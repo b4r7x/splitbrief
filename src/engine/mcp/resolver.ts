@@ -15,6 +15,9 @@ import {
 import { SUMMARY_FILE } from '../../core/paths.js';
 import { parsePersistedSession } from '../../core/sessions/summary-parser.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
+import { projectWorkflowStateForTranscriptPolicy } from '../../core/state/persistence.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { readSessionPersistTranscript } from '../../core/sessions/io.js';
 import { parseTasks, splitTaskBlocks } from '../spec/parser.js';
 import { parseSimpleYamlFrontmatter } from '../../utils/frontmatter.js';
 import { buildManifest, hasCanonicalManifestArtifacts } from './manifest.js';
@@ -23,6 +26,7 @@ export type McpResolverConfig = {
   projectDir: string;
   sessionIds: string[];
   diptychVersion: string;
+  persistTranscript?: boolean | undefined;
 };
 
 export type McpResolver = {
@@ -91,6 +95,15 @@ function extractIdFromBlock(block: string): string | null {
 
 export function createResolver(config: McpResolverConfig): McpResolver {
   const { projectDir, sessionIds, diptychVersion } = config;
+  const fallbackPersistTranscript = config.persistTranscript ?? true;
+
+  function sessionPersistTranscript(id: string): boolean {
+    return fallbackPersistTranscript && readSessionPersistTranscript({ projectDir, sessionId: id });
+  }
+
+  function sessionTitle(id: string, title: string): string {
+    return sessionPersistTranscript(id) ? title : TRANSCRIPT_OMITTED_MESSAGE;
+  }
 
   function sessionResourcePath(id: string, file: string): string {
     return join(DIPTYCH_DIR, SESSIONS_DIR, id, file);
@@ -116,7 +129,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
         if (parsed.status === 'ok') {
           return {
             id,
-            title: parsed.session.feature,
+            title: sessionTitle(id, parsed.session.feature),
             mode: parsed.session.summary?.mode ?? 'unknown',
             startedAt: parsed.session.startedAt,
             status: parsed.session.status,
@@ -135,7 +148,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       const startedAt = Date.parse(parsed.data.startedAt);
       return {
         id,
-        title: parsed.data.feature,
+        title: sessionTitle(id, parsed.data.feature),
         mode: 'unknown',
         startedAt: Number.isNaN(startedAt) ? 0 : startedAt,
         status: 'interrupted',
@@ -254,6 +267,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
 
       const staticResource = STATIC_RESOURCES[resource];
       if (staticResource) {
+        if (resource === 'state.json') return readStateResource(uri, id);
         const content = await readSessionFile(id, staticResource.file);
         if (!content) return null;
         return { uri, mimeType: staticResource.mimeType, text: content };
@@ -262,6 +276,23 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       return null;
     } catch (err) {
       warnError(`MCP readResource(${uri})`, err);
+      return null;
+    }
+  }
+
+  async function readStateResource(uri: string, id: string): Promise<McpResourceContent | null> {
+    const content = await readSessionFile(id, STATE_FILE);
+    if (!content) return null;
+    if (sessionPersistTranscript(id)) return { uri, mimeType: 'application/json', text: content };
+
+    try {
+      const parsed = WorkflowStateSchema.safeParse(JSON.parse(content));
+      if (!parsed.success) return null;
+      const state = projectWorkflowStateForTranscriptPolicy(parsed.data, {
+        persistTranscript: false,
+      });
+      return { uri, mimeType: 'application/json', text: `${JSON.stringify(state, null, 2)}\n` };
+    } catch {
       return null;
     }
   }

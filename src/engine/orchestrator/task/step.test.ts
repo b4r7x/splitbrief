@@ -19,10 +19,12 @@ import { loadState } from '../../../core/state/persistence.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/base.js';
-import { createValidator } from '../validation.js';
+import { createValidator, type RunValidationOptions } from '../validation.js';
 import { runSingleTask } from './step.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
+import type { HooksConfig } from '../../../core/schemas/hooks.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 
 afterEach(cleanupTaskProjects);
 
@@ -158,7 +160,7 @@ describe('runSingleTask — happy path', () => {
       reason: 'APPROVAL_REQUIRED',
     });
 
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
     expect(ledger?.rejections?.[0]).toMatchObject({
       taskId: 'T001',
       actionClass: 'write_out_of_scope',
@@ -340,7 +342,7 @@ describe('runSingleTask — happy path', () => {
       taskId: 'T001',
     });
 
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
     expect(ledger?.tasks.find((entry) => entry.id === 'T001')?.changedFiles).toContain(
       'src/hello.ts',
     );
@@ -375,6 +377,17 @@ describe('runSingleTask — happy path', () => {
     const runValidation = vi.fn().mockResolvedValue([]);
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
+    const hooks: HooksConfig = {
+      pre_validation: [
+        {
+          kind: 'module',
+          path: 'deny-validation.mjs',
+          timeout_ms: 30_000,
+          on_failure: 'warn',
+        },
+      ],
+    };
+    markHooksConfigTrusted(projectDir, hooks);
 
     const result = await runSingleTask({
       wctx: makeWorkflowContext({
@@ -384,16 +397,7 @@ describe('runSingleTask — happy path', () => {
         implementer,
         bus,
         config: makeConfig({
-          hooks: {
-            pre_validation: [
-              {
-                kind: 'module',
-                path: 'deny-validation.mjs',
-                timeout_ms: 30_000,
-                on_failure: 'warn',
-              },
-            ],
-          },
+          hooks,
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: { commitStrategy: 'none', maxRetries: 2 },
         }),
@@ -418,8 +422,16 @@ describe('runSingleTask — happy path', () => {
       reason: 'policy: validation gated',
     });
     expect(events.find((e) => e.type === 'task_completed')).toBeUndefined();
+    expect(existsSync(join(projectDir, 'src/hello.ts'))).toBe(false);
+    expect(
+      events.find(
+        (e) =>
+          e.type === 'warning' &&
+          e.message.includes('unvalidated task change(s) after pre_validation denied'),
+      ),
+    ).toBeDefined();
 
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
     expect(ledger?.tasks.find((entry) => entry.id === 'T001')).toMatchObject({
       id: 'T001',
       status: 'skipped',
@@ -1204,6 +1216,63 @@ describe('runSingleTask — happy path', () => {
     expect(events.find((e) => e.type === 'task_retry')).toBeUndefined();
   });
 
+  it('aborting after validation passes returns state without completing the task', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const controller = new AbortController();
+    const task = makeTask({
+      id: 'T001',
+      action: 'create',
+      file: 'src/main.ts',
+      scope: { inBounds: ['src/main.ts'] },
+    });
+    const state = implementingState([task]);
+
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 1;\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+      retry: vi.fn(),
+    });
+    const runValidation = vi.fn().mockImplementation(async (opts: RunValidationOptions) => {
+      expect(opts.signal).toBe(controller.signal);
+      controller.abort();
+      return [{ stage: 'test' as const, passed: true }];
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        bus,
+        signal: controller.signal,
+        config: makeConfig({
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          workflow: { commitStrategy: 'none', maxRetries: 2 },
+        }),
+        validator: { ...createValidator(), runValidation },
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(result.pendingRecovery).toBeUndefined();
+    expect(result.tasks[0]?.status).not.toBe('done');
+    expect(result.currentTaskIndex).toBe(0);
+    expect(events.find((e) => e.type === 'task_completed')).toBeUndefined();
+  });
+
   it('persists successful confirm reasons in the evidence ledger', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({
@@ -1255,7 +1324,7 @@ describe('runSingleTask — happy path', () => {
       setCurrentTask: vi.fn(),
     });
 
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
     expect(ledger?.approvals).toContainEqual(
       expect.objectContaining({
         taskId: 'T001',

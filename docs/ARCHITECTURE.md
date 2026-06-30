@@ -254,7 +254,7 @@ type PlannerCapabilities = {
 
 Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/runners/agent-sdk-backend.ts`. All other backends fall back to transcript rebuild on resume (`src/engine/orchestrator/transcript-rebuild.ts`).
 
-`shell` and `agent` defaults are all-false but can be overridden per-project via config:
+`shell` and `agent` defaults are all-false but can be narrowed or partially declared per project. The schema rejects `supportsSessionResume`, `supportsEffort`, and `supportsImages` when set to `true` because command-based adapters have no session-handle, effort, or image-attachment channel.
 
 ```yaml
 planner:
@@ -264,8 +264,8 @@ planner:
   outputFormat: stream-json
   capabilities:
     supportsConversationalPlanning: true
-    supportsSessionResume: true
-    supportsEffort: true
+    supportsHintEscalation: true
+    supportsSelfSummarisation: false
 ```
 
 `cli`, `api`, and `agent-sdk` kinds have hardcoded capabilities; the `capabilities` config key is rejected by schema validation for those kinds.
@@ -429,7 +429,7 @@ The repository layers many supporting subsystems on top of that core loop:
 - **Handoff packs** (`src/engine/handoff/`) — render the compiled brief into formats other agents consume (`spec-kit`, `agents-md`, `claude-code`, `copilot-issue`) plus user-supplied custom renderers under `.diptych/handoff-renderers/`.
 - **MCP server** (`src/engine/mcp/`) — exposes session artifacts (sessions index, manifest, spec, plan, tasks, evidence, drift report, state, and summary) as read-only MCP resources for external clients, plus constrained evidence-ledger tools. It is not an execution path.
 - **IPC server** (`src/engine/ipc/`) — UNIX-domain socket per session so a `diptych attach` TUI client can re-bind to a long-running background workflow; `diptych ps` lists status.
-- **Worktree management** (`src/engine/worktree.ts`) — `diptych worktree list / switch / remove` for isolated parallel sessions under `.trees/<name>/`.
+- **Worktree management** (`src/engine/worktree.ts`) — `diptych worktree list / switch / path / remove` for isolated parallel sessions under `.trees/<name>/`.
 - **Tiered approval** (`src/engine/orchestrator/approval/tiered-approval.ts`) — declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and go through `auto` / `sticky` / `confirm` tiers, with sticky grants persisted at `.diptych/approvals.json` and managed via `diptych approval list / clear`. `network` is accepted only for config compatibility; it is not shell/network sandboxing.
 - **Repo-map context** (`src/engine/codebase/`) — token-budgeted PageRank-based codebase summary fed to every planner call.
 - **Hooks** (`src/engine/hooks/`) — `pre_*` (sync) and `post_*` / `on_*` (fire-and-forget) commands declared in config and dispatched on matching events.
@@ -1098,14 +1098,24 @@ export function emptyActiveChain(): ActiveDriftChain
 export function resetDriftChainState(projectDir, sessionId): void
 ```
 
+### `core/evidence/ledger.ts`
+
+```ts
+export function createEvidenceLedger(input: CreateEvidenceLedgerInput): EvidenceLedger
+//  input.briefHash propagates onto the ledger AND every task entry.
+export function evidenceLedgerPath(ref: SessionRef): string
+export function writeEvidenceLedger(ref, ledger): void
+export function mutateEvidenceLedger(ref, mutate): EvidenceLedger
+export function readEvidenceLedger(ref): EvidenceLedger | null
+```
+
+The evidence ledger data model, locking, path resolution, and read/write/mutate APIs are owned by `src/core/evidence/ledger.ts`.
+
 ### `engine/orchestrator/evidence/`
 
 ```ts
-// ledger.ts
-export function createEvidenceLedger(input: CreateEvidenceLedgerInput): EvidenceLedger
-//  input.briefHash propagates onto the ledger AND every task entry.
-
 // task.ts
+
 export function recordLocalTaskEvidence(input): EvidenceLedger
 export function recordRetryOrEscalationEvidence(input): EvidenceLedger
 export function recordSkippedTaskEvidence(input): EvidenceLedger
@@ -1119,9 +1129,10 @@ export function buildRejectionContext(ledger): string
 export function buildEvidenceSummary(ledger): NonNullable<Summary['evidenceSummary']>
 
 // persistence.ts
-export function evidenceLedgerPath(projectDir, sessionId): string
-export function writeEvidenceLedger(projectDir, sessionId, ledger): void
-export function readEvidenceLedger(projectDir, sessionId): EvidenceLedger | null
+export function getOrCreateLedger(input): EvidenceLedger
+export function persistTaskEvidence(input): void
+export function persistRejectionEvidence(input): void
+export function persistApprovalEvidence(input): void
 ```
 
 Every `record*` takes an optional `briefHash: string | null` parameter. The invariant — **`briefHash` must be threaded from `createEvidenceLedger` to every `record*` call** — is maintained at the call sites in `src/engine/orchestrator/task/step.ts`, `src/engine/orchestrator/task/loop.ts`, and `src/engine/orchestrator/final-review.ts`.
@@ -1148,7 +1159,7 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 | `diptych snapshot` | `create`, `list`, `restore <id-or-name>`, `diff <id-or-name>` | Working-tree snapshots. `restore` supports `--force` to overwrite conflicts. `diff` exits non-zero when changes detected. |
 | `diptych approval` | `list`, `clear --scope session\|always\|all` | Manage sticky approval grants in `.diptych/approvals.json`. |
 | `diptych mcp` | `serve` | Start MCP HTTP server (default port 4321) exposing session resources and constrained evidence tools. Generates one-shot bearer token; supports `--session` or `--all-sessions`. |
-| `diptych worktree` | `list`, `switch <name>`, `remove <name>` | Manage `.trees/<name>/` git worktrees. `remove` supports `--force` and `--delete-branch`. |
+| `diptych worktree` | `list`, `switch <name>`, `path <name>`, `remove <name>` | Manage `.trees/<name>/` git worktrees. `path` prints the resolved filesystem path. `remove` supports `--force` and `--delete-branch`. |
 | `diptych attach [session-id]` | — | Connect TUI client to a running background session via `ipc.sock`. Auto-resolves the session-id if exactly one is running. (Not supported on Windows.) |
 | `diptych detach [session-id]` | — | Disconnect a TUI client while keeping the background workflow server running. |
 | `diptych ps` | — | List sessions with status (`running` / `exited` / `crashed` / `unknown`), pid, mode, elapsed time, feature. Sorted newest-first. (Not supported on Windows.) |
@@ -1157,7 +1168,7 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 ---
 
-## 10. Runtime commands (full list, 26)
+## 10. Runtime commands (full list, 30)
 
 Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input). Commands are callable from composer `/` input, the command palette, and RPC command dispatch.
 
@@ -1169,10 +1180,14 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 | `/sessions` | Browse past sessions |
 | `/settings` | Planner, model & settings overlay |
 | `/mode` | Select workflow mode (`instant` / `quick` / `standard` / `speckit`) |
+| `/copy [message\|brief\|path\|command\|cost]` | Copy a reviewed value to the clipboard |
 | `/effort` | Set planner effort (`low` / `medium` / `high` / `xhigh`) |
 | `/planner` | Select planner tool |
 | `/implementer` | Select implementer |
 | `/home` | Return to home screen |
+| `/scroll <top\|bottom\|page-up\|page-down>` | Scroll the workflow conversation |
+| `/activity` | Expand or collapse the latest activity batch |
+| `/sidebar` | Show or hide the workflow sidebar |
 | `/refresh` | Re-detect available tools |
 | `/revise-spec` | Rewind to spec phase with optional feedback |
 | `/revise-plan` | Rewind to plan phase with optional feedback |

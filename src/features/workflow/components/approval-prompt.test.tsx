@@ -2,12 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import {
-  ApprovalPrompt,
-  PROMPT_ZONE_Z,
-  getStickyOptionZones,
-  triggerStickyOption,
-} from './approval-prompt.js';
+import { ApprovalPrompt, PROMPT_ZONE_Z } from './approval-prompt.js';
 import { openApprovalPrompt, approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import {
   _resetMouseZones,
@@ -17,7 +12,7 @@ import {
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { readConversationScrollSnapshot } from '../layout/snapshot.js';
-import { getApprovalPromptRows } from '../prompt-rows.js';
+import { getApprovalPromptRows, getStickyOptionZones } from '../prompt-rows.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
@@ -193,6 +188,10 @@ describe('ApprovalPrompt', () => {
 });
 
 describe('sticky option click zones', () => {
+  beforeEach(() => {
+    _resetMouseZones();
+  });
+
   afterEach(() => {
     _resetMouseZones();
     approvalPromptStore.__testReset();
@@ -248,14 +247,32 @@ describe('sticky option click zones', () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  it('triggers the same store action a key would for each option', async () => {
+  it('registered option zones trigger the same store action a key would', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
     const allow = openApprovalPrompt(makeStickyRequest('write outside scope'));
-    triggerStickyOption('a');
+    const ui = render(<ApprovalPrompt />);
+    const { contentRect } = readConversationScrollSnapshot();
+    const boxTop = contentRect.top + contentRect.height;
+    const centerX = 40;
+
+    await tick(PAST_GRACE);
+    await vi.waitFor(() => {
+      expect(hitTopmostZone(centerX, boxTop + 5)?.id).toBe('approval-option-a');
+    });
+    hitTopmostZone(centerX, boxTop + 5)?.onClick?.();
     await expect(allow).resolves.toEqual({ decision: 'allow', scope: 'once' });
+    ui.unmount();
+    _resetMouseZones();
 
     const deny = openApprovalPrompt(makeStickyRequest('write outside scope'));
-    triggerStickyOption('x');
+    const denyUi = render(<ApprovalPrompt />);
+    await tick(PAST_GRACE);
+    await vi.waitFor(() => {
+      expect(hitTopmostZone(centerX, boxTop + 8)?.id).toBe('approval-option-x');
+    });
+    hitTopmostZone(centerX, boxTop + 8)?.onClick?.();
     await expect(deny).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    denyUi.unmount();
   });
 });
 
@@ -272,8 +289,8 @@ describe('short-viewport clamp clips registered sticky zones', () => {
   });
 
   it('does not activate the deny zone below the shell-clamped prompt box', async () => {
-    const ui = render(<ApprovalPrompt clampedBoxRows={8} />);
     const decision = openApprovalPrompt(makeStickyRequest('write src/x.ts'));
+    const ui = render(<ApprovalPrompt clampedBoxRows={8} />);
     await tick(PAST_GRACE);
 
     const { contentRect } = readConversationScrollSnapshot();

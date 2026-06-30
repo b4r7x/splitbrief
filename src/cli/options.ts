@@ -130,6 +130,11 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
     )
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
+    .option(
+      '--allow-repo-runners',
+      'Trust repo-local shell/agent runner commands from project config',
+      false,
+    )
     .option('--json', 'Headless mode: emit public NDJSON records to stdout, skip TUI render', false)
     .option('--rpc', 'RPC mode: bidirectional NDJSON on stdin/stdout', false)
     .option(

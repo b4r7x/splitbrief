@@ -21,6 +21,10 @@ export type PlanningPhaseOptions = {
   approveLevel?: ApproveLevel | undefined;
   attachments?: Attachment[] | undefined;
   deferBriefGate?: boolean | undefined;
+  afterSpecReview?: (input: {
+    state: WorkflowState;
+    tasks: Task[];
+  }) => Promise<{ state: WorkflowState; tasks: Task[]; cancelled?: boolean | undefined }>;
 };
 
 export type PlanningRunContext = {

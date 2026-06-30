@@ -6,6 +6,7 @@ import { discoverHookModules, mergeDiscoveredHooks, resolveHooksConfig } from '.
 import { runPreHooks } from './run-pre.js';
 import type { EngineEvent } from '../events/types.js';
 import { taskId } from '../../core/schemas/task.js';
+import { markHooksConfigTrusted } from '../../core/hooks/trust.js';
 import { makeCommandHookEntry } from '#testing/helpers/factories/hook-entry.js';
 
 let projectDir: string;
@@ -110,6 +111,7 @@ describe('resolveHooksConfig', () => {
     );
 
     const hooks = await resolveHooksConfig(projectDir, undefined);
+    if (hooks) markHooksConfigTrusted(projectDir, hooks);
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, {
       projectDir,
       sessionId: 's',

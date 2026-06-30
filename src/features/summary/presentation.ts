@@ -5,6 +5,7 @@ import { ARROW_SEP } from '../../components/separators.js';
 import { formatToolModel } from '../../core/model-display.js';
 import { uniqueSorted } from '../../utils/collections.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
+import { countNoun } from '../../utils/pluralize.js';
 import { assertNever } from '../../utils/type-guards.js';
 
 export function formatImplementerSummary(summary: Summary): string | null {
@@ -69,7 +70,7 @@ export function formatRouteSummary(
 }
 
 export function compactCount(count: number, noun: string): string {
-  return count === 1 ? `1 ${noun}` : `${count} ${noun}s`;
+  return countNoun(count, noun);
 }
 
 export function compactPacketPath(path: string): string {

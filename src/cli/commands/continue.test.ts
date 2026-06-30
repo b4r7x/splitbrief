@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -15,6 +15,12 @@ import type { WorkflowOpts } from '../../core/types/config-options.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
+
+const LEGACY_FIXTURE_DIR = join(
+  import.meta.dirname,
+  '../../../testing/fixtures/legacy-diptych-current',
+);
+const EXPECTED_LEGACY_SESSION_ID = '2026-03-15-add-email-validator';
 
 type RpcRun = {
   feature: string;
@@ -96,6 +102,14 @@ function writeState(sessDir: string, phase: string, extra: Record<string, unknow
     ...extra,
   };
   writeFileSync(join(sessDir, 'state.json'), JSON.stringify(state));
+}
+
+function writeLegacyCurrent(projectDir: string): void {
+  const legacyDir = join(projectDir, DIPTYCH_DIR, 'current');
+  mkdirSync(legacyDir, { recursive: true });
+  for (const name of ['state.json', 'events.jsonl', 'spec.md']) {
+    writeFileSync(join(legacyDir, name), readFileSync(join(LEGACY_FIXTURE_DIR, name)));
+  }
 }
 
 function mockPlatform(value: NodeJS.Platform): () => void {
@@ -190,6 +204,24 @@ describe('continueCommand', () => {
 
     await expect(continueCommand(undefined, { projectDir }, deps)).rejects.toThrow(
       /no session to continue/,
+    );
+  });
+
+  it('migrates legacy current before resolving the implicit continue target', async () => {
+    const projectDir = makeTmpProject();
+    writeLegacyCurrent(projectDir);
+
+    await expect(continueCommand(undefined, { projectDir }, deps)).rejects.toThrow(
+      /cannot be resumed/,
+    );
+
+    expect(
+      existsSync(
+        join(projectDir, DIPTYCH_DIR, 'sessions', EXPECTED_LEGACY_SESSION_ID, 'state.json'),
+      ),
+    ).toBe(true);
+    expect(readFileSync(join(projectDir, DIPTYCH_DIR, 'active'), 'utf-8').trim()).toBe(
+      EXPECTED_LEGACY_SESSION_ID,
     );
   });
 
@@ -575,6 +607,27 @@ describe('continueCommand', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await continueCommand('2025-04-01-private', { projectDir }, deps);
+    } finally {
+      const resumeLine = logSpy.mock.calls
+        .map((call) => call.join(' '))
+        .find((line) => line.includes('Resuming:'));
+      expect(resumeLine).toBeDefined();
+      expect(resumeLine).toContain(TRANSCRIPT_OMITTED_MESSAGE);
+      expect(resumeLine).not.toContain('secret');
+      logSpy.mockRestore();
+    }
+  });
+
+  it('omits the feature on the resume status line for a transcript-private session when current config allows transcripts', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-session-abcdef123456';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    writeState(sessDir, 'implementing', { feature: 'secret oauth login' });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await continueCommand(sessionId, { projectDir }, deps);
     } finally {
       const resumeLine = logSpy.mock.calls
         .map((call) => call.join(' '))

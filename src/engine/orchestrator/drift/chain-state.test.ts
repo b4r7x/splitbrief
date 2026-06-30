@@ -24,7 +24,7 @@ describe('initialDriftChainState', () => {
 
 describe('driftChainsPath', () => {
   it('returns expected path under .diptych/sessions/<id>/drift-chains.json', () => {
-    const path = driftChainsPath('/project', 'sess-abc');
+    const path = driftChainsPath({ projectDir: '/project', sessionId: 'sess-abc' });
     expect(path).toBe('/project/.diptych/sessions/sess-abc/drift-chains.json');
   });
 });
@@ -39,21 +39,24 @@ describe('readDriftChainState', () => {
   });
 
   it('returns null when file is absent', () => {
-    expect(readDriftChainState(dir, 'missing')).toBeNull();
+    expect(readDriftChainState({ projectDir: dir, sessionId: 'missing' })).toBeNull();
   });
 
   it('returns null when file contains invalid JSON', () => {
     const sessionPath = join(dir, '.diptych', 'sessions', 's1');
     mkdirSync(sessionPath, { recursive: true });
-    writeFileSync(driftChainsPath(dir, 's1'), '{not valid json');
-    expect(readDriftChainState(dir, 's1')).toBeNull();
+    writeFileSync(driftChainsPath({ projectDir: dir, sessionId: 's1' }), '{not valid json');
+    expect(readDriftChainState({ projectDir: dir, sessionId: 's1' })).toBeNull();
   });
 
   it('returns null when file contains JSON that fails schema validation', () => {
     const sessionPath = join(dir, '.diptych', 'sessions', 's1');
     mkdirSync(sessionPath, { recursive: true });
-    writeFileSync(driftChainsPath(dir, 's1'), JSON.stringify({ version: 99, bad: true }));
-    expect(readDriftChainState(dir, 's1')).toBeNull();
+    writeFileSync(
+      driftChainsPath({ projectDir: dir, sessionId: 's1' }),
+      JSON.stringify({ version: 99, bad: true }),
+    );
+    expect(readDriftChainState({ projectDir: dir, sessionId: 's1' })).toBeNull();
   });
 });
 
@@ -68,8 +71,8 @@ describe('writeDriftChainState', () => {
 
   it('creates file with trailing newline and parseable JSON', () => {
     const state = initialDriftChainState('s1');
-    writeDriftChainState(dir, 's1', state);
-    const path = driftChainsPath(dir, 's1');
+    writeDriftChainState({ projectDir: dir, sessionId: 's1' }, state);
+    const path = driftChainsPath({ projectDir: dir, sessionId: 's1' });
     expect(existsSync(path)).toBe(true);
     const raw = readFileSync(path, 'utf8');
     expect(raw.endsWith('\n')).toBe(true);
@@ -78,8 +81,8 @@ describe('writeDriftChainState', () => {
 
   it('round-trips a written state via readDriftChainState', () => {
     const state = initialDriftChainState('s2');
-    writeDriftChainState(dir, 's2', state);
-    const result = readDriftChainState(dir, 's2');
+    writeDriftChainState({ projectDir: dir, sessionId: 's2' }, state);
+    const result = readDriftChainState({ projectDir: dir, sessionId: 's2' });
     expect(result).not.toBeNull();
     expect(result?.version).toBe(1);
     expect(result?.sessionId).toBe('s2');

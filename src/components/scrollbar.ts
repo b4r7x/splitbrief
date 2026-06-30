@@ -1,3 +1,5 @@
+import { clamp } from '../utils/math.js';
+
 export interface ScrollbarThumb {
   thumbStart: number;
   thumbSize: number;
@@ -17,7 +19,7 @@ export function getScrollbarThumb(input: {
   }
   const thumbSize = Math.max(1, Math.round((visibleHeight * visibleHeight) / lineCount));
   const maxThumbStart = visibleHeight - thumbSize;
-  const clampedOffset = Math.min(Math.max(offset, 0), lineCount - visibleHeight);
+  const clampedOffset = clamp(offset, 0, lineCount - visibleHeight);
   const thumbStart = Math.round((clampedOffset * maxThumbStart) / (lineCount - visibleHeight));
   return { thumbStart, thumbSize };
 }

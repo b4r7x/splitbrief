@@ -87,7 +87,7 @@ src/cli/
 │   ├── errors.ts          # rpcError factory + isTransportClosed predicate — see ERRORS.md
 │   └── types.ts
 └── sessions/          # session-id resolution for subcommands
-    ├── resolve.ts          # resolveSessionOrThrow(dir, opt) — active pointer → single-running fallback
+    ├── resolve.ts          # resolveSessionOrThrow(dir, opt) — ps alias / active pointer resolution
     ├── aliases.ts          # numeric alias ↔ session-id mapping from lockfiles
     └── single-running.ts   # findSingleRunningSession scan (single | none | multiple)
 ```

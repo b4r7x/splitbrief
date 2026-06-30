@@ -1,18 +1,49 @@
-import { resolve } from 'node:path';
-import { describe, it, expect } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { createHookSink } from './sink.js';
-import type { HookCommandEntry, HooksConfig } from '../../core/schemas/hooks.js';
+import type { HookCommandEntry, HookModuleEntry, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent, EventBus } from '../events/types.js';
 import { createEventBus } from '../events/bus.js';
 import { taskId } from '../../core/schemas/task.js';
-import {
-  makeCommandHookEntry,
-  makeAllowHook,
-  makeThrowingModuleHook,
-} from '#testing/helpers/factories/hook-entry.js';
+import { markHooksConfigTrusted } from '../../core/hooks/trust.js';
+import { makeCommandHookEntry, makeAllowHook } from '#testing/helpers/factories/hook-entry.js';
 
-const projectDir = resolve('.');
-const ctx = { projectDir, sessionId: 'sess-1' };
+let projectDir: string;
+
+beforeEach(() => {
+  projectDir = mkdtempSync(join(tmpdir(), 'diptych-hook-sink-'));
+});
+
+afterEach(() => {
+  rmSync(projectDir, { recursive: true, force: true });
+});
+
+function ctx() {
+  return { projectDir, sessionId: 'sess-1' };
+}
+
+function trust(hooks: HooksConfig): HooksConfig {
+  markHooksConfigTrusted(projectDir, hooks);
+  return hooks;
+}
+
+function throwingModuleHook(overrides?: Partial<HookModuleEntry>): HookModuleEntry {
+  mkdirSync(join(projectDir, 'hooks'), { recursive: true });
+  const path = `hooks/${overrides?.name ?? 'throws'}.mjs`;
+  writeFileSync(
+    join(projectDir, path),
+    "export default async function hook() { throw new Error('segfault'); }\n",
+  );
+  return {
+    kind: 'module',
+    path,
+    timeout_ms: 5000,
+    on_failure: 'warn',
+    ...overrides,
+  };
+}
 
 function makeBus(): { bus: EventBus; warnings: string[]; all: EngineEvent[] } {
   const warnings: string[] = [];
@@ -72,7 +103,7 @@ describe('createHookSink', () => {
   it('does nothing when no hooks are configured for the event', async () => {
     const { bus, warnings, all } = makeBus();
     const hooks: HooksConfig = {};
-    const sink = createHookSink(hooks, ctx, bus);
+    const sink = createHookSink(hooks, ctx(), bus);
     sink(taskCompletedEvent);
     await waitForNoActivity(all);
     expect(warnings).toHaveLength(0);
@@ -82,18 +113,18 @@ describe('createHookSink', () => {
   it('dispatches post_task hook on task_completed event', async () => {
     {
       const { bus, warnings, all } = makeBus();
-      const hooks: HooksConfig = { post_task: [makeAllowHook('allow-hook')] };
-      const sink = createHookSink(hooks, ctx, bus);
+      const hooks = trust({ post_task: [makeAllowHook('allow-hook')] });
+      const sink = createHookSink(hooks, ctx(), bus);
       sink(taskCompletedEvent);
       await waitForNoActivity(all);
       expect(warnings).toHaveLength(0);
     }
     {
       const { bus, warnings } = makeBus();
-      const hooks: HooksConfig = {
+      const hooks = trust({
         post_task: [makeCommandHookEntry({ command: 'false', name: 'fails', on_failure: 'warn' })],
-      };
-      const sink = createHookSink(hooks, ctx, bus);
+      });
+      const sink = createHookSink(hooks, ctx(), bus);
       sink(taskCompletedEvent);
       await waitForWarnings(warnings, 1);
       expect(warnings).toHaveLength(1);
@@ -103,13 +134,13 @@ describe('createHookSink', () => {
 
   it('runs multiple hooks sequentially in order', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = {
+    const hooks = trust({
       post_task: [
         makeCommandHookEntry({ command: 'false', name: 'hook-a', on_failure: 'warn' }),
         makeCommandHookEntry({ command: 'false', name: 'hook-b', on_failure: 'warn' }),
       ],
-    };
-    const sink = createHookSink(hooks, ctx, bus);
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 2);
     expect(warnings).toHaveLength(2);
@@ -119,8 +150,8 @@ describe('createHookSink', () => {
 
   it('publishes a warning when a hook crashes, but does not gate the flow', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = { post_task: [makeThrowingModuleHook({ name: 'crash-hook' })] };
-    const sink = createHookSink(hooks, ctx, bus);
+    const hooks = trust({ post_task: [throwingModuleHook({ name: 'crash-hook' })] });
+    const sink = createHookSink(hooks, ctx(), bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);
     expect(warnings).toHaveLength(1);
@@ -130,10 +161,10 @@ describe('createHookSink', () => {
 
   it('logs deny from post_* hook as informational warning, does not block', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = {
+    const hooks = trust({
       post_task: [denyViaStdoutHook('deny-cmd', 'not allowed')],
-    };
-    const sink = createHookSink(hooks, ctx, bus);
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);
     expect(warnings).toHaveLength(1);
@@ -142,12 +173,12 @@ describe('createHookSink', () => {
 
   it('does not dispatch for validate events with status=running (only done)', async () => {
     const { bus, warnings, all } = makeBus();
-    const hooks: HooksConfig = {
+    const hooks = trust({
       post_validation: [
         makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
       ],
-    };
-    const sink = createHookSink(hooks, ctx, bus);
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
     const runningEvent: EngineEvent = {
       type: 'validate',
       ts: 1,
@@ -165,12 +196,12 @@ describe('createHookSink', () => {
 
   it('dispatches post_validation for validate event with status=done', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = {
+    const hooks = trust({
       post_validation: [
         makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
       ],
-    };
-    const sink = createHookSink(hooks, ctx, bus);
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
     const doneEvent: EngineEvent = {
       type: 'validate',
       ts: 1,
@@ -188,10 +219,10 @@ describe('createHookSink', () => {
 
   it('dispatches on_complete for workflow_complete event', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = {
+    const hooks = trust({
       on_complete: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
-    };
-    const sink = createHookSink(hooks, ctx, bus);
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
     const completeEvent: EngineEvent = { type: 'workflow_complete', ts: 1, phase: 'idle' };
     sink(completeEvent);
     await waitForWarnings(warnings, 1);
@@ -201,10 +232,10 @@ describe('createHookSink', () => {
 
   it('dispatches on_error for error event', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = {
+    const hooks = trust({
       on_error: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
-    };
-    const sink = createHookSink(hooks, ctx, bus);
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
     const errorEvent: EngineEvent = { type: 'error', ts: 1, phase: 'idle', message: 'err' };
     sink(errorEvent);
     await waitForWarnings(warnings, 1);
@@ -214,10 +245,10 @@ describe('createHookSink', () => {
 
   it('never dispatches a pre_compact hook (reserved event with no dispatch site)', async () => {
     const { bus, warnings, all } = makeBus();
-    const hooks: HooksConfig = {
+    const hooks = trust({
       pre_compact: [makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' })],
-    };
-    const sink = createHookSink(hooks, ctx, bus);
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
     const completeEvent: EngineEvent = { type: 'workflow_complete', ts: 1, phase: 'idle' };
     const errorEvent: EngineEvent = { type: 'error', ts: 1, phase: 'idle', message: 'err' };
     sink(taskCompletedEvent);
@@ -230,13 +261,37 @@ describe('createHookSink', () => {
 
   it('catches unexpected thrown errors and publishes warning', async () => {
     const { bus, warnings } = makeBus();
-    const hooks: HooksConfig = {
-      post_task: [makeThrowingModuleHook({ name: 'unexpected-throw' })],
-    };
-    const sink = createHookSink(hooks, ctx, bus);
+    const hooks = trust({
+      post_task: [throwingModuleHook({ name: 'unexpected-throw' })],
+    });
+    const sink = createHookSink(hooks, ctx(), bus);
     sink(taskCompletedEvent);
     await waitForWarnings(warnings, 1);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('segfault');
+  });
+
+  it('refuses a trusted post hook script after its bytes change', async () => {
+    mkdirSync(join(projectDir, 'hooks'), { recursive: true });
+    writeFileSync(
+      join(projectDir, 'hooks', 'post.mjs'),
+      'process.stdout.write(JSON.stringify({ decision: "allow" }));\n',
+    );
+    const marker = join(projectDir, 'marker.txt');
+    const hooks = trust({
+      post_task: [makeCommandHookEntry({ command: 'node', args: ['hooks/post.mjs'] })],
+    });
+    writeFileSync(
+      join(projectDir, 'hooks', 'post.mjs'),
+      `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(marker)}, 'ran');\n`,
+    );
+    const { bus, warnings } = makeBus();
+    const sink = createHookSink(hooks, ctx(), bus);
+
+    sink(taskCompletedEvent);
+    await waitForWarnings(warnings, 1);
+
+    expect(warnings[0]).toContain('changed after trust');
+    expect(existsSync(marker)).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import { useTheme } from '../../theme.js';
 import { borderStyleFor, glyph } from '../../../lib/glyphs.js';
 import { type ScrollbarThumb, scrollbarCell } from '../../scrollbar.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { clamp } from '../../../utils/math.js';
 import { windowSlice } from '../../pickers/scroll-window.js';
 
 export function CompletionPanel<T>({
@@ -148,7 +149,7 @@ function menuScrollThumb(input: {
   }
   const thumbSize = Math.max(1, Math.round((visibleHeight * visibleHeight) / lineCount));
   const maxThumbStart = visibleHeight - thumbSize;
-  const clampedIndex = Math.min(Math.max(selectedIndex, 0), lineCount - 1);
+  const clampedIndex = clamp(selectedIndex, 0, lineCount - 1);
   return {
     thumbStart: Math.round((clampedIndex * maxThumbStart) / (lineCount - 1)),
     thumbSize,

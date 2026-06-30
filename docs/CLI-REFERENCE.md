@@ -37,7 +37,7 @@ diptych — Cost-optimized AI coding orchestrator (v0.1.0)
 | 13 | `diptych snapshot` | Create / list / restore / diff working-tree snapshots. |
 | 14 | `diptych approval` | List or clear sticky approval grants. |
 | 15 | `diptych mcp` | Run the MCP resource and evidence-tool server. |
-| 16 | `diptych worktree` | List / switch / remove `.trees/<slug>` git worktrees. |
+| 16 | `diptych worktree` | List / switch / path / remove `.trees/<slug>` git worktrees. |
 | 17 | `diptych attach` | Attach a TUI client to a detached background session. |
 | 18 | `diptych detach` | Detach a TUI client without stopping the background server. |
 | 19 | `diptych ps` | List sessions in the current project with status. |
@@ -73,7 +73,7 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
   [--budget <amount>] [--planner-effort <level>] [--yolo] \
   [--project <dir>] [--worktree [name]] [--detach] \
   [--no-fullscreen] [--no-mouse] [--hover] \
-  [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
+  [--allow-hooks] [--allow-repo-runners] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
 ### Options
@@ -105,12 +105,13 @@ diptych start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 | `--budget <amount>` | float | — | Maximum budget in USD (e.g. `2.00`). Workflow warns/pauses before the cap, stops when exceeded, and pauses when paid usage has unknown pricing. |
 | `--yolo` | boolean | `false` | Disable file-write tiered approval prompts for the session. Spec/plan gates still follow `--approve` / mode policy, and briefs review remains separate. This is not a shell or network sandbox setting. |
 | `--project <dir>` | path | cwd | Project directory. |
-| `--worktree [name]` | string \| boolean | — | Run inside a new linked git worktree at `.trees/<name>` on branch `diptych/<name>`. If `name` is omitted, the feature slug is used. |
+| `--worktree [name]` | string \| boolean | — | Run inside a new linked git worktree at `.trees/<name>` on branch `diptych/<name>`. If `name` is omitted, the feature slug is used only when `workflow.persistTranscript` is true; otherwise an opaque `session-<hex>` slug is used. |
 | `--detach` | boolean | `false` | Spawn the workflow as a background server and exit. Requires a `feature` argument and is mutually exclusive with `--json` and `--rpc`. |
 | `--no-fullscreen` | boolean | fullscreen on | Disable the alternate screen buffer. Useful when piping or debugging. |
 | `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
 | `--hover` | boolean | `false` | Opt in to hover highlighting under the mouse. Requires both mouse tracking and fullscreen; a no-op with `--no-mouse` or `--no-fullscreen`. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
+| `--allow-repo-runners` | boolean | `false` | Trust repo-local `shell`/`agent` runner commands from project config, including profile runners, package-manager script indirection, and project-local PATH resolution. Command strings containing `{prompt}` are rejected by config validation; pass prompts through stdin or args. |
 | `--json` | boolean | `false` | Headless: emit public NDJSON records to stdout, skip TUI. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`. Requires a `feature`. |
 | `--rpc` | boolean | `false` | RPC: bidirectional NDJSON. Reads commands from stdin and writes `ack` / `error` / `status` / wrapped `event` responses to stdout. Requires a `feature`; mutually exclusive with `--json`. |
 | `--otel-exporter <name>` | string | — | Bootstrap an OTel exporter (currently only `console`). Requires `otel.enabled: true` in config. |
@@ -146,6 +147,10 @@ diptych attach <session-id> --project .
 
 # Isolated worktree
 diptych start --worktree migration "Postgres 17 upgrade"
+
+# Privacy-preserving bare worktree name when workflow.persistTranscript=false
+diptych start "sensitive customer migration" --worktree
+# prints .trees/session-<hex> instead of a feature-derived directory
 ```
 
 ### Exit codes
@@ -175,7 +180,7 @@ diptych start --worktree migration "Postgres 17 upgrade"
 - Readiness inspects validation configuration and package-script posture only. It does not run `typecheck`, lint, tests, model calls, or network probes.
 - With `--json`, the first readiness line is `{ "type": "readiness_report", "report": ... }` before model-backed workflow events. With `--rpc`, readiness is wrapped as `{ "type": "status", "data": { "type": "readiness_report", "report": ... } }`.
 - `clearStaleSession()` runs before a new session begins. It blocks only a genuinely live active session; if the active session's lockfile has exited or the PID is gone, the stale `.diptych/active` pointer is cleared and start continues.
-- When `--worktree` is passed, the source working tree must be clean. The project directory is reassigned to the newly created worktree path before any state is written. With `--detach --worktree`, worktree selection happens before the detached server is spawned. If worktree creation fails, the command exits `1` with the underlying message.
+- When `--worktree` is passed, the source working tree must be clean. The project directory is reassigned to the newly created worktree path before any state is written. With `--detach --worktree`, worktree selection happens before the detached server is spawned. A bare `--worktree` derives its slug from the feature only when transcript persistence is enabled; with `workflow.persistTranscript: false`, it uses an opaque `session-<hex>` slug so `.trees/<slug>` and `diptych/<slug>` do not reveal feature text. If worktree creation fails, the command exits `1` with the underlying message.
 - The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
 - Runner override flags are validated against the resolved runner kind. `--planner-api-base` / `--implementer-api-base` apply only to `api` runners, and `--planner-api-key-env` / `--implementer-api-key-env` apply only to `api` and `agent-sdk` runners. Passing one for an incompatible kind prints a warning to stderr (e.g. `--planner-api-base is ignored: the planner 'cli' runner does not use it.`) and the value is dropped rather than erroring.
 
@@ -196,7 +201,7 @@ Planner stream output is stripped of terminal control sequences before writing t
 ### Usage
 
 ```
-diptych spec <feature> [--project <dir>] [--allow-hooks]
+diptych spec <feature> [--project <dir>] [--allow-hooks] [--allow-repo-runners]
 ```
 
 ### Options
@@ -205,6 +210,7 @@ diptych spec <feature> [--project <dir>] [--allow-hooks]
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
+| `--allow-repo-runners` | boolean | `false` | Trust repo-local planner runner commands from project config. |
 
 ### Examples
 
@@ -429,7 +435,7 @@ diptych explain [--session <id>] [--project <dir>] [--json]
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--session <id>` | string | active session | Session to explain. Required when `.diptych/active` is absent, which is typical after completed runs. |
+| `--session <id>` | string \| number | active session | Session ID or numeric alias from `diptych ps`. Required when `.diptych/active` is absent, which is typical after completed runs. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--json` | boolean | `false` | Emit one JSON object: `{ "type": "run_explain", "explain": ... }`. |
 
@@ -441,6 +447,7 @@ diptych explain
 
 # Explain a completed session
 diptych explain --session 2026-04-29-add-auth
+diptych explain --session 1
 
 # Machine-readable output
 diptych explain --session 2026-04-29-add-auth --json
@@ -497,7 +504,7 @@ diptych resume [--mode <mode>] [--auto] [--approve <level>] \
   [--budget <amount>] [--planner-effort <level>] [--yolo] \
   [--project <dir>] \
   [--no-fullscreen] [--no-mouse] [--hover] \
-  [--allow-hooks] [--json] [--rpc] [--otel-exporter <name>]
+  [--allow-hooks] [--allow-repo-runners] [--json] [--rpc] [--otel-exporter <name>]
 ```
 
 ### Options
@@ -570,6 +577,7 @@ Smart session continuity command. Figures out the right thing: attaches if the s
 | `--project <dir>` | path | cwd | Project directory. |
 | `--auto` / `--approve <level>` | approval | mode default | Spec/plan document approval mode. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
+| `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
 | `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. Live detached sessions still attach through the TUI. |
 | `--rpc` | boolean | `false` | Resume an interrupted session in bidirectional RPC mode. Mutually exclusive with `--json`; rejected for live detached sessions. |
 | Other resume flags | — | — | Runner overrides, mode, budget, OTel, `--no-fullscreen`, `--no-mouse`, and `--hover` (live attach path only), and approval controls. `--worktree` is rejected — it is a `start`-only flag, since a resumed session already lives in its original worktree. |
@@ -632,7 +640,7 @@ Attach or resume the newest lockfile-backed session. Use this when you want rece
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
-| Workflow flags | — | — | Same options as `continue`, including `--json`, `--rpc`, `--auto`, `--allow-hooks`, runner overrides, mode, budget, and approval controls. `--json` / `--rpc` apply only when the newest session resolves to interrupted resumable state. |
+| Workflow flags | — | — | Same options as `continue`, including `--json`, `--rpc`, `--auto`, `--allow-hooks`, `--allow-repo-runners`, runner overrides, mode, budget, and approval controls. `--json` / `--rpc` apply only when the newest session resolves to interrupted resumable state. |
 
 ### Examples
 
@@ -856,7 +864,7 @@ The optional `target` argument defaults to `spec-kit`.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--session <id>` | string | active session | Session ID to export. |
+| `--session <id>` | string \| number | active session | Session ID or numeric alias from `diptych ps` to export. |
 | `--out <dir>` | path | `.diptych/handoffs/<target>/` | Output directory. |
 | `--task <ids>` | csv | all tasks | Comma-separated list of task IDs to include. |
 | `--mode <mode>` | enum | `default` | Write mode: `default` (refuse on conflict), `append`, or `overwrite`. |
@@ -872,6 +880,9 @@ diptych handoff
 
 # Pack a specific session for Claude Code
 diptych handoff claude-code --session 2026-04-26-abcd1234
+
+# Pack by numeric alias from diptych ps
+diptych handoff claude-code --session 1
 
 # Subset of tasks, custom output directory
 diptych handoff agents-md --task T-001,T-003,T-007 --out ./pack
@@ -893,7 +904,7 @@ diptych handoff linear-ticket --allow-custom-renderer
 
 ### Files affected
 
-- **Reads:** `.diptych/sessions/<id>/{spec.md,plan.md,tasks.md,state.json}`. Custom renderer modules under `.diptych/handoff-renderers/` are read only when `--allow-custom-renderer` is set or config has `trust.customRenderers: true`.
+- **Reads:** `.diptych/sessions/<id>/{spec.md,plan.md,tasks.md,state.json}` and `.specify/memory/constitution.md` when present. Custom renderer modules under `.diptych/handoff-renderers/` are read only when `--allow-custom-renderer` is set or config has `trust.customRenderers: true`.
 - **Writes:** every file in `--out` (default `.diptych/handoffs/<target>/`).
 
 ### See also
@@ -941,7 +952,7 @@ Capture the current working tree state for the active session. The snapshot is t
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--name <name>` | string | — | Optional human label. |
-| `--session <id>` | string | active session | Session ID. |
+| `--session <id>` | string \| number | active session | Session ID or numeric alias from `diptych ps`. |
 | `--project <dir>` | path | cwd | Project directory. |
 
 #### Examples
@@ -950,6 +961,7 @@ Capture the current working tree state for the active session. The snapshot is t
 diptych snapshot create
 diptych snapshot create --name "before refactor"
 diptych snapshot create --session 2026-04-26-abcd1234 --name pre-merge
+diptych snapshot create --session 1 --name pre-merge
 ```
 
 #### Exit codes
@@ -982,7 +994,7 @@ List snapshots for a session in chronological order.
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--session <id>` | string | active session | Session ID. |
+| `--session <id>` | string \| number | active session | Session ID or numeric alias from `diptych ps`. |
 | `--project <dir>` | path | cwd | Project directory. |
 
 #### Output format
@@ -1013,7 +1025,7 @@ Restore the working tree to a previously captured snapshot. Files modified after
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `<id-or-name>` | string (positional) | — | Snapshot id or `--name` label. Required. |
-| `--session <id>` | string | active session | Session ID. |
+| `--session <id>` | string \| number | active session | Session ID or numeric alias from `diptych ps`. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--force` | boolean | `false` | Overwrite files modified since the snapshot. |
 
@@ -1061,7 +1073,7 @@ Print a unified diff between the current working tree and a snapshot.
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `<id-or-name>` | string (positional) | — | Snapshot id or `--name` label. Required. |
-| `--session <id>` | string | active session | Session ID. |
+| `--session <id>` | string \| number | active session | Session ID or numeric alias from `diptych ps`. |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--no-color` | boolean | color on | Disable ANSI color in the diff. |
 
@@ -1193,7 +1205,7 @@ diptych mcp serve [--port <number>] [--session <id> | --all-sessions] [--project
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--port <number>` | integer | `4321` | TCP port to listen on. Validated as an integer in `[1, 65535]`. |
-| `--session <id>` | string | active session | Serve only this session. Mutually exclusive with `--all-sessions`. |
+| `--session <id>` | string \| number | active session | Serve only this session or numeric alias from `diptych ps`. Mutually exclusive with `--all-sessions`. |
 | `--all-sessions` | boolean | `false` | Serve every session in the project. Mutually exclusive with `--session`. |
 | `--project <dir>` | path | cwd | Project directory. |
 
@@ -1208,6 +1220,7 @@ diptych mcp serve --port 4400 --all-sessions
 
 # Specific session
 diptych mcp serve --session 2026-04-26-abcd1234
+diptych mcp serve --session 1
 ```
 
 ### Exit codes
@@ -1238,7 +1251,7 @@ After binding, prints the URL, generated bearer token, listed sessions, and a re
 - General tool execution stays inside the configured planner or implementer runner, where the user can review the runner's own tool UI and approval prompts.
 - `--port 0` is rejected (the validator requires `>= 1`); a free random port cannot be requested via this CLI.
 - MCP Streamable HTTP uses protocol version `2025-11-25`. Missing `MCP-Protocol-Version` request headers default to that version; unsupported versions return `400`.
-- `resources/list` always includes the sessions index and conditionally lists session resources that exist: `manifest.json` only when canonical `summary.json` and `state.json` are valid, plus `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json`.
+- `resources/list` always includes the sessions index and conditionally lists session resources that exist: `manifest.json` only when canonical `summary.json` and `state.json` are valid, plus `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json`. When `workflow.persistTranscript: false`, the sessions index and `state.json` resource replace transcript-sensitive fields such as feature text, task prose, queued message text, and queued clarification questions.
 - Missing concrete session resources return MCP resource-not-found rather than empty success. The virtual `tasks` resource returns an empty JSON array when `tasks.md` is absent.
 
 ---
@@ -1574,9 +1587,10 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 |---|---|---|---|
 | `--project <dir>` | most | cwd | Project directory. |
 | `-p, --project <dir>` | `migrate`, `export` | `.` / cwd | Short project-dir alias. |
-| `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | When omitted, the active session is read from `.diptych/active`. |
+| `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | Accepts a session ID or numeric alias from `diptych ps`. When omitted, the active session is read from `.diptych/active`. |
 | `--auto` | `start`, `resume`, `continue`, `last` | `false` | Aliases spec/plan `--approve none`. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
+| `--allow-repo-runners` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Trust repo-local shell/agent runner execution from project config. Separate from hook trust. |
 | `--json` | `start`, `resume`, `continue`, `last`, `doctor`, `explain`, `stats` | `false` | Public NDJSON record stream for workflow commands; single JSON object for `doctor` / `explain` / `stats`. Workflow events are wrapped as `{ "type": "event", "data": ... }`. For `continue` / `last`, applies only when the target is an interrupted resumable session; live sessions attach through the TUI. |
 | `--rpc` | `start`, `resume`, `continue`, `last` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. For `continue` / `last`, applies only to interrupted resumable sessions and is rejected for live detached sessions. |
 

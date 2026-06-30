@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import { sessionDir, sessionsRoot } from '../../../core/paths.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import {
@@ -31,36 +32,36 @@ function hasUnsafeSessionPathSegment(sessionId: string): boolean {
     .some((segment) => segment.length === 0 || segment === '.' || segment === '..');
 }
 
-function assertSessionConfined(projectDir: string, sessionId: string): string | null {
-  if (hasUnsafeSessionPathSegment(sessionId)) {
-    return `unsafe session ID: ${sessionId}`;
+function assertSessionConfined(ref: SessionRef): string | null {
+  if (hasUnsafeSessionPathSegment(ref.sessionId)) {
+    return `unsafe session ID: ${ref.sessionId}`;
   }
   try {
-    assertPathConfined(sessionId, sessionsRoot(projectDir));
+    assertPathConfined(ref.sessionId, sessionsRoot(ref.projectDir));
     return null;
   } catch (error) {
-    return error instanceof Error ? error.message : `unsafe session ID: ${sessionId}`;
+    return error instanceof Error ? error.message : `unsafe session ID: ${ref.sessionId}`;
   }
 }
 
-function assertSessionExists(projectDir: string, sessionId: string): string | null {
-  const dir = sessionDir(projectDir, sessionId);
-  if (!existsSync(dir)) return `Session not found: ${sessionId}`;
+function assertSessionExists(ref: SessionRef): string | null {
+  const dir = sessionDir(ref.projectDir, ref.sessionId);
+  if (!existsSync(dir)) return `Session not found: ${ref.sessionId}`;
   return null;
 }
 
-export function readCheckedLedger(
-  projectDir: string,
-  sessionId: string,
-  taskId: TaskId,
-): { ok: true; ledger: EvidenceLedger; task: EvidenceTask } | { ok: false; error: string } {
-  const sessionConfinedError = assertSessionConfined(projectDir, sessionId);
+export function readCheckedLedger(opts: {
+  ref: SessionRef;
+  taskId: TaskId;
+}): { ok: true; ledger: EvidenceLedger; task: EvidenceTask } | { ok: false; error: string } {
+  const { ref, taskId } = opts;
+  const sessionConfinedError = assertSessionConfined(ref);
   if (sessionConfinedError !== null) return { ok: false, error: sessionConfinedError };
 
-  const sessionError = assertSessionExists(projectDir, sessionId);
+  const sessionError = assertSessionExists(ref);
   if (sessionError !== null) return { ok: false, error: sessionError };
 
-  const ledger = readEvidenceLedger(projectDir, sessionId);
+  const ledger = readEvidenceLedger(ref);
   if (ledger === null) return { ok: false, error: 'Evidence ledger not found for this session' };
 
   const task = ledger.tasks.find((t) => t.id === taskId);
@@ -79,10 +80,11 @@ export function handleReportEvidence(
   if (!parsed.success) return invalidInput(parsed.error.issues);
 
   const { sessionId, taskId, observedEvidence, changedFiles } = parsed.data;
-  const loaded = readCheckedLedger(projectDir, sessionId, taskId);
+  const ref = { projectDir, sessionId };
+  const loaded = readCheckedLedger({ ref, taskId });
   if (!loaded.ok) return loaded;
 
-  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+  mutateEvidenceLedger(ref, (ledger) => {
     if (ledger === null) throw evidenceError.ledgerNotFound();
     return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = {
@@ -109,7 +111,8 @@ export function handleReportProgress(
   if (!parsed.success) return invalidInput(parsed.error.issues);
 
   const { sessionId, taskId, message, percentComplete } = parsed.data;
-  const loaded = readCheckedLedger(projectDir, sessionId, taskId);
+  const ref = { projectDir, sessionId };
+  const loaded = readCheckedLedger({ ref, taskId });
   if (!loaded.ok) return loaded;
 
   const progressEntry =
@@ -117,7 +120,7 @@ export function handleReportProgress(
       ? `progress: ${message} (${percentComplete}%)`
       : `progress: ${message}`;
 
-  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+  mutateEvidenceLedger(ref, (ledger) => {
     if (ledger === null) throw evidenceError.ledgerNotFound();
     return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = { ...task, observedEvidence: [...task.observedEvidence] };
@@ -136,10 +139,11 @@ export function handleMarkTaskDone(
   if (!parsed.success) return invalidInput(parsed.error.issues);
 
   const { sessionId, taskId, changedFiles, observedEvidence, summary } = parsed.data;
-  const loaded = readCheckedLedger(projectDir, sessionId, taskId);
+  const ref = { projectDir, sessionId };
+  const loaded = readCheckedLedger({ ref, taskId });
   if (!loaded.ok) return loaded;
 
-  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+  mutateEvidenceLedger(ref, (ledger) => {
     if (ledger === null) throw evidenceError.ledgerNotFound();
     return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = {
@@ -170,7 +174,8 @@ export function handleReportValidationResult(
   if (!parsed.success) return invalidInput(parsed.error.issues);
 
   const { sessionId, taskId, stage, passed, errorSummary, changedFiles } = parsed.data;
-  const loaded = readCheckedLedger(projectDir, sessionId, taskId);
+  const ref = { projectDir, sessionId };
+  const loaded = readCheckedLedger({ ref, taskId });
   if (!loaded.ok) return loaded;
 
   const entry: EvidenceValidationEntry = { stage, passed };
@@ -179,7 +184,7 @@ export function handleReportValidationResult(
     entry.changedFiles = [...changedFiles];
   }
 
-  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+  mutateEvidenceLedger(ref, (ledger) => {
     if (ledger === null) throw evidenceError.ledgerNotFound();
     return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = {
@@ -205,10 +210,11 @@ export function handleReportError(
   if (!parsed.success) return invalidInput(parsed.error.issues);
 
   const { sessionId, taskId, error, changedFiles, recoverable } = parsed.data;
-  const loaded = readCheckedLedger(projectDir, sessionId, taskId);
+  const ref = { projectDir, sessionId };
+  const loaded = readCheckedLedger({ ref, taskId });
   if (!loaded.ok) return loaded;
 
-  mutateEvidenceLedger(projectDir, sessionId, (ledger) => {
+  mutateEvidenceLedger(ref, (ledger) => {
     if (ledger === null) throw evidenceError.ledgerNotFound();
     return withUpdatedTask(ledger, taskId, (task) => {
       const updated: EvidenceTask = {

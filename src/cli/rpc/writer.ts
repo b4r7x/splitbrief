@@ -2,11 +2,11 @@ import type { EngineEvent } from '../../engine/events/types.js';
 import { RecoveryIssueSchema } from '../../core/schemas/recovery.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { protectConsumerPayload } from '../../core/consumer-policy.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import {
   projectCostPredictionForTranscriptPolicy,
   projectUserEditConflictForTranscriptPolicy,
   protectEngineEventForConsumer,
-  TRANSCRIPT_OMITTED_MESSAGE,
 } from '../../engine/events/protection.js';
 import { projectRecoveryIssueForTranscriptPolicy } from '../../engine/events/public-json.js';
 import { userEditConflictSchema } from '../../engine/events/schema.js';

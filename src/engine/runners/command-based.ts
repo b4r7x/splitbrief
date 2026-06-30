@@ -19,6 +19,7 @@ import { processError } from '../../lib/process/errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
 import { finishRunnerCallOutputLimit, runnerCallLineOutputLimit } from '../calls/output-limit.js';
+import { commandName, isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
 
@@ -30,6 +31,7 @@ export interface CommandBasedOptions {
   env?: NodeJS.ProcessEnv | undefined;
   timeout?: number | undefined;
   notFoundMessage?: string | undefined;
+  allowShellEvaluatedPrompt?: boolean | undefined;
 }
 
 export interface CommandBasedResult {
@@ -48,6 +50,21 @@ function rejectPromptPlaceholderCommand(command: string): void {
     'runner-command-prompt-placeholder',
     'Runner command must not contain {prompt}; pass the prompt through stdin or args instead.',
     { command },
+  );
+}
+
+function rejectShellEvaluatedPrompt(
+  command: string,
+  args: readonly string[],
+  allowShellEvaluatedPrompt: boolean | undefined,
+): void {
+  if (allowShellEvaluatedPrompt) return;
+  if (!isShellEvaluatedPromptArg(command, args)) return;
+
+  throw error(
+    'runner-shell-evaluated-prompt',
+    `Runner args must not pass {prompt} through ${commandName(command)} -c; use stdin or a non-shell argv placeholder instead.`,
+    { command, args },
   );
 }
 
@@ -99,6 +116,7 @@ export async function invokeCommandBasedRunner(
   const format: OutputFormat = opts.outputFormat ?? 'text';
 
   rejectPromptPlaceholderCommand(opts.command);
+  rejectShellEvaluatedPrompt(opts.command, rawArgs, opts.allowShellEvaluatedPrompt);
 
   let finalCommand = opts.command;
   let finalArgs = rawArgs;

@@ -151,7 +151,7 @@ export async function runFinalReviewPhase(
 
     let driftPromptSection: string | undefined;
     try {
-      const ledger = readEvidenceLedger(projectDir, sessionId);
+      const ledger = readEvidenceLedger({ projectDir, sessionId });
       const driftReport = analyzeBriefDrift({
         tasks: state.tasks,
         changedFiles: universe.changedFiles,
@@ -162,7 +162,7 @@ export async function runFinalReviewPhase(
           ? Object.keys(state.changedFilesBaseline.fingerprints)
           : null,
       });
-      writeDriftReport(projectDir, sessionId, driftReport);
+      writeDriftReport({ projectDir, sessionId }, driftReport);
       publishDriftReport(bus, state.phase, driftReport);
       driftPromptSection = formatDriftReportForPrompt(driftReport);
     } catch (err) {
@@ -234,11 +234,10 @@ export async function runFinalReviewPhase(
   if (opts.signal?.aborted) return interruptedSummary();
 
   try {
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
     if (ledger) {
       writeEvidenceLedger(
-        projectDir,
-        sessionId,
+        { projectDir, sessionId },
         recordFinalReviewEvidence({ ledger, status: reviewStatus }),
       );
     }

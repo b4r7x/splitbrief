@@ -413,7 +413,7 @@ function recordRecoverySkipEvidence(opts: {
   mode?: WorkflowMode | undefined;
   reason: string;
 }): void {
-  const existing = readEvidenceLedger(opts.projectDir, opts.sessionId);
+  const existing = readEvidenceLedger(opts);
   const briefHash = hashTaskBrief(opts.state.tasks);
   const ledger = getOrCreateLedger(
     {
@@ -431,7 +431,7 @@ function recordRecoverySkipEvidence(opts: {
     reason: opts.reason,
     briefHash,
   });
-  writeEvidenceLedger(opts.projectDir, opts.sessionId, updated);
+  writeEvidenceLedger(opts, updated);
 }
 
 function isSafeContinue(issue: RecoveryIssue): boolean {

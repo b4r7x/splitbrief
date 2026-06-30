@@ -112,6 +112,61 @@ describe('engine-level hook trust gate', () => {
     expect(init.ok).toBe(true);
   });
 
+  it('does not let allowHooks authorize repo-local runner commands', async () => {
+    const projectDir = setupProjectDir('hook-trust-runner-block');
+    const config = makeConfig({
+      implementer: {
+        kind: 'agent',
+        command: './scripts/agent',
+        model: 'agent-default',
+      },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+      hooks: HOOK,
+    });
+    const args = makeInitArgs(projectDir, HOOK, { allowHooks: true, config });
+
+    await expect(
+      initializeWorkflow({
+        opts: args.opts,
+        sessionId: args.sessionId,
+        summaryBase: args.summaryBase,
+        metadata: args.metadata,
+        setTrackedState: args.setTracked,
+        resumeHolder: { messages: [] },
+      }),
+    ).rejects.toMatchObject({ kind: 'runner-not-trusted' });
+  });
+
+  it('allows repo-local runner commands when allowRepoRunners is true', async () => {
+    const projectDir = setupProjectDir('hook-trust-runner-allow');
+    const config = makeConfig({
+      implementer: {
+        kind: 'agent',
+        command: './scripts/agent',
+        model: 'agent-default',
+      },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+      hooks: HOOK,
+    });
+    const args = makeInitArgs(projectDir, HOOK, {
+      allowHooks: true,
+      allowRepoRunners: true,
+      config,
+    });
+
+    const init = await initializeWorkflow({
+      opts: args.opts,
+      sessionId: args.sessionId,
+      summaryBase: args.summaryBase,
+      metadata: args.metadata,
+      setTrackedState: args.setTracked,
+      resumeHolder: { messages: [] },
+    });
+    expect(init.ok).toBe(true);
+  });
+
   it('allows pre-trusted hooks without allowHooks', async () => {
     const projectDir = setupProjectDir('hook-trust-pretrusted');
     markHooksConfigTrusted(projectDir, HOOK);

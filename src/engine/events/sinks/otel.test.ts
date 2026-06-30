@@ -7,7 +7,7 @@ import {
 import { SpanStatusCode } from '@opentelemetry/api';
 import { createOtelSink } from './otel.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 
 describe('createOtelSink', () => {
   let exporter: InMemorySpanExporter;

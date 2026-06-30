@@ -15,6 +15,7 @@ import { initStores } from '../init-stores.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
 import {
   beginSession,
+  clearActive,
   generateOpaqueSessionSlug,
   MAX_SLUG_LENGTH,
 } from '../../core/sessions/lifecycle.js';
@@ -219,6 +220,7 @@ async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void
     overrides,
     persistTranscript,
     ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
+    ...(opts.allowRepoRunners !== undefined && { allowRepoRunners: opts.allowRepoRunners }),
     ...(plannerContext !== undefined && { plannerContext }),
     ...(args.attachments !== undefined &&
       args.attachments.length > 0 && {
@@ -227,6 +229,7 @@ async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void
   });
 
   if (!result.ok) {
+    clearActive({ projectDir, sessionId: sessId });
     throw cliError(`Failed to start server: ${result.reason}`, 1);
   }
 
@@ -316,12 +319,14 @@ async function runInteractiveStart(args: DispatchArgs): Promise<void> {
       onComplete: feature ? 'workflow' : 'home',
       feature: enrichedFeature ?? feature,
       plannerContext,
+      allowRepoRunners: opts.allowRepoRunners ?? false,
     });
   } else if (feature) {
     routerStore.init({
       screen: 'workflow',
       feature: enrichedFeature ?? feature,
       plannerContext,
+      allowRepoRunners: opts.allowRepoRunners ?? false,
       sessionId,
       worktreeName: worktreeName ?? undefined,
       readiness: readiness ? readiness.report : undefined,

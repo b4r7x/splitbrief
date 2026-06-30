@@ -29,11 +29,15 @@ export const providerError = {
       `API ${role} requires an explicit model name — 'auto' is not supported for API backends. Set ${role}.model in your config.`,
       { role },
     ),
-  promptExceedsContext: (promptTokens: number, contextLength: number) =>
+  promptExceedsContext: (
+    promptTokens: number,
+    contextLength: number,
+    role: 'planner' | 'implementer' = 'implementer',
+  ) =>
     error(
       'provider-prompt-exceeds-context',
       `Prompt (${promptTokens} tokens) leaves no room for output within the ${contextLength}-token context window. ` +
-        `Raise implementer.contextLength or reduce the task context.`,
+        `Raise ${role}.contextLength or reduce the task context.`,
       { promptTokens, contextLength },
     ),
   expectedOpenAIClient: (provider: string) =>

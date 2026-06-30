@@ -180,7 +180,7 @@ describe('validateConfig', () => {
     ).toBe(false);
   });
 
-  it('warns instead of blocking when an unused implementer profile is missing credentials', () => {
+  it('blocks non-default implementer profiles when required credentials are missing', () => {
     const config = {
       ...makeConfig(),
       implementerProfiles: {
@@ -206,12 +206,56 @@ describe('validateConfig', () => {
 
     expect(
       errors.find((e) => e.path === 'implementerProfiles.profiles.cheap-cloud.apiKey'),
-    ).toBeUndefined();
+    ).toBeTruthy();
     expect(
       warnings.some((w) =>
         w.includes('Non-default implementer profile cheap-cloud is missing credentials'),
       ),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it('requires credentials for an enabled remote intermediate provider', () => {
+    const config = makeConfig({
+      escalation: {
+        intermediateProvider: 'openrouter',
+        intermediateModel: 'openrouter/model',
+        enabled: true,
+      },
+    });
+
+    expect(validateConfig(config).errors).toContainEqual({
+      path: 'escalation.intermediateProvider',
+      message: 'OpenRouter intermediate provider requires OPENROUTER_API_KEY env var',
+    });
+
+    process.env.OPENROUTER_API_KEY = 'sk-or-env';
+    expect(
+      validateConfig(config).errors.find((e) => e.path === 'escalation.intermediateProvider'),
+    ).toBeUndefined();
+  });
+
+  it('does not require credentials for local or disabled intermediate providers', () => {
+    const local = makeConfig({
+      escalation: {
+        intermediateProvider: 'ollama',
+        intermediateModel: 'qwen2.5-coder:7b',
+        enabled: true,
+      },
+    });
+    const disabled = makeConfig({
+      escalation: {
+        intermediateProvider: 'openrouter',
+        intermediateModel: 'openrouter/model',
+        enabled: false,
+      },
+    });
+
+    expect(
+      validateConfig(local).errors.find((e) => e.path === 'escalation.intermediateProvider'),
+    ).toBeUndefined();
+    expect(
+      validateConfig(disabled).errors.find((e) => e.path === 'escalation.intermediateProvider'),
+    ).toBeUndefined();
   });
 
   it('requires explicit credentials for custom remote providers', () => {

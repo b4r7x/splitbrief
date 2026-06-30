@@ -3,6 +3,7 @@ import {
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
 } from '../../../utils/display-text.js';
+import { clamp } from '../../../utils/math.js';
 
 const DEFAULT_MIN_TITLE_WIDTH = 16;
 const DEFAULT_MIN_FILE_WIDTH = 12;
@@ -35,10 +36,6 @@ export interface TaskIdentityParts {
   title: string;
 }
 
-function clampBudget(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(value, max));
-}
-
 function textWidth(text: string): number {
   return getTerminalCellWidth(text);
 }
@@ -48,12 +45,8 @@ export function formatTaskIdentityParts(input: TaskIdentityPartsInput): TaskIden
   const prefix = input.prefix ?? '';
   const flag = input.flag ?? '';
   const statusSymbol = `${input.statusSymbol} `;
-  const taskIdBudget = clampBudget(textWidth(input.taskId), MIN_TASK_ID_WIDTH, MAX_TASK_ID_WIDTH);
-  const statusBudget = clampBudget(
-    textWidth(input.status),
-    MIN_TASK_STATUS_WIDTH,
-    MAX_TASK_STATUS_WIDTH,
-  );
+  const taskIdBudget = clamp(textWidth(input.taskId), MIN_TASK_ID_WIDTH, MAX_TASK_ID_WIDTH);
+  const statusBudget = clamp(textWidth(input.status), MIN_TASK_STATUS_WIDTH, MAX_TASK_STATUS_WIDTH);
   const taskId = truncateTerminalDisplayText(input.taskId, taskIdBudget);
   const status = truncateTerminalDisplayText(input.status, statusBudget);
   const baseWidth =

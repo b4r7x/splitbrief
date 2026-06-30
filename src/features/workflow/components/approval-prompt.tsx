@@ -34,9 +34,7 @@ import type { TieredApprovalResponse } from '../../../core/approval/types.js';
 
 export const PROMPT_ZONE_Z = 50;
 
-export { getStickyOptionZones, type PromptOptionZone } from '../prompt-rows.js';
-
-export function triggerStickyOption(key: string): void {
+function triggerStickyOption(key: string): void {
   if (key === 'a') {
     closeApprovalPrompt({ decision: 'allow', scope: 'once' });
     return;

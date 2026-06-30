@@ -9,7 +9,7 @@ import { sessionDir } from '../../../core/paths.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
 import { CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER } from '../../../core/consumer-policy.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import type { EngineEvent } from '../types.js';
 
 describe('jsonlSink', () => {

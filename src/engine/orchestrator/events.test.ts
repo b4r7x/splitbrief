@@ -16,7 +16,8 @@ import {
   publishDriftChainDetected,
 } from './events.js';
 import { addUsageAndSave } from './state-ops.js';
-import { protectEngineEventForConsumer, TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { protectEngineEventForConsumer } from '../events/protection.js';
 
 let dirs: string[] = [];
 

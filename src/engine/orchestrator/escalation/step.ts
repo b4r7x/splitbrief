@@ -23,6 +23,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     usageCategory,
     retryFailureFallback,
     profileOverride,
+    stagedProjectRole,
     resultTool,
     resultModel,
     invokeRetry,
@@ -46,7 +47,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     saveState(ctx, state);
   }
 
-  const staged = await createStagedProject(ctx.projectDir, retryRuntime.config);
+  const staged = await createStagedProject(ctx.projectDir, retryRuntime.config, stagedProjectRole);
   let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
   try {
     retryResult = await invokeRetry({

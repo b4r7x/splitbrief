@@ -1,6 +1,7 @@
 import { formatToolModel } from '../../../core/model-display.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ActivityDisplayValueFit } from '../display/activity-display-text.js';
 import {
@@ -202,7 +203,7 @@ function activityBatchHeader(
   const errors = severityCounts.error;
   return [
     `${runnerActivityRoleLabel(latest.role)} activity`,
-    `${headerCount} ${headerCount === 1 ? 'update' : 'updates'}`,
+    countNoun(headerCount, 'update'),
     warnings > 0 ? `${warnings} warn` : null,
     errors > 0 ? `${errors} err` : null,
     tool ? `[${tool}]` : null,

@@ -129,6 +129,7 @@ export function runCommand(
     cwd?: string | undefined;
     timeout?: number | undefined;
     label?: string | undefined;
+    signal?: AbortSignal | undefined;
     outputMaxBytes?: number | undefined;
     stderrMaxBytes?: number | undefined;
   },
@@ -154,12 +155,16 @@ export function runCommand(
     command,
     args,
     cwd: options?.cwd,
+    detached: true,
+    signal: options?.signal,
     onSpawned: (proc) => {
       if (timeoutSignal.aborted) {
-        killProcess(proc);
+        killProcess(proc, { group: true });
         return;
       }
-      timeoutSignal.addEventListener('abort', () => killProcess(proc), { once: true });
+      timeoutSignal.addEventListener('abort', () => killProcess(proc, { group: true }), {
+        once: true,
+      });
     },
     onStdout: (chunk) => {
       stdout.append(chunk);

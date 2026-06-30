@@ -32,6 +32,7 @@ export type WorkflowLoopContext = {
   feature: string;
   plannerContext?: string | undefined;
   allowHooks?: boolean | undefined;
+  allowRepoRunners?: boolean | undefined;
   attachments?: IpcServerAttachment[] | undefined;
 };
 
@@ -214,9 +215,6 @@ async function resolveDetachedPendingRecovery(
     state,
   );
   if (!pending.pending) return { shouldRun: true, state: pending.state };
-  if (pending.issue.status === 'paused') {
-    return { shouldRun: false, state: pending.state };
-  }
 
   const applyAction = (action: RecoveryAction) => {
     const current =
@@ -321,6 +319,7 @@ export async function runWorkflowLoop(
       projectDir: ctx.projectDir,
       config,
       allowHooks: ctx.allowHooks ?? false,
+      allowRepoRunners: ctx.allowRepoRunners ?? false,
       sessionId: ctx.sessionId,
       eventBus: ipcBus,
       sinks: ipcBridge.sinks,

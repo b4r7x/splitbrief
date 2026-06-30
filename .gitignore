@@ -20,11 +20,12 @@ evals/cassettes/*
 evals/results/*
 !evals/results/.gitkeep
 
-# SpecKit — only constitution and specs are tracked
-.specify/scripts/
-.specify/templates/
-.specify/init-options.json
-.specify/features/
+# SpecKit reusable command assets are tracked; generated feature work is not
+.specify/features/*
+!.specify/features/audit-fixes/
+!.specify/features/audit-fixes/handoff-prompt.md
+!.specify/features/audit-fixes/tasks.md
+!.specify/features/audit-fixes/checklist.md
 
 # Agent worktrees
 .claude/worktrees/

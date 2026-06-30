@@ -76,6 +76,9 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   const pendingPlannerContext = routerStore.use((s) =>
     s.screen === 'setup' ? s.plannerContext : undefined,
   );
+  const pendingAllowRepoRunners = routerStore.use((s) =>
+    s.screen === 'setup' ? s.allowRepoRunners : undefined,
+  );
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
 
   const [step, setStep] = useState<Step>(() =>
@@ -142,6 +145,7 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
         to: 'workflow',
         feature: pendingFeature,
         plannerContext: pendingPlannerContext,
+        allowRepoRunners: pendingAllowRepoRunners,
       });
     } else {
       routerStore.navigate({ to: 'home' });

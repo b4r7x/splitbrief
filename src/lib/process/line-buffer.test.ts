@@ -85,4 +85,35 @@ describe('createLineBuffer', () => {
 
     expect(overflows).toHaveLength(1);
   });
+
+  it('discards an oversized trailing partial line after safe complete lines', () => {
+    const lines: string[] = [];
+    const overflows: number[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line), {
+      maxLineBytes: 8,
+      onOverflow: (overflow) => overflows.push(overflow.lineBytes),
+    });
+
+    buffer.push(`ok\n${'x'.repeat(20)}`);
+    buffer.flush();
+
+    expect(overflows).toEqual([20]);
+    expect(lines).toEqual(['ok']);
+  });
+
+  it('does not carry skip state after flushing an oversized partial line', () => {
+    const lines: string[] = [];
+    const overflows: number[] = [];
+    const buffer = createLineBuffer((line) => lines.push(line), {
+      maxLineBytes: 8,
+      onOverflow: (overflow) => overflows.push(overflow.lineBytes),
+    });
+
+    buffer.push('x'.repeat(20));
+    buffer.flush();
+    buffer.push('ok\n');
+
+    expect(overflows).toEqual([20]);
+    expect(lines).toEqual(['ok']);
+  });
 });

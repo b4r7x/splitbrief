@@ -38,6 +38,35 @@ afterEach(() => {
 });
 
 describe('api implementer — OpenAI-compatible path', () => {
+  it('checks availability without fetching the provider model list', async () => {
+    const implementer = createApiImplementer(makeConfig());
+
+    expect(await implementer.isAvailable()).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reports unavailable when a referenced remote API key is missing', async () => {
+    const original = process.env['OPENROUTER_API_KEY'];
+    delete process.env['OPENROUTER_API_KEY'];
+    try {
+      const cfg = makeConfig({
+        implementer: {
+          provider: 'openrouter',
+          apiBase: 'https://openrouter.ai/api/v1',
+          apiKey: 'env:OPENROUTER_API_KEY',
+          model: 'openrouter/test',
+        },
+      });
+      const implementer = createApiImplementer(cfg);
+
+      expect(await implementer.isAvailable()).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      if (original === undefined) delete process.env['OPENROUTER_API_KEY'];
+      else process.env['OPENROUTER_API_KEY'] = original;
+    }
+  });
+
   it('writes extracted code to disk and returns success with usage', async () => {
     const code = '```typescript\nexport function hello() {\n  return "hi";\n}\n```';
     fetchMock.mockResolvedValue(

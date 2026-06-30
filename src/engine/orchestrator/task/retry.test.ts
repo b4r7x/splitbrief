@@ -27,7 +27,17 @@ import { retryAndRecord } from './retry.js';
 // so widen the timeout for this file (cases pass in seconds in isolation).
 vi.setConfig({ testTimeout: 30_000 });
 
-afterEach(cleanupTaskProjects);
+let savedOpenRouterKey: string | undefined;
+
+beforeEach(() => {
+  savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
+});
+
+afterEach(() => {
+  if (savedOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = savedOpenRouterKey;
+  cleanupTaskProjects();
+});
 
 describe('retryAndRecord — retry budget', () => {
   it('local retry on first attempt succeeds → advances task, records local method', async () => {
@@ -114,7 +124,7 @@ describe('retryAndRecord — retry budget', () => {
     });
 
     expect(result.completed).toBe(true);
-    expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.validation).toEqual([
+    expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.validation).toEqual([
       {
         stage: 'test',
         passed: false,
@@ -129,7 +139,7 @@ describe('retryAndRecord — retry budget', () => {
         changedFiles: ['src/task.ts'],
       },
     ]);
-    expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.changedFiles).toEqual([
+    expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.changedFiles).toEqual([
       'src/initial.ts',
       'src/task.ts',
     ]);
@@ -378,6 +388,7 @@ describe('retryAndRecord — escalated-intermediate booking identity', () => {
   });
 
   it('books the per-task record under the intermediate provider/model, not the primary implementer', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/intermediate.ts', action: 'create' });
     let state = implementingState([task]);

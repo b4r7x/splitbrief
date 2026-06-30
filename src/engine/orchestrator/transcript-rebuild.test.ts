@@ -47,7 +47,10 @@ describe('keepRecentCountForThreshold', () => {
 describe('buildResumeContext', () => {
   it('returns empty messages with warning when persistTranscript is false', async () => {
     const { projectDir, sessionId } = setupProject();
-    const result = await buildResumeContext(projectDir, sessionId, false);
+    const result = await buildResumeContext({
+      ref: { projectDir, sessionId },
+      persistTranscript: false,
+    });
     expect(result.messages).toEqual([]);
     expect(result.warning).toBe('transcript-unavailable');
   });
@@ -63,7 +66,10 @@ describe('buildResumeContext', () => {
       { kind: 'event', ts: now, type: 'workflow_started', phase: 'idle', data: {} },
     ]);
 
-    const result = await buildResumeContext(projectDir, sessionId, true);
+    const result = await buildResumeContext({
+      ref: { projectDir, sessionId },
+      persistTranscript: true,
+    });
     expect(result.messages).toEqual([
       { role: 'user', content: 'hello' },
       { role: 'assistant', content: 'hi there' },
@@ -81,7 +87,10 @@ describe('buildResumeContext', () => {
       { kind: 'message', ts: 2002, role: 'assistant', phase: 'planning', text: 'new answer' },
     ]);
 
-    const result = await buildResumeContext(projectDir, sessionId, true);
+    const result = await buildResumeContext({
+      ref: { projectDir, sessionId },
+      persistTranscript: true,
+    });
 
     expect(result.messages).toEqual([
       { role: 'user', content: '## Summary\nOld work preserved' },
@@ -92,7 +101,10 @@ describe('buildResumeContext', () => {
 
   it('returns empty array with no warning when no session log exists and persist is true', async () => {
     const { projectDir, sessionId } = setupProject();
-    const result = await buildResumeContext(projectDir, sessionId, true);
+    const result = await buildResumeContext({
+      ref: { projectDir, sessionId },
+      persistTranscript: true,
+    });
     expect(result.messages).toEqual([]);
     expect(result.warning).toBeUndefined();
   });
@@ -112,7 +124,10 @@ describe('buildResumeContext', () => {
       },
     ]);
 
-    const result = await buildResumeContext(projectDir, sessionId, true);
+    const result = await buildResumeContext({
+      ref: { projectDir, sessionId },
+      persistTranscript: true,
+    });
 
     expect(result.messages).toEqual([
       { role: 'user', content: 'do the thing' },
@@ -137,7 +152,10 @@ describe('buildResumeContext', () => {
       },
     ]);
 
-    const result = await buildResumeContext(projectDir, sessionId, true);
+    const result = await buildResumeContext({
+      ref: { projectDir, sessionId },
+      persistTranscript: true,
+    });
 
     expect(result.messages).toEqual([
       { role: 'user', content: '## Summary\nOld work preserved' },
@@ -177,7 +195,10 @@ describe('buildResumeContext', () => {
       { kind: 'message', ts: queuedAt, role: 'assistant', phase: 'planning', text: 'working' },
     ]);
 
-    const result = await buildResumeContext(projectDir, sessionId, true);
+    const result = await buildResumeContext({
+      ref: { projectDir, sessionId },
+      persistTranscript: true,
+    });
 
     expect(result.messages).toEqual([{ role: 'assistant', content: 'working' }]);
   });
@@ -219,7 +240,10 @@ describe('buildResumeContext', () => {
       { kind: 'message', ts: 3001, role: 'user', phase: 'planning', text: 'later request' },
     ]);
 
-    const result = await buildResumeContext(projectDir, sessionId, true);
+    const result = await buildResumeContext({
+      ref: { projectDir, sessionId },
+      persistTranscript: true,
+    });
 
     expect(result.messages).toEqual([
       { role: 'user', content: '## Summary\nOld work preserved' },

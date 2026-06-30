@@ -450,7 +450,7 @@ describe('appendMessage', () => {
     appendMessage(
       { projectDir: dir, sessionId: SESSION_ID },
       { role: 'user', text: 'add auth' },
-      true,
+      { persistTranscript: true },
     );
     const raw = readFileSync(
       join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
@@ -469,7 +469,7 @@ describe('appendMessage', () => {
     appendMessage(
       { projectDir: dir, sessionId: SESSION_ID },
       { role: 'assistant', text: 'planner output' },
-      false,
+      { persistTranscript: false },
     );
     const filePath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl');
     expect(existsSync(filePath)).toBe(false);
@@ -480,7 +480,7 @@ describe('appendMessage', () => {
     appendMessage(
       { projectDir: dir, sessionId: SESSION_ID },
       { role: 'assistant', phase: 'researching', text: 'hello', interrupted: true },
-      true,
+      { persistTranscript: true },
     );
     const raw = readFileSync(
       join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
@@ -523,7 +523,11 @@ describe('session append symlink confinement', () => {
     symlinkSync(outsideLog, join(sessionPath, 'session.jsonl'));
 
     expect(() =>
-      appendMessage({ projectDir: dir, sessionId: SESSION_ID }, { role: 'user', text: 'hi' }, true),
+      appendMessage(
+        { projectDir: dir, sessionId: SESSION_ID },
+        { role: 'user', text: 'hi' },
+        { persistTranscript: true },
+      ),
     ).toThrow(/refusing to write through symlink/);
     expect(readFileSync(outsideLog, 'utf-8')).toBe('');
 
@@ -533,12 +537,20 @@ describe('session append symlink confinement', () => {
 
 describe('consoleWorkflowFeature', () => {
   it('strips terminal controls and omits feature text when persistTranscript is false', () => {
-    expect(consoleWorkflowFeature('add \u001b]0;pwned\u0007login', false)).toBe(
-      TRANSCRIPT_OMITTED_MESSAGE,
-    );
+    expect(
+      consoleWorkflowFeature({
+        feature: 'add \u001b]0;pwned\u0007login',
+        persistTranscript: false,
+      }),
+    ).toBe(TRANSCRIPT_OMITTED_MESSAGE);
   });
 
   it('returns the sanitized feature when persistTranscript is true', () => {
-    expect(consoleWorkflowFeature('add \u001b]0;pwned\u0007login', true)).toBe('add login');
+    expect(
+      consoleWorkflowFeature({
+        feature: 'add \u001b]0;pwned\u0007login',
+        persistTranscript: true,
+      }),
+    ).toBe('add login');
   });
 });

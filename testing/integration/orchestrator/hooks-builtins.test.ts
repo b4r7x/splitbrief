@@ -7,6 +7,7 @@ import { makeTaskStart } from '#testing/helpers/events.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { HooksConfig } from '../../../src/core/schemas/hooks.js';
+import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
 
 const ctx = (dir: string) => ({ projectDir: dir, sessionId: 'test-session' });
 
@@ -19,12 +20,17 @@ describe('hooks-builtins integration', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  function trust(hooks: HooksConfig): HooksConfig {
+    markHooksConfigTrusted(dir, hooks);
+    return hooks;
+  }
+
   describe('block-secrets via runPreHooks — production path (git_commit event)', () => {
     it('denies when git_commit event has file field containing AWS key (production path via task/commit.ts)', async () => {
       const f = join(dir, 'infra.ts');
       writeFileSync(f, 'const key = "AKIAIOSFODNN7EXAMPLE"; // planted secret');
 
-      const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
+      const hooks = trust({ builtin: { 'block-secrets': true } });
       const commitMsg = 'feat(diptych): T001 - add infra';
       const event: EngineEvent = {
         type: 'git_commit',
@@ -45,7 +51,7 @@ describe('hooks-builtins integration', () => {
       const f = join(dir, 'clean.ts');
       writeFileSync(f, 'export const x = 42;');
 
-      const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
+      const hooks = trust({ builtin: { 'block-secrets': true } });
       const event: EngineEvent = {
         type: 'git_commit',
         ts: Date.now(),
@@ -63,7 +69,7 @@ describe('hooks-builtins integration', () => {
       const f = join(dir, 'secret-no-file.ts');
       writeFileSync(f, 'const key = "AKIAIOSFODNN7EXAMPLE";');
 
-      const hooks: HooksConfig = { builtin: { 'block-secrets': true } };
+      const hooks = trust({ builtin: { 'block-secrets': true } });
       const event: EngineEvent = {
         type: 'git_commit',
         ts: Date.now(),
@@ -82,7 +88,7 @@ describe('hooks-builtins integration', () => {
       const f = join(dir, 'oops.ts');
       writeFileSync(f, 'const k = "AKIAIOSFODNN7EXAMPLE";');
 
-      const hooks: HooksConfig = {
+      const hooks = trust({
         builtin: { 'block-secrets': true },
         pre_commit: [
           {
@@ -93,7 +99,7 @@ describe('hooks-builtins integration', () => {
             on_failure: 'warn',
           },
         ],
-      };
+      });
       const event = makeTaskStart({
         taskId: taskId('T001'),
         title: 'plant file',

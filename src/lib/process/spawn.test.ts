@@ -79,6 +79,39 @@ describe('runCommand', () => {
     ).rejects.toMatchObject({ kind: 'command-timeout' });
   });
 
+  it('kills the process group on timeout so descendants are not orphaned', async () => {
+    const childProgram = 'sleep 60 & printf "%s\\n" "$!"; sleep 60';
+
+    let descendantPid = 0;
+    try {
+      await runCommand('sh', ['-c', childProgram], { timeout: 1_000 });
+      throw new Error('expected command to time out');
+    } catch (err: unknown) {
+      expect(processError.isTimeout(err)).toBe(true);
+      if (!processError.isTimeout(err)) throw err;
+      const data = err.data as { output?: string };
+      descendantPid = Number.parseInt(data.output?.trim() ?? '', 10);
+    }
+
+    expect(descendantPid).toBeGreaterThan(0);
+
+    const stillAlive = () => {
+      try {
+        process.kill(descendantPid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+
+    const deadline = Date.now() + 5000;
+    while (stillAlive() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    expect(stillAlive()).toBe(false);
+  });
+
   it('uses the provided label in the timeout message', async () => {
     await expect(
       runCommand('node', ['-e', 'setTimeout(() => {}, 10_000)'], {

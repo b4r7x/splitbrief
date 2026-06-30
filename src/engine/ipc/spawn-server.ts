@@ -21,6 +21,7 @@ export type SpawnServerOptions = {
   configPath: string;
   overrides?: CLIOverrides;
   allowHooks?: boolean;
+  allowRepoRunners?: boolean;
   plannerContext?: string;
   attachments?: Array<{ id: string; path: string; mimeType: string }>;
   persistTranscript?: boolean;
@@ -79,6 +80,7 @@ export function buildServerArgs(opts: SpawnServerOptions): IpcServerArgs {
     overrides: opts.overrides ?? {},
     ...(opts.persistTranscript !== undefined && { persistTranscript: opts.persistTranscript }),
     ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
+    ...(opts.allowRepoRunners !== undefined && { allowRepoRunners: opts.allowRepoRunners }),
     ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
     ...(opts.attachments !== undefined && { attachments: opts.attachments }),
   };

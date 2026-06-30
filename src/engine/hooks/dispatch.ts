@@ -1,4 +1,12 @@
-import type { HookEntry, HookCommandEntry, HookModuleEntry } from '../../core/schemas/hooks.js';
+import {
+  HookCommandResponseSchema,
+  HookOutcomeSchema,
+  type HookEntry,
+  type HookCommandEntry,
+  type HookModuleEntry,
+  type HooksConfig,
+  type HookCommandResponse,
+} from '../../core/schemas/hooks.js';
 import type { EngineEvent } from '../events/types.js';
 import { spawnWithTimeout } from '../../lib/process/spawn.js';
 import { isENOENT, isNodeError, processError } from '../../lib/process/errors.js';
@@ -8,11 +16,8 @@ import { loadHookModule } from './load-module.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
 import { protectConsumerPayload } from '../../core/consumer-policy.js';
-
-type HookResponse = {
-  decision?: string;
-  message?: string;
-};
+import { isRecord } from '../../utils/type-guards.js';
+import { isHooksConfigTrusted } from '../../core/hooks/trust.js';
 
 export const hookError = {
   timedOut: (timeoutMs: number) =>
@@ -28,6 +33,22 @@ export async function runHook(
     return runModuleHook(entry, event, ctx);
   }
   return runCommandHook(entry, event, ctx);
+}
+
+export async function runTrustedHook(
+  entry: HookEntry,
+  event: EngineEvent,
+  ctx: HookContext,
+  hooks: HooksConfig,
+): Promise<HookOutcome> {
+  const refusal = hookTrustRefusal(ctx.projectDir, hooks);
+  if (refusal) return { kind: 'deny', message: refusal };
+  return runHook(entry, event, ctx);
+}
+
+export function hookTrustRefusal(projectDir: string, hooks: HooksConfig): string | null {
+  if (isHooksConfigTrusted(projectDir, hooks)) return null;
+  return 'hook configuration or hook files changed after trust; re-run with --allow-hooks or approve hooks again';
 }
 
 async function runCommandHook(
@@ -93,24 +114,25 @@ function interpretHookOutput(
 ): HookOutcome {
   const parsed = tryParseResponse(output);
   const stderrOpt = stderr?.trim() ? { stderr: stderr } : {};
-  if (parsed?.decision === 'deny') {
+  if (parsed.kind === 'invalid') {
+    return failureOutcome(entry, parsed.message, stderr);
+  }
+  if (parsed.kind === 'none') {
+    if (code === 0) return { kind: 'allow', ...stderrOpt };
+    return failureOutcome(entry, `command exited with code ${code}`, stderr);
+  }
+  const response = parsed.response;
+  if (response.decision === 'deny') {
     return {
       kind: 'deny',
-      ...(parsed.message !== undefined && { message: parsed.message }),
+      ...(response.message !== undefined && { message: response.message }),
       ...stderrOpt,
     };
   }
-  if (parsed?.decision === 'warn') {
+  if (response.decision === 'warn') {
     return {
       kind: 'warn',
-      ...(parsed.message !== undefined && { message: parsed.message }),
-      ...stderrOpt,
-    };
-  }
-  if (parsed?.decision !== undefined && parsed.decision !== 'allow') {
-    return {
-      kind: 'warn',
-      message: `unrecognized hook decision: ${String(parsed.decision)}`,
+      ...(response.message !== undefined && { message: response.message }),
       ...stderrOpt,
     };
   }
@@ -141,25 +163,24 @@ async function runModuleHook(
         timer = setTimeout(() => rej(hookError.timedOut(entry.timeout_ms)), entry.timeout_ms);
       }),
     ]).finally(() => clearTimeout(timer));
-    return validateOutcome(result);
+    const parsed = HookOutcomeSchema.safeParse(result);
+    if (!parsed.success) {
+      return failureOutcome(entry, 'malformed hook outcome');
+    }
+    return parsed.data;
   } catch (err) {
     return failureOutcome(entry, toErrorMessage(err));
   }
 }
 
-function validateOutcome(result: unknown): HookOutcome {
-  if (result !== null && typeof result === 'object' && 'kind' in result) {
-    const kind = (result as { kind: unknown }).kind;
-    if (kind === 'allow' || kind === 'deny' || kind === 'warn' || kind === 'crash') {
-      return result as HookOutcome;
-    }
-  }
-  return { kind: 'warn', message: 'hook returned unrecognized outcome shape' };
-}
+type ParsedHookResponse =
+  | { kind: 'none' }
+  | { kind: 'valid'; response: HookCommandResponse }
+  | { kind: 'invalid'; message: string };
 
-function tryParseResponse(stdout: string): HookResponse | null {
+function tryParseResponse(stdout: string): ParsedHookResponse {
   const trimmed = stdout.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return { kind: 'none' };
   const whole = parseJsonObject(trimmed);
   if (whole) return whole;
   const lines = trimmed.split('\n');
@@ -167,18 +188,32 @@ function tryParseResponse(stdout: string): HookResponse | null {
     const candidate = parseJsonObject(lines[i]?.trim() ?? '');
     if (candidate) return candidate;
   }
+  return { kind: 'none' };
+}
+
+function parseJsonObject(text: string): ParsedHookResponse | null {
+  if (!text.startsWith('{')) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (isRecord(parsed)) return parseHookResponseObject(parsed);
+  } catch {
+    return invalidHookResponse();
+  }
   return null;
 }
 
-function parseJsonObject(text: string): HookResponse | null {
-  if (!text.startsWith('{')) return null;
-  try {
-    const parsed = JSON.parse(text) as unknown;
-    if (parsed !== null && typeof parsed === 'object') return parsed as HookResponse;
-  } catch {
-    return null;
-  }
-  return null;
+function parseHookResponseObject(value: Record<string, unknown>) {
+  const parsed = HookCommandResponseSchema.safeParse(value);
+  if (parsed.success) return { kind: 'valid' as const, response: parsed.data };
+  return invalidHookResponse();
+}
+
+function invalidHookResponse(): ParsedHookResponse {
+  return {
+    kind: 'invalid',
+    message:
+      'malformed hook response; expected { decision?: "allow" | "deny" | "warn", message?: string }',
+  };
 }
 
 function failureOutcome(

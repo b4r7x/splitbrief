@@ -2,10 +2,12 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { createConnection, type Socket } from 'node:net';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { saveState, loadState } from '../../core/state/persistence.js';
+import { taskId } from '../../core/schemas/task.js';
 import { createEventBus } from '../events/bus.js';
 import { startIpcServer, type IpcServer } from './server.js';
 import { createIpcWorkflowBridge } from './workflow-bridge.js';
@@ -185,6 +187,64 @@ describe('runWorkflowLoop detached retry', () => {
     const persisted = loadState(ref);
     expect(persisted?.tasks.map((task) => task.status)).toEqual(['done', 'pending']);
 
+    expect(summary.failed).toBe(0);
+  });
+
+  it('reopens paused pending recovery and applies the client action before running', async () => {
+    const projectDir = createTempDir('wl');
+    tmpDirs.push(projectDir);
+    ensureSessionDir(projectDir, SESSION_ID);
+
+    const sessionDir = `${projectDir}/.diptych/sessions/${SESSION_ID}`;
+    const bus = createEventBus();
+    const ipcBridge = createIpcWorkflowBridge(bus);
+    const srv = await startIpcServer({
+      sessionId: SESSION_ID,
+      sessionDir,
+      startedAt: Date.now(),
+      mode: 'standard',
+      feature: 'paused recovery',
+      authToken: AUTH_TOKEN,
+      bus,
+      onUserInput: () => undefined,
+    });
+    servers.push(srv);
+
+    const ref = { projectDir, sessionId: SESSION_ID };
+    saveState(
+      ref,
+      makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+        currentTaskIndex: 0,
+        pendingRecovery: makeRecoveryIssue({
+          status: 'paused',
+          selectedAction: 'pause-run',
+          taskId: taskId('T001'),
+        }),
+      }),
+    );
+
+    await attachRecoveryAnsweringClient(srv.sockPath, 'retry-same-worker');
+
+    const observedSavedStates: Array<WorkflowState | undefined> = [];
+    const fakeRunWorkflow = async (opts: RunWorkflowOptions): Promise<Summary> => {
+      observedSavedStates.push(opts.savedState);
+      return cleanRunSummary();
+    };
+
+    const summary = await runWorkflowLoop(
+      { projectDir, sessionId: SESSION_ID, feature: 'paused recovery' },
+      srv,
+      ipcBridge,
+      bus,
+      makeConfig(),
+      fakeRunWorkflow,
+    );
+
+    ipcBridge.close();
+
+    expect(observedSavedStates).toHaveLength(1);
+    expect(observedSavedStates[0]?.pendingRecovery).toBeUndefined();
+    expect(observedSavedStates[0]?.tasks[0]?.status).toBe('pending');
     expect(summary.failed).toBe(0);
   });
 

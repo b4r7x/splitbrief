@@ -8,16 +8,16 @@
   "files": {
     "includes": [
       "**",
-      "!**/dist",
-      "!**/node_modules",
-      "!**/coverage",
-      "!**/.claude",
-      "!**/.specify",
-      "!**/.nuke",
-      "!**/specs",
-      "!**/.diptych",
-      "!**/.tiny-spec",
-      "!**/.opencode"
+      "!!**/dist",
+      "!!**/node_modules",
+      "!!**/coverage",
+      "!!**/.claude",
+      "!!**/.specify",
+      "!!**/.nuke",
+      "!!**/specs",
+      "!!**/.diptych",
+      "!!**/.tiny-spec",
+      "!!**/.opencode"
     ]
   },
   "formatter": {

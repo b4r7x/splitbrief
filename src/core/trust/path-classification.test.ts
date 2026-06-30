@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { commandTokensAfterInterpreter, isPathLike, isRepoLocal } from './path-classification.js';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import {
+  commandTokensAfterInterpreter,
+  isBareCommandResolvedInsideProject,
+  isPackageManagerScriptInvocation,
+  isPathLike,
+  isRepoLocal,
+  isShellEvaluatedPromptArg,
+  resolveBareCommandOnPath,
+} from './path-classification.js';
 
 describe('isPathLike', () => {
   it('treats tokens with slashes as path-like', () => {
@@ -57,5 +68,90 @@ describe('commandTokensAfterInterpreter', () => {
 
   it('keeps a lone interpreter token when there is nothing after it', () => {
     expect(commandTokensAfterInterpreter(['node'])).toEqual(['node']);
+  });
+
+  it('drops interpreter inline program strings', () => {
+    expect(
+      commandTokensAfterInterpreter(['node', '-e', 'process.stdout.write("file: src/hello.ts")']),
+    ).toEqual([]);
+    expect(commandTokensAfterInterpreter(['python', '-c', 'print("file: src/hello.py")'])).toEqual(
+      [],
+    );
+  });
+
+  it('keeps interpreter flags that load repo-local files', () => {
+    expect(
+      commandTokensAfterInterpreter(['node', '--require=./x.js', '-e', 'console.log(1)']),
+    ).toEqual(['--require=./x.js']);
+    expect(commandTokensAfterInterpreter(['node', '--require', './x.js'])).toEqual([
+      '--require',
+      './x.js',
+    ]);
+  });
+});
+
+describe('isPackageManagerScriptInvocation', () => {
+  it.each([
+    ['npm run build', ['npm', 'run', 'build']],
+    ['npm test', ['npm', 'test']],
+    ['pnpm run build', ['pnpm', 'run', 'build']],
+    ['yarn run build', ['yarn', 'run', 'build']],
+    ['bun run build', ['bun', 'run', 'build']],
+    ['npm --silent run build', ['npm', '--silent', 'run', 'build']],
+    ['npm run --if-present build', ['npm', 'run', '--if-present', 'build']],
+  ])('flags package script execution for %s', (_label, tokens) => {
+    expect(isPackageManagerScriptInvocation(tokens)).toBe(true);
+  });
+
+  it.each([
+    ['npm install', ['npm', 'install']],
+    ['npm run without a script', ['npm', 'run']],
+    ['node runner', ['node', 'runner']],
+  ])('does not flag non-script package manager commands for %s', (_label, tokens) => {
+    expect(isPackageManagerScriptInvocation(tokens)).toBe(false);
+  });
+});
+
+describe('resolveBareCommandOnPath', () => {
+  it('resolves bare commands through PATH', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'diptych-path-classification-'));
+    try {
+      const bin = join(dir, 'runner');
+      writeFileSync(bin, '#!/bin/sh\n');
+      chmodSync(bin, 0o755);
+
+      expect(resolveBareCommandOnPath('runner', '/tmp/project', dir)).toBe(bin);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('classifies a bare command as repo-local when PATH resolves inside the project', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-project-path-'));
+    try {
+      const binDir = join(projectDir, 'node_modules', '.bin');
+      mkdirSync(binDir, { recursive: true });
+      const bin = join(binDir, 'runner');
+      writeFileSync(bin, '#!/bin/sh\n');
+      chmodSync(bin, 0o755);
+
+      expect(isBareCommandResolvedInsideProject('runner', projectDir, binDir)).toBe(true);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('isShellEvaluatedPromptArg', () => {
+  it.each([
+    ['bash -c', 'bash', ['-c', 'printf "%s" "{prompt}"']],
+    ['bash -lc', 'bash', ['-lc', 'printf "%s" "{prompt}"']],
+    ['sh -ec', 'sh', ['-ec', 'printf "%s" "{prompt}"']],
+  ])('flags %s prompt evaluation', (_label, command, args) => {
+    expect(isShellEvaluatedPromptArg(command, args)).toBe(true);
+  });
+
+  it('does not flag non-shell argv placeholders', () => {
+    expect(isShellEvaluatedPromptArg('node', ['runner.js', '{prompt}'])).toBe(false);
   });
 });

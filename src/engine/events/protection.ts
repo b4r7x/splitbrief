@@ -8,8 +8,6 @@ import { EngineEventSchema, eventPhase } from './schema.js';
 import type { EngineEvent, EngineEventOf } from './types.js';
 import type { UserEditConflict } from './workflow-events.js';
 
-export { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
-
 interface EngineEventProtectionOptions {
   context: CallConsumerContext;
   persistTranscript: boolean;

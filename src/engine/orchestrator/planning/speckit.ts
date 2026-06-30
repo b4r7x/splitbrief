@@ -7,6 +7,7 @@ import {
   CLARIFICATIONS_FILE,
   CONSTITUTION_CHECK_FILE,
   PLAN_FILE,
+  SPECIFY_CONSTITUTION_FILE,
   SPEC_FILE,
   TASKS_FILE,
   sessionDir,
@@ -23,6 +24,7 @@ import type {
   ConstitutionCheckResult,
   ConstitutionViolation,
 } from '../../../core/schemas/constitution.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { AnalyzeResult } from '../../../core/schemas/analyze.js';
 import { narrowRecord } from '../../../utils/type-guards.js';
 import { extractJsonBlock } from '../../../utils/extract-json-block.js';
@@ -80,10 +82,8 @@ function parseAnalyze(text: string): AnalyzeResult {
   };
 }
 
-const CONSTITUTION_RELATIVE_PATH = join('.specify', 'memory', 'constitution.md');
-
 async function readConstitution(projectDir: string): Promise<string> {
-  return confinedReadFileOrEmpty(projectDir, CONSTITUTION_RELATIVE_PATH);
+  return confinedReadFileOrEmpty(projectDir, SPECIFY_CONSTITUTION_FILE);
 }
 
 async function readArtifact(dir: string, file: string): Promise<string> {
@@ -105,51 +105,18 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   const dir = sessionDir(projectDir, sessionId);
   let { state } = opts;
 
-  const constitutionContent = await readConstitution(projectDir);
-
-  writeSecureFile(join(dir, CLARIFICATIONS_FILE), formatClarificationsPlaceholder());
-
-  const planResult = await runFullPlanning({ ...opts, state, deferBriefGate: true });
+  const planResult = await runFullPlanning({
+    ...opts,
+    state,
+    deferBriefGate: true,
+    afterSpecReview: async ({ state: reviewedState, tasks: reviewedTasks }) => {
+      const constitution = await runConstitutionGate({ ...opts, state: reviewedState });
+      return { ...constitution, tasks: reviewedTasks };
+    },
+  });
   state = planResult.state;
   if (planResult.cancelled) return planResult;
   let tasks = planResult.tasks;
-
-  publishPlannerStatus(bus, state, 'running');
-  let constitutionResult: ConstitutionCheckResult;
-  if (constitutionContent.trim() === '') {
-    constitutionResult = { passed: true, violations: [] };
-  } else {
-    const specText = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
-    const prompt = buildConstitutionPrompt({
-      feature: opts.feature,
-      spec: specText,
-      constitutionContent,
-    });
-    const review = await runPlannerReview({
-      planner,
-      prompt,
-      projectDir,
-      sessionId,
-      bus,
-      state,
-      signal: wctx.signal,
-    });
-    state = review.state;
-    constitutionResult = parseConstitutionCheck(review.text);
-  }
-  writeSecureFile(join(dir, CONSTITUTION_CHECK_FILE), JSON.stringify(constitutionResult, null, 2));
-
-  const hardViolation = constitutionResult.violations.find((v) => v.severity === 'hard');
-  if (hardViolation || !constitutionResult.passed) {
-    const reason = hardViolation?.reason ?? 'constitution check failed';
-    bus.publish({
-      type: 'warning',
-      ts: Date.now(),
-      phase: state.phase,
-      message: `constitution check failed: ${reason}`,
-    });
-    return { state, tasks: [], cancelled: true };
-  }
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ANALYZE_START' });
   publishPlannerStatus(bus, state, 'running');
@@ -209,4 +176,67 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
   return { state, tasks, cancelled: false };
+}
+
+async function runConstitutionGate(
+  opts: PlanningPhaseOptions,
+): Promise<{ state: WorkflowState; cancelled: boolean }> {
+  const { wctx, planner } = opts;
+  const { projectDir, sessionId, bus } = wctx;
+  const dir = sessionDir(projectDir, sessionId);
+  let { state } = opts;
+
+  writeSecureFile(join(dir, CLARIFICATIONS_FILE), formatClarificationsPlaceholder());
+
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_CLARIFY_START' });
+  publishPlannerStatus(bus, state, 'running');
+  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'SPEC_CLARIFY_DONE' });
+  publishPlannerStatus(bus, state, 'running');
+
+  const constitutionContent = await readConstitution(projectDir);
+  let constitutionResult: ConstitutionCheckResult;
+  if (constitutionContent.trim() === '') {
+    constitutionResult = { passed: true, violations: [] };
+  } else {
+    const specText = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
+    const prompt = buildConstitutionPrompt({
+      feature: opts.feature,
+      spec: specText,
+      constitutionContent,
+    });
+    const review = await runPlannerReview({
+      planner,
+      prompt,
+      projectDir,
+      sessionId,
+      bus,
+      state,
+      signal: wctx.signal,
+    });
+    state = review.state;
+    constitutionResult = parseConstitutionCheck(review.text);
+  }
+  writeSecureFile(join(dir, CONSTITUTION_CHECK_FILE), JSON.stringify(constitutionResult, null, 2));
+
+  const hardViolation = constitutionResult.violations.find((v) => v.severity === 'hard');
+  if (hardViolation || !constitutionResult.passed) {
+    const reason = hardViolation?.reason ?? 'constitution check failed';
+    bus.publish({
+      type: 'warning',
+      ts: Date.now(),
+      phase: state.phase,
+      message: `constitution check failed: ${reason}`,
+    });
+    state = transitionAndSave({ projectDir, sessionId }, state, {
+      type: 'CONSTITUTION_CHECK_FAIL',
+    });
+    return { state, cancelled: true };
+  }
+
+  state = transitionAndSave({ projectDir, sessionId }, state, {
+    type: 'CONSTITUTION_CHECK_PASS',
+  });
+  publishPlannerStatus(bus, state, 'running');
+
+  return { state, cancelled: false };
 }

@@ -20,7 +20,7 @@ export function registerExplainCommand(program: Command): void {
     .option('--json', 'Emit explanation as JSON', false)
     .action(async (opts: ExplainOpts) => {
       const projectDir = resolveProjectDir(opts.project);
-      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+      const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
       await withCliErrors(async () => {
         const explain = await buildRunExplain({ projectDir, sessionId });

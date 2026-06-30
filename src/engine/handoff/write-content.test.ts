@@ -136,13 +136,43 @@ describe('writeHandoffPack — readback correctness', () => {
 });
 
 describe('writeHandoffPack — confined constitution reads', () => {
+  it('includes the SpecKit constitution enforced during planning', async () => {
+    const sessionId = 'speckit-constitution-session';
+    writeHandoffWriterSessionState(tmp, sessionId);
+    mkdirSync(join(tmp, '.specify', 'memory'), { recursive: true });
+    writeFileSync(
+      join(tmp, '.specify', 'memory', 'constitution.md'),
+      '# SpecKit Constitution\n\nUse ESM imports.',
+    );
+
+    const outDir = join(tmp, 'handoff', 'speckit-constitution');
+    const result = await writeHandoffPack({
+      projectDir: tmp,
+      sessionId,
+      target: 'spec-kit',
+      outDir,
+      mode: 'default',
+    });
+
+    expect(result.files).toContain('constitution.md');
+    expect(readFileSync(join(outDir, 'constitution.md'), 'utf-8')).toContain(
+      'SpecKit Constitution',
+    );
+    const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
+    expect(manifest.artifacts.constitution).toBe('constitution.md');
+  });
+
   itUnix('does not include constitution content from symlink escapes', async () => {
     const outside = createTempDir('handoff-constitution-outside');
     try {
       const sessionId = 'constitution-session';
       writeHandoffWriterSessionState(tmp, sessionId);
       writeFileSync(join(outside, 'constitution.md'), '# Outside constitution\n\nsecret rules');
-      symlinkSync(join(outside, 'constitution.md'), join(tmp, 'constitution.md'));
+      mkdirSync(join(tmp, '.specify', 'memory'), { recursive: true });
+      symlinkSync(
+        join(outside, 'constitution.md'),
+        join(tmp, '.specify', 'memory', 'constitution.md'),
+      );
 
       const outDir = join(tmp, 'handoff', 'constitution');
       const result = await writeHandoffPack({
@@ -155,7 +185,7 @@ describe('writeHandoffPack — confined constitution reads', () => {
 
       expect(result.files).not.toContain('constitution.md');
       const manifest = JSON.parse(readFileSync(join(outDir, 'manifest.json'), 'utf-8'));
-      expect(manifest.constitution ?? null).toBeNull();
+      expect(manifest.artifacts.constitution).toBeUndefined();
     } finally {
       cleanupTempDir(outside);
     }

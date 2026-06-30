@@ -92,6 +92,33 @@ function writeMinimalConfigYaml(projectDir: string): void {
   ]);
 }
 
+function writeCurrentTranscriptConfigYaml(projectDir: string): void {
+  writeConfigYaml(projectDir, [
+    'version: 3',
+    'planner:',
+    '  kind: cli',
+    '  tool: claude-code',
+    'implementer:',
+    '  kind: api',
+    '  provider: ollama',
+    '  api_base: http://localhost:11434/v1',
+    '  model: qwen2.5-coder:7b',
+    '  context_length: 32768',
+    'validation:',
+    '  typecheck: false',
+    '  lint: false',
+    '  test: false',
+    '  test_command: "noop"',
+    'workflow:',
+    '  auto_approve_spec: true',
+    '  auto_approve_plan: true',
+    '  approve: none',
+    '  commit_strategy: none',
+    '  mode: quick',
+    '  persist_transcript: true',
+  ]);
+}
+
 let dirs: string[] = [];
 
 function setupProject(pauseThreshold = 0.85): string {
@@ -522,6 +549,38 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     expect(implement).toHaveBeenCalledTimes(1);
     const session = listSessions(projectDir).find((s) => s.id === sessionId);
     expect(session?.status).toBe('interrupted');
+  });
+
+  it('keeps opaque resumed sessions transcript-private when current config allows transcripts', async () => {
+    const projectDir = createTempDir('headless-private-resume');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    writeCurrentTranscriptConfigYaml(projectDir);
+    const sessionId = '2025-04-01-session-abcdef123456';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+    const state = makeTwoTaskState();
+    saveState({ projectDir, sessionId }, state);
+    let seenPersistTranscript: boolean | undefined;
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (opts) => {
+        seenPersistTranscript = opts.config.workflow.persistTranscript;
+        process.emit('SIGINT');
+        return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+
+    await runHeadless({
+      feature: 'secret oauth login',
+      projectDir,
+      opts: {},
+      savedState: state,
+      sessionId,
+      _planner: planner,
+      _implementer: implementer,
+    });
+
+    expect(seenPersistTranscript).toBe(false);
   });
 
   it('stops the run on SIGTERM the same way', async () => {

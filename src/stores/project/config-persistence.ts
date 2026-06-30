@@ -1,6 +1,5 @@
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import { toYaml } from '../../core/config/load/transform.js';
-import { deepEqual } from '../../utils/deep-equal.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 export interface SaveOptions {
@@ -20,6 +19,23 @@ export function cloneConfig(config: Config): Config {
 
 export function cloneValue<T>(value: T): T {
   return structuredClone(value);
+}
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    return a.every((item, index) => deepEqual(item, b[index]));
+  }
+  if (isRecord(a) || isRecord(b)) {
+    if (!isRecord(a) || !isRecord(b)) return false;
+    const aKeys = Object.keys(a);
+    const bKeys = Object.keys(b);
+    if (aKeys.length !== bKeys.length) return false;
+    return aKeys.every((key) => Object.hasOwn(b, key) && deepEqual(a[key], b[key]));
+  }
+  return false;
 }
 
 function parseChangedPaths(paths: readonly string[] | undefined): Path[] {

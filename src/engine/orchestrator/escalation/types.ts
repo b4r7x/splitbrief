@@ -7,6 +7,7 @@ import type { Implementer } from '../../implementers/types.js';
 import type { WorkflowContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
 import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import type { StagedProjectRunnerRole } from '../approval/staged-project.js';
 import type { ValidationResult } from '../validation-result.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
@@ -68,6 +69,7 @@ export type RetryStepOpts = {
   usageCategory: UsageCategory;
   retryFailureFallback: string;
   profileOverride?: string | undefined;
+  stagedProjectRole?: StagedProjectRunnerRole | undefined;
   resultTool?: string | undefined;
   resultModel?: string | undefined;
   invokeRetry: (args: RetryInvokeArgs) => Promise<{

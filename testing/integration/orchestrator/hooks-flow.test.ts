@@ -78,6 +78,7 @@ describe('hooks integration flow', { timeout: 30_000 }, () => {
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       allowHooks: true,
+      allowRepoRunners: true,
       _eventSink: (e) => recorded.push(e),
     });
 
@@ -128,6 +129,7 @@ describe('hooks integration flow', { timeout: 30_000 }, () => {
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       allowHooks: true,
+      allowRepoRunners: true,
       _eventSink: (e) => recorded.push(e),
     });
 

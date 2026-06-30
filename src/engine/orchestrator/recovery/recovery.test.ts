@@ -542,7 +542,7 @@ describe('applyRecoveryAction', () => {
     expect(result.state.tasks[0]?.status).toBe('skipped');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-    expect(readEvidenceLedger(projectDir, sessionId)?.tasks[0]?.observedEvidence).toContain(
+    expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.observedEvidence).toContain(
       'skipped: recovery retry-exhausted: T034 exhausted recovery retries',
     );
     expect(events.map((event) => event.type)).toEqual(
@@ -553,7 +553,7 @@ describe('applyRecoveryAction', () => {
   it('blocks skip with a dedicated skip-evidence-failed code when evidence cannot be written', () => {
     const { projectDir, sessionId } = setupSession('skip-evidence-fail');
     // Occupy the evidence file path with a directory so the ledger write fails.
-    mkdirSync(evidenceLedgerPath(projectDir, sessionId), { recursive: true });
+    mkdirSync(evidenceLedgerPath({ projectDir, sessionId }), { recursive: true });
 
     const task = makeTask({ id: 'T099', file: 'src/x.ts' });
     const issue = buildRetryExhaustedRecoveryIssue({

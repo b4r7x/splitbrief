@@ -3,6 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ApiImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { hasApiBase } from '../../../core/config/accessors/runner-config.js';
+import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
 import { getProviderBaseURL } from '../../../core/providers/catalog.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
 import {
@@ -95,6 +96,15 @@ async function runIntermediateTier(input: TierStepInput): Promise<RetryStepOutco
 
   const intermediateConfig = resolveIntermediateConfig(ctx, state);
   if (!intermediateConfig) return { state, task: initialTask, lastError, attempts: priorAttempts };
+  const missingCredential = missingRunnerCredential(intermediateConfig.implementer);
+  if (missingCredential) {
+    publishWarning({
+      bus: ctx.bus,
+      phase: state.phase,
+      message: `Cannot escalate: ${missingCredential.providerDisplayName} intermediate provider is missing ${missingCredential.envVar ?? 'an API key'}`,
+    });
+    return { state, task: initialTask, lastError, attempts: priorAttempts };
+  }
 
   let intermediateImplementer: Implementer;
   try {
@@ -246,7 +256,7 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
     ctx.projectDir,
     state.discoveredValidation?.language,
   );
-  const staged = await createStagedProject(ctx.projectDir, ctx.config);
+  const staged = await createStagedProject(ctx.projectDir, ctx.config, 'planner');
   let tier1Result: Awaited<ReturnType<typeof ctx.planner.escalateHint>>;
   try {
     tier1Result = await ctx.planner.escalateHint({
@@ -259,6 +269,7 @@ async function runHintTier(input: TierStepInput): Promise<RetryStepOutcome> {
       },
       languageContext,
       fileIgnoreProjectDir: ctx.projectDir,
+      sandboxEnv: staged.sandboxEnv,
     });
   } catch (err) {
     staged.cleanup();
@@ -407,13 +418,22 @@ async function runFullTier(
     commitSuffix: 'escalated',
     usageCategory: 'escalation',
     retryFailureFallback: 'Tier-2 escalation failed to produce valid code',
-    invokeRetry: async ({ task: t, lastError: err, projectDir, signal, fileIgnoreProjectDir }) =>
+    stagedProjectRole: 'planner',
+    invokeRetry: async ({
+      task: t,
+      lastError: err,
+      projectDir,
+      signal,
+      sandboxEnv,
+      fileIgnoreProjectDir,
+    }) =>
       ctx.planner.escalateFull({
         task: t,
         error: err,
         projectDir,
         callbacks: { onOutput: textHandler, signal },
         languageContext,
+        sandboxEnv,
         fileIgnoreProjectDir,
       }),
     onValidationAfterRetryFail: (validationError) => {

@@ -103,6 +103,7 @@ export interface WorkflowContext {
   createImplementer?:
     | ((config: Config, options?: ImplementerFactoryOptions) => Implementer | Promise<Implementer>)
     | undefined;
+  allowRepoRunners?: boolean | undefined;
   implementerProfile?: string | undefined;
   retryProfileOverride?: string | undefined;
   retryProfileOverrideTaskId?: TaskId | undefined;

@@ -143,7 +143,7 @@ export function seedRejectionEvidence(projectDir: string, sessionId: string): vo
     actionDescription: 'fetch https://api.example.com/audit',
     reason: 'user denied network access',
   });
-  writeEvidenceLedger(projectDir, sessionId, ledger);
+  writeEvidenceLedger({ projectDir, sessionId }, ledger);
 }
 
 export function sequencedApproval(

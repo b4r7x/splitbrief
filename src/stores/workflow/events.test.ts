@@ -2,11 +2,9 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { eventsStore, MAX_EVENTS, MAX_MERGED_TEXT_LENGTH, mergeEvent } from './events.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import type { EngineEventOf } from '../../engine/events/types.js';
-import {
-  protectEngineEventForConsumer,
-  TRANSCRIPT_OMITTED_MESSAGE,
-} from '../../engine/events/protection.js';
+import { protectEngineEventForConsumer } from '../../engine/events/protection.js';
 import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import {

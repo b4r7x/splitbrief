@@ -3,6 +3,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
@@ -15,6 +16,7 @@ import {
   sessionDir,
   TASKS_FILE,
 } from '../../core/paths.js';
+import { taskId } from '../../core/schemas/task.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
@@ -24,7 +26,7 @@ import { runRpc, rpcShutdownError } from './run.js';
 
 let dirs: string[] = [];
 
-function writeConfig(projectDir: string): void {
+function writeConfig(projectDir: string, persistTranscript = false): void {
   const diptychDir = join(projectDir, DIPTYCH_DIR);
   mkdirSync(diptychDir, { recursive: true });
   const configPath = join(diptychDir, CONFIG_FILE);
@@ -51,7 +53,7 @@ function writeConfig(projectDir: string): void {
       '  max_retries: 3',
       '  commit_strategy: none',
       '  mode: standard',
-      '  persist_transcript: false',
+      `  persist_transcript: ${persistTranscript ? 'true' : 'false'}`,
     ].join('\n'),
   );
   chmodSync(configPath, 0o600);
@@ -208,6 +210,53 @@ describe('runRpc', () => {
       }),
     );
     expect(approved).toBe(true);
+  });
+
+  it('keeps opaque resumed sessions transcript-private when current config allows transcripts', async () => {
+    const projectDir = createTempDir('rpc-private-resume');
+    dirs.push(projectDir);
+    writeConfig(projectDir, true);
+    const sessionId = '2025-04-01-session-abcdef123456';
+    ensureSessionDir(projectDir, sessionId);
+    const state: WorkflowState = {
+      ...createInitialState('secret oauth login'),
+      phase: 'planning',
+    };
+    saveState({ projectDir, sessionId }, state);
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let seenPersistTranscript: boolean | undefined;
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      seenPersistTranscript = workflowOpts.config.workflow.persistTranscript;
+      workflowOpts.eventBus?.publish({
+        type: 'workflow_started',
+        ts: 1,
+        phase: 'researching',
+        feature: 'secret oauth login',
+      });
+    };
+
+    await runRpc({
+      feature: 'secret oauth login',
+      projectDir,
+      opts: { rpc: true },
+      savedState: state,
+      sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    expect(seenPersistTranscript).toBe(false);
+    const serialized = chunks.join('');
+    expect(serialized).not.toContain('secret oauth login');
+    expect(parseLines(chunks)).toContainEqual(
+      expect.objectContaining({
+        type: 'event',
+        data: expect.objectContaining({
+          type: 'workflow_started',
+          feature: '[transcript omitted]',
+        }),
+      }),
+    );
   });
 
   it('correlates prompt-scoped brief review command ids across interleaved events', async () => {
@@ -828,6 +877,65 @@ describe('runRpc', () => {
 
     expect(parseLines(chunks)).toContainEqual(
       expect.objectContaining({ type: 'ack', command: 'recovery' }),
+    );
+  });
+
+  it('reopens paused recovery instead of stopping the RPC run', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'rpc-paused-recovery-session';
+    ensureSessionDir(projectDir, sessionId);
+    const stateWithPausedRecovery: WorkflowState = {
+      ...createInitialState('paused recovery feature'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001', status: 'failed' })],
+      pendingRecovery: makeRecoveryIssue({
+        status: 'paused',
+        selectedAction: 'pause-run',
+        taskId: taskId('T001'),
+        affectedTaskIds: [taskId('T001')],
+        availableActions: ['retry-same-worker', 'pause-run', 'abort-workflow'],
+        recommendedAction: 'retry-same-worker',
+      }),
+    };
+    saveState({ projectDir, sessionId }, stateWithPausedRecovery);
+
+    const input = new PassThrough();
+    const { chunks, output } = captureWritable();
+    let savedStateForRun: WorkflowState | undefined;
+    const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
+      savedStateForRun = workflowOpts.savedState;
+    };
+
+    const run = runRpc({
+      feature: 'paused recovery feature',
+      projectDir,
+      opts: { rpc: true },
+      savedState: stateWithPausedRecovery,
+      sessionId,
+      deps: { input, output, runWorkflow: runWorkflowStub },
+    });
+
+    await waitForLine(
+      chunks,
+      (line) =>
+        line.type === 'status' &&
+        typeof line.data === 'object' &&
+        line.data !== null &&
+        'pending' in line.data &&
+        line.data.pending === 'recovery',
+    );
+
+    input.write('{"type":"recovery","action":"retry-same-worker"}\n');
+    await run;
+
+    expect(savedStateForRun?.pendingRecovery).toBeUndefined();
+    expect(savedStateForRun?.tasks[0]?.status).toBe('pending');
+    expect(parseLines(chunks)).toContainEqual(
+      expect.objectContaining({
+        type: 'ack',
+        command: 'recovery',
+        data: expect.objectContaining({ action: 'retry-same-worker' }),
+      }),
     );
   });
 

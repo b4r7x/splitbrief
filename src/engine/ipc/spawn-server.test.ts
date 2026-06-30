@@ -5,7 +5,7 @@ import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:net';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
-import { HEARTBEAT_STALENESS_MS } from './constants.js';
+import { HEARTBEAT_STALENESS_MS } from '../../core/sessions/lockfile-status.js';
 import { writeLockfile, readLockfile } from './lockfile.js';
 import {
   buildServerArgs,
@@ -382,6 +382,10 @@ describe('buildServerArgs transcript policy', () => {
   it('forwards the transcript policy so the child can redact the ps-facing lockfile', () => {
     expect(buildServerArgs({ ...base, persistTranscript: false }).persistTranscript).toBe(false);
     expect(buildServerArgs({ ...base, persistTranscript: true }).persistTranscript).toBe(true);
+  });
+
+  it('forwards repo runner trust to the detached child', () => {
+    expect(buildServerArgs({ ...base, allowRepoRunners: true }).allowRepoRunners).toBe(true);
   });
 
   it('redacting the forwarded feature with its policy yields the ps-facing omission', () => {

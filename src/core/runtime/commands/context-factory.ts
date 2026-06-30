@@ -3,6 +3,7 @@ import { defaultApprovalConfig } from '../../schemas/config.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { RewindTarget } from '../../state/build-rewind-action.js';
 import type { OverlayType } from '../../navigation/types.js';
+import type { SessionRef } from '../../types/session-ref.js';
 import type {
   RuntimeCommandContext,
   ExportSessionResult,
@@ -63,11 +64,10 @@ interface CommandContextFactoryOptions {
     projectDir: string,
     sessionId: string,
   ) => ReturnType<RuntimeCommandContext['rejectRunSnapshot']>;
-  compactTranscript: (
-    config: Config,
-    projectDir: string,
-    sessionId: string,
-  ) => ReturnType<RuntimeCommandContext['compactTranscript']>;
+  compactTranscript: (opts: {
+    config: Config;
+    ref: SessionRef;
+  }) => ReturnType<RuntimeCommandContext['compactTranscript']>;
   exportSession: (
     projectDir: string,
     sessionId: string,
@@ -160,7 +160,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       const projectDir = opts.projectDir();
       const config = currentConfig('/compact-transcript');
       const sessionId = sessionIdOrThrow('/compact-transcript');
-      return opts.compactTranscript(config, projectDir, sessionId);
+      return opts.compactTranscript({ config, ref: { projectDir, sessionId } });
     },
     exportSession: async () => {
       const projectDir = opts.projectDir();

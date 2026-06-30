@@ -453,7 +453,7 @@ diptych handoff --list                            # list available targets
 
 In the TUI: `/handoff <target> [task-id]` writes to `.diptych/sessions/<id>/handoffs/<target>/`.
 
-**Pack shape.** Most built-in targets write `manifest.json` (with `briefHash`), `spec.md`, `plan.md`, `constitution.md` (when present), `tasks/T001.md`, `tasks/T002.md`, …, and `README.md`. `copilot-issue` is the exception: it writes `manifest.json` and one self-contained `issue.md` body with the selected tasks embedded.
+**Pack shape.** Most built-in targets write `manifest.json` (with `briefHash`), `spec.md`, `plan.md`, `constitution.md` (when `.specify/memory/constitution.md` is present), `tasks/T001.md`, `tasks/T002.md`, …, and `README.md`. `copilot-issue` is the exception: it writes `manifest.json` and one self-contained `issue.md` body with the selected tasks embedded.
 
 ### Custom handoff renderers (advanced)
 
@@ -476,7 +476,7 @@ diptych handoff jira --allow-custom-renderer
 
 ### MCP resources and evidence tools server (advanced)
 
-**What it does.** A localhost-only HTTP MCP server exposing supported session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup).
+**What it does.** A localhost-only HTTP MCP server exposing supported session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup). With `workflow.persistTranscript: false`, the sessions index and `state.json` read resource replace transcript-sensitive feature, task, queued-message, and queued-question text.
 
 MCP also exposes constrained evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. These tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shells, write project files, or dispatch implementation work. General tool calls belong to the selected planner or implementer runner.
 
@@ -612,6 +612,8 @@ diptych last             # always the most recent session
 diptych ps               # shows #1, #2, #3...
 diptych attach 1         # instead of the full session ID
 diptych continue 2
+diptych handoff --session 1
+diptych snapshot list --session 1
 ```
 
 ---

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Session } from '../schemas/session.js';
 import type { SessionRef } from '../types/session-ref.js';
 import type { WorkflowState } from '../schemas/workflow.js';
+import type { Config } from '../schemas/config.js';
 import { SessionSchema } from '../schemas/session.js';
 import { parsePersistedSession } from './summary-parser.js';
 import { sessionDir, sessionsRoot, isValidSessionId } from '../paths.js';
@@ -78,6 +79,32 @@ function recoverSession(projectDir: string, sessionId: string): Session | null {
   const state = loadState({ projectDir, sessionId });
   if (!state) return null;
   return stateToSession(projectDir, sessionId, state);
+}
+
+export function readSessionPersistTranscript(ref: SessionRef): boolean {
+  const { projectDir, sessionId } = ref;
+  if (isOpaqueSessionId(sessionId)) return false;
+
+  const sessDir = sessionDir(projectDir, sessionId);
+  const summary = readSummaryFile(join(sessDir, 'summary.json'), sessionId);
+  if (summary?.feature === TRANSCRIPT_OMITTED_FEATURE) return false;
+
+  const lockfile = readSessionLockfileData({ sessionDir: sessDir });
+  if (lockfile.kind === 'valid' && lockfile.data.feature === TRANSCRIPT_OMITTED_FEATURE) {
+    return false;
+  }
+
+  return true;
+}
+
+export function configForSessionTranscriptPolicy(
+  config: Config,
+  ref: SessionRef | undefined,
+): Config {
+  if (!ref) return config;
+  const persistTranscript = config.workflow.persistTranscript && readSessionPersistTranscript(ref);
+  if (persistTranscript === config.workflow.persistTranscript) return config;
+  return { ...config, workflow: { ...config.workflow, persistTranscript } };
 }
 
 // Home windows the list by terminal fit and the palette caps session items to 10, so 30 is a safe upper bound.

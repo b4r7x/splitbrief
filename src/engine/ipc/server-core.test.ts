@@ -5,7 +5,7 @@ import { createConnection, type Socket } from 'node:net';
 import { createEventBus } from '../events/bus.js';
 import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/brief-review-command.js';
 import type { EngineEvent } from '../events/types.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { startIpcServer, type IpcServer } from './server.js';
 import type { ServerMessage } from './protocol.js';
 

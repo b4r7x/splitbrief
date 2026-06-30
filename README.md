@@ -105,7 +105,9 @@ Needs **Node.js 22+** and **git** in the project.
 
 Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are scoped to one workflow each — see [docs/VISION.md](./docs/VISION.md) for the full list of non-goals.
 
-If using Ollama, bump the context window — the default 2048 tokens is too small:
+If using Ollama, configure the model's real context window first (for example, set
+`num_ctx` in the model/template you run). Then set diptych's prompt-budget view
+to match when auto-detection is wrong:
 
 ```bash
 export DIPTYCH_CONTEXT_LENGTH=32768
@@ -176,7 +178,7 @@ workflow:
   persistTranscript: true  # Save planner/user messages to session.jsonl for resume context
 ```
 
-`contextLength` should match your model's effective window. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: diptych selects the cheapest capable profile for each Task Brief instead of becoming a multi-agent manager.
+`contextLength` should match the model's effective window after the provider itself is configured. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: diptych selects the cheapest capable profile for each Task Brief instead of becoming a multi-agent manager.
 
 Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves changes unstaged for manual review; set `checkpoint` or `per-task` only if you want diptych to create git history.
 
@@ -249,6 +251,7 @@ Any planner CLI tool can also be used as an implementer:
 implementer:
   kind: cli
   tool: claude-code           # or codex, opencode, aider, copilot, kilo-code
+  model: auto
 ```
 
 #### Shell implementer
@@ -261,6 +264,7 @@ implementer:
   command: my-custom-script
   args: ["--format", "markdown"]
   outputFormat: text
+  model: auto
 ```
 
 ## Models

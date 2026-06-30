@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { _resetHoverThrottle, wireMousePointer } from './use-mouse-pointer.js';
+import { wireAppMouse } from '../../../app/mouse.js';
+import { _resetHoverThrottle } from './use-mouse-pointer.js';
 import type { FilteredStdin, MouseEvent } from '../../../lib/terminal/filtered-stdin.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
@@ -10,16 +11,9 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { controlsStore } from '../../../stores/ui/controls.js';
-import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
-import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
-import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
-import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import { resetWorkflow } from '../../../stores/workflow/actions.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { _resetMouseZones, registerMouseZone } from '../../../lib/terminal/mouse-zones.js';
-import { ROW_ZONE_Z_OVERLAY, ROW_ZONE_Z_SCREEN } from '../../../components/pickers/row-zone.js';
-import { PROMPT_ZONE_Z } from '../components/approval-prompt.js';
 import {
   readBriefListSnapshot,
   readConversationScrollSnapshot,
@@ -124,15 +118,6 @@ function pointerEvent(type: MouseEvent['type'], x: number, y: number): MouseEven
   return { type, x, y, button, shift: false, meta: false, ctrl: false };
 }
 
-function makePendingApprovalRequest(): TieredApprovalRequest {
-  return {
-    tier: 'confirm',
-    actionClass: 'destructive',
-    actionDescription: 'rm -rf /',
-    phase: 'implementing',
-  };
-}
-
 function openBriefReview(taskCount: number) {
   routerStore.init({ screen: 'workflow', feature: 'feat' });
   lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
@@ -142,7 +127,7 @@ function openBriefReview(taskCount: number) {
   return snapshot;
 }
 
-describe('wireMousePointer', () => {
+describe('wireAppMouse workflow pointer handling', () => {
   beforeEach(() => {
     routerStore.reset();
     overlayStore.reset();
@@ -154,9 +139,6 @@ describe('wireMousePointer', () => {
     resetWorkflow();
     inputHeightStore.reset();
     lifecycleStore.__testReset();
-    controlsStore.__testReset();
-    approvalPromptStore.__testReset();
-    costApprovalStore.__testReset();
     _resetMouseZones();
     _resetHoverThrottle();
   });
@@ -169,7 +151,7 @@ describe('wireMousePointer', () => {
     const sgrX = snapshot.rect.left;
     const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('press', sgrX, listTop + windowIndex * SIMPLE_TASK_ROW_HEIGHT));
 
     expect(focusStore.get()).toEqual({
@@ -184,7 +166,7 @@ describe('wireMousePointer', () => {
   it('ignores a click outside any zone or row', () => {
     openBriefReview(12);
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('press', 1, 1));
 
     expect(reviewStore.get().scrollOffset).toBe(0);
@@ -195,7 +177,7 @@ describe('wireMousePointer', () => {
   it('ignores wheel events (the scroll handler owns them)', () => {
     openBriefReview(12);
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('wheel-up', 5, 10));
     mock.emit(pointerEvent('wheel-down', 5, 10));
 
@@ -216,67 +198,10 @@ describe('wireMousePointer', () => {
       onClick: () => overlayStore.open('cost-drilldown'),
     });
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('press', 65, 28));
 
     expect(overlayStore.get().active).toBe('cost-drilldown');
-    dispose();
-  });
-
-  it('routes clicks to overlay-layer zones while an overlay is open', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
-    overlayStore.open('command-palette');
-    let clicks = 0;
-    registerMouseZone({
-      id: 'overlay-row',
-      left: 1,
-      right: 80,
-      top: 5,
-      bottom: 5,
-      z: ROW_ZONE_Z_OVERLAY,
-      onClick: () => {
-        clicks += 1;
-      },
-    });
-    const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
-    mock.emit(pointerEvent('press', 10, 5));
-
-    expect(clicks).toBe(1);
-    dispose();
-  });
-
-  it('does not run a hidden screen zone when an overlay owns input', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
-    const screenClick = vi.fn();
-    registerMouseZone({
-      id: 'screen-row',
-      left: 1,
-      right: 80,
-      top: 5,
-      bottom: 5,
-      z: ROW_ZONE_Z_SCREEN,
-      onClick: screenClick,
-    });
-    // The composer footer zone lives below the overlay layer too.
-    const composerClick = vi.fn();
-    registerMouseZone({
-      id: 'composer-hint',
-      left: 1,
-      right: 80,
-      top: 9,
-      bottom: 9,
-      z: 5,
-      onClick: composerClick,
-    });
-    overlayStore.open('command-palette');
-    const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
-    mock.emit(pointerEvent('press', 10, 5));
-    mock.emit(pointerEvent('press', 10, 9));
-
-    expect(screenClick).not.toHaveBeenCalled();
-    expect(composerClick).not.toHaveBeenCalled();
     dispose();
   });
 
@@ -285,77 +210,10 @@ describe('wireMousePointer', () => {
     const onClick = vi.fn();
     registerMouseZone({ id: 'z', left: 1, right: 80, top: 5, bottom: 5, z: 5, onClick });
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('release', 10, 5));
 
     expect(onClick).not.toHaveBeenCalled();
-    dispose();
-  });
-
-  it('fires only prompt-layer zones while an approval prompt is pending', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
-    approvalPromptStore.__testReset({
-      status: 'pending',
-      request: makePendingApprovalRequest(),
-      resolve: () => {},
-    });
-    const composerClick = vi.fn();
-    registerMouseZone({
-      id: 'composer-hint',
-      left: 1,
-      right: 80,
-      top: 6,
-      bottom: 6,
-      z: 5,
-      onClick: composerClick,
-    });
-    const promptClick = vi.fn();
-    registerMouseZone({
-      id: 'approval-option-allow',
-      left: 1,
-      right: 80,
-      top: 2,
-      bottom: 2,
-      z: PROMPT_ZONE_Z,
-      onClick: promptClick,
-    });
-    const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
-    mock.emit(pointerEvent('press', 10, 6));
-    mock.emit(pointerEvent('press', 10, 2));
-
-    // The composer hint sits below the prompt layer, so it stays inert while the prompt owns input.
-    expect(composerClick).not.toHaveBeenCalled();
-    expect(promptClick).toHaveBeenCalledOnce();
-    expect(focusStore.get()).toBeNull();
-    dispose();
-  });
-
-  it('blocks brief fallback focus while a cost prompt is pending', () => {
-    const snapshot = openBriefReview(12);
-    costApprovalStore.__testReset({
-      status: 'pending',
-      prediction: makeCostPrediction(),
-      resolve: () => {},
-    });
-    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
-    const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
-    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
-
-    expect(focusStore.get()).toBeNull();
-    dispose();
-  });
-
-  it('blocks brief fallback focus while input mode is question', () => {
-    const snapshot = openBriefReview(12);
-    controlsStore.setInputMode('question');
-    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
-    const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
-    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
-
-    expect(focusStore.get()).toBeNull();
     dispose();
   });
 
@@ -373,7 +231,7 @@ describe('wireMousePointer', () => {
     const buildZone = readRailSnapshot().zones.find((zone) => zone.index === 3);
     if (!buildZone) throw new Error('expected a build rail zone');
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('press', buildZone.left, buildZone.top));
 
     const scroll = conversationScrollStore.get();
@@ -399,7 +257,7 @@ describe('wireMousePointer', () => {
     };
 
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
 
     const clickStage = (index: number): number => {
       conversationScrollStore.reset();
@@ -426,7 +284,7 @@ describe('wireMousePointer', () => {
     const snapshot = openBriefReview(12);
     const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('move', snapshot.rect.left, listTop));
 
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
@@ -441,7 +299,7 @@ describe('wireMousePointer', () => {
     // Seed a stale tint so the assertion proves the rail move actively clears it.
     hoverStore.set('conversation', 5);
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('move', railZone.left, railZone.top));
 
     expect(hoverStore.get()).toBeNull();
@@ -452,7 +310,7 @@ describe('wireMousePointer', () => {
     openBriefReview(12);
     hoverStore.set('brief', 3);
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('move', 1, 1));
 
     expect(hoverStore.get()).toBeNull();
@@ -464,49 +322,10 @@ describe('wireMousePointer', () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const snapshot = readConversationScrollSnapshot();
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('move', snapshot.conversationRect.left, snapshot.conversationRect.top));
 
     expect(hoverStore.get()).toEqual({ surface: 'conversation', index: 0 });
-    dispose();
-  });
-
-  it('clears hover on a move while an overlay owns input', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
-    overlayStore.open('command-palette');
-    hoverStore.set('brief', 3);
-    const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
-    mock.emit(pointerEvent('move', 10, 5));
-
-    expect(hoverStore.get()).toBeNull();
-    dispose();
-  });
-
-  it('clears hover on a move while the workflow screen is off-screen', () => {
-    // beforeEach leaves the router on its default (non-workflow) screen.
-    hoverStore.set('conversation', 2);
-    const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
-    mock.emit(pointerEvent('move', 10, 5));
-
-    expect(hoverStore.get()).toBeNull();
-    dispose();
-  });
-
-  it('clears hover on a move while a prompt owns input', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
-    approvalPromptStore.__testReset({
-      status: 'pending',
-      request: makePendingApprovalRequest(),
-      resolve: () => {},
-    });
-    hoverStore.set('brief', 1);
-    const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
-    mock.emit(pointerEvent('move', 10, 5));
-
-    expect(hoverStore.get()).toBeNull();
     dispose();
   });
 
@@ -514,7 +333,7 @@ describe('wireMousePointer', () => {
     const snapshot = openBriefReview(12);
     const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('move', snapshot.rect.left, listTop));
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
 
@@ -535,7 +354,7 @@ describe('wireMousePointer', () => {
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(false);
 
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(
       pointerEvent(
         'press',
@@ -561,7 +380,7 @@ describe('wireMousePointer', () => {
     expect(windowIndex).toBeGreaterThanOrEqual(0);
 
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(
       pointerEvent(
         'press',
@@ -584,7 +403,7 @@ describe('wireMousePointer', () => {
     expect(conversationScrollStore.get().expandedDiffs.size).toBe(0);
 
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(
       pointerEvent(
         'press',
@@ -607,7 +426,7 @@ describe('wireMousePointer', () => {
     const snapshot = readConversationScrollSnapshot();
 
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(
       pointerEvent('press', snapshot.conversationRect.left, snapshot.conversationRect.top + 1),
     );
@@ -623,7 +442,7 @@ describe('wireMousePointer', () => {
     const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
     expect(snapshot.visibleCount).toBeGreaterThan(1);
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
     mock.emit(pointerEvent('move', snapshot.rect.left, listTop));
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
 
@@ -642,7 +461,7 @@ describe('wireMousePointer', () => {
     const hoverSpy = vi.spyOn(snapshot, 'readConversationHoverSnapshot');
     const scrollSpy = vi.spyOn(snapshot, 'readConversationScrollSnapshot');
     const mock = createMockFilteredStdin();
-    const dispose = wireMousePointer(mock.filtered);
+    const dispose = wireAppMouse(mock.filtered);
 
     mock.emit(
       pointerEvent(

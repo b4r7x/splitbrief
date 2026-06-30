@@ -7,7 +7,7 @@ import { parseTextLine } from '../streaming/parse-text.js';
 import { getLineParser } from '../streaming/output-parsers.js';
 import { processError } from '../../lib/process/errors.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
-import { createCommandAvailability } from '../availability.js';
+import { createCommandExistsAvailability } from '../availability.js';
 import { runClaudeOneShot } from '../runners/claude-invoke.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { runnerConfigError } from '../runners/errors.js';
@@ -82,6 +82,6 @@ export function createCliImplementer(
 
     detectChanges: createChangeDetector(`Tool implementer (${toolName})`),
 
-    ...createCommandAvailability(tool.command),
+    ...createCommandExistsAvailability(tool.command),
   });
 }

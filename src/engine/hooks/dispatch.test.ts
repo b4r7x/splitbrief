@@ -129,7 +129,7 @@ describe('runHook', () => {
     if (outcome.kind === 'deny') expect(outcome.message).toBe('nope');
   });
 
-  it('warns (never silently allows) on an unrecognized decision value', async () => {
+  it('rejects an unrecognized decision value as a malformed response', async () => {
     const outcome = await runHook(
       mkEntry({
         command: 'node',
@@ -139,7 +139,35 @@ describe('runHook', () => {
       ctx,
     );
     expect(outcome.kind).toBe('warn');
-    if (outcome.kind === 'warn') expect(outcome.message).toContain('unrecognized hook decision');
+    if (outcome.kind === 'warn') expect(outcome.message).toContain('malformed hook response');
+  });
+
+  it('maps malformed command responses through on_failure', async () => {
+    const outcome = await runHook(
+      mkEntry({
+        command: 'node',
+        args: ['-e', 'process.stdout.write(JSON.stringify({decision:"deny",message:42}))'],
+        on_failure: 'block',
+      }),
+      event,
+      ctx,
+    );
+    expect(outcome.kind).toBe('deny');
+    if (outcome.kind === 'deny') expect(outcome.message).toContain('malformed hook response');
+  });
+
+  it('rejects malformed JSON object stdout', async () => {
+    const outcome = await runHook(
+      mkEntry({
+        command: 'node',
+        args: ['-e', 'process.stdout.write("{")'],
+        on_failure: 'block',
+      }),
+      event,
+      ctx,
+    );
+    expect(outcome.kind).toBe('deny');
+    if (outcome.kind === 'deny') expect(outcome.message).toContain('malformed hook response');
   });
 
   it('extracts the decision from the last JSON line of mixed stdout', async () => {
@@ -303,12 +331,22 @@ describe('runHook — kind: module', () => {
     }
   });
 
-  it('returns warn with unrecognized-shape message for invalid outcome', async () => {
+  it('maps malformed module outcomes through on_failure', async () => {
     const entry = mkModuleEntry({ path: 'testing/fixtures/hooks/invalid-outcome.mjs' });
     const result = await runHook(entry, event, { projectDir, sessionId: 's' });
     expect(result.kind).toBe('warn');
     if (result.kind === 'warn') {
-      expect(result.message).toBe('hook returned unrecognized outcome shape');
+      expect(result.message).toBe('malformed hook outcome');
+    }
+
+    const blockingEntry = mkModuleEntry({
+      path: 'testing/fixtures/hooks/invalid-outcome.mjs',
+      on_failure: 'block',
+    });
+    const blockingResult = await runHook(blockingEntry, event, { projectDir, sessionId: 's' });
+    expect(blockingResult.kind).toBe('deny');
+    if (blockingResult.kind === 'deny') {
+      expect(blockingResult.message).toBe('malformed hook outcome');
     }
   });
 });

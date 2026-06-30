@@ -6,7 +6,7 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
-import { createClientFromProvider, describeProviderUnavailability } from '../providers/client.js';
+import { createClientFromProvider, createProviderAvailability } from '../providers/client.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { providerError } from '../providers/errors.js';
@@ -55,7 +55,10 @@ async function invokeApi(opts: {
 }): Promise<RunnerCallResult> {
   const messages = buildMessages(opts.prompt, opts.priorMessages);
   const promptTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
-  const maxTokens = clampToMaxOutput(Math.max(opts.contextLength - promptTokens, 1024));
+  const availableTokens = opts.contextLength - promptTokens;
+  if (availableTokens <= 0)
+    throw providerError.promptExceedsContext(promptTokens, opts.contextLength, 'planner');
+  const maxTokens = clampToMaxOutput(availableTokens);
   return dispatchStreamCompletion({
     provider: opts.planner.provider,
     client: opts.client,
@@ -84,8 +87,7 @@ export function createApiPlanner(config: Config): Planner {
     apiKey: plannerCfg.apiKey,
   });
 
-  const client: StreamClient | null =
-    provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(resolved));
+  const availability = createProviderAvailability(resolved);
   const effort = plannerCfg.effort;
   const timeout = plannerCfg.timeout;
   const contextLength = plannerCfg.contextLength ?? DEFAULT_CONTEXT_LENGTH;
@@ -113,6 +115,8 @@ export function createApiPlanner(config: Config): Planner {
     signal?: AbortSignal | undefined;
   }) => {
     const effectiveSignal = composeAbortSignal(signal, timeout);
+    const client: StreamClient | null =
+      provider === 'anthropic' ? null : toStreamClient(createClientFromProvider(resolved));
     return invokeApi({
       client,
       model,
@@ -142,21 +146,9 @@ export function createApiPlanner(config: Config): Planner {
     model,
     consumesPriorMessages: true,
 
-    async isAvailable() {
-      try {
-        return (await resolved.listModels()).length > 0;
-      } catch {
-        return false;
-      }
-    },
+    isAvailable: availability.isAvailable,
 
-    unavailabilityReason() {
-      return describeProviderUnavailability({
-        isLocal: resolved.isLocal,
-        hasKey: resolved.apiKey().length > 0,
-        lastError: resolved.getLastError?.(),
-      });
-    },
+    unavailabilityReason: availability.unavailabilityReason,
 
     async getVersion() {
       return model;

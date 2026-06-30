@@ -3,7 +3,12 @@ import {
   commandTokensAfterInterpreter,
   isPathLike,
   isRepoLocal,
+  isBareCommandResolvedInsideProject,
+  isPackageManagerScriptInvocation,
+  isShellEvaluatedPromptArg,
 } from '../../core/trust/path-classification.js';
+import { stripProfileMetadata } from '../../core/config/accessors/implementer-profiles.js';
+import { parseShellCommand } from '../../utils/parse-shell-command.js';
 import { error } from '../../utils/error.js';
 
 function tokenIsRepoLocalExecutable(token: string, projectDir: string): boolean {
@@ -23,7 +28,11 @@ function commandHasRepoLocalPaths(
   args: readonly string[],
   projectDir: string,
 ): boolean {
-  const tokens = [...command.split(/\s+/).filter((t) => t.length > 0), ...args];
+  const tokens = [...parseShellCommand(command), ...args];
+  const executable = tokens[0];
+  if (executable && isBareCommandResolvedInsideProject(executable, projectDir)) return true;
+  if (isPackageManagerScriptInvocation(tokens)) return true;
+
   const checkTokens = commandTokensAfterInterpreter(tokens);
   for (const token of checkTokens) {
     const candidate = token.startsWith('-') ? flagValue(token) : token;
@@ -33,42 +42,85 @@ function commandHasRepoLocalPaths(
   return false;
 }
 
-export interface RunnerTrustResult {
-  untrustedCommands: string[];
+export interface RunnerTrustViolation {
+  label: string;
+  command: string;
 }
 
-export function checkRunnerTrust(config: Config, projectDir: string): RunnerTrustResult {
-  const untrusted: string[] = [];
+export interface RunnerTrustResult {
+  untrustedCommands: string[];
+  violations: RunnerTrustViolation[];
+}
+
+type CommandRunner = Extract<
+  Config['planner'] | Config['implementer'],
+  { kind: 'shell' | 'agent' }
+>;
+
+function commandDisplay(command: string, args: readonly string[]): string {
+  return [command, ...args].join(' ');
+}
+
+function collectCommandRunnerViolations(
+  label: string,
+  runner: CommandRunner,
+  projectDir: string,
+): RunnerTrustViolation[] {
+  const args = runner.args ?? [];
+  const command = commandDisplay(runner.command, args);
+  const violations: RunnerTrustViolation[] = [];
+
+  if (commandHasRepoLocalPaths(runner.command, args, projectDir)) {
+    violations.push({ label, command });
+  }
+  if (runner.kind === 'agent' && isShellEvaluatedPromptArg(runner.command, args)) {
+    violations.push({ label, command });
+  }
+
+  return violations;
+}
+
+function commandRunnerViolations(config: Config, projectDir: string): RunnerTrustViolation[] {
+  const violations: RunnerTrustViolation[] = [];
 
   for (const role of ['planner', 'implementer'] as const) {
     const runner = config[role];
     if (runner.kind !== 'shell' && runner.kind !== 'agent') continue;
-    const command = runner.command;
-    const args = runner.args ?? [];
-    if (commandHasRepoLocalPaths(command, args, projectDir)) {
-      untrusted.push([command, ...args].join(' '));
-    }
+    violations.push(...collectCommandRunnerViolations(role, runner, projectDir));
   }
 
-  return { untrustedCommands: untrusted };
+  for (const [name, profile] of Object.entries(config.implementerProfiles?.profiles ?? {})) {
+    const runner = stripProfileMetadata(profile);
+    if (runner.kind !== 'shell' && runner.kind !== 'agent') continue;
+    violations.push(
+      ...collectCommandRunnerViolations(`implementer profile ${name}`, runner, projectDir),
+    );
+  }
+
+  return violations;
+}
+
+export function checkRunnerTrust(config: Config, projectDir: string): RunnerTrustResult {
+  const violations = commandRunnerViolations(config, projectDir);
+  return { untrustedCommands: violations.map((violation) => violation.command), violations };
 }
 
 export function rejectUntrustedRunners(
   config: Config,
   projectDir: string,
-  allowHooks: boolean,
+  allowRepoRunners: boolean,
 ): void {
-  const { untrustedCommands } = checkRunnerTrust(config, projectDir);
-  if (untrustedCommands.length === 0) return;
+  const { violations } = checkRunnerTrust(config, projectDir);
+  if (violations.length === 0) return;
 
-  if (allowHooks) return;
+  if (allowRepoRunners) return;
 
-  const cmds = untrustedCommands.map((c) => `  ${c}`).join('\n');
+  const cmds = violations.map((v) => `  ${v.label}: ${v.command}`).join('\n');
   throw error(
     'runner-not-trusted',
-    `Refusing to execute repo-local runner commands from project config:\n${cmds}\n` +
-      `These commands point to executables inside the repository and could be malicious. ` +
-      `Re-run with --allow-hooks to trust them, or use system-installed commands instead.`,
-    { commands: untrustedCommands },
+    `Refusing to execute untrusted runner commands from project config:\n${cmds}\n` +
+      `These commands can execute project-local code or shell-evaluate prompt text. ` +
+      `Re-run with --allow-repo-runners to trust them, or use system-installed commands instead.`,
+    { commands: violations.map((violation) => violation.command) },
   );
 }

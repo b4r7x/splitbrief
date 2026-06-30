@@ -44,7 +44,7 @@ Cross-feature primitives only. Flat directory — no subfolders, no barrels.
 | `use-filterable-list.ts` | Filterable, searchable picker state (arrow-nav, filter, selection). Used by every feature-level picker. |
 | `use-static-selector.ts` | Fixed-list keyboard selector (no filter). Peer of `use-filterable-list` for simpler cases. |
 
-App-wide keyboard dispatch (`useAppKeys`) lives at `src/app/keys.ts` rather than under `src/hooks/`. It binds to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort) and is composed once by `src/app/root.tsx`, so it sits next to the shell it serves.
+App-wide keyboard dispatch (`useAppKeys`) lives at `src/app/keys.ts` rather than under `src/hooks/`. App-wide mouse dispatch (`useAppMouse`) lives next to it at `src/app/mouse.ts`. These bind to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort, and terminal mouse subscription) and are composed once by `src/app/root.tsx`, so they sit next to the shell they serve.
 
 ### Feature-scoped (`src/features/{feature}/hooks/`)
 
@@ -55,7 +55,8 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 | `use-runner.ts` | Engine lifecycle, resume, rewind, approval/question prompts. |
 | `use-input-mode.ts` | Promise-based modal input (normal/review/question). |
 | `use-review-content.ts` | Async file read via `AbortController`-cancelled `fs.readFile` + line-count sync to `reviewStore`. |
-| `use-mouse-scroll.ts` | Mouse-wheel binding to conversation/review scroll. |
+| `use-mouse-scroll.ts` | Workflow-owned mouse-wheel handlers for conversation/review scroll. App-level dispatch decides when workflow may receive wheel events. |
+| `use-mouse-pointer.ts` | Workflow-owned hit testing for rail, brief, and conversation rows. App-level dispatch owns overlays, non-workflow screens, and prompt gating. |
 | `use-cost-stats.ts` | Cost breakdown from tokens + tasks stores, formatted for footer. |
 | `use-keys.ts` | Workflow-only keyboard: conversation/review scroll, diff/activity expansion, and cost drilldown. Mounted only when `screen === 'workflow'`. |
 | `use-brief-review-keys.ts` | Brief-review row focus: arrow-key selection and `y` yank during Task Brief review. Receives `copyTarget` / `canCopyFocused` ports from `WorkflowScreen` (wired in `app/router.tsx` / the workflow page) so the app shell never owns workflow copy state. Clears `focusStore` on unmount. |
@@ -120,7 +121,7 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 1. **Trivial hooks do not need direct tests.** A 20-LOC hook with no branching that wraps an Ink API is covered transitively through its consumer's integration test. Writing a direct test for it asserts implementation.
 2. **Behavior lives in the hook, not the pure helper.** If you split a hook into `use-foo.ts` + `foo-helpers.ts`, the hook orchestrates, the helpers stay pure. Test the pure helpers directly; test the hook at the behavior level.
 3. **Hooks do not import from other features.** `features/home/hooks/*` must not import from `features/workflow/*`. Cross-feature needs go through a shared hook in `src/hooks/` or a store.
-4. **One `useInput` per concern.** Splitting `use-global-keys` into `useAppKeys` (now at `src/app/keys.ts`) + `use-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`.
+4. **One `useInput` per concern.** Splitting `use-global-keys` into `useAppKeys` (now at `src/app/keys.ts`) + `use-keys` was a direct application of this: global keybindings stay always-on, workflow keybindings mount conditionally under `screen === 'workflow'`. Mouse follows the same boundary: `src/app/mouse.ts` owns the terminal subscription and global dispatch, while workflow hit testing stays under `features/workflow/hooks/use-mouse-*`.
 5. **Prefer `AbortController` over ad-hoc `cancelled` flags for async cancellation.** When a hook races a promise against unmount, use `new AbortController()` + `controller.signal` and return `() => controller.abort()` from the effect. Node's `fs.readFile`, `fetch`, and most async APIs accept `{ signal }` natively. Closure booleans (`let cancelled = false`) work but signal the wrong intent — `AbortController.abort()` is self-documenting and the Node-native SOTA. Canonical example: `use-review-content.ts`.
 
 ## Design decisions

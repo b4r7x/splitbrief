@@ -40,6 +40,20 @@ describe('parseStreamLine', () => {
       },
     ],
     [
+      'result text without usage',
+      jsonLine({
+        type: 'result',
+        session_id: 'sess-no-usage',
+        result: 'Final answer only',
+      }),
+      {
+        text: 'Final answer only',
+        channel: 'result',
+        sessionId: 'sess-no-usage',
+        isResult: true,
+      },
+    ],
+    [
       'session-only event',
       jsonLine({ type: 'system', session_id: 'sess-3' }),
       { sessionId: 'sess-3' },

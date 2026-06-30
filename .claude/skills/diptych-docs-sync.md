@@ -40,13 +40,16 @@ Run each item, collect findings, then fix in a single pass. Do not commit.
 
 ### 1. Command surface
 
-Grep for `diptych <command>` patterns in docs. Verify each command actually exists:
+Derive the current CLI command list from code/help output, then grep for `diptych <command>` patterns in docs:
 
 ```bash
-grep -rn "diptych start\|diptych spec\|diptych init\|diptych resume\|diptych status\|diptych migrate\|diptych sessions" docs/ README.md CLAUDE.md AGENTS.md
+rg -n "register[A-Za-z]+Command\(program\)" src/cli.ts
+rg -n "\.command\(['\"]" src/cli/commands
+npm run dev -- --help
+rg -n "\bdiptych [a-z][a-z-]*\b" docs/ README.md CLAUDE.md AGENTS.md
 ```
 
-For each hit, cross-reference with `src/cli.ts` and `src/cli/commands/`. Commands missing from code but present in docs → remove from docs (or, if intended as a target-state mention, mark with "(planned — see the relevant spec under `notes/superpowers/specs/`)").
+For each doc hit, cross-reference the command name against `src/cli.ts`, `src/cli/commands/`, and the help output. Commands missing from code but present in docs → remove from docs or mark as planned-only in the same paragraph. In particular, `diptych sessions` is planned-only until a standalone CLI command exists; `/sessions` is a runtime UI command, not a top-level CLI command.
 
 ### 2. Phase list
 
@@ -77,7 +80,7 @@ Cross-reference with `src/core/paths.ts` for file-name constants. Paths in docs 
 Grep for type / function names in docs:
 
 ```bash
-grep -rn "PlannerCapabilities\|WorkflowState\|TuiEvent\|sessionDir\|appendMessage\|queueMessage" docs/
+grep -rn "PlannerCapabilities\|WorkflowState\|EngineEvent\|sessionDir\|appendMessage\|queueMessage" docs/
 ```
 
 For each, verify it still exists in `src/` with the documented shape. If shape changed, update doc.
@@ -108,7 +111,7 @@ Every "see `src/...`" or "see `docs/...`" link in a doc file must point at a rea
 grep -rn "tiny-spec\b\|\.tiny-spec\b\|EVENTS_FILE\|/current/" docs/ README.md CLAUDE.md AGENTS.md
 ```
 
-Any hit outside of intentional historical references (CHANGELOG) is stale and needs replacement.
+Any `tiny-spec`, `.tiny-spec`, or `EVENTS_FILE` hit outside intentional historical references (CHANGELOG) is stale and needs replacement. `/current/` is context-sensitive: it is stale in normal session/storage docs, but valid in migration or legacy-compatibility sections that describe importing pre-v3 `.diptych/current/` state. Cross-reference current constants in `src/core/paths.ts` and migration support in `src/core/migration/` before editing.
 
 ## Report format
 

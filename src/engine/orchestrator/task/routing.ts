@@ -29,7 +29,10 @@ export async function createTaskImplementer(opts: {
 }): Promise<Implementer> {
   if (opts.singleImplementerMode && opts.profile.isDefault) return opts.wctx.implementer;
   const factory = opts.wctx.createImplementer ?? createImplementer;
-  return factory(opts.taskConfig, { publisher: createImplementerPublisher(opts.wctx.bus) });
+  return factory(opts.taskConfig, {
+    publisher: createImplementerPublisher(opts.wctx.bus),
+    allowRepoRunners: opts.wctx.allowRepoRunners ?? false,
+  });
 }
 
 export function retryProfileOverrideForTask(wctx: WorkflowContext, task: Task): string | undefined {

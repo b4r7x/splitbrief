@@ -92,6 +92,7 @@ Runtime state of the active workflow run.
 - **inputHeightStore** -- current composer height in rows.
 - **inputHistoryStore** -- command history with disk persistence.
 - **commandPaletteMruStore** -- most-recently-used entries for the command palette.
+- **projectFilesStore** -- refresh invalidation tick for project-file completion; the composer owns the async file read and local suggestion list.
 
 ### Project -- `src/stores/project/`
 

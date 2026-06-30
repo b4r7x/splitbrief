@@ -100,5 +100,18 @@ export function createApiImplementer(
     },
 
     retryTemperatureStep: 0.1,
+    async isAvailable() {
+      const impl = assertImplementerKind(initialConfig, 'api');
+      try {
+        const provider = getProvider(impl.provider, {
+          apiBase: impl.apiBase,
+          apiKey: impl.apiKey,
+        });
+        if (!provider.isLocal) provider.apiKey();
+        return true;
+      } catch {
+        return false;
+      }
+    },
   });
 }

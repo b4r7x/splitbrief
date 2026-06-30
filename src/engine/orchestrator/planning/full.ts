@@ -167,8 +167,15 @@ async function runNewPlanning(
     }
   }
 
-  state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_SPEC' });
-  publishPlannerStatus(wctx.bus, state, 'running');
+  if (opts.afterSpecReview) {
+    const advanced = await opts.afterSpecReview({ state, tasks });
+    state = advanced.state;
+    tasks = advanced.tasks;
+    if (advanced.cancelled) return { state, tasks: [], cancelled: true };
+  } else {
+    state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_SPEC' });
+    publishPlannerStatus(wctx.bus, state, 'running');
+  }
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'PLAN_DONE', tasks });
   publishPlannerStatus(wctx.bus, state, 'running');
@@ -258,7 +265,7 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
   if (rewindPending) {
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'CLEAR_REWIND_PENDING' });
     try {
-      resetDriftChainState(projectDir, sessionId);
+      resetDriftChainState({ projectDir, sessionId });
     } catch {
       // non-fatal: rewind continues even if chain state reset fails
     }

@@ -322,10 +322,10 @@ describe('readDriftReport — backward compat', () => {
     const { briefHash: _bh, ...legacy } = report;
     const sessionPath = join(dir, '.diptych', 'sessions', 's1');
     mkdirSync(sessionPath, { recursive: true });
-    const path = driftReportPath(dir, 's1');
+    const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
     writeFileSync(path, `${JSON.stringify(legacy)}\n`);
-    expect(() => readDriftReport(dir, 's1')).not.toThrow();
-    const result = readDriftReport(dir, 's1');
+    expect(() => readDriftReport({ projectDir: dir, sessionId: 's1' })).not.toThrow();
+    const result = readDriftReport({ projectDir: dir, sessionId: 's1' });
     expect(result).not.toBeNull();
     expect(result?.briefHash).toBeNull();
   });
@@ -342,8 +342,8 @@ describe('writeDriftReport', () => {
 
   it('persists the report at the session path with trailing newline', () => {
     const report = analyzeBriefDrift({ tasks: [], changedFiles: [], diff: '' });
-    writeDriftReport(dir, 's1', report);
-    const path = driftReportPath(dir, 's1');
+    writeDriftReport({ projectDir: dir, sessionId: 's1' }, report);
+    const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
     expect(existsSync(path)).toBe(true);
     const raw = readFileSync(path, 'utf8');
     expect(raw.endsWith('\n')).toBe(true);
@@ -351,14 +351,14 @@ describe('writeDriftReport', () => {
   });
 
   it('returns null when the report file is missing', () => {
-    expect(readDriftReport(dir, 'missing')).toBeNull();
+    expect(readDriftReport({ projectDir: dir, sessionId: 'missing' })).toBeNull();
   });
 
   it('returns null when the report file cannot be parsed', () => {
-    const path = driftReportPath(dir, 's1');
+    const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
     mkdirSync(join(dir, '.diptych', 'sessions', 's1'), { recursive: true });
     writeFileSync(path, '{not valid json');
-    expect(readDriftReport(dir, 's1')).toBeNull();
+    expect(readDriftReport({ projectDir: dir, sessionId: 's1' })).toBeNull();
   });
 });
 

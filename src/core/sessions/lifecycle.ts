@@ -82,7 +82,6 @@ export function isSessionLive(ref: SessionRef): boolean {
   });
   switch (lock.kind) {
     case 'missing':
-      return true;
     case 'invalid':
     case 'exited':
     case 'dead':

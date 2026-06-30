@@ -5,6 +5,7 @@ import { getMethodDisplay } from '../../../core/sessions/display.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import { glyph } from '../../../lib/glyphs.js';
 
 interface TaskSummaryProps {
@@ -72,7 +73,7 @@ export function TaskSummary({
 
   const label = getMethodDisplay(method, t).text;
   const meta: string[] = [label];
-  if (retries && retries > 0) meta.push(`${retries} ${retries === 1 ? 'retry' : 'retries'}`);
+  if (retries && retries > 0) meta.push(countNoun(retries, 'retry', 'retries'));
   if (duration != null) meta.push(formatDuration(duration));
   const tail = [safeFile, ...meta].filter((part) => part !== undefined && part !== '');
 

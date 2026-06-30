@@ -45,13 +45,13 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
   const missing: string[] = [];
   sourceArtifactMissing(opts.projectDir, opts.sessionId, missing);
 
-  const ledger = readEvidenceLedger(opts.projectDir, opts.sessionId);
+  const ledger = readEvidenceLedger(opts);
   if (!ledger) addMissing(missing, EVIDENCE_FILE);
 
-  const drift = readDriftReport(opts.projectDir, opts.sessionId);
+  const drift = readDriftReport(opts);
   if (!drift) addMissing(missing, DRIFT_REPORT_FILE);
 
-  const chainState = readDriftChainState(opts.projectDir, opts.sessionId);
+  const chainState = readDriftChainState(opts);
   if (!existsSync(join(sessionDir(opts.projectDir, opts.sessionId), DRIFT_CHAINS_FILE)))
     addMissing(missing, DRIFT_CHAINS_FILE);
   const briefQuality = readBriefQuality(opts.projectDir, opts.sessionId, missing);

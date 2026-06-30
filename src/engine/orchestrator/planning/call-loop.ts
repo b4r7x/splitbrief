@@ -53,7 +53,7 @@ export async function runPlannerCallInContinuationLoop(
 
         if (config.approval?.feedRejectionsToPlanner !== false) {
           try {
-            const ledger = readEvidenceLedger(projectDir, sessionId);
+            const ledger = readEvidenceLedger({ projectDir, sessionId });
             if (ledger) {
               const rejectionCtx = buildRejectionContext(ledger);
               if (rejectionCtx.length > 0) {

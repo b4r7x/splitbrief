@@ -6,6 +6,7 @@ import {
 } from '../layout/cost-chrome.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import type { ConversationRow } from './types.js';
 import { row, wrapRows } from './row-format.js';
 
@@ -43,7 +44,7 @@ export function costPredictionRows(
     rows.push(
       row({
         key: `${keyPrefix}-tools`,
-        text: `Planner: ${getProviderDisplayName(prediction.plannerTool)} Implementer: ${getProviderDisplayName(prediction.implementerTool)} (${prediction.estimatedTasks} tasks)`,
+        text: `Planner: ${getProviderDisplayName(prediction.plannerTool)} Implementer: ${getProviderDisplayName(prediction.implementerTool)} (${countNoun(prediction.estimatedTasks, 'task')})`,
         tone: 'textDim',
       }),
     );
@@ -155,15 +156,11 @@ function formatDeterministicRiskCounts(deterministic: DeterministicPrediction): 
     parts.push(`${priceConfidenceCounts.profileUnavailable} price profile n/a`);
   }
   if (parts.length === 0) return '';
-  return `Risk: ${parts.join(' · ')} (${deterministic.taskCount} ${formatTaskNoun(deterministic.taskCount)})`;
+  return `Risk: ${parts.join(' · ')} (${countNoun(deterministic.taskCount, 'task')})`;
 }
 
 function formatBlockedUnknownReasons(deterministic: DeterministicPrediction): string {
   const totals = deterministic.totals;
   if (totals.knownActualEstimate !== null && totals.hypotheticalAllPlanner !== null) return '';
   return formatCostPredictionUnknownReasons(totals.unknownCostReason);
-}
-
-function formatTaskNoun(count: number): string {
-  return count === 1 ? 'task' : 'tasks';
 }

@@ -17,6 +17,7 @@ import {
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
 } from '../../../utils/display-text.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   chooseFormBVariant,
@@ -66,7 +67,7 @@ function doneTail(stage: RailStage, summary: RailDoneSummary): string {
     case 'plan':
       return 'approved';
     case 'briefs':
-      return summary.totalTasks > 0 ? `${summary.totalTasks} briefs` : 'written';
+      return summary.totalTasks > 0 ? countNoun(summary.totalTasks, 'brief') : 'written';
     case 'build':
       return summary.totalTasks > 0 ? `${summary.localCount}/${summary.totalTasks} local` : 'built';
     case 'verify':

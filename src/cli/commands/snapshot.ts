@@ -31,7 +31,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { name?: string; session?: string; project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+      const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
       assertSessionExists(projectDir, sessionId);
 
       await withCliErrors(async () => {
@@ -71,7 +71,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { session?: string; project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
-      const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+      const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
       const { manifests } = await withCliErrors(() => listSnapshots(projectDir, sessionId));
 
@@ -97,7 +97,7 @@ export function registerSnapshotCommand(program: Command): void {
     .action(
       async (idOrName: string, opts: { session?: string; project?: string; force?: boolean }) => {
         const projectDir = resolveProjectDir(opts.project);
-        const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+        const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
         const result = await withCliErrors(() =>
           restoreSnapshot({
@@ -166,7 +166,7 @@ export function registerSnapshotCommand(program: Command): void {
     .action(
       async (idOrName: string, opts: { session?: string; project?: string; color?: boolean }) => {
         const projectDir = resolveProjectDir(opts.project);
-        const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+        const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
         const manifest = await withCliErrors(() =>
           resolveSnapshot(projectDir, sessionId, idOrName),

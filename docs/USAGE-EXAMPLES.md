@@ -867,6 +867,7 @@ Handoff written to: handoff/spec-kit
 ```
 
 `spec-kit` is the default target (`diptych handoff` with no argument). The manifest carries `briefHash` so downstream tools can detect drift.
+When `.specify/memory/constitution.md` exists, the pack also includes it as `constitution.md`, matching the constitution Speckit enforces during planning.
 
 **Variations:** `agents-md` produces an `AGENTS.md` instead — the emerging cross-tool agent context standard.
 
@@ -1018,7 +1019,7 @@ diptych MCP server ready
   Sessions: all
 ```
 
-The MCP resource list now includes `state.json`, `summary.json`, `tasks`, individual `tasks/<id>`, `evidence.json`, `drift-report.json`, and available spec/plan resources. Multi-session mode is still not an execution surface; the only mutation surface is the constrained evidence-tool set for existing sessions and tasks.
+The MCP resource list now includes `state.json`, `summary.json`, `tasks`, individual `tasks/<id>`, `evidence.json`, `drift-report.json`, and available spec/plan resources. With `workflow.persistTranscript: false`, the sessions index and `state.json` read resource use transcript-protected text for feature, task, queued-message, and queued-question fields. Multi-session mode is still not an execution surface; the only mutation surface is the constrained evidence-tool set for existing sessions and tasks.
 
 **Variations:** `--session` and `--all-sessions` are mutually exclusive.
 

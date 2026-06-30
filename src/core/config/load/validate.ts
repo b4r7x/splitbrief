@@ -4,10 +4,9 @@ import { isProviderId } from '../../schemas/enums.js';
 import type { Config } from '../../schemas/config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
-import { parseShellCommand } from '../../../utils/parse-shell-command.js';
+import { commandName, isShellEvaluatedPromptArg } from '../../trust/path-classification.js';
 import { missingRunnerCredential } from '../accessors/runner-credentials.js';
 import { getRunnerDisplayName, getRunnerApiKey } from '../accessors/runner-config.js';
-import { pickDefaultProfileName } from '../accessors/implementer-profiles.js';
 import { apiBaseValidationError } from '../api-base.js';
 import {
   customEndpointCredentialSourceError,
@@ -72,13 +71,10 @@ function runnerBoundaryErrors(opts: {
   role: 'planner' | 'implementer';
   path: string;
   config: RunnerCredentialConfig;
-  skipMissingKey?: boolean | undefined;
 }): ConfigError[] {
   const errors: ConfigError[] = [];
-  if (!opts.skipMissingKey) {
-    const missing = missingApiKeyError(opts);
-    if (missing) errors.push(missing);
-  }
+  const missing = missingApiKeyError(opts);
+  if (missing) errors.push(missing);
 
   if (opts.config.kind === 'api' && opts.config.apiBase) {
     const apiBaseError = apiBaseValidationError(opts.config.apiBase);
@@ -101,6 +97,7 @@ function apiKeyErrors(config: Config): ConfigError[] {
   errors.push(
     ...runnerBoundaryErrors({ role: 'planner', path: 'planner', config: config.planner }),
   );
+  errors.push(...intermediateProviderCredentialErrors(config));
 
   if (!config.implementerProfiles) {
     errors.push(
@@ -113,14 +110,12 @@ function apiKeyErrors(config: Config): ConfigError[] {
     return errors;
   }
 
-  const defaultProfileName = selectedImplementerProfileName(config);
   for (const [name, profile] of Object.entries(config.implementerProfiles.profiles)) {
     errors.push(
       ...runnerBoundaryErrors({
         role: 'implementer',
         path: `implementerProfiles.profiles.${name}`,
         config: profile,
-        skipMissingKey: name !== defaultProfileName,
       }),
     );
   }
@@ -128,9 +123,21 @@ function apiKeyErrors(config: Config): ConfigError[] {
   return errors;
 }
 
-function selectedImplementerProfileName(config: Config): string | undefined {
-  if (!config.implementerProfiles) return undefined;
-  return pickDefaultProfileName(config.implementerProfiles);
+function intermediateProviderCredentialErrors(config: Config): ConfigError[] {
+  const escalation = config.escalation;
+  const provider = escalation?.intermediateProvider;
+  if (!provider || escalation.enabled === false) return [];
+  if (!isProviderId(provider)) return [];
+
+  const info = PROVIDER_CATALOG[provider];
+  if (info.isLocal || !info.apiKeyEnv || process.env[info.apiKeyEnv]) return [];
+
+  return [
+    {
+      path: 'escalation.intermediateProvider',
+      message: `${info.displayName} intermediate provider requires ${info.apiKeyEnv} env var`,
+    },
+  ];
 }
 
 function keyFormatWarnings(provider: string, key: string): string[] {
@@ -238,7 +245,6 @@ export function securityWarnings(config: Config): string[] {
   }
 
   warnings.push(...promptPlaceholderArgWarnings(config));
-  warnings.push(...profileCredentialWarnings(config));
 
   return warnings;
 }
@@ -272,54 +278,6 @@ function runnerPromptPlaceholderArgWarnings(
   return [
     `${label}.args contains {prompt}. Placeholder args are allowed, but placeholder-enabled runners pass prompt text through argv; prefer stdin when possible.`,
   ];
-}
-
-function isShellEvaluatedPromptArg(command: string, args: readonly string[]): boolean {
-  const name = commandName(command);
-  if (name !== 'sh' && name !== 'bash') return false;
-  return (
-    shellArgsEvaluateCommandString(args) && args.some((arg) => arg.includes(PROMPT_PLACEHOLDER))
-  );
-}
-
-function shellArgsEvaluateCommandString(args: readonly string[]): boolean {
-  for (const arg of args) {
-    if (arg === '--') return false;
-    if (arg === '-c') return true;
-    if (isCombinedShellCommandFlag(arg)) return true;
-    if (!arg.startsWith('-') || arg === '-') return false;
-  }
-  return false;
-}
-
-function isCombinedShellCommandFlag(arg: string): boolean {
-  return (
-    arg.startsWith('-') && !arg.startsWith('--') && arg.length > 2 && arg.slice(1).includes('c')
-  );
-}
-
-function commandName(command: string): string {
-  const executable = parseShellCommand(command)[0] ?? command;
-  return executable.split(/[\\/]/).pop() ?? executable;
-}
-
-function profileCredentialWarnings(config: Config): string[] {
-  const defaultName = selectedImplementerProfileName(config);
-  if (defaultName === undefined) return [];
-
-  return Object.entries(config.implementerProfiles?.profiles ?? {}).flatMap(([name, profile]) => {
-    const error = missingApiKeyError({
-      role: 'implementer',
-      path: `implementerProfiles.profiles.${name}`,
-      config: profile,
-    });
-    if (!error) return [];
-    if (name === defaultName) return [];
-
-    return [
-      `Non-default implementer profile ${name} is missing credentials; it will be skipped by automatic task routing until credentials are configured: ${error.message}.`,
-    ];
-  });
 }
 
 export function validateConfig(config: Record<string, unknown>): ConfigValidation {

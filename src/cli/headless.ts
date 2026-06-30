@@ -4,6 +4,7 @@ import type { Planner } from '../engine/planners/types.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import { loadState } from '../core/state/persistence.js';
 import { readActive } from '../core/sessions/lifecycle.js';
+import { configForSessionTranscriptPolicy } from '../core/sessions/io.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
 import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
@@ -13,7 +14,7 @@ import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { flushOtel } from '../lib/otel.js';
 import type { CollectedReadiness } from '../core/readiness/collect.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../engine/events/protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../core/transcript-policy.js';
 
 function buildNoopSinks() {
   return {
@@ -92,8 +93,12 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     readiness,
     autoApprove: opts.auto !== undefined ? opts.auto : true,
   });
+  const runConfig = configForSessionTranscriptPolicy(
+    config,
+    sessionId === undefined ? undefined : { projectDir, sessionId },
+  );
 
-  if ((config.workflow.taskReview ?? 'none') !== 'none') {
+  if ((runConfig.workflow.taskReview ?? 'none') !== 'none') {
     throw cliError(
       'workflow.taskReview requires an interactive TUI run. Set workflow.taskReview: none for headless mode.',
     );
@@ -109,9 +114,10 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       feature,
       plannerContext,
       projectDir,
-      config,
+      config: runConfig,
       headless: true,
       allowHooks: opts.allowHooks ?? false,
+      allowRepoRunners: opts.allowRepoRunners ?? false,
       sinks: buildNoopSinks(),
       modelCache: modelCacheStore,
       drainPendingAttachments: () => attachmentsStore.drain(),
@@ -135,6 +141,6 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
 
   if (abortController.signal.aborted) return;
 
-  emitRecoveryAndFailIfPending(projectDir, sessionId, config.workflow.persistTranscript);
+  emitRecoveryAndFailIfPending(projectDir, sessionId, runConfig.workflow.persistTranscript);
   failIfFinalReviewIncomplete(projectDir, sessionId);
 }

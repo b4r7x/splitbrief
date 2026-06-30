@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -26,7 +27,7 @@ import { saveState, loadState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { sessionDir } from '../../../core/paths.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { WorkflowCompletion } from './use-runner.js';
+import type { RunWorkflowFn, WorkflowCompletion } from './use-runner.js';
 
 // Harness mounts useWorkflowRunner with a bogus planner command so that
 // runWorkflow exits fast via the "planner not available" branch in
@@ -47,6 +48,7 @@ interface HarnessProps {
   captureRunner?: { current: RunnerHandle | null };
   planner?: PlannerConfig | undefined;
   workflow?: Partial<Config['workflow']> | undefined;
+  runWorkflow?: RunWorkflowFn | undefined;
 }
 
 function Harness({
@@ -58,6 +60,7 @@ function Harness({
   captureRunner,
   planner,
   workflow,
+  runWorkflow,
 }: HarnessProps) {
   const inputMode = useInputMode();
   const config = makeConfig({
@@ -72,6 +75,7 @@ function Harness({
     initialResumeState,
     inputMode,
     sessionId,
+    runWorkflow,
   });
   useEffect(() => {
     if (captureRunner) captureRunner.current = runner;
@@ -179,6 +183,42 @@ describe('useWorkflowRunner', () => {
       expect(lifecycle.queueDepth).toBe(0);
       expect(lifecycle.phase).toBe('reviewing-spec');
     });
+    inst.unmount();
+  });
+
+  it('keeps opaque resumed sessions transcript-private when current config allows transcripts', async () => {
+    const sessionId = '2026-06-18-session-abcdef123456';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+    const resume: WorkflowState = {
+      ...createInitialState('secret oauth login'),
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T001' })],
+    };
+    saveState({ projectDir, sessionId }, resume);
+    let seenPersistTranscript: boolean | undefined;
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (opts) => {
+      seenPersistTranscript = opts.config.workflow.persistTranscript;
+      return makeSummary();
+    });
+
+    const inst = render(
+      <Harness
+        feature="secret oauth login"
+        projectDir={projectDir}
+        onComplete={() => {}}
+        initialResumeState={resume}
+        sessionId={sessionId}
+        workflow={{ mode: 'quick', persistTranscript: true }}
+        runWorkflow={runWorkflowStub}
+      />,
+    );
+
+    await vi.waitFor(() => {
+      expect(runWorkflowStub).toHaveBeenCalled();
+    });
+    expect(seenPersistTranscript).toBe(false);
+
     inst.unmount();
   });
 

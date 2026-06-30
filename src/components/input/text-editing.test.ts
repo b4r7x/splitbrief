@@ -1,213 +1,140 @@
 import { describe, it, expect } from 'vitest';
 import {
-  deleteWordBackward,
-  deleteLineBackward,
-  moveToLineStart,
-  moveToLineEnd,
-  moveCharBackward,
-  moveCharForward,
-  deleteCharForward,
-  findVisualLineStart,
-  resolveEditAction,
   applyEditAction,
-  navigateVertically,
-  prevCodePointIndex,
-  nextCodePointIndex,
   dropLastCodePoint,
+  navigateVertically,
+  nextCodePointIndex,
+  prevCodePointIndex,
+  resolveEditAction,
+  type EditAction,
 } from './text-editing.js';
 
-// '😀' is one code point spanning two UTF-16 code units.
 const EMOJI = '😀';
 
-describe('deleteWordBackward', () => {
-  it('deletes word at end of string', () => {
-    expect(deleteWordBackward('hello world', 11)).toEqual({ value: 'hello ', cursor: 6 });
+function edit(action: NonNullable<EditAction>, value: string, cursor: number, columns?: number) {
+  return applyEditAction({ action, value, cursor, columns });
+}
+
+describe('applyEditAction', () => {
+  it('returns null for null action', () => {
+    expect(applyEditAction({ action: null, value: 'hello', cursor: 5 })).toBeNull();
   });
 
-  it('deletes partial word when cursor is mid-word', () => {
-    expect(deleteWordBackward('hello world', 8)).toEqual({ value: 'hello rld', cursor: 6 });
+  it.each([
+    [
+      'end of string',
+      'delete-word-backward',
+      'hello world',
+      11,
+      undefined,
+      { value: 'hello ', cursor: 6 },
+    ],
+    [
+      'mid-word',
+      'delete-word-backward',
+      'hello world',
+      8,
+      undefined,
+      { value: 'hello rld', cursor: 6 },
+    ],
+    ['trailing spaces', 'delete-word-backward', 'hello   ', 8, undefined, { value: '', cursor: 0 }],
+    [
+      'after newline',
+      'delete-word-backward',
+      'line1\nword',
+      10,
+      undefined,
+      { value: 'line1\n', cursor: 6 },
+    ],
+    [
+      'line start',
+      'move-line-start',
+      'line1\nline2',
+      9,
+      undefined,
+      { value: 'line1\nline2', cursor: 6 },
+    ],
+    [
+      'line end',
+      'move-line-end',
+      'line1\nline2',
+      2,
+      undefined,
+      { value: 'line1\nline2', cursor: 5 },
+    ],
+    [
+      'delete forward',
+      'delete-char-forward',
+      `a${EMOJI}b`,
+      1,
+      undefined,
+      { value: 'ab', cursor: 1 },
+    ],
+    [
+      'move backward',
+      'move-char-backward',
+      `a${EMOJI}b`,
+      4,
+      undefined,
+      { value: `a${EMOJI}b`, cursor: 3 },
+    ],
+    [
+      'move forward',
+      'move-char-forward',
+      `a${EMOJI}b`,
+      1,
+      undefined,
+      { value: `a${EMOJI}b`, cursor: 3 },
+    ],
+  ] as const)('%s', (_label, action, value, cursor, columns, expected) => {
+    expect(edit(action, value, cursor, columns)).toEqual(expected);
   });
 
-  it('skips trailing spaces then deletes word', () => {
-    expect(deleteWordBackward('hello   ', 8)).toEqual({ value: '', cursor: 0 });
+  it.each([
+    ['single line', 'hello world', 11, undefined, { value: '', cursor: 0 }],
+    ['multiline', 'line1\nline2', 11, undefined, { value: 'line1\n', cursor: 6 }],
+    ['line boundary', 'line1\nline2', 6, undefined, { value: 'line1line2', cursor: 5 }],
+    ['middle line', 'a\nb\nc', 3, undefined, { value: 'a\n\nc', cursor: 2 }],
+    ['hard-wrap boundary', 'abcdefghijklmno', 15, 10, { value: 'abcdefghij', cursor: 10 }],
+    ['first visual line', 'hello', 5, 80, { value: '', cursor: 0 }],
+    ['visual boundary progress', 'abcdefghij', 10, 10, { value: 'abcdefghi', cursor: 9 }],
+    ['word-wrap boundary', 'abc defghijk', 12, 10, { value: 'abc ', cursor: 4 }],
+  ] as const)('delete-line-backward handles %s', (_label, value, cursor, columns, expected) => {
+    expect(edit('delete-line-backward', value, cursor, columns)).toEqual(expected);
   });
 
-  it('returns unchanged when cursor is 0', () => {
-    expect(deleteWordBackward('hello', 0)).toEqual({ value: 'hello', cursor: 0 });
-  });
-
-  it('returns unchanged for empty string', () => {
-    expect(deleteWordBackward('', 0)).toEqual({ value: '', cursor: 0 });
-  });
-
-  it('deletes single word entirely', () => {
-    expect(deleteWordBackward('hello', 5)).toEqual({ value: '', cursor: 0 });
-  });
-
-  it('deletes word after newline', () => {
-    expect(deleteWordBackward('line1\nword', 10)).toEqual({ value: 'line1\n', cursor: 6 });
-  });
-});
-
-describe('deleteLineBackward', () => {
-  it('deletes entire single line from end', () => {
-    expect(deleteLineBackward('hello world', 11)).toEqual({ value: '', cursor: 0 });
-  });
-
-  it('deletes to start of current line in multiline', () => {
-    expect(deleteLineBackward('line1\nline2', 11)).toEqual({ value: 'line1\n', cursor: 6 });
-  });
-
-  it('deletes one char backward when cursor is at line start', () => {
-    expect(deleteLineBackward('line1\nline2', 6)).toEqual({ value: 'line1line2', cursor: 5 });
-  });
-
-  it('returns unchanged when cursor is 0', () => {
-    expect(deleteLineBackward('hello', 0)).toEqual({ value: 'hello', cursor: 0 });
-  });
-
-  it('is true no-op only at position 0', () => {
-    expect(deleteLineBackward('a', 0)).toEqual({ value: 'a', cursor: 0 });
-  });
-
-  it('deletes middle line content in three-line string', () => {
-    expect(deleteLineBackward('a\nb\nc', 3)).toEqual({ value: 'a\n\nc', cursor: 2 });
-  });
-});
-
-describe('moveToLineStart', () => {
-  it('moves to start of single line', () => {
-    expect(moveToLineStart('hello', 3)).toEqual({ value: 'hello', cursor: 0 });
-  });
-
-  it('moves to start of current line in multiline', () => {
-    expect(moveToLineStart('line1\nline2', 9)).toEqual({ value: 'line1\nline2', cursor: 6 });
-  });
-
-  it('stays at 0 when already at start', () => {
-    expect(moveToLineStart('hello', 0)).toEqual({ value: 'hello', cursor: 0 });
-  });
-});
-
-describe('moveToLineEnd', () => {
-  it('moves to the end of a single line', () => {
-    expect(moveToLineEnd('hello', 2)).toEqual({ value: 'hello', cursor: 5 });
-  });
-
-  it('moves to the end of the current line in multiline text', () => {
-    expect(moveToLineEnd('line1\nline2', 2)).toEqual({ value: 'line1\nline2', cursor: 5 });
-  });
-});
-
-describe('character movement and forward deletion', () => {
-  it('moves backward and forward by code point', () => {
-    const value = `a${EMOJI}b`;
-    expect(moveCharBackward(value, value.length)).toEqual({ value, cursor: 3 });
-    expect(moveCharForward(value, 1)).toEqual({ value, cursor: 3 });
-  });
-
-  it('deletes the next whole code point', () => {
-    const value = `a${EMOJI}b`;
-    expect(deleteCharForward(value, 1)).toEqual({ value: 'ab', cursor: 1 });
-  });
-});
-
-describe('findVisualLineStart', () => {
-  it('returns 0 for text within one visual line', () => {
-    expect(findVisualLineStart('hello', 5, 80)).toBe(0);
-  });
-
-  it('returns visual line start for hard-wrapped text (no spaces)', () => {
-    // No word boundaries → hard wrap at column 10
-    expect(findVisualLineStart('abcdefghijklmno', 15, 10)).toBe(10);
-  });
-
-  it('wraps at word boundary matching Ink rendering with cursor space', () => {
-    // "abc defg hijk" (cursor space at pos 8). Ink wraps at width 10:
-    // "abc defg " (9 chars) | "hijk" — cursor is on the first visual line
-    expect(findVisualLineStart('abc defghijk', 8, 10)).toBe(0);
-  });
-
-  it('handles NFC Polish text correctly', () => {
-    const nfc = 'Zażółć gęślą jaźń test';
-    expect(nfc).toBe(nfc.normalize('NFC'));
-    const result = findVisualLineStart(nfc, nfc.length, 10);
-    expect(result).toBeGreaterThanOrEqual(0);
-    expect(result).toBeLessThan(nfc.length);
-  });
-});
-
-describe('deleteLineBackward with columns', () => {
-  it('deletes to visual line start when text hard-wraps (no spaces)', () => {
-    expect(deleteLineBackward('abcdefghijklmno', 15, 10)).toEqual({
-      value: 'abcdefghij',
-      cursor: 10,
-    });
-  });
-
-  it('deletes entire text when on first visual line', () => {
-    expect(deleteLineBackward('hello', 5, 80)).toEqual({
-      value: '',
-      cursor: 0,
-    });
-  });
-
-  it('deletes one char at visual line boundary to keep making progress', () => {
-    // "abcdefghij" + cursor space at end → Ink wraps to "abcdefghij" | " "
-    // Cursor is at visual line start — delete one char backward to join lines
-    expect(deleteLineBackward('abcdefghij', 10, 10)).toEqual({
-      value: 'abcdefghi',
-      cursor: 9,
-    });
-  });
-
-  it('falls back to logical line without columns', () => {
-    expect(deleteLineBackward('abcdefghijklmno', 15)).toEqual({
-      value: '',
-      cursor: 0,
-    });
-  });
-
-  it('deletes to word-wrap boundary matching Ink rendering', () => {
-    // "abc defghijk" at width 10 wraps as "abc " | "defghijk"
-    // Ctrl+U at end (pos 12) should delete "defghijk" (positions 4-12)
-    expect(deleteLineBackward('abc defghijk', 12, 10)).toEqual({
-      value: 'abc ',
-      cursor: 4,
-    });
-  });
-
-  it('handles NFD text by normalizing before visual line calculation', () => {
+  it('normalizes decomposed text before visual line deletion', () => {
     const nfd = 'abc defghijk'.normalize('NFD');
     const nfc = 'abc defghijk';
-    const result = deleteLineBackward(nfd, nfd.length, 10);
-    // NFD input is normalized to NFC, producing same result
-    expect(result).toEqual(deleteLineBackward(nfc, nfc.length, 10));
+
+    expect(edit('delete-line-backward', nfd, nfd.length, 10)).toEqual(
+      edit('delete-line-backward', nfc, nfc.length, 10),
+    );
+  });
+
+  it('does not split surrogate pairs when deleting around visual boundaries', () => {
+    const result = edit('delete-line-backward', `a${EMOJI}`, 3, 2);
+
+    expect(result?.value.normalize('NFC')).toBe(result?.value);
+    expect(result?.value).not.toContain('\udc00');
   });
 });
 
 describe('resolveEditAction', () => {
   const noMods = { ctrl: false, meta: false, super: false, backspace: false, delete: false };
 
-  it('returns delete-word-backward for Ctrl+W', () => {
-    expect(resolveEditAction('w', { ...noMods, ctrl: true })).toBe('delete-word-backward');
-  });
-
-  it('returns delete-line-backward for Ctrl+U', () => {
-    expect(resolveEditAction('u', { ...noMods, ctrl: true })).toBe('delete-line-backward');
-  });
-
-  it('returns move-line-start for Ctrl+A', () => {
-    expect(resolveEditAction('a', { ...noMods, ctrl: true })).toBe('move-line-start');
-  });
-
-  it('returns move-line-end for Ctrl+E', () => {
-    expect(resolveEditAction('e', { ...noMods, ctrl: true })).toBe('move-line-end');
-  });
-
-  it('returns character movement for Ctrl+B and Ctrl+F', () => {
-    expect(resolveEditAction('b', { ...noMods, ctrl: true })).toBe('move-char-backward');
-    expect(resolveEditAction('f', { ...noMods, ctrl: true })).toBe('move-char-forward');
+  it.each([
+    ['Ctrl+W', 'w', { ctrl: true }, 'delete-word-backward'],
+    ['Ctrl+U', 'u', { ctrl: true }, 'delete-line-backward'],
+    ['Ctrl+A', 'a', { ctrl: true }, 'move-line-start'],
+    ['Ctrl+E', 'e', { ctrl: true }, 'move-line-end'],
+    ['Ctrl+B', 'b', { ctrl: true }, 'move-char-backward'],
+    ['Ctrl+F', 'f', { ctrl: true }, 'move-char-forward'],
+    ['plain Backspace', '', { backspace: true }, 'delete-char-backward'],
+    ['plain Delete', '', { delete: true }, 'delete-char-forward'],
+    ['raw terminal DEL', '\x7f', {}, 'delete-char-backward'],
+  ] as const)('%s resolves to %s', (_label, input, key, expected) => {
+    expect(resolveEditAction(input, { ...noMods, ...key })).toBe(expected);
   });
 
   it('reserves modifier deletion chords for text editing', () => {
@@ -222,126 +149,50 @@ describe('resolveEditAction', () => {
     );
   });
 
-  it('keeps plain Backspace and Delete as directional character deletion', () => {
-    expect(resolveEditAction('', { ...noMods, backspace: true })).toBe('delete-char-backward');
-    expect(resolveEditAction('', { ...noMods, delete: true })).toBe('delete-char-forward');
-  });
-
-  it('maps the raw terminal DEL byte to Backspace when Ink does not set a key flag', () => {
-    expect(resolveEditAction('\x7f', noMods)).toBe('delete-char-backward');
-  });
-
-  it('returns null for no special combo', () => {
+  it('returns null for ordinary input', () => {
     expect(resolveEditAction('a', noMods)).toBeNull();
   });
 });
 
-describe('applyEditAction', () => {
-  it('returns null for null action', () => {
-    expect(applyEditAction(null, 'hello', 5)).toBeNull();
-  });
-
-  it('applies forward deletion reached from the Delete key', () => {
-    const action = resolveEditAction('', {
-      ctrl: false,
-      meta: false,
-      super: false,
-      backspace: false,
-      delete: true,
-    });
-
-    expect(applyEditAction(action, 'abc', 1)).toEqual({ value: 'ac', cursor: 1 });
-  });
-});
-
-describe('code-point stepping', () => {
-  it('prevCodePointIndex steps over a full surrogate pair', () => {
-    // 'a😀' is 'a' (1 unit) + emoji (2 units) = length 3. Backspace from end → index 1.
-    const value = `a${EMOJI}`;
-    expect(value.length).toBe(3);
-    expect(prevCodePointIndex(value, value.length)).toBe(1);
-  });
-
-  it('prevCodePointIndex steps one unit for a BMP char', () => {
-    expect(prevCodePointIndex('ab', 2)).toBe(1);
-  });
-
-  it('prevCodePointIndex clamps at 0', () => {
-    expect(prevCodePointIndex(EMOJI, 0)).toBe(0);
-  });
-
-  it('nextCodePointIndex steps over a full surrogate pair', () => {
+describe('code-point helpers', () => {
+  it('steps over surrogate pairs', () => {
+    expect(prevCodePointIndex(`a${EMOJI}`, 3)).toBe(1);
     expect(nextCodePointIndex(EMOJI, 0)).toBe(2);
   });
 
-  it('nextCodePointIndex steps one unit for a BMP char', () => {
+  it('steps one unit for BMP text and clamps at the edges', () => {
+    expect(prevCodePointIndex('ab', 2)).toBe(1);
+    expect(prevCodePointIndex(EMOJI, 0)).toBe(0);
     expect(nextCodePointIndex('ab', 0)).toBe(1);
-  });
-
-  it('nextCodePointIndex clamps at length', () => {
     expect(nextCodePointIndex(EMOJI, 2)).toBe(2);
   });
 
-  it('dropLastCodePoint removes a whole emoji, not a lone surrogate', () => {
+  it('drops the last whole code point', () => {
     const result = dropLastCodePoint(`hi${EMOJI}`);
+
     expect(result).toBe('hi');
-    // No lone surrogate left behind.
     expect(result.normalize('NFC')).toBe(result);
   });
 });
 
-describe('deleteLineBackward with astral characters', () => {
-  it('deletes a whole emoji at line start without leaving a lone surrogate', () => {
-    // 'line1\n😀' — cursor at line start of the emoji line deletes the newline,
-    // but a cursor right after the emoji at logical line start deletes the full pair.
-    const value = `${EMOJI}`;
-    const result = deleteLineBackward(value, value.length);
-    expect(result.value).toBe('');
-    expect(result.cursor).toBe(0);
-  });
-
-  it('does not split a surrogate pair when joining lines at a visual boundary', () => {
-    // Width 2: 'a😀' wraps with the emoji on its own visual row; deleting at the
-    // visual line start must remove the full emoji code point, not half of it.
-    const result = deleteLineBackward(`a${EMOJI}`, 3, 2);
-    expect(result.value.normalize('NFC')).toBe(result.value);
-    expect(result.value).not.toContain('\udc00');
-  });
-});
-
 describe('navigateVertically', () => {
-  it('moves up from second line to first', () => {
-    expect(navigateVertically('up', 'abc\ndef', 5)).toBe(1);
+  it.each([
+    ['up to first line', 'up', 'abc\ndef', 5, 1],
+    ['down to second line', 'down', 'abc\ndef', 1, 5],
+    ['down clamps to shorter line', 'down', 'abcdef\nhi', 5, 9],
+    ['down from first boundary', 'down', 'abc\ndef', 3, 7],
+    ['down to middle line', 'down', 'aaa\nbbb\nccc', 1, 5],
+    ['up to middle line', 'up', 'aaa\nbbb\nccc', 9, 5],
+  ] as const)('%s', (_label, direction, value, cursorIndex, expected) => {
+    expect(navigateVertically({ direction, value, cursorIndex })).toBe(expected);
   });
 
-  it('moves down from first line to second', () => {
-    expect(navigateVertically('down', 'abc\ndef', 1)).toBe(5);
-  });
-
-  it('returns undefined when already on first line moving up', () => {
-    expect(navigateVertically('up', 'abc\ndef', 2)).toBeUndefined();
-  });
-
-  it('returns undefined when already on last line moving down', () => {
-    expect(navigateVertically('down', 'abc\ndef', 5)).toBeUndefined();
-  });
-
-  it('clamps column to shorter target line', () => {
-    // cursor at col 5 of "abcdef", moving to "hi" (len 2) → clamps to col 2 → index 7+2=9
-    expect(navigateVertically('down', 'abcdef\nhi', 5)).toBe(9);
-  });
-
-  it('handles single line', () => {
-    expect(navigateVertically('up', 'hello', 3)).toBeUndefined();
-    expect(navigateVertically('down', 'hello', 3)).toBeUndefined();
-  });
-
-  it('handles three lines navigating to middle', () => {
-    expect(navigateVertically('down', 'aaa\nbbb\nccc', 1)).toBe(5);
-    expect(navigateVertically('up', 'aaa\nbbb\nccc', 9)).toBe(5);
-  });
-
-  it('handles cursor at line boundary', () => {
-    expect(navigateVertically('down', 'abc\ndef', 3)).toBe(7);
+  it.each([
+    ['up at first line', 'up', 'abc\ndef', 2],
+    ['down at last line', 'down', 'abc\ndef', 5],
+    ['single line up', 'up', 'hello', 3],
+    ['single line down', 'down', 'hello', 3],
+  ] as const)('returns undefined for %s', (_label, direction, value, cursorIndex) => {
+    expect(navigateVertically({ direction, value, cursorIndex })).toBeUndefined();
   });
 });

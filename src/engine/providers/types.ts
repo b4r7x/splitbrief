@@ -20,3 +20,8 @@ export interface ProviderOverrides {
   apiBase?: string | undefined;
   apiKey?: string | undefined;
 }
+
+export type StreamMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+};

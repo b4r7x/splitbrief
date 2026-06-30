@@ -176,8 +176,64 @@ describe('createStagedProject — sensitive file exclusion', () => {
     }
   });
 
-  it("preserves the configured runner's auth key in the sandbox env while stripping other secrets", async () => {
+  it("preserves the implementer's auth key by default while stripping planner credentials", async () => {
     const dir = createTempDir('staged-runner-auth-test');
+    try {
+      createTestGitRepo(dir);
+      touchedEnvKeys.push(
+        'OPENAI_API_KEY',
+        'ANTHROPIC_API_KEY',
+        'GITHUB_TOKEN',
+        'AWS_PROFILE',
+        'AWS_WEB_IDENTITY_TOKEN_FILE',
+        'GIT_ASKPASS',
+        'SSH_AUTH_SOCK',
+        'npm_config_userconfig',
+      );
+      process.env.OPENAI_API_KEY = 'sk-openai';
+      process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
+      process.env.GITHUB_TOKEN = 'gh-secret';
+      process.env.AWS_PROFILE = 'prod';
+      process.env.AWS_WEB_IDENTITY_TOKEN_FILE = '/tmp/aws-token';
+      process.env.GIT_ASKPASS = '/tmp/askpass';
+      process.env.SSH_AUTH_SOCK = '/tmp/ssh-agent.sock';
+      process.env.npm_config_userconfig = '/home/user/.npmrc';
+
+      const config = makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'openai',
+          apiBase: 'https://api.openai.com/v1',
+          model: 'gpt-4',
+        },
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-sonnet',
+        },
+      });
+
+      const staged = await createStagedProject(dir, config);
+      try {
+        expect(staged.sandboxEnv.OPENAI_API_KEY).toBe('sk-openai');
+        expect(staged.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
+        expect(staged.sandboxEnv.GITHUB_TOKEN).toBeUndefined();
+        expect(staged.sandboxEnv.AWS_PROFILE).toBeUndefined();
+        expect(staged.sandboxEnv.AWS_WEB_IDENTITY_TOKEN_FILE).toBeUndefined();
+        expect(staged.sandboxEnv.GIT_ASKPASS).toBeUndefined();
+        expect(staged.sandboxEnv.SSH_AUTH_SOCK).toBeUndefined();
+        expect(staged.sandboxEnv.npm_config_userconfig).toBeUndefined();
+      } finally {
+        staged.cleanup();
+      }
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it("preserves the planner's auth key for planner-owned staged calls", async () => {
+    const dir = createTempDir('staged-planner-auth-test');
     try {
       createTestGitRepo(dir);
       touchedEnvKeys.push('OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GITHUB_TOKEN');
@@ -192,13 +248,18 @@ describe('createStagedProject — sensitive file exclusion', () => {
           apiBase: 'https://api.openai.com/v1',
           model: 'gpt-4',
         },
-        planner: { kind: 'cli', tool: 'codex', model: 'auto' },
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-sonnet',
+        },
       });
 
-      const staged = await createStagedProject(dir, config);
+      const staged = await createStagedProject(dir, config, 'planner');
       try {
-        expect(staged.sandboxEnv.OPENAI_API_KEY).toBe('sk-openai');
-        expect(staged.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
+        expect(staged.sandboxEnv.ANTHROPIC_API_KEY).toBe('sk-anthropic');
+        expect(staged.sandboxEnv.OPENAI_API_KEY).toBeUndefined();
         expect(staged.sandboxEnv.GITHUB_TOKEN).toBeUndefined();
       } finally {
         staged.cleanup();

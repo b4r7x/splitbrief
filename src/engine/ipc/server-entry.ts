@@ -160,6 +160,7 @@ export async function main(argv: IpcServerArgs, dir: string) {
       feature: argv.feature,
       plannerContext: argv.plannerContext,
       allowHooks: argv.allowHooks,
+      allowRepoRunners: argv.allowRepoRunners,
       attachments: argv.attachments,
     },
     ipcServer,

@@ -22,6 +22,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { runPlanningPhases, runTasksAndReview } from './phases.js';
 
 const DENY_HOOK_MODULE = 'export default () => ({ kind: "deny", message: "planning blocked" });\n';
@@ -40,6 +41,12 @@ function denyPrePlanningConfig(): Config {
       ],
     },
   });
+}
+
+function trustedDenyPrePlanningConfig(projectDir: string): Config {
+  const config = denyPrePlanningConfig();
+  markHooksConfigTrusted(projectDir, config.hooks);
+  return config;
 }
 
 const TEST_SINKS: WorkflowSinks = {
@@ -1488,7 +1495,7 @@ describe('runPlanningPhases', () => {
       wctx: {
         projectDir,
         sessionId,
-        config: denyPrePlanningConfig(),
+        config: trustedDenyPrePlanningConfig(projectDir),
         callbacks,
         bus,
         planner,
@@ -1532,7 +1539,7 @@ describe('runPlanningPhases', () => {
       wctx: {
         projectDir,
         sessionId,
-        config: denyPrePlanningConfig(),
+        config: trustedDenyPrePlanningConfig(projectDir),
         callbacks,
         bus,
         planner,

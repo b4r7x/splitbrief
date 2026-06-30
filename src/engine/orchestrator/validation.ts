@@ -39,6 +39,7 @@ export type RunValidationOptions = {
   bus: EventBus;
   phase: Phase;
   discoveredValidation?: DiscoveredValidation | undefined;
+  signal?: AbortSignal | undefined;
 };
 
 export type ValidationStage = ValidationResult['stage'];
@@ -48,6 +49,7 @@ export type PrimeBaselineOptions = {
   projectDir: string;
   config: Config;
   discoveredValidation?: DiscoveredValidation | undefined;
+  signal?: AbortSignal | undefined;
 };
 
 export interface Validator {
@@ -168,6 +170,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     config: Config,
     discovered: DiscoveredValidation | undefined,
     heuristic: DiscoveredValidation | null,
+    signal: AbortSignal | undefined,
   ): Promise<Set<ValidationStage>> {
     const failing = new Set<ValidationStage>();
     const probeStage = async (
@@ -187,6 +190,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         timeout: resolveValidationTimeout(config),
         runCommand: commandRunner,
         command,
+        signal,
       });
       if (!result.passed) failing.add(stage);
     };
@@ -233,6 +237,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     config: Config,
     discovered: DiscoveredValidation | undefined,
     heuristic: DiscoveredValidation | null,
+    signal?: AbortSignal | undefined,
     onProgress?: (progress: ValidationProgress) => void,
   ): Promise<ValidationResult[]> {
     const results: ValidationResult[] = [];
@@ -257,6 +262,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         timeout: resolveValidationTimeout(config),
         runCommand: commandRunner,
         command,
+        signal,
       });
       results.push(result);
       if (!result.passed) return 'stop';
@@ -319,7 +325,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
 
   async function primeBaseline(opts: PrimeBaselineOptions): Promise<void> {
     if (deps.captureBaseline !== true || baselineFailingStages !== null) return;
-    const { task, projectDir, config, discoveredValidation } = opts;
+    const { task, projectDir, config, discoveredValidation, signal } = opts;
     const heuristic = detectValidationHeuristic(projectDir);
     const sanitizedDiscovered = sanitizeDiscoveredValidation(discoveredValidation);
     baselineFailingStages = await probeBaseline(
@@ -328,11 +334,12 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       config,
       sanitizedDiscovered,
       heuristic,
+      signal,
     );
   }
 
   async function runValidation(opts: RunValidationOptions): Promise<ValidationResult[]> {
-    const { task, projectDir, config, bus, phase, discoveredValidation } = opts;
+    const { task, projectDir, config, bus, phase, discoveredValidation, signal } = opts;
     const taskId = task.id;
     const startTime = Date.now();
     publishValidation({ bus: bus, phase: phase }, taskId, { phase: 'start' });
@@ -344,6 +351,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       config,
       sanitizedDiscovered,
       heuristic,
+      signal,
       (progress) => {
         publishValidation({ bus: bus, phase: phase }, taskId, {
           phase: 'progress',
@@ -406,10 +414,16 @@ async function runValidationStep(opts: {
   timeout: number;
   runCommand: ValidationCommandRunner;
   command: string;
+  signal?: AbortSignal | undefined;
 }): Promise<ValidationResult> {
-  const { stage, cmd, args, source, cwd, timeout, runCommand, command } = opts;
+  const { stage, cmd, args, source, cwd, timeout, runCommand, command, signal } = opts;
   try {
-    const { stdout } = await runCommand(cmd, args, { cwd, timeout, label: `${stage} validation` });
+    const { stdout } = await runCommand(cmd, args, {
+      cwd,
+      timeout,
+      label: `${stage} validation`,
+      signal,
+    });
     return { passed: true, stage, output: sanitizeValidationOutput(stdout), command };
   } catch (err: unknown) {
     if (isENOENT(err) || processError.isNotFound(err)) {

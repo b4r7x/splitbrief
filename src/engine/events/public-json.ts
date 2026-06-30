@@ -4,7 +4,8 @@ import { RecoveryActionSchema, RecoveryReasonSchema } from '../../core/schemas/e
 import type { RecoveryIssue } from '../../core/schemas/recovery.js';
 import { protectConsumerPayload, type CallConsumerContext } from '../../core/consumer-policy.js';
 import { EngineEventSchema } from './schema.js';
-import { protectEngineEventForConsumer, TRANSCRIPT_OMITTED_MESSAGE } from './protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { protectEngineEventForConsumer } from './protection.js';
 
 export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
   z.strictObject({

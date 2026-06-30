@@ -1,8 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: 1.3.1 → 1.3.2
-- Modified principles: V. Validate Before Commit → Validate Before Checkpoint
-- Updated sections: Core Principles, Development Workflow
+- Version change: 1.3.2 → 1.3.3
+- Modified principles: none
+- Updated sections: Technical Constraints
 - Removed sections: none
 - Templates requiring updates:
   - .specify/templates/plan-template.md ✅ compatible (generic Constitution Check gate)
@@ -132,14 +132,13 @@ Explicit anti-goals that MUST NOT be implemented:
 
 ## Technical Constraints
 
-- **Runtime**: Node.js 22+ with native TypeScript stripping
+- **Runtime**: Node.js 22+; development runs through `tsx`, production runs compiled `tsc` output from `dist/`
 - **Language**: TypeScript 6.x, ESM only (`"type": "module"`)
 - **TUI**: Ink 6.x (React 19 for CLI), conversation flow layout with structured event cards
-- **Syntax highlighting**: Shiki 4.x (WASM-based, async)
 - **Target**: macOS (primary), Linux (secondary)
 - **v0.1 scope**: TypeScript/JavaScript projects only
-- **Planner**: Pluggable backends (6 built-in + shell command via config)
-- **Implementer**: OpenAI-compatible API (default), shell subprocess, or agent subprocess via config
+- **Planner**: Pluggable runner kinds via config: `cli`, `api`, `shell`, `agent`, and `agent-sdk`
+- **Implementer**: The same five runner kinds as planner; `api` remains the default local/cheap path
 - **Edit format**: Whole-file replacement for files under 200 lines,
   search/replace blocks for larger files
 
@@ -177,4 +176,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 1.3.2 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-04-28
+**Version**: 1.3.3 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-06-30

@@ -12,7 +12,7 @@ describe('fuzzyMatch', () => {
   it('full exact match returns score > 0', () => {
     const result = fuzzyMatch('revise', 'revise');
     expect(result).not.toBeNull();
-    expect(result!.score).toBeGreaterThan(0);
+    expect(result?.score).toBeGreaterThan(0);
   });
 
   it('non-matching query returns null', () => {
@@ -22,7 +22,7 @@ describe('fuzzyMatch', () => {
   it("'rs' matches 'revise-spec' as a subsequence", () => {
     const result = fuzzyMatch('rs', 'revise-spec');
     expect(result).not.toBeNull();
-    expect(result!.positions.length).toBeGreaterThan(0);
+    expect(result?.positions.length).toBeGreaterThan(0);
   });
 
   it("'rs' does NOT match 'help'", () => {
@@ -34,7 +34,7 @@ describe('fuzzyMatch', () => {
     const b = fuzzyMatch('abc', 'a_b_c_def');
     expect(a).not.toBeNull();
     expect(b).not.toBeNull();
-    expect(a!.score).toBeGreaterThan(b!.score);
+    expect(a?.score).toBeGreaterThan(b?.score ?? 0);
   });
 
   it("word boundary bonus: 'r' in 'revise-spec' at position 0 scores higher than 'e' in 'revise-spec'", () => {
@@ -42,14 +42,14 @@ describe('fuzzyMatch', () => {
     const e = fuzzyMatch('e', 'revise-spec');
     expect(r).not.toBeNull();
     expect(e).not.toBeNull();
-    expect(r!.score).toBeGreaterThan(e!.score);
+    expect(r?.score).toBeGreaterThan(e?.score ?? 0);
   });
 
   it('score is clamped to [0, 1]', () => {
     const result = fuzzyMatch('rv', 'revise-spec');
     expect(result).not.toBeNull();
-    expect(result!.score).toBeGreaterThanOrEqual(0);
-    expect(result!.score).toBeLessThanOrEqual(1);
+    expect(result?.score).toBeGreaterThanOrEqual(0);
+    expect(result?.score).toBeLessThanOrEqual(1);
   });
 
   it('case-insensitive matching', () => {
@@ -59,15 +59,15 @@ describe('fuzzyMatch', () => {
   it('single-char query against single-char matching target', () => {
     const result = fuzzyMatch('a', 'a');
     expect(result).not.toBeNull();
-    expect(Number.isFinite(result!.score)).toBe(true);
-    expect(Number.isNaN(result!.score)).toBe(false);
-    expect(result!.score).toBeGreaterThan(0);
+    expect(Number.isFinite(result?.score)).toBe(true);
+    expect(Number.isNaN(result?.score)).toBe(false);
+    expect(result?.score).toBeGreaterThan(0);
   });
 
   it("fuzzyMatch('rv', 'revise-spec') matches with expected positions", () => {
     const result = fuzzyMatch('rv', 'revise-spec');
     expect(result).not.toBeNull();
-    expect(result!.positions).toEqual([0, 2]);
+    expect(result?.positions).toEqual([0, 2]);
   });
 });
 
@@ -90,8 +90,7 @@ describe('fuzzyMatchExtended', () => {
   it('fuzzyMatchExtended can exceed score of 1 (multiple terms)', () => {
     const result = fuzzyMatchExtended('rev sp', 'revise-spec');
     expect(result).not.toBeNull();
-    // Both terms match reasonably well; summed score may exceed 1
-    expect(result!.score).toBeGreaterThan(0);
+    expect(result?.score).toBeGreaterThan(0);
   });
 
   it('positions are deduplicated and sorted', () => {
@@ -99,7 +98,10 @@ describe('fuzzyMatchExtended', () => {
     if (result !== null) {
       const pos = result.positions;
       for (let i = 1; i < pos.length; i++) {
-        expect(pos[i]).toBeGreaterThan(pos[i - 1]!);
+        const current = pos[i];
+        const previous = pos[i - 1];
+        if (current === undefined || previous === undefined) continue;
+        expect(current).toBeGreaterThan(previous);
       }
     }
   });

@@ -4,7 +4,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowContext } from '../types.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { runSingleTask } from './step.js';
-import { refreshAndPersistCode } from '../state-ops.js';
+import { raisePendingRecovery, refreshAndPersistCode } from '../state-ops.js';
 import {
   getRunnerDisplayName,
   getRunnerModelName,
@@ -18,12 +18,16 @@ import {
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { configForProfile, createTaskImplementer } from './routing.js';
+import { publishError } from '../events.js';
 import { reviewTaskIfNeeded } from './review-flow.js';
 import { maybeAutoSnapshot } from './auto-snapshot.js';
 import { checkDependencyGate } from './dependency-gate.js';
 import { checkUserEditGate } from './user-edit-gate.js';
 import { selectRoutingProfile } from './routing-selection.js';
 import { absorbAcceptedFiles, reconcileAfterTask } from './post-task.js';
+import { nowIso } from '../../../utils/format-time.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
+import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -88,6 +92,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       projectDir,
       config,
       discoveredValidation: state.discoveredValidation,
+      signal: wctx.signal,
     });
   }
   for (let i = state.currentTaskIndex; i < totalTasks; i++) {
@@ -163,6 +168,35 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       taskConfig: selectedTaskConfig,
       singleImplementerMode,
     });
+    let isImplementerAvailable = false;
+    let availabilityError: string | undefined;
+    try {
+      isImplementerAvailable = await taskImplementer.isAvailable();
+    } catch (err) {
+      availabilityError = toErrorMessage(err);
+    }
+    if (!isImplementerAvailable) {
+      const tool = getRunnerDisplayName(selectedProfile.config);
+      const reason =
+        availabilityError ??
+        `Selected implementer profile ${selectedProfile.name} (${tool}) is unavailable. Check runner installation, API credentials, or endpoint reachability.`;
+      publishError({ bus: wctx.bus, phase: state.phase, message: reason });
+      state = raisePendingRecovery(
+        wctx,
+        state,
+        buildImplementerUnavailableRecoveryIssue({
+          task: refreshedTask,
+          phase: state.phase,
+          selectedImplementerProfile: selectedProfile.name,
+          tool,
+          ...(selectedModel !== undefined && { model: selectedModel }),
+          availabilityReason: reason,
+          createdAt: nowIso(),
+        }),
+        setTrackedState,
+      );
+      return { state, taskBreakdowns, status: 'stopped' };
+    }
     const { implementerModel: _previousImplementerModel, ...stateWithoutImplementerModel } = state;
     const taskState: WorkflowState = {
       ...stateWithoutImplementerModel,

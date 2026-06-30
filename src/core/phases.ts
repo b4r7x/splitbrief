@@ -82,10 +82,14 @@ export function canRedoTask(phase: Phase): boolean {
   return isImplementerPhase(phase);
 }
 
-// awaitingContinue overrides the phase check for a workflow paused mid-turn, but
-// never for a terminal phase: a completed (or idle) session with a stale flag must
-// stay non-resumable so `continue` cannot re-run it and flip its summary status.
+// Recovery and awaitingContinue overlays override the phase check for workflows
+// paused mid-turn, but never for terminal phases: completed or idle sessions with
+// stale overlays must stay non-resumable so `continue` cannot re-run them.
 export function isResumable(state: WorkflowState): boolean {
   if (isTerminalPhase(state.phase)) return false;
-  return state.awaitingContinue || RESUMABLE_PHASES.has(state.phase);
+  return (
+    state.pendingRecovery !== undefined ||
+    state.awaitingContinue ||
+    RESUMABLE_PHASES.has(state.phase)
+  );
 }

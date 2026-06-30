@@ -3,12 +3,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { CliToolId } from '../../../src/core/schemas/enums.js';
-import { makeConfig } from '../../helpers/factories/config.js';
-import { makeCallbacks } from '../../helpers/orchestrator-factories.js';
-import { TEST_WORKFLOW_SINKS } from '../../helpers/orchestrator-context.js';
-import { createTestGitRepo } from '../../helpers/git.js';
-import { cleanupTempDir, createTempDir } from '../../helpers/temp-dir.js';
-import { resetAllStores } from '../../helpers/stores.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
+import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 const runRealCliSmoke = process.env.DIPTYCH_REAL_CLI_E2E === '1';
 const itReal = runRealCliSmoke ? it : it.skip;

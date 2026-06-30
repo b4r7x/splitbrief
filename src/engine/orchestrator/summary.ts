@@ -225,7 +225,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   let checkpointSummary: Summary['checkpointSummary'];
   let reviewPacket: Summary['reviewPacket'];
   if (projectDir && sessionId) {
-    const ledger = readEvidenceLedger(projectDir, sessionId);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
     if (ledger) evidenceSummary = buildEvidenceSummary(ledger);
 
     const bqReport = readBriefQualityReport(projectDir, sessionId);
@@ -239,7 +239,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
       };
     }
 
-    const drift = readDriftReport(projectDir, sessionId);
+    const drift = readDriftReport({ projectDir, sessionId });
     if (drift) {
       const counts = countBySeverity(drift.findings);
       driftSummary = {
@@ -250,7 +250,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
       };
     }
 
-    const chainState = readDriftChainState(projectDir, sessionId);
+    const chainState = readDriftChainState({ projectDir, sessionId });
     if (chainState && chainState.emittedChains.length > 0) {
       const best = chainState.emittedChains.reduce((a, b) => (a.score >= b.score ? a : b));
       chainDriftSummary = {

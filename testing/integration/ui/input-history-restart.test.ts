@@ -24,7 +24,7 @@ async function loadRuntime() {
     '../../../src/components/composer/composer.js'
   );
   const { initStores, teardownStores } = await import('../../../src/cli/init-stores.js');
-  const { resetAllStores } = await import('../../helpers/stores.js');
+  const { resetAllStores } = await import('#testing/helpers/stores.js');
 
   const renderComposer = (
     props: React.ComponentProps<typeof Composer>,

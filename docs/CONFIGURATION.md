@@ -267,7 +267,7 @@ implementer:
   timeout: 240000
 ```
 
-`contextLength` is the input context window, used to size the prompt budget. It is **not** the per-response output cap — diptych clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
+`contextLength` is diptych's assumed input context window, used to size the prompt budget. It does **not** change a provider's real model context. For Ollama, configure the model/server `num_ctx` first; use `contextLength` or `DIPTYCH_CONTEXT_LENGTH` only to match or override diptych's detection. It is also **not** the per-response output cap — diptych clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
 
 **When to use:**
 - *Cheap local* — Ollama or LM Studio for cost-free iteration on small tasks.
@@ -487,7 +487,7 @@ workflow: {
 
 ### Transcript persistence policy
 
-`persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, `resume` / `continue` / `status` CLI console output, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. Per-task git commit subjects also use task ids and control metadata only.
+`persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, MCP session metadata and `state.json` reads, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, `resume` / `continue` / `status` CLI console output, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. A bare `diptych start --worktree` also uses an opaque `session-<hex>` worktree/branch slug instead of the feature slug. Per-task git commit subjects use task ids and control metadata only.
 
 The UI and machine consumers still receive safe control data: phase, task ids/status, queue depth, cost/usage numbers, allowed recovery actions, approval tiers, runner/model identifiers, safe runner activity labels, compact runner status, and bounded operational warnings/errors. Runner-call warning/error text, approval or revision comments, retry errors, task titles/reasons, task-review prose, queued-message text, and cost-prediction task prose are replaced with `[transcript omitted]` or removed. Raw runner expansion is disabled: protected runner activity forces `rawAvailable:false` and omits `expandId`, so `raw` markers disappear instead of pointing at hidden payloads.
 
@@ -955,7 +955,7 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 
 | Variable | Purpose |
 |---|---|
-| `DIPTYCH_CONTEXT_LENGTH` | Override detected implementer context length (`src/engine/providers/registry.ts`). Useful when the provider misreports. |
+| `DIPTYCH_CONTEXT_LENGTH` | Override diptych's detected implementer context length (`src/engine/providers/registry.ts`). This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
 | `DIPTYCH_QUIET` | Suppress legacy-mode deprecation notice (set to `1`) (`src/cli/init-stores.ts`). |
 
 ### Observability
@@ -1012,11 +1012,12 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--no-mouse` | Disable mouse tracking | start, resume, continue, last, attach |
 | `--hover` | Opt in to hover highlighting (requires mouse + fullscreen) | start, resume, continue, last, attach |
 | `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, continue, last, spec |
+| `--allow-repo-runners` | Trust repo-local shell/agent runner execution from project config, including profiles and project-local PATH/script resolution | start, resume, continue, last, spec |
 | `--allow-custom-renderer` | Trust repo-local handoff renderer for this invocation | handoff |
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue, last |
 | `--rpc` | Bidirectional NDJSON over stdin/stdout | start, resume, continue, last |
 | `--otel-exporter <name>` | Bootstrap built-in exporter (`console` only) | start, resume, continue, last |
-| `--worktree [name]` | Run in a linked git worktree | start |
+| `--worktree [name]` | Run in a linked git worktree; bare flag uses the feature slug unless `workflow.persistTranscript: false`, in which case it uses an opaque `session-<hex>` slug | start |
 | `--yolo` | Skip file-write tiered approval prompts for this session | start, resume, continue, last |
 | `--detach` | Spawn workflow as background IPC server | start |
 | `--reconfigure` | Overwrite existing config | init |

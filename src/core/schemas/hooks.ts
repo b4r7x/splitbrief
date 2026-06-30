@@ -19,6 +19,35 @@ export type HookEvent = z.infer<typeof HookEventSchema>;
 
 const FailureModeSchema = z.enum(['block', 'warn', 'ignore']);
 
+export const HookCommandResponseSchema = z.strictObject({
+  decision: z.enum(['allow', 'deny', 'warn']).optional(),
+  message: z.string().optional(),
+});
+export type HookCommandResponse = z.infer<typeof HookCommandResponseSchema>;
+
+export const HookOutcomeSchema = z.discriminatedUnion('kind', [
+  z.strictObject({
+    kind: z.literal('allow'),
+    stderr: z.string().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('deny'),
+    message: z.string().optional(),
+    stderr: z.string().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('warn'),
+    message: z.string().optional(),
+    stderr: z.string().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal('crash'),
+    message: z.string(),
+    stderr: z.string().optional(),
+  }),
+]);
+export type HookOutcome = z.infer<typeof HookOutcomeSchema>;
+
 const FORBIDDEN_SHELL_COMMANDS = new Set([
   'sh',
   'bash',

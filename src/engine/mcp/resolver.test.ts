@@ -7,6 +7,7 @@ import { ensureSessionDir } from '../../core/paths-io.js';
 import { saveSummary } from '../../core/sessions/io.js';
 import { saveState } from '../../core/state/persistence.js';
 import { createInitialState, CURRENT_STATE_VERSION } from '../../core/state/machine.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { createResolver } from './resolver.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
@@ -117,8 +118,13 @@ afterEach(() => {
   dirs = [];
 });
 
-function makeResolver(projectDir: string, sessionId: string) {
-  return createResolver({ projectDir, sessionIds: [sessionId], diptychVersion: '1.2.3' });
+function makeResolver(projectDir: string, sessionId: string, persistTranscript = true) {
+  return createResolver({
+    projectDir,
+    sessionIds: [sessionId],
+    diptychVersion: '1.2.3',
+    persistTranscript,
+  });
 }
 
 function sessionPath(projectDir: string, sessionId: string): string {
@@ -452,6 +458,100 @@ describe('readResource - file resources', () => {
       'T001',
       'T002',
     ]);
+  });
+
+  it('serves transcript-protected state.json when transcript persistence is disabled', async () => {
+    const projectDir = createTempDir('resolver-test');
+    dirs.push(projectDir);
+    const id = 'sess-protected-state';
+    ensureSessionDir(projectDir, id);
+    saveState(
+      { projectDir, sessionId: id },
+      {
+        ...createInitialState('secret feature text'),
+        stateVersion: CURRENT_STATE_VERSION,
+        tasks: [
+          makeTask({
+            id: 'T001',
+            title: 'secret task title',
+            file: 'src/secret.ts',
+            description: 'secret task prose',
+            tests: ['secret acceptance'],
+            constraints: ['secret constraint'],
+            typeDefs: 'type Secret = string',
+            implementationSteps: ['use the secret'],
+          }),
+        ],
+        messageQueue: [
+          {
+            id: 'm1',
+            text: 'queued secret text',
+            queuedAt: '2026-06-30T00:00:00.000Z',
+            phase: 'planning',
+            deliveredViaNative: false,
+            nativeDeliveryState: 'pending',
+            question: 'secret clarification question',
+          },
+        ],
+      },
+    );
+
+    const resolver = makeResolver(projectDir, id, false);
+    const sessions = await resolver.readResource('mcp://diptych/sessions');
+    const state = await resolver.readResource(`mcp://diptych/sessions/${id}/state.json`);
+
+    expect(sessions).not.toBeNull();
+    expect(JSON.parse(sessions!.text!)[0].title).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(state).not.toBeNull();
+    expect(state!.text).not.toContain('queued secret text');
+    expect(state!.text).not.toContain('secret clarification question');
+    expect(state!.text).not.toContain('secret feature text');
+    expect(state!.text).not.toContain('secret task prose');
+    const parsed = JSON.parse(state!.text!);
+    expect(parsed.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(parsed.messageQueue[0]).toMatchObject({
+      text: TRANSCRIPT_OMITTED_MESSAGE,
+      question: TRANSCRIPT_OMITTED_MESSAGE,
+    });
+    expect(parsed.tasks[0]).toMatchObject({
+      id: 'T001',
+      title: TRANSCRIPT_OMITTED_MESSAGE,
+      file: TRANSCRIPT_OMITTED_MESSAGE,
+      status: 'pending',
+    });
+  });
+
+  it('keeps opaque sessions transcript-protected when current config allows transcripts', async () => {
+    const projectDir = createTempDir('resolver-test');
+    dirs.push(projectDir);
+    const id = '2026-04-18-session-abcdef123456';
+    ensureSessionDir(projectDir, id);
+    saveState(
+      { projectDir, sessionId: id },
+      {
+        ...createInitialState('secret oauth login'),
+        stateVersion: CURRENT_STATE_VERSION,
+        tasks: [
+          makeTask({
+            id: 'T001',
+            title: 'secret task title',
+            description: 'secret task prose',
+          }),
+        ],
+      },
+    );
+
+    const resolver = makeResolver(projectDir, id, true);
+    const sessions = await resolver.readResource('mcp://diptych/sessions');
+    const state = await resolver.readResource(`mcp://diptych/sessions/${id}/state.json`);
+
+    expect(sessions).not.toBeNull();
+    expect(JSON.parse(sessions!.text!)[0].title).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(state).not.toBeNull();
+    expect(state!.text).toContain(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(state!.text).not.toContain('secret oauth login');
+    expect(state!.text).not.toContain('secret task title');
+    expect(state!.text).not.toContain('secret task prose');
   });
 
   it('returns null for missing concrete summary.json and state.json', async () => {

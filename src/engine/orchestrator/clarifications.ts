@@ -59,7 +59,7 @@ export async function collectAndPersistClarifications(
     appendMessage(
       { projectDir, sessionId },
       { role: 'user', phase: state.phase, text: answer },
-      persistTranscript,
+      { persistTranscript },
     );
     clarifications.push({ question: question.text, answer });
 

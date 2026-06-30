@@ -11,7 +11,7 @@ import { createEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/l
 import { recordLocalTaskEvidence } from './evidence/task.js';
 import { writeDriftChainState } from './drift/chain-state.js';
 import type { DriftChainState } from '../../core/schemas/drift-chain.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../events/protection.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -359,7 +359,7 @@ describe('buildSummary', () => {
         method: 'local',
         validation: [{ passed: true, stage: 'typecheck' }],
       });
-      writeEvidenceLedger(projectDir, sessionId, ledger);
+      writeEvidenceLedger({ projectDir, sessionId }, ledger);
 
       const summary = buildSummary({
         feature: 'ev-test',
@@ -426,7 +426,7 @@ describe('buildSummary', () => {
         activeChain: { entries: [], uniqueFiles: [], score: 0 },
         emittedChains: [],
       };
-      writeDriftChainState(projectDir, sessionId, state);
+      writeDriftChainState({ projectDir, sessionId }, state);
       const summary = buildSummary({
         feature: 'chain-empty',
         state: makeState(),
@@ -460,7 +460,7 @@ describe('buildSummary', () => {
           },
         ],
       };
-      writeDriftChainState(projectDir, sessionId, chainState);
+      writeDriftChainState({ projectDir, sessionId }, chainState);
       const summary = buildSummary({
         feature: 'chain-one',
         state: makeState(),
@@ -505,7 +505,7 @@ describe('buildSummary', () => {
           },
         ],
       };
-      writeDriftChainState(projectDir, sessionId, chainState);
+      writeDriftChainState({ projectDir, sessionId }, chainState);
       const summary = buildSummary({
         feature: 'chain-multi',
         state: makeState(),

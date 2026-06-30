@@ -18,6 +18,7 @@ type WorkflowPayload = {
   resumeState?: WorkflowState | undefined;
   sessionId?: string | undefined;
   worktreeName?: string | undefined;
+  allowRepoRunners?: boolean | undefined;
   attach?: WorkflowAttach | undefined;
   readiness?: ReadinessReport | undefined;
 };
@@ -30,6 +31,7 @@ type SetupPayload = {
   onComplete?: 'home' | 'workflow' | undefined;
   feature?: string | undefined;
   plannerContext?: string | undefined;
+  allowRepoRunners?: boolean | undefined;
 };
 
 export type RouteData =
@@ -75,6 +77,7 @@ function navigate(args: NavigateArgs) {
         resumeState: args.resumeState,
         sessionId: args.sessionId,
         worktreeName: args.worktreeName,
+        allowRepoRunners: args.allowRepoRunners,
         attach: args.attach,
         readiness: args.readiness,
       });
@@ -93,6 +96,7 @@ function navigate(args: NavigateArgs) {
         onComplete: args.onComplete,
         feature: args.feature,
         plannerContext: args.plannerContext,
+        allowRepoRunners: args.allowRepoRunners,
       });
       return;
     default:

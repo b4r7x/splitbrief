@@ -1,6 +1,6 @@
 export type McpResponse = {
   jsonrpc: '2.0';
-  id: string | number;
+  id: string | number | null;
   result: unknown;
 };
 

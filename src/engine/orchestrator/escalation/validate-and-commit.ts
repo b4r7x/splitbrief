@@ -29,6 +29,7 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     bus: ctx.bus,
     phase: state.phase,
     discoveredValidation: state.discoveredValidation,
+    signal: ctx.signal,
   });
   if (ctx.signal?.aborted) {
     return { state, completed: false, validationResults, blockedReason: 'aborted' };

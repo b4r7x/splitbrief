@@ -1,6 +1,6 @@
 import type { HookEvent, HooksConfig } from '../../core/schemas/hooks.js';
 import type { EngineEvent } from '../events/types.js';
-import { runHook } from './dispatch.js';
+import { hookTrustRefusal, runTrustedHook } from './dispatch.js';
 import type { HookContext } from './types.js';
 import { activeBuiltinsFor } from './builtins/registry.js';
 
@@ -17,7 +17,20 @@ export async function runPreHooks(
   ctx: HookContext,
 ): Promise<PreHookResult> {
   const warnings: string[] = [];
-  for (const builtin of activeBuiltinsFor(event, hooks)) {
+  const builtins = activeBuiltinsFor(event, hooks);
+  const entries = hooks?.[event] ?? [];
+  if (builtins.length === 0 && entries.length === 0) {
+    return { allow: true };
+  }
+
+  if (!hooks) return { allow: true };
+
+  const trustRefusal = hookTrustRefusal(ctx.projectDir, hooks);
+  if (trustRefusal) {
+    return { allow: false, reason: trustRefusal, warnings };
+  }
+
+  for (const builtin of builtins) {
     const outcome = await builtin.run(eventPayload, ctx);
     if (outcome.kind === 'deny') {
       return { allow: false, reason: outcome.message ?? `${event} builtin denied`, warnings };
@@ -32,9 +45,8 @@ export async function runPreHooks(
       warnings.push(`[builtin ${builtin.name}] ${outcome.message}`);
     }
   }
-  const entries = hooks?.[event] ?? [];
   for (const entry of entries) {
-    const outcome = await runHook(entry, eventPayload, ctx);
+    const outcome = await runTrustedHook(entry, eventPayload, ctx, hooks);
     if (outcome.kind === 'deny') {
       return { allow: false, reason: outcome.message ?? `${event} hook denied`, warnings };
     }

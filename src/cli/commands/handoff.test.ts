@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -24,6 +24,15 @@ function createDeps(): HandoffDeps {
       };
     },
   };
+}
+
+function makeAliasableSession(sessionId: string, sortKeyMs: number): void {
+  const dir = join(tmp, '.diptych', 'sessions', sessionId);
+  mkdirSync(dir, { recursive: true });
+  const summaryPath = join(dir, 'summary.json');
+  writeFileSync(summaryPath, '{}');
+  const time = new Date(sortKeyMs);
+  utimesSync(summaryPath, time, time);
 }
 
 beforeEach(() => {
@@ -148,6 +157,15 @@ describe('handoff command — defaults', () => {
 
     expect(writes).toMatchObject([{ outDir: join(tmp, '.diptych', 'handoffs', 'spec-kit') }]);
     expect(logs.join('\n')).toContain(join(tmp, '.diptych', 'handoffs', 'spec-kit'));
+  });
+
+  it('resolves numeric --session aliases before writing the pack', async () => {
+    makeAliasableSession('older-session', 1_000);
+    makeAliasableSession('newer-session', 2_000);
+
+    await runHandoff(['--session', '1']);
+
+    expect(writes).toMatchObject([{ sessionId: 'newer-session' }]);
   });
 });
 

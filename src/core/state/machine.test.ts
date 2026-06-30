@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createInitialState, transition, workflowFeatureForConsole } from './machine.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../transcript-policy.js';
+import { createInitialState, transition } from './machine.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -30,16 +29,6 @@ describe('createInitialState', () => {
     expect(state.phase).toBe('idle');
     expect(state.feature).toBe('feature');
     expect(state.tasks).toEqual([]);
-  });
-});
-
-describe('workflowFeatureForConsole', () => {
-  it('returns the raw feature when persistTranscript is true', () => {
-    expect(workflowFeatureForConsole('add auth', true)).toBe('add auth');
-  });
-
-  it('omits the feature when persistTranscript is false', () => {
-    expect(workflowFeatureForConsole('secret oauth', false)).toBe(TRANSCRIPT_OMITTED_MESSAGE);
   });
 });
 
@@ -707,6 +696,25 @@ describe('transition', () => {
     expect(next.phase).toBe('validating-task');
     expect(next.pendingRecovery?.status).toBe('applying');
     expect(next.pendingRecovery?.selectedAction).toBe('route-bigger-worker');
+  });
+
+  it('MARK_RECOVERY_APPLYING replaces a stale paused action for replay', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      pendingRecovery: makeRecoveryIssue({
+        status: 'paused',
+        selectedAction: 'pause-run',
+      }),
+    };
+
+    const next = transition(state, {
+      type: 'MARK_RECOVERY_APPLYING',
+      action: 'retry-same-worker',
+    });
+
+    expect(next.pendingRecovery?.status).toBe('applying');
+    expect(next.pendingRecovery?.selectedAction).toBe('retry-same-worker');
   });
 
   it('RESOLVE_PENDING_RECOVERY clears pending recovery after a selected action succeeds', () => {

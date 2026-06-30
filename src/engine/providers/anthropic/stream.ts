@@ -10,7 +10,7 @@ import { streamError, throwMappedError } from '../../streaming/stream-errors.js'
 import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../../constants.js';
 import { attachImagesToLastUserMessage } from '../image-attach.js';
 import { throwIfAborted } from '../../../utils/abort.js';
-import type { StreamMessage } from '../stream-types.js';
+import type { StreamMessage } from '../types.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
 import { normalizeRunnerCallUsage } from '../../calls/usage.js';

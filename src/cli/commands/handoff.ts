@@ -64,7 +64,7 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
             return;
           }
 
-          const sessionId = resolveSessionOrThrow(projectDir, opts.session);
+          const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
           const resolvedTarget = normalizeHandoffTarget(target);
 

@@ -27,6 +27,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
+import { clamp } from '../../utils/math.js';
 
 interface SummaryScreenProps {
   commands: RuntimeCommandDef[];
@@ -55,8 +56,8 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
     widths: { small: 64, large: 96 },
     gutter: 2,
   });
-  const labelWidth = isSmall ? Math.min(13, Math.max(10, Math.floor(contentWidth / 3))) : 20;
-  const taskTitleWidth = Math.max(8, Math.min(isSmall ? 16 : 30, contentWidth - 24));
+  const labelWidth = isSmall ? clamp(Math.floor(contentWidth / 3), 10, 13) : 20;
+  const taskTitleWidth = clamp(contentWidth - 24, 8, isSmall ? 16 : 30);
   const truncateLength = Math.max(6, taskTitleWidth - 2);
   const mode = summary.mode;
   const isShortSmall = isSmall && cols <= 56 && rows <= 28;

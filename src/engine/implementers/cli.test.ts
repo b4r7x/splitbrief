@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, chmodSync, readFileSync } from 'node:fs';
+import { writeFileSync, chmodSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
@@ -172,6 +172,23 @@ describe('createCliImplementer (opencode arg vector)', () => {
     const argv = readArgv(argvFile);
     expect(argv[0]).toBe('run');
     expect(argv.at(-1)).toContain('src/hello.ts');
+  });
+
+  it('checks availability without executing the implementer command', async () => {
+    const markerFile = join(shimDir, 'availability-ran.txt');
+    const shimPath = join(shimDir, 'opencode');
+    writeFileSync(
+      shimPath,
+      ['#!/bin/bash', `printf ran > '${markerFile}'`, 'exit 2'].join('\n') + '\n',
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+
+    const implementer = createCliImplementer(opencodeImplementer);
+
+    expect(await implementer.isAvailable()).toBe(true);
+    expect(await implementer.getVersion()).toBeNull();
+    expect(existsSync(markerFile)).toBe(false);
   });
 
   it('places an explicit --model under the `run` subcommand, before the prompt positional', async () => {

@@ -141,7 +141,7 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
         phase: type === 'spec' ? 'reviewing-spec' : 'reviewing-plan',
         text: comment,
       },
-      persistTranscript,
+      { persistTranscript },
     );
 
     const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);

@@ -13,6 +13,7 @@ import { EVIDENCE_FILE, sessionDir } from '../paths.js';
 import { ensureSecureDir, readJsonSafe, writeSecureFile } from '../../lib/fs.js';
 import { nowIso } from '../../utils/format-time.js';
 import { evidenceError } from './errors.js';
+import type { SessionRef } from '../types/session-ref.js';
 
 function buildExpectedEvidence(task: Task): string[] {
   const out: string[] = [];
@@ -147,8 +148,8 @@ export function getOrCreateLedger(
   return existing ?? createEvidenceLedger(input);
 }
 
-export function evidenceLedgerPath(projectDir: string, sessionId: string): string {
-  return join(sessionDir(projectDir, sessionId), EVIDENCE_FILE);
+export function evidenceLedgerPath(ref: SessionRef): string {
+  return join(sessionDir(ref.projectDir, ref.sessionId), EVIDENCE_FILE);
 }
 
 const LEDGER_LOCK_SUFFIX = '.lock';
@@ -253,33 +254,28 @@ function writeEvidenceLedgerUnlocked(ledgerPath: string, ledger: EvidenceLedger)
   writeSecureFile(ledgerPath, `${JSON.stringify(ledger, null, 2)}\n`);
 }
 
-export function writeEvidenceLedger(
-  projectDir: string,
-  sessionId: string,
-  ledger: EvidenceLedger,
-): void {
-  const ledgerPath = evidenceLedgerPath(projectDir, sessionId);
+export function writeEvidenceLedger(ref: SessionRef, ledger: EvidenceLedger): void {
+  const ledgerPath = evidenceLedgerPath(ref);
   withEvidenceLedgerLock(ledgerPath, () => {
     writeEvidenceLedgerUnlocked(ledgerPath, ledger);
   });
 }
 
 export function mutateEvidenceLedger(
-  projectDir: string,
-  sessionId: string,
+  ref: SessionRef,
   mutate: (ledger: EvidenceLedger | null) => EvidenceLedger,
 ): EvidenceLedger {
-  const ledgerPath = evidenceLedgerPath(projectDir, sessionId);
+  const ledgerPath = evidenceLedgerPath(ref);
   return withEvidenceLedgerLock(ledgerPath, () => {
-    const current = readEvidenceLedger(projectDir, sessionId);
+    const current = readEvidenceLedger(ref);
     const updated = mutate(current);
     writeEvidenceLedgerUnlocked(ledgerPath, updated);
     return updated;
   });
 }
 
-export function readEvidenceLedger(projectDir: string, sessionId: string): EvidenceLedger | null {
-  const raw = readJsonSafe(evidenceLedgerPath(projectDir, sessionId));
+export function readEvidenceLedger(ref: SessionRef): EvidenceLedger | null {
+  const raw = readJsonSafe(evidenceLedgerPath(ref));
   if (raw === null) return null;
   const result = EvidenceLedgerSchema.safeParse(raw);
   return result.success ? result.data : null;
