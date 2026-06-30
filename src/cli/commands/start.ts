@@ -50,7 +50,7 @@ import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spa
 import { buildCLIOverrides, printConfigWarnings } from '../build-overrides.js';
 import { writeHeadlessJsonRecord } from '../../engine/events/public-json.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
-import { formatDetachedAttachHint } from '../../utils/shell-quote.js';
+import { formatDetachedAttachHint } from './attach-hint.js';
 import { resolveCliWorkflowMode } from '../../core/config/runtime/overrides.js';
 
 export interface StartDeps {

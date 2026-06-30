@@ -67,13 +67,15 @@ src/cli/
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
 ├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
 ├── hook-trust-prompt.ts  # TTY trust prompt for hook config; refuses in non-TTY unless --allow-hooks
-├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core)
+├── …                  # plus leaf modules (crash-diagnostic, render-table, parse-at-files, …) — `rg --files src/cli` for the full set
+├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core). Listing is representative; `rg --files src/cli/commands` for the full set
 │   ├── start.ts
 │   ├── resume.ts
 │   ├── spec.ts
 │   ├── init.ts
 │   ├── status.ts
-│   └── migrate.ts     # thin wrapper; business logic in core/migration/executor.ts
+│   ├── migrate.ts     # thin wrapper; business logic in core/migration/executor.ts
+│   └── …              # plus attach, continue, ps, doctor, mcp, and more — see the rg pointer above
 ├── rpc/               # attached-client RPC: reader/writer framing, gates, command dispatch, run loop
 │   ├── run.ts
 │   ├── dispatch.ts
@@ -82,6 +84,7 @@ src/cli/
 │   ├── writer.ts
 │   ├── callbacks.ts
 │   ├── command-context.ts
+│   ├── errors.ts          # rpcError factory + isTransportClosed predicate — see ERRORS.md
 │   └── types.ts
 └── sessions/          # session-id resolution for subcommands
     ├── resolve.ts          # resolveSessionOrThrow(dir, opt) — active pointer → single-running fallback

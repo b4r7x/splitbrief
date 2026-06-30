@@ -8,10 +8,6 @@ export function formatShellArgv(argv: readonly string[]): string {
   return argv.map(shellQuoteArg).join(' ');
 }
 
-export function formatDetachedAttachHint(projectDir: string, sessionId: string): string {
-  return formatShellArgv(['diptych', 'attach', sessionId, '--project', projectDir]);
-}
-
 export function shellCommandFromText(text: string): string | null {
   const prefixes = [
     '/bin/zsh -lc ',

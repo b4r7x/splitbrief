@@ -29,8 +29,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { useStores } from '../../stores/use-stores.js';
 import { registerMouseZone } from '../../lib/terminal/mouse-zones.js';
-import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
-import { wrapHard } from '../../utils/wrap.js';
+import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -38,9 +37,18 @@ import { useHistory } from './use-history.js';
 import { attachImage, attachmentsStore } from '../../stores/workflow/attachments.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
 import { glyph } from '../../lib/glyphs.js';
+import {
+  fitFeedbackMessage,
+  matchKnownFeedbackMessage,
+  type FeedbackMessageInput,
+} from './feedback-fit.js';
+import {
+  compactComposerHints,
+  composerHintZoneRects,
+  computeComposerHintBudget,
+} from './hint-zones.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
-const ELLIPSIS = '\u2026';
 const RESUME_INTERRUPTED_PREFIX = 'Cannot resume "';
 const RESUME_INTERRUPTED_SUFFIX = '": interrupted before it made progress \u2014 start it again.';
 const SESSION_FAILED_PREFIX = 'Session "';
@@ -65,91 +73,12 @@ function placeholderForMode(mode: InputMode, hint?: string): string {
 const SESSIONS_REL_DIR = `${DIPTYCH_DIR}/${SESSIONS_DIR}`;
 const SESSIONS_EXCLUDE = new RegExp(`(?:^|/)${SESSIONS_REL_DIR.replace(/[.]/g, '\\$&')}/`);
 
-export interface FeedbackMessageParts {
-  prefix: string;
-  title: string;
-  suffix: string;
-}
-
-type FeedbackMessageInput = FeedbackMessageParts | string;
-
-function fitsDisplayWidth(text: string, maxWidth: number): boolean {
-  if (maxWidth <= 0) return text.length === 0;
-  return !wrapHard(text, maxWidth).includes('\n');
-}
-
-function truncateToDisplayWidth(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return '';
-  if (fitsDisplayWidth(text, maxWidth)) return text;
-  if (!fitsDisplayWidth(ELLIPSIS, maxWidth)) return '';
-
-  const chars = Array.from(text);
-  let low = 0;
-  let high = chars.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    const candidate = `${chars.slice(0, mid).join('')}${ELLIPSIS}`;
-    if (fitsDisplayWidth(candidate, maxWidth)) {
-      low = mid;
-    } else {
-      high = mid - 1;
-    }
-  }
-  return `${chars.slice(0, low).join('')}${ELLIPSIS}`;
-}
-
-function matchKnownFeedbackMessage(
-  message: string,
-  prefix: string,
-  suffix: string,
-): FeedbackMessageParts | null {
-  if (!message.startsWith(prefix) || !message.endsWith(suffix)) return null;
-  return {
-    prefix,
-    title: message.slice(prefix.length, message.length - suffix.length),
-    suffix,
-  };
-}
-
 function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {
   return (
     matchKnownFeedbackMessage(message, RESUME_INTERRUPTED_PREFIX, RESUME_INTERRUPTED_SUFFIX) ??
     matchKnownFeedbackMessage(message, SESSION_FAILED_PREFIX, SESSION_FAILED_SUFFIX) ??
     message
   );
-}
-
-export function fitFeedbackMessage(message: FeedbackMessageInput, width: number): string {
-  const text =
-    typeof message === 'string' ? message : `${message.prefix}${message.title}${message.suffix}`;
-  if (!Number.isFinite(width)) return text;
-
-  const max = Math.max(0, Math.floor(width));
-  if (fitsDisplayWidth(text, max)) return text;
-  if (typeof message === 'string') return truncateToDisplayWidth(message, max);
-
-  const emptyTitle = `${message.prefix}${message.suffix}`;
-  if (!fitsDisplayWidth(emptyTitle, max)) return truncateToDisplayWidth(text, max);
-
-  const ellipsizedTitle = `${message.prefix}${ELLIPSIS}${message.suffix}`;
-  if (!fitsDisplayWidth(ellipsizedTitle, max)) return emptyTitle;
-
-  const chars = Array.from(message.title);
-  let low = 0;
-  let high = chars.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    const candidate = `${message.prefix}${chars.slice(0, mid).join('')}${ELLIPSIS}${
-      message.suffix
-    }`;
-    if (fitsDisplayWidth(candidate, max)) {
-      low = mid;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  return `${message.prefix}${chars.slice(0, low).join('')}${ELLIPSIS}${message.suffix}`;
 }
 
 async function readProjectFiles(projectDir: string): Promise<string[]> {
@@ -194,122 +123,6 @@ function boxHintCostColor(
   if (tone === 'error') return theme.error;
   if (tone === 'warning') return theme.warning;
   return theme.text;
-}
-
-const SUBMIT_GLYPH = '⏎';
-const COMPOSER_PROMPT_WIDTH = 2;
-const COMPOSER_HINT_MARGIN_LEFT = 2;
-const COMPOSER_BORDER_AND_PADDING = 4;
-const COMPOSER_MIN_INPUT_WIDTH = 24;
-
-// The in-box hints sit at the right edge while the input keeps a readable minimum; this is the
-// width left for them once the box chrome, prompt, margin and that reserve are accounted for.
-export function computeComposerHintBudget(boxWidth: number): number {
-  return Math.max(
-    0,
-    boxWidth -
-      COMPOSER_BORDER_AND_PADDING -
-      COMPOSER_PROMPT_WIDTH -
-      COMPOSER_HINT_MARGIN_LEFT -
-      COMPOSER_MIN_INPUT_WIDTH,
-  );
-}
-
-export interface ComposerHintDisplay {
-  keys: string;
-  cost?: string | undefined;
-}
-
-// Compaction ladder: full, then drop the cost, keeping the bare submit affordance to the floor. The keys
-// cluster is already a single glyph, so the cost is the only droppable accessory. Returns what is
-// actually rendered so click zones can track it exactly.
-export function compactComposerHints(
-  input: { keys: string; cost?: string | undefined },
-  budget: number,
-): ComposerHintDisplay {
-  const costSuffix = input.cost !== undefined ? `  ${input.cost}` : '';
-  if (getTerminalCellWidth(input.keys + costSuffix) <= budget) {
-    return { keys: input.keys, cost: input.cost };
-  }
-  return { keys: input.keys, cost: undefined };
-}
-
-export interface ComposerHintSegment {
-  id: 'submit' | 'cost';
-  offset: number;
-  width: number;
-}
-
-export function renderComposerHint(display: ComposerHintDisplay): string {
-  const costSuffix =
-    display.cost !== undefined
-      ? display.keys.length > 0
-        ? `  ${display.cost}`
-        : display.cost
-      : '';
-  return `${display.keys}${costSuffix}`;
-}
-
-// `offset` is the cell distance from the start of the rendered hint to the start of the segment,
-// taken as the terminal cell width of the rendered prefix (not the raw character index), so a
-// wide-cell glyph anywhere before a segment shifts it correctly and zone placement never drifts.
-export function composerHintSegments(display: ComposerHintDisplay): ComposerHintSegment[] {
-  const rendered = renderComposerHint(display);
-  const segments: ComposerHintSegment[] = [];
-  const submitIndex = rendered.indexOf(SUBMIT_GLYPH);
-  if (submitIndex >= 0) {
-    segments.push({
-      id: 'submit',
-      offset: getTerminalCellWidth(rendered.slice(0, submitIndex)),
-      width: getTerminalCellWidth(SUBMIT_GLYPH),
-    });
-  }
-  if (display.cost !== undefined && display.cost.length > 0) {
-    const costIndex = rendered.lastIndexOf(display.cost);
-    if (costIndex >= 0) {
-      segments.push({
-        id: 'cost',
-        offset: getTerminalCellWidth(rendered.slice(0, costIndex)),
-        width: getTerminalCellWidth(display.cost),
-      });
-    }
-  }
-  return segments;
-}
-
-export interface ComposerHintZoneRect {
-  id: 'submit' | 'cost';
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-// Maps the post-compaction segments onto 1-based screen cells. The hint block is right-aligned
-// inside the box, so its last cell is `boxLeft + boxWidth - 3` (1 border + 1 padding); each
-// segment offset is already a cell distance (composerHintSegments). Calibration: row = sgrY - rect.top.
-export function composerHintZoneRects(input: {
-  boxLeft: number;
-  boxWidth: number;
-  hintRow: number;
-  display: ComposerHintDisplay;
-}): ComposerHintZoneRect[] {
-  const rendered = renderComposerHint(input.display);
-  const renderedWidth = getTerminalCellWidth(rendered);
-  if (renderedWidth <= 0 || input.hintRow < 1) return [];
-  const rightCell = input.boxLeft + input.boxWidth - 3;
-  const leftCell = rightCell - renderedWidth + 1;
-  if (leftCell < 1) return [];
-  return composerHintSegments(input.display).map((segment) => {
-    const left = leftCell + segment.offset;
-    return {
-      id: segment.id,
-      left,
-      right: left + segment.width - 1,
-      top: input.hintRow,
-      bottom: input.hintRow,
-    };
-  });
 }
 
 export function Composer({

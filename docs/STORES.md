@@ -50,6 +50,9 @@ src/stores/
 │   ├── input-height.ts       # Input bar rendered height
 │   ├── command-palette-mru.ts # Command palette most-recently-used order
 │   ├── project-files.ts      # Project file list for mention/attach pickers
+│   ├── completion.ts         # Completion popup open/closed flag
+│   ├── focus.ts              # Focused region + index (e.g. brief)
+│   ├── hover.ts              # Hovered surface + index (brief / conversation)
 │   └── persistence.ts        # Disk I/O for inputHistoryStore (hydrate + debounced save)
 ├── workflow/                 # State that only exists during a workflow run
 │   ├── events.ts             # Event log (mergeEvent + MAX_EVENTS)
