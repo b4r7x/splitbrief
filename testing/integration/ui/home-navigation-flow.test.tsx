@@ -22,7 +22,7 @@ const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
 const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k';
-const RECENT_SESSIONS_HINT = '↑↓ navigate · type filter · enter resume/view · esc back';
+const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
 const FOCUS_BAR = '▌';
 
 function lineIndexContaining(frame: string, text: string): number {
@@ -81,7 +81,7 @@ describe('home navigation flow (through real App)', () => {
 
     const boot = ui.lastFrame() ?? '';
     expect(boot).toContain('__| (_)');
-    expect(boot).toContain('recent sessions');
+    expect(boot).toContain('RECENT SESSIONS');
 
     await focusRecentSessions(ui);
 

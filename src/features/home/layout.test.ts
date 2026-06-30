@@ -54,7 +54,7 @@ describe('getHomeLayout', () => {
 
   it('accounts focused prompt and selection-error rows before session capacity', () => {
     const baseRows = 16;
-    const focusedChromeRows = 2;
+    const focusedChromeRows = 5;
     const sessionCount = 30;
 
     const unfocused = getHomeLayout({
@@ -90,7 +90,7 @@ describe('getHomeLayout', () => {
   it('reserves a row for +N more when capacity allows more than one session row', () => {
     const layout = getHomeLayout({
       cols: 80,
-      rows: 17,
+      rows: 18,
       isSmall: true,
       hasSkills: false,
       sessionCount: 25,

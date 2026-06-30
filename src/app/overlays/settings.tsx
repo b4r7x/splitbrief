@@ -95,7 +95,9 @@ export function SettingsOverlay() {
         <Text color={t.textDim}>esc</Text>
       </Box>
 
-      <FilterInput filter={filter} placeholder={'filter\u2026'} />
+      <Box marginBottom={1}>
+        <FilterInput filter={filter} placeholder={'filter\u2026'} />
+      </Box>
 
       <ListViewport
         items={filtered}

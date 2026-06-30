@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
+import { Box } from 'ink';
 import type { Key } from 'ink';
 import { OverlayPanel } from '../overlays/overlay-panel.js';
-import { FilterInput, type FilterInputVariant } from '../filter-input.js';
+import { FilterInput } from '../filter-input.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -22,7 +23,6 @@ interface FilterableListProps<T> {
   maxVisible?: number;
   listFloor?: number;
   width?: number;
-  filterVariant?: FilterInputVariant | undefined;
   filterPlaceholder?: string | undefined;
   shouldAppendChar?: (ch: string) => boolean;
   customKeys?: (
@@ -47,7 +47,6 @@ export function FilterableList<T>({
   maxVisible: maxVisibleProp,
   listFloor = 0,
   width,
-  filterVariant = 'plain',
   filterPlaceholder,
   shouldAppendChar,
   customKeys,
@@ -57,8 +56,6 @@ export function FilterableList<T>({
   const viewportRows = availableRows({ rows, chromeRows, floor: listFloor });
   const pageSize =
     maxVisibleProp === undefined ? viewportRows : Math.min(viewportRows, maxVisibleProp);
-  const resolvedFilterVariant =
-    viewportRows <= 0 && filterVariant === 'plain' ? 'inline' : filterVariant;
 
   const list = useFilterableList<T>({
     items,
@@ -76,11 +73,12 @@ export function FilterableList<T>({
 
   return (
     <OverlayPanel title={title} hint={hint} maxWidth={width}>
-      <FilterInput
-        filter={filter}
-        variant={resolvedFilterVariant}
-        {...(filterPlaceholder !== undefined ? { placeholder: filterPlaceholder } : {})}
-      />
+      <Box marginBottom={1}>
+        <FilterInput
+          filter={filter}
+          {...(filterPlaceholder !== undefined ? { placeholder: filterPlaceholder } : {})}
+        />
+      </Box>
       <ListViewport
         items={filtered}
         selectedIndex={selectedIndex}

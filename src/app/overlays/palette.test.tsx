@@ -149,6 +149,15 @@ function rowContaining(rows: string[], text: string): string {
   return row ?? '';
 }
 
+function promptLine(frame: string): string {
+  const marker = `${glyph('prompt')} `;
+  return (
+    stripAnsiStyles(frame)
+      .split('\n')
+      .find((line) => line.includes(marker)) ?? ''
+  );
+}
+
 const DOWN = '\u001b[B';
 const UP = '\u001b[A';
 const ENTER = '\r';
@@ -208,14 +217,14 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain(`hel${glyph('editCursor')}`);
+    expect(promptLine(instance.lastFrame() ?? '')).toContain('hel');
     write(instance, BACKSPACE);
     await tick(1);
     await tick(1);
 
-    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
-    expect(frame).toContain(`he${glyph('editCursor')}`);
-    expect(frame).not.toContain(`hel${glyph('editCursor')}`);
+    const line = promptLine(instance.lastFrame() ?? '');
+    expect(line).toContain('he');
+    expect(line).not.toContain('hel');
     instance.unmount();
   });
 
@@ -227,14 +236,16 @@ describe('CommandPaletteOverlay', () => {
     write(instance, 'hi😀');
     await tick(1);
     await tick(1);
-    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain(`hi😀${glyph('editCursor')}`);
+    expect(promptLine(instance.lastFrame() ?? '')).toContain('hi😀');
 
     write(instance, BACKSPACE);
     await tick(1);
     await tick(1);
 
-    const frame = stripAnsiStyles(instance.lastFrame() ?? '');
-    expect(frame).toContain(`hi${glyph('editCursor')}`);
+    const raw = instance.lastFrame() ?? '';
+    const frame = stripAnsiStyles(raw);
+    expect(promptLine(raw)).toContain('hi');
+    expect(promptLine(raw)).not.toContain('😀');
     // No half of the surrogate pair left behind.
     expect(frame).not.toContain('\ud83d');
     expect(frame).not.toContain('\ude00');

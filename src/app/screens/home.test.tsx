@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { readClipboardExecCalls } from '#testing/helpers/clipboard-exec-fixture.js';
+import {
+  installClipboardExecFixture,
+  readClipboardExecCalls,
+  resetClipboardExecFixture,
+  restoreClipboardExecFixture,
+} from '#testing/helpers/clipboard-exec-fixture.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -29,7 +34,7 @@ const ESC = '\u001b';
 const ENTER = '\r';
 const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k';
 const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k';
-const RECENT_SESSIONS_HINT = '↑↓ navigate · type filter · enter resume/view · esc back';
+const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
 const FOCUS_BAR = '▌';
 
 const COMMANDS: RuntimeCommandDef[] = [
@@ -90,7 +95,7 @@ describe('HomeScreen', () => {
     const frame = ui.lastFrame() ?? '';
     const plannerLine = frame.split('\n').find((line) => line.includes('planner')) ?? '';
     expect(plannerLine.indexOf('planner')).toBeGreaterThan(0);
-    expect(frame).toContain('plan expensively · build cheaply');
+    expect(frame).not.toContain('plan expensively · build cheaply');
     expect(frame).toContain(DEFAULT_HOME_HINT);
     ui.unmount();
   });
@@ -150,7 +155,7 @@ describe('HomeScreen', () => {
   });
 
   it('caps recent sessions and reports a hidden count when capacity is tight', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 17, isSmall: true });
+    terminalSizeStore.__testReset({ cols: 80, rows: 18, isSmall: true });
 
     for (let i = 0; i < 25; i++) {
       saveSummary(
@@ -169,7 +174,7 @@ describe('HomeScreen', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('feature 24');
     expect(frame).toMatch(/\b\d+ more\b/);
-    expect(frame).toContain('ctrl+r');
+    expect(frame).not.toContain('ctrl+r');
     ui.unmount();
   });
 
@@ -324,6 +329,8 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
     resetAllStores();
+    installClipboardExecFixture();
+    resetClipboardExecFixture();
     projectDir = createTempDir('home-focus-test');
     configStore.__testReset({ config: makeConfig(), projectDir });
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
@@ -331,6 +338,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   afterEach(() => {
     resetAllStores();
+    restoreClipboardExecFixture();
     cleanupTempDir(projectDir);
     projectDir = '';
   });
@@ -351,8 +359,32 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('shows compact focused recent-sessions chrome at 80x16', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
+  it('keeps the planner/implementer/mode rows intact and separate while focused', async () => {
+    seedSessions(20);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
+    });
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    // Each config row must remain on its own line with its own slash hint — the
+    // focus-time overflow bug merged them into "standardAuto" / "/imple /mode".
+    const implLine = lineContaining(frame, '/implementer');
+    const modeLine = lineContaining(frame, '/mode');
+    expect(implLine).toContain('implementer');
+    expect(modeLine).toContain('mode');
+    expect(modeLine).toContain('standard');
+    expect(implLine).not.toBe(modeLine);
+    expect(implLine).not.toContain('standard');
+    expect(frame).not.toContain('/imple /mode');
+    ui.unmount();
+  });
+
+  it('engages the bordered focused recent-sessions chrome at a viable small height', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     seedSessions(30);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await tick(20);
@@ -360,12 +392,27 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('recent sessions');
+      expect(frame).toContain('RECENT SESSIONS');
       expect(frame).toContain('filter sessions');
       expect(frame).toContain(RECENT_SESSIONS_HINT);
-      expect(frame).not.toContain(FOCUS_BAR);
-      expect(frame).not.toMatch(/focus feature \d+/);
+      expect(frame).toContain(FOCUS_BAR);
     });
+    ui.unmount();
+  });
+
+  it('Ctrl+R is a no-op at 80x16 where the bordered filter cannot fit', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
+    seedSessions(30);
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await tick(20);
+
+    ui.stdin.write(CTRL_R);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).not.toContain(FOCUS_BAR);
+    expect(frame).not.toContain('filter sessions');
+    expect(frame).toContain('RECENT SESSIONS');
     ui.unmount();
   });
 
@@ -484,8 +531,8 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('Enter at a short height with zero visible rows selects no invisible session', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
+  it('Enter with a filter that matches nothing selects no session', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     saveSummary(
       { projectDir, sessionId: 'invisible-complete' },
       makeSession({
@@ -502,9 +549,15 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('filter sessions');
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('filter sessions');
+      expect(frame).toContain('invisible feature');
     });
-    expect(ui.lastFrame() ?? '').not.toContain('invisible feature');
+
+    ui.stdin.write('zzznomatch');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').not.toContain('invisible feature');
+    });
 
     ui.stdin.write(ENTER);
     await tick(20);
@@ -513,8 +566,8 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('y does not copy a session when no session row is visible', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
+  it('y does not copy a session when the filtered list is empty', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     saveSummary(
       { projectDir, sessionId: 'invisible-copy' },
       makeSession({
@@ -531,9 +584,15 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('filter sessions');
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('filter sessions');
+      expect(frame).toContain('invisible copy feature');
     });
-    expect(ui.lastFrame() ?? '').not.toContain('invisible copy feature');
+
+    ui.stdin.write('zzznomatch');
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').not.toContain('invisible copy feature');
+    });
 
     ui.stdin.write('y');
     await tick(20);

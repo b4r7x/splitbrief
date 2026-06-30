@@ -11,7 +11,7 @@ export interface LabeledRowProps {
 export function LabeledRow({ label, labelWidth = 14, children }: LabeledRowProps) {
   const t = useTheme();
   return (
-    <Box gap={1} overflow="hidden">
+    <Box gap={1} overflow="hidden" flexShrink={0}>
       <Box width={labelWidth} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
           {label}

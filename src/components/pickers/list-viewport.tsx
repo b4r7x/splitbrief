@@ -20,6 +20,7 @@ interface ListViewportBaseProps<T> {
   onRowActivate?: ((globalIndex: number) => void) | undefined;
   rowZonePrefix?: string | undefined;
   rowZoneZ?: number | undefined;
+  showRemainingCount?: boolean | undefined;
 }
 
 type ListViewportExplicitBudgetProps = {
@@ -52,6 +53,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
     onRowActivate,
     rowZonePrefix = 'list-row',
     rowZoneZ = ROW_ZONE_Z_OVERLAY,
+    showRemainingCount = false,
   } = props;
   const rowBudgetInput =
     props.rowBudget !== undefined
@@ -62,7 +64,11 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
           maxVisible: props.maxVisible,
           listFloor: props.listFloor,
         };
-  const { rowBudget: resolvedRows, visibleSlots } = computeListDisplayWindow({
+  const {
+    rowBudget: resolvedRows,
+    visibleSlots,
+    scrollOffset,
+  } = computeListDisplayWindow({
     items,
     selectedIndex,
     ...rowBudgetInput,
@@ -71,6 +77,9 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
       : {}),
   });
   if (resolvedRows <= 0) return null;
+
+  const visibleItemCount = visibleSlots.filter((slot) => slot.kind === 'item').length;
+  const remainingBelow = items.length - (scrollOffset + visibleItemCount);
 
   return (
     <Box flexDirection="column">
@@ -82,6 +91,9 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
                 key={`indicator-${slot.direction}-${i}`}
                 show
                 direction={slot.direction}
+                {...(showRemainingCount && slot.direction === 'down'
+                  ? { count: remainingBelow }
+                  : {})}
               />
             );
           case 'header':

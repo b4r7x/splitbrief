@@ -34,7 +34,6 @@ function formatRelativeTime(timestamp: number): string {
 interface SessionRowProps {
   session: Session;
   cursor?: SessionRowCursor;
-  copyHint?: boolean;
 }
 
 function isSelected(cursor: SessionRowCursor): boolean {
@@ -51,7 +50,7 @@ function isSelected(cursor: SessionRowCursor): boolean {
   }
 }
 
-export function SessionRow({ session, cursor = NO_ROW_CURSOR, copyHint = false }: SessionRowProps) {
+export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps) {
   const t = useTheme();
   const display = getSessionStatusDisplay(session.status, t);
   const failed = session.status === 'failed';
@@ -92,7 +91,6 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR, copyHint = false }
               </Text>
             </>
           )}
-          {copyHint && selected && <Text color={t.textDim}>{`${SOFT_SEP}y copy`}</Text>}
         </Text>
       </Box>
     </Box>
