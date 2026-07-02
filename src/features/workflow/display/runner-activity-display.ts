@@ -6,6 +6,7 @@ import {
 import { shellCommandFromText } from '../../../utils/shell-quote.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ActivityDisplayValueFit } from './activity-display-text.js';
+import { prettifyShellActivity } from './shell-activity-pretty.js';
 
 export type RunnerActivityLedgerTone = 'info' | 'success' | 'warning' | 'error' | 'textDim';
 export type RunnerActivitySeverity = 'info' | 'warning' | 'error';
@@ -50,7 +51,8 @@ export type RunnerActivityLedgerLabel =
   | 'SESS'
   | 'ART'
   | 'WARN'
-  | 'ERR';
+  | 'ERR'
+  | 'LIST';
 
 const DEFAULT_DIAGNOSTIC_PREVIEW_MAX_CELLS = 80;
 const INTERNAL_RUNNER_INTERRUPTED_PATTERN = /\brunner_interrupted\b/g;
@@ -63,8 +65,11 @@ export function runnerActivityLedgerItem(
   const withoutVerb = stripActivityVerb(source);
   const shellCommand =
     shellCommandFromText(withoutVerb) !== null || shellCommandFromText(source) !== null;
-  const label = runnerActivityLedgerLabel(input, { interrupted, shellCommand });
-  const value = runnerActivityLedgerValue(input, { interrupted });
+  const rawLabel = runnerActivityLedgerLabel(input, { interrupted, shellCommand });
+  const rawValue = runnerActivityLedgerValue(input, { interrupted });
+  const pretty = rawLabel === 'RUN' ? prettifyShellActivity(rawValue) : null;
+  const label = pretty?.label ?? rawLabel;
+  const value = pretty?.value ?? rawValue;
   const diagnosticPreview = runnerActivityDiagnosticPreview(input);
   const severity = runnerActivitySeverity(input, { interrupted });
   const rawMarker = input.rawAvailable === true ? 'raw' : null;
@@ -112,17 +117,17 @@ export function runnerActivityRoleLabel(
 ): string {
   switch (role) {
     case 'planner':
-      return 'plan';
+      return 'Plan';
     case 'implementer':
-      return 'impl';
+      return 'Implementer';
     case 'review':
-      return 'review';
+      return 'Review';
     case 'summary':
-      return 'summary';
+      return 'Summary';
     case 'compaction':
-      return 'compact';
+      return 'Compaction';
     case 'escalation':
-      return 'escalate';
+      return 'Escalation';
     default:
       return assertNever(role);
   }
@@ -270,7 +275,9 @@ function activityFitMode(
   input: RunnerActivityDisplayInput,
 ): ActivityDisplayValueFit {
   if (label === 'RUN') return 'middle';
-  if (label === 'READ' || label === 'EDIT' || input.kind === 'file') return 'start';
+  if (label === 'READ' || label === 'EDIT' || label === 'LIST' || input.kind === 'file') {
+    return 'start';
+  }
   if (label === 'WARN' || label === 'ERR') return 'middle';
   return 'end';
 }

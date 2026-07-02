@@ -94,7 +94,7 @@ export function CompletionPanel<T>({
   }
   rows.push(
     <Box key="divider" width="100%" height={1} overflow="hidden" backgroundColor={panelBg}>
-      <Text color={t.border}>{glyph('divider').repeat(Math.max(0, cols - 2))}</Text>
+      <Text color={t.border}>{glyph('divider').repeat(Math.max(0, cols - 4))}</Text>
     </Box>,
   );
   rows.push(
@@ -111,6 +111,7 @@ export function CompletionPanel<T>({
       <Box
         flexDirection="column"
         width="100%"
+        paddingX={1}
         borderStyle={borderStyleFor('round')}
         borderColor={t.border}
         backgroundColor={panelBg}

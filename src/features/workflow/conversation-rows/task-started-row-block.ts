@@ -1,6 +1,6 @@
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from './types.js';
 import { sanitizeRowDisplayText, segmentedRow, wrappedRowTexts } from './row-format.js';
-import { rowLeadingCells } from './row-markers.js';
+import { wrapWidthFor } from './row-markers.js';
 
 export function taskStartedRowBlock(input: {
   keyPrefix: string;
@@ -16,10 +16,7 @@ export function taskStartedRowBlock(input: {
   const indexEnd = indexText.length;
   const titleEnd = indexEnd + titleText.length;
 
-  const wrapped = wrappedRowTexts(
-    fullText,
-    Math.max(1, input.width - rowLeadingCells('task-header')),
-  );
+  const wrapped = wrappedRowTexts(fullText, wrapWidthFor('task-header', input.width));
   if (wrapped.length === 0) return null;
 
   const rows: ConversationRow[] = [];

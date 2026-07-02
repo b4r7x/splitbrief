@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
+import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -8,9 +9,17 @@ import { eventsStore } from '../../../stores/workflow/events.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import { RAIL_MARKER_SLOT_WIDTH, railConnectorString } from '../layout/chrome-rows.js';
-import { buildRailFraction, getRailStageZones } from '../layout/hit-test.js';
-import { Rail } from './rail.js';
+import {
+  getRailStages,
+  RAIL_MARKER_SLOT_WIDTH,
+  railConnectorString,
+} from '../layout/chrome-rows.js';
+import {
+  buildRailFraction,
+  getRailStageZones,
+  RAIL_FORM_C_CANCELLED_SUFFIX,
+} from '../layout/hit-test.js';
+import { Rail, railFormCText } from './rail.js';
 
 const STAGES = ['spec', 'plan', 'briefs', 'build', 'verify'];
 
@@ -39,6 +48,17 @@ function lineContaining(frame: string, needle: string): string {
   return line;
 }
 
+// The rail renders inline inside the header row, now flush to the terminal edge (no paddingX), so
+// its first stage marker sits at screen column 1 (RAIL_CONTENT_LEFT_COL). Standalone renders keep
+// that flush layout so the hit-test geometry stays honest.
+function renderRail(form: 'B' | 'C') {
+  return renderFeature(
+    <Box>
+      <Rail form={form} />
+    </Box>,
+  );
+}
+
 beforeEach(() => {
   lifecycleStore.__testReset();
   terminalSizeStore.reset();
@@ -53,7 +73,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="B" />);
+    const ui = renderRail('B');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
@@ -70,13 +90,13 @@ describe('Rail — Form B (horizontal pipeline)', () => {
   it('distinguishes idle (no active marker) from a running first stage without color', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'idle' });
-    const idle = renderFeature(<Rail form="B" />);
+    const idle = renderRail('B');
     await tick();
     const idleFrame = stripAnsiStyles(idle.lastFrame() ?? '');
     idle.unmount();
 
     lifecycleStore.__testReset({ phase: 'specifying', status: 'running', startedAt: 0 });
-    const running = renderFeature(<Rail form="B" />);
+    const running = renderRail('B');
     await tick();
     const runningFrame = stripAnsiStyles(running.lastFrame() ?? '');
     running.unmount();
@@ -93,7 +113,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="B" />);
+    const ui = renderRail('B');
     await tick();
     const frame = ui.lastFrame() ?? '';
 
@@ -106,38 +126,16 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     ui.unmount();
   });
 
-  it('hangs the activity line under the active stage, indented to its marker column', async () => {
-    const cols = 80;
-    terminalSizeStore.__testReset({ cols, rows: 40, isSmall: false });
+  it('paints no background pill behind the active stage — bold and the marker carry it', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="B" />);
+    const ui = renderRail('B');
     await tick();
-    const frame = ui.lastFrame() ?? '';
+    const raw = ui.lastFrame() ?? '';
 
-    expect(stripAnsiStyles(frame)).toContain('implementing…');
-    expect(stripAnsiStyles(frame)).toContain('task 3/7');
-
-    const elbow = glyph('elbow');
-    const activityLine = lineContaining(frame, elbow);
-    const railLine = lineContaining(frame, 'build');
-    // The elbow corner sits exactly under the active stage's marker (label column − marker slot).
-    const elbowCol = activityLine.indexOf(elbow) + 1;
-    const buildMarkerCol = railLine.indexOf('build') + 1 - RAIL_MARKER_SLOT_WIDTH;
-    expect(elbowCol).toBe(buildMarkerCol);
-    ui.unmount();
-  });
-
-  it('shows the just-compiled artifact tail at a review gate instead of the live verb', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
-    tasksStore.__testReset({ currentTask: 7, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="B" />);
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain('7 briefs');
-    expect(frame).not.toContain('reviewing briefs');
+    // No SGR background sequence (48;… truecolor/256 or the 40–47 basic range) anywhere in the rail.
+    expect(raw).not.toMatch(new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*4[0-8][;m]`));
     ui.unmount();
   });
 
@@ -145,7 +143,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="B" />);
+    const ui = renderRail('B');
     await tick();
     const railLine = lineContaining(ui.lastFrame() ?? '', 'spec');
 
@@ -170,13 +168,13 @@ describe('Rail — Form B (horizontal pipeline)', () => {
       reason: 'user_cancelled',
     });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="B" />);
+    const ui = renderRail('B');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     for (const stage of STAGES) expect(frame).toContain(stage);
     expect(countActiveMarkers(frame)).toBe(0);
-    expect(frame).not.toContain('implementing…');
+    expect(frame).not.toContain('Implementing…');
     ui.unmount();
   });
 });
@@ -206,7 +204,7 @@ describe('Rail — completion reward', () => {
         },
       ],
     });
-    const ui = renderFeature(<Rail form="B" />);
+    const ui = renderRail('B');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
@@ -242,7 +240,7 @@ describe('Rail — completion reward', () => {
         },
       ],
     });
-    const ui = renderFeature(<Rail form="B" />);
+    const ui = renderRail('B');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
@@ -252,11 +250,25 @@ describe('Rail — completion reward', () => {
 });
 
 describe('Rail — Form C (narrow floor)', () => {
+  it('builds the active stage line without a task fraction outside task stages', () => {
+    expect(railFormCText(getRailStages('planning'), '')).toBe(`${ACTIVE} plan`);
+  });
+
+  it('builds the active task stage line with its task fraction', () => {
+    expect(railFormCText(getRailStages('implementing'), '3/7')).toBe(`${ACTIVE} build  task 3/7`);
+  });
+
+  it('builds the cancelled stage line without a task fraction', () => {
+    expect(railFormCText(getRailStages('implementing', { cancelled: true }), '3/7')).toBe(
+      `${PENDING} build${RAIL_FORM_C_CANCELLED_SUFFIX}`,
+    );
+  });
+
   it('renders only the active stage and its fraction, no verb', async () => {
     terminalSizeStore.__testReset({ cols: 24, rows: 30, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="C" />);
+    const ui = renderRail('C');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
@@ -273,7 +285,7 @@ describe('Rail — Form C (narrow floor)', () => {
     terminalSizeStore.__testReset({ cols, rows: 30, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="C" />);
+    const ui = renderRail('C');
     await tick();
     const frame = ui.lastFrame() ?? '';
 
@@ -303,7 +315,7 @@ describe('Rail — Form C (narrow floor)', () => {
       reason: 'user_cancelled',
     });
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
-    const ui = renderFeature(<Rail form="C" />);
+    const ui = renderRail('C');
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 

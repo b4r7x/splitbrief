@@ -78,6 +78,37 @@ function seedDiff(): void {
   });
 }
 
+// A transcript that overflows the viewport with an activity disclosure sitting a few rows above a
+// trailing non-activity block, exercised while a stage is live.
+function seedLiveDisclosureTranscript(): void {
+  eventsStore.__testReset({
+    events: [
+      makePlannerText({ text: Array.from({ length: 60 }, (_, i) => `line ${i}`).join('\n') }),
+      activityEvent('a', 'reading a.ts', 1),
+      activityEvent('b', 'reading b.ts', 2),
+      activityEvent('c', 'reading c.ts', 3),
+      activityEvent('d', 'reading d.ts', 4),
+      makePlannerText({ text: 'wrapping up' }),
+    ],
+  });
+}
+
+function transcriptViewportRows() {
+  const snapshot = readConversationScrollSnapshot();
+  const scroll = conversationScrollStore.get();
+  return computeConversationRowScroll({
+    sections: getSections(),
+    expandedDiffs: scroll.expandedDiffs,
+    expandedActivityBatches: scroll.expandedActivityBatches,
+    cols: snapshot.conversationWidth,
+    viewportHeight: snapshot.transcriptViewportHeight,
+    rawScrollOffset: scroll.scrollOffset,
+    renderableCountAtScroll: scroll.renderableCountAtScroll,
+    heightAtScroll: scroll.heightAtScroll,
+    streaming: streamingOutputStore.get(),
+  }).rows;
+}
+
 function transcriptRows() {
   const snapshot = readConversationScrollSnapshot();
   const scroll = conversationScrollStore.get();
@@ -415,6 +446,37 @@ describe('wireAppMouse workflow pointer handling', () => {
     expect(conversationScrollStore.get().expandedDiffs.has('implementer_generate_done:0')).toBe(
       true,
     );
+    expect(focusStore.get()).toBeNull();
+    dispose();
+  });
+
+  it('resolves an activity disclosure click while a stage is live and the transcript is scrolled to the bottom', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    seedLiveDisclosureTranscript();
+    const snapshot = readConversationScrollSnapshot();
+    expect(snapshot.maxOffset).toBeGreaterThan(0);
+
+    // The render (flow.tsx) and hit-test snapshot share the transcript-viewport projection, so the
+    // disclosure the user actually sees lives in the same window the click path resolves against.
+    const liveRows = transcriptViewportRows();
+    const windowIndex = liveRows.findIndex((row) => row.kind === 'activity-more');
+    expect(windowIndex).toBeGreaterThanOrEqual(0);
+    const batchKey = (liveRows[windowIndex]?.key ?? '').replace(/-hidden$/, '');
+    expect(batchKey).toMatch(/^activity-batch:/);
+    expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(false);
+
+    const mock = createMockFilteredStdin();
+    const dispose = wireAppMouse(mock.filtered);
+    mock.emit(
+      pointerEvent(
+        'press',
+        snapshot.conversationRect.left,
+        snapshot.conversationRect.top + snapshot.stickyLeadingRows + windowIndex,
+      ),
+    );
+
+    expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(true);
     expect(focusStore.get()).toBeNull();
     dispose();
   });

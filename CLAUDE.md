@@ -101,6 +101,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, and the overlay entry is the page `src/app/overlays/palette.tsx`.
 - **Settings** overlay entry is the page `src/app/overlays/settings.tsx`; `ModeSelector` stays at `src/features/settings/mode-selector.tsx` and is imported directly by `src/app/router.tsx` (a router-imported feature component, not a page).
 - **Runner selection** is the `src/features/runners/` feature; its picker entry is the page `src/app/overlays/runners.tsx`. `ToolModelPicker` / `renderToolPicker` are component/callback names, not a `tool-picker` folder boundary.
+- **Workflow live status** renders in the composer byline (`InputFooter` + `deriveLiveStatus`), not as a transcript row — do not recreate `live-status-row`. The transcript has no max-width cap; the sidebar (25% + 2-col gap) is the only width constraint.
 
 ## Runner kinds
 

@@ -4,7 +4,9 @@ import { glyph } from '../../../lib/glyphs.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { eventRowBlock, eventRows } from './event-rows.js';
+import { eventRows } from '#testing/helpers/event-rows.js';
+import { calloutRowsBlock } from './callout-block.js';
+import { eventRowBlock } from './event-rows.js';
 import { rowText } from './row-format.js';
 import type { ConversationRow } from './types.js';
 
@@ -33,7 +35,7 @@ function requireRow(
 }
 
 function hasLabelRow(rows: ReturnType<typeof rowsFor>): boolean {
-  return rows.some((rowValue) => rowValue.kind === 'card-top');
+  return rows.some((rowValue) => rowValue.kind === 'card-top' || rowValue.kind === 'callout-top');
 }
 
 function hasFrameGlyphs(rows: ReturnType<typeof rowsFor>): boolean {
@@ -42,10 +44,28 @@ function hasFrameGlyphs(rows: ReturnType<typeof rowsFor>): boolean {
 }
 
 function hasLeftRule(rows: ReturnType<typeof rowsFor>): boolean {
-  return rows.some((rowValue) => rowValue.segments[0]?.text === `${RULE} `);
+  return rows.some(
+    (rowValue) => rowValue.kind === 'callout-top' || rowValue.kind === 'callout-body',
+  );
 }
 
 describe('eventRows colored left-rule callouts', () => {
+  it('emits callout kinds whose leading carries the rule, with no bar in the text', () => {
+    const block = calloutRowsBlock({
+      keyPrefix: 'w',
+      label: 'warning',
+      value: 'Something went sideways',
+      width: 40,
+      severity: 'warning',
+    });
+    const rows = block?.createRows(0, block.rowCount) ?? [];
+    expect(rows[0]?.kind).toBe('callout-top');
+    expect(rows.slice(1).every((row) => row.kind === 'callout-body')).toBe(true);
+    for (const row of rows) {
+      expect(row.segments[0]?.text.includes('│')).toBe(false);
+    }
+  });
+
   it('renders error events as a red left rule + red label + dim body, no box frame', () => {
     const event: EngineEventOf<'error'> = {
       type: 'error',
@@ -60,17 +80,17 @@ describe('eventRows colored left-rule callouts', () => {
     expect(hasLeftRule(rows)).toBe(true);
     expect(hasFrameGlyphs(rows)).toBe(false);
 
-    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
-    expect(topRow.segments[0]?.text).toBe(`${RULE} `);
+    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
+    expect(topRow.markerTone).toBe('error');
     expect(topRow.segments[0]?.tone).toBe('error');
-    expect(topRow.segments[1]?.tone).toBe('error');
+    expect(rowText(topRow)).not.toContain(RULE);
     expect(rowText(topRow)).toContain('error');
 
-    const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-body');
-    expect(bodyRow.segments[0]?.text).toBe(`${RULE} `);
-    expect(bodyRow.segments[0]?.tone).toBe('error');
+    const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-body');
+    expect(bodyRow.markerTone).toBe('error');
+    expect(rowText(bodyRow)).not.toContain(RULE);
     expect(rowText(bodyRow)).toContain('typecheck failed');
-    expect(bodyRow.segments[1]?.tone).toBe('textDim');
+    expect(bodyRow.segments[0]?.tone).toBe('textDim');
   });
 
   it('renders budget_warning as a yellow left rule + yellow label + dim body', () => {
@@ -88,15 +108,14 @@ describe('eventRows colored left-rule callouts', () => {
     expect(hasLeftRule(rows)).toBe(true);
     expect(hasFrameGlyphs(rows)).toBe(false);
 
-    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
-    expect(topRow.segments[0]?.text).toBe(`${RULE} `);
+    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
+    expect(topRow.markerTone).toBe('warning');
     expect(topRow.segments[0]?.tone).toBe('warning');
-    expect(topRow.segments[1]?.tone).toBe('warning');
     expect(rowText(topRow)).toContain('budget');
 
-    const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-body');
+    const bodyRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-body');
     expect(rowText(bodyRow)).toContain('80% reached');
-    expect(bodyRow.segments[1]?.tone).toBe('textDim');
+    expect(bodyRow.segments[0]?.tone).toBe('textDim');
   });
 
   it('routes budget_exceeded through a red left rule (hard stop, not yellow)', () => {
@@ -109,10 +128,9 @@ describe('eventRows colored left-rule callouts', () => {
     };
 
     const rows = rowsFor(event);
-    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
-    expect(topRow.segments[0]?.text).toBe(`${RULE} `);
+    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
+    expect(topRow.markerTone).toBe('error');
     expect(topRow.segments[0]?.tone).toBe('error');
-    expect(topRow.segments[1]?.tone).toBe('error');
     expect(rowText(topRow)).toContain('budget');
   });
 
@@ -163,7 +181,7 @@ describe('eventRows colored left-rule callouts', () => {
     expect(rowText(bodyRow)).toContain('retry-same-worker');
   });
 
-  it('closes the left-rule callout with a trailing blank row', () => {
+  it('does not append its own trailing blank row (build.ts owns inter-block spacing)', () => {
     const event: EngineEventOf<'error'> = {
       type: 'error',
       ts: 0,
@@ -173,8 +191,8 @@ describe('eventRows colored left-rule callouts', () => {
 
     const rows = rowsFor(event);
     const last = rows.at(-1);
-    expect(last?.kind).toBe('spacer');
-    expect(rowText(last ?? { key: '', kind: 'spacer', segments: [] })).toBe('');
+    expect(last?.kind).not.toBe('spacer');
+    expect(last?.kind).toBe('callout-body');
   });
 
   it('fits left-rule callout rows to terminal cell width for long path bodies', () => {
@@ -233,14 +251,14 @@ describe('eventRows colored left-rule callouts', () => {
 
     const windowRows = block?.createRows(0, 1) ?? [];
     expect(windowRows).toHaveLength(1);
-    const topRow = requireRow(windowRows, (rowValue) => rowValue.kind === 'card-top');
-    expect(topRow.segments[0]?.text).toBe(`${RULE} `);
+    const topRow = requireRow(windowRows, (rowValue) => rowValue.kind === 'callout-top');
+    expect(topRow.markerTone).toBe('error');
     expect(rowText(topRow)).toContain('error');
 
     const bodyWindowRows = block?.createRows(1, 2) ?? [];
     expect(bodyWindowRows).toHaveLength(1);
-    const bodyRow = requireRow(bodyWindowRows, (rowValue) => rowValue.kind === 'card-body');
-    expect(bodyRow.segments[0]?.text).toBe(`${RULE} `);
+    const bodyRow = requireRow(bodyWindowRows, (rowValue) => rowValue.kind === 'callout-body');
+    expect(bodyRow.markerTone).toBe('error');
     expect(rowText(bodyRow)).toContain('error line 1');
     expect(rowText(bodyRow)).not.toContain('error line 2');
   });

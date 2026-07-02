@@ -4,15 +4,37 @@ import { row } from './row-format.js';
 import { compositeBlock, rowsBlock } from './row-block-compose.js';
 import { markdownConversationRowsProjection } from './markdown-rows.js';
 
+const LEADING_H1_HEADING_PATTERN = /^\s*#[^#].*(?:\r?\n)+/;
+
+function normalizeHeading(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+// The planner often opens its first response by restating the feature title as a markdown H1 —
+// redundant since the user's prompt already appears as the first row of the transcript. Strip that
+// heading only when it actually echoes the title (the user's prompt), so a heading that introduces
+// new content is kept. Matched on the title rather than block position, because the user_message
+// prompt is always the first renderable block, so the planner's echo is never "first".
+function stripEchoedTitleHeading(text: string, title: string | undefined): string {
+  if (title === undefined || title === '') return text;
+  const match = LEADING_H1_HEADING_PATTERN.exec(text);
+  if (match === null) return text;
+  const heading = match[0].replace(/^\s*#\s*/, '');
+  if (normalizeHeading(heading) !== normalizeHeading(title)) return text;
+  return text.slice(match[0].length);
+}
+
 export function markdownPlannerTextRowBlock(input: {
   keyPrefix: string;
   text: string;
   width: number;
   phase?: Phase;
+  dedupTitle?: string | undefined;
 }): ConversationRowBlock | null {
+  const text = stripEchoedTitleHeading(input.text, input.dedupTitle);
   const projection = markdownConversationRowsProjection({
     keyPrefix: input.keyPrefix,
-    text: input.text,
+    text,
     width: input.width,
   });
   if (projection.rowCount === 0) return null;
@@ -43,13 +65,13 @@ export function plannerPhaseHeader(
 ): { label: string; tone: ConversationRowTone } | null {
   switch (phase) {
     case 'specifying':
-      return { label: 'SPEC', tone: 'planner' };
+      return { label: 'Spec', tone: 'planner' };
     case 'planning':
-      return { label: 'PLAN', tone: 'planner' };
+      return { label: 'Plan', tone: 'planner' };
     case 'researching':
-      return { label: 'RESEARCH', tone: 'planner' };
+      return { label: 'Research', tone: 'planner' };
     case 'escalating':
-      return { label: 'ESCALATION', tone: 'warning' };
+      return { label: 'Escalation', tone: 'warning' };
     default:
       return null;
   }

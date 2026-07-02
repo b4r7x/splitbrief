@@ -52,7 +52,7 @@ function questionInputMode(hint: string): UseInputModeResult {
 }
 
 describe('WorkflowBody brief review rendering', () => {
-  it('pads conversation content inside the main workflow body', () => {
+  it('renders conversation content flush against the terminal edge inside the main workflow body', () => {
     const ui = renderFeature(
       <WorkflowBody
         showSidebar={false}
@@ -69,9 +69,10 @@ describe('WorkflowBody brief review rendering', () => {
     const lines = frame.split('\n');
     const row = lines.find((line) => line.includes('no events yet')) ?? '';
 
-    expect(lines[0]).toBe('');
-    expect(row.startsWith(' ')).toBe(true);
-    expect(row.trimStart()).toContain('no events yet');
+    // No top-gap row: the body starts on its first line, directly under the header divider.
+    expect(lines[0]).toContain('no events yet');
+    // Flush layout (WORKFLOW_CONTENT_PADDING_X = 0): the transcript text sits at column 0, no inset.
+    expect(row.startsWith('no events yet')).toBe(true);
 
     ui.unmount();
   });
@@ -100,40 +101,29 @@ describe('WorkflowBody brief review rendering', () => {
     ui.unmount();
   });
 
-  it('renders question prompts as a sanitized multiline body surface', () => {
-    const rawToken = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
+  it('keeps the conversation visible in question mode (the prompt panel lives above the composer)', () => {
     const ui = renderFeature(
       <WorkflowBody
         showSidebar={false}
         sidebarWidth={0}
-        inputMode={questionInputMode(
-          [
-            'Task review: T001 - Run command',
-            'Validation: npm test \u001b]52;c;clipboard\u0007token=' + rawToken,
-            '',
-            'Commands: continue, redo, notes <text>, abort',
-          ].join('\n'),
-        )}
+        inputMode={questionInputMode('Task interrupted. Enter instructions to continue:')}
         reviewFilePath={null}
         phase="implementing"
-        contentHeight={8}
+        contentHeight={4}
         contentWidth={80}
       />,
     );
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Task review: T001 - Run command');
-    expect(frame).toContain('Validation: npm test token=***REDACTED***');
-    expect(frame).toContain('Commands: continue, redo, notes <text>, abort');
-    expect(frame).not.toContain(rawToken);
-    expect(frame).not.toContain('clipboard');
-    expect(frame).not.toContain('\u001b');
+    expect(frame).toContain('no events yet');
+    expect(frame).not.toContain('Task interrupted');
 
     ui.unmount();
   });
 
-  it('clears the above-scroll label when conversation mode is replaced by a prompt', () => {
+  it('clears the scroll labels when conversation mode is replaced by a review', () => {
     const onScrollAbove = vi.fn();
+    const onScrollBelow = vi.fn();
     const ui = renderFeature(
       <WorkflowBody
         showSidebar={false}
@@ -144,24 +134,28 @@ describe('WorkflowBody brief review rendering', () => {
         contentHeight={4}
         contentWidth={40}
         onScrollAbove={onScrollAbove}
+        onScrollBelow={onScrollBelow}
       />,
     );
 
     onScrollAbove.mockClear();
+    onScrollBelow.mockClear();
     ui.rerender(
       <WorkflowBody
         showSidebar={false}
         sidebarWidth={0}
-        inputMode={questionInputMode('Question?')}
+        inputMode={reviewInputMode()}
         reviewFilePath={null}
         phase="implementing"
         contentHeight={4}
         contentWidth={40}
         onScrollAbove={onScrollAbove}
+        onScrollBelow={onScrollBelow}
       />,
     );
 
     expect(onScrollAbove).toHaveBeenCalledWith('');
+    expect(onScrollBelow).toHaveBeenCalledWith('');
     ui.unmount();
   });
 });

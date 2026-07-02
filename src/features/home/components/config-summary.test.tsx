@@ -4,7 +4,6 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { configStore } from '../../../stores/project/config.js';
-import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { HomeConfigSummary } from './config-summary.js';
 
 const ESC = String.fromCharCode(27);
@@ -46,21 +45,7 @@ describe('HomeConfigSummary', () => {
     resetAllStores();
   });
 
-  it('strips OSC-52/CSI control bytes from runner model labels in the full layout', async () => {
-    terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
-    seedEvilModels();
-
-    const ui = renderFeature(<HomeConfigSummary />);
-    await tick(20);
-
-    const frame = ui.lastFrame() ?? '';
-    expectNoControlBytes(frame);
-    expect(stripAnsiStyles(frame)).toContain('Ollama');
-    ui.unmount();
-  });
-
-  it('strips OSC-52/CSI control bytes from runner model labels in the compact layout', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
+  it('strips OSC-52/CSI control bytes from runner model labels', async () => {
     seedEvilModels();
 
     const ui = renderFeature(<HomeConfigSummary />);

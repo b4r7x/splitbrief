@@ -4,40 +4,25 @@ import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js'
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
-export const WORKFLOW_BODY_TOP_GAP_ROWS = 1;
-// Header (1) + the horizontal rail region (blank 1 + rail 1) + divider (1), plus the fixed body
-// gap below it. While a stage is active the rail hangs one activity row under it, reserved
-// separately via RAIL_ACTIVE_EXTRA_ROWS.
-export const TOP_FIXED_CHROME_ROWS = 4 + WORKFLOW_BODY_TOP_GAP_ROWS;
-// Footer divider (1) + feedback row (1) + composer + input footer (byline 1 + its bottom breathing
-// row 1). The two-row input footer is what keeps the byline off the terminal's last line.
+// The header row (which now carries the phase rail inline) + the divider (1). The divider alone
+// separates the chrome from the body — no gap row below it — and the live status rides inline, so
+// no chrome row is reserved for it either.
+export const TOP_FIXED_CHROME_ROWS = 2;
+// Footer divider (1) + feedback row (1) + composer + the one-row input footer byline, which hugs
+// the terminal's last line.
 export const BOTTOM_FOOTER_DIVIDER_ROWS = 1;
-export const BOTTOM_FIXED_CHROME_ROWS = 3 + BOTTOM_FOOTER_DIVIDER_ROWS;
-
-// The horizontal rail hangs one activity line under the active stage; reserved only while a stage
-// is actually running so an idle or complete rail never leaves a blank gap.
-export const RAIL_ACTIVE_EXTRA_ROWS = 1;
+export const BOTTOM_FIXED_CHROME_ROWS = 2 + BOTTOM_FOOTER_DIVIDER_ROWS;
 
 export function getChromeContentWidth(cols: number): number {
-  return Math.max(1, cols - 2);
+  return Math.max(1, cols);
 }
 
-export function getChromeHeight(inputRows: number, railExtraRows = 0): number {
-  return TOP_FIXED_CHROME_ROWS + railExtraRows + BOTTOM_FIXED_CHROME_ROWS + inputRows;
+export function getChromeHeight(inputRows: number): number {
+  return TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROWS + inputRows;
 }
 
-// WorkflowBody drops its top gap when only one content row is visible, so the lone row sits flush
-// against the chrome. Hit-test geometry must apply the same rule or it targets the dropped blank.
-export function getWorkflowBodyTopGapRows(contentHeight: number): number {
-  return contentHeight > 1 ? WORKFLOW_BODY_TOP_GAP_ROWS : 0;
-}
-
-export function getContentTopRow(railExtraRows = 0, contentHeight?: number): number {
-  const gapRows =
-    contentHeight === undefined
-      ? WORKFLOW_BODY_TOP_GAP_ROWS
-      : getWorkflowBodyTopGapRows(contentHeight);
-  return TOP_FIXED_CHROME_ROWS - WORKFLOW_BODY_TOP_GAP_ROWS + gapRows + railExtraRows + 1;
+export function getContentTopRow(): number {
+  return TOP_FIXED_CHROME_ROWS + 1;
 }
 
 export const RAIL_STAGES = ['spec', 'plan', 'briefs', 'build', 'verify'] as const;
@@ -117,13 +102,23 @@ export function getRailStages(
   }));
 }
 
+export function getActiveRailStage(phase: Phase): RailStageState | null {
+  return getRailStages(phase).find((state) => state.status === 'active') ?? null;
+}
+
 // Wall-clock completion time per stage, read from the event log: a stage is done at the timestamp
 // of the first event whose phase advances the active index past it. 0 means not yet completed.
 function isPhaseEvent(event: EngineEvent): event is Extract<EngineEvent, { phase: Phase }> {
   return 'phase' in event && event.phase !== undefined;
 }
 
+let cachedCompletionEvents: readonly EngineEvent[] | null = null;
+let cachedCompletionTimes: number[] | null = null;
+
 export function getRailStageCompletionTimes(events: readonly EngineEvent[]): number[] {
+  if (events === cachedCompletionEvents && cachedCompletionTimes !== null) {
+    return cachedCompletionTimes;
+  }
   const times = RAIL_STAGES.map(() => 0);
   for (const event of events) {
     if (!isPhaseEvent(event)) continue;
@@ -132,6 +127,9 @@ export function getRailStageCompletionTimes(events: readonly EngineEvent[]): num
       if (active > stage && times[stage] === 0) times[stage] = event.ts;
     }
   }
+  // Projection-cache house pattern: repeated chrome renders reuse the same event-array projection.
+  cachedCompletionEvents = events;
+  cachedCompletionTimes = times;
   return times;
 }
 
@@ -146,18 +144,6 @@ export function getRailDriftPassed(events: readonly EngineEvent[]): boolean | un
 }
 
 export type RailForm = 'B' | 'C';
-
-// The horizontal rail reserves one activity row only while a stage is live (Form B, not cancelled,
-// inside the running range). Form C is the narrow single-line floor and never hangs an activity row.
-export function railShowsActivityRow(form: RailForm, phase: Phase, cancelled: boolean): boolean {
-  if (form !== 'B' || cancelled) return false;
-  const active = getRailActiveIndex(phase);
-  return active >= 0 && active < RAIL_STAGES.length;
-}
-
-export function getRailExtraRows(form: RailForm, phase: Phase, cancelled = false): number {
-  return railShowsActivityRow(form, phase, cancelled) ? RAIL_ACTIVE_EXTRA_ROWS : 0;
-}
 
 // Marker glyph plus its trailing space: every stage segment opens with this fixed slot, so the
 // renderer and the hit-test zones share one column budget.

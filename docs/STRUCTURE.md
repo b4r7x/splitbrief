@@ -247,6 +247,7 @@ features/workflow/
 │   └── use-keys.ts
 ├── handlers.ts               # pure helper — engine↔UI bridge
 ├── keyboard.ts               # pure helper — keyboard action dispatchers
+├── display/                  # pure display formatters — activity labels, shell prettifier, tones
 └── layout/                   # geometry helpers — rects, chrome rows, snapshots
 ```
 

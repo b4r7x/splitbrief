@@ -2,6 +2,8 @@ import {
   fitCompactActivityDisplayLine,
   type ActivityDisplayValueFit,
 } from '../display/activity-display-text.js';
+import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
+import type { RunnerActivityLedgerLabel } from '../display/runner-activity-display.js';
 import { getShortcutKey } from '../../../core/keybindings/registry.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import {
@@ -10,7 +12,7 @@ import {
   type RunnerActivityEvent,
 } from './activity-batch-model.js';
 import { row, segmentedRow } from './row-format.js';
-import { rowMarkerCells } from './row-markers.js';
+import { rowLeadingCells } from './row-markers.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
 
 type RunnerActivityBatchRowsInput = {
@@ -47,7 +49,6 @@ export function runnerActivityBatchRowBlock(
 
 function activityBatchActiveRowKey(model: ActivityBatchViewModel): string | undefined {
   if (model.headerText !== null) return `${model.batchKey}-header`;
-  if (model.visibleItems.length === 1) return `${model.batchKey}-item-0`;
   return undefined;
 }
 
@@ -83,16 +84,14 @@ export function runnerActivityBatchWindowRows(input: {
   const headerText = model.headerText;
   if (headerText !== null) {
     appendVisibleRow(() =>
-      row({
+      activityHeaderRow({
         key: `${model.batchKey}-header`,
         text: fitCompactActivityDisplayLine({
           label: headerText,
           rowCells: width,
-          prefixCells: rowMarkerCells('activity'),
+          prefixCells: rowLeadingCells('activity'),
         }).text,
         tone: model.tone,
-        bold: true,
-        kind: 'activity',
       }),
     );
   }
@@ -100,7 +99,6 @@ export function runnerActivityBatchWindowRows(input: {
   const visibleCount = model.visibleItems.length;
   const hasDisclosure = model.hiddenCount > 0;
   const lastItemIndex = visibleCount - 1;
-  const loneItem = headerText === null && visibleCount === 1;
 
   for (const [index, item] of model.visibleItems.entries()) {
     const isLastVisible = index === lastItemIndex;
@@ -114,8 +112,7 @@ export function runnerActivityBatchWindowRows(input: {
         valueTone: item.valueTone,
         fitMode: item.fitMode,
         rawMarker: item.rawMarker,
-        kind: loneItem ? 'activity' : isLastVisible ? 'activity-child-last' : 'activity-child',
-        ...(loneItem ? { prefixCells: rowMarkerCells('activity') } : {}),
+        kind: isLastVisible ? 'activity-child-last' : 'activity-child',
       }),
     );
     if (rowIndex >= end) return rows;
@@ -128,11 +125,19 @@ export function runnerActivityBatchWindowRows(input: {
   return rows;
 }
 
+function activityHeaderRow(input: {
+  key: string;
+  text: string;
+  tone: ConversationRowTone;
+}): ConversationRow {
+  return row({ key: input.key, text: input.text, tone: input.tone, bold: true, kind: 'activity' });
+}
+
 function activityDisclosureRow(input: {
   model: ActivityBatchViewModel;
   width: number;
 }): ConversationRow {
-  const prefixCells = rowMarkerCells('activity-more');
+  const prefixCells = rowLeadingCells('activity-more');
   const budget = Math.max(0, input.width - prefixCells);
   const label = input.model.expanded ? 'collapse' : `+${input.model.hiddenCount} more`;
   const text = truncateTerminalDisplayText(`${label}${activityDisclosureHint()}`, budget);
@@ -176,7 +181,7 @@ function resolveActivityBatchRowsOptions(options: RunnerActivityBatchRowsOptions
 
 function activityCardRow(input: {
   key: string;
-  label: string;
+  label: RunnerActivityLedgerLabel;
   value: string;
   width: number;
   labelTone: ConversationRowTone;
@@ -190,10 +195,10 @@ function activityCardRow(input: {
   const rawMarkerText = rawMarker ? `  ${rawMarker}` : '';
   const kind = input.kind ?? 'activity-child';
   const line = fitCompactActivityDisplayLine({
-    label: input.label.padEnd(4),
+    label: displayActivityLabel(input.label).padEnd(ACTIVITY_LABEL_PAD),
     value: input.value,
     rowCells: input.width - rawMarkerText.length,
-    prefixCells: input.prefixCells ?? rowMarkerCells(kind),
+    prefixCells: input.prefixCells ?? rowLeadingCells(kind),
     valueFit: input.fitMode,
   });
   const labelText = line.value === undefined ? line.label : `${line.label}  `;

@@ -12,6 +12,7 @@ import {
   wrappedRowTexts,
   type RowInput,
 } from './row-format.js';
+import { wrapWidthFor } from './row-markers.js';
 
 export function rowsBlock(
   key: string,
@@ -65,11 +66,11 @@ export function wrappedTextBlock(input: {
 }): ConversationRowBlock | null {
   const keyPrefix = input.keyPrefix;
   const text = sanitizeRowDisplayText(input.text);
-  const width = input.width;
+  const wrapWidth = wrapWidthFor(input.kind ?? 'message', input.width);
   const tone = input.tone;
   const bold = input.bold;
   const kind = input.kind;
-  const rowCount = countEventWrappedRows(text, width);
+  const rowCount = countEventWrappedRows(text, wrapWidth);
   if (rowCount === 0) return null;
 
   return {
@@ -83,13 +84,44 @@ export function wrappedTextBlock(input: {
       eventWrappedRowsWindow({
         keyPrefix,
         text,
-        width,
+        width: wrapWidth,
         tone,
         ...(bold !== undefined && { bold }),
         ...(kind !== undefined && { kind }),
         windowStart,
         windowEnd,
       }),
+  };
+}
+
+export function promptTextBlock(input: {
+  keyPrefix: string;
+  text: string;
+  width: number;
+}): ConversationRowBlock | null {
+  const text = sanitizeRowDisplayText(input.text);
+  const wrapWidth = wrapWidthFor('prompt', input.width);
+  const rowCount = countEventWrappedRows(text, wrapWidth);
+  if (rowCount === 0) return null;
+  return {
+    key: input.keyPrefix,
+    rowCount,
+    renderableUnits: 1,
+    createRows: (windowStart, windowEnd) => {
+      const rows = eventWrappedRowsWindow({
+        keyPrefix: input.keyPrefix,
+        text,
+        width: wrapWidth,
+        tone: 'text',
+        bold: true,
+        kind: 'message',
+        windowStart,
+        windowEnd,
+      });
+      return rows.map((row) =>
+        row.key === `${input.keyPrefix}-0` ? { ...row, kind: 'prompt' as const } : row,
+      );
+    },
   };
 }
 
@@ -105,12 +137,12 @@ export function cardRowsBlock(input: {
   const keyPrefix = input.keyPrefix;
   const label = sanitizeRowDisplayText(input.label);
   const value = input.value === undefined ? undefined : sanitizeRowDisplayText(input.value);
-  const width = input.width;
+  const wrapWidth = wrapWidthFor(input.kind ?? 'card', input.width);
   const labelTone = input.labelTone;
   const valueTone = input.valueTone;
   const kind = input.kind;
   const labelText = value ? `${label}  ` : label;
-  const rowCount = countWrappedRowTexts(`${labelText}${value ?? ''}`, width);
+  const rowCount = countWrappedRowTexts(`${labelText}${value ?? ''}`, wrapWidth);
   if (rowCount === 0) return null;
 
   return {
@@ -125,7 +157,7 @@ export function cardRowsBlock(input: {
         keyPrefix,
         label,
         value,
-        width,
+        width: wrapWidth,
         labelTone,
         ...(valueTone !== undefined && { valueTone }),
         ...(kind !== undefined && { kind }),

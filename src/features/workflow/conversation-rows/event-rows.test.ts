@@ -4,10 +4,20 @@ import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { eventRows } from './event-rows.js';
+import { eventRows } from '#testing/helpers/event-rows.js';
+import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
+import { eventRowBlock } from './event-rows.js';
 import { rowText } from './row-format.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
+
+function activityLabelSegment(label: Parameters<typeof displayActivityLabel>[0]): string {
+  return `${displayActivityLabel(label).padEnd(ACTIVITY_LABEL_PAD)}  `;
+}
+
+function activityLine(label: Parameters<typeof displayActivityLabel>[0], value: string): string {
+  return `${activityLabelSegment(label)}${value}`;
+}
 
 describe('eventRows', () => {
   it('renders markdown planner documents without raw heading or fence markers', () => {
@@ -40,8 +50,8 @@ describe('eventRows', () => {
     const text = rows.map(rowText).join('\n');
     const heading = rows.find((rowValue) => rowText(rowValue).includes('Description'));
 
-    expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('PLAN');
-    expect(rows[0]?.segments).toContainEqual({ text: 'PLAN', tone: 'planner', bold: true });
+    expect(rowText(rows[0] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('Plan');
+    expect(rows[0]?.segments).toContainEqual({ text: 'Plan', tone: 'planner', bold: true });
     expect(rowText(rows[1] ?? { key: 'missing', kind: 'message', segments: [] })).toBe('id: T001');
     expect(rows[1]?.segments).toContainEqual({ text: 'T001', tone: 'text', bold: true });
     expect(text).toContain('Description');
@@ -55,6 +65,75 @@ describe('eventRows', () => {
       tone: 'text',
       bold: true,
     });
+  });
+
+  it('strips a leading H1 heading from the planner’s first transcript block when it echoes the title', () => {
+    const event: EngineEvent = {
+      type: 'planner_text',
+      ts: 0,
+      phase: 'analyzing',
+      content: 'markdown',
+      text: '# Add dark-mode toggle\n\nLooking into the request now.',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      dedupTitle: 'Add dark-mode toggle',
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).not.toContain('Add dark-mode toggle');
+    expect(text).toContain('Looking into the request now.');
+  });
+
+  it('keeps a leading H1 heading that does not echo the title', () => {
+    const event: EngineEvent = {
+      type: 'planner_text',
+      ts: 0,
+      phase: 'analyzing',
+      content: 'markdown',
+      text: '# Add dark-mode toggle\n\nLooking into the request now.',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 1,
+      expanded: false,
+      dedupTitle: 'A completely different feature',
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain('Add dark-mode toggle');
+  });
+
+  it('strips OSC-52/CSI control bytes from a user prompt row now that it owns the title', () => {
+    const payload = 'ZWNobyBwd25lZA==';
+    const esc = String.fromCharCode(0x1b);
+    const bel = String.fromCharCode(0x07);
+    const malicious = `before${esc}]52;c;${payload}${bel}${esc}[2Jafter`;
+    const event: EngineEvent = {
+      type: 'user_message',
+      ts: 0,
+      phase: 'idle',
+      text: malicious,
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).not.toContain(payload);
+    expect(text).not.toContain(']52');
+    expect(text).not.toContain('[2J');
+    expect(text).toContain('beforeafter');
   });
 
   it.each([
@@ -220,8 +299,8 @@ describe('eventRows', () => {
       ctx: { width: 4, viewportRows: 20, streaming },
     }).map(rowText);
 
-    expect(lines).toEqual(['abcd', 'efgh']);
-    expect(lines.every((line) => getTerminalCellWidth(line) <= 4)).toBe(true);
+    expect(lines).toEqual(['ab', 'cd', 'ef', 'gh']);
+    expect(lines.every((line) => getTerminalCellWidth(line) <= 2)).toBe(true);
   });
 
   it('renders sanitized queued message text when queued and injected events carry it', () => {
@@ -315,12 +394,16 @@ describe('eventRows', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText)).toEqual(['RUN   npm run typecheck']);
-    expect(rows[0]?.segments).toEqual([
-      { text: 'RUN   ', tone: 'accent' },
-      { text: 'npm run typecheck', tone: 'textDim' },
+    expect(rows.map(rowText)).toEqual([
+      'Implementer activity  1 update  [Codex]',
+      activityLine('RUN', 'npm run typecheck'),
     ]);
     expect(rows[0]?.kind).toBe('activity');
+    expect(rows[1]?.segments).toEqual([
+      { text: activityLabelSegment('RUN'), tone: 'accent' },
+      { text: 'npm run typecheck', tone: 'textDim' },
+    ]);
+    expect(rows[1]?.kind).toBe('activity-child-last');
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
   });
 
@@ -350,7 +433,9 @@ describe('eventRows', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toBe("RUN   sed -n '1,260p' CLAUDE.md");
+    expect(text).toBe(
+      ['Plan activity  1 update  [Codex]', activityLine('READ', 'CLAUDE.md :1-260')].join('\n'),
+    );
     expect(text).not.toContain('/bin/zsh -lc');
     expect(text).not.toContain('activity:');
   });
@@ -635,6 +720,25 @@ describe('eventRows', () => {
     expect(errorSegments.some((segment) => segment.text.includes(stateWord))).toBe(true);
     expect(errorSegments.every((segment) => !segment.text.includes(body))).toBe(true);
     expect(dimSegments.some((segment) => segment.text.includes(body))).toBe(true);
+  });
+
+  it('renders the user prompt with a prompt marker row and message continuations', () => {
+    const block = eventRowBlock({
+      event: {
+        type: 'user_message',
+        ts: 1,
+        phase: 'idle',
+        text: 'add dark mode toggle to the settings screen',
+      },
+      globalIndex: 0,
+      ctx: { width: 24, viewportRows: 20, streaming },
+      expanded: false,
+    });
+    const rows = block?.createRows(0, block.rowCount) ?? [];
+
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows[0]?.kind).toBe('prompt');
+    for (const row of rows.slice(1)) expect(row.kind).toBe('message');
   });
 
   it('renders user_message rows without the heavy-angle prompt marker', () => {

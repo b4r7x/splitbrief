@@ -47,7 +47,7 @@ Gates are consolidated here; full rationale for each lives in the linked doc.
 
 These are architectural invariants enforced by focused tests plus the layer gates above:
 
-- Active operation state comes from normalized `runner_call_*` lifecycle events projected into `operationsStore`. `planner_status` is a legacy/fallback phase span, not the source of truth for `AgentStatusRow`.
+- Active operation state comes from normalized `runner_call_*` lifecycle events projected into `operationsStore`. `planner_status` is a legacy/fallback phase span, not the source of truth for operation-state consumers.
 - Terminal operation and workflow states carry frozen `endedAt` / `durationMs`. UI components may display those values, but they must not keep their own lifecycle truth after cancel, abort, timeout, failure, or completion.
 - UI cancel records local intent only for immediate feedback. The canonical audit/history event is engine-published `workflow_cancelled`, and late terminal runner/cost events after cancel remain acceptable.
 - Review and conversation-document scrolling use rendered Markdown row height, not raw newline count. Markdown parsing/layout lives in `src/utils/markdown/*` and is UI-free; Ink rendering lives in `src/components/markdown.tsx` or feature-local row adapters.

@@ -4,7 +4,7 @@ import type { Section } from '../../../core/sections/event-sections.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { colorForTone } from '../components/conversation-flow/row-view.js';
+import { colorForTone } from '../display/tone-color.js';
 import { activityBatchTone, toneToConversationTone } from './activity-batch-model.js';
 import {
   getConversationRowsProjection,
@@ -148,7 +148,9 @@ describe('conversation rows projection cache', () => {
       windowEnd: 5,
     });
 
+    // Six single-line events with a one-row spacer between each: 6 + 5×1 = 11 rows.
     expect(projection.totalRows).toBe(11);
+    // Window [2,5) straddles event 1, the spacer after it, then event 2.
     expect(projection.rows.map(rowText)).toEqual(['event 1', '', 'event 2']);
     expect(projection.windowStart).toBe(2);
     expect(projection.windowEnd).toBe(5);
@@ -221,8 +223,8 @@ describe('conversation rows projection cache', () => {
       ]),
     });
 
-    expect(planning.rows.map(rowText)).toEqual(['PLAN', 'Heading']);
-    expect(researching.rows.map(rowText)).toEqual(['RESEARCH', 'Heading']);
+    expect(planning.rows.map(rowText)).toEqual(['Plan', 'Heading']);
+    expect(researching.rows.map(rowText)).toEqual(['Research', 'Heading']);
   });
 
   it('invalidates when planner text content mode or role changes', () => {
@@ -259,7 +261,7 @@ describe('conversation rows projection cache', () => {
     });
 
     expect(plain.rows.map(rowText)).toEqual(['### Heading']);
-    expect(markdown.rows.map(rowText)).toEqual(['PLAN', 'Heading']);
+    expect(markdown.rows.map(rowText)).toEqual(['Plan', 'Heading']);
   });
 
   it('invalidates when activity role or runner metadata changes', () => {
@@ -307,9 +309,9 @@ describe('conversation rows projection cache', () => {
       ]),
     });
 
-    expect(implementer.rows.map(rowText).join('\n')).toContain('impl activity');
+    expect(implementer.rows.map(rowText).join('\n')).toContain('Implementer activity');
     expect(implementer.rows.map(rowText).join('\n')).toContain('[Codex · xhigh]');
-    expect(planner.rows.map(rowText).join('\n')).toContain('plan activity');
+    expect(planner.rows.map(rowText).join('\n')).toContain('Plan activity');
     expect(planner.rows.map(rowText).join('\n')).toContain('[claude · sonnet]');
   });
 

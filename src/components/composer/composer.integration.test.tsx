@@ -11,6 +11,7 @@ import {
 } from './hint-zones.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { glyph } from '../../lib/glyphs.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -530,39 +531,39 @@ describe('composer in-box footer hints', () => {
     resetAllStores();
   });
 
-  it('renders the dim submit affordance and the cost token inside the rounded box', async () => {
+  it('renders override keys and the cost token inside the rounded box', async () => {
     const ui = renderDockedComposer({
       commands: COMMANDS,
       currentScreen: 'workflow',
       mode: 'normal',
       hint: '',
-      boxHints: { keys: '⏎', cost: '$0.03', costTone: 'text' },
+      boxHints: { keys: 'Ctrl+D detach', cost: '$0.03', costTone: 'text' },
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('⏎');
+    expect(frame).toContain('Ctrl+D detach');
     expect(frame).not.toContain('tab');
     expect(frame).toContain('$0.03');
     ui.unmount();
   });
 
-  it('drops tab and shows the send affordance for question-mode hints', async () => {
+  it('renders warning-toned cost beside override keys in question mode', async () => {
     const ui = renderDockedComposer({
       commands: COMMANDS,
       currentScreen: 'workflow',
       mode: 'question',
       hint: '',
-      boxHints: { keys: '⏎  send', cost: '$0.41', costTone: 'warning' },
+      boxHints: { keys: 'Ctrl+D detach', cost: '$0.41', costTone: 'warning' },
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('send');
+    expect(frame).toContain('Ctrl+D detach');
     expect(frame).toContain('$0.41');
     expect(frame).not.toContain('tab');
     ui.unmount();
@@ -671,43 +672,69 @@ describe('composer integration: in-box hint click zones fire store actions', () 
     terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: false });
   });
 
-  it('clicking the ⏎ hint submits and clicking the cost hint opens cost-drilldown', async () => {
-    const submits: string[] = [];
+  it('clicking the cost hint opens cost-drilldown', async () => {
     const ui = renderDockedComposer({
       commands: COMMANDS,
       currentScreen: 'workflow',
       mode: 'normal',
       hint: '',
-      onSubmit: (t) => submits.push(t),
+      onSubmit: () => {},
       onRuntimeCommand: () => {},
-      boxHints: { keys: '⏎', cost: '$0.41' },
+      boxHints: { keys: 'Ctrl+G', cost: '$0.41' },
     });
 
-    ui.stdin.write('ship it');
     await tick(20);
 
-    // The docked composer is bottom-anchored above the two-row footer: the single-line hint row sits
-    // at rows-visibleRows-2.
+    // The docked composer is bottom-anchored above the one-row footer: the single-line hint row sits
+    // at rows-visibleRows-1.
     const display = compactComposerHints(
-      { keys: '⏎', cost: '$0.41' },
-      computeComposerHintBudget(80),
+      { keys: 'Ctrl+G', cost: '$0.41' },
+      computeComposerHintBudget({ boxWidth: 80 }),
     );
-    const rects = composerHintZoneRects({ boxLeft: 1, boxWidth: 80, hintRow: 17, display });
-    const submitRect = rects.find((rect) => rect.id === 'submit');
+    const rects = composerHintZoneRects({ boxLeft: 1, boxWidth: 80, hintRow: 18, display });
     const costRect = rects.find((rect) => rect.id === 'cost');
-    if (!submitRect || !costRect) throw new Error('expected both hint zones to be present');
-
-    const submitZone = hitTopmostZone(submitRect.left, submitRect.top);
-    expect(submitZone?.id).toBe('composer-hint-submit');
-    submitZone?.onClick?.();
-    await tick(20);
-    expect(submits).toEqual(['ship it']);
+    if (!costRect) throw new Error('expected cost hint zone to be present');
 
     const costZone = hitTopmostZone(costRect.left, costRect.top);
     expect(costZone?.id).toBe('composer-hint-cost');
     costZone?.onClick?.();
     await tick(20);
     expect(overlayStore.get().active).toBe('cost-drilldown');
+
+    ui.unmount();
+  });
+
+  it('aligns the cost zone with the flush inputPaddingX=0 workflow composer hint', async () => {
+    const cost = '$0.41';
+    const ui = renderFeature(
+      <Box flexDirection="column" height={20} justifyContent="flex-end" width={80}>
+        <Composer
+          commands={COMMANDS}
+          currentScreen="workflow"
+          mode="normal"
+          hint=""
+          onSubmit={() => {}}
+          onRuntimeCommand={() => {}}
+          boxHints={{ keys: 'Ctrl+G', cost }}
+          inputPaddingX={0}
+        />
+      </Box>,
+    );
+
+    await tick(20);
+
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const hintRowIndex = lines.findIndex((line) => line.includes(cost));
+    if (hintRowIndex < 0) throw new Error('expected cost hint text in the rendered frame');
+    const hintLine = lines[hintRowIndex];
+    if (hintLine === undefined) throw new Error('expected cost hint row in the rendered frame');
+    const costIndex = hintLine.indexOf(cost);
+    if (costIndex < 0) throw new Error('expected cost hint column in the rendered frame');
+    const actualColumn = getTerminalCellWidth(hintLine.slice(0, costIndex)) + 1;
+    const hintRow = terminalSizeStore.get().rows - 2;
+
+    expect(hitTopmostZone(actualColumn, hintRow)?.id).toBe('composer-hint-cost');
+    expect(hitTopmostZone(actualColumn - 1, hintRow)?.id).not.toBe('composer-hint-cost');
 
     ui.unmount();
   });
@@ -721,19 +748,19 @@ describe('composer integration: in-box hint click zones fire store actions', () 
       hint: '',
       onSubmit: () => {},
       onRuntimeCommand: () => {},
-      boxHints: { keys: '⏎', cost: '$0.41' },
+      boxHints: { keys: 'Ctrl+G', cost: '$0.41' },
     });
 
     await tick(20);
 
     const display = compactComposerHints(
-      { keys: '⏎', cost: '$0.41' },
-      computeComposerHintBudget(36),
+      { keys: 'Ctrl+G', cost: '$0.41' },
+      computeComposerHintBudget({ boxWidth: 36 }),
     );
     expect(display.cost).toBeUndefined();
-    const rects = composerHintZoneRects({ boxLeft: 1, boxWidth: 36, hintRow: 17, display });
-    expect(rects.map((rect) => rect.id)).toEqual(['submit']);
-    expect(hitTopmostZone(rects[0]?.left ?? 0, 17)?.id).toBe('composer-hint-submit');
+    const rects = composerHintZoneRects({ boxLeft: 1, boxWidth: 36, hintRow: 18, display });
+    expect(rects).toEqual([]);
+    expect(hitTopmostZone(34, 18)).toBeUndefined();
 
     ui.unmount();
   });
@@ -750,7 +777,7 @@ describe('composer review-column hint zones register against the inset box', () 
     terminalSizeStore.__testReset({ cols: 120, rows: 20, isSmall: false });
   });
 
-  it('shifts the submit/cost zones by boxLeftOffset so a review-column click lands on the box', async () => {
+  it('shifts the cost zone by boxLeftOffset so a review-column click lands on the box', async () => {
     const ui = renderDockedComposer({
       commands: COMMANDS,
       currentScreen: 'workflow',
@@ -758,7 +785,7 @@ describe('composer review-column hint zones register against the inset box', () 
       hint: '',
       onSubmit: () => {},
       onRuntimeCommand: () => {},
-      boxHints: { keys: '⏎', cost: '$0.41' },
+      boxHints: { keys: 'Ctrl+G', cost: '$0.41' },
       width: REVIEW_WIDTH,
       boxLeftOffset: REVIEW_LEFT_OFFSET,
     });
@@ -766,24 +793,21 @@ describe('composer review-column hint zones register against the inset box', () 
     await tick(20);
 
     const display = compactComposerHints(
-      { keys: '⏎', cost: '$0.41' },
-      computeComposerHintBudget(REVIEW_WIDTH),
+      { keys: 'Ctrl+G', cost: '$0.41' },
+      computeComposerHintBudget({ boxWidth: REVIEW_WIDTH }),
     );
     const rects = composerHintZoneRects({
       boxLeft: 1 + REVIEW_LEFT_OFFSET,
       boxWidth: REVIEW_WIDTH,
-      hintRow: 17,
+      hintRow: 18,
       display,
     });
-    const submitRect = rects.find((rect) => rect.id === 'submit');
     const costRect = rects.find((rect) => rect.id === 'cost');
-    if (!submitRect || !costRect) throw new Error('expected both inset hint zones to be present');
+    if (!costRect) throw new Error('expected inset cost hint zone to be present');
 
-    expect(submitRect.left).toBeGreaterThan(REVIEW_LEFT_OFFSET);
-    expect(hitTopmostZone(submitRect.left, submitRect.top)?.id).toBe('composer-hint-submit');
+    expect(costRect.left).toBeGreaterThan(REVIEW_LEFT_OFFSET);
     expect(hitTopmostZone(costRect.left, costRect.top)?.id).toBe('composer-hint-cost');
-    // The docked full-width box would have placed the submit zone at column 1; the inset box must not.
-    expect(hitTopmostZone(1, 17)).toBeUndefined();
+    expect(hitTopmostZone(costRect.left - REVIEW_LEFT_OFFSET, 18)).toBeUndefined();
 
     ui.unmount();
   });
@@ -796,25 +820,25 @@ describe('composer review-column hint zones register against the inset box', () 
       hint: '',
       onSubmit: () => {},
       onRuntimeCommand: () => {},
-      boxHints: { keys: '⏎', cost: '$0.41' },
+      boxHints: { keys: 'Ctrl+G', cost: '$0.41' },
       width: REVIEW_WIDTH,
     });
 
     await tick(20);
 
     const display = compactComposerHints(
-      { keys: '⏎', cost: '$0.41' },
-      computeComposerHintBudget(REVIEW_WIDTH),
+      { keys: 'Ctrl+G', cost: '$0.41' },
+      computeComposerHintBudget({ boxWidth: REVIEW_WIDTH }),
     );
     const rects = composerHintZoneRects({
       boxLeft: 1 + REVIEW_LEFT_OFFSET,
       boxWidth: REVIEW_WIDTH,
-      hintRow: 17,
+      hintRow: 18,
       display,
     });
-    const submitRect = rects.find((rect) => rect.id === 'submit');
-    if (!submitRect) throw new Error('expected a submit rect for the probe');
-    expect(hitTopmostZone(submitRect.left, submitRect.top)).toBeUndefined();
+    const costRect = rects.find((rect) => rect.id === 'cost');
+    if (!costRect) throw new Error('expected a cost rect for the probe');
+    expect(hitTopmostZone(costRect.left, costRect.top)).toBeUndefined();
 
     ui.unmount();
   });

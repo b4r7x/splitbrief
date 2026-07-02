@@ -232,7 +232,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 
 `lifecycle.ts` owns queue count state. `message_queued` increments `queueDepth`; `message_injected_native`, `queue_drained`, and `queue_cleared` decrement it. `resetWorkflow(resume)` reconstructs depth from undrained, non-native queue entries so resumed sessions show the same pending queue count near the composer.
 
-`operations.ts` owns compact runner lifecycle for `AgentStatusRow`: active/last call identity, terminal status, frozen timing, warning count/detail, usage, partial output, runner, and model. It does not decide what activity text belongs in chrome. Conversation rows render safe `runner_call_activity` events from the retained event log as batched per-call activity blocks; assistant/result text, prompts, task bodies, full descriptions, and raw tool payloads remain transcript-bearing and must not update status chrome.
+`operations.ts` owns compact runner lifecycle for operation-state consumers: active/last call identity, terminal status, frozen timing, warning count/detail, usage, partial output, runner, and model. It does not decide what activity text belongs in chrome. Conversation rows render safe `runner_call_activity` events from the retained event log as batched per-call activity blocks; assistant/result text, prompts, task bodies, full descriptions, and raw tool payloads remain transcript-bearing and must not update status chrome.
 
 ## Design Decisions
 

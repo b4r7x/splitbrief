@@ -1,18 +1,20 @@
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 
-const SUBMIT_GLYPH = '⏎';
 const COMPOSER_PROMPT_WIDTH = 2;
 const COMPOSER_HINT_MARGIN_LEFT = 2;
-const COMPOSER_BORDER_AND_PADDING = 4;
+const COMPOSER_BORDER_WIDTH = 2;
 const COMPOSER_MIN_INPUT_WIDTH = 24;
 
 // The in-box hints sit at the right edge while the input keeps a readable minimum; this is the
-// width left for them once the box chrome, prompt, margin and that reserve are accounted for.
-export function computeComposerHintBudget(boxWidth: number): number {
+// width left for them once the box chrome (border + both padding columns), prompt, margin and that
+// reserve are accounted for. paddingX defaults to the box's resting 1-column inset.
+export function computeComposerHintBudget(input: { boxWidth: number; paddingX?: number }): number {
+  const paddingX = input.paddingX ?? 1;
   return Math.max(
     0,
-    boxWidth -
-      COMPOSER_BORDER_AND_PADDING -
+    input.boxWidth -
+      COMPOSER_BORDER_WIDTH -
+      paddingX * 2 -
       COMPOSER_PROMPT_WIDTH -
       COMPOSER_HINT_MARGIN_LEFT -
       COMPOSER_MIN_INPUT_WIDTH,
@@ -24,9 +26,8 @@ export interface ComposerHintDisplay {
   cost?: string | undefined;
 }
 
-// Compaction ladder: full, then drop the cost, keeping the bare submit affordance to the floor. The keys
-// cluster is already a single glyph, so the cost is the only droppable accessory. Returns what is
-// actually rendered so click zones can track it exactly.
+// Compaction ladder: full, then drop the cost while keeping the keys hint. Returns what is actually
+// rendered so click zones can track it exactly.
 export function compactComposerHints(
   input: { keys: string; cost?: string | undefined },
   budget: number,
@@ -39,7 +40,7 @@ export function compactComposerHints(
 }
 
 export interface ComposerHintSegment {
-  id: 'submit' | 'cost';
+  id: 'cost';
   offset: number;
   width: number;
 }
@@ -60,14 +61,6 @@ export function renderComposerHint(display: ComposerHintDisplay): string {
 export function composerHintSegments(display: ComposerHintDisplay): ComposerHintSegment[] {
   const rendered = renderComposerHint(display);
   const segments: ComposerHintSegment[] = [];
-  const submitIndex = rendered.indexOf(SUBMIT_GLYPH);
-  if (submitIndex >= 0) {
-    segments.push({
-      id: 'submit',
-      offset: getTerminalCellWidth(rendered.slice(0, submitIndex)),
-      width: getTerminalCellWidth(SUBMIT_GLYPH),
-    });
-  }
   if (display.cost !== undefined && display.cost.length > 0) {
     const costIndex = rendered.lastIndexOf(display.cost);
     if (costIndex >= 0) {
@@ -82,7 +75,7 @@ export function composerHintSegments(display: ComposerHintDisplay): ComposerHint
 }
 
 export interface ComposerHintZoneRect {
-  id: 'submit' | 'cost';
+  id: 'cost';
   left: number;
   right: number;
   top: number;
@@ -90,18 +83,21 @@ export interface ComposerHintZoneRect {
 }
 
 // Maps the post-compaction segments onto 1-based screen cells. The hint block is right-aligned
-// inside the box, so its last cell is `boxLeft + boxWidth - 3` (1 border + 1 padding); each
-// segment offset is already a cell distance (composerHintSegments). Calibration: row = sgrY - rect.top.
+// inside the box, so its last cell is `boxLeft + boxWidth - 1 - 1 - paddingX` (drop the box's right
+// border column, then its right padding); each segment offset is already a cell distance
+// (composerHintSegments). paddingX defaults to the resting 1-column inset. Calibration: row = sgrY -
+// rect.top.
 export function composerHintZoneRects(input: {
   boxLeft: number;
   boxWidth: number;
   hintRow: number;
   display: ComposerHintDisplay;
+  paddingX?: number;
 }): ComposerHintZoneRect[] {
   const rendered = renderComposerHint(input.display);
   const renderedWidth = getTerminalCellWidth(rendered);
   if (renderedWidth <= 0 || input.hintRow < 1) return [];
-  const rightCell = input.boxLeft + input.boxWidth - 3;
+  const rightCell = input.boxLeft + input.boxWidth - 2 - (input.paddingX ?? 1);
   const leftCell = rightCell - renderedWidth + 1;
   if (leftCell < 1) return [];
   return composerHintSegments(input.display).map((segment) => {

@@ -44,8 +44,6 @@ const PROSE_STATUS_MARKERS: readonly string[] = [
 ];
 
 const RISK_MARKERS: readonly string[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
-export const STATUS_DIM_ERROR = '#a85561';
-const STATUS_DIM_SUCCESS = '#6e8f4a';
 const TASK_ID_PATTERN = /^T\d{3}/;
 const FILE_PATH_PATTERN =
   /^(?:\.{1,2}\/|\/|[A-Za-z0-9_.-]+\/)[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+(?::\d+)?/;
@@ -251,8 +249,8 @@ function statusColor(text: string, theme: Theme): string {
     value.includes('BLOCKED') ||
     value.includes('NOT VERIFIED')
   ) {
-    return STATUS_DIM_ERROR;
+    return theme.dimError;
   }
   if (value.includes('WARN') || value.includes('INCONCLUSIVE')) return theme.textDim;
-  return STATUS_DIM_SUCCESS;
+  return theme.dimSuccess;
 }

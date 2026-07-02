@@ -3,6 +3,7 @@ import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { useInputMode, type UseInputModeResult } from './use-input-mode.js';
 
 function Harness({ capture }: { capture: { current: UseInputModeResult | null } }) {
@@ -26,6 +27,7 @@ async function waitForMode(
 describe('useInputMode', () => {
   beforeEach(() => {
     controlsStore.reset();
+    questionPromptStore.reset();
   });
 
   it('resolves a superseded question before installing the next question resolver', async () => {
@@ -45,6 +47,7 @@ describe('useInputMode', () => {
     expect(capture.current?.mode).toBe('question');
     expect(capture.current?.hint).toBe('second question');
     expect(controlsStore.get().inputMode).toBe('question');
+    expect(questionPromptStore.get().hint).toBe('second question');
 
     capture.current?.resolve('answer');
     await expect(second).resolves.toBe('answer');
@@ -52,6 +55,7 @@ describe('useInputMode', () => {
 
     expect(capture.current?.mode).toBe('normal');
     expect(controlsStore.get().inputMode).toBe('normal');
+    expect(questionPromptStore.get().hint).toBeNull();
     ui.unmount();
   });
 
@@ -75,6 +79,27 @@ describe('useInputMode', () => {
     await expect(question).resolves.toBe('answer');
     ui.unmount();
   });
+
+  it('clears the question geometry hint when review mode supersedes a question', async () => {
+    const capture: { current: UseInputModeResult | null } = { current: null };
+    const ui = renderFeature(<Harness capture={capture} />);
+    await tick();
+
+    const question = capture.current?.setQuestionMode('question prompt');
+    if (!question) throw new Error('expected question promise');
+    await waitForMode(capture, 'question');
+    expect(questionPromptStore.get().hint).toBe('question prompt');
+
+    const review = capture.current?.setReviewMode('review prompt');
+    if (!review) throw new Error('expected review promise');
+    await expect(question).resolves.toBe('');
+    await waitForMode(capture, 'review');
+
+    expect(questionPromptStore.get().hint).toBeNull();
+    capture.current?.resolve({ approved: false });
+    await review;
+    ui.unmount();
+  });
 });
 
 function mount() {
@@ -91,10 +116,12 @@ function requireRef(ref: { current: UseInputModeResult | null }): UseInputModeRe
 describe('useInputMode — mode transitions', () => {
   beforeEach(() => {
     controlsStore.reset();
+    questionPromptStore.reset();
   });
 
   afterEach(() => {
     controlsStore.reset();
+    questionPromptStore.reset();
   });
 
   it('enters review mode when the engine requests approval, and returns to normal when the user approves', async () => {
@@ -150,6 +177,7 @@ describe('useInputMode — mode transitions', () => {
 
     await waitForMode(ref, 'question');
     expect(controlsStore.get().inputMode).toBe('question');
+    expect(questionPromptStore.get().hint).toBe('Which framework?');
     expect(ui.lastFrame()).toContain('Which framework?');
 
     requireRef(ref).resolve('react');
@@ -157,6 +185,7 @@ describe('useInputMode — mode transitions', () => {
 
     expect(answer).toBe('react');
     expect(controlsStore.get().inputMode).toBe('normal');
+    expect(questionPromptStore.get().hint).toBeNull();
     ui.unmount();
   });
 
@@ -194,6 +223,7 @@ describe('useInputMode — mode transitions', () => {
     await pending;
 
     expect(answer).toBe('');
+    expect(questionPromptStore.get().hint).toBeNull();
     ui.unmount();
   });
 
@@ -229,5 +259,6 @@ describe('useInputMode — mode transitions', () => {
     await pending;
 
     expect(answer).toBe('');
+    expect(questionPromptStore.get().hint).toBeNull();
   });
 });

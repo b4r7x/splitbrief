@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { glyph, resolveGlyphTier } from './glyphs.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import {
+  BRAILLE_SPINNER_FRAMES,
+  LINE_SPINNER_FRAMES,
+  glyph,
+  prefersBrailleSpinner,
+  resolveGlyphTier,
+  spinnerFrames,
+} from './glyphs.js';
 
 describe('glyph tier', () => {
   const envSnapshot = { ...process.env };
@@ -21,5 +29,33 @@ describe('glyph tier', () => {
     expect(glyph('statusCancelled', 'ascii')).toBe('x');
     expect(glyph('check', 'ascii')).toBe('+');
     expect(glyph('divider', 'ascii')).toBe('-');
+  });
+
+  it('maps the prompt marker and completed header through both tiers', () => {
+    expect(glyph('promptMarker', 'unicode')).toBe('❯');
+    expect(glyph('promptMarker', 'ascii')).toBe('>');
+    expect(glyph('completed', 'unicode')).toBe('◇');
+    expect(glyph('completed', 'ascii')).toBe('o');
+  });
+});
+
+describe('spinner frames', () => {
+  const envSnapshot = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...envSnapshot };
+  });
+
+  it('prefers braille on every unicode-tier host, without a terminal-program allowlist', () => {
+    forceUnicodeGlyphs();
+    const unicodeEnv = { TERM: 'xterm-256color', LANG: 'en_US.UTF-8' };
+    expect(resolveGlyphTier(unicodeEnv)).toBe('unicode');
+    expect(prefersBrailleSpinner(unicodeEnv)).toBe(true);
+    expect(spinnerFrames(unicodeEnv)).toBe(BRAILLE_SPINNER_FRAMES);
+  });
+
+  it('falls back to the line spinner on the ascii tier', () => {
+    expect(prefersBrailleSpinner({ TERM: 'dumb' })).toBe(false);
+    expect(spinnerFrames({ TERM: 'dumb' })).toBe(LINE_SPINNER_FRAMES);
   });
 });

@@ -12,7 +12,6 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { useStores } from '../../stores/use-stores.js';
-import { skillsStore } from '../../stores/project/skills.js';
 import type { Session } from '../../core/schemas/session.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { getHomeLayout } from '../../features/home/layout.js';
@@ -20,8 +19,8 @@ import { getLogo } from '../../features/home/logo.js';
 import { RECENT_SESSIONS_HINT } from '../../features/home/components/recent-sessions-list.js';
 import { useRecentSessionsFocus } from '../../features/home/use-recent-sessions-focus.js';
 
-const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k';
-const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k';
+const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k commands';
+const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k commands';
 const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
 
 interface HomeScreenProps {
@@ -39,12 +38,10 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
   );
   const selectionError = sessionSelectStore.use((s) => s.error);
   const [sessionsFocused, setSessionsFocused] = useState(false);
-  const hasSkills = skillsStore.use((s) => s.selected.size > 0);
   const preliminaryLayout = getHomeLayout({
     cols,
     rows,
     isSmall,
-    hasSkills,
     sessionCount: totalCount,
     sessionsFocused: false,
   });
@@ -52,7 +49,6 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
     cols,
     rows,
     isSmall,
-    hasSkills,
     sessionCount: totalCount,
     sessionsFocused: true,
   });
@@ -63,7 +59,6 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
     cols,
     rows,
     isSmall,
-    hasSkills,
     sessionCount: totalCount,
     sessionsFocused: sessionsActive,
   });
@@ -102,7 +97,7 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
       <Box flexDirection="column" width={layout.inputWidth} height="100%">
         <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
           <Box flexDirection="column" width={layout.bodyWidth} gap={isSmall ? 0 : 1}>
-            <Box flexDirection="column" alignItems="center" marginBottom={1} flexShrink={0}>
+            <Box flexDirection="column" alignItems="center" flexShrink={0}>
               <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
             </Box>
 

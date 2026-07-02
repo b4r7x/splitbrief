@@ -1,7 +1,8 @@
 import { clamp } from '../../../utils/math.js';
 import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 
-export const WORKFLOW_CONTENT_PADDING_X = 1;
+export const WORKFLOW_CONTENT_PADDING_X = 0;
+export const WORKFLOW_SIDEBAR_GAP = 2;
 
 export interface SidebarWidthInput {
   cols: number;
@@ -14,12 +15,19 @@ export function getWorkflowSidebarWidth(input: SidebarWidthInput): number {
   return sidebarVisible && !isSmall ? Math.max(0, Math.floor(cols * 0.25)) : 0;
 }
 
-function getWorkflowContentPaneWidth(input: SidebarWidthInput): number {
-  return Math.max(0, input.cols - getWorkflowSidebarWidth(input));
+// The gap exists only while the sidebar actually renders, so a hidden sidebar keeps the full width.
+function getWorkflowSidebarGap(input: SidebarWidthInput): number {
+  return getWorkflowSidebarWidth(input) > 0 ? WORKFLOW_SIDEBAR_GAP : 0;
 }
 
 export function getWorkflowContentWidth(input: SidebarWidthInput): number {
-  return Math.max(0, getWorkflowContentPaneWidth(input) - WORKFLOW_CONTENT_PADDING_X * 2);
+  return Math.max(
+    0,
+    input.cols -
+      getWorkflowSidebarWidth(input) -
+      getWorkflowSidebarGap(input) -
+      WORKFLOW_CONTENT_PADDING_X * 2,
+  );
 }
 
 export function getReviewColumnWidth(contentWidth: number): number {
@@ -34,7 +42,7 @@ export interface WorkflowReviewColumn {
 export function getWorkflowReviewColumn(input: SidebarWidthInput): WorkflowReviewColumn {
   const sidebarWidth = getWorkflowSidebarWidth(input);
   return {
-    leftOffset: sidebarWidth + WORKFLOW_CONTENT_PADDING_X,
+    leftOffset: sidebarWidth + getWorkflowSidebarGap(input) + WORKFLOW_CONTENT_PADDING_X,
     width: getReviewColumnWidth(getWorkflowContentWidth(input)),
   };
 }
@@ -48,36 +56,10 @@ export interface WorkflowContentRect {
   height: number;
 }
 
-export interface WorkflowRuntimeLayout {
-  conversationWidth: number;
-  contentWidth: number;
-}
-
-export function getWorkflowRuntimeLayout(input: { contentWidth: number }): WorkflowRuntimeLayout {
-  const { contentWidth } = input;
-  return {
-    conversationWidth: contentWidth,
-    contentWidth,
-  };
-}
-
-export function getWorkflowConversationRect(
-  contentRect: WorkflowContentRect,
-  runtimeLayout: WorkflowRuntimeLayout,
-): WorkflowContentRect {
-  const width = runtimeLayout.conversationWidth;
-  return {
-    ...contentRect,
-    width,
-    right: width > 0 ? contentRect.left + width - 1 : contentRect.left,
-  };
-}
-
 export interface WorkflowContentRectInput {
   cols: number;
   rows: number;
   inputRows: number;
-  railExtraRows: number;
   sidebarVisible: boolean;
   isSmall: boolean;
   promptRows?: number;
@@ -86,43 +68,47 @@ export interface WorkflowContentRectInput {
 const REVIEW_HEADER_ROWS = 2;
 const REVIEW_FOOTER_ROWS = 2;
 
-function getWorkflowMiddleRows(rows: number, inputRows: number, railExtraRows: number): number {
-  return Math.max(0, rows - getChromeHeight(inputRows, railExtraRows));
+function getWorkflowMiddleRows(rows: number, inputRows: number): number {
+  return Math.max(0, rows - getChromeHeight(inputRows));
 }
 
-export function clampWorkflowPromptRows(
-  rows: number,
-  inputRows: number,
-  railExtraRows: number,
-  promptRows: number,
-): number {
-  return clamp(promptRows, 0, getWorkflowMiddleRows(rows, inputRows, railExtraRows));
+export function clampWorkflowPromptRows(input: {
+  rows: number;
+  inputRows: number;
+  promptRows: number;
+}): number {
+  const { rows, inputRows, promptRows } = input;
+  return clamp(promptRows, 0, getWorkflowMiddleRows(rows, inputRows));
 }
 
-export function getWorkflowViewportHeight(
-  rows: number,
-  inputRows: number,
-  railExtraRows = 0,
-  promptRows = 0,
-): number {
+export function getWorkflowViewportHeight(input: {
+  rows: number;
+  inputRows: number;
+  promptRows?: number;
+}): number {
+  const { rows, inputRows, promptRows = 0 } = input;
   return Math.max(
     0,
-    getWorkflowMiddleRows(rows, inputRows, railExtraRows) -
-      clampWorkflowPromptRows(rows, inputRows, railExtraRows, promptRows),
+    getWorkflowMiddleRows(rows, inputRows) -
+      clampWorkflowPromptRows({ rows, inputRows, promptRows }),
   );
 }
 
 export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
-  const { cols, rows, inputRows, railExtraRows, sidebarVisible, isSmall, promptRows = 0 } = input;
+  const { cols, rows, inputRows, sidebarVisible, isSmall, promptRows = 0 } = input;
   const sidebarWidth = getWorkflowSidebarWidth({
     cols,
     sidebarVisible,
     isSmall,
   });
   const width = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
-  const height = getWorkflowViewportHeight(rows, inputRows, railExtraRows, promptRows);
-  const left = sidebarWidth + WORKFLOW_CONTENT_PADDING_X + 1;
-  const top = getContentTopRow(railExtraRows, height);
+  const height = getWorkflowViewportHeight({ rows, inputRows, promptRows });
+  const left =
+    sidebarWidth +
+    getWorkflowSidebarGap({ cols, sidebarVisible, isSmall }) +
+    WORKFLOW_CONTENT_PADDING_X +
+    1;
+  const top = getContentTopRow();
   const right = width > 0 ? left + width - 1 : left;
   const bottom = height > 0 ? top + height - 1 : top;
   return {

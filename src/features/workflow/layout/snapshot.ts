@@ -1,18 +1,11 @@
-import {
-  getChromeHeight,
-  getRailActiveIndex,
-  getRailExtraRows,
-  selectRailForm,
-} from './chrome-rows.js';
+import { getChromeHeight, getRailActiveIndex, selectRailForm } from './chrome-rows.js';
 import { getRailStageZones, resolveRailFraction, type RailStageZone } from './hit-test.js';
 import { clamp } from '../../../utils/math.js';
 import {
   getReviewColumnWidth,
-  getWorkflowConversationRect,
   getReviewContentLayout,
   getWorkflowContentRect,
   getWorkflowContentWidth,
-  getWorkflowRuntimeLayout,
   getWorkflowViewportHeight,
 } from './rect.js';
 import {
@@ -31,6 +24,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
+import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { getWorkflowPromptRows } from '../prompt-rows.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
@@ -63,11 +57,12 @@ interface ConversationLayoutSnapshot {
 }
 
 function readWorkflowPromptRows(): number {
-  return getWorkflowPromptRows(
-    approvalPromptStore.get(),
-    costApprovalStore.get(),
-    terminalSizeStore.get().cols,
-  );
+  return getWorkflowPromptRows({
+    approvalState: approvalPromptStore.get(),
+    costApprovalState: costApprovalStore.get(),
+    questionHint: questionPromptStore.get().hint,
+    cols: terminalSizeStore.get().cols,
+  });
 }
 
 function readRailFraction(): string {
@@ -81,14 +76,8 @@ function readRailFraction(): string {
   });
 }
 
-function readRailExtraRows(): number {
-  const { phase, cancelled } = lifecycleStore.get();
-  const form = selectRailForm({ phase, cols: terminalSizeStore.get().cols });
-  return getRailExtraRows(form, phase, cancelled);
-}
-
 function readWorkflowChromeHeight(): number {
-  return getChromeHeight(inputHeightStore.get().rows, readRailExtraRows());
+  return getChromeHeight(inputHeightStore.get().rows);
 }
 
 function hasReviewLoadError(): boolean {
@@ -140,13 +129,11 @@ export interface BriefListSnapshot {
 export function readBriefListSnapshot(): BriefListSnapshot | null {
   if (lifecycleStore.get().phase !== 'reviewing-briefs') return null;
   const { rows, cols, isSmall } = terminalSizeStore.get();
-  const railExtraRows = readRailExtraRows();
   const promptRows = readWorkflowPromptRows();
   const contentRect = getWorkflowContentRect({
     cols,
     rows,
     inputRows: inputHeightStore.get().rows,
-    railExtraRows,
     sidebarVisible: controlsStore.get().sidebarVisible,
     isSmall,
     promptRows,
@@ -179,14 +166,12 @@ export function readBriefListSnapshot(): BriefListSnapshot | null {
 
 function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
   const { rows, cols, isSmall } = terminalSizeStore.get();
-  const railExtraRows = readRailExtraRows();
   const promptRows = readWorkflowPromptRows();
-  const viewportHeight = getWorkflowViewportHeight(
+  const viewportHeight = getWorkflowViewportHeight({
     rows,
-    inputHeightStore.get().rows,
-    railExtraRows,
+    inputRows: inputHeightStore.get().rows,
     promptRows,
-  );
+  });
   const sections = getSections();
   const viewportSplit = splitConversationViewport({
     viewportHeight,
@@ -199,22 +184,17 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     sidebarVisible,
     isSmall,
   });
-  const runtimeLayout = getWorkflowRuntimeLayout({
-    contentWidth,
-  });
   const contentRect = getWorkflowContentRect({
     cols,
     rows,
     inputRows: inputHeightStore.get().rows,
-    railExtraRows,
     sidebarVisible,
     isSmall,
     promptRows,
   });
-  const conversationRect = getWorkflowConversationRect(contentRect, runtimeLayout);
   return {
-    conversationRect,
-    conversationWidth: runtimeLayout.conversationWidth,
+    conversationRect: contentRect,
+    conversationWidth: contentWidth,
     contentRect,
     viewportSplit,
     transcriptViewportHeight: viewportSplit.transcriptViewportHeight,

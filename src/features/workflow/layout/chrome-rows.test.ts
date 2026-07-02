@@ -5,30 +5,26 @@ import type { EngineEvent } from '../../../engine/events/types.js';
 import {
   BOTTOM_FIXED_CHROME_ROWS,
   BOTTOM_FOOTER_DIVIDER_ROWS,
-  RAIL_ACTIVE_EXTRA_ROWS,
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,
   RAIL_STAGES,
   TOP_FIXED_CHROME_ROWS,
-  WORKFLOW_BODY_TOP_GAP_ROWS,
   chooseFormBVariant,
+  getActiveRailStage,
   getChromeContentWidth,
   getChromeHeight,
   getContentTopRow,
   getRailActiveIndex,
   getRailDriftPassed,
-  getRailExtraRows,
   getRailFormBMinWidth,
   getRailStageCompletionTimes,
   getRailStages,
-  getWorkflowBodyTopGapRows,
   isRailCurrent,
   measureFormB,
   railConnectorWidth,
   railFormBLabel,
   railFormBSegmentWidth,
   railIsHandoff,
-  railShowsActivityRow,
   railStageRole,
   selectRailForm,
 } from './chrome-rows.js';
@@ -50,9 +46,9 @@ function plannerText(phase: Phase, ts = 1): EngineEvent {
 }
 
 describe('getChromeContentWidth', () => {
-  it('subtracts horizontal chrome padding and clamps to one column', () => {
-    expect(getChromeContentWidth(120)).toBe(118);
-    expect(getChromeContentWidth(1)).toBe(1);
+  it('spans the full terminal width and clamps to one column', () => {
+    expect(getChromeContentWidth(120)).toBe(120);
+    expect(getChromeContentWidth(0)).toBe(1);
   });
 });
 
@@ -64,16 +60,6 @@ describe('getChromeHeight', () => {
     );
   });
 
-  it('adds the active activity row when a stage is live', () => {
-    const inputRows = 2;
-    expect(getChromeHeight(inputRows, RAIL_ACTIVE_EXTRA_ROWS)).toBe(
-      TOP_FIXED_CHROME_ROWS + RAIL_ACTIVE_EXTRA_ROWS + BOTTOM_FIXED_CHROME_ROWS + inputRows,
-    );
-    expect(getChromeHeight(inputRows, RAIL_ACTIVE_EXTRA_ROWS)).toBeGreaterThan(
-      getChromeHeight(inputRows),
-    );
-  });
-
   it('each additional input row increases chrome height by exactly 1', () => {
     const base = getChromeHeight(1);
     expect(getChromeHeight(4) - base).toBe(3);
@@ -81,39 +67,16 @@ describe('getChromeHeight', () => {
 });
 
 describe('bottom footer chrome', () => {
-  it('reserves divider, feedback, and the two-row input footer before variable composer rows', () => {
+  it('reserves divider, feedback, and the one-row input footer before variable composer rows', () => {
     expect(BOTTOM_FOOTER_DIVIDER_ROWS).toBe(1);
-    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(4);
-    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(3 + BOTTOM_FOOTER_DIVIDER_ROWS);
+    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(3);
+    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(2 + BOTTOM_FOOTER_DIVIDER_ROWS);
   });
 });
 
 describe('getContentTopRow', () => {
   it('starts after the baseline top chrome rows', () => {
     expect(getContentTopRow()).toBe(TOP_FIXED_CHROME_ROWS + 1);
-  });
-
-  it('shifts down by the active activity row when a stage is live', () => {
-    expect(getContentTopRow(RAIL_ACTIVE_EXTRA_ROWS)).toBe(
-      TOP_FIXED_CHROME_ROWS + RAIL_ACTIVE_EXTRA_ROWS + 1,
-    );
-  });
-
-  it('drops the body top gap from the content top row at degenerate heights', () => {
-    expect(getContentTopRow(0, 2)).toBe(getContentTopRow(0));
-    expect(getContentTopRow(0, 1)).toBe(getContentTopRow(0) - WORKFLOW_BODY_TOP_GAP_ROWS);
-    expect(getContentTopRow(RAIL_ACTIVE_EXTRA_ROWS, 1)).toBe(
-      getContentTopRow(RAIL_ACTIVE_EXTRA_ROWS) - WORKFLOW_BODY_TOP_GAP_ROWS,
-    );
-  });
-});
-
-describe('getWorkflowBodyTopGapRows', () => {
-  it('drops the gap at one-row content and keeps it once a second row is visible', () => {
-    expect(getWorkflowBodyTopGapRows(0)).toBe(0);
-    expect(getWorkflowBodyTopGapRows(1)).toBe(0);
-    expect(getWorkflowBodyTopGapRows(2)).toBe(WORKFLOW_BODY_TOP_GAP_ROWS);
-    expect(getWorkflowBodyTopGapRows(8)).toBe(WORKFLOW_BODY_TOP_GAP_ROWS);
   });
 });
 
@@ -144,6 +107,12 @@ describe('rail phase → stage map', () => {
   it('marks every stage pending at idle and every stage done at complete', () => {
     expect(getRailStages('idle').every((s) => s.status === 'pending')).toBe(true);
     expect(getRailStages('complete').every((s) => s.status === 'done')).toBe(true);
+  });
+
+  it('returns the active rail stage or null for terminal phases', () => {
+    expect(getActiveRailStage('planning')).toEqual({ stage: 'plan', status: 'active' });
+    expect(getActiveRailStage('idle')).toBeNull();
+    expect(getActiveRailStage('complete')).toBeNull();
   });
 
   it('has exactly one active stage for any running phase', () => {
@@ -244,9 +213,9 @@ describe('getRailFormBMinWidth', () => {
 describe('selectRailForm', () => {
   it('drops to Form C one cell before the thinnest five-stage line would overflow', () => {
     const min = getRailFormBMinWidth('implementing');
-    // contentWidth = cols - 2; at exactly `min` it fits (B), one cell under it does not (C).
-    expect(selectRailForm({ phase: 'implementing', cols: min + 2 })).toBe('B');
-    expect(selectRailForm({ phase: 'implementing', cols: min + 1 })).toBe('C');
+    // contentWidth = cols; at exactly `min` it fits (B), one cell under it does not (C).
+    expect(selectRailForm({ phase: 'implementing', cols: min })).toBe('B');
+    expect(selectRailForm({ phase: 'implementing', cols: min - 1 })).toBe('C');
   });
 
   it('stays horizontal (Form B) on a wide terminal and never returns the removed Form A', () => {
@@ -258,25 +227,6 @@ describe('selectRailForm', () => {
 
   it('falls to Form C on a very narrow terminal', () => {
     expect(selectRailForm({ phase: 'implementing', cols: 12 })).toBe('C');
-  });
-});
-
-describe('railShowsActivityRow / getRailExtraRows', () => {
-  it('reserves the activity row only for a live stage in Form B', () => {
-    expect(railShowsActivityRow('B', 'implementing', false)).toBe(true);
-    expect(railShowsActivityRow('B', 'reviewing-briefs', false)).toBe(true);
-    expect(railShowsActivityRow('B', 'implementing', true)).toBe(false);
-    expect(railShowsActivityRow('C', 'implementing', false)).toBe(false);
-    expect(railShowsActivityRow('B', 'idle', false)).toBe(false);
-    expect(railShowsActivityRow('B', 'complete', false)).toBe(false);
-  });
-
-  it('spends one extra row exactly when the activity row is shown', () => {
-    expect(getRailExtraRows('B', 'implementing', false)).toBe(RAIL_ACTIVE_EXTRA_ROWS);
-    expect(getRailExtraRows('B', 'implementing', true)).toBe(0);
-    expect(getRailExtraRows('C', 'implementing', false)).toBe(0);
-    expect(getRailExtraRows('B', 'idle', false)).toBe(0);
-    expect(getRailExtraRows('B', 'complete', false)).toBe(0);
   });
 });
 
@@ -324,5 +274,16 @@ describe('getRailStageCompletionTimes', () => {
       plannerText('planning', 200),
     ]);
     expect(times[0]).toBe(200);
+  });
+
+  it('reuses the projection for the same event array reference', () => {
+    const events = [plannerText('specifying', 100), plannerText('planning', 200)];
+    const first = getRailStageCompletionTimes(events);
+    const second = getRailStageCompletionTimes(events);
+    const recomputed = getRailStageCompletionTimes([...events, plannerText('implementing', 300)]);
+
+    expect(second).toBe(first);
+    expect(recomputed).not.toBe(first);
+    expect(recomputed[2]).toBe(300);
   });
 });

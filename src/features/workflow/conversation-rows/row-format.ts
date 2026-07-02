@@ -6,6 +6,7 @@ import {
   truncateTerminalDisplayTextMiddle,
 } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
+import { wrapWidthFor } from './row-markers.js';
 import type {
   ConversationRow,
   ConversationRowKind,
@@ -232,11 +233,17 @@ export interface CardBlockInput {
   metaSegments?: CardMetaSegmentInput[];
   bodyLines: CardBodyLineInput[];
   width: number;
+  bodyPrefix?: string;
 }
 
 export function countCardRows(input: CardBlockInput): number {
-  const bodyWrapWidth = Math.max(1, Math.max(0, Math.max(CARD_MIN_WIDTH, input.width) - 4));
-  let count = 2;
+  const width = Math.max(CARD_MIN_WIDTH, input.width);
+  const bodyPrefix = input.bodyPrefix ?? '  ';
+  const bodyWrapWidth = Math.max(
+    1,
+    wrapWidthFor('card-body', width) - getTerminalCellWidth(bodyPrefix),
+  );
+  let count = 1;
   for (const body of input.bodyLines) {
     const cleanBody = sanitizeRowDisplayText(cardBodyLineDisplayText(body));
     count += countHardWrappedDisplayLines(cleanBody, bodyWrapWidth);
@@ -364,7 +371,12 @@ export function cardRowsWindowSlice(
   input: CardBlockInput & { windowStart: number; windowEnd: number },
 ): ConversationRow[] {
   const width = Math.max(CARD_MIN_WIDTH, input.width);
-  const inner = Math.max(0, width - 4);
+  const headerWidth = wrapWidthFor('card-top', width);
+  const bodyPrefix = input.bodyPrefix ?? '  ';
+  const bodyWrapWidth = Math.max(
+    1,
+    wrapWidthFor('card-body', width) - getTerminalCellWidth(bodyPrefix),
+  );
   const label = sanitizeRowDisplayText(input.label);
   const metaSegments =
     input.metaSegments === undefined
@@ -385,14 +397,18 @@ export function cardRowsWindowSlice(
       rowIndex += 1;
       return;
     }
-    const segments = fittedCardHeaderSegments({ label, labelTone, metaSegments, width: inner });
+    const segments = fittedCardHeaderSegments({
+      label,
+      labelTone,
+      metaSegments,
+      width: headerWidth,
+    });
     rows.push(segmentedRow(`${input.keyPrefix}-top`, segments, 'card-top'));
     rowIndex += 1;
   };
 
   appendTop();
 
-  const bodyWrapWidth = Math.max(1, inner);
   for (const [index, body] of input.bodyLines.entries()) {
     if (rowIndex >= end) return rows;
     const bodySegments = cardBodySegments(body);
@@ -407,18 +423,16 @@ export function cardRowsWindowSlice(
       rows.push(
         segmentedRow(
           `${input.keyPrefix}-body-${index}-${offset}`,
-          [{ text: '  ' }, ...cardBodyRowSegments(bodySegments, text, body, offset)],
+          [
+            ...(bodyPrefix === '' ? [] : [{ text: bodyPrefix }]),
+            ...cardBodyRowSegments(bodySegments, text, body, offset),
+          ],
           'card-body',
         ),
       );
     }
     if (!bodyWindow.exhausted) return rows;
     rowIndex += bodyWindow.totalRows;
-  }
-
-  if (rowIndex >= end) return rows;
-  if (rowIndex >= start) {
-    rows.push(blankRow(`${input.keyPrefix}-bottom`));
   }
 
   return rows;

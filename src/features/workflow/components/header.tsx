@@ -2,33 +2,31 @@ import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
-  truncateTerminalDisplayTextMiddle,
-} from '../../../utils/display-text.js';
-import { routerStore } from '../../../stores/navigation/router.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { tokensStore } from '../../../stores/workflow/tokens.js';
+import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { CHEVRON_SEP } from '../../../components/separators.js';
-import { getChromeContentWidth } from '../layout/chrome-rows.js';
+import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { runnerShortLabel } from './runner-label.js';
+import { measureRailCells, Rail } from './rail.js';
 
 interface HeaderProps {
   startedAt: string;
+  railForm?: RailForm | undefined;
 }
 
-const TIMER_WIDTH = 10;
-const STATUS_JOINER = ' · ';
+const TIMER_WIDTH = 8;
 const RUNNER_GAP = 2;
 
 export type HeaderRunnerVariant = 'full' | 'compact' | 'none';
 
 export interface HeaderLayout {
   contentWidth: number;
-  featureWidth: number;
+  railWidth: number;
   showElapsed: boolean;
   runnerVariant: HeaderRunnerVariant;
 }
@@ -81,20 +79,19 @@ function ElapsedClock({
 export function getHeaderLayout(input: {
   cols: number;
   isSmall: boolean;
-  featureCells: number;
+  railCells: number;
   runnerFullCells?: number | undefined;
   runnerCompactCells?: number | undefined;
 }): HeaderLayout {
-  const { cols, isSmall, featureCells, runnerFullCells = 0, runnerCompactCells = 0 } = input;
+  const { cols, isSmall, railCells, runnerFullCells = 0, runnerCompactCells = 0 } = input;
   const contentWidth = getChromeContentWidth(cols);
-  const featureCap = isSmall ? 44 : 72;
   const gap = 1;
-  const minFeature = Math.min(featureCap, Math.max(0, featureCells));
-  const elapsedTail = STATUS_JOINER.length + TIMER_WIDTH;
-  const tailRoom = contentWidth - minFeature - gap;
+  const minRail = Math.min(contentWidth, Math.max(0, railCells));
+  const elapsedTail = TIMER_WIDTH;
+  const tailRoom = contentWidth - minRail - gap;
   const showElapsed = tailRoom >= elapsedTail;
   const elapsedWidth = showElapsed ? elapsedTail : 0;
-  const runnerRoom = contentWidth - minFeature - gap - elapsedWidth - RUNNER_GAP;
+  const runnerRoom = contentWidth - minRail - gap - elapsedWidth - RUNNER_GAP;
   let runnerVariant: HeaderRunnerVariant = 'none';
   if (!isSmall && runnerFullCells > 0 && runnerRoom >= runnerFullCells) {
     runnerVariant = 'full';
@@ -108,52 +105,50 @@ export function getHeaderLayout(input: {
         ? runnerCompactCells
         : 0;
   const tailWidth = elapsedWidth + (runnerWidth > 0 ? runnerWidth + RUNNER_GAP : 0);
-  const featureWidth =
-    tailWidth > 0
-      ? Math.min(featureCap, Math.max(0, contentWidth - tailWidth - gap))
-      : Math.min(featureCap, contentWidth);
-  return { contentWidth, featureWidth, showElapsed, runnerVariant };
+  const railWidth = tailWidth > 0 ? Math.max(0, contentWidth - tailWidth - gap) : contentWidth;
+  return { contentWidth, railWidth, showElapsed, runnerVariant };
 }
 
-export function Header({ startedAt }: HeaderProps) {
-  const [{ cols, isSmall }, lifecycle] = useStores(terminalSizeStore, lifecycleStore);
-  const { startedAt: lifecycleStartedAt, endedAt, durationMs } = lifecycle;
+export function Header({ startedAt, railForm }: HeaderProps) {
+  const [{ cols, isSmall }, lifecycle, tasks, tokens, eventsState] = useStores(
+    terminalSizeStore,
+    lifecycleStore,
+    tasksStore,
+    tokensStore,
+    eventsStore,
+  );
+  const { startedAt: lifecycleStartedAt, endedAt, durationMs, phase, cancelled } = lifecycle;
   const t = useTheme();
   const config = configStore.use((s) => s.config);
-  const feature = routerStore.use((s) =>
-    s.screen === 'workflow' ? sanitizeTerminalDisplayText(s.feature) : '',
-  );
-  const worktreeName = routerStore.use((s) =>
-    s.screen === 'workflow' ? s.worktreeName : undefined,
-  );
+  const railCells = measureRailCells({
+    phase,
+    cancelled,
+    form: railForm ?? 'B',
+    cols,
+    tasks,
+    localCount: tokens.localCount,
+    events: eventsState.events,
+  });
 
   const plannerLabel = config ? runnerShortLabel(config.planner) : '';
   const implLabel = config ? runnerShortLabel(config.implementer) : '';
   const hasRunner = plannerLabel !== '' && implLabel !== '';
-  const runnerFull = hasRunner ? `planner ${plannerLabel}${CHEVRON_SEP}impl ${implLabel}` : '';
+  const runnerFull = hasRunner
+    ? `Planner ${plannerLabel}${CHEVRON_SEP}Implementer ${implLabel}`
+    : '';
   const runnerCompact = hasRunner ? `${plannerLabel}${CHEVRON_SEP}${implLabel}` : '';
   const layout = getHeaderLayout({
     cols,
     isSmall,
-    featureCells: getTerminalCellWidth(feature),
+    railCells,
     runnerFullCells: getTerminalCellWidth(runnerFull),
     runnerCompactCells: getTerminalCellWidth(runnerCompact),
   });
-  const featureText = truncateTerminalDisplayText(feature, layout.featureWidth);
-  const worktreeNameCap = Math.max(
-    0,
-    layout.featureWidth - getTerminalCellWidth(featureText) - STATUS_JOINER.length,
-  );
-  const worktreeText =
-    worktreeName && worktreeNameCap > 0
-      ? `${STATUS_JOINER}${truncateTerminalDisplayTextMiddle(worktreeName, worktreeNameCap)}`
-      : '';
 
   return (
-    <Box width="100%" height={1} overflow="hidden" paddingX={1}>
-      <Box width={layout.featureWidth} overflow="hidden">
-        {layout.featureWidth > 0 && <Text color={t.text}>{featureText}</Text>}
-        {worktreeText !== '' && <Text color={t.textDim}>{worktreeText}</Text>}
+    <Box width="100%" height={1} overflow="hidden">
+      <Box width={layout.railWidth} overflow="hidden">
+        <Rail form={railForm} />
       </Box>
       <Box flexGrow={1} />
       {layout.runnerVariant !== 'none' && (
@@ -161,12 +156,12 @@ export function Header({ startedAt }: HeaderProps) {
           {layout.runnerVariant === 'full' ? (
             <Text>
               <Text color={t.planner} bold>
-                {'planner '}
+                {'Planner '}
               </Text>
               <Text color={t.planner}>{plannerLabel}</Text>
               <Text color={t.textDim}>{CHEVRON_SEP}</Text>
               <Text color={t.implementer} bold>
-                {'impl '}
+                {'Implementer '}
               </Text>
               <Text color={t.implementer}>{implLabel}</Text>
             </Text>

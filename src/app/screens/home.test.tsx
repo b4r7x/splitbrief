@@ -32,8 +32,8 @@ const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k';
-const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k';
+const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k commands';
+const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k commands';
 const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
 const FOCUS_BAR = '▌';
 
@@ -62,6 +62,11 @@ function lineContaining(frame: string, text: string): string {
     .find((candidate) => candidate.includes(text));
   expect(line).toBeDefined();
   return line ?? '';
+}
+
+function expectLineContains(frame: string, anchor: string, text: string): void {
+  const line = lineContaining(frame, anchor);
+  expect(line).toContain(text);
 }
 
 function columnIndexOf(frame: string, text: string): number {
@@ -93,8 +98,8 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    const plannerLine = frame.split('\n').find((line) => line.includes('planner')) ?? '';
-    expect(plannerLine.indexOf('planner')).toBeGreaterThan(0);
+    const plannerLine = frame.split('\n').find((line) => line.includes('Claude Code')) ?? '';
+    expect(plannerLine.indexOf('Claude Code')).toBeGreaterThan(0);
     expect(frame).not.toContain('plan expensively · build cheaply');
     expect(frame).toContain(DEFAULT_HOME_HINT);
     ui.unmount();
@@ -108,7 +113,7 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('__|_||_|');
-    expect(frame).toContain('STANDARD');
+    expect(frame).toContain('standard');
     expect(frame).toContain('no recent sessions');
     ui.unmount();
   });
@@ -124,20 +129,18 @@ describe('HomeScreen', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('/help');
     expect(frame).toContain('tab fill');
-    expect(lineContaining(frame, 'tab fill')).toContain('tab fill');
-    expect(lineContaining(frame, '› /')).toContain('› /');
     ui.unmount();
   });
 
-  it('keeps long configured model labels to one row before slash hints', async () => {
+  it('keeps the config summary to one row with long configured model names', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
-    const longModel =
-      'provider-family-ultra-long-model-name-with-capability-flags-and-release-channel';
+    const longModel = 'provider-family-long';
     configStore.__testReset({
       projectDir,
       config: makeConfig({
         planner: { kind: 'cli', tool: 'codex', model: longModel },
         implementer: { model: longModel },
+        workflow: { mode: 'standard' },
       }),
     });
 
@@ -145,11 +148,9 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    const plannerLine = lineContaining(frame, '/plann');
-    const implementerLine = lineContaining(frame, '/implem');
-
-    expect(plannerLine).toContain('/plann');
-    expect(implementerLine).toContain('/implem');
+    const summaryLine = lineContaining(frame, 'Codex');
+    expect(summaryLine).toBe(lineContaining(frame, 'standard'));
+    expect(summaryLine).toContain('Ollama');
     expect(frame.split('\n').length).toBeLessThanOrEqual(30);
     ui.unmount();
   });
@@ -203,7 +204,7 @@ describe('HomeScreen', () => {
     await tick(20);
 
     const before = ui.lastFrame() ?? '';
-    const plannerLine = lineContaining(before, 'planner');
+    const plannerLine = lineContaining(before, 'Claude Code');
     const modeLine = lineContaining(before, 'standard');
 
     ui.stdin.write('/');
@@ -211,7 +212,7 @@ describe('HomeScreen', () => {
 
     const after = ui.lastFrame() ?? '';
     expect(after).toContain('tab fill');
-    expect(lineContaining(after, 'planner')).toBe(plannerLine);
+    expect(lineContaining(after, 'Claude Code')).toBe(plannerLine);
     expect(lineContaining(after, 'standard')).toBe(modeLine);
     ui.unmount();
   });
@@ -359,30 +360,6 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('keeps the planner/implementer/mode rows intact and separate while focused', async () => {
-    seedSessions(20);
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
-
-    ui.stdin.write(CTRL_R);
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    });
-
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    // Each config row must remain on its own line with its own slash hint — the
-    // focus-time overflow bug merged them into "standardAuto" / "/imple /mode".
-    const implLine = lineContaining(frame, '/implementer');
-    const modeLine = lineContaining(frame, '/mode');
-    expect(implLine).toContain('implementer');
-    expect(modeLine).toContain('mode');
-    expect(modeLine).toContain('standard');
-    expect(implLine).not.toBe(modeLine);
-    expect(implLine).not.toContain('standard');
-    expect(frame).not.toContain('/imple /mode');
-    ui.unmount();
-  });
-
   it('engages the bordered focused recent-sessions chrome at a viable small height', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     seedSessions(30);
@@ -452,12 +429,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
-      expect(lineContaining(ui.lastFrame() ?? '', 'focus feature 2')).toContain(FOCUS_BAR);
+      expectLineContains(ui.lastFrame() ?? '', 'focus feature 2', FOCUS_BAR);
     });
 
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
-      expect(lineContaining(ui.lastFrame() ?? '', 'focus feature 1')).toContain(FOCUS_BAR);
+      expectLineContains(ui.lastFrame() ?? '', 'focus feature 1', FOCUS_BAR);
     });
     ui.unmount();
   });
@@ -489,7 +466,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('ancient hidden focus target');
-      expect(lineContaining(frame, 'ancient hidden focus target')).toContain(FOCUS_BAR);
+      expectLineContains(frame, 'ancient hidden focus target', FOCUS_BAR);
     });
 
     ui.unmount();

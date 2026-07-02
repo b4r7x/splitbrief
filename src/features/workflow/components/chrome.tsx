@@ -3,7 +3,6 @@ import type { RuntimeCommandDef } from '../../../core/runtime/commands/types.js'
 import type { InputMode } from '../../../core/navigation/types.js';
 import { Composer, type ComposerBoxHints } from '../../../components/composer/composer.js';
 import { Header } from './header.js';
-import { Rail } from './rail.js';
 import { FeedbackRow } from './feedback-row.js';
 import { InputFooter } from './input-footer.js';
 import { Divider } from './divider.js';
@@ -16,14 +15,15 @@ import type { ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailForm } from '../layout/chrome-rows.js';
 import type { WorkflowReviewColumn } from '../layout/rect.js';
 
-function useComposerBoxHints(
-  mode: InputMode,
-  override?: ComposerBoxHintOverride | undefined,
-): ComposerBoxHints {
+// The composer no longer advertises the ⏎ submit hint; the keys slot carries only override hints
+// (cancelled/attach bylines) and the completion check mark.
+function useComposerBoxHints(override?: ComposerBoxHintOverride | undefined): ComposerBoxHints {
   const complete = lifecycleStore.use((s) => s.phase === 'complete');
   const { localRate, costBreakdown, pricingState } = useCostStats();
-  const baseKeys = override ? override.keys : mode === 'question' ? '⏎  send' : '⏎';
-  const keys = complete ? `${baseKeys}  ${glyph('check')}` : baseKeys;
+  const baseKeys = override ? override.keys : '';
+  const keys = complete
+    ? [baseKeys, glyph('check')].filter((part) => part.length > 0).join('  ')
+    : baseKeys;
   const display = formatCostDisplay(localRate, costBreakdown, pricingState);
   const cost = override?.cost === true && display.hasPricedUsage ? display.spentText : undefined;
   return { keys, cost };
@@ -41,8 +41,7 @@ export function WorkflowHeader({
   const cols = terminalSizeStore.use((s) => s.cols);
   return (
     <>
-      <Header startedAt={startedAt} />
-      <Rail form={railForm} />
+      <Header startedAt={startedAt} railForm={railForm} />
       <Divider width={cols} label={scrollAboveLabel} tone="textDim" />
     </>
   );
@@ -61,6 +60,7 @@ export function WorkflowFooter({
   onEditShortcut,
   reviewColumn,
   questionEpoch,
+  waitingForUser = false,
 }: {
   handleInput: (text: string) => void;
   onEmptySubmit?: (() => void) | undefined;
@@ -74,12 +74,13 @@ export function WorkflowFooter({
   onEditShortcut?: (() => void) | undefined;
   reviewColumn?: WorkflowReviewColumn | undefined;
   questionEpoch?: number | undefined;
+  waitingForUser?: boolean | undefined;
 }) {
   const composerWidthProps = reviewColumn
     ? { width: reviewColumn.width, boxLeftOffset: reviewColumn.leftOffset }
     : {};
   const footerWidthProps = reviewColumn ? { width: reviewColumn.width } : {};
-  const boxHints = useComposerBoxHints(mode, boxHintOverride);
+  const boxHints = useComposerBoxHints(boxHintOverride);
   const footer = (
     <>
       <FeedbackRow inputHint={feedbackHint ?? inputHint} />
@@ -94,10 +95,11 @@ export function WorkflowFooter({
         disabled={disabled}
         boxHints={boxHints}
         questionEpoch={questionEpoch}
+        inputPaddingX={0}
         {...composerWidthProps}
         {...(onEditShortcut ? { onEditShortcut } : {})}
       />
-      <InputFooter {...footerWidthProps} />
+      <InputFooter {...footerWidthProps} waiting={waitingForUser} />
     </>
   );
 

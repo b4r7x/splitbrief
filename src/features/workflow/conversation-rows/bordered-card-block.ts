@@ -15,7 +15,7 @@ export function borderedCardRowsBlock(input: {
   const labelTone = input.labelTone;
   const valueTone = input.valueTone;
 
-  const cardWidth = Math.max(1, input.width - 2);
+  const cardWidth = Math.max(1, input.width);
   const bodyLines =
     value === undefined || value.length === 0
       ? []

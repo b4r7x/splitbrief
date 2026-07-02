@@ -10,7 +10,6 @@ import {
   markdownConversationRowsCacheKey,
   markdownConversationRowsProjection,
   resetMarkdownConversationRowsCache,
-  STATUS_DIM_ERROR,
   workflowMarkdownRenderSegments,
 } from './markdown-rows.js';
 import { rowText } from './row-format.js';
@@ -319,7 +318,7 @@ describe('workflowMarkdownRenderSegments', () => {
     expect(parts).toContainEqual({ text: 'HIGH' });
     expect(parts).toContainEqual({
       text: 'FAILED',
-      style: { color: STATUS_DIM_ERROR, bold: false },
+      style: { color: theme.dimError, bold: false },
     });
     expect(
       parts.every(

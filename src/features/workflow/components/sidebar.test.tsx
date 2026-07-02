@@ -1,11 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box } from 'ink';
+import { act } from 'react';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { glyph } from '../../../lib/glyphs.js';
+import { glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { configStore } from '../../../stores/project/config.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { Sidebar } from './sidebar.js';
@@ -114,10 +116,74 @@ describe('Sidebar — completed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('planner claude-code');
-    expect(frame).toContain('impl');
+    expect(frame).toContain('Planner claude-code');
+    expect(frame).toContain('Implementer');
     expect(frame).toContain('Qwen 2.5 Coder 7B');
     expect(frame).toContain(glyph('connectorHandoff'));
+
+    ui.unmount();
+  });
+
+  it('shows the waiting placeholder while a stage runs with no tasks', async () => {
+    tasksStore.__testReset({ tasks: [] });
+    lifecycleStore.__testReset({ phase: 'researching', startedAt: Date.now() - 65_000 });
+
+    const ui = renderFeature(<Sidebar width={30} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('no tasks yet');
+    expect(frame).toContain('planner is working');
+    expect(frame).toContain('spec');
+
+    ui.unmount();
+  });
+
+  it('keeps the waiting clock live under reduced motion without advancing the frame', async () => {
+    const previousReduceMotion = process.env.DIPTYCH_REDUCE_MOTION;
+    process.env.DIPTYCH_REDUCE_MOTION = '1';
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+
+    let ui: ReturnType<typeof renderFeature> | null = null;
+    try {
+      tasksStore.__testReset({ tasks: [] });
+      lifecycleStore.__testReset({ phase: 'researching', startedAt: 0 });
+
+      ui = renderFeature(<Sidebar width={30} />);
+      const firstFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const firstSpinnerFrame = spinnerFrames()[0] ?? '';
+
+      expect(firstFrame).toContain(`${firstSpinnerFrame} spec`);
+      expect(firstFrame).toContain('0:00');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1000);
+      });
+
+      const nextFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(nextFrame).toContain(`${firstSpinnerFrame} spec`);
+      expect(nextFrame).toContain('0:01');
+    } finally {
+      ui?.unmount();
+      if (previousReduceMotion === undefined) {
+        delete process.env.DIPTYCH_REDUCE_MOTION;
+      } else {
+        process.env.DIPTYCH_REDUCE_MOTION = previousReduceMotion;
+      }
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows only the empty note when nothing is running', async () => {
+    tasksStore.__testReset({ tasks: [] });
+
+    const ui = renderFeature(<Sidebar width={30} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('no tasks yet');
+    expect(frame).not.toContain('planner is working');
 
     ui.unmount();
   });

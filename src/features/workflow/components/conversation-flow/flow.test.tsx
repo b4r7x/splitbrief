@@ -18,8 +18,10 @@ import type { EngineEvent } from '../../../../engine/events/types.js';
 import type { ConversationRow } from '../../conversation-rows/types.js';
 import { getTheme } from '../../../../components/theme.js';
 import { glyph } from '../../../../lib/glyphs.js';
+import { displayActivityLabel } from '../../display/activity-label-display.js';
 import { ConversationFlow } from './flow.js';
-import { ConversationRowView, colorForTone } from './row-view.js';
+import { ConversationRowView } from './row-view.js';
+import { colorForTone } from '../../display/tone-color.js';
 import { hoverStore } from '../../../../stores/ui/hover.js';
 import * as projectionCache from '../../conversation-rows/projection-cache.js';
 
@@ -29,6 +31,17 @@ const QUEUED_MARK = glyph('statusPending');
 const LIVE_MARK = glyph('statusInProgress');
 const FOCUS_MARK = glyph('liveBar');
 const TREE_BRANCH_MARK = glyph('treeBranch');
+const COMPLETED_HEADER = `${glyph('completed')} completed`;
+
+function expectActivityLine(
+  frame: string,
+  label: Parameters<typeof displayActivityLabel>[0],
+  value: string,
+): void {
+  const line = frame.split('\n').find((candidate) => candidate.includes(value)) ?? '';
+  expect(line).toContain(displayActivityLabel(label));
+  expect(line).toContain(value);
+}
 
 function makePlannerText(index: number): Extract<EngineEvent, { type: 'planner_text' }> {
   return makePlannerTextEvent({ ts: index, phase: 'planning', text: `event ${index}` });
@@ -214,13 +227,19 @@ function contentRows(frame: string): string[] {
   return normalizedRows(frame).filter((line) => /^line-\d+$/.test(line));
 }
 
-function renderConversation(events: EngineEvent[], height: number, conversationWidth: number) {
+function renderConversation(
+  events: EngineEvent[],
+  height: number,
+  conversationWidth: number,
+  onScrollBelow?: (label: string) => void,
+) {
   eventsStore.__testReset({ events });
   return renderFeature(
     <ConversationFlow
       height={height}
       conversationWidth={conversationWidth}
       contentWidth={conversationWidth}
+      {...(onScrollBelow ? { onScrollBelow } : {})}
     />,
   );
 }
@@ -294,15 +313,17 @@ describe('ConversationFlow', () => {
     const ui = renderConversation([makeRunnerActivity()], 5, 90);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain("RUN   sed -n '1,260p' CLAUDE.md");
+    expect(frame).toContain('Plan activity  1 update  [Codex]');
+    expectActivityLine(frame, 'READ', 'CLAUDE.md :1-260');
     expect(frame).not.toContain('/bin/zsh -lc');
     expect(frame).not.toContain('activity:');
 
     ui.unmount();
   });
 
-  it('keeps scroll indicators inside the fixed viewport', () => {
+  it('lifts the below scroll label to the chrome divider and keeps the viewport fixed', () => {
     const events = Array.from({ length: 6 }, (_, index) => makePlannerText(index));
+    const belowCalls: string[] = [];
 
     conversationScrollStore.__testReset({
       scrollOffset: 1,
@@ -310,48 +331,19 @@ describe('ConversationFlow', () => {
       heightAtScroll: 11,
     });
 
-    const ui = renderConversation(events, 10, 80);
+    const ui = renderConversation(events, 10, 80, (label) => belowCalls.push(label));
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('1 line below');
+    expect(belowCalls.at(-1)).toBe('1 line below');
+    expect(frame).not.toContain('line below');
     expect(frameRowCount(frame)).toBeLessThanOrEqual(10);
 
     ui.unmount();
   });
 
-  it('keeps the below scroll banner rule within the conversation width', () => {
-    const events = Array.from({ length: 6 }, (_, index) => makePlannerText(index));
-    const conversationWidth = 60;
-
-    eventsStore.__testReset({ events });
-    conversationScrollStore.__testReset({
-      scrollOffset: 1,
-      renderableCountAtScroll: events.length,
-      heightAtScroll: 11,
-    });
-
-    const ui = renderFeature(
-      <ConversationFlow
-        height={10}
-        conversationWidth={conversationWidth}
-        contentWidth={conversationWidth}
-      />,
-    );
-    const frame = ui.lastFrame() ?? '';
-    const bannerLine =
-      stripAnsiStyles(frame)
-        .split('\n')
-        .find((line) => line.includes('line below')) ?? '';
-
-    expect(frame).toContain('1 line below');
-    expect(bannerLine.length).toBeLessThanOrEqual(conversationWidth);
-    expect(bannerLine.indexOf('line below')).toBeLessThan(conversationWidth);
-
-    ui.unmount();
-  });
-
-  it('shows new renderable events without growing the viewport when scrolled up', () => {
+  it('combines lines below and new events into one chrome label', () => {
     const events = Array.from({ length: 7 }, (_, index) => makePlannerText(index));
+    const belowCalls: string[] = [];
 
     conversationScrollStore.__testReset({
       scrollOffset: 1,
@@ -359,11 +351,11 @@ describe('ConversationFlow', () => {
       heightAtScroll: 11,
     });
 
-    const ui = renderConversation(events, 10, 80);
+    const ui = renderConversation(events, 10, 80, (label) => belowCalls.push(label));
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('↓ 1 new event');
-    expect(frame).toContain('3 lines below');
+    expect(belowCalls.at(-1)).toBe('3 lines below · ↓ 1 new event');
+    expect(frame).not.toContain('new event');
     expect(frameRowCount(frame)).toBeLessThanOrEqual(10);
 
     ui.unmount();
@@ -381,23 +373,32 @@ describe('ConversationFlow', () => {
     const bottomFrame = bottom.lastFrame() ?? '';
     bottom.unmount();
 
+    const belowCalls: string[] = [];
     conversationScrollStore.__testReset({
       scrollOffset: 1,
       renderableCountAtScroll: 1,
       heightAtScroll: 12,
     });
-    const scrolled = renderConversation(events, 6, 80);
+    const scrolled = renderConversation(events, 6, 80, (label) => belowCalls.push(label));
     const scrolledFrame = scrolled.lastFrame() ?? '';
 
-    expect(contentRows(bottomFrame)).toEqual(['line-8', 'line-9', 'line-10', 'line-11', 'line-12']);
+    expect(contentRows(bottomFrame)).toEqual([
+      'line-7',
+      'line-8',
+      'line-9',
+      'line-10',
+      'line-11',
+      'line-12',
+    ]);
     expect(contentRows(scrolledFrame)).toEqual([
+      'line-6',
       'line-7',
       'line-8',
       'line-9',
       'line-10',
       'line-11',
     ]);
-    expect(scrolledFrame).toContain('1 line below');
+    expect(belowCalls.at(-1)).toBe('1 line below');
     expect(frameRowCount(scrolledFrame)).toBeLessThanOrEqual(6);
 
     scrolled.unmount();
@@ -415,17 +416,18 @@ describe('ConversationFlow', () => {
     const bottomRows = windowRows(bottom.lastFrame() ?? '');
     bottom.unmount();
 
+    const belowCalls: string[] = [];
     conversationScrollStore.__testReset({
       scrollOffset: 5,
       renderableCountAtScroll: 2,
       heightAtScroll: 13,
     });
-    const scrolled = renderConversation(events, 7, 72);
+    const scrolled = renderConversation(events, 7, 72, (label) => belowCalls.push(label));
     const scrolledFrame = scrolled.lastFrame() ?? '';
     const scrolledRows = windowRows(scrolledFrame);
 
     expect(scrolledRows.slice(1)).toEqual(bottomRows.slice(0, -1));
-    expect(scrolledFrame).toContain('5 lines below');
+    expect(belowCalls.at(-1)).toBe('5 lines below');
     expect(frameRowCount(scrolledFrame)).toBeLessThanOrEqual(7);
 
     scrolled.unmount();
@@ -448,19 +450,26 @@ describe('ConversationFlow', () => {
     const bottomRows = normalizedRows(bottom.lastFrame() ?? '');
     bottom.unmount();
 
+    const belowCalls: string[] = [];
     conversationScrollStore.__testReset({
       scrollOffset: 1,
       renderableCountAtScroll: 1,
       heightAtScroll: 6,
     });
-    const scrolled = renderConversation(events, 5, 80);
+    const scrolled = renderConversation(events, 5, 80, (label) => belowCalls.push(label));
     const scrolledFrame = scrolled.lastFrame() ?? '';
     const scrolledRows = normalizedRows(scrolledFrame);
 
-    expect(bottomRows).toEqual(['stream-2', 'stream-3', 'stream-4', 'stream-5']);
-    expect(scrolledRows).toEqual(['stream-1', 'stream-2', 'stream-3', 'stream-4']);
+    expect(bottomRows).toEqual(['stream-1', 'stream-2', 'stream-3', 'stream-4', 'stream-5']);
+    expect(scrolledRows).toEqual([
+      'generating README.md...',
+      'stream-1',
+      'stream-2',
+      'stream-3',
+      'stream-4',
+    ]);
     expect(scrolledFrame).not.toMatch(/[│┆]/);
-    expect(scrolledFrame).toContain('1 line below');
+    expect(belowCalls.at(-1)).toBe('1 line below');
     expect(frameRowCount(scrolledFrame)).toBeLessThanOrEqual(5);
 
     scrolled.unmount();
@@ -483,7 +492,7 @@ describe('ConversationFlow', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Finished task');
-    expect(frame).toContain('◇ completed');
+    expect(frame).toContain(COMPLETED_HEADER);
     expect(frame).toMatch(/event \d/);
     expect(frameRowCount(frame)).toBeLessThanOrEqual(10);
 
@@ -499,9 +508,9 @@ describe('ConversationFlow', () => {
     const ui = renderConversation(events, 8, 80);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('◇ completed');
+    expect(frame).toContain(COMPLETED_HEADER);
     expect(frame).toContain('Finished task');
-    expect(frame.match(/◇/g) ?? []).toHaveLength(1);
+    expect(frame.match(new RegExp(COMPLETED_HEADER, 'g')) ?? []).toHaveLength(1);
 
     ui.unmount();
   });
@@ -527,7 +536,7 @@ describe('ConversationFlow', () => {
 
     eventsStore.__testReset({ events });
     conversationScrollStore.__testReset({
-      scrollOffset: 1,
+      scrollOffset: 0,
       renderableCountAtScroll: events.length,
       heightAtScroll: 11,
     });
@@ -658,9 +667,35 @@ describe('ConversationFlow', () => {
     const running = renderConversation(events, 12, 90);
     const runningFrame = running.lastFrame() ?? '';
     expect(runningFrame).toContain(LIVE_MARK);
-    expect(runningFrame).toContain('plan activity');
-    expect(runningFrame).toContain('READ  src/a.ts');
+    expect(runningFrame).toContain('Plan activity');
+    expectActivityLine(runningFrame, 'READ', 'src/a.ts');
     running.unmount();
+  });
+
+  it('keeps the live status out of the transcript while a stage runs', () => {
+    const events = makeActivityReads(['src/a.ts', 'src/b.ts']);
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'researching',
+      startedAt: Date.now() - 5_000,
+    });
+    const ui = renderConversation(events, 12, 90);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Plan activity');
+    expect(frame).not.toContain('Researching…');
+    ui.unmount();
+  });
+
+  it('keeps the live header on a single-event activity group instead of a lone item row', () => {
+    const events = makeActivityReads(['src/only.ts']);
+    lifecycleStore.__testReset({ status: 'running', phase: 'researching', startedAt: 0 });
+    const ui = renderConversation(events, 12, 90);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Plan activity');
+    expect(frame).toContain('src/only.ts');
+    ui.unmount();
   });
 
   it('renders the live ◉ for an active activity row and the done ● for a finished one', () => {
@@ -756,13 +791,13 @@ describe('ConversationFlow', () => {
     }
   });
 
-  it('prefixes the ▌ focus bar before the done ✓ on a focused completed header', () => {
+  it('overlays the ▌ focus bar onto the done glyph cell of a focused completed header', () => {
     const row = makeTaskHeaderRow('task-header:T001');
 
     const ui = renderFeature(<ConversationRowView row={row} focused={true} />);
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(FOCUS_MARK);
-    expect(frame).toContain(DONE_MARK);
+    expect(frame).not.toContain(DONE_MARK);
     expect(frame).not.toContain(LIVE_MARK);
     expect(frame).toContain('T001 No-op task');
     ui.unmount();

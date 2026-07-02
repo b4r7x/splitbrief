@@ -9,7 +9,7 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { railConnectorString } from '../layout/chrome-rows.js';
-import { eventRows } from '../conversation-rows/event-rows.js';
+import { eventRows } from '#testing/helpers/event-rows.js';
 import { rowText } from '../conversation-rows/row-format.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';

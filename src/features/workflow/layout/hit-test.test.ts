@@ -194,7 +194,7 @@ describe('rail stage hit zones', () => {
       const mid = Math.floor((zone.left + zone.right) / 2);
       expect(hitRailStage(zones, mid, RAIL_STAGE_FIRST_ROW)).toBe(zone.index);
     }
-    expect(hitRailStage(zones, 1, RAIL_STAGE_FIRST_ROW)).toBeNull();
+    expect(hitRailStage(zones, RAIL_CONTENT_LEFT_COL - 1, RAIL_STAGE_FIRST_ROW)).toBeNull();
     expect(hitRailStage(zones, zoneByIndex(zones, 4).right + 1, RAIL_STAGE_FIRST_ROW)).toBeNull();
     expect(hitRailStage(zones, zoneByIndex(zones, 0).left, RAIL_STAGE_FIRST_ROW + 1)).toBeNull();
   });
@@ -223,7 +223,7 @@ describe('rail stage hit zones', () => {
     const indices = zones.map((zone) => zone.index);
     expect(indices).not.toContain(3);
     expect(indices).not.toContain(4);
-    const maxCol = RAIL_CONTENT_LEFT_COL + (cols - 2) - 1;
+    const maxCol = RAIL_CONTENT_LEFT_COL + cols - 1;
     for (const zone of zones) expect(zone.right).toBeLessThanOrEqual(maxCol);
   });
 

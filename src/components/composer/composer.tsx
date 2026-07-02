@@ -114,6 +114,7 @@ interface ComposerProps {
   onEditShortcut?: (() => void) | undefined;
   boxLeftOffset?: number | undefined;
   questionEpoch?: number | undefined;
+  inputPaddingX?: number | undefined;
 }
 
 function boxHintCostColor(
@@ -140,13 +141,14 @@ export function Composer({
   onEditShortcut,
   boxLeftOffset,
   questionEpoch,
+  inputPaddingX = 1,
 }: ComposerProps) {
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
   const [{ projectDir, config }] = useStores(configStore);
   const [{ message: feedbackMessage, isError: feedbackIsError }] = useStores(feedbackStore);
   const [{ pending: pendingAttachments }] = useStores(attachmentsStore);
-  const inputColumns = Math.max(1, (width ?? cols) - 6);
+  const inputColumns = Math.max(1, (width ?? cols) - 4 - inputPaddingX * 2);
   const [value, setValue] = useState('');
   const [pastes, setPastes] = useState<PasteMarker[]>([]);
   const pasteIdRef = useRef(0);
@@ -258,14 +260,11 @@ export function Composer({
     return handleBoundaryNavigate(direction);
   };
 
-  const submitRef = useRef<() => void>(() => {});
-  submitRef.current = () => handleSubmit(value);
-
   const hintBoxWidth = width ?? cols;
   const hintDisplay = boxHints
     ? compactComposerHints(
         { keys: boxHints.keys, cost: boxHints.cost },
-        computeComposerHintBudget(hintBoxWidth),
+        computeComposerHintBudget({ boxWidth: hintBoxWidth, paddingX: inputPaddingX }),
       )
     : null;
   // A click is an alternate trigger for the same store action the keyboard calls. The docked
@@ -343,21 +342,21 @@ export function Composer({
     return () => completionStore.setOpen(false);
   }, [completionOpen]);
 
-  // The composer is docked to the bottom of the workflow shell above the two-row InputFooter (the
-  // byline plus its one row of bottom breathing room), so the single-line hint row sits at
-  // `rows - visibleRows - 2` (footer pad at rows, byline at rows-1, box bottom border at rows-2, the
-  // box is visibleRows + 2 tall). Zones come from the post-compaction render, so a dropped cost is
-  // never a phantom hotspot.
+  // The composer is docked to the bottom of the workflow shell above the one-row InputFooter, so
+  // the single-line hint row sits at `rows - visibleRows - 1` (byline at rows, box bottom border at
+  // rows-1, the box is visibleRows + 2 tall). Zones come from the post-compaction render, so a
+  // dropped cost is never a phantom hotspot.
   const hintKeys = hintDisplay?.keys;
   const hintCost = hintDisplay?.cost;
   useEffect(() => {
     if (!registerHintZones || hintDisplay === null) return;
-    const hintRow = rows - visibleRows - 2;
+    const hintRow = rows - visibleRows - 1;
     const rects = composerHintZoneRects({
       boxLeft: hintBoxLeft,
       boxWidth: hintBoxWidth,
       hintRow,
       display: hintDisplay,
+      paddingX: inputPaddingX,
     });
     const disposers = rects.map((rect) =>
       registerMouseZone({
@@ -367,10 +366,7 @@ export function Composer({
         top: rect.top,
         bottom: rect.bottom,
         z: 5,
-        onClick: () => {
-          if (rect.id === 'submit') submitRef.current();
-          else overlayStore.open('cost-drilldown');
-        },
+        onClick: () => overlayStore.open('cost-drilldown'),
       }),
     );
     return () => {
@@ -378,7 +374,16 @@ export function Composer({
     };
     // hintDisplay is derived from hintKeys/hintCost; depending on those primitives keeps the zones
     // in sync without re-registering on every keystroke.
-  }, [registerHintZones, hintKeys, hintCost, hintBoxWidth, hintBoxLeft, rows, visibleRows]);
+  }, [
+    registerHintZones,
+    hintKeys,
+    hintCost,
+    hintBoxWidth,
+    hintBoxLeft,
+    inputPaddingX,
+    rows,
+    visibleRows,
+  ]);
 
   return (
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">
@@ -400,7 +405,7 @@ export function Composer({
         <Box
           borderStyle="round"
           borderColor={theme.border}
-          paddingX={1}
+          paddingX={inputPaddingX}
           width="100%"
           minHeight={3}
           flexShrink={0}

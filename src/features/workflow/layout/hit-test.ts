@@ -4,6 +4,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { SIMPLE_REVIEW_BASE_CHROME_ROWS, SIMPLE_TASK_ROW_HEIGHT } from './brief-review.js';
 import {
   chooseFormBVariant,
+  getActiveRailStage,
   getChromeContentWidth,
   getRailStages,
   isRailCurrent,
@@ -84,10 +85,11 @@ export function hitBriefTaskRow(input: {
   });
 }
 
-// Header (1) + the rail's leading blank (1): the first stage line is the 3rd 1-based screen row.
-export const RAIL_STAGE_FIRST_ROW = 3;
-// The header and rail boxes carry paddingX=1, so rail content starts at the 2nd 1-based column.
-export const RAIL_CONTENT_LEFT_COL = 2;
+// The phase rail now shares the header row itself: the first stage line is the 1st 1-based screen row.
+export const RAIL_STAGE_FIRST_ROW = 1;
+// The header row is flush to the terminal edge (no paddingX), so the first rail stage's marker
+// glyph renders in the 1st 1-based column.
+export const RAIL_CONTENT_LEFT_COL = 1;
 // Marker plus trailing space prefixes the active label in the Form-C line.
 const RAIL_GLYPH_PREFIX_WIDTH = 2;
 const RAIL_FORM_C_FRACTION_PREFIX = '  task ';
@@ -112,9 +114,7 @@ export function resolveRailFraction(input: {
   totalTasks: number;
   cancelled: boolean;
 }): string {
-  const activeStage = getRailStages(input.phase, { cancelled: input.cancelled }).find(
-    (state) => state.status === 'active',
-  );
+  const activeStage = input.cancelled ? null : getActiveRailStage(input.phase);
   return activeStage
     ? buildRailFraction(activeStage.stage, input.currentTask, input.totalTasks)
     : '';

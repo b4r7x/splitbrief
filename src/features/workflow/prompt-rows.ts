@@ -9,6 +9,7 @@ import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ApprovalPromptState } from '../../stores/approval-prompt/prompt.js';
 import type { CostApprovalState } from '../../stores/cost-approval/prompt.js';
 import { glyph } from '../../lib/glyphs.js';
+import { countPromptBodyRows } from './prompt-body-rows.js';
 
 const MIN_TEXT_WIDTH = 1;
 const BORDER_ROWS = 2;
@@ -264,12 +265,26 @@ export function getCostApprovalPromptRowsForPrediction(
   );
 }
 
-export function getWorkflowPromptRows(
-  approvalState: ApprovalPromptState,
-  costApprovalState: CostApprovalState,
-  cols: number,
-): number {
+export const QUESTION_PROMPT_HORIZONTAL_CHROME = 4;
+const QUESTION_PROMPT_BORDER_ROWS = 2;
+
+export function getQuestionPromptRows(hint: string, cols: number): number {
+  const width = Math.max(MIN_TEXT_WIDTH, cols - QUESTION_PROMPT_HORIZONTAL_CHROME);
+  return QUESTION_PROMPT_BORDER_ROWS + Math.max(1, countPromptBodyRows(hint, width));
+}
+
+export interface WorkflowPromptRowsInput {
+  approvalState: ApprovalPromptState;
+  costApprovalState: CostApprovalState;
+  questionHint: string | null;
+  cols: number;
+}
+
+export function getWorkflowPromptRows(input: WorkflowPromptRowsInput): number {
+  const { approvalState, costApprovalState, questionHint, cols } = input;
   return (
-    getApprovalPromptRows(approvalState, cols) + getCostApprovalPromptRows(costApprovalState, cols)
+    getApprovalPromptRows(approvalState, cols) +
+    getCostApprovalPromptRows(costApprovalState, cols) +
+    (questionHint === null ? 0 : getQuestionPromptRows(questionHint, cols))
   );
 }

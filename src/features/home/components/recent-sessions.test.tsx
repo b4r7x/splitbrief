@@ -208,11 +208,10 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it('renders the unfocused small-height home budget as one visible session row', async () => {
+  it('renders the unfocused small-height home budget as two visible session rows', async () => {
     seed([
-      { id: 'small-0', feature: 'oldest-small-home', startedAt: 1_700_000_000 },
-      { id: 'small-1', feature: 'middle-small-home', startedAt: 1_700_000_001 },
-      { id: 'small-2', feature: 'newest-small-home', startedAt: 1_700_000_002 },
+      { id: 'small-0', feature: 'older-small-home', startedAt: 1_700_000_000 },
+      { id: 'small-1', feature: 'newest-small-home', startedAt: 1_700_000_001 },
     ]);
     const terminalRows = 16;
     terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
@@ -220,8 +219,7 @@ describe('RecentSessions', () => {
       cols: 80,
       rows: 16,
       isSmall: true,
-      hasSkills: false,
-      sessionCount: 3,
+      sessionCount: 2,
       sessionsFocused: false,
     });
 
@@ -234,8 +232,7 @@ describe('RecentSessions', () => {
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
     expect(frame).toContain('RECENT SESSIONS');
     expect(frame).toContain('newest-small-home');
-    expect(frame).not.toContain('middle-small-home');
-    expect(frame).not.toContain('oldest-small-home');
+    expect(frame).toContain('older-small-home');
     expect(frame).not.toContain('filter sessions');
     expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toMatch(/\b\d+ more\b/);
@@ -254,7 +251,6 @@ describe('RecentSessions', () => {
       cols: 80,
       rows: terminalRows,
       isSmall: true,
-      hasSkills: false,
       sessionCount: 3,
       sessionsFocused: true,
     });
@@ -281,9 +277,9 @@ describe('RecentSessions', () => {
     expect(frame).toContain('filter sessions');
     expect(frame).toContain('selection failed');
     expect(frame).toContain('newest-focused-small-home');
+    expect(frame).toContain('↓ 2 more');
     expect(frame).not.toContain('middle-focused-small-home');
     expect(frame).not.toContain('oldest-focused-small-home');
-    expect(frame).not.toMatch(/\b\d+ more\b/);
     ui.unmount();
   });
 
