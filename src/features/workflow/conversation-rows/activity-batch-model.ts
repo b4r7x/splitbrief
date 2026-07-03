@@ -20,7 +20,7 @@ export type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
 
 export interface ActivityDisplayItem {
   key: string;
-  label: string;
+  label: RunnerActivityLedgerLabel;
   value: string;
   labelTone: ConversationRowTone;
   valueTone: ConversationRowTone;
@@ -75,6 +75,11 @@ export function buildActivityBatchViewModel(input: {
     ? expandedActivityItemsProjection(input.events)
     : collapsedActivityItemsProjection(input.events, COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
   const hiddenCount = Math.max(0, projection.headerCount - COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
+  const headerText = activityBatchHeader(
+    input.events,
+    projection.headerCount,
+    projection.severityCounts,
+  );
 
   return {
     batchKey: input.batchKey,
@@ -82,11 +87,7 @@ export function buildActivityBatchViewModel(input: {
     expanded,
     hiddenCount,
     headerCount: projection.headerCount,
-    headerText: activityBatchHeader(
-      input.events,
-      projection.headerCount,
-      projection.severityCounts,
-    ),
+    headerText,
     tone: activityBatchTone(input.events),
     renderableUnits: projection.headerCount,
     expandableKey: hiddenCount > 0 ? input.batchKey : null,
@@ -193,16 +194,15 @@ function activityBatchHeader(
   headerCount: number,
   severityCounts: Readonly<Record<RunnerActivitySeverity, number>>,
 ): string | null {
-  if (headerCount <= 1) return null;
-
   const latest = events.at(-1);
   if (latest === undefined) return null;
 
   const tool = sanitizeTerminalDisplayText(formatToolModel(latest.runnerName, latest.model));
   const warnings = severityCounts.warning;
   const errors = severityCounts.error;
+  const roleLabel = `${runnerActivityRoleLabel(latest.role)} activity`;
   return [
-    `${runnerActivityRoleLabel(latest.role)} activity`,
+    roleLabel,
     countNoun(headerCount, 'update'),
     warnings > 0 ? `${warnings} warn` : null,
     errors > 0 ? `${errors} err` : null,
@@ -310,6 +310,7 @@ function activityLabelTone(
       return 'info';
     case 'READ':
     case 'FIND':
+    case 'LIST':
       return 'textDim';
     case 'WARN':
       return 'warning';

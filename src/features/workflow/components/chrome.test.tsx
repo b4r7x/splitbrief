@@ -129,7 +129,7 @@ describe('WorkflowFooter', () => {
     ui.unmount();
   });
 
-  it('shows the question-mode send affordance and feedback hint in the footer', async () => {
+  it('drops the ⏎ keys hint in question mode but keeps the feedback hint in the footer', async () => {
     const ui = renderFooter({
       mode: 'question',
       inputHint: 'answer prompt shown above',
@@ -137,17 +137,19 @@ describe('WorkflowFooter', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('send');
+    expect(frame).not.toContain('⏎');
+    expect(frame).not.toContain('send');
     expect(frame).toContain('answer prompt shown above');
     ui.unmount();
   });
 
-  it('omits the done token while the workflow is still running', async () => {
+  it('omits the done token and the ⏎ hint while the workflow is still running', async () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const ui = renderFooter();
     await tick();
 
     expect(ui.lastFrame() ?? '').not.toContain(glyph('check'));
+    expect(ui.lastFrame() ?? '').not.toContain('⏎');
     ui.unmount();
   });
 

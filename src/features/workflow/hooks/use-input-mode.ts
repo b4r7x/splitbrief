@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { InputMode } from '../../../core/navigation/types.js';
 import type { ApprovalReviewResult } from '../../../core/approval/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 
 export interface UseInputModeResult {
   mode: InputMode;
@@ -36,6 +37,7 @@ export function useInputMode(): UseInputModeResult {
     const questionResolver = questionResolverRef.current;
     reviewResolverRef.current = null;
     questionResolverRef.current = null;
+    questionPromptStore.clearHint();
     reviewResolver?.({ approved: false });
     questionResolver?.('');
   };
@@ -53,6 +55,7 @@ export function useInputMode(): UseInputModeResult {
     supersedePending();
     return new Promise((resolve) => {
       questionResolverRef.current = resolve;
+      questionPromptStore.setHint(h);
       setModeState((state) => ({
         mode: 'question',
         hint: h,
@@ -66,6 +69,7 @@ export function useInputMode(): UseInputModeResult {
     const currentMode = modeRef.current;
     setModeState((state) => ({ ...state, mode: 'normal', hint: '' }));
     controlsStore.clearInputMode();
+    questionPromptStore.clearHint();
     if (currentMode === 'review' && typeof value === 'object') {
       const resolver = reviewResolverRef.current;
       reviewResolverRef.current = null;
@@ -84,6 +88,7 @@ export function useInputMode(): UseInputModeResult {
     questionResolverRef.current = null;
     setModeState((state) => ({ ...state, mode: 'normal', hint: '' }));
     controlsStore.clearInputMode();
+    questionPromptStore.clearHint();
     reviewResolver?.({ approved: false });
     questionResolver?.('');
   };
@@ -95,6 +100,7 @@ export function useInputMode(): UseInputModeResult {
       reviewResolverRef.current = null;
       questionResolverRef.current = null;
       controlsStore.clearInputMode();
+      questionPromptStore.clearHint();
     };
   }, []);
 

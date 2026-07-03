@@ -16,18 +16,15 @@ import {
   formatTaskStartedValue,
   validationRow,
 } from './event-format.js';
-import type {
-  ConversationRow,
-  ConversationRowBlock,
-  ConversationRowTone,
-  RowBuildContext,
-} from './types.js';
+import type { ConversationRowBlock, ConversationRowTone, RowBuildContext } from './types.js';
 import { sanitizeRowDisplayText } from './row-format.js';
+import { wrapWidthFor } from './row-markers.js';
 import { implementerExpandedDiffCardBlock } from './implementer-diff-card-block.js';
 import { markdownPlannerTextRowBlock } from './planner-markdown-row-block.js';
 import {
   cardRowsBlock,
   compositeBlock,
+  promptTextBlock,
   rowSeedsBlock,
   rowsBlock,
   wrappedTextBlock,
@@ -35,21 +32,12 @@ import {
 import { taskStartedRowBlock } from './task-started-row-block.js';
 import { isRunnerCallTranscriptRowSuppressed } from './runner-call-classification.js';
 
-export function eventRows(options: {
-  event: EngineEvent;
-  globalIndex: number;
-  ctx: RowBuildContext;
-  expanded: boolean;
-}): ConversationRow[] {
-  const block = eventRowBlock(options);
-  return block === null ? [] : block.createRows(0, block.rowCount);
-}
-
 export function eventRowBlock(options: {
   event: EngineEvent;
   globalIndex: number;
   ctx: RowBuildContext;
   expanded: boolean;
+  dedupTitle?: string | undefined;
 }): ConversationRowBlock | null {
   const { event, globalIndex, ctx, expanded } = options;
   const keyPrefix = `event-${globalIndex}-${event.type}`;
@@ -144,7 +132,12 @@ export function eventRowBlock(options: {
         valueTone: recoveryResolvedTone(event.outcome),
       });
     case 'planner_text':
-      return plannerTextRowBlock({ event, keyPrefix, width: ctx.width });
+      return plannerTextRowBlock({
+        event,
+        keyPrefix,
+        width: ctx.width,
+        dedupTitle: options.dedupTitle,
+      });
     case 'rewind_to_spec':
       return cardRowsBlock({
         keyPrefix,
@@ -315,13 +308,7 @@ export function eventRowBlock(options: {
         labelTone: 'textDim',
       });
     case 'user_message':
-      return wrappedTextBlock({
-        keyPrefix,
-        text: event.text,
-        width: ctx.width,
-        tone: 'text',
-        bold: true,
-      });
+      return promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
     case 'planner_attachments_dropped':
       return cardRowsBlock({
         keyPrefix,
@@ -397,14 +384,17 @@ function plannerTextRowBlock(options: {
   event: EngineEventOf<'planner_text'>;
   keyPrefix: string;
   width: number;
+  dedupTitle: string | undefined;
 }): ConversationRowBlock | null {
-  const { event, keyPrefix, width } = options;
+  const { event, keyPrefix, width, dedupTitle } = options;
+  const markdownWidth = wrapWidthFor('message', width);
   if (isPlannerTextRenderedAsMarkdown(event)) {
     return markdownPlannerTextRowBlock({
       keyPrefix,
       text: event.text,
-      width,
+      width: markdownWidth,
       phase: event.phase,
+      dedupTitle,
     });
   }
 
@@ -413,8 +403,9 @@ function plannerTextRowBlock(options: {
       return markdownPlannerTextRowBlock({
         keyPrefix,
         text: event.text,
-        width,
+        width: markdownWidth,
         phase: event.phase,
+        dedupTitle,
       });
     case 'plain':
     case undefined:

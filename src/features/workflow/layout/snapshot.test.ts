@@ -17,9 +17,9 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
-import { getApprovalPromptRows } from '../prompt-rows.js';
+import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
+import { getApprovalPromptRows, getQuestionPromptRows } from '../prompt-rows.js';
 import { getWorkflowContentWidth, getWorkflowViewportHeight } from './rect.js';
-import { RAIL_ACTIVE_EXTRA_ROWS } from './chrome-rows.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -34,6 +34,7 @@ beforeEach(() => {
   reviewStore.reset();
   approvalPromptStore.reset();
   costApprovalStore.reset();
+  questionPromptStore.reset();
 });
 
 function makeConfirmRequest(actionDescription: string): TieredApprovalRequest {
@@ -81,11 +82,15 @@ describe('readConversationScrollSnapshot', () => {
 
     const snap = readConversationScrollSnapshot();
     // Default phase is idle: no stage is live, so the rail hangs no activity row.
-    const fullBodyHeight = getWorkflowViewportHeight(40, 3, 0, 0);
+    const fullBodyHeight = getWorkflowViewportHeight({
+      rows: 40,
+      inputRows: 3,
+      promptRows: 0,
+    });
 
-    expect(snap.contentRect.width).toBe(158);
-    expect(snap.conversationWidth).toBe(158);
-    expect(snap.conversationRect.width).toBe(158);
+    expect(snap.contentRect.width).toBe(160);
+    expect(snap.conversationWidth).toBe(160);
+    expect(snap.conversationRect.width).toBe(160);
     expect(snap.viewportHeight).toBe(fullBodyHeight);
     expect(snap.viewportHeight).toBeLessThan(40);
     expect(snap.conversationRect.top).toBe(snap.contentRect.top);
@@ -102,7 +107,7 @@ describe('readConversationScrollSnapshot', () => {
     expect(snap.viewportHeight).toBeLessThan(20);
   });
 
-  it('spends one extra activity row on a live stage versus an idle rail', () => {
+  it('reserves no viewport row for the live status, which lives in the footer byline', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
 
@@ -112,8 +117,8 @@ describe('readConversationScrollSnapshot', () => {
     lifecycleStore.__testReset({ phase: 'idle' });
     const idle = readConversationScrollSnapshot();
 
-    expect(active.viewportHeight).toBeLessThan(idle.viewportHeight);
-    expect(idle.viewportHeight - active.viewportHeight).toBe(RAIL_ACTIVE_EXTRA_ROWS);
+    expect(active.viewportHeight).toBe(idle.viewportHeight);
+    expect(active.totalHeight).toBe(idle.totalHeight);
   });
 
   it('subtracts dynamic prompt rows from the conversation viewport', () => {
@@ -133,6 +138,25 @@ describe('readConversationScrollSnapshot', () => {
     expect(withPrompt.viewportHeight).toBe(
       withoutPrompt.viewportHeight - getApprovalPromptRows(approvalPromptStore.get(), 80),
     );
+  });
+
+  it('subtracts question prompt rows from shared conversation and review geometry', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: true });
+    inputHeightStore.__testReset({ rows: 3 });
+    reviewStore.setRenderedLineCount(0);
+
+    const withoutPrompt = readConversationScrollSnapshot();
+    const reviewWithoutPrompt = readReviewContentHeight();
+    const hint = 'Question 1/1: Which API style should the implementation use?';
+
+    questionPromptStore.setHint(hint);
+
+    const withPrompt = readConversationScrollSnapshot();
+    const reviewWithPrompt = readReviewContentHeight();
+    const questionRows = getQuestionPromptRows(hint, 80);
+
+    expect(withPrompt.viewportHeight).toBe(withoutPrompt.viewportHeight - questionRows);
+    expect(reviewWithPrompt).toBe(reviewWithoutPrompt - questionRows);
   });
 
   it('recomputes prompt row budget when terminal width changes', () => {
@@ -174,10 +198,10 @@ describe('readConversationScrollSnapshot', () => {
 
     const snap = readConversationScrollSnapshot();
 
-    expect(snap.contentRect.width).toBe(118);
-    expect(snap.conversationWidth).toBe(118);
-    expect(snap.conversationRect.width).toBe(118);
-    expect(snap.conversationRect.right).toBe(snap.conversationRect.left + 117);
+    expect(snap.contentRect.width).toBe(120);
+    expect(snap.conversationWidth).toBe(120);
+    expect(snap.conversationRect.width).toBe(120);
+    expect(snap.conversationRect.right).toBe(snap.conversationRect.left + 119);
   });
 
   it('sidebar presence narrows content width', () => {

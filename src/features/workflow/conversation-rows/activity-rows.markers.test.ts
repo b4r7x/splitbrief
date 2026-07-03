@@ -5,13 +5,18 @@ import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { colorForTone } from '../components/conversation-flow/row-view.js';
+import { eventRows } from '#testing/helpers/event-rows.js';
+import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
+import { colorForTone } from '../display/tone-color.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
-import { eventRows } from './event-rows.js';
-import { rowMarker } from './row-markers.js';
+import { rowLeading, rowLeadingCells } from './row-markers.js';
 import { rowText } from './row-format.js';
 import type { ConversationRow } from './types.js';
+
+function activityLine(label: Parameters<typeof displayActivityLabel>[0], value: string): string {
+  return `${displayActivityLabel(label).padEnd(ACTIVITY_LABEL_PAD)}  ${value}`;
+}
 
 function activity(
   overrides: Partial<EngineEventOf<'runner_call_activity'>>,
@@ -60,7 +65,7 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
 
     const header = rows.find((rowValue) => rowValue.kind === 'activity');
     expect(header).toBeDefined();
-    expect(rowMarker(header?.kind ?? 'message', 'live')).toBe(`${glyph('statusInProgress')} `);
+    expect(rowLeading(header?.kind ?? 'message', 'live')).toBe(`${glyph('statusInProgress')} `);
   });
 
   it('colors the activity header label by its batch role hue', () => {
@@ -114,9 +119,9 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(rows.every((rowValue) => rowValue.kind !== 'card-bottom')).toBe(true);
     expect(text).not.toContain('┌─');
     expect(text).not.toMatch(/─{3,}/);
-    expect(text).toContain('READ  src/a.ts');
-    expect(text).toContain('READ  src/b.ts');
-    expect(text).toContain('READ  src/c.ts');
+    expect(text).toContain(activityLine('READ', 'src/a.ts'));
+    expect(text).toContain(activityLine('READ', 'src/b.ts'));
+    expect(text).toContain(activityLine('READ', 'src/c.ts'));
   });
 
   it('renders mixed read+edit batches flat with the same continuation marker', () => {
@@ -127,8 +132,8 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(text).not.toContain('┌─');
-    expect(text).toContain('READ  src/a.ts');
-    expect(text).toContain('EDIT  src/a.ts');
+    expect(text).toContain(activityLine('READ', 'src/a.ts'));
+    expect(text).toContain(activityLine('EDIT', 'src/a.ts'));
     expect(
       rows.every(
         (rowValue) =>
@@ -139,15 +144,16 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     ).toBe(true);
   });
 
-  it('renders a lone activity as a self-contained bullet, not an orphan corner', () => {
+  it('renders a lone activity under its always-on header, never as a bare item row', () => {
     const rows = blockRows([
       activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading src/a.ts' }),
     ]);
 
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     expect(rows[0]?.kind).toBe('activity');
-    expect(rows.some((rowValue) => rowValue.kind === 'activity-child-last')).toBe(false);
-    expect(rows.map(rowText).join('')).toContain('READ');
+    expect(rows[0] ? rowText(rows[0]) : '').toContain('1 update');
+    expect(rows[1]?.kind).toBe('activity-child-last');
+    expect(rows.map(rowText).join('')).toContain('Read');
   });
 
   it('terminates the tree on the last real child and marks the +more affordance separately', () => {
@@ -191,36 +197,36 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(moreText).not.toContain('more');
   });
 
-  it('keeps every activity-child marker at the same cell width as the gutter', () => {
+  it('keeps every activity-child leading at the same cell width as the gutter', () => {
     for (const kind of ['activity-child', 'activity-child-last', 'activity-more'] as const) {
-      expect(getTerminalCellWidth(rowMarker(kind) ?? '')).toBe(4);
+      expect(rowLeadingCells(kind)).toBe(4);
     }
-    expect(rowMarker('activity-child')).toBe(`  ${glyph('treeBranch')} `);
-    expect(rowMarker('activity-child-last')).toBe(`  ${glyph('treeLast')} `);
-    expect(rowMarker('activity-more')).toBe('    ');
-    expect(getTerminalCellWidth(rowMarker('activity') ?? '')).toBe(2);
+    expect(rowLeading('activity-child')).toBe(`  ${glyph('treeBranch')} `);
+    expect(rowLeading('activity-child-last')).toBe(`  ${glyph('treeLast')} `);
+    expect(rowLeading('activity-more')).toBe('    ');
+    expect(rowLeadingCells('activity')).toBe(2);
   });
 
   it('emits status-specific header glyphs at a byte-stable width-2 prefix', () => {
     for (const kind of ['activity', 'task-header'] as const) {
-      expect(rowMarker(kind)).toBe(`${glyph('statusInProgress')} `);
-      expect(rowMarker(kind, 'live')).toBe(`${glyph('statusInProgress')} `);
-      expect(rowMarker(kind, 'queued')).toBe(`${glyph('statusPending')} `);
+      expect(rowLeading(kind)).toBe(`${glyph('statusInProgress')} `);
+      expect(rowLeading(kind, 'live')).toBe(`${glyph('statusInProgress')} `);
+      expect(rowLeading(kind, 'queued')).toBe(`${glyph('statusPending')} `);
       for (const status of ['live', 'done', 'queued'] as const) {
-        expect(getTerminalCellWidth(rowMarker(kind, status) ?? '')).toBe(2);
+        expect(getTerminalCellWidth(rowLeading(kind, status))).toBe(2);
       }
     }
-    expect(rowMarker('activity', 'done')).toBe(`${glyph('stageDone')} `);
-    expect(rowMarker('task-header', 'done')).toBe(`${glyph('statusDone')} `);
+    expect(rowLeading('activity', 'done')).toBe(`${glyph('stageDone')} `);
+    expect(rowLeading('task-header', 'done')).toBe(`${glyph('statusDone')} `);
   });
 
   it('encodes every header status with a distinct glyph so state survives a color-off terminal', () => {
     for (const kind of ['activity', 'task-header'] as const) {
-      const markers = (['live', 'done', 'queued'] as const).map((status) =>
-        rowMarker(kind, status),
+      const leadings = (['live', 'done', 'queued'] as const).map((status) =>
+        rowLeading(kind, status),
       );
-      expect(markers.every((marker) => marker !== null && marker.trim().length > 0)).toBe(true);
-      expect(new Set(markers).size).toBe(markers.length);
+      expect(leadings.every((leading) => leading.trim().length > 0)).toBe(true);
+      expect(new Set(leadings).size).toBe(leadings.length);
     }
   });
 });

@@ -25,6 +25,54 @@ describe('runnerActivityLedgerItem', () => {
     });
   });
 
+  it('prettifies recognized shell reads, searches, and listings out of RUN commands', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'command',
+        label: "running sed -n '1,240p' CLAUDE.md",
+        target: "sed -n '1,240p' CLAUDE.md",
+      }),
+    ).toMatchObject({ label: 'READ', value: 'CLAUDE.md :1-240', fitMode: 'start' });
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'unknown',
+        label: '/bin/zsh -lc "rg -n deriveLiveStatus src"',
+      }),
+    ).toMatchObject({ label: 'FIND', value: '"deriveLiveStatus"  src' });
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'command',
+        label: 'running ls src/features',
+        target: 'ls src/features',
+      }),
+    ).toMatchObject({ label: 'LIST', value: 'src/features', fitMode: 'start' });
+  });
+
+  it('keeps compound or unrecognized commands as raw RUN', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'command',
+        label: 'running cat a.ts && cat b.ts',
+        target: 'cat a.ts && cat b.ts',
+      }),
+    ).toMatchObject({ label: 'RUN', value: 'cat a.ts && cat b.ts', fitMode: 'middle' });
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'updated',
+        kind: 'command',
+        label: 'running wc -l CLAUDE.md',
+        target: 'wc -l CLAUDE.md',
+      }),
+    ).toMatchObject({ label: 'RUN', value: 'wc -l CLAUDE.md' });
+  });
+
   it('keeps real terminal failures distinct from interruption', () => {
     expect(
       runnerActivityLedgerItem({

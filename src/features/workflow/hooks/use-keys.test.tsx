@@ -378,7 +378,9 @@ describe('useWorkflowKeys', () => {
     ui.stdin.write(PAGE_DOWN);
     await tick(1);
     await tick(1);
-    expect(reviewStore.get().scrollOffset).toBe(visibleTasks);
+    // One page is a full task viewport, clamped to the last reachable offset when the taller
+    // chrome-free body already shows most of the list.
+    expect(reviewStore.get().scrollOffset).toBe(Math.min(visibleTasks, maxTaskOffset));
 
     for (let i = 0; i < 10; i += 1) {
       ui.stdin.write(PAGE_DOWN);

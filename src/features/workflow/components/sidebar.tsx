@@ -8,11 +8,15 @@ import {
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { formatStageElapsed } from '../display/live-activity.js';
+import { getActiveRailStage } from '../layout/chrome-rows.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
+import { useSpinnerFrame } from '../hooks/use-spinner-frame.js';
 import { formatCostDisplay } from '../cost-text.js';
 import { Divider } from './divider.js';
 import { runnerShortLabel } from './runner-label.js';
@@ -101,6 +105,29 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
   }
 }
 
+function SidebarWaiting() {
+  const t = useTheme();
+  const phase = lifecycleStore.use((s) => s.phase);
+  const running = lifecycleStore.use((s) => s.status === 'running');
+  const startedAt = lifecycleStore.use((s) => s.startedAt);
+  const { frame } = useSpinnerFrame(running);
+
+  if (!running) return <Text color={t.textDim}>no tasks yet</Text>;
+
+  const stage = getActiveRailStage(phase)?.stage ?? '';
+  const elapsed = startedAt !== null ? formatStageElapsed(Date.now() - startedAt) : '';
+  return (
+    <Box flexDirection="column">
+      <Text color={t.textDim}>no tasks yet</Text>
+      <Text color={t.textDim}>planner is working</Text>
+      <Text color={t.textDim}>
+        {`${frame} ${stage}`}
+        {elapsed === '' ? '' : `${SOFT_SEP}${elapsed}`}
+      </Text>
+    </Box>
+  );
+}
+
 function rateColor(rate: number, routed: number, t: Theme): string {
   if (routed === 0) return t.textDim;
   if (rate >= 50) return t.success;
@@ -146,6 +173,7 @@ export function Sidebar({ width }: SidebarProps) {
         flexShrink={1}
         overflow="hidden"
       >
+        {tasks.length === 0 && <SidebarWaiting />}
         {tasks.map((task) => {
           const spec = rowSpec(task.status, t);
           const reserved = spec.tail ? spec.tail.text.length + 2 : 0;
@@ -198,12 +226,12 @@ export function Sidebar({ width }: SidebarProps) {
           )}
           <Text wrap="truncate">
             <Text color={t.planner} bold>
-              planner
+              Planner
             </Text>
             {plannerLabel !== '' && <Text color={t.planner}>{` ${plannerLabel}`}</Text>}
             <Text color={t.textDim}>{ARROW_SEP}</Text>
             <Text color={t.implementer} bold>
-              impl
+              Implementer
             </Text>
             {implLabel !== '' && <Text color={t.implementer}>{` ${implLabel}`}</Text>}
           </Text>

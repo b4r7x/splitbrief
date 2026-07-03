@@ -3,7 +3,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { eventRows } from './event-rows.js';
+import { eventRows } from '#testing/helpers/event-rows.js';
 import { rowText } from './row-format.js';
 import type { ConversationRow, ConversationRowSegment } from './types.js';
 
@@ -81,7 +81,7 @@ describe('implementer_generate_done diff card', () => {
 
     expect(text).not.toMatch(/[┌┐└┘│]/);
     const lastRow = rows.at(-1);
-    expect(lastRow?.kind).toBe('spacer');
+    expect(lastRow?.kind).toBe('card-body');
 
     const bodyRows = rows.filter((rowValue) => rowValue.kind === 'card-body');
     expect(bodyRows.length).toBeGreaterThan(0);

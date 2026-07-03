@@ -7,6 +7,8 @@ export interface Theme {
   success: string;
   error: string;
   warning: string;
+  dimError: string;
+  dimSuccess: string;
   info: string;
   planner: string;
   implementer: string;
@@ -54,6 +56,8 @@ const terminalTheme: Theme = {
   success: 'green',
   error: 'red',
   warning: 'yellow',
+  dimError: 'red', // 16-color named ANSI collapses dim to base error/success; mono separates them.
+  dimSuccess: 'green',
   info: 'blue',
   planner: 'magenta',
   implementer: 'cyan',
@@ -101,6 +105,8 @@ const monoTheme: Theme = {
   success: '#9ece6a',
   error: '#f7768e',
   warning: '#e0af68',
+  dimError: '#a85561',
+  dimSuccess: '#6e8f4a',
   info: '#7dcfff',
   planner: '#bb9af7',
   implementer: '#7dcfff',

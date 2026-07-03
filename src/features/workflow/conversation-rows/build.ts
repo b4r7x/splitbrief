@@ -10,6 +10,7 @@ import type {
   RowBuildContext,
 } from './types.js';
 import { blankRow } from './row-format.js';
+import { wrapWidthFor } from './row-markers.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { eventRowBlock, isPlannerTextRenderedAsMarkdown } from './event-rows.js';
@@ -21,6 +22,9 @@ import {
 } from './markdown-rows.js';
 
 const MIN_ROW_WIDTH = 1;
+// One blank row separates consecutive top-level transcript sections, giving the log a calmer
+// one-row rhythm. renderableUnits stays 0 so the spacer never registers as a scrolled-past event.
+const SECTION_SPACER_ROWS = 1;
 
 export type ConversationRowAction =
   | { type: 'toggle-diff'; key: string }
@@ -54,8 +58,9 @@ export function buildConversationRowsProjection(
     viewportRows: inputs.viewportHeight,
     streaming: inputs.streaming,
   };
+  const markdownWidth = wrapWidthFor('message', ctx.width);
   const endMarkdownProjectionPass = beginMarkdownConversationRowsProjectionPass(
-    markdownProjectionCacheKeys(inputs.sections, ctx.width),
+    markdownProjectionCacheKeys(inputs.sections, markdownWidth),
   );
 
   try {
@@ -73,16 +78,21 @@ function buildConversationRowsProjectionWithContext(
   let renderableCount = 0;
   let activityBatch: RunnerActivityBatch | null = null;
   let hasRenderableBlock = false;
+  // The feature/prompt, captured from the first user_message so the planner's opening H1 echo of it
+  // can be stripped (the prompt already renders as the first transcript row).
+  let dedupTitle: string | undefined;
 
   const appendBlock = (block: ConversationRowBlock, globalIndex: number): void => {
     if (block.rowCount === 0) return;
     if (hasRenderableBlock) {
       blocks.push({
         key: `spacer-${globalIndex}`,
-        rowCount: 1,
+        rowCount: SECTION_SPACER_ROWS,
         renderableUnits: 0,
         createRows: (windowStart, windowEnd) =>
-          windowStart === 0 && windowEnd > 0 ? [blankRow(`spacer-${globalIndex}`)] : [],
+          Array.from({ length: Math.max(0, windowEnd - windowStart) }, (_, offset) =>
+            blankRow(`spacer-${globalIndex}-${windowStart + offset}`),
+          ),
       });
     }
     blocks.push(block);
@@ -123,11 +133,16 @@ function buildConversationRowsProjectionWithContext(
         continue;
       }
 
+      if (event.type === 'user_message' && dedupTitle === undefined) {
+        dedupTitle = event.text;
+      }
+
       const block = eventRowBlock({
         event,
         globalIndex,
         ctx,
         expanded: inputs.expandedDiffs.has(diffEventKey(event, globalIndex)),
+        dedupTitle,
       });
       if (block === null) {
         if (!belongsToActivityBatch(event, activityBatch)) flushActivityBatch();

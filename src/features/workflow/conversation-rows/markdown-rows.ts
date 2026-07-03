@@ -25,10 +25,7 @@ export {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRowsCacheKey,
 } from './markdown-rows/cache.js';
-export {
-  STATUS_DIM_ERROR,
-  workflowMarkdownRenderSegments,
-} from './markdown-rows/workflow-markers.js';
+export { workflowMarkdownRenderSegments } from './markdown-rows/workflow-markers.js';
 
 export function markdownConversationRows(input: MarkdownConversationRowsInput): ConversationRow[] {
   const projection = markdownConversationRowsProjection(input);

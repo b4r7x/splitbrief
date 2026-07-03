@@ -5,7 +5,6 @@ interface HomeLayoutInput {
   cols: number;
   rows: number;
   isSmall: boolean;
-  hasSkills: boolean;
   sessionCount?: number;
   sessionsFocused?: boolean | undefined;
 }
@@ -24,21 +23,8 @@ interface SessionLimitInput {
   isSmall: boolean;
   logoTier: LogoTier;
   inputBottomMargin: number;
-  hasSkills: boolean;
   sessionCount: number;
   sessionsFocused: boolean;
-}
-
-export const CONFIG_SUMMARY_COMPACT_ROWS = 30;
-
-export function getConfigSummaryHeight(input: {
-  isSmall: boolean;
-  rows: number;
-  hasSkills: boolean;
-}): number {
-  const compact = input.isSmall || input.rows < CONFIG_SUMMARY_COMPACT_ROWS;
-  if (compact) return 1;
-  return 3 + (input.hasSkills ? 1 : 0);
 }
 
 const FOCUSED_FILTER_BLOCK_ROWS = 4;
@@ -48,12 +34,11 @@ function getContentAwareSessionLimit(input: SessionLimitInput): {
   recentSessionLimit: number;
   showHiddenCount: boolean;
 } {
-  const { rows, isSmall, logoTier, inputBottomMargin, hasSkills, sessionCount, sessionsFocused } =
-    input;
+  const { rows, isSmall, logoTier, inputBottomMargin, sessionCount, sessionsFocused } = input;
   const inputDock = 1 + 3 + inputBottomMargin;
   const bodyGaps = isSmall ? 0 : 2;
-  const logoBlock = getLogoHeight(logoTier) + 2;
-  const configBlock = getConfigSummaryHeight({ isSmall, rows, hasSkills }) + 1;
+  const logoBlock = getLogoHeight(logoTier) + 1;
+  const configBlock = 1 + 1;
   const sessionsChrome = 1 + (isSmall ? 0 : 1) + 1;
   const baseAvailable = rows - (inputDock + bodyGaps + logoBlock + configBlock + sessionsChrome);
   const baseCapacity = Math.max(0, baseAvailable);
@@ -77,7 +62,6 @@ export function getHomeLayout({
   cols,
   rows,
   isSmall,
-  hasSkills,
   sessionCount = 0,
   sessionsFocused = false,
 }: HomeLayoutInput): HomeLayout {
@@ -95,7 +79,6 @@ export function getHomeLayout({
     isSmall,
     logoTier,
     inputBottomMargin,
-    hasSkills,
     sessionCount,
     sessionsFocused,
   });

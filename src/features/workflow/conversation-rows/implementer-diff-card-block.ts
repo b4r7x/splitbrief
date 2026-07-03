@@ -63,7 +63,7 @@ export function implementerExpandedDiffCardBlock(
       { text: ` -${event.linesRemoved}`, tone: 'error' as const },
     ],
     bodyLines,
-    width: ctx.width - 2,
+    width: ctx.width,
   };
   const rowCount = countCardRows(cardInput);
   if (rowCount === 0) return null;

@@ -24,7 +24,9 @@ export type GlyphName =
   | 'treeLast'
   | 'elbow'
   | 'divider'
-  | 'check';
+  | 'check'
+  | 'promptMarker'
+  | 'completed';
 
 export type CardKind = 'round' | 'single' | 'bold';
 export type CardBorderStyle = 'round' | 'single' | 'bold' | 'classic';
@@ -54,6 +56,8 @@ const UNICODE_GLYPHS: Record<GlyphName, string> = {
   elbow: '└─',
   divider: '─',
   check: '✓',
+  promptMarker: '❯',
+  completed: '◇',
 };
 
 const ASCII_GLYPHS: Record<GlyphName, string> = {
@@ -81,12 +85,12 @@ const ASCII_GLYPHS: Record<GlyphName, string> = {
   elbow: '\\-',
   divider: '-',
   check: '+',
+  promptMarker: '>',
+  completed: 'o',
 };
 
 export const LINE_SPINNER_FRAMES = ['|', '/', '-', '\\'] as const;
 export const BRAILLE_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
-
-const MODERN_TERM_PROGRAMS = new Set(['iTerm.app', 'Apple_Terminal', 'vscode', 'WezTerm']);
 
 // Decide the glyph tier once from terminal capability. Box-drawing and the marker set below render
 // on virtually every modern terminal; the ascii tier exists for legacy/uncertain hosts where they
@@ -117,12 +121,10 @@ export function borderStyleFor(
   return tier === 'unicode' ? kind : 'classic';
 }
 
-// Braille spinners are dense and only legible on positively-identified modern hosts; everywhere
-// else the line spinner is the portable default.
+// Braille renders on every unicode-tier host; only the ascii tier falls back to the portable line
+// spinner.
 export function prefersBrailleSpinner(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (resolveGlyphTier(env) === 'ascii') return false;
-  if (env.WT_SESSION || env.KITTY_WINDOW_ID) return true;
-  return MODERN_TERM_PROGRAMS.has(env.TERM_PROGRAM ?? '');
+  return resolveGlyphTier(env) !== 'ascii';
 }
 
 export function spinnerFrames(env: NodeJS.ProcessEnv = process.env): readonly string[] {

@@ -37,6 +37,6 @@ describe('computeConversationRowsWindowFromProjection', () => {
     expect(result.activeRowKey).toBe('activity-header');
     expect(createActiveRows).not.toHaveBeenCalled();
     expect(createTailRows).toHaveBeenCalledTimes(1);
-    expect(createTailRows).toHaveBeenCalledWith(49_991, 50_000);
+    expect(createTailRows).toHaveBeenCalledWith(49_990, 50_000);
   });
 });

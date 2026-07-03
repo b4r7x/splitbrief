@@ -3,16 +3,24 @@ import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makeImplementerGenerate } from '#testing/helpers/events.js';
+import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import {
   buildConversationRowActions,
   buildConversationRows,
+  buildConversationRowsProjection,
   materializeConversationRowsWindow,
 } from './build.js';
+import { wrappedTextBlock } from './row-block-compose.js';
 import { rowText } from './row-format.js';
+import { wrapWidthFor } from './row-markers.js';
 import type { ConversationRowBlock } from './types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
+
+function activityLine(label: Parameters<typeof displayActivityLabel>[0], value: string): string {
+  return `${displayActivityLabel(label).padEnd(ACTIVITY_LABEL_PAD)}  ${value}`;
+}
 
 function activity(
   overrides: Partial<EngineEventOf<'runner_call_activity'>>,
@@ -73,6 +81,39 @@ describe('buildConversationRows', () => {
     expect(rows.map(rowText)).toEqual(['visible-0', 'visible-1']);
   });
 
+  it('strips the planner H1 that echoes the user prompt so the title renders once', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          { type: 'user_message', ts: 0, phase: 'idle', text: 'Add dark-mode toggle' },
+          {
+            type: 'planner_text',
+            ts: 1,
+            phase: 'analyzing',
+            content: 'markdown',
+            text: '# Add dark-mode toggle\n\nLooking into the request now.',
+          },
+        ],
+      },
+    ];
+
+    const { rows } = buildConversationRows({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+    const text = rows.map(rowText).join('\n');
+    const occurrences = text.split('Add dark-mode toggle').length - 1;
+
+    expect(occurrences).toBe(1);
+    expect(text).toContain('Looking into the request now.');
+  });
+
   it('batches repeated runner activity from one call into one renderable block', () => {
     const sections: Section<EngineEvent>[] = [
       {
@@ -121,11 +162,11 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(3);
-    expect(text).toContain('plan activity  3 updates  [Codex]');
-    expect(text.match(/sed -n/g)).toHaveLength(1);
-    expect(text).toContain("RUN   sed -n '1,240p' CLAUDE.md");
-    expect(text).toContain('RUN   wc -l CLAUDE.md');
-    expect(text).toContain('PLAN  rg -n \\');
+    expect(text).toContain('Plan activity  3 updates  [Codex]');
+    expect(text).not.toContain('sed -n');
+    expect(text).toContain(activityLine('READ', 'CLAUDE.md :1-240'));
+    expect(text).toContain(activityLine('RUN', 'wc -l CLAUDE.md'));
+    expect(text).toContain(activityLine('PLAN', 'rg -n \\'));
     expect(text).not.toContain('/bin/zsh -lc');
     expect(text).not.toContain('activity:');
   });
@@ -177,9 +218,9 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(2);
-    expect(text).toContain('plan activity  2 updates  [Codex]');
+    expect(text).toContain('Plan activity  2 updates  [Codex]');
     expect(text.match(/npm run typecheck/g)).toHaveLength(1);
-    expect(text).toContain('READ  src/app.ts');
+    expect(text).toContain(activityLine('READ', 'src/app.ts'));
     expect(text).not.toContain('+  ');
   });
 
@@ -208,7 +249,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(4);
-    expect(text).toContain('plan activity  4 updates  [Codex]');
+    expect(text).toContain('Plan activity  4 updates  [Codex]');
     expect(text).not.toContain('a.ts');
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
@@ -263,12 +304,12 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain('plan activity  5 updates  1 warn  [Codex]');
-    expect(text).toContain('WARN  stderr');
-    expect(text).toContain('READ  c.ts');
-    expect(text).toContain('READ  d.ts');
-    expect(text).not.toContain('READ  a.ts');
-    expect(text).not.toContain('READ  b.ts');
+    expect(text).toContain('Plan activity  5 updates  1 warn  [Codex]');
+    expect(text).toContain(activityLine('WARN', 'stderr'));
+    expect(text).toContain(activityLine('READ', 'c.ts'));
+    expect(text).toContain(activityLine('READ', 'd.ts'));
+    expect(text).not.toContain(activityLine('READ', 'a.ts'));
+    expect(text).not.toContain(activityLine('READ', 'b.ts'));
   });
 
   it('sanitizes runner metadata in compact activity batch headers', () => {
@@ -341,7 +382,7 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain('WARN  current turn interrupted');
+    expect(text).toContain(activityLine('WARN', 'current turn interrupted'));
     expect(text).not.toContain('runner_interrupted');
   });
 
@@ -382,8 +423,10 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain('WARN  stderr: npm deprecated package token sk-***REDACTED***');
-    expect(text).toContain('ERR   exit_code_1: Command failed: npm test');
+    expect(text).toContain(
+      activityLine('WARN', 'stderr: npm deprecated package token sk-***REDACTED***'),
+    );
+    expect(text).toContain(activityLine('ERR', 'exit_code_1: Command failed: npm test'));
     expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 
@@ -422,6 +465,61 @@ describe('buildConversationRows', () => {
     const secondText = secondExpanded.rows.map(rowText).join('\n');
     expect(secondText).toContain('second line');
     expect(secondText).not.toContain('first line');
+  });
+});
+
+describe('wrappedTextBlock', () => {
+  it('wraps message rows at width minus their leading so nothing clips at the right edge', () => {
+    const width = 20;
+    const text = 'x'.repeat(width);
+    const block = wrappedTextBlock({ keyPrefix: 'k', text, width, tone: 'text' });
+    expect(block?.rowCount).toBe(2);
+    const rows = block?.createRows(0, 2) ?? [];
+    for (const row of rows) {
+      const line = row.segments.map((segment) => segment.text).join('');
+      expect(line.length).toBeLessThanOrEqual(wrapWidthFor('message', width));
+    }
+  });
+});
+
+describe('buildConversationRowsProjection section spacers', () => {
+  it('inserts exactly one renderableUnits-0 one-row blank spacer between adjacent sections, none at the edges', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          makeImplementerGenerate({ status: 'done', file: 'a.ts', diff: '+ a', ts: 1 }),
+          makeImplementerGenerate({ status: 'done', file: 'b.ts', diff: '+ b', ts: 2 }),
+        ],
+      },
+    ];
+
+    const projection = buildConversationRowsProjection({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+
+    const spacerIndexes = projection.blocks
+      .map((block, index) => (block.key.startsWith('spacer-') ? index : -1))
+      .filter((index) => index >= 0);
+
+    // Exactly one spacer, sitting strictly between the two section blocks — never first, never last,
+    // so no dangling blank hangs above the input.
+    expect(spacerIndexes).toHaveLength(1);
+    const spacerIndex = spacerIndexes[0] ?? -1;
+    expect(spacerIndex).toBeGreaterThan(0);
+    expect(spacerIndex).toBeLessThan(projection.blocks.length - 1);
+
+    const spacer = projection.blocks[spacerIndex];
+    // One blank row gives the transcript a calmer one-row rhythm between sections.
+    expect(spacer?.rowCount).toBe(1);
+    // renderableUnits 0 keeps the spacer out of the new-event count and the auto-scroll math.
+    expect(spacer?.renderableUnits).toBe(0);
   });
 });
 

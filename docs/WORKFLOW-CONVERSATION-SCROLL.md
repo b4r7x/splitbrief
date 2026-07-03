@@ -50,10 +50,10 @@ Completed task summaries are pinned above the dynamic conversation window. `src/
 
 `src/features/workflow/layout/scroll-window.ts` owns row-window math:
 
-- `computeScrollMaxOffset()` computes the maximum offset after reserving scroll indicator rows.
-- `getScrollWindowState()` returns `windowStart`, `windowEnd`, visible above/below counts, and optional new-event row reservation.
+- `computeScrollMaxOffset()` computes the maximum offset from content height and viewport height.
+- `getScrollWindowState()` returns `windowStart`, `windowEnd`, and the visible above/below line counts.
 
-The above-count label is lifted into the top chrome divider. The below-count banner and the new-events banner remain part of the conversation viewport budget, so they never add rows after the fact.
+Scroll banners ride the chrome dividers: the above-count label renders on the header divider, and the below-count and new-events labels render on the footer divider (`N lines below · ↓ N new events`). The transcript window owns every viewport row and reserves nothing for in-flow banners.
 
 ## Keyboard and Commands
 
@@ -117,7 +117,7 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - wrapped `task_started` rows do not jump by card
   - streaming output participates in row height
   - completed summaries remain pinned outside dynamic scroll
-  - new-event banner fits inside the viewport
+  - new-event counts surface through the chrome label, not viewport rows
 - `src/features/workflow/conversation-rows/projection-cache.test.ts`
   - unchanged source identity reuses projections
   - mutable event and streaming content invalidates projections
@@ -138,7 +138,7 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - review panes support Shift+arrow, PageUp/PageDown, Home/End, and Ctrl+B/Ctrl+F
   - `/activity` and `Ctrl+A` toggle activity
 - `src/features/workflow/layout/scroll-window.test.ts`
-  - banner rows stay inside the visible height
+  - the window spans the full visible height; banners ride the chrome dividers
 - `src/features/workflow/layout/rect.test.ts`
   - prompt rows are capped to the available middle area
 - `src/core/sections/completed-task-summary-rows.test.ts`
@@ -148,6 +148,6 @@ The key regression coverage is observable Ink output, not implementation wiring:
 
 - Scroll units are rendered terminal rows.
 - Row descriptors must render as exactly one terminal row.
-- Prompt rows, completed summaries, and scroll banners are part of the row budget.
+- Prompt rows and completed summaries are part of the row budget; scroll banners live on the chrome dividers.
 - Terminal width changes must recompute row wrapping and total height.
 - Stores remain the data source; layout helpers remain pure enough to test without running the workflow engine.

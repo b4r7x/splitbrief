@@ -48,7 +48,7 @@ export function computeConversationRowsWindowFromProjection(input: {
   const newEventCount =
     input.rawScrollOffset > 0 ? Math.max(0, renderableCount - input.renderableCountAtScroll) : 0;
   const totalDynamicHeight = projection.totalRows;
-  const maxOffset = computeScrollMaxOffset(totalDynamicHeight, viewportHeight, newEventCount > 0);
+  const maxOffset = computeScrollMaxOffset({ totalHeight: totalDynamicHeight, viewportHeight });
   const scrollOffset = computeAnchoredScrollOffset({
     rawScrollOffset: input.rawScrollOffset,
     heightAtScroll: input.heightAtScroll,
@@ -59,7 +59,6 @@ export function computeConversationRowsWindowFromProjection(input: {
     totalHeight: totalDynamicHeight,
     viewportHeight,
     scrollOffset,
-    hasNewEvents: newEventCount > 0,
   });
   const windowProjection = getConversationRowsWindowProjection({
     projection,

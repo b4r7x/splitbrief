@@ -21,6 +21,11 @@
 - Session JSONL log at `.diptych/sessions/<id>/session.jsonl` with `kind: "event" | "message"` entries.
 - `diptych resume` rebuilds planner context from `session.jsonl` on backends without native session resume.
 
+### Changed
+
+- Workflow transcript redesigned: one column model (glyph slot at column 0, content at column 2), full-width conversation with a 2-column sidebar gap, always-on activity batch headers with Capitalized labels (`Run`, `Read`, `Search`, …), and a conservative shell-command prettifier (`cat`/`sed`/`head`/`tail` → Read, `rg`/`grep` → Search, `ls` → List).
+- Live stage status moved from the transcript into the composer byline (braille spinner on unicode terminals). Scroll counts now render on the chrome dividers, and question prompts render as a bordered panel above the composer instead of replacing the transcript.
+
 ### Fixed
 
 - `diptych resume` now correctly handles `awaitingContinue` state.

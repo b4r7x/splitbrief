@@ -23,14 +23,17 @@ export function ConversationTranscriptRows({
 
   return (
     <>
-      {rows.map((rowValue, index) => (
-        <ConversationRowView
-          key={rowValue.key}
-          row={rowValue}
-          lifecycle={rowValue.key === visibleActiveRowKey ? 'live' : 'done'}
-          focused={focusedTranscriptIndex === index}
-        />
-      ))}
+      {rows.map((rowValue, index) => {
+        const isActive = rowValue.key === visibleActiveRowKey;
+        return (
+          <ConversationRowView
+            key={rowValue.key}
+            row={rowValue}
+            lifecycle={isActive ? 'live' : 'done'}
+            focused={focusedTranscriptIndex === index}
+          />
+        );
+      })}
     </>
   );
 }

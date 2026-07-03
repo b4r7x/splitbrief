@@ -23,10 +23,13 @@ export type ConversationRowTone =
 
 export type ConversationRowKind =
   | 'message'
+  | 'prompt'
   | 'card'
   | 'card-top'
   | 'card-body'
   | 'card-bottom'
+  | 'callout-top'
+  | 'callout-body'
   | 'activity'
   | 'activity-child'
   | 'activity-child-last'
@@ -49,6 +52,7 @@ export interface ConversationRow {
   key: string;
   kind: ConversationRowKind;
   segments: ConversationRowSegment[];
+  markerTone?: ConversationRowTone;
 }
 
 export interface ConversationRowsResult {

@@ -1,0 +1,104 @@
+import type { Phase } from '../../../core/schemas/enums.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
+import { assertNever } from '../../../utils/type-guards.js';
+import {
+  getActiveRailStage,
+  getRailActiveIndex,
+  getRailStageCompletionTimes,
+  railStageRole,
+  type RailRole,
+} from '../layout/chrome-rows.js';
+import type { ConversationRowTone } from '../conversation-rows/types.js';
+
+// The review/gate phases where the workflow pauses for approval: the live status row drops
+// because the transcript is about to swap out for the review view.
+const RAIL_GATE_PHASES: ReadonlySet<Phase> = new Set([
+  'reviewing-spec',
+  'reviewing-plan',
+  'reviewing-briefs',
+]);
+
+function activeVerb(phase: Phase): string {
+  switch (phase) {
+    case 'researching':
+      return 'Researching…';
+    case 'specifying':
+      return 'Specifying…';
+    case 'reviewing-spec':
+      return 'Reviewing spec…';
+    case 'clarifying':
+      return 'Clarifying…';
+    case 'constitution-check':
+      return 'Checking constitution…';
+    case 'planning':
+      return 'Compiling briefs from spec…';
+    case 'reviewing-plan':
+      return 'Reviewing plan…';
+    case 'reviewing-briefs':
+      return 'Reviewing briefs…';
+    case 'analyzing':
+      return 'Analyzing…';
+    case 'implementing':
+      return 'Implementing…';
+    case 'validating-task':
+      return 'Validating…';
+    case 'escalating':
+      return 'Escalating…';
+    case 'final-review':
+      return 'Reviewing…';
+    case 'idle':
+    case 'complete':
+      return '';
+    default:
+      return assertNever(phase);
+  }
+}
+
+export function formatStageElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const seconds = String(total % 60).padStart(2, '0');
+  const minutes = Math.floor(total / 60);
+  return `${minutes}:${seconds}`;
+}
+
+function railRoleTone(role: RailRole): ConversationRowTone {
+  switch (role) {
+    case 'planner':
+      return 'planner';
+    case 'implementer':
+      return 'implementer';
+    case 'validator':
+      return 'validator';
+    default:
+      return assertNever(role);
+  }
+}
+
+export interface LiveStatus {
+  verb: string;
+  stageStart: number;
+  tone: ConversationRowTone;
+}
+
+// The single source of truth for "is a stage live and what does its status row say". Null unless a
+// stage is genuinely running: not cancelled, not a review gate, not idle/complete.
+export function deriveLiveStatus(input: {
+  phase: Phase;
+  cancelled: boolean;
+  startedAt: number | null;
+  events: readonly EngineEvent[];
+}): LiveStatus | null {
+  if (input.cancelled) return null;
+  if (RAIL_GATE_PHASES.has(input.phase)) return null;
+  const activeIndex = getRailActiveIndex(input.phase);
+  const activeStage = getActiveRailStage(input.phase);
+  if (activeIndex < 0 || activeStage === null) return null;
+  const completionTimes = getRailStageCompletionTimes(input.events);
+  const stageStart =
+    activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
+  return {
+    verb: activeVerb(input.phase),
+    stageStart,
+    tone: railRoleTone(railStageRole(activeStage.stage)),
+  };
+}

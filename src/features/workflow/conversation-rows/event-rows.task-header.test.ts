@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { makePlannerText, makeTaskStart } from '#testing/helpers/events.js';
+import { eventRows } from '#testing/helpers/event-rows.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { eventRows } from './event-rows.js';
 import { rowText } from './row-format.js';
 import type { ConversationRow } from './types.js';
 
@@ -73,7 +73,7 @@ describe('eventRows task header and planner phase header', () => {
       { text: 'T1', tone: 'text', bold: true },
       { text: ' Route ordinary task', tone: 'text', bold: true },
       {
-        text: '  src/app.ts (modify) · Codex · profile cheap-cloud · fit fits · why selected cheapest capable',
+        text: '  src/app.ts (modify) · Codex · profile cheap-cloud · fit fits · why selected cheapest capable ',
         tone: 'textDim',
       },
     ]);
@@ -125,7 +125,7 @@ describe('eventRows task header and planner phase header', () => {
     }
   });
 
-  it('prepends RESEARCH header for researching-phase markdown planner text', () => {
+  it('prepends Research header for researching-phase markdown planner text', () => {
     const event = makeMarkdownPlannerText({ phase: 'researching' });
     const rows = eventRows({
       event,
@@ -136,12 +136,12 @@ describe('eventRows task header and planner phase header', () => {
 
     const first = rows[0];
     expect(first?.kind).toBe('message');
-    expect(rowText(first ?? { key: 'missing', kind: 'message', segments: [] })).toBe('RESEARCH');
+    expect(rowText(first ?? { key: 'missing', kind: 'message', segments: [] })).toBe('Research');
     expect(rowText(first ?? { key: 'missing', kind: 'message', segments: [] })).not.toBe('BRIEF');
-    expect(first?.segments).toContainEqual({ text: 'RESEARCH', tone: 'planner', bold: true });
+    expect(first?.segments).toContainEqual({ text: 'Research', tone: 'planner', bold: true });
   });
 
-  it('prepends a planner phase header (PLAN, planner tone, bold) for planning markdown', () => {
+  it('prepends a planner phase header (Plan, planner tone, bold) for planning markdown', () => {
     const event = makeMarkdownPlannerText({ phase: 'planning' });
     const rows = eventRows({
       event,
@@ -152,11 +152,11 @@ describe('eventRows task header and planner phase header', () => {
 
     const first = requireRow(rows, 0);
     expect(first.kind).toBe('message');
-    expect(rowText(first)).toBe('PLAN');
-    expect(first.segments).toContainEqual({ text: 'PLAN', tone: 'planner', bold: true });
+    expect(rowText(first)).toBe('Plan');
+    expect(first.segments).toContainEqual({ text: 'Plan', tone: 'planner', bold: true });
   });
 
-  it('prepends a planner phase header (RESEARCH, planner tone, bold) for researching markdown', () => {
+  it('prepends a planner phase header (Research, planner tone, bold) for researching markdown', () => {
     const event = makeMarkdownPlannerText({ phase: 'researching' });
     const rows = eventRows({
       event,
@@ -167,7 +167,7 @@ describe('eventRows task header and planner phase header', () => {
 
     const first = requireRow(rows, 0);
     expect(first.kind).toBe('message');
-    expect(rowText(first)).toBe('RESEARCH');
-    expect(first.segments).toContainEqual({ text: 'RESEARCH', tone: 'planner', bold: true });
+    expect(rowText(first)).toBe('Research');
+    expect(first.segments).toContainEqual({ text: 'Research', tone: 'planner', bold: true });
   });
 });

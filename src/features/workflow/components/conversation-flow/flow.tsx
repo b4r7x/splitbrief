@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
-import { Divider } from '../divider.js';
+import { glyph } from '../../../../lib/glyphs.js';
 import { TaskSummary } from '../task-summary.js';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
@@ -13,6 +13,7 @@ import { useStores } from '../../../../stores/use-stores.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../../conversation-rows/viewport.js';
 import { row } from '../../conversation-rows/row-format.js';
+import { SOFT_SEP } from '../../../../components/separators.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
 import {
@@ -25,6 +26,7 @@ interface ConversationFlowProps {
   conversationWidth: number;
   contentWidth: number;
   onScrollAbove?: ((label: string) => void) | undefined;
+  onScrollBelow?: ((label: string) => void) | undefined;
 }
 
 function computeScrollBannerLabel(
@@ -42,6 +44,7 @@ export function ConversationFlow({
   conversationWidth,
   contentWidth,
   onScrollAbove,
+  onScrollBelow,
 }: ConversationFlowProps) {
   const t = useTheme();
   const [
@@ -60,7 +63,6 @@ export function ConversationFlow({
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = conversationWidth;
-  const fullWidth = contentWidth;
   const completedItems = sections.flatMap((section) =>
     section.type === 'completed-task' ? [section.summary] : [],
   );
@@ -98,19 +100,22 @@ export function ConversationFlow({
     streaming,
   });
 
-  const hasNewEvents = newEventCount > 0;
   const visibleActiveRowKey =
-    isRunning && activeRowKey !== null && rows.some((row) => row.key === activeRowKey)
+    isRunning && activeRowKey !== null && rows.some((candidate) => candidate.key === activeRowKey)
       ? activeRowKey
       : null;
   const windowState = getScrollWindowState({
     totalHeight: totalDynamicHeight,
     viewportHeight: scrollViewportHeight,
     scrollOffset,
-    hasNewEvents,
   });
   const { above, below } = computeScrollBannerLabel(windowState.linesAbove, windowState.linesBelow);
-  const { newEventRows, innerHeight } = windowState;
+  const { innerHeight } = windowState;
+  const newEventsLabel =
+    newEventCount > 0 && scrollOffset > 0
+      ? `↓ ${newEventCount} new ${pluralize(newEventCount, 'event')}`
+      : '';
+  const belowLabel = [below, newEventsLabel].filter((part) => part !== '').join(SOFT_SEP);
 
   const stickyLeadingLines = viewportSplit.stickyLeadingRows;
 
@@ -118,6 +123,11 @@ export function ConversationFlow({
     onScrollAbove?.(above);
     return () => onScrollAbove?.('');
   }, [above, onScrollAbove]);
+
+  useEffect(() => {
+    onScrollBelow?.(belowLabel);
+    return () => onScrollBelow?.('');
+  }, [belowLabel, onScrollBelow]);
 
   return (
     <Box
@@ -135,7 +145,7 @@ export function ConversationFlow({
           {(focusedSummaryIndex) => (
             <>
               <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
-                <Text color={t.textDim}>◇ completed</Text>
+                <Text color={t.textDim}>{`${glyph('completed')} completed`}</Text>
               </Box>
               {visibleCompletedItems.map((item, position) => (
                 <Box
@@ -186,16 +196,6 @@ export function ConversationFlow({
               <ConversationRowView row={queuedRow} lifecycle="queued" />
             </Box>
           ))}
-        </Box>
-      )}
-      {below !== '' && <Divider width={fullWidth} label={below} tone="textDim" />}
-      {newEventRows > 0 && (
-        <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
-          <Divider
-            width={conversationWidth}
-            label={`↓ ${newEventCount} new ${pluralize(newEventCount, 'event')}`}
-            tone="textDim"
-          />
         </Box>
       )}
     </Box>
