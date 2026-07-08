@@ -498,6 +498,35 @@ Typed commands:
 
 `workflow.briefReview: rich` is deprecated and maps to the same simple review commands; it no longer opens an inline Task Brief plan editor.
 
+### Inline editor (spec, plan, and Task Brief)
+
+`Ctrl+E` during a review phase opens the built-in inline editor instead of shelling out: in `reviewing-spec` / `reviewing-plan` it opens a full-surface exclusive overlay over `spec.md` / `plan.md`; in `reviewing-briefs` it opens the small-viewport field editor over the focused Task Brief. The editor is protocol-free and single-owner — while it is open it owns keyboard input and no other handler competes. `$EDITOR` (see the `edit-file` command above) remains available as the opt-in secondary path for bulk or structural edits.
+
+The keymap is protocol-free and is the single source of truth in [`src/core/keybindings/editor.ts`](../src/core/keybindings/editor.ts) (`resolveEditorKeyAction`); the chords below are asserted against that resolver by [`src/core/keybindings/editor.test.ts`](../src/core/keybindings/editor.test.ts) so this table cannot drift.
+
+| Key | Action |
+|---|---|
+| `Enter` / `Ctrl+J` | Insert a newline (Enter never commits) |
+| `Ctrl+S` | Save |
+| `Esc` | Cancel (discard, close the editor) |
+| `Ctrl+O` | Open the current file in the external editor (raw surface pre-saves the buffer, CAS-guarded; Task Brief field surface discards the in-progress edit and opens `tasks.md`) |
+| `Alt+C` / `Ctrl+Y` | Copy selection |
+| `Alt+X` / `Ctrl+X` | Cut selection |
+| `Alt+A` | Select all |
+| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |
+| `←` / `→` | Move caret one grapheme (collapses selection) |
+| `Shift+←` / `Shift+→` | Extend selection by one grapheme |
+| `Alt+←/→` or `Ctrl+←/→` | Move by word (add `Shift` to select) |
+| `↑` / `↓` | Move caret by visual row |
+| `Home` / `End` | Move to start / end of the current visual row |
+| `Ctrl+Home` / `Ctrl+End` | Move to start / end of the document |
+| `PageUp` / `PageDown` | Move by one viewport page |
+| `Backspace` / `Delete` | Delete one grapheme (add `Ctrl`/`Alt` to delete a word) |
+
+`Shift` combined with any motion (`←/→`, word, `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, `PageUp`/`PageDown`) extends the selection; the same motion without `Shift` collapses it. `Ctrl+C` is **never** mapped to copy, cut, or select-all — it keeps its interrupt / exit semantics (copy is `Alt+C` or `Ctrl+Y`), so the editor cannot swallow the interrupt chord. `Home`, `End`, `PageUp`, and `PageDown` are recaptured as editor motions while the exclusive overlay is open rather than being surrendered to the conversation transcript.
+
+When the opt-in `$EDITOR` handover is used instead, `VISUAL` takes precedence over `EDITOR` in editor resolution ([`src/features/workflow/editor-command.ts`](../src/features/workflow/editor-command.ts) `resolveEditorArgv`); this precedence is asserted by [`src/features/workflow/editor-command.test.ts`](../src/features/workflow/editor-command.test.ts).
+
 ### Summary screen
 
 | Key | Action | Source |

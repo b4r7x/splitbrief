@@ -10,6 +10,8 @@ import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflo
 import type { Task } from '../../../core/schemas/task.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
+import { topoSort } from '../../../core/state/topo-sort.js';
+import { labelError } from '../../../utils/format-errors.js';
 import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
@@ -108,7 +110,38 @@ export async function runBriefsApprovalLoop(
         publishBriefQualityFailure(bus, state.phase, report);
         continue;
       }
+      const editReadiness = await runBriefReadinessGate({
+        tasks: edited.tasks,
+        config,
+        projectDir,
+      });
+      if (!editReadiness.ok) {
+        publishError({
+          bus: bus,
+          phase: state.phase,
+          message: firstBriefReadinessBlockMessage(editReadiness),
+        });
+        continue;
+      }
       tasks = edited.tasks;
+      if (tasks.length < 1) {
+        publishError({
+          bus,
+          phase: state.phase,
+          message: 'Task Brief set must retain at least one task.',
+        });
+        continue;
+      }
+      try {
+        topoSort(tasks);
+      } catch (err) {
+        publishError({
+          bus,
+          phase: state.phase,
+          message: labelError('Task Brief dependency graph is invalid', err),
+        });
+        continue;
+      }
       state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
       continue;
     }
@@ -155,6 +188,24 @@ export async function runBriefsApprovalLoop(
         continue;
       }
       tasks = approved.tasks;
+      if (tasks.length < 1) {
+        publishError({
+          bus,
+          phase: state.phase,
+          message: 'Task Brief set must retain at least one task.',
+        });
+        continue;
+      }
+      try {
+        topoSort(tasks);
+      } catch (err) {
+        publishError({
+          bus,
+          phase: state.phase,
+          message: labelError('Task Brief dependency graph is invalid', err),
+        });
+        continue;
+      }
       state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
       state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_BRIEFS' });
       return { state, tasks, rejected: false };

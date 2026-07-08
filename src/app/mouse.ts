@@ -8,6 +8,7 @@ import { hitTopmostZone } from '../lib/terminal/mouse-zones.js';
 import { ROW_ZONE_Z_OVERLAY } from '../components/pickers/row-zone.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
+import { editorStore } from '../stores/ui/editor.js';
 import {
   clearWorkflowHover,
   handleWorkflowMouseMove,
@@ -41,8 +42,18 @@ export function wireAppMouse(filteredStdin: FilteredStdin): () => void {
       return;
     }
 
+    if (fieldSessionOwnsInput()) {
+      if (event.type === 'move') clearWorkflowHover();
+      return;
+    }
+
     handleWorkflowPointer(event);
   });
+}
+
+function fieldSessionOwnsInput(): boolean {
+  const editor = editorStore.get();
+  return editor.status === 'open' && editor.surface === 'field';
 }
 
 export function useAppMouse(): void {
@@ -53,10 +64,17 @@ export function useAppMouse(): void {
   }, []);
 }
 
+const WHEEL_STEP = 1;
+
 function handleWheel(event: MouseEvent): void {
+  if (overlayStore.get().active === 'editor') {
+    editorStore.scrollBy(event.type === 'wheel-up' ? -WHEEL_STEP : WHEEL_STEP);
+    return;
+  }
   if (routerStore.get().screen !== 'workflow') return;
   if (overlayStore.get().active !== 'none') return;
   if (promptOwnsInput()) return;
+  if (fieldSessionOwnsInput()) return;
   handleWorkflowMouseWheel(event);
 }
 

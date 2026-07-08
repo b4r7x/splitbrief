@@ -110,7 +110,15 @@ function isPage(slice: Slice | null): slice is { kind: 'screen' | 'overlay'; nam
   return slice !== null && slice.kind !== 'feature';
 }
 
+const SHARED_FEATURES = new Set(['editor']);
+
 function sliceIsolationReason(from: Slice, to: Slice): string | null {
+  // The inline editor is a shared editing surface consumed by both app-level pages and other
+  // feature slices (workflow briefs region + review-gate trigger); any feature may import it.
+  if (to.kind === 'feature' && SHARED_FEATURES.has(to.name)) {
+    return null;
+  }
+
   // PRESERVED byte-for-byte: existing cross-feature message format.
   if (from.kind === 'feature' && to.kind === 'feature') {
     return `src/features/${from.name}/** must not import from src/features/${to.name}/**`;

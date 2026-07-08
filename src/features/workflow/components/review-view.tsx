@@ -1,12 +1,8 @@
 import { Box, Text } from 'ink';
 import { useEffect } from 'react';
 import { renderMarkdownRows } from '../../../components/markdown.js';
-import {
-  getTerminalCellWidth,
-  truncateTerminalDisplayTextStart,
-} from '../../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../components/separators.js';
-import { borderStyleFor } from '../../../lib/glyphs.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
 import {
   clampScrollableDocumentOffset,
@@ -14,6 +10,7 @@ import {
   ScrollableDocument,
 } from '../../../components/scrollable-document.js';
 import { Divider } from './divider.js';
+import { FramePanel } from './frame-panel.js';
 import { useTheme } from '../../../components/theme.js';
 import { getReviewColumnWidth, getReviewContentLayout } from '../layout/rect.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
@@ -61,20 +58,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
 
   return (
     <Box flexDirection="column" height={containerHeight} width={width} overflow="hidden">
-      <Box
-        flexDirection="column"
-        width={documentWidth}
-        height={containerHeight}
-        borderStyle={borderStyleFor('single')}
-        borderColor={t.border}
-        borderDimColor
-        paddingX={1}
-        overflow="hidden"
-      >
-        <Box height={1} overflow="hidden">
-          {renderTitle(filePath, frameInnerWidth, t.textDim, t.text)}
-        </Box>
-        <Divider width={frameInnerWidth} />
+      <FramePanel filePath={filePath} width={documentWidth} height={containerHeight}>
         {contentHeight > 0 && (
           <ScrollableDocument
             rows={rows}
@@ -97,25 +81,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
             </Box>
           </>
         )}
-      </Box>
+      </FramePanel>
     </Box>
-  );
-}
-
-function renderTitle(filePath: string, width: number, dim: string, fg: string) {
-  const pip = '◇ ';
-  const pathBudget = Math.max(1, width - getTerminalCellWidth(pip));
-  const path = truncateTerminalDisplayTextStart(filePath, pathBudget);
-  const slash = path.lastIndexOf('/');
-  const dir = slash >= 0 ? path.slice(0, slash + 1) : '';
-  const base = slash >= 0 ? path.slice(slash + 1) : path;
-  return (
-    <Text>
-      <Text color={dim}>{pip}</Text>
-      {dir !== '' && <Text color={dim}>{dir}</Text>}
-      <Text color={fg} bold>
-        {base}
-      </Text>
-    </Text>
   );
 }

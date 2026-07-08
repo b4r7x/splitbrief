@@ -9,6 +9,7 @@ import { readBriefListSnapshot } from '../features/workflow/layout/snapshot.js';
 import { _resetHoverThrottle } from '../features/workflow/hooks/use-mouse-pointer.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
+import { editorStore } from '../stores/ui/editor.js';
 import { hoverStore } from '../stores/ui/hover.js';
 import { focusStore } from '../stores/ui/focus.js';
 import { controlsStore } from '../stores/ui/controls.js';
@@ -94,6 +95,7 @@ describe('wireAppMouse', () => {
     costApprovalStore.__testReset();
     _resetMouseZones();
     _resetHoverThrottle();
+    editorStore.close();
   });
 
   it('routes clicks only to overlay-layer zones while an overlay is open', () => {
@@ -204,6 +206,24 @@ describe('wireAppMouse', () => {
     dispose();
   });
 
+  it('blocks workflow fallback hit testing while a field-editor session owns input', () => {
+    const snapshot = openBriefReview(12);
+    editorStore.openField({
+      filePath: 'briefs.md',
+      value: 'title text',
+      ownerToken: reviewStore.get().ownerToken,
+      layout: { columns: 80, rows: 30 },
+    });
+    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
+    const mock = createMockFilteredStdin();
+    const dispose = wireAppMouse(mock.filtered);
+
+    mock.emit(pointerEvent('press', snapshot.rect.left, listTop));
+
+    expect(focusStore.get()).toBeNull();
+    dispose();
+  });
+
   it('ignores workflow wheel input while overlays or prompts own input', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
     seedConversation();
@@ -226,8 +246,44 @@ describe('wireAppMouse', () => {
       resolve: () => {},
     });
     mock.emit(pointerEvent('wheel-up', 2, 7));
+    costApprovalStore.__testReset();
+    editorStore.openField({
+      filePath: 'briefs.md',
+      value: 'title text',
+      ownerToken: 1,
+      layout: { columns: 80, rows: 30 },
+    });
+    mock.emit(pointerEvent('wheel-up', 2, 7));
 
     expect(conversationScrollStore.get().scrollOffset).toBe(0);
+    dispose();
+  });
+
+  it('scrolls the raw editor overlay by one step per wheel event and clamps at the top', () => {
+    editorStore.openRaw({
+      filePath: 'spec.md',
+      // Content must overflow the viewport (20 lines in 5 rows → maxTop 15) so wheel steps are not
+      // clamped away: scrollBy bounds scrollTop to the wrapped document height (REQ-030), so a
+      // fits-in-viewport buffer could never scroll and would mask per-event stepping.
+      value: Array.from({ length: 20 }, (_, i) => `line-${i + 1}`).join('\n'),
+      ownerToken: 1,
+      layout: { columns: 80, rows: 5 },
+    });
+    overlayStore.open('editor');
+    const mock = createMockFilteredStdin();
+    const dispose = wireAppMouse(mock.filtered);
+
+    mock.emit(pointerEvent('wheel-down', 2, 7));
+    expect(editorStore.get()).toMatchObject({ scrollTop: 1 });
+    mock.emit(pointerEvent('wheel-down', 2, 7));
+    expect(editorStore.get()).toMatchObject({ scrollTop: 2 });
+
+    mock.emit(pointerEvent('wheel-up', 2, 7));
+    expect(editorStore.get()).toMatchObject({ scrollTop: 1 });
+    mock.emit(pointerEvent('wheel-up', 2, 7));
+    mock.emit(pointerEvent('wheel-up', 2, 7));
+    expect(editorStore.get()).toMatchObject({ scrollTop: 0 });
+
     dispose();
   });
 });

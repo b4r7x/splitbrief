@@ -858,4 +858,68 @@ describe('createFilteredStdin bracketed paste handling', () => {
     filtered.disable();
     expect(filtered.isPasteActive()).toBe(false);
   });
+
+  it('folds CRLF to LF, strips embedded escapes and C0 bytes, and leaves no ESC (T-030)', async () => {
+    // A CRLF reaching Ink would fire the composer submit / approval gates mid-paste, and a leaked
+    // ESC would explode into synthetic keypresses. A single paste that mixes a CRLF line break, an
+    // embedded CSI cursor-move, and C0 control bytes must emerge as printable text with LF only.
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const collected: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('\u001b[200~a\r\nb\u001b[Cc\x00\x07d\u001b[201~'));
+    await new Promise((r) => setTimeout(r, 10));
+
+    const seen = collected.join('');
+    expect(seen).toBe('a\nbcd');
+    expect(seen).toContain('\n');
+    expect(seen).not.toContain('\r');
+    expect(seen).not.toContain('\x1b');
+    expect(filtered.isPasteActive()).toBe(false);
+
+    filtered.disable();
+  });
+
+  it('decodes a tmux CSI-u CR/LF re-encoding inside a paste to a newline (REQ-052, T-030)', async () => {
+    // Under tmux extended-keys, CR/LF can arrive re-encoded as CSI-u (e.g. `\u001b[13u` for CR,
+    // `[10u` for LF, or a modified variant `[13;5u`). These are decoded to LF before
+    // sanitizing so pasted line breaks survive as newlines (REQ-052) — while no raw ESC leaks.
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const collected: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit(
+      'data',
+      Buffer.from('\u001b[200~x\u001b[13uy\u001b[10uz\u001b[13;5uw\u001b[201~'),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+
+    const seen = collected.join('');
+    expect(seen).toBe('x\ny\nz\nw');
+    expect(seen).not.toContain('\x1b');
+    expect(filtered.isPasteActive()).toBe(false);
+
+    filtered.disable();
+  });
+
+  it('still strips a non-line-break tmux CSI-u re-encoding inside a paste (T-030)', async () => {
+    // A CSI-u for a printable key (e.g. `\u001b[97u` = 'a') is not a line break, so it is
+    // dropped whole like any other in-paste escape - only CR/LF re-encodings become newlines.
+    const fakeStdin = makeFakeStdin();
+    const filtered = createFilteredStdin(fakeStdin);
+    const collected: string[] = [];
+    filtered.stdin.on('data', (chunk: Buffer) => collected.push(chunk.toString('utf8')));
+
+    fakeStdin.emit('data', Buffer.from('\u001b[200~x\u001b[97uy\u001b[201~'));
+    await new Promise((r) => setTimeout(r, 10));
+
+    const seen = collected.join('');
+    expect(seen).toBe('xy');
+    expect(seen).not.toContain('\x1b');
+    expect(filtered.isPasteActive()).toBe(false);
+
+    filtered.disable();
+  });
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -36,6 +36,11 @@ const { openCostApprovalPrompt } = await import('../../stores/cost-approval/prom
 const { createInitialState, transition } = await import('../../core/state/machine.js');
 const { saveState } = await import('../../core/state/persistence.js');
 const { abortStore } = await import('../../stores/workflow/abort.js');
+const { editorStore } = await import('../../stores/ui/editor.js');
+const { focusStore } = await import('../../stores/ui/focus.js');
+const { reviewStore } = await import('../../stores/workflow/review.js');
+const { externalEditRequestStore } = await import('../../stores/ui/external-edit-request.js');
+const reviewParser = await import('../../features/workflow/review-parser.js');
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 const ENTER = '\r';
@@ -657,7 +662,7 @@ describe('WorkflowScreen key arbitration', () => {
     }
   });
 
-  it('Ctrl+E opens the external editor for brief review and resolves the edit action', async () => {
+  it('the edit command opens the external editor for brief review and resolves the edit action', async () => {
     const projectDir = createTempDir('workflow-screen-brief-shortcut');
     try {
       const tasksPath = join(projectDir, 'tasks.md');
@@ -700,7 +705,9 @@ describe('WorkflowScreen key arbitration', () => {
         expect(ui.lastFrame() ?? '').toContain('Review shortcut task');
       });
 
-      ui.stdin.write(CTRL_E);
+      ui.stdin.write('edit');
+      await tick(20);
+      ui.stdin.write(ENTER);
 
       await vi.waitFor(() => {
         expect(approvalResult).toEqual({ approved: false, action: 'edit' });
@@ -714,10 +721,63 @@ describe('WorkflowScreen key arbitration', () => {
     }
   });
 
+  it('Ctrl+E opens the inline field editor for brief review and does not spawn the external editor', async () => {
+    const projectDir = createTempDir('workflow-screen-brief-inline');
+    try {
+      const tasksPath = join(projectDir, 'tasks.md');
+      const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
+      writeFileSync(
+        tasksPath,
+        formatTasks([
+          makeTask({
+            id: 'T001',
+            title: 'Inline shortcut task',
+            file: 'src/inline-shortcut.ts',
+            evidence: ['reviewable proof'],
+            scope: { inBounds: ['src/inline-shortcut.ts'], outOfBounds: [] },
+          }),
+        ]),
+        'utf-8',
+      );
+      stubReviewEditor(editorPath);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', 'inline-must-not-spawn');
+
+      runWorkflow.mockImplementationOnce(async (opts) => {
+        lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+        void opts.callbacks.onApprovalNeeded('briefs', tasksPath);
+        return makeSummary();
+      });
+      const ui = mountWorkflow();
+
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('Inline shortcut task');
+      });
+      focusStore.set('brief', 0);
+      await tick(20);
+
+      ui.stdin.write(CTRL_E);
+
+      await vi.waitFor(() => {
+        expect(editorStore.get().status).toBe('open');
+      });
+      const session = editorStore.get();
+      expect(session.status === 'open' ? session.surface : null).toBe('field');
+      // Single owner (REQ-049 / CON-D): Ctrl+E is the inline editor's alone; it must not also
+      // fire the composer's external-editor path, so the fake $EDITOR is never spawned.
+      expect(existsSync(logPath)).toBe(false);
+
+      editorStore.close();
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
   it.each([
     ['spec', 'reviewing-spec'],
     ['plan', 'reviewing-plan'],
-  ] as const)('Ctrl+E opens the external editor for %s review and refreshes before approval', async (type, phase) => {
+  ] as const)('the edit command opens the external editor for %s review and refreshes before approval', async (type, phase) => {
     const projectDir = createTempDir(`workflow-screen-${type}-editor`);
     try {
       const reviewPath = join(projectDir, `${type}.md`);
@@ -741,7 +801,9 @@ describe('WorkflowScreen key arbitration', () => {
         expect(ui.lastFrame() ?? '').toContain(`Original ${type} review`);
       });
 
-      ui.stdin.write(CTRL_E);
+      ui.stdin.write('edit');
+      await tick(20);
+      ui.stdin.write(ENTER);
 
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain(`Edited ${type} review`);
@@ -761,5 +823,55 @@ describe('WorkflowScreen key arbitration', () => {
     } finally {
       cleanupTempDir(projectDir);
     }
+  });
+});
+
+describe('WorkflowScreen external-edit bridge effect', () => {
+  beforeEach(() => {
+    resetAllStores();
+    routerStore.init({ screen: 'home' });
+    runWorkflow.mockReset();
+    runWorkflow.mockReturnValue(new Promise<never>(() => {}));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    resetAllStores();
+    routerStore.init({ screen: 'home' });
+  });
+
+  it('runs the external-editor handoff exactly once when the requested token still owns the review prompt', async () => {
+    const openSpy = vi.spyOn(reviewParser, 'openReviewFileExternally').mockResolvedValue(undefined);
+    const ui = mountWorkflow();
+    await tick(20);
+
+    const token = reviewStore.setReviewFile('/tmp/diptych-bridge/tasks.md');
+    externalEditRequestStore.request(token);
+    await tick(20);
+
+    // consume-before-await: the intent is consumed to idle and the single-owner effect fires the
+    // handoff exactly once (no re-fire under a strict-mode double-invoke).
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(externalEditRequestStore.get().status).toBe('idle');
+
+    ui.unmount();
+  });
+
+  it('drops a stale request whose token no longer owns the review prompt (CAS, no handoff)', async () => {
+    const openSpy = vi.spyOn(reviewParser, 'openReviewFileExternally').mockResolvedValue(undefined);
+    const ui = mountWorkflow();
+    await tick(20);
+
+    const staleToken = reviewStore.setReviewFile('/tmp/diptych-bridge/tasks.md');
+    // The review prompt is superseded (a fresh owner token) before the stale intent is consumed.
+    reviewStore.setReviewFile('/tmp/diptych-bridge/plan.md');
+    externalEditRequestStore.request(staleToken);
+    await tick(20);
+
+    expect(openSpy).not.toHaveBeenCalled();
+    // The intent is still consumed (consume-before-CAS) so no stale request lingers.
+    expect(externalEditRequestStore.get().status).toBe('idle');
+
+    ui.unmount();
   });
 });

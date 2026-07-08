@@ -2,6 +2,13 @@ import { wrapHard } from '../../utils/wrap.js';
 import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
 import { resolveTextEditingKeyAction } from '../../core/keybindings/text.js';
 import type { TextEditingKeyAction } from '../../core/keybindings/text.js';
+import {
+  displayColumnOfIndex,
+  indexAtDisplayColumn,
+  nextGraphemeIndex,
+  prevGraphemeIndex,
+  wrapVisualLines,
+} from '../../core/editor/grapheme-motions.js';
 import { normalizeLineEndings } from './segments.js';
 
 const RAW_BACKSPACE = '\x7f';
@@ -11,28 +18,16 @@ export interface EditResult {
   cursor: number;
 }
 
-export function prevCodePointIndex(value: string, cursor: number): number {
-  if (cursor <= 0) return 0;
-  const before = value.charCodeAt(cursor - 1);
-  if (before >= 0xdc00 && before <= 0xdfff && cursor >= 2) {
-    const lead = value.charCodeAt(cursor - 2);
-    if (lead >= 0xd800 && lead <= 0xdbff) return cursor - 2;
-  }
-  return cursor - 1;
+export function prevGraphemeBoundary(value: string, cursor: number): number {
+  return prevGraphemeIndex(value, cursor);
 }
 
-export function nextCodePointIndex(value: string, cursor: number): number {
-  if (cursor >= value.length) return value.length;
-  const at = value.charCodeAt(cursor);
-  if (at >= 0xd800 && at <= 0xdbff && cursor + 1 < value.length) {
-    const trail = value.charCodeAt(cursor + 1);
-    if (trail >= 0xdc00 && trail <= 0xdfff) return cursor + 2;
-  }
-  return cursor + 1;
+export function nextGraphemeBoundary(value: string, cursor: number): number {
+  return nextGraphemeIndex(value, cursor);
 }
 
-export function dropLastCodePoint(value: string): string {
-  return value.slice(0, prevCodePointIndex(value, value.length));
+export function dropLastGrapheme(value: string): string {
+  return value.slice(0, prevGraphemeBoundary(value, value.length));
 }
 
 export type EditAction = TextEditingKeyAction | null;
@@ -50,6 +45,15 @@ function deleteWordBackward(value: string, cursor: number): EditResult {
   };
 }
 
+// Ctrl+A (move-line-start) and Ctrl+U (delete-line-backward) act on VISUAL rows,
+// so this must match how Ink actually paints the composer: Ink auto-wraps <Text>
+// with wrap-ansi WORD-wrap (controlled-multiline-input.tsx), not the grapheme
+// char-wrap in wrapVisualLines. On the composer, wrap-ansi IS the painted-column
+// oracle, so re-pointing this at wrapVisualLines would desync the caret from the
+// rendered rows on wrapped multi-word lines (e.g. "abc defghijk" @10 breaks at the
+// space, not mid-word). The single-width-fn rule (CON-F) applies to the editor
+// surfaces that pre-wrap with wrapVisualLines; the Ink-auto-wrapped composer must
+// keep wrap-ansi here. Offsets stay in UTF-16 code units to match wrap-ansi output.
 function findVisualLineStart(value: string, cursor: number, columns: number): number {
   const logicalStart = value.lastIndexOf('\n', cursor - 1) + 1;
   const nextNewline = value.indexOf('\n', logicalStart);
@@ -92,7 +96,7 @@ function deleteLineBackward(value: string, cursor: number, columns?: number): Ed
 
   if (nfc.cursor === lineStart) {
     if (nfc.cursor > 0) {
-      const prev = prevCodePointIndex(nfc.value, nfc.cursor);
+      const prev = prevGraphemeBoundary(nfc.value, nfc.cursor);
       return {
         value: nfc.value.slice(0, prev) + nfc.value.slice(nfc.cursor),
         cursor: prev,
@@ -123,16 +127,16 @@ function moveToLineEnd(value: string, cursor: number): EditResult {
 }
 
 function moveCharBackward(value: string, cursor: number): EditResult {
-  return { value, cursor: prevCodePointIndex(value, cursor) };
+  return { value, cursor: prevGraphemeBoundary(value, cursor) };
 }
 
 function moveCharForward(value: string, cursor: number): EditResult {
-  return { value, cursor: nextCodePointIndex(value, cursor) };
+  return { value, cursor: nextGraphemeBoundary(value, cursor) };
 }
 
 function deleteCharBackward(value: string, cursor: number): EditResult {
   if (cursor <= 0) return { value, cursor };
-  const prev = prevCodePointIndex(value, cursor);
+  const prev = prevGraphemeBoundary(value, cursor);
   return {
     value: value.slice(0, prev) + value.slice(cursor),
     cursor: prev,
@@ -141,7 +145,7 @@ function deleteCharBackward(value: string, cursor: number): EditResult {
 
 function deleteCharForward(value: string, cursor: number): EditResult {
   if (cursor >= value.length) return { value, cursor };
-  const next = nextCodePointIndex(value, cursor);
+  const next = nextGraphemeBoundary(value, cursor);
   return {
     value: value.slice(0, cursor) + value.slice(next),
     cursor,
@@ -199,33 +203,22 @@ export function navigateVertically({
   value,
   cursorIndex,
 }: NavigateVerticallyOptions): number | undefined {
-  const lines = normalizeLineEndings(value).split('\n');
-  let currentLineIndex = 0;
-  let currentPos = 0;
-  let col = 0;
+  const lines = wrapVisualLines(normalizeLineEndings(value), Number.MAX_SAFE_INTEGER);
+  let currentLineIndex = -1;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line === undefined) continue;
-    const lineLen = line.length;
-    const lineEnd = currentPos + lineLen;
-    if (cursorIndex >= currentPos && cursorIndex <= lineEnd) {
+    if (cursorIndex >= line.start && cursorIndex <= line.end) {
       currentLineIndex = i;
-      col = cursorIndex - currentPos;
       break;
     }
-    currentPos = lineEnd + 1;
   }
+  if (currentLineIndex === -1) return undefined;
   const canMove = direction === 'up' ? currentLineIndex > 0 : currentLineIndex < lines.length - 1;
   if (!canMove) return undefined;
-  const targetLineIndex = direction === 'up' ? currentLineIndex - 1 : currentLineIndex + 1;
-  const targetLine = lines[targetLineIndex];
-  if (targetLine === undefined) return undefined;
-  const newCol = Math.min(col, targetLine.length);
-  let newIndex = 0;
-  for (let i = 0; i < targetLineIndex; i++) {
-    const line = lines[i];
-    if (line === undefined) continue;
-    newIndex += line.length + 1;
-  }
-  return newIndex + newCol;
+  const current = lines[currentLineIndex];
+  const target = lines[direction === 'up' ? currentLineIndex - 1 : currentLineIndex + 1];
+  if (current === undefined || target === undefined) return undefined;
+  const goalCol = displayColumnOfIndex(current.text, cursorIndex - current.start);
+  return target.start + indexAtDisplayColumn(target.text, goalCol);
 }

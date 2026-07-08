@@ -51,6 +51,30 @@ describe('findImportBoundaryViolations', () => {
     expect(violation?.reason).toContain('features/workflow');
   });
 
+  it('allows any feature to import the shared editor feature (workflow -> editor)', () => {
+    write('features/editor/brief-field-editor.tsx', 'export const E = 1;');
+    write(
+      'features/workflow/components/brief-review-view.tsx',
+      "import { E } from '../../editor/brief-field-editor.js';\nexport const v = E;",
+    );
+
+    expect(findImportBoundaryViolations(root)).toHaveLength(0);
+  });
+
+  it('still flags the editor feature importing back into another feature', () => {
+    write('features/workflow/status-glyph.ts', 'export const g = 1;');
+    write(
+      'features/editor/use-inline-edit-trigger.ts',
+      "import { g } from '../workflow/status-glyph.js';\nexport const t = g;",
+    );
+
+    const violations = findImportBoundaryViolations(root);
+
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.reason).toContain('features/editor');
+    expect(violations[0]?.reason).toContain('features/workflow');
+  });
+
   it('flags engine importing from top-level hooks/components/cli, depth-independently', () => {
     write('hooks/use-filterable-list.ts', 'export const h = 1;');
     write(

@@ -8,6 +8,7 @@ import { HelpOverlay } from './overlays/help.js';
 import { CommandPaletteOverlay, type CommandPaletteOverlayProps } from './overlays/palette.js';
 import { SkillsPicker } from './overlays/skills.js';
 import { SessionsPicker } from './overlays/sessions.js';
+import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
 import { ToolModelPicker } from './overlays/runners.js';
 import { ModeSelector } from '../features/settings/mode-selector.js';
@@ -131,6 +132,8 @@ function renderOverlay({
       return <ToolModelPicker role="implementer" />;
     case 'sessions':
       return <SessionsPicker />;
+    case 'editor':
+      return <EditorOverlay />;
     case 'cost-drilldown':
       return <CostDrilldownOverlay />;
     default:
