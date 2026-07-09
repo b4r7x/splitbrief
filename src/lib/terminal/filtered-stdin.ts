@@ -19,6 +19,8 @@ type MouseListener = (event: MouseEvent) => void;
 const ESC = 0x1b;
 const CSI = 0x5b;
 const SS3 = 0x4f;
+const CSI_U_FINAL = 0x75;
+const NEWLINE_BYTES = Buffer.from([0x0a]);
 const SGR_PREFIX = Buffer.from('\u001b[<', 'ascii');
 const X10_PREFIX = Buffer.from('\u001b[M', 'ascii');
 const PASTE_START = '\u001b[200~';
@@ -180,6 +182,20 @@ function readCsiSequenceLength(source: Buffer): number | 'incomplete' | undefine
   return 'incomplete';
 }
 
+function isCsiULineBreak(source: Buffer, csiLength: number): boolean {
+  if (source.readUInt8(csiLength - 1) !== CSI_U_FINAL) return false;
+  let code = 0;
+  let hasDigit = false;
+  for (let i = 2; i < csiLength - 1; i++) {
+    const byte = source.readUInt8(i);
+    if (byte === 0x3b) break;
+    if (!isDigitByte(byte)) return false;
+    code = code * 10 + (byte - 0x30);
+    hasDigit = true;
+  }
+  return hasDigit && (code === 13 || code === 10);
+}
+
 function readSs3SequenceLength(source: Buffer): number | 'incomplete' | undefined {
   if (source.length < 2 || source.readUInt8(0) !== ESC || source.readUInt8(1) !== SS3) {
     return undefined;
@@ -193,12 +209,16 @@ type EscapeDecision =
   | { kind: 'paste-end'; length: number }
   | { kind: 'mouse'; length: number; event: MouseEvent | undefined }
   | { kind: 'skip'; length: number }
+  | { kind: 'paste-newline'; length: number }
   | { kind: 'text'; length: number };
 
 function readPasteEscape(source: Buffer): EscapeDecision {
   const csiLength = readCsiSequenceLength(source);
   if (csiLength === 'incomplete') return { kind: 'hold' };
-  if (typeof csiLength === 'number') return { kind: 'skip', length: csiLength };
+  if (typeof csiLength === 'number') {
+    if (isCsiULineBreak(source, csiLength)) return { kind: 'paste-newline', length: csiLength };
+    return { kind: 'skip', length: csiLength };
+  }
 
   const ss3Length = readSs3SequenceLength(source);
   if (ss3Length === 'incomplete') return { kind: 'hold' };
@@ -352,6 +372,10 @@ export function createFilteredStdin(
           cursor += decision.length;
           break;
         case 'skip':
+          cursor += decision.length;
+          break;
+        case 'paste-newline':
+          writeBytes(NEWLINE_BYTES, true);
           cursor += decision.length;
           break;
         case 'text':

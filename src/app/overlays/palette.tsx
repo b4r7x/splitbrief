@@ -10,7 +10,7 @@ import {
 import { ListGroupHeader, ListRow } from '../../components/list-row.js';
 import { windowSlice } from '../../components/pickers/scroll-window.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from '../../components/pickers/row-zone.js';
-import { dropLastCodePoint } from '../../components/input/text-editing.js';
+import { dropLastGrapheme } from '../../components/input/text-editing.js';
 import { buildPaletteResults } from '../../features/palette/results.js';
 import type { PaletteResult, PaletteSource } from '../../features/palette/results.js';
 import { buildPaletteSources } from '../../features/palette/sources.js';
@@ -174,7 +174,7 @@ export function CommandPaletteOverlay({
         return;
       }
       if (key.backspace || key.delete) {
-        setQuery((q) => dropLastCodePoint(q));
+        setQuery((q) => dropLastGrapheme(q));
         setCursor(0);
         return;
       }

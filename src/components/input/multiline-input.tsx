@@ -5,8 +5,8 @@ import {
   resolveEditAction,
   applyEditAction,
   navigateVertically,
-  prevCodePointIndex,
-  nextCodePointIndex,
+  prevGraphemeBoundary,
+  nextGraphemeBoundary,
 } from './text-editing.js';
 import {
   ControlledMultilineInput,
@@ -180,14 +180,14 @@ export function MultilineInput({
           setPasteLength(0);
         }
       } else if (key.leftArrow) {
-        setCursorIndex(prevCodePointIndex(value, cursorIndex));
+        setCursorIndex(prevGraphemeBoundary(value, cursorIndex));
         setPasteLength(0);
       } else if (key.rightArrow) {
-        setCursorIndex(nextCodePointIndex(value, cursorIndex));
+        setCursorIndex(nextGraphemeBoundary(value, cursorIndex));
         setPasteLength(0);
       } else if (key.backspace || key.delete) {
         if (cursorIndex > 0) {
-          const prev = prevCodePointIndex(value, cursorIndex);
+          const prev = prevGraphemeBoundary(value, cursorIndex);
           onChange(value.slice(0, prev) + value.slice(cursorIndex));
           setCursorIndex(prev);
           setPasteLength(0);

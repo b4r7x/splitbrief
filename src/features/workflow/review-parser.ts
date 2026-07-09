@@ -45,6 +45,25 @@ function openInEditor(filePath: string): Promise<void> {
   })();
 }
 
+export async function openReviewFileExternally(inputMode: UseInputModeResult): Promise<void> {
+  const filePath = reviewStore.get().filePath;
+  if (!filePath) return;
+  try {
+    await openInEditor(filePath);
+    const phase = lifecycleStore.get().phase;
+    if (phase === 'reviewing-briefs') {
+      const result = briefReviewCommandToApprovalReviewResult({
+        action: 'external_edit_applied',
+      });
+      if (result) inputMode.resolve(result);
+    } else {
+      reviewStore.reloadReviewFile();
+    }
+  } catch (err) {
+    feedbackStore.setError(`Failed to open editor: ${toErrorMessage(err)}`);
+  }
+}
+
 export interface ReviewInputHandler {
   handleInput: (text: string) => Promise<void>;
 }
@@ -100,23 +119,7 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
         return;
       }
       if (parsed.kind === 'open-external-editor') {
-        const filePath = reviewStore.get().filePath;
-        if (filePath) {
-          try {
-            await openInEditor(filePath);
-            const phase = lifecycleStore.get().phase;
-            if (phase === 'reviewing-briefs') {
-              const result = briefReviewCommandToApprovalReviewResult({
-                action: 'external_edit_applied',
-              });
-              if (result) inputMode.resolve(result);
-            } else {
-              reviewStore.reloadReviewFile();
-            }
-          } catch (err) {
-            feedbackStore.setError(`Failed to open editor: ${toErrorMessage(err)}`);
-          }
-        }
+        await openReviewFileExternally(inputMode);
       }
       return;
     }

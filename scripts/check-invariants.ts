@@ -197,6 +197,19 @@ const gates: Gate[] = [
       "{ for term in 'kanban' 'plan archive' 'cross-plan' 'swarm' 'project-management'; do rg -iq \"$term\" docs/VISION.md || printf 'missing: %s\\n' \"$term\"; done; } | wc -l",
     expected: 0,
   },
+  {
+    id: '24',
+    description:
+      'CON-C: inline editor path imports no child_process / editor-handover / $EDITOR|VISUAL / scratch writer',
+    command: `{ rg -n "child_process|editor-handover|\\bEDITOR\\b|\\bVISUAL\\b|scratch" src/features/editor/ src/stores/ui/editor.ts src/app/overlays/editor.tsx --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l`,
+    expected: 0,
+  },
+  {
+    id: '25',
+    description: 'CON-E: inline editor reads session artifacts only via readSessionFileConfined',
+    command: `{ rg -n "\\breadFileSync\\b|\\breadFile\\b|from 'node:fs'|from 'fs'" src/features/editor/ src/stores/ui/editor.ts src/app/overlays/editor.tsx --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l`,
+    expected: 0,
+  },
 ];
 
 type ExecGateCommand = (command: string) => string;

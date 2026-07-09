@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { useApp, useInput } from 'ink';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ApprovalReviewResult } from '../../../core/approval/types.js';
+import type { SpecFileRef } from '../../../core/paths-io.js';
 import { isResumable } from '../../../core/phases.js';
 import { readActive } from '../../../core/sessions/lifecycle.js';
 import { createStartReadinessRecord } from '../../../core/readiness/format.js';
@@ -19,7 +21,9 @@ import { createIpcPromptDispatcher } from '../ipc-prompt-dispatcher.js';
 import { type CollectReadinessFn, useReadinessFetch } from './use-readiness-fetch.js';
 import { useWorkflowKeys } from './use-keys.js';
 import { useBriefReviewKeys } from './use-brief-review-keys.js';
-import { createReviewInputHandler } from '../review-parser.js';
+import { useInlineEditTrigger } from '../../editor/use-inline-edit-trigger.js';
+import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
+import { createReviewInputHandler, openReviewFileExternally } from '../review-parser.js';
 import {
   resolveAttachBoxHint,
   resolveAttachFeedbackHint,
@@ -30,6 +34,8 @@ import {
 import { configStore } from '../../../stores/project/config.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { editorStore } from '../../../stores/ui/editor.js';
+import { externalEditRequestStore } from '../../../stores/ui/external-edit-request.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -44,6 +50,17 @@ import { addTuiEvent } from '../tui-sink.js';
 export interface WorkflowScreenDeps {
   runWorkflow?: RunWorkflowFn | undefined;
   collectReadiness?: CollectReadinessFn | undefined;
+}
+
+export interface InlineFieldEditContext {
+  resolve: (result: ApprovalReviewResult) => void;
+  sessionRef: SpecFileRef;
+}
+
+let inlineFieldEditContext: InlineFieldEditContext | null = null;
+
+export function getInlineFieldEditContext(): InlineFieldEditContext | null {
+  return inlineFieldEditContext;
 }
 
 interface UseWorkflowScreenOptions {
@@ -164,12 +181,55 @@ export function useWorkflowScreen({
   const costPending = costApprovalState.status === 'pending';
   const promptPending = approvalPending || costPending;
 
-  useWorkflowKeys({ isActive: !promptPending });
+  const activeSessionId = sessionId ?? runner.sessionId;
+  const sessionDirPath =
+    activeSessionId === undefined ? undefined : sessionDir(projectDir, activeSessionId);
+
+  const fieldSessionOpen = editorStore.use((s) => s.status === 'open' && s.surface === 'field');
+  const fieldSessionOwned = useFieldSessionOwned();
+  const globalKeysActive = !promptPending && !fieldSessionOwned;
+  useWorkflowKeys({ isActive: globalKeysActive });
   useBriefReviewKeys({
-    isActive: !promptPending,
+    isActive: globalKeysActive,
     copyTarget,
     canCopyFocused,
   });
+  useInlineEditTrigger({ isActive: globalKeysActive, sessionDirPath });
+
+  // A field session whose owner token no longer owns the live prompt is dormant: it is already
+  // unmounted and released by the shared ownership predicate. Close it so no stale open session
+  // lingers in the store (CON-B).
+  useEffect(() => {
+    if (fieldSessionOpen && !fieldSessionOwned) editorStore.close();
+  }, [fieldSessionOpen, fieldSessionOwned]);
+
+  // The inline editor surfaces cannot perform the external-editor handoff themselves (import
+  // boundaries + CON-C), so they emit a neutral one-shot intent into external-edit-request. This
+  // single-owner effect consumes it and runs the existing review-parser handoff, re-arming the
+  // review prompt with a fresh owner token on return (CON-B).
+  const externalEditToken = externalEditRequestStore.use((s) =>
+    s.status === 'requested' ? s.ownerToken : null,
+  );
+  useEffect(() => {
+    if (externalEditToken === null) return;
+    externalEditRequestStore.consume(); // consume-before-await → idempotent under strict-mode double-invoke
+    if (reviewStore.get().ownerToken !== externalEditToken) return; // stale request superseded → drop (CON-B)
+    void openReviewFileExternally(inputMode);
+  }, [externalEditToken, inputMode.resolve]);
+
+  useEffect(() => {
+    if (activeSessionId === undefined) {
+      inlineFieldEditContext = null;
+      return;
+    }
+    inlineFieldEditContext = {
+      resolve: inputMode.resolve,
+      sessionRef: { projectDir, sessionId: activeSessionId },
+    };
+    return () => {
+      inlineFieldEditContext = null;
+    };
+  }, [projectDir, activeSessionId, inputMode.resolve]);
 
   useEffect(() => {
     if (!isAttachedClient) return;
@@ -242,16 +302,6 @@ export function useWorkflowScreen({
       }
     : onRuntimeCommand;
 
-  const reviewEditShortcutActive =
-    inputMode.mode === 'review' &&
-    reviewFilePath !== null &&
-    (phase === 'reviewing-spec' || phase === 'reviewing-plan' || phase === 'reviewing-briefs');
-  const handleReviewEditShortcut = reviewEditShortcutActive
-    ? () => {
-        void review.handleInput('edit');
-      }
-    : undefined;
-
   const attachedNormal = isAttachedClient && inputMode.mode === 'normal';
   const cancelledHints =
     !isAttachedClient && cancelled ? resolveCancelledHints(canResumeCancelledSession) : null;
@@ -302,7 +352,10 @@ export function useWorkflowScreen({
     handleInput,
     handleRuntimeCommand,
     onEmptySubmit: canResumeCancelledSession ? runner.handleResume : undefined,
-    onEditShortcut: handleReviewEditShortcut,
+    // Ctrl+E is owned solely by useInlineEditTrigger (mounted above); the composer must not
+    // also claim it, or both fire on one keypress (double-owner: inline overlay + $EDITOR spawn).
+    // $EDITOR stays reachable via the typed `edit` review command.
+    onEditShortcut: undefined,
     inputHint,
     feedbackHint,
     boxHintOverride,

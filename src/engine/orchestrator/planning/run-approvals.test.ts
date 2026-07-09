@@ -388,6 +388,62 @@ describe('runPlanningPhase — happy paths (modes + approval)', () => {
     expect(result.tasks[0]?.title).toBe('Add auth');
   });
 
+  it('brief edit refreshes readiness and blocks the save when the edited tasks.md overflows workers', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const planner = makePassingPlanner();
+    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
+    const overflowingTask = makePassingTask('T001');
+    const overflowingTasks = formatTasks([
+      {
+        ...overflowingTask,
+        description: 'Create a large worker packet',
+        implementationSteps: [
+          Array.from({ length: 300 }, (_, index) => `implement detail ${index}`).join(' '),
+        ],
+      },
+    ]);
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockImplementationOnce(async () => {
+        writeFileSync(tasksPath, overflowingTasks, 'utf8');
+        return { approved: false, action: 'edit' };
+      })
+      .mockResolvedValueOnce({ approved: false });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({
+      implementer: { contextLength: 200 },
+      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+    });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(true);
+    expect(result.state.phase).toBe('idle');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'error' &&
+          event.message.includes('Task Brief approval blocked') &&
+          event.message.includes('Next best action'),
+      ),
+    ).toBe(true);
+  });
+
   it('warns on the bus when an edited tasks.md has an unknown ### section (F-429 / N399)', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = makePassingPlanner();

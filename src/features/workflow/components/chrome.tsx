@@ -8,6 +8,7 @@ import { InputFooter } from './input-footer.js';
 import { Divider } from './divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
 import { formatCostDisplay } from '../cost-text.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -81,6 +82,7 @@ export function WorkflowFooter({
     : {};
   const footerWidthProps = reviewColumn ? { width: reviewColumn.width } : {};
   const boxHints = useComposerBoxHints(boxHintOverride);
+  const fieldEditorOpen = useFieldSessionOwned();
   const footer = (
     <>
       <FeedbackRow inputHint={feedbackHint ?? inputHint} />
@@ -92,7 +94,7 @@ export function WorkflowFooter({
         mode={mode}
         hint={inputHint}
         currentScreen="workflow"
-        disabled={disabled}
+        disabled={disabled || fieldEditorOpen}
         boxHints={boxHints}
         questionEpoch={questionEpoch}
         inputPaddingX={0}

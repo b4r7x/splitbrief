@@ -18,6 +18,16 @@ describe('resolveEditorArgv', () => {
     ).toEqual({ command: 'code', args: ['--wait'] });
   });
 
+  it('selects VISUAL over EDITOR when both are plain non-terminal commands', () => {
+    expect(
+      resolveEditorArgv({
+        env: { VISUAL: 'a', EDITOR: 'b' },
+        platform: 'linux',
+        commandExists: missingCommand,
+      }),
+    ).toEqual({ command: 'a', args: [] });
+  });
+
   it('prefers VISUAL exactly over EDITOR and detected GUI editors', () => {
     expect(
       resolveEditorArgv({

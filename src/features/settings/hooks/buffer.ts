@@ -3,7 +3,7 @@ import { useInput } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
-import { dropLastCodePoint } from '../../../components/input/text-editing.js';
+import { dropLastGrapheme } from '../../../components/input/text-editing.js';
 import { validateNumber } from '../presentation.js';
 
 interface UseEditBufferParams {
@@ -76,7 +76,7 @@ export function useEditBuffer({ onCommit }: UseEditBufferParams): EditBufferStat
         return;
       }
       if (key.backspace || key.delete) {
-        setEditBuffer((prev) => dropLastCodePoint(prev));
+        setEditBuffer((prev) => dropLastGrapheme(prev));
         return;
       }
       if (input && !key.ctrl && !key.meta) setEditBuffer((prev) => prev + input);

@@ -22,6 +22,9 @@ import { loadBriefReviewData } from '../brief-review-loader.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { hoverStore } from '../../../stores/ui/hover.js';
+import { BriefFieldEditor } from '../../editor/brief-field-editor.js';
+import { useFieldSessionOwned } from '../../editor/use-field-session-owned.js';
+import { getInlineFieldEditContext } from '../hooks/use-workflow-screen.js';
 import {
   getSimpleBriefTaskRowBudget,
   getSimpleBriefVisibleSlice,
@@ -200,6 +203,8 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
   const hoveredBriefIndex = hoverStore.use((h) =>
     h !== null && h.surface === 'brief' ? h.index : null,
   );
+  const fieldSessionOwned = useFieldSessionOwned();
+  const inlineFieldEdit = fieldSessionOwned ? getInlineFieldEditContext() : null;
   const containerHeight = height ?? 24;
   const rowWidth = Math.max(1, width ?? 80);
   const innerWidth = Math.max(1, rowWidth - 4);
@@ -272,7 +277,15 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
         hasLoadError={hasLoadError}
       />
       <Box height={1} />
-      {loadError !== null ? (
+      {inlineFieldEdit !== null ? (
+        <BriefFieldEditor
+          tasks={tasks}
+          taskIndex={focusedBriefIndex ?? 0}
+          sessionRef={inlineFieldEdit.sessionRef}
+          resolve={inlineFieldEdit.resolve}
+          height={taskRowBudget}
+        />
+      ) : loadError !== null ? (
         <Box width={innerWidth} overflow="hidden">
           <Text wrap="truncate">
             <Text color={t.error}>couldn't load briefs</Text>

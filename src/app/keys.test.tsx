@@ -16,6 +16,8 @@ import * as handlers from '../features/workflow/handlers.js';
 import type { InterruptResult } from '../features/workflow/handlers.js';
 import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import { costApprovalStore, openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
+import { editorStore } from '../stores/ui/editor.js';
+import { reviewStore } from '../stores/workflow/review.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
 // so the deferred arm flushes without copying that module-private literal here.
@@ -654,6 +656,58 @@ describe('useAppKeys: keystroke binding', () => {
     await tick(20);
 
     expect(overlayStore.get().active).toBe('planner-picker');
+    ui.unmount();
+  });
+});
+
+describe('useAppKeys: suppressed while the inline briefs field editor owns input', () => {
+  const LAYOUT = { columns: 40, rows: 6 };
+
+  beforeEach(() => {
+    resetAllStores();
+    routerStore.navigate({ to: 'workflow', feature: 'field-edit test' });
+    // The field editor is not an overlay: give a field session ownership of the live prompt by
+    // matching its captured token to reviewStore.ownerToken (the CON-B ownership predicate).
+    const token = reviewStore.setReviewFile('/tmp/TASKS.md');
+    editorStore.openField({
+      filePath: '/tmp/TASKS.md',
+      value: 'x',
+      ownerToken: token,
+      layout: LAYOUT,
+    });
+  });
+
+  afterEach(() => {
+    editorStore.close();
+    reviewStore.clearReview();
+    abortStore.clear();
+  });
+
+  it.each([
+    { name: 'Ctrl+K', input: '\x0b' },
+    { name: 'Ctrl+,', input: '\x1b[44;5u' },
+    { name: 'Ctrl+/ (legacy \\x1f)', input: '\x1f' },
+  ] as const)('$name does not open an overlay over the field editor', async ({ input }) => {
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick(20);
+
+    writeKey(ui, input);
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('none');
+    ui.unmount();
+  });
+
+  it('Ctrl+Q does not exit while the field editor owns input', async () => {
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick(20);
+
+    writeKey(ui, '\x11');
+    await tick(20);
+
+    expect(exit).not.toHaveBeenCalled();
     ui.unmount();
   });
 });
