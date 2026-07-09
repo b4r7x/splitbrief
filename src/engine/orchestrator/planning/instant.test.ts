@@ -20,11 +20,13 @@ import {
   SPEC_FILE,
   PLAN_FILE,
   RESEARCH_FILE,
+  SESSION_LOG_FILE,
 } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import { planningError } from './errors.js';
 import type { Planner, PlannerCallbacks, PlanResult } from '../../planners/types.js';
 import type { RunnerCallContext } from '../../calls/types.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 
 const TEST_METADATA = {
   plannerTool: 'claude-code',
@@ -68,6 +70,15 @@ function setupProject(): { projectDir: string; sessionId: string } {
   const sessionId = 'sess-instant';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
+}
+
+function readSessionLog(projectDir: string, sessionId: string): unknown[] {
+  const logPath = join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE);
+  if (!existsSync(logPath)) return [];
+  return readFileSync(logPath, 'utf-8')
+    .split('\n')
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line));
 }
 
 function instantPlanResult(overrides?: Partial<PlanResult>): PlanResult {
@@ -445,5 +456,109 @@ describe('runInstantPlanning', () => {
     });
 
     expectBriefQualityBlocked(result, projectDir, sessionId, events);
+  });
+
+  it('strips markers from published text but keeps raw transcript', async () => {
+    const marker = '<!-- Q:{"id":"q1","type":"input","text":"Name?"} -->';
+    const { projectDir, sessionId, events } = await runInstant({
+      instantPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onOutput('before ');
+          callbacks.onOutput(marker);
+          callbacks.onOutput(' after');
+          return instantPlanResult();
+        }),
+    });
+
+    const publishedText = events
+      .filter((e) => e.type === 'planner_text')
+      .map((e) => e.text)
+      .join('');
+    expect(publishedText).not.toContain('<!--');
+    expect(publishedText).toContain('before');
+    expect(publishedText).toContain('after');
+
+    expect(readSessionLog(projectDir, sessionId)).toContainEqual(
+      expect.objectContaining({
+        kind: 'message',
+        role: 'assistant',
+        text: expect.stringContaining(marker),
+      }),
+    );
+  });
+
+  it('asks collected questions before START_INSTANT', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const question: ClarificationQuestion = { id: 'q1', type: 'input', text: 'Module name?' };
+    const planner = makePlanner({
+      instantPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onQuestion?.([question]);
+          return instantPlanResult();
+        }),
+    });
+    const onQuestionAsked = vi.fn().mockResolvedValue('auth-module');
+    const { callbacks } = makeCallbacks({ onQuestionAsked });
+    const config = makeConfig({ workflow: { mode: 'instant' } });
+    const initial = createInitialState('feature');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
+    const specContent = readFileSync(join(sessionDir(projectDir, sessionId), SPEC_FILE), 'utf-8');
+    expect(specContent).toContain('## Clarifications');
+    expect(specContent).toContain('auth-module');
+  });
+
+  it('all-skip proceeds to START_INSTANT', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const question: ClarificationQuestion = { id: 'q1', type: 'input', text: 'Module name?' };
+    const planner = makePlanner({
+      instantPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onQuestion?.([question]);
+          return instantPlanResult();
+        }),
+    });
+    const onQuestionAsked = vi.fn().mockResolvedValue('skip');
+    const { callbacks } = makeCallbacks({ onQuestionAsked });
+    const config = makeConfig({ workflow: { mode: 'instant' } });
+    const initial = createInitialState('feature');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
   });
 });

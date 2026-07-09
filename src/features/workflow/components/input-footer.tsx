@@ -9,7 +9,6 @@ import { useAdvisory } from '../hooks/use-advisory.js';
 import { formatAdvisoryText } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { focusHasResolvableCopy } from '../copy/resolve.js';
@@ -102,11 +101,7 @@ export function InputFooter({
   waiting?: boolean | undefined;
 }) {
   const t = useTheme();
-  const [lifecycle, { cols }, { events }] = useStores(
-    lifecycleStore,
-    terminalSizeStore,
-    eventsStore,
-  );
+  const [lifecycle, { cols }] = useStores(lifecycleStore, terminalSizeStore);
   const worktreeName = routerStore.use((s) =>
     s.screen === 'workflow' ? s.worktreeName : undefined,
   );
@@ -131,7 +126,7 @@ export function InputFooter({
           phase: lifecycle.phase,
           cancelled: lifecycle.cancelled,
           startedAt: lifecycle.startedAt,
-          events,
+          phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
         })
       : null;
   const live = liveStatus !== null;

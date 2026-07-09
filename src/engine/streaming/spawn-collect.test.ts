@@ -187,6 +187,26 @@ describe('spawnAndCollect', () => {
     ]);
   });
 
+  it('completes with a bounded warning when a plain-text stdout line overflows', async () => {
+    const result = await spawnAndCollect({
+      command: 'node',
+      args: ['-e', `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}))`],
+      cwd: process.cwd(),
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.text).toBe('');
+    expect(result.warnings).toEqual([
+      expect.objectContaining({
+        code: 'stdout_line_overflow',
+        severity: 'warning',
+        source: 'system',
+        surface: 'activity',
+        message: expect.stringContaining('stdout line exceeded'),
+      }),
+    ]);
+  });
+
   it('caps aggregate parsed stdout from many small lines', async () => {
     const events: RunnerCallEvent[] = [];
     const result = await spawnAndCollect({

@@ -180,4 +180,202 @@ describe('parseMarkdownBlocks', () => {
     expect(() => parseMarkdownBlocks(compactMarkers)).not.toThrow();
     expect(() => parseMarkdownBlocks(spacedMarkers)).not.toThrow();
   });
+
+  describe('heading depths 4-6', () => {
+    it.each([1, 2, 3, 4, 5, 6] as const)('emits a heading block for depth %d', (depth) => {
+      const document = parseMarkdownBlocks(`${'#'.repeat(depth)} Title`);
+
+      expect(document.blocks).toEqual([
+        {
+          kind: 'heading',
+          depth,
+          text: 'Title',
+          inlines: [{ kind: 'text', text: 'Title' }],
+        },
+      ]);
+    });
+
+    it('keeps seven or more hashes as a paragraph', () => {
+      const document = parseMarkdownBlocks('####### Too deep');
+
+      expect(document.blocks).toMatchObject([{ kind: 'paragraph', text: '####### Too deep' }]);
+    });
+  });
+
+  describe('table blocks', () => {
+    it('parses a leading-pipe table with header, separator, and rows', () => {
+      const document = parseMarkdownBlocks(
+        ['| Name | Qty |', '| --- | ---: |', '| apple | 1 |', '| kiwi | 12 |'].join('\n'),
+      );
+
+      expect(document.blocks).toEqual([
+        {
+          kind: 'table',
+          alignments: ['left', 'right'],
+          header: [
+            { text: 'Name', inlines: [{ kind: 'text', text: 'Name' }] },
+            { text: 'Qty', inlines: [{ kind: 'text', text: 'Qty' }] },
+          ],
+          rows: [
+            [
+              { text: 'apple', inlines: [{ kind: 'text', text: 'apple' }] },
+              { text: '1', inlines: [{ kind: 'text', text: '1' }] },
+            ],
+            [
+              { text: 'kiwi', inlines: [{ kind: 'text', text: 'kiwi' }] },
+              { text: '12', inlines: [{ kind: 'text', text: '12' }] },
+            ],
+          ],
+        },
+      ]);
+    });
+
+    it.each([
+      ['| --- | --- |', ['left', 'left']],
+      ['| :--- | --- |', ['left', 'left']],
+      ['| :---: | --- |', ['center', 'left']],
+      ['| ---: | --- |', ['right', 'left']],
+      ['| :---: | ---: |', ['center', 'right']],
+      ['|:---|:---:|', ['left', 'center']],
+    ])('reads alignments from separator %s', (separator, alignments) => {
+      const document = parseMarkdownBlocks(['| a | b |', separator, '| c | d |'].join('\n'));
+
+      expect(document.blocks).toMatchObject([{ kind: 'table', alignments }]);
+    });
+
+    it('keeps mid-sentence pipes without a leading pipe as a paragraph', () => {
+      const document = parseMarkdownBlocks(['a | b', '| --- |'].join('\n'));
+
+      expect(document.blocks.map((block) => block.kind)).not.toContain('table');
+    });
+
+    it('keeps a table head without a separator line as a paragraph', () => {
+      const document = parseMarkdownBlocks(['| a | b |', 'plain text'].join('\n'));
+
+      expect(document.blocks).toMatchObject([{ kind: 'paragraph', text: '| a | b | plain text' }]);
+    });
+
+    it('keeps a trailing table head at end of input as a paragraph', () => {
+      const document = parseMarkdownBlocks('| a | b |');
+
+      expect(document.blocks).toMatchObject([{ kind: 'paragraph', text: '| a | b |' }]);
+    });
+
+    it('unescapes escaped pipes inside cells', () => {
+      const document = parseMarkdownBlocks(
+        ['| left \\| right | c |', '| --- | --- |', '| a \\| b | d |'].join('\n'),
+      );
+
+      expect(document.blocks).toMatchObject([
+        {
+          kind: 'table',
+          header: [{ text: 'left | right' }, { text: 'c' }],
+          rows: [[{ text: 'a | b' }, { text: 'd' }]],
+        },
+      ]);
+    });
+
+    it('accepts rows without a trailing pipe and parses cell inlines', () => {
+      const document = parseMarkdownBlocks(
+        ['| Col | Note', '| --- | --- |', '| **x** | plain'].join('\n'),
+      );
+
+      expect(document.blocks).toMatchObject([
+        {
+          kind: 'table',
+          header: [{ text: 'Col' }, { text: 'Note' }],
+          rows: [[{ text: '**x**', inlines: [{ kind: 'bold', text: 'x' }] }, { text: 'plain' }]],
+        },
+      ]);
+    });
+
+    it('interrupts a paragraph when a table starts', () => {
+      const document = parseMarkdownBlocks(
+        ['prose line', '| a | b |', '| --- | --- |', '| c | d |'].join('\n'),
+      );
+
+      expect(document.blocks.map((block) => block.kind)).toEqual(['paragraph', 'table']);
+    });
+
+    it('ends the table at the first non-table line', () => {
+      const document = parseMarkdownBlocks(['| a |', '| --- |', '| b |', 'after table'].join('\n'));
+
+      expect(document.blocks.map((block) => block.kind)).toEqual(['table', 'paragraph']);
+    });
+  });
+
+  describe('html comment blocks', () => {
+    it.each([
+      '<!-- note -->',
+      '<!-- Q:{"id":"q1","question":"Which mode?"} -->',
+      '  <!-- indented -->',
+      '<!--no spaces-->',
+    ])('parses %s into an htmlComment block', (line) => {
+      const document = parseMarkdownBlocks(line);
+
+      expect(document.blocks).toEqual([{ kind: 'htmlComment', lines: [line] }]);
+    });
+
+    it('re-parses text after the closing marker as ordinary content', () => {
+      const document = parseMarkdownBlocks('<!-- c --> tail');
+
+      expect(document.blocks).toEqual([
+        { kind: 'htmlComment', lines: ['<!-- c -->'] },
+        { kind: 'paragraph', text: 'tail', inlines: [{ kind: 'text', text: 'tail' }] },
+      ]);
+    });
+
+    it('keeps text after a multi-line comment close visible', () => {
+      const document = parseMarkdownBlocks(
+        ['before', '<!-- a', 'b --> trailing after close', 'after'].join('\n'),
+      );
+
+      expect(document.blocks).toEqual([
+        { kind: 'paragraph', text: 'before', inlines: [{ kind: 'text', text: 'before' }] },
+        { kind: 'htmlComment', lines: ['<!-- a', 'b -->'] },
+        {
+          kind: 'paragraph',
+          text: 'trailing after close after',
+          inlines: [{ kind: 'text', text: 'trailing after close after' }],
+        },
+      ]);
+    });
+
+    it('consumes a multi-line comment through its closing line', () => {
+      const document = parseMarkdownBlocks(['<!--', 'hidden body', '-->', 'visible'].join('\n'));
+
+      expect(document.blocks).toEqual([
+        { kind: 'htmlComment', lines: ['<!--', 'hidden body', '-->'] },
+        { kind: 'paragraph', text: 'visible', inlines: [{ kind: 'text', text: 'visible' }] },
+      ]);
+    });
+
+    it('consumes an unterminated comment to end of input', () => {
+      const document = parseMarkdownBlocks(
+        ['<!-- Q:{"id":"q1",', '"question":"still streaming'].join('\n'),
+      );
+
+      expect(document.blocks).toEqual([
+        { kind: 'htmlComment', lines: ['<!-- Q:{"id":"q1",', '"question":"still streaming'] },
+      ]);
+    });
+
+    it('interrupts a paragraph when a comment starts', () => {
+      const document = parseMarkdownBlocks(['prose', '<!-- hidden -->', 'more'].join('\n'));
+
+      expect(document.blocks.map((block) => block.kind)).toEqual([
+        'paragraph',
+        'htmlComment',
+        'paragraph',
+      ]);
+    });
+
+    it('parses comments nested inside blockquotes', () => {
+      const document = parseMarkdownBlocks('> <!-- hidden -->');
+
+      expect(document.blocks).toEqual([
+        { kind: 'blockquote', blocks: [{ kind: 'htmlComment', lines: ['<!-- hidden -->'] }] },
+      ]);
+    });
+  });
 });

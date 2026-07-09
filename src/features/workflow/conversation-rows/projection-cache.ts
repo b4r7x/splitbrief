@@ -1,21 +1,20 @@
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { assertNever } from '../../../utils/type-guards.js';
 import { buildConversationRowsProjection, materializeConversationRowsWindow } from './build.js';
-import type { ConversationRow, ConversationRowsProjection } from './types.js';
+import type {
+  ConversationRow,
+  ConversationRowInputs,
+  ConversationRowsProjection,
+} from './types.js';
 
-interface ProjectionCacheKeyInput {
+interface ProjectionCacheEntry {
   sections: Section<EngineEvent>[];
   expandedDiffs: Set<string>;
   expandedActivityBatches: Set<string>;
   cols: number;
   viewportHeight: number;
   streaming: StreamingOutputState;
-}
-
-interface ProjectionCacheEntry {
-  key: string;
   projection: ConversationRowsProjection;
 }
 
@@ -34,26 +33,35 @@ export function resetConversationRowsProjectionCache(): void {
 }
 
 export function getConversationRowsProjection(
-  input: ProjectionCacheKeyInput,
+  input: ConversationRowInputs,
 ): ConversationRowsProjection {
-  const key = projectionCacheKey(input);
-  if (cache?.key === key) return cache.projection;
+  if (cache !== null && isProjectionCacheHit(cache, input)) return cache.projection;
 
+  const { sections, expandedDiffs, expandedActivityBatches, cols, viewportHeight, streaming } =
+    input;
   const projection = buildConversationRowsProjection({
-    sections: input.sections,
-    expandedDiffs: input.expandedDiffs,
-    expandedActivityBatches: input.expandedActivityBatches,
-    cols: input.cols,
-    viewportHeight: input.viewportHeight,
-    streaming: input.streaming,
+    sections,
+    expandedDiffs,
+    expandedActivityBatches,
+    cols,
+    viewportHeight,
+    streaming,
   });
-  cache = { key, projection };
+  cache = {
+    sections,
+    expandedDiffs,
+    expandedActivityBatches,
+    cols,
+    viewportHeight,
+    streaming,
+    projection,
+  };
   return projection;
 }
 
 export function getConversationRowsWindowProjection(
   input:
-    | (ProjectionCacheKeyInput & {
+    | (ConversationRowInputs & {
         windowStart: number;
         windowEnd: number;
       })
@@ -76,82 +84,18 @@ export function getConversationRowsWindowProjection(
   };
 }
 
-function projectionCacheKey(input: ProjectionCacheKeyInput): string {
-  return [
-    input.cols,
-    input.viewportHeight,
-    setKey(input.expandedDiffs),
-    setKey(input.expandedActivityBatches),
-    streamingKey(input.streaming),
-    sectionsKey(input.sections),
-  ].join('\u0001');
-}
-
-function sectionsKey(sections: readonly Section<EngineEvent>[]): string {
-  return sections.map(sectionKey).join('\u0002');
-}
-
-function sectionKey(section: Section<EngineEvent>): string {
-  switch (section.type) {
-    case 'completed-task':
-      return `completed:${section.startIndex}:${section.summary.index}:${textKey(section.summary.title)}`;
-    case 'events':
-      return `events:${section.startIndex}:${section.items.length}:${section.items
-        .map(eventKey)
-        .join('\u0003')}`;
-    case 'active-task':
-      return `active-task:${section.startIndex}:${section.items.length}:${section.items
-        .map(eventKey)
-        .join('\u0003')}`;
-    default:
-      return assertNever(section);
-  }
-}
-
-function eventKey(event: EngineEvent): string {
-  const revision = 'ts' in event ? event.ts : 0;
-  const typeSpecific = typeSpecificEventKey(event);
-  return `${event.type}:${revision}:${typeSpecific}`;
-}
-
-function typeSpecificEventKey(event: EngineEvent): string {
-  switch (event.type) {
-    case 'runner_call_activity':
-      return objectContentKey(event);
-    case 'planner_text':
-      return [
-        event.content ?? 'plain',
-        event.phase ?? '',
-        event.role ?? '',
-        textKey(event.text),
-      ].join('\u0004');
-    default:
-      return objectContentKey(event);
-  }
-}
-
-function setKey(values: ReadonlySet<string>): string {
-  return Array.from(values).sort().join('\u0004');
-}
-
-function streamingKey(streaming: StreamingOutputState): string {
-  return [
-    streaming.active ? 'active' : 'inactive',
-    streaming.taskId ?? '',
-    streaming.lines.length,
-    textKey(streaming.lines.join('\n')),
-  ].join('\u0004');
-}
-
-function textKey(text: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return `${text.length}:${(hash >>> 0).toString(36)}`;
-}
-
-function objectContentKey(value: object): string {
-  return textKey(JSON.stringify(value));
+// A hit requires all six inputs to be reference/primitive-equal. This is sound because upstream
+// state never mutates in place: mergeEvent re-allocates the changed event and the events array
+// (src/stores/workflow/events.ts), computeSections is identity-cached on that array
+// (src/stores/workflow/actions.ts), and the streaming/scroll stores replace their state objects
+// on every change.
+function isProjectionCacheHit(entry: ProjectionCacheEntry, input: ConversationRowInputs): boolean {
+  return (
+    entry.sections === input.sections &&
+    entry.expandedDiffs === input.expandedDiffs &&
+    entry.expandedActivityBatches === input.expandedActivityBatches &&
+    entry.cols === input.cols &&
+    entry.viewportHeight === input.viewportHeight &&
+    entry.streaming === input.streaming
+  );
 }

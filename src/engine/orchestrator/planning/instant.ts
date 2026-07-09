@@ -1,4 +1,5 @@
 import type { PlannerCallbacks, PlanResult } from '../../planners/types.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import {
   createBusTextHandler,
   publishPlannerStatus,
@@ -6,6 +7,7 @@ import {
   publishWarning,
 } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { collectAndPersistClarifications } from '../clarifications.js';
 import { drainAndFormat } from './queue-drain.js';
 import { handlePlanningFailure } from './failure.js';
 import { runBriefQualityGate } from './brief-quality-gate.js';
@@ -13,8 +15,10 @@ import { persistPhases } from './io.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
+import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
 import { planningError } from './errors.js';
+import { MAX_CLARIFICATION_QUESTIONS } from './call-loop.js';
 
 export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -44,10 +48,13 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     resumeHolder && resumeHolder.messages.length > 0 ? resumeHolder.messages : undefined;
   const attachments =
     opts.attachments && opts.attachments.length > 0 ? opts.attachments : undefined;
+  const collected: ClarificationQuestion[] = [];
+  const stripper = createQuestionMarkerStripper();
   const plannerCallbacks: PlannerCallbacks = {
     onOutput: (text) => {
-      textHandler(text);
       buffer.append(text);
+      const display = stripper.push(text);
+      if (display.length > 0) textHandler(display);
     },
     onWarning: (message) => publishWarning({ bus: wctx.bus, phase: state.phase, message: message }),
     onSessionId: (id) => {
@@ -66,6 +73,11 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     sessionId,
     persistTranscript: config.workflow.persistTranscript,
     onCallEvent: (event) => publishRunnerCallEvent({ bus: wctx.bus, phase: state.phase }, event),
+    onQuestion: (questions) => {
+      for (const q of questions) {
+        if (collected.length < MAX_CLARIFICATION_QUESTIONS) collected.push(q);
+      }
+    },
     ...(wctx.signal !== undefined && { signal: wctx.signal }),
     ...(priorMessages ? { priorMessages } : {}),
     ...(attachments ? { attachments } : {}),
@@ -86,13 +98,31 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
       codebaseContext: opts.codebaseContext,
     });
     buffer.flush();
+    const rest = stripper.flush();
+    if (rest.length > 0) textHandler(rest);
   } catch (err) {
     buffer.flush();
+    const rest = stripper.flush();
+    if (rest.length > 0) textHandler(rest);
     return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
   }
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
   state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
+
+  if (collected.length > 0 && wctx.callbacks.onQuestionAsked) {
+    state = await collectAndPersistClarifications({
+      questions: collected,
+      projectDir,
+      sessionId,
+      state,
+      onQuestionAsked: wctx.callbacks.onQuestionAsked,
+      persistTranscript: config.workflow.persistTranscript,
+      bus: wctx.bus,
+      metadata,
+      planner,
+    });
+  }
 
   if (planResult.tasks.length === 0) {
     return handlePlanningFailure({

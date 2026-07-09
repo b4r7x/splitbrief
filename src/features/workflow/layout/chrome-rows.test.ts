@@ -17,7 +17,6 @@ import {
   getRailActiveIndex,
   getRailDriftPassed,
   getRailFormBMinWidth,
-  getRailStageCompletionTimes,
   getRailStages,
   isRailCurrent,
   measureFormB,
@@ -25,6 +24,7 @@ import {
   railFormBLabel,
   railFormBSegmentWidth,
   railIsHandoff,
+  railStageCompletionTimesFromPhaseFirstSeen,
   railStageRole,
   selectRailForm,
 } from './chrome-rows.js';
@@ -239,14 +239,14 @@ describe('getRailDriftPassed', () => {
   });
 });
 
-describe('getRailStageCompletionTimes', () => {
-  it('records each stage completion at the first event that advances past it', () => {
-    const times = getRailStageCompletionTimes([
-      plannerText('specifying', 100),
-      plannerText('planning', 200),
-      plannerText('reviewing-briefs', 300),
-      plannerText('implementing', 400),
-    ]);
+describe('railStageCompletionTimesFromPhaseFirstSeen', () => {
+  it('records each stage completion at the first-seen phase that advances past it', () => {
+    const times = railStageCompletionTimesFromPhaseFirstSeen({
+      specifying: 100,
+      planning: 200,
+      'reviewing-briefs': 300,
+      implementing: 400,
+    });
     expect(times[0]).toBe(200);
     expect(times[1]).toBe(300);
     expect(times[2]).toBe(400);
@@ -255,35 +255,22 @@ describe('getRailStageCompletionTimes', () => {
   });
 
   it('leaves every stage unmarked while still in the first stage', () => {
-    const times = getRailStageCompletionTimes([plannerText('specifying', 100)]);
+    const times = railStageCompletionTimesFromPhaseFirstSeen({ specifying: 100 });
     expect(times.every((time) => time === 0)).toBe(true);
   });
 
-  it('marks every stage done at the complete event', () => {
-    const times = getRailStageCompletionTimes([
-      plannerText('specifying', 100),
-      plannerText('complete', 999),
-    ]);
+  it('marks every stage done at the complete phase', () => {
+    const times = railStageCompletionTimesFromPhaseFirstSeen({ specifying: 100, complete: 999 });
     expect(times.every((time) => time > 0)).toBe(true);
     expect(times[4]).toBe(999);
   });
 
-  it('skips events that carry no phase', () => {
-    const times = getRailStageCompletionTimes([
-      { type: 'approval_mode_changed', ts: 50, mode: 'normal' },
-      plannerText('planning', 200),
-    ]);
+  it('takes the earliest first-seen phase when multiple phases clear the same stage', () => {
+    const times = railStageCompletionTimesFromPhaseFirstSeen({
+      specifying: 100,
+      planning: 250,
+      'reviewing-briefs': 200,
+    });
     expect(times[0]).toBe(200);
-  });
-
-  it('reuses the projection for the same event array reference', () => {
-    const events = [plannerText('specifying', 100), plannerText('planning', 200)];
-    const first = getRailStageCompletionTimes(events);
-    const second = getRailStageCompletionTimes(events);
-    const recomputed = getRailStageCompletionTimes([...events, plannerText('implementing', 300)]);
-
-    expect(second).toBe(first);
-    expect(recomputed).not.toBe(first);
-    expect(recomputed[2]).toBe(300);
   });
 });

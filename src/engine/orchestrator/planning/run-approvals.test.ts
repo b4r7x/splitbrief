@@ -964,20 +964,12 @@ describe('runPlanningPhase — persistence', () => {
 });
 
 describe('runPlanningPhase — onQuestion wiring', () => {
-  const onQuestionCases: Array<{
-    name: string;
-    supports: boolean;
-    expectedType: 'undefined' | 'function';
-  }> = [
-    {
-      name: 'no onQuestion passed when capability is false',
-      supports: false,
-      expectedType: 'undefined',
-    },
-    { name: 'onQuestion wired when capability is true', supports: true, expectedType: 'function' },
+  const onQuestionCases: Array<{ name: string; supports: boolean }> = [
+    { name: 'onQuestion wired regardless of capability (capability false)', supports: false },
+    { name: 'onQuestion wired regardless of capability (capability true)', supports: true },
   ];
 
-  it.each(onQuestionCases)('$name', async ({ supports, expectedType }) => {
+  it.each(onQuestionCases)('$name', async ({ supports }) => {
     let captured: unknown;
     const plan = vi.fn().mockImplementation(async (opts) => {
       captured = opts.callbacks.onQuestion;
@@ -1002,7 +994,6 @@ describe('runPlanningPhase — onQuestion wiring', () => {
     const { result } = await runPhase({ planner, config: makeConfig({ workflow: auto() }) });
 
     expect(result.cancelled).toBe(false);
-    if (expectedType === 'undefined') expect(captured).toBeUndefined();
-    else expect(captured).toBeTypeOf('function');
+    expect(captured).toBeTypeOf('function');
   });
 });

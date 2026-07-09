@@ -15,6 +15,7 @@ import { useTheme } from '../../../components/theme.js';
 import { getReviewColumnWidth, getReviewContentLayout } from '../layout/rect.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
+import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { workflowMarkdownRenderSegments } from '../conversation-rows/markdown-rows.js';
 
@@ -38,6 +39,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
     width: bodyWidth,
     theme: t,
     decorateSegment: workflowMarkdownRenderSegments,
+    projectDir: configStore.get().projectDir,
   });
   const renderedLineCount = getScrollableDocumentLineCount(rows);
   const { contentHeight, showFooter } = getReviewContentLayout(innerHeight, renderedLineCount);

@@ -1,3 +1,4 @@
+import { firstContentSegmentIndex } from '../../../../components/markdown.js';
 import type { MarkdownLayoutLine, MarkdownLayoutRow } from '../../../../utils/markdown/types.js';
 import type { ConversationRow } from '../types.js';
 import type {
@@ -11,10 +12,12 @@ export function createMarkdownRowsCacheEntryFromChunks(input: {
   sourceText: string;
   keyPrefix: string;
   chunks: readonly MarkdownLayoutChunk[];
+  projectDir: string | undefined;
 }): MarkdownRowsCacheEntry {
   const rows = input.chunks.flatMap((chunk) => chunk.rows);
   const rowCount = input.chunks.reduce((sum, chunk) => sum + chunk.height, 0);
   const keyPrefix = input.keyPrefix;
+  const projectDir = input.projectDir;
   const projection: MarkdownConversationRowsProjection = {
     rowCount,
     createRows: (windowStart, windowEnd) =>
@@ -23,6 +26,7 @@ export function createMarkdownRowsCacheEntryFromChunks(input: {
         rows,
         windowStart,
         windowEnd,
+        projectDir,
       }),
   };
 
@@ -38,6 +42,7 @@ function markdownLayoutWindowRows(input: {
   rows: readonly MarkdownLayoutRow[];
   windowStart: number;
   windowEnd: number;
+  projectDir: string | undefined;
 }): ConversationRow[] {
   const rows: ConversationRow[] = [];
   const start = Math.max(0, input.windowStart);
@@ -58,7 +63,7 @@ function markdownLayoutWindowRows(input: {
       rows.push({
         key: `${input.keyPrefix}-${layoutRow.key}-${currentIndex}`,
         kind: 'message',
-        segments: markdownLineSegments(line),
+        segments: markdownLineSegments(line, layoutRow.lines[localIndex - 1], input.projectDir),
       });
     }
   }
@@ -66,6 +71,17 @@ function markdownLayoutWindowRows(input: {
   return rows;
 }
 
-function markdownLineSegments(line: MarkdownLayoutLine) {
-  return line.segments.flatMap(workflowMarkdownConversationSegments);
+function markdownLineSegments(
+  line: MarkdownLayoutLine,
+  previousLine: MarkdownLayoutLine | undefined,
+  projectDir: string | undefined,
+) {
+  const previousLineText = previousLine?.segments.map((segment) => segment.text).join('');
+  const contentIndex = firstContentSegmentIndex(line.segments);
+  return line.segments.flatMap((segment, segmentIndex) =>
+    workflowMarkdownConversationSegments(segment, {
+      projectDir,
+      previousLineText: segmentIndex === contentIndex ? previousLineText : undefined,
+    }),
+  );
 }

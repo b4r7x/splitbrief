@@ -13,6 +13,7 @@ import {
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { PlanOptions, Planner } from '../../planners/types.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { runFullPlanning } from './full.js';
 
 let dirs: string[] = [];
@@ -116,5 +117,50 @@ describe('runFullPlanning — skill rehydration', () => {
     });
 
     expect(captured?.skillsContext).toBeUndefined();
+  });
+});
+
+describe('runFullPlanning — questions', () => {
+  it('non-conversational planner emitting markers → onQuestionAsked invoked', async () => {
+    const projectDir = createTempDir('full-questions');
+    dirs.push(projectDir);
+    const sessionId = 'sess-questions';
+    ensureSessionDir(projectDir, sessionId);
+
+    const question: ClarificationQuestion = { id: 'q1', type: 'confirm', text: 'Proceed?' };
+    const planner: Planner = makePlanner({
+      plan: vi.fn(async (opts: PlanOptions) => {
+        opts.callbacks.onQuestion?.([question]);
+        return {
+          spec: '# Spec',
+          plan: '# Plan',
+          tasks: [],
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      }),
+    });
+    expect(planner.capabilities.supportsConversationalPlanning).toBe(false);
+
+    const onQuestionAsked = vi.fn().mockResolvedValue('skip');
+
+    await runFullPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } }),
+        callbacks: makeCallbacks({ onQuestionAsked }).callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner,
+      state: transition(createInitialState('feat'), { type: 'START' }),
+      feature: 'feat',
+      selectedSkills: undefined,
+      approveLevel: 'none',
+      deferBriefGate: true,
+    });
+
+    expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
   });
 });

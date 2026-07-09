@@ -3,12 +3,18 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makePlanner, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makePlanner,
+  makeBusRecorder,
+  makeCallbacks,
+} from '#testing/helpers/orchestrator-factories.js';
+import { createTestSinks } from '#testing/helpers/planning-phase.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { PlannerCallbacks } from '../../planners/types.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
 import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
@@ -202,5 +208,131 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
     expect(capturedCallbacks).toBeDefined();
     expect(capturedCallbacks!.signal).toBeDefined();
     expect(capturedCallbacks!.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('runPlannerCallInContinuationLoop — question markers', () => {
+  it('publishes marker-free planner text', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const planner = makePlanner({
+      quickPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onOutput('before ');
+          callbacks.onOutput('<!-- Q:{"id":"q1","type"');
+          callbacks.onOutput(':"choice","text":"Pick","options":["a","b"]} -->');
+          callbacks.onOutput(' after');
+          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+        }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWctx(projectDir, sessionId, { bus });
+
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    const publishedText = events
+      .filter((e) => e.type === 'planner_text')
+      .map((e) => e.text)
+      .join('');
+    expect(publishedText).not.toContain('<!--');
+    expect(publishedText).toContain('before');
+    expect(publishedText).toContain('after');
+  });
+
+  it.each([
+    { mode: 'quick' as const, conversational: false },
+    { mode: 'speckit' as const, conversational: false },
+    { mode: 'speckit' as const, conversational: true },
+  ])('collects questions for mode $mode with conversational=$conversational', async ({
+    mode,
+    conversational,
+  }) => {
+    const { projectDir, sessionId } = setupSession();
+    const question: ClarificationQuestion = {
+      id: 'q1',
+      type: 'choice',
+      text: 'Pick',
+      options: ['a', 'b'],
+    };
+    const callFn = vi
+      .fn()
+      .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onQuestion?.([question]);
+        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+      });
+    const planner = makePlanner({
+      plan: callFn,
+      quickPlan: callFn,
+      capabilities: {
+        supportsConversationalPlanning: conversational,
+        supportsHintEscalation: true,
+        supportsSessionResume: false,
+        supportsEffort: false,
+        supportsImages: false,
+        supportsSelfSummarisation: false,
+      },
+    });
+    const wctx = makeWctx(projectDir, sessionId);
+    const collectedQuestions: ClarificationQuestion[] = [];
+
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode,
+      collectedQuestions,
+    });
+
+    expect(collectedQuestions).toEqual([
+      { id: 'q1', type: 'choice', text: 'Pick', options: ['a', 'b'] },
+    ]);
+  });
+
+  it('records raw marker text for continuation while publishing stripped text', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const marker = '<!-- Q:{"id":"q1","type":"input","text":"Name?"} -->';
+    const sinks = createTestSinks();
+    let callCount = 0;
+    const planner = makePlanner({
+      quickPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callCount++;
+          if (callCount === 1) {
+            callbacks.onOutput(marker);
+            sinks.abortTurn();
+            throw new DOMException('The user aborted a request.', 'AbortError');
+          }
+          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+        }),
+    });
+    const continuationPrompts: string[] = [];
+    const wctx = makeWctx(projectDir, sessionId, {
+      sinks,
+      callbacks: makeCallbacks({
+        onContinuationNeeded: async (partial: string) => {
+          continuationPrompts.push(partial);
+          return 'continue';
+        },
+      }).callbacks,
+    });
+
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    expect(continuationPrompts).toEqual([marker]);
+    expect(callCount).toBe(2);
   });
 });

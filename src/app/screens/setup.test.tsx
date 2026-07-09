@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLIPBOARD_EXEC_WAIT_MS,
   installClipboardExecFixture,
   readClipboardExecCalls,
   resetClipboardExecFixture,
@@ -100,7 +101,7 @@ describe('SetupScreen', () => {
 
     await vi.waitFor(() => {
       expect(readClipboardExecCalls().at(-1)?.stdin).toBe('npm i -g @anthropic-ai/claude-code');
-    });
+    }, CLIPBOARD_EXEC_WAIT_MS);
 
     ui.unmount();
   });
@@ -138,7 +139,7 @@ describe('SetupScreen', () => {
 
     await vi.waitFor(() => {
       expect(readClipboardExecCalls().at(-1)?.stdin).toBe('npm i -g @openai/codex');
-    });
+    }, CLIPBOARD_EXEC_WAIT_MS);
 
     ui.unmount();
   });

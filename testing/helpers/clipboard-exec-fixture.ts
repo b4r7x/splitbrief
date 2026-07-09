@@ -25,6 +25,10 @@ const COMMANDS = ['pbcopy', 'clip', 'wl-copy', 'xclip', 'xsel', 'tmux'] as const
 const CALLS_ENV = 'DIPTYCH_TEST_CLIPBOARD_CALLS';
 const EXIT_CODES_ENV = 'DIPTYCH_TEST_CLIPBOARD_EXIT_CODES';
 
+// The fake commands are node scripts whose spawn can outlive vi.waitFor's 1s default
+// under full-suite load; polls of fire-and-forget copies pass this deadline instead.
+export const CLIPBOARD_EXEC_WAIT_MS = 5000;
+
 let active: ClipboardExecFixture | null = null;
 
 function commandScript(): string {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deriveLiveStatus } from './live-activity.js';
 
-const base = { cancelled: false, startedAt: 1000, events: [] as const };
+const base = { cancelled: false, startedAt: 1000, phaseFirstSeenTs: {} };
 
 describe('deriveLiveStatus', () => {
   it('is null when idle, complete, cancelled, or at a review gate', () => {
@@ -16,7 +16,13 @@ describe('deriveLiveStatus', () => {
     expect(status).toEqual({ verb: 'Researching…', stageStart: 1000, tone: 'planner' });
   });
 
-  it('uses the implementer tone during build', () => {
-    expect(deriveLiveStatus({ ...base, phase: 'implementing' })?.tone).toBe('implementer');
+  it('uses the implementer tone during build and derives stage start from phaseFirstSeenTs', () => {
+    const status = deriveLiveStatus({
+      ...base,
+      phase: 'implementing',
+      phaseFirstSeenTs: { implementing: 5000 },
+    });
+    expect(status?.tone).toBe('implementer');
+    expect(status?.stageStart).toBe(5000);
   });
 });

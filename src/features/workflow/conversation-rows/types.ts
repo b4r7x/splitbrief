@@ -18,6 +18,17 @@ export type ConversationRowTone =
   | 'markdownBlockquote'
   | 'markdownList'
   | 'markdownRule'
+  | 'markdownLink'
+  | 'markdownStrike'
+  | 'markdownTableBorder'
+  | 'syntaxKeyword'
+  | 'syntaxString'
+  | 'syntaxComment'
+  | 'syntaxNumber'
+  | 'syntaxLiteral'
+  | 'syntaxType'
+  | 'syntaxFunction'
+  | 'syntaxPunctuation'
   | 'reviewFile'
   | 'border';
 
@@ -46,6 +57,8 @@ export interface ConversationRowSegment {
   tone?: ConversationRowTone;
   bold?: boolean;
   italic?: boolean;
+  strikethrough?: boolean;
+  href?: string;
 }
 
 export interface ConversationRow {

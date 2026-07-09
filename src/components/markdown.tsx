@@ -1,8 +1,10 @@
 import { Box, Text } from 'ink';
 import type { ReactNode } from 'react';
 import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
+import { osc8Hyperlink, terminalSupportsHyperlinks } from '../lib/terminal/hyperlinks.js';
 import { parseMarkdownBlocks } from '../utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../utils/markdown/layout.js';
+import { resolveMarkdownLinkTarget } from '../utils/path-links.js';
 import { assertNever } from '../utils/type-guards.js';
 import type {
   MarkdownLayoutLine,
@@ -16,39 +18,59 @@ interface SegmentStyle {
   color: string;
   bold?: boolean;
   italic?: boolean;
+  strikethrough?: boolean;
+  underline?: boolean;
 }
 
 export interface MarkdownRenderSegmentStyle {
   color?: string | undefined;
   bold?: boolean | undefined;
   italic?: boolean | undefined;
+  strikethrough?: boolean | undefined;
+  underline?: boolean | undefined;
 }
 
 export interface MarkdownRenderSegment {
   text: string;
   style?: MarkdownRenderSegmentStyle;
+  href?: string | undefined;
 }
 
 export type MarkdownSegmentDecorator = (input: {
   segment: MarkdownLayoutSegment;
   theme: Theme;
+  projectDir: string | undefined;
+  // Set only for a line's first content segment (leading blockquote/list markers and
+  // whitespace-only indents skipped) when the line continues a wrapped logical row, so
+  // decorators can tell wrap-start matches apart from hard-wrapped word fragments.
+  previousLineText?: string | undefined;
 }) => readonly MarkdownRenderSegment[];
+
+export function firstContentSegmentIndex(segments: readonly MarkdownLayoutSegment[]): number {
+  return segments.findIndex(
+    (segment) =>
+      segment.kind !== 'blockquoteMarker' &&
+      segment.kind !== 'listMarker' &&
+      !(segment.kind === 'text' && segment.text.trim() === ''),
+  );
+}
 
 export interface RenderMarkdownRowsOptions {
   source: string;
   width: number;
   theme: Theme;
   decorateSegment?: MarkdownSegmentDecorator | undefined;
+  projectDir?: string | undefined;
 }
 
 export function renderMarkdownRows(options: RenderMarkdownRowsOptions): ScrollableDocumentRow[] {
-  const { source, width, theme, decorateSegment } = options;
+  const { source, width, theme, decorateSegment, projectDir } = options;
   const safeSource = sanitizeTerminalDisplayText(source, { preserveLineBreaks: true });
   const layout = layoutMarkdown(parseMarkdownBlocks(safeSource), { width });
   return layout.rows.map((row) => ({
     key: row.key,
     lines: row.height,
-    node: renderMarkdownLayoutRow({ row, theme, decorateSegment }),
+    node: renderMarkdownLayoutRow({ row, theme, decorateSegment, projectDir }),
   }));
 }
 
@@ -56,16 +78,19 @@ function renderMarkdownLayoutRow(input: {
   row: MarkdownLayoutRow;
   theme: Theme;
   decorateSegment: MarkdownSegmentDecorator | undefined;
+  projectDir: string | undefined;
 }): ReactNode {
-  const { row, theme, decorateSegment } = input;
+  const { row, theme, decorateSegment, projectDir } = input;
   return (
     <Box flexDirection="column">
       {row.lines.map((line, index) =>
         renderMarkdownLayoutLine({
           line,
+          previousLine: row.lines[index - 1],
           key: `${row.key}-${index}`,
           theme,
           decorateSegment,
+          projectDir,
         }),
       )}
     </Box>
@@ -74,11 +99,15 @@ function renderMarkdownLayoutRow(input: {
 
 function renderMarkdownLayoutLine(input: {
   line: MarkdownLayoutLine;
+  previousLine: MarkdownLayoutLine | undefined;
   key: string;
   theme: Theme;
   decorateSegment: MarkdownSegmentDecorator | undefined;
+  projectDir: string | undefined;
 }): ReactNode {
-  const { line, key, theme, decorateSegment } = input;
+  const { line, previousLine, key, theme, decorateSegment, projectDir } = input;
+  const previousLineText = previousLine?.segments.map((segment) => segment.text).join('');
+  const contentIndex = firstContentSegmentIndex(line.segments);
   return (
     <Text key={key}>
       {line.segments.map((segment, index) =>
@@ -87,6 +116,8 @@ function renderMarkdownLayoutLine(input: {
           key: `${key}-${index}`,
           theme,
           decorateSegment,
+          projectDir,
+          previousLineText: index === contentIndex ? previousLineText : undefined,
         }),
       )}
     </Text>
@@ -98,16 +129,22 @@ function renderSegment(input: {
   key: string;
   theme: Theme;
   decorateSegment: MarkdownSegmentDecorator | undefined;
+  projectDir: string | undefined;
+  previousLineText: string | undefined;
 }): ReactNode {
-  const { segment, key, theme, decorateSegment } = input;
+  const { segment, key, theme, decorateSegment, projectDir, previousLineText } = input;
   const baseStyle = segmentStyle(segment, theme);
-  const parts = decorateSegment?.({ segment, theme }) ?? [{ text: segment.text }];
+  const parts = decorateSegment?.({ segment, theme, projectDir, previousLineText }) ?? [
+    { text: segment.text },
+  ];
 
   return parts.map((part, index) =>
     renderTextSegment({
       key: `${key}-${index}`,
       text: part.text,
       style: mergeSegmentStyle(baseStyle, part.style),
+      href: part.href ?? segment.href,
+      projectDir,
     }),
   );
 }
@@ -120,38 +157,43 @@ function mergeSegmentStyle(
   const style: SegmentStyle = { color: override.color ?? baseStyle.color };
   const bold = override.bold ?? baseStyle.bold;
   const italic = override.italic ?? baseStyle.italic;
+  const strikethrough = override.strikethrough ?? baseStyle.strikethrough;
+  const underline = override.underline ?? baseStyle.underline;
   if (bold !== undefined) style.bold = bold;
   if (italic !== undefined) style.italic = italic;
+  if (strikethrough !== undefined) style.strikethrough = strikethrough;
+  if (underline !== undefined) style.underline = underline;
   return style;
 }
 
-function renderTextSegment(input: { key: string; text: string; style: SegmentStyle }): ReactNode {
-  const { key, text, style } = input;
+function renderTextSegment(input: {
+  key: string;
+  text: string;
+  style: SegmentStyle;
+  href: string | undefined;
+  projectDir: string | undefined;
+}): ReactNode {
+  const { key, text, style, href, projectDir } = input;
   const cleanText = sanitizeTerminalDisplayText(text);
-  if (style.bold && style.italic) {
-    return (
-      <Text key={key} color={style.color} bold italic>
-        {cleanText}
-      </Text>
-    );
-  }
-  if (style.bold) {
-    return (
-      <Text key={key} color={style.color} bold>
-        {cleanText}
-      </Text>
-    );
-  }
-  if (style.italic) {
-    return (
-      <Text key={key} color={style.color} italic>
-        {cleanText}
-      </Text>
-    );
-  }
+  const { label, href: resolvedHref } = resolveMarkdownLinkTarget({
+    label: cleanText,
+    href,
+    rootDir: projectDir,
+  });
+  const content =
+    resolvedHref !== undefined && terminalSupportsHyperlinks()
+      ? osc8Hyperlink({ label, href: resolvedHref })
+      : label;
   return (
-    <Text key={key} color={style.color}>
-      {cleanText}
+    <Text
+      key={key}
+      color={style.color}
+      bold={style.bold === true}
+      italic={style.italic === true}
+      strikethrough={style.strikethrough === true}
+      underline={style.underline === true}
+    >
+      {content}
     </Text>
   );
 }
@@ -159,7 +201,7 @@ function renderTextSegment(input: { key: string; text: string; style: SegmentSty
 function segmentStyle(segment: MarkdownLayoutSegment, theme: Theme): SegmentStyle {
   switch (segment.kind) {
     case 'heading':
-      return { color: theme.markdown.heading, bold: true };
+      return { color: theme.markdown.heading, bold: (segment.depth ?? 1) <= 3 };
     case 'metadata':
       return { color: theme.textDim };
     case 'rule':
@@ -169,13 +211,23 @@ function segmentStyle(segment: MarkdownLayoutSegment, theme: Theme): SegmentStyl
     case 'blockquoteMarker':
       return { color: theme.markdown.blockquote };
     case 'code':
-      return { color: theme.markdown.code };
+      return segment.scope !== undefined
+        ? { color: theme.syntax[segment.scope] }
+        : { color: theme.markdown.code };
     case 'bold':
       return { color: theme.markdown.bold, bold: true };
     case 'italic':
       return { color: theme.markdown.italic, italic: true };
     case 'boldItalic':
       return { color: theme.markdown.bold, bold: true, italic: true };
+    case 'strikethrough':
+      return { color: theme.markdown.strike, strikethrough: true };
+    case 'link':
+      return { color: theme.markdown.link, underline: true };
+    case 'tableBorder':
+      return { color: theme.markdown.tableBorder };
+    case 'tableHeader':
+      return { color: theme.markdown.heading, bold: true };
     case 'text':
       return { color: theme.text };
     default:

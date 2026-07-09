@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getTheme } from '../../../components/theme.js';
+import { configStore } from '../../../stores/project/config.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../../../utils/markdown/layout.js';
@@ -53,6 +54,14 @@ function canonicalMarkdownLineText(text: string, width: number): string[] {
   const layout = layoutMarkdown(parseMarkdownBlocks(text), { width });
   return layout.rows.flatMap((layoutRow) =>
     layoutRow.lines.map((line) => line.segments.map((segment) => segment.text).join('')),
+  );
+}
+
+function spanOffsets(start: number, end: number, count: number): number[] {
+  const span = end - start;
+  return Array.from(
+    { length: count },
+    (_, index) => start + Math.floor((span * (index + 1)) / (count + 1)),
   );
 }
 
@@ -287,6 +296,82 @@ describe('markdownConversationRows', () => {
     expect(comparableRows(appended)).toEqual(comparableRows(cold));
   });
 
+  it('repairs the streaming tail chunk', () => {
+    resetMarkdownConversationRowsCache();
+    const text = 'before **bold text** after';
+    const keyPrefix = 'markdown-tail-repair';
+    let rows: MarkdownRows = [];
+
+    for (let length = 1; length <= text.length; length += 1) {
+      rows = markdownConversationRows({
+        keyPrefix,
+        text: text.slice(0, length),
+        width: 80,
+      });
+      expect(rows.map(rowText).join('\n')).not.toContain('**');
+    }
+
+    expect(rows.map(rowText).join('\n')).toContain('before bold text after');
+  });
+
+  it('skips tail repair for a blockquote tail holding an open fence', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'markdown-blockquote-tail',
+      text: '> ```ts\n> const a = 1;',
+      width: 60,
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain('const a = 1;');
+    expect(text).not.toContain('const a = 1;`');
+  });
+
+  it('keeps a lone backtick literal in a table-shaped tail line', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'markdown-table-tail',
+      text: '| `code | x |',
+      width: 60,
+    });
+
+    expect(rows.map(rowText).join('\n')).toContain('| `code | x |');
+  });
+
+  it('final append render equals from-scratch render', () => {
+    const introText = 'Intro paragraph before the table.';
+    const text = [
+      introText,
+      '',
+      '| Name | Status |',
+      '| --- | --- |',
+      '| alpha | done |',
+      '| beta | pending |',
+      '| gamma | queued |',
+      '',
+      '**closing bold note**',
+    ].join('\n');
+    const width = 60;
+    const keyPrefix = 'markdown-table-incremental';
+
+    resetMarkdownConversationRowsCache();
+    const cold = comparableRows(
+      markdownConversationRows({ keyPrefix: 'markdown-table-cold', text, width }),
+    );
+
+    resetMarkdownConversationRowsCache();
+    const lines = text.split('\n');
+    let rows: MarkdownRows = [];
+    for (const lineIndex of lines.keys()) {
+      rows = markdownConversationRows({
+        keyPrefix,
+        text: lines.slice(0, lineIndex + 1).join('\n'),
+        width,
+      });
+      expect(rows.map(rowText)).toContain(introText);
+    }
+
+    expect(comparableRows(rows)).toEqual(cold);
+  });
+
   it('wraps CJK, emoji, and combining marks by terminal cells', () => {
     const developerEmoji = '👩‍💻';
     const rows = markdownConversationRows({
@@ -301,6 +386,144 @@ describe('markdownConversationRows', () => {
     expect(joined).toContain(developerEmoji.repeat(5));
     expect(joined).toContain('e\u0301'.repeat(10));
   });
+
+  it('renders headings with the shared markdown heading tone', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'markdown',
+      text: '# H1\n\n#### H4',
+      width: 80,
+    });
+    const segments = rows.flatMap((row) => row.segments);
+
+    expect(segments).toContainEqual({ text: 'H1', tone: 'markdownHeading', bold: true });
+    expect(segments).toContainEqual({ text: 'H4', tone: 'markdownHeading', bold: false });
+  });
+
+  it('links a project file-path reference and shortens its label', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown',
+        text: 'update /repo/src/app/root.tsx:14 now',
+        width: 80,
+      });
+      const segments = rows.flatMap((row) => row.segments);
+
+      expect(segments).toContainEqual({
+        text: 'src/app/root.tsx:14',
+        tone: 'markdownLink',
+        href: 'file:///repo/src/app/root.tsx',
+      });
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('does not mint file hrefs for wrap-continuation fragments of a long path', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown-wrap-continuation',
+        text: 'see /repo/src/features/workflow/components/input-footer.tsx:12 now',
+        width: 30,
+      });
+
+      for (const segment of rows.flatMap((row) => row.segments)) {
+        if (segment.href !== undefined) {
+          expect(segment.href).toBe(
+            'file:///repo/src/features/workflow/components/input-footer.tsx',
+          );
+        }
+      }
+      expect(JSON.stringify(rows)).not.toContain('/mponents/');
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('does not mint file hrefs for wrap-continuation fragments inside a blockquote', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown-wrap-continuation-blockquote',
+        text: '> see /repo/src/features/workflow/components/input-footer.tsx:12 now',
+        width: 30,
+      });
+
+      for (const segment of rows.flatMap((row) => row.segments)) {
+        expect(segment.href).not.toBe('file:///repo/components/input-footer.tsx');
+        if (segment.href !== undefined) {
+          expect(segment.href).toBe(
+            'file:///repo/src/features/workflow/components/input-footer.tsx',
+          );
+        }
+      }
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('does not mint file hrefs for wrap-continuation fragments inside a list item', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown-wrap-continuation-list',
+        text: '- see /repo/src/features/workflow/components/input-footer.tsx:12 now',
+        width: 30,
+      });
+
+      for (const segment of rows.flatMap((row) => row.segments)) {
+        expect(segment.href).not.toBe('file:///repo/components/input-footer.tsx');
+        if (segment.href !== undefined) {
+          expect(segment.href).toBe(
+            'file:///repo/src/features/workflow/components/input-footer.tsx',
+          );
+        }
+      }
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('resolves a markdown link to a project file as a file URL and shortens its label', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown',
+        text: '[src/app/root.tsx:14](src/app/root.tsx:14)',
+        width: 80,
+      });
+      const segments = rows.flatMap((row) => row.segments);
+
+      expect(segments).toContainEqual({
+        text: 'src/app/root.tsx:14',
+        tone: 'markdownLink',
+        href: 'file:///repo/src/app/root.tsx',
+      });
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('leaves an external link target unresolved', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown',
+        text: '[docs](https://example.com/docs)',
+        width: 80,
+      });
+      const segments = rows.flatMap((row) => row.segments);
+
+      expect(segments).toContainEqual({
+        text: 'docs',
+        tone: 'markdownLink',
+        href: 'https://example.com/docs',
+      });
+    } finally {
+      configStore.__testReset();
+    }
+  });
 });
 
 describe('workflowMarkdownRenderSegments', () => {
@@ -311,7 +534,7 @@ describe('workflowMarkdownRenderSegments', () => {
       text: 'T001 in src/foo.ts is HIGH risk and FAILED',
     };
 
-    const parts = workflowMarkdownRenderSegments({ segment, theme });
+    const parts = workflowMarkdownRenderSegments({ segment, theme, projectDir: undefined });
 
     expect(parts).toContainEqual({ text: 'T001' });
     expect(parts).toContainEqual({ text: 'src/foo.ts', style: { color: theme.textDim } });
@@ -335,7 +558,7 @@ describe('workflowMarkdownRenderSegments', () => {
       text: 'all checks PASS and tasks DONE, nothing is OK to skip',
     };
 
-    const parts = workflowMarkdownRenderSegments({ segment, theme });
+    const parts = workflowMarkdownRenderSegments({ segment, theme, projectDir: undefined });
 
     expect(parts.every((part) => part.style === undefined)).toBe(true);
     expect(parts.map((part) => part.text).join('')).toBe(
@@ -347,11 +570,262 @@ describe('workflowMarkdownRenderSegments', () => {
     const theme = getTheme();
     const segment: MarkdownLayoutSegment = { kind: 'text', text: 'result is INCONCLUSIVE' };
 
-    const parts = workflowMarkdownRenderSegments({ segment, theme });
+    const parts = workflowMarkdownRenderSegments({ segment, theme, projectDir: undefined });
 
     expect(parts).toContainEqual({
       text: 'INCONCLUSIVE',
       style: { color: theme.textDim, bold: false },
     });
+  });
+});
+
+describe('streaming tail repair', () => {
+  const boldText = 'before **bold text example content** after';
+  const boldOpenerEnd = boldText.indexOf('**') + 2;
+  const boldCloserStart = boldText.indexOf('**', boldOpenerEnd);
+
+  it.each(
+    spanOffsets(boldOpenerEnd, boldCloserStart, 6),
+  )('keeps a mid-** split styled with no dangling delimiter at offset %i', (offset) => {
+    const keyPrefix = `streaming-bold-${offset}`;
+    resetMarkdownConversationRowsCache();
+    markdownConversationRows({ keyPrefix, text: '', width: 80 });
+    const intermediate = markdownConversationRows({
+      keyPrefix,
+      text: boldText.slice(0, offset),
+      width: 80,
+    });
+    expect(intermediate.map(rowText).join('\n')).not.toContain('**');
+
+    const final = markdownConversationRows({ keyPrefix, text: boldText, width: 80 });
+    const scratch = markdownConversationRows({
+      keyPrefix: `${keyPrefix}-scratch`,
+      text: boldText,
+      width: 80,
+    });
+    expect(comparableRows(final)).toEqual(comparableRows(scratch));
+  });
+
+  const strikeText = 'before ~~strike text example content~~ after';
+  const strikeOpenerEnd = strikeText.indexOf('~~') + 2;
+  const strikeCloserStart = strikeText.indexOf('~~', strikeOpenerEnd);
+
+  it.each(
+    spanOffsets(strikeOpenerEnd, strikeCloserStart, 6),
+  )('keeps a mid-~~ split styled with no dangling delimiter at offset %i', (offset) => {
+    const keyPrefix = `streaming-strike-${offset}`;
+    resetMarkdownConversationRowsCache();
+    markdownConversationRows({ keyPrefix, text: '', width: 80 });
+    const intermediate = markdownConversationRows({
+      keyPrefix,
+      text: strikeText.slice(0, offset),
+      width: 80,
+    });
+    expect(intermediate.map(rowText).join('\n')).not.toContain('~~');
+
+    const final = markdownConversationRows({ keyPrefix, text: strikeText, width: 80 });
+    const scratch = markdownConversationRows({
+      keyPrefix: `${keyPrefix}-scratch`,
+      text: strikeText,
+      width: 80,
+    });
+    expect(comparableRows(final)).toEqual(comparableRows(scratch));
+  });
+
+  const fenceText = [
+    'before',
+    '```ts',
+    'const a = 1;',
+    'const b = 2;',
+    'const c = 3;',
+    'const d = 4;',
+    'const e = 5;',
+    '```',
+    'after',
+  ].join('\n');
+  const fenceOpenerEnd = fenceText.indexOf('\n', fenceText.indexOf('```ts')) + 1;
+  const fenceCloserStart = fenceText.lastIndexOf('```');
+
+  it.each(
+    spanOffsets(fenceOpenerEnd, fenceCloserStart, 6),
+  )('keeps a mid-fence split styled with no dangling delimiter at offset %i', (offset) => {
+    const keyPrefix = `streaming-fence-${offset}`;
+    resetMarkdownConversationRowsCache();
+    markdownConversationRows({ keyPrefix, text: '', width: 80 });
+    const intermediate = markdownConversationRows({
+      keyPrefix,
+      text: fenceText.slice(0, offset),
+      width: 80,
+    });
+    expect(intermediate.map(rowText).join('\n')).not.toContain('```');
+
+    const final = markdownConversationRows({ keyPrefix, text: fenceText, width: 80 });
+    const scratch = markdownConversationRows({
+      keyPrefix: `${keyPrefix}-scratch`,
+      text: fenceText,
+      width: 80,
+    });
+    expect(comparableRows(final)).toEqual(comparableRows(scratch));
+  });
+});
+
+describe('q-marker invisibility', () => {
+  const questionMarker =
+    '<!-- Q:{"id":"q1","type":"choice","text":"?","options":["a","b"],"default":0} -->';
+  const prefixEnd = questionMarker.indexOf('{');
+  const jsonEnd = questionMarker.lastIndexOf('}');
+  const suffixStart = jsonEnd + 1;
+  const splitOffsets: ReadonlyArray<readonly [string, number]> = [
+    ['inside the <!-- Q: prefix', 6],
+    ['inside the JSON body', Math.floor((prefixEnd + jsonEnd) / 2)],
+    ['at the JSON close, before -->', suffixStart],
+    ['inside the --> closer', suffixStart + 2],
+  ];
+
+  it('hides a complete marker with zero visible rows', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'q-marker-complete',
+      text: questionMarker,
+      width: 80,
+    });
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it.each(splitOffsets)('hides the marker split %s', (_label, offset) => {
+    const keyPrefix = `q-marker-split-${offset}`;
+    resetMarkdownConversationRowsCache();
+    markdownConversationRows({ keyPrefix, text: '', width: 80 });
+    const intermediate = markdownConversationRows({
+      keyPrefix,
+      text: questionMarker.slice(0, offset),
+      width: 80,
+    });
+    expect(intermediate).toHaveLength(0);
+
+    const final = markdownConversationRows({ keyPrefix, text: questionMarker, width: 80 });
+    expect(final).toHaveLength(0);
+  });
+
+  it('hides a generic html comment with zero visible rows', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'q-marker-generic-comment',
+      text: '<!-- note -->',
+      width: 80,
+    });
+
+    expect(rows).toHaveLength(0);
+  });
+});
+
+describe('links and tables in transcript rows', () => {
+  it('renders an inline link as a styled label without the raw markdown syntax', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'links-tables-inline-link',
+      text: '[label](https://example.com/x)',
+      width: 80,
+    });
+    const segments = rows.flatMap((row) => row.segments);
+
+    expect(segments).toContainEqual({
+      text: 'label',
+      tone: 'markdownLink',
+      href: 'https://example.com/x',
+    });
+    const text = rows.map(rowText).join('\n');
+    expect(text).not.toContain('](');
+    expect(text).not.toContain('https://example.com/x');
+  });
+
+  it('renders a pipe table with border and header tones and no raw separator text', () => {
+    const tableText = [
+      '| Name | Status |',
+      '| --- | --- |',
+      '| alpha | done |',
+      '| beta | pending |',
+    ].join('\n');
+    const rows = markdownConversationRows({
+      keyPrefix: 'links-tables-pipe-table',
+      text: tableText,
+      width: 80,
+    });
+    const segments = rows.flatMap((row) => row.segments);
+
+    expect(segments).toContainEqual({ text: 'Name', tone: 'markdownHeading', bold: true });
+    expect(segments).toContainEqual({ text: 'Status', tone: 'markdownHeading', bold: true });
+    expect(segments.some((segment) => segment.tone === 'markdownTableBorder')).toBe(true);
+    const text = rows.map(rowText).join('\n');
+    expect(text).not.toContain('|');
+    expect(text).not.toContain('---');
+  });
+
+  it('wraps an overflow-width table without any row exceeding the layout width', () => {
+    const width = 24;
+    const tableText = [
+      '| Name | Description |',
+      '| --- | --- |',
+      '| alpha | a very long description that will not fit on one line for sure |',
+      '| beta | another sufficiently long description to force wrapping too |',
+    ].join('\n');
+    const rows = markdownConversationRows({
+      keyPrefix: 'links-tables-overflow-table',
+      text: tableText,
+      width,
+    });
+
+    expect(rows.length).toBeGreaterThan(0);
+    for (const rowValue of rows) {
+      expect(getTerminalCellWidth(rowText(rowValue))).toBeLessThanOrEqual(width);
+    }
+  });
+});
+
+describe('heading tone unification', () => {
+  it.each([
+    1, 2, 3, 4, 5, 6,
+  ] as const)('gives depth %d headings the shared markdownHeading tone with bold only at depth <= 3', (depth) => {
+    const marker = '#'.repeat(depth);
+    const rows = markdownConversationRows({
+      keyPrefix: `heading-tone-depth-${depth}`,
+      text: `${marker} Heading text`,
+      width: 80,
+    });
+    const segments = rows.flatMap((row) => row.segments);
+
+    expect(segments).toContainEqual({
+      text: 'Heading text',
+      tone: 'markdownHeading',
+      bold: depth <= 3,
+    });
+  });
+});
+
+describe('highlighted code in transcript rows', () => {
+  it('renders a ts fence with at least two distinct syntax tones', () => {
+    const text = ['```ts', "const x = 'y';", '```'].join('\n');
+    const projection = markdownConversationRowsProjection({
+      keyPrefix: 'highlight-ts-fence',
+      text,
+      width: 80,
+    });
+    const rows = projection.createRows(0, projection.rowCount);
+    const tones = rows.flatMap((row) => row.segments.map((segment) => segment.tone));
+    const syntaxTones = new Set(tones.filter((tone) => tone?.startsWith('syntax')));
+
+    expect(syntaxTones.size).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps an unknown-tag fence monochrome with no syntax tone and no lost text', () => {
+    const text = ['```zzz', "const x = 'y';", '```'].join('\n');
+    const projection = markdownConversationRowsProjection({
+      keyPrefix: 'highlight-zzz-fence',
+      text,
+      width: 80,
+    });
+    const rows = projection.createRows(0, projection.rowCount);
+    const tones = rows.flatMap((row) => row.segments.map((segment) => segment.tone));
+
+    expect(tones.some((tone) => tone?.startsWith('syntax'))).toBe(false);
+    expect(rows.map(rowText).join('\n')).toContain("const x = 'y';");
   });
 });

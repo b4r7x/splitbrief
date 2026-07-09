@@ -312,6 +312,24 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('derives the elapsed live-status time from lifecycle.phaseFirstSeenTs, not the events store', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'implementing',
+      startedAt: Date.now() - 300_000,
+      phaseFirstSeenTs: { implementing: Date.now() - 30_000 },
+    });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toMatch(/Implementing… 0:\d\d/);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
   it('keeps the live lead below the Form-B rail width', () => {
     terminalSizeStore.__testReset({ cols: 24, rows: 24, isSmall: false });
     lifecycleStore.__testReset({

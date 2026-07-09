@@ -36,6 +36,9 @@ const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k commands';
 const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k commands';
 const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
 const FOCUS_BAR = '▌';
+// 35 real session files (saveSummary + loadAll) can outlive vi.waitFor's 1s default
+// under full-suite load; this filter-settle poll needs more headroom.
+const SESSION_FILTER_WAIT_MS = 5000;
 
 const COMMANDS: RuntimeCommandDef[] = [
   {
@@ -461,13 +464,13 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    });
+    }, SESSION_FILTER_WAIT_MS);
     ui.stdin.write('ancient');
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('ancient hidden focus target');
       expectLineContains(frame, 'ancient hidden focus target', FOCUS_BAR);
-    });
+    }, SESSION_FILTER_WAIT_MS);
 
     ui.unmount();
   });

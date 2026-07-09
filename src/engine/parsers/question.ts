@@ -39,15 +39,14 @@ function findBalancedBrace(text: string, start: number): number {
   return -1;
 }
 
-interface ScanResult {
-  questions: ClarificationQuestion[];
-  consumed: number;
+interface MarkerSpan {
+  start: number;
+  end: number;
 }
 
-function scanQuestions(text: string): ScanResult {
-  const questions: ClarificationQuestion[] = [];
+function scanMarkerSpans(text: string): MarkerSpan[] {
+  const spans: MarkerSpan[] = [];
   let searchFrom = 0;
-  let consumed = 0;
 
   while (searchFrom < text.length) {
     const start = text.indexOf(MARKER_PREFIX, searchFrom);
@@ -71,16 +70,33 @@ function scanQuestions(text: string): ScanResult {
       continue;
     }
 
+    const end = afterJson + MARKER_SUFFIX.length;
+    spans.push({ start, end });
+    searchFrom = end;
+  }
+
+  return spans;
+}
+
+interface ScanResult {
+  questions: ClarificationQuestion[];
+  consumed: number;
+}
+
+function scanQuestions(text: string): ScanResult {
+  const questions: ClarificationQuestion[] = [];
+  let consumed = 0;
+
+  for (const { start, end } of scanMarkerSpans(text)) {
     try {
-      const parsed = JSON.parse(text.substring(jsonStart, afterJson));
+      const json = text.substring(start + MARKER_PREFIX.length, end - MARKER_SUFFIX.length);
+      const parsed = JSON.parse(json);
       const narrowed = narrowQuestion(parsed);
       if (narrowed) questions.push(narrowed);
     } catch (err) {
       warnError('question: malformed marker', err);
     }
-
-    searchFrom = afterJson + MARKER_SUFFIX.length;
-    consumed = searchFrom;
+    consumed = end;
   }
 
   return { questions, consumed };
@@ -113,6 +129,118 @@ export function createQuestionAccumulator() {
     },
     getAll(): ClarificationQuestion[] {
       return [...allQuestions];
+    },
+  };
+}
+
+// Cap for text held back awaiting a marker that never completes; on overflow it is released
+// verbatim — the markdown html-comment hiding keeps it invisible (layered defense).
+const HOLD_CAP = 16 * 1024;
+
+export function createQuestionMarkerStripper() {
+  let held = '';
+  // emittedTail tracks display output for blank-line collapse; lastSourceChar tracks source
+  // text (which display omits: stripped markers, collapsed newlines) for line-start checks.
+  let emittedTail = '';
+  let lastSourceChar = '';
+  let pendingLineBreak = false;
+  let atSeam = false;
+
+  const emit = (source: string): string => {
+    if (source === '') return '';
+    let text = source;
+    if (pendingLineBreak) {
+      pendingLineBreak = false;
+      if (text.startsWith('\n')) {
+        text = text.slice(1);
+        atSeam = true;
+      } else {
+        atSeam = false;
+      }
+    }
+    if (atSeam) {
+      // A marker line was removed; swallow the following blank line(s) only when the emitted
+      // text already ends blank, so stripping never leaves double blank lines.
+      if (emittedTail === '' || emittedTail.endsWith('\n\n')) {
+        while (text.startsWith('\n')) text = text.slice(1);
+      }
+      if (text !== '') atSeam = false;
+    }
+    lastSourceChar = source.slice(-1);
+    if (text !== '') emittedTail = (emittedTail + text).slice(-2);
+    return text;
+  };
+
+  return {
+    push(chunk: string): string {
+      const buffer = held + chunk;
+      held = '';
+      let out = '';
+      let cursor = 0;
+
+      for (const span of scanMarkerSpans(buffer)) {
+        const between = buffer.slice(cursor, span.start);
+        if (between === '' && pendingLineBreak) {
+          // Next source char is the marker's '<': the previous marker was not alone on its line.
+          pendingLineBreak = false;
+          atSeam = false;
+        }
+        out += emit(between);
+        const atLineStart =
+          span.start > 0
+            ? buffer[span.start - 1] === '\n'
+            : lastSourceChar === '' || lastSourceChar === '\n';
+        cursor = span.end;
+        lastSourceChar = '>';
+        if (atLineStart) {
+          if (cursor >= buffer.length) {
+            pendingLineBreak = true;
+          } else if (buffer[cursor] === '\n') {
+            cursor += 1;
+            lastSourceChar = '\n';
+            atSeam = true;
+          }
+        }
+      }
+
+      const tail = buffer.slice(cursor);
+      // Hold only viable candidates — nothing after the prefix yet, or '{' next — mirroring
+      // scanMarkerSpans' dead-prefix rule, so prose mentioning '<!-- Q:' is released immediately.
+      let holdStart = -1;
+      let from = tail.length;
+      while (from > 0) {
+        const candidate = tail.lastIndexOf(MARKER_PREFIX, from - 1);
+        if (candidate === -1) break;
+        const after = candidate + MARKER_PREFIX.length;
+        if (after >= tail.length || tail[after] === '{') {
+          holdStart = candidate;
+          break;
+        }
+        from = candidate;
+      }
+      if (holdStart === -1) {
+        holdStart = tail.length;
+        for (let len = MARKER_PREFIX.length - 1; len >= 1; len--) {
+          if (tail.endsWith(MARKER_PREFIX.slice(0, len))) {
+            holdStart = tail.length - len;
+            break;
+          }
+        }
+      }
+      out += emit(tail.slice(0, holdStart));
+      held = tail.slice(holdStart);
+      if (held.length > HOLD_CAP) {
+        out += emit(held);
+        held = '';
+      }
+      return out;
+    },
+    flush(): string {
+      const out = held;
+      held = '';
+      pendingLineBreak = false;
+      atSeam = false;
+      return out;
     },
   };
 }

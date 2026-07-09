@@ -42,7 +42,12 @@ export async function collectAndPersistClarifications(
     planner,
   } = opts;
   let state = opts.state;
-  if (state.phase !== 'researching' && state.phase !== 'specifying') {
+  if (
+    state.phase !== 'idle' &&
+    state.phase !== 'researching' &&
+    state.phase !== 'specifying' &&
+    state.phase !== 'planning'
+  ) {
     warnError('clarifications: unexpected phase', { phase: state.phase });
     return state;
   }
