@@ -78,7 +78,7 @@ describe('conversation rows projection cache', () => {
     resetConversationRowsProjectionCache();
   });
 
-  it('reuses a row projection when source revision and display inputs are unchanged', () => {
+  it('returns the identical projection object for identical input identities', () => {
     const input = {
       sections: sections(3),
       expandedDiffs: new Set<string>(),
@@ -115,10 +115,44 @@ describe('conversation rows projection cache', () => {
     expect(expansionChanged).not.toBe(widthChanged);
   });
 
-  it('invalidates cached rows when source events mutate in place', () => {
-    const event = plannerText(1);
+  it('rebuilds when a set input is a new identity with equal contents', () => {
+    const base = {
+      sections: sections(3),
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 80,
+      viewportHeight: 10,
+      streaming,
+    };
+
+    const first = getConversationRowsProjection(base);
+    const second = getConversationRowsProjection({ ...base, expandedDiffs: new Set<string>() });
+
+    expect(second).not.toBe(first);
+    expect(second.totalRows).toBe(first.totalRows);
+  });
+
+  it('rebuilds after resetConversationRowsProjectionCache', () => {
     const input = {
-      sections: eventSections([event]),
+      sections: sections(3),
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 80,
+      viewportHeight: 10,
+      streaming,
+    };
+
+    const first = getConversationRowsProjection(input);
+    resetConversationRowsProjectionCache();
+    const second = getConversationRowsProjection(input);
+
+    expect(second).not.toBe(first);
+    expect(second.totalRows).toBe(first.totalRows);
+  });
+
+  it('rebuilds when an event object is replaced as mergeEvent does', () => {
+    const event = plannerText(1);
+    const base = {
       expandedDiffs: new Set<string>(),
       expandedActivityBatches: new Set<string>(),
       cols: 80,
@@ -128,12 +162,17 @@ describe('conversation rows projection cache', () => {
       windowEnd: 1,
     };
 
-    const first = getConversationRowsWindowProjection(input);
-    event.text = 'mutated event text';
-    const second = getConversationRowsWindowProjection(input);
+    const first = getConversationRowsWindowProjection({
+      ...base,
+      sections: eventSections([event]),
+    });
+    const second = getConversationRowsWindowProjection({
+      ...base,
+      sections: eventSections([{ ...event, text: 'merged event text' }]),
+    });
 
     expect(first.rows.map(rowText)).toEqual(['event 1']);
-    expect(second.rows.map(rowText)).toEqual(['mutated event text']);
+    expect(second.rows.map(rowText)).toEqual(['merged event text']);
   });
 
   it('materializes only the requested visible row window from the cached projection', () => {
@@ -315,10 +354,8 @@ describe('conversation rows projection cache', () => {
     expect(planner.rows.map(rowText).join('\n')).toContain('[claude · sonnet]');
   });
 
-  it('invalidates when mutable activity source metadata changes in place', () => {
-    const event = activityEvent();
-    const input = {
-      sections: eventSections([event]),
+  it('rebuilds when an activity event object is replaced with changed metadata', () => {
+    const base = {
       expandedDiffs: new Set<string>(),
       expandedActivityBatches: new Set<string>(),
       cols: 120,
@@ -326,9 +363,14 @@ describe('conversation rows projection cache', () => {
       streaming,
     };
 
-    const first = getConversationRowsProjection(input);
-    event.attempt = 1;
-    const second = getConversationRowsProjection(input);
+    const first = getConversationRowsProjection({
+      ...base,
+      sections: eventSections([activityEvent()]),
+    });
+    const second = getConversationRowsProjection({
+      ...base,
+      sections: eventSections([activityEvent({ attempt: 1 })]),
+    });
 
     expect(second).not.toBe(first);
   });

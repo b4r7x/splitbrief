@@ -13,6 +13,13 @@ import { blankRow } from './row-format.js';
 import { wrapWidthFor } from './row-markers.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
+import {
+  getCachedActivityBatchBlock,
+  getCachedEventRowBlock,
+  rememberActivityBatchBlock,
+  rememberEventRowBlock,
+  type EventBlockCacheKey,
+} from './block-cache.js';
 import { eventRowBlock, isPlannerTextRenderedAsMarkdown } from './event-rows.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import { runnerCallId } from './runner-call-classification.js';
@@ -36,6 +43,7 @@ interface RunnerActivityBatch {
   callId: string;
   firstIndex: number;
   events: RunnerActivityEvent[];
+  lastEvent: RunnerActivityEvent;
 }
 
 export function buildConversationRows(inputs: ConversationRowInputs): ConversationRowsResult {
@@ -105,13 +113,14 @@ function buildConversationRowsProjectionWithContext(
     const batchKey = activityBatchKey(activityBatch.firstIndex, activityBatch.callId);
     const events = [...activityBatch.events];
     const firstIndex = activityBatch.firstIndex;
-    const model = buildActivityBatchViewModel({
-      events,
-      batchKey,
-      expanded: inputs.expandedActivityBatches.has(batchKey),
-    });
-    const width = ctx.width;
-    const block = runnerActivityBatchRowBlock({ model, width });
+    const expanded = inputs.expandedActivityBatches.has(batchKey);
+    const key = { batchKey, count: events.length, width: ctx.width, expanded };
+    let block = getCachedActivityBatchBlock(activityBatch.lastEvent, key);
+    if (block === undefined) {
+      const model = buildActivityBatchViewModel({ events, batchKey, expanded });
+      block = runnerActivityBatchRowBlock({ model, width: ctx.width });
+      rememberActivityBatchBlock(activityBatch.lastEvent, key, block);
+    }
     if (block !== null) appendBlock(block, firstIndex);
     activityBatch = null;
   };
@@ -126,9 +135,15 @@ function buildConversationRowsProjectionWithContext(
       if (event.type === 'runner_call_activity') {
         if (activityBatch !== null && activityBatch.callId === event.callId) {
           activityBatch.events.push(event);
+          activityBatch.lastEvent = event;
         } else {
           flushActivityBatch();
-          activityBatch = { callId: event.callId, firstIndex: globalIndex, events: [event] };
+          activityBatch = {
+            callId: event.callId,
+            firstIndex: globalIndex,
+            events: [event],
+            lastEvent: event,
+          };
         }
         continue;
       }
@@ -137,13 +152,19 @@ function buildConversationRowsProjectionWithContext(
         dedupTitle = event.text;
       }
 
-      const block = eventRowBlock({
-        event,
-        globalIndex,
-        ctx,
-        expanded: inputs.expandedDiffs.has(diffEventKey(event, globalIndex)),
+      const expanded = inputs.expandedDiffs.has(diffEventKey(event, globalIndex));
+      const blockKey: EventBlockCacheKey = {
+        width: ctx.width,
+        viewportRows: ctx.viewportRows,
+        expanded,
+        keyPrefix: String(globalIndex),
         dedupTitle,
-      });
+      };
+      let block = getCachedEventRowBlock(event, blockKey);
+      if (block === undefined) {
+        block = eventRowBlock({ event, globalIndex, ctx, expanded, dedupTitle });
+        rememberEventRowBlock(event, blockKey, block);
+      }
       if (block === null) {
         if (!belongsToActivityBatch(event, activityBatch)) flushActivityBatch();
         continue;
@@ -250,9 +271,15 @@ export function buildConversationRowActions(
       if (event.type === 'runner_call_activity') {
         if (activityBatch !== null && activityBatch.callId === event.callId) {
           activityBatch.events.push(event);
+          activityBatch.lastEvent = event;
         } else {
           flushActivityBatch();
-          activityBatch = { callId: event.callId, firstIndex: globalIndex, events: [event] };
+          activityBatch = {
+            callId: event.callId,
+            firstIndex: globalIndex,
+            events: [event],
+            lastEvent: event,
+          };
         }
         continue;
       }

@@ -1,3 +1,4 @@
+import { configStore } from '../../../stores/project/config.js';
 import { sanitizeRowDisplayText } from './row-format.js';
 import type { ConversationRow } from './types.js';
 import {
@@ -37,6 +38,7 @@ export function markdownConversationRowsProjection(
 ): MarkdownConversationRowsProjection {
   const key = markdownRowsIdentityKey(input);
   const sourceText = normalizeMarkdownSource(sanitizeRowDisplayText(input.text));
+  const projectDir = configStore.get().projectDir || undefined;
   const cached = getMarkdownRowsCacheEntry(key);
   if (cached?.sourceText === sourceText) {
     rememberMarkdownRows(key, cached);
@@ -50,6 +52,7 @@ export function markdownConversationRowsProjection(
           sourceText,
           keyPrefix: input.keyPrefix,
           width: input.width,
+          projectDir,
         })
       : createMarkdownRowsCacheEntry({
           sourceText,
@@ -57,6 +60,7 @@ export function markdownConversationRowsProjection(
           width: input.width,
           startChunkIndex: 0,
           startOffset: 0,
+          projectDir,
         });
 
   rememberMarkdownRows(key, next);

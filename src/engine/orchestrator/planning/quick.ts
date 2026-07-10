@@ -1,6 +1,8 @@
 import type { PlanResult } from '../../planners/types.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { collectAndPersistClarifications } from '../clarifications.js';
 import { drainAndFormat } from './queue-drain.js';
 import { handlePlanningFailure } from './failure.js';
 import { runBriefQualityGate } from './brief-quality-gate.js';
@@ -23,6 +25,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
   }
   feature = featureWithRewindFeedback(feature, opts.rewindPending);
 
+  const collectedQuestions: ClarificationQuestion[] = [];
   let planResult: PlanResult;
   try {
     const run = await runPlannerCallInContinuationLoop({
@@ -31,6 +34,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
       planner,
       feature,
       mode: 'quick',
+      collectedQuestions,
       ...(opts.codebaseContext !== undefined ? { codebaseContext: opts.codebaseContext } : {}),
       ...(resumeHolder && resumeHolder.messages.length > 0
         ? { priorMessages: resumeHolder.messages }
@@ -46,6 +50,20 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
 
   persistPhases(projectDir, sessionId, planResult.phases, metadata);
   state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
+
+  if (collectedQuestions.length > 0 && wctx.callbacks.onQuestionAsked) {
+    state = await collectAndPersistClarifications({
+      questions: collectedQuestions,
+      projectDir,
+      sessionId,
+      state,
+      onQuestionAsked: wctx.callbacks.onQuestionAsked,
+      persistTranscript: wctx.config.workflow.persistTranscript,
+      bus: wctx.bus,
+      metadata,
+      planner,
+    });
+  }
 
   if (planResult.tasks.length === 0) {
     return handlePlanningFailure({

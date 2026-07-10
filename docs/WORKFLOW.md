@@ -208,6 +208,16 @@ Upgrade and downgrade advice fire only when `confidence >= 0.65`. Missing-contex
 
 The advisor never auto-switches the mode. It publishes a `mode_advice` event and the footer displays the suggestion. On downgrade it also publishes `mode_downgrade_advised` for backward compatibility.
 
+### Clarification questions
+
+All four modes extract planner `<!-- Q:{...} -->` markers and show the interactive `QuestionPrompt` panel above the composer (`collectAndPersistClarifications` in `src/engine/orchestrator/clarifications.ts`); the marker itself never appears in the transcript, in any mode. The five-question cap holds everywhere.
+
+`standard` and `speckit` collect clarifications mid-plan, after the phase's planner call, and regenerate the affected planning artifacts with the answers before moving on — existing behavior, unchanged by this feature.
+
+`quick` and `instant` ask after their single planner call completes, once tasks are already drafted: each answer is persisted under `## Clarifications` in `spec.md` and queued as a `QueuedMessage` (`origin: 'clarification'`) for the next planner invocation, with a native-inject attempt against the live planner session where the runner supports it. There is no automatic re-plan — `quick` and `instant` stay one planner call each; the answers ride along as queued context rather than triggering a second call.
+
+Skipping, cancelling, or superseding a question lets the workflow proceed; no mode blocks on an answer that never comes.
+
 ---
 
 ## 4. Abort / continue / queue

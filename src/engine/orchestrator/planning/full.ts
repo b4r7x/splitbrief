@@ -53,7 +53,6 @@ async function runNewPlanning(
   const { wctx, planner } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder } = wctx;
   const signal = wctx.signal;
-  const conversational = planner.capabilities.supportsConversationalPlanning;
   let feature = opts.feature;
   const collectedQuestions: ClarificationQuestion[] = [];
 
@@ -103,7 +102,7 @@ async function runNewPlanning(
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'RESEARCH_DONE' });
   publishPlannerStatus(wctx.bus, state, 'running');
 
-  if (conversational && collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
+  if (collectedQuestions.length > 0 && callbacks.onQuestionAsked) {
     state = await collectAndPersistClarifications({
       questions: collectedQuestions,
       projectDir,

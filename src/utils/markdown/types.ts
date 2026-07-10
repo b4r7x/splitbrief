@@ -1,11 +1,8 @@
-export type MarkdownHeadingDepth = 1 | 2 | 3;
+export type MarkdownHeadingDepth = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type MarkdownInlineToken =
-  | { kind: 'text'; text: string }
-  | { kind: 'code'; text: string }
-  | { kind: 'bold'; text: string }
-  | { kind: 'italic'; text: string }
-  | { kind: 'boldItalic'; text: string };
+  | { kind: 'text' | 'code' | 'bold' | 'italic' | 'boldItalic' | 'strikethrough'; text: string }
+  | { kind: 'link'; text: string; href: string };
 
 export interface MarkdownDocument {
   blocks: readonly MarkdownBlock[];
@@ -18,6 +15,8 @@ export type MarkdownBlock =
   | MarkdownCodeBlock
   | MarkdownListBlock
   | MarkdownBlockquoteBlock
+  | MarkdownTableBlock
+  | MarkdownHtmlCommentBlock
   | MarkdownParagraphBlock;
 
 export interface MarkdownFrontmatterBlock {
@@ -69,11 +68,40 @@ export interface MarkdownBlockquoteBlock {
   blocks: readonly MarkdownBlock[];
 }
 
+export type MarkdownTableAlignment = 'left' | 'center' | 'right';
+
+export interface MarkdownTableCell {
+  text: string;
+  inlines: readonly MarkdownInlineToken[];
+}
+
+export interface MarkdownTableBlock {
+  kind: 'table';
+  alignments: readonly MarkdownTableAlignment[];
+  header: readonly MarkdownTableCell[];
+  rows: ReadonlyArray<readonly MarkdownTableCell[]>;
+}
+
+export interface MarkdownHtmlCommentBlock {
+  kind: 'htmlComment';
+  lines: readonly string[];
+}
+
 export interface MarkdownParagraphBlock {
   kind: 'paragraph';
   text: string;
   inlines: readonly MarkdownInlineToken[];
 }
+
+export type MarkdownHighlightScope =
+  | 'keyword'
+  | 'string'
+  | 'comment'
+  | 'number'
+  | 'literal'
+  | 'type'
+  | 'function'
+  | 'punctuation';
 
 export type MarkdownLayoutSegmentKind =
   | MarkdownInlineToken['kind']
@@ -81,11 +109,16 @@ export type MarkdownLayoutSegmentKind =
   | 'metadata'
   | 'rule'
   | 'listMarker'
-  | 'blockquoteMarker';
+  | 'blockquoteMarker'
+  | 'tableBorder'
+  | 'tableHeader';
 
 export interface MarkdownLayoutSegment {
   kind: MarkdownLayoutSegmentKind;
   text: string;
+  href?: string; // 'link' segments only
+  scope?: MarkdownHighlightScope; // 'code' segments only (highlighted fences)
+  depth?: MarkdownHeadingDepth; // 'heading' segments only
 }
 
 export interface MarkdownLayoutLine {

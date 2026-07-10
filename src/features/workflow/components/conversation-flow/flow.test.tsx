@@ -23,7 +23,9 @@ import { ConversationFlow } from './flow.js';
 import { ConversationRowView } from './row-view.js';
 import { colorForTone } from '../../display/tone-color.js';
 import { hoverStore } from '../../../../stores/ui/hover.js';
+import { configStore } from '../../../../stores/project/config.js';
 import * as projectionCache from '../../conversation-rows/projection-cache.js';
+import { resetMarkdownConversationRowsCache } from '../../conversation-rows/markdown-rows.js';
 
 const DONE_MARK = glyph('statusDone');
 const ACTIVITY_DONE_MARK = glyph('stageDone');
@@ -834,7 +836,7 @@ describe('ConversationFlow', () => {
   });
 });
 
-describe('the four-tone palette resolves to exactly the rendered colors', () => {
+describe('the tone palette resolves to exactly the rendered colors', () => {
   for (const mode of ['terminal', 'mono'] as const) {
     const theme = getTheme(mode);
 
@@ -844,6 +846,21 @@ describe('the four-tone palette resolves to exactly the rendered colors', () => 
       expect(colorForTone('textDim', theme)).toBe(theme.textDim);
       expect(colorForTone('success', theme)).toBe(theme.success);
       expect(colorForTone('error', theme)).toBe(theme.error);
+    });
+
+    it(`maps markdown and syntax tones onto their theme tokens in ${mode}`, () => {
+      expect(colorForTone('markdownHeading', theme)).toBe(theme.markdown.heading);
+      expect(colorForTone('markdownLink', theme)).toBe(theme.markdown.link);
+      expect(colorForTone('markdownStrike', theme)).toBe(theme.markdown.strike);
+      expect(colorForTone('markdownTableBorder', theme)).toBe(theme.markdown.tableBorder);
+      expect(colorForTone('syntaxKeyword', theme)).toBe(theme.syntax.keyword);
+      expect(colorForTone('syntaxString', theme)).toBe(theme.syntax.string);
+      expect(colorForTone('syntaxComment', theme)).toBe(theme.syntax.comment);
+      expect(colorForTone('syntaxNumber', theme)).toBe(theme.syntax.number);
+      expect(colorForTone('syntaxLiteral', theme)).toBe(theme.syntax.literal);
+      expect(colorForTone('syntaxType', theme)).toBe(theme.syntax.type);
+      expect(colorForTone('syntaxFunction', theme)).toBe(theme.syntax.function);
+      expect(colorForTone('syntaxPunctuation', theme)).toBe(theme.syntax.punctuation);
     });
 
     it(`keeps dim metadata distinct from primary text and every state hue in ${mode}`, () => {
@@ -909,5 +926,52 @@ describe('conversation hover rendering', () => {
     expect(projectionSpy.mock.calls.length).toBe(callsAfterMount);
     ui.unmount();
     projectionSpy.mockRestore();
+  });
+});
+
+describe('transcript OSC 8 hyperlinks', () => {
+  const originalForceHyperlink = process.env['FORCE_HYPERLINK'];
+
+  function makeFileLinkPlannerText(): Extract<EngineEvent, { type: 'planner_text' }> {
+    return makePlannerTextEvent({
+      ts: 0,
+      phase: 'planning',
+      content: 'markdown',
+      text: '[src/app/root.tsx:14](src/app/root.tsx:14)',
+    });
+  }
+
+  beforeEach(() => {
+    configStore.__testReset({ projectDir: '/repo' });
+    projectionCache.resetConversationRowsProjectionCache();
+    resetMarkdownConversationRowsCache();
+  });
+
+  afterEach(() => {
+    if (originalForceHyperlink === undefined) {
+      delete process.env['FORCE_HYPERLINK'];
+    } else {
+      process.env['FORCE_HYPERLINK'] = originalForceHyperlink;
+    }
+    configStore.__testReset();
+  });
+
+  it('wraps transcript file links in OSC 8 when forced on', () => {
+    process.env['FORCE_HYPERLINK'] = '1';
+    const ui = renderConversation([makeFileLinkPlannerText()], 20, 90);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('\x1b]8;;file://');
+    ui.unmount();
+  });
+
+  it('emits no OSC 8 bytes when hyperlinks are forced off', () => {
+    process.env['FORCE_HYPERLINK'] = '0';
+    const ui = renderConversation([makeFileLinkPlannerText()], 20, 90);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).not.toContain('\x1b]8');
+    expect(frame).toContain('src/app/root.tsx:14');
+    ui.unmount();
   });
 });

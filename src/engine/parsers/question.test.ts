@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { extractQuestionsFromStream, createQuestionAccumulator } from './question.js';
+import {
+  extractQuestionsFromStream,
+  createQuestionAccumulator,
+  createQuestionMarkerStripper,
+} from './question.js';
 
 describe('extractQuestionsFromStream', () => {
   it('extracts multiple questions from text', () => {
@@ -208,5 +212,110 @@ describe('extractQuestionsFromStream — edge cases', () => {
     const text = '<!-- Q:not json -->';
     const questions = extractQuestionsFromStream(text);
     expect(questions.length).toBe(0);
+  });
+});
+
+describe('createQuestionMarkerStripper', () => {
+  const marker = '<!-- Q:{"id":"q1","type":"confirm","text":"Go?"} -->';
+
+  it('strips a complete-marker-only input to the empty string', () => {
+    const stripper = createQuestionMarkerStripper();
+    expect(stripper.push(marker)).toBe('');
+    expect(stripper.flush()).toBe('');
+  });
+
+  it.each([
+    ['<'],
+    ['<!'],
+    ['<!-'],
+    ['<!--'],
+    ['<!-- '],
+    ['<!-- Q'],
+    ['<!-- Q:'],
+  ])('never emits marker text when the stream splits after %j', (prefix) => {
+    const stripper = createQuestionMarkerStripper();
+    const outputs = [
+      stripper.push(`Intro.\n${prefix}`),
+      stripper.push(`${marker.slice(prefix.length)}\nOutro.`),
+      stripper.flush(),
+    ];
+    for (const out of outputs) {
+      expect(out).not.toContain('<!-- Q:');
+    }
+    expect(outputs.join('')).toBe('Intro.\nOutro.');
+  });
+
+  it('never emits marker text when the stream splits inside the closing suffix', () => {
+    const stripper = createQuestionMarkerStripper();
+    const cut = marker.length - 2;
+    const outputs = [
+      stripper.push(`Intro.\n${marker.slice(0, cut)}`),
+      stripper.push(`${marker.slice(cut)}\nOutro.`),
+      stripper.flush(),
+    ];
+    for (const out of outputs) {
+      expect(out).not.toContain('<!-- Q:');
+    }
+    expect(outputs.join('')).toBe('Intro.\nOutro.');
+  });
+
+  it('passes non-question html comments through unchanged', () => {
+    const stripper = createQuestionMarkerStripper();
+    const text = 'Note:\n<!-- note -->\nEnd.';
+    expect(stripper.push(text) + stripper.flush()).toBe(text);
+  });
+
+  it('passes a split non-question comment through unchanged', () => {
+    const stripper = createQuestionMarkerStripper();
+    const out = stripper.push('See <!-- ') + stripper.push('note --> here.') + stripper.flush();
+    expect(out).toBe('See <!-- note --> here.');
+  });
+
+  it('emits held text verbatim when the hold cap overflows', () => {
+    const stripper = createQuestionMarkerStripper();
+    expect(stripper.push('<!-- Q:{"pad":"')).toBe('');
+    const filler = 'x'.repeat(17 * 1024);
+    expect(stripper.push(filler)).toBe(`<!-- Q:{"pad":"${filler}`);
+    expect(stripper.flush()).toBe('');
+  });
+
+  it('flush releases held non-marker residue at stream end', () => {
+    const stripper = createQuestionMarkerStripper();
+    expect(stripper.push('Done <!-- Q:{"id":"q9"')).toBe('Done ');
+    expect(stripper.flush()).toBe('<!-- Q:{"id":"q9"');
+  });
+
+  it('collapses the blank lines around a stripped marker line', () => {
+    const stripper = createQuestionMarkerStripper();
+    const out = stripper.push(`Intro.\n\n${marker}\n\nOutro.`) + stripper.flush();
+    expect(out).toBe('Intro.\n\nOutro.');
+  });
+
+  it('collapses blank lines around a marker split across pushes', () => {
+    const stripper = createQuestionMarkerStripper();
+    const out =
+      stripper.push('Intro.\n\n<!-- Q:{') +
+      stripper.push(`${marker.slice(8)}\n\nOutro.`) +
+      stripper.flush();
+    expect(out).toBe('Intro.\n\nOutro.');
+  });
+
+  it('emits the text between multiple markers', () => {
+    const stripper = createQuestionMarkerStripper();
+    const second = '<!-- Q:{"id":"q2","type":"input","text":"Name?"} -->';
+    const out = stripper.push(`A\n${marker}\nB\n${second}\nC`) + stripper.flush();
+    expect(out).toBe('A\nB\nC');
+  });
+
+  it('releases prose mentioning the marker prefix immediately', () => {
+    const stripper = createQuestionMarkerStripper();
+    const out = stripper.push('Markers look like `<!-- Q:...` in the raw stream.\n');
+    expect(out).toContain('in the raw stream');
+  });
+
+  it('releases a dead candidate with a space after the colon without flush', () => {
+    const stripper = createQuestionMarkerStripper();
+    expect(stripper.push('<!-- Q: {"id":"q1"} -->')).toContain('"id":"q1"');
+    expect(stripper.push('more text')).toContain('more text');
   });
 });

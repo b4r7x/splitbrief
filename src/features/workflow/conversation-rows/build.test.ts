@@ -5,6 +5,7 @@ import type { StreamingOutputState } from '../../../stores/workflow/streaming-ou
 import { makeImplementerGenerate } from '#testing/helpers/events.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { activityBatchKey } from './activity-batch-key.js';
+import { resetEventBlockCache } from './block-cache.js';
 import {
   buildConversationRowActions,
   buildConversationRows,
@@ -520,6 +521,74 @@ describe('buildConversationRowsProjection section spacers', () => {
     expect(spacer?.rowCount).toBe(1);
     // renderableUnits 0 keeps the spacer out of the new-event count and the auto-scroll math.
     expect(spacer?.renderableUnits).toBe(0);
+  });
+});
+
+describe('buildConversationRowsProjection event block cache', () => {
+  it('reuses prior event blocks by identity on append', () => {
+    resetEventBlockCache();
+
+    const userMessage: EngineEventOf<'user_message'> = {
+      type: 'user_message',
+      ts: 0,
+      phase: 'idle',
+      text: 'Add dark-mode toggle',
+    };
+    const firstPlannerText: EngineEventOf<'planner_text'> = {
+      type: 'planner_text',
+      ts: 1,
+      phase: 'analyzing',
+      content: 'markdown',
+      text: 'Looking into the request now.',
+    };
+    const secondPlannerText: EngineEventOf<'planner_text'> = {
+      type: 'planner_text',
+      ts: 2,
+      phase: 'analyzing',
+      content: 'markdown',
+      text: 'Second update landed.',
+    };
+
+    const projectionFor = (items: EngineEvent[]) => {
+      const sections: Section<EngineEvent>[] = [{ type: 'events', startIndex: 0, items }];
+      return buildConversationRowsProjection({
+        sections,
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 88,
+        viewportHeight: 20,
+        streaming,
+      });
+    };
+
+    const first = projectionFor([userMessage, firstPlannerText]);
+    const firstEventBlocks = first.blocks.filter((block) => !block.key.startsWith('spacer-'));
+
+    const second = projectionFor([userMessage, firstPlannerText, secondPlannerText]);
+    const secondEventBlocks = second.blocks.filter((block) => !block.key.startsWith('spacer-'));
+
+    expect(secondEventBlocks[0]).toBe(firstEventBlocks[0]);
+    expect(secondEventBlocks[1]).toBe(firstEventBlocks[1]);
+
+    const incrementalText = materializeConversationRowsWindow({
+      projection: second,
+      windowStart: 0,
+      windowEnd: second.totalRows,
+    })
+      .map(rowText)
+      .join('\n');
+
+    resetEventBlockCache();
+    const fresh = projectionFor([userMessage, firstPlannerText, secondPlannerText]);
+    const freshText = materializeConversationRowsWindow({
+      projection: fresh,
+      windowStart: 0,
+      windowEnd: fresh.totalRows,
+    })
+      .map(rowText)
+      .join('\n');
+
+    expect(incrementalText).toBe(freshText);
   });
 });
 

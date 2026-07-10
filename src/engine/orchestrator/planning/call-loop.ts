@@ -5,6 +5,7 @@ import { withContinuationLoop } from '../continuation.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 import { buildRejectionContext } from '../evidence/reporting.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
+import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { PlannerCallRunResult, PlannerCallOptions } from './types.js';
 
@@ -30,7 +31,6 @@ export async function runPlannerCallInContinuationLoop(
     { bus: wctx.bus, phase: state.phase },
     { content: 'markdown' },
   );
-  const conversational = planner.capabilities.supportsConversationalPlanning;
   let attachmentsConsumed = false;
 
   const heartbeat = startPlannerHeartbeat(wctx.bus, state.phase, Date.now());
@@ -49,6 +49,7 @@ export async function runPlannerCallInContinuationLoop(
         state = s;
       },
       body: async ({ signal: callSignal, continuationPrompt, recordOutput }) => {
+        const stripper = createQuestionMarkerStripper();
         let prompt = continuationPrompt ?? feature;
 
         if (config.approval?.feedRejectionsToPlanner !== false) {
@@ -71,7 +72,8 @@ export async function runPlannerCallInContinuationLoop(
         const plannerCallbacks: PlannerCallbacks = {
           onOutput: (text) => {
             recordOutput(text);
-            textHandler(text);
+            const display = stripper.push(text);
+            if (display.length > 0) textHandler(display);
           },
           onWarning: (message) =>
             publishWarning({ bus: wctx.bus, phase: state.phase, message: message }),
@@ -100,7 +102,7 @@ export async function runPlannerCallInContinuationLoop(
           ...(state.discoveredValidation !== undefined
             ? { discoveredValidation: state.discoveredValidation }
             : {}),
-          ...(mode === 'speckit' && conversational && collectedQuestions
+          ...(collectedQuestions
             ? {
                 onQuestion: (questions) => {
                   for (const q of questions) {
@@ -121,6 +123,8 @@ export async function runPlannerCallInContinuationLoop(
             callbacks: plannerCallbacks,
             codebaseContext,
           });
+          const rest = stripper.flush();
+          if (rest.length > 0) textHandler(rest);
           return { value: result };
         }
         const result = await planner.plan({
@@ -130,6 +134,8 @@ export async function runPlannerCallInContinuationLoop(
           skillsContext,
           codebaseContext,
         });
+        const rest = stripper.flush();
+        if (rest.length > 0) textHandler(rest);
         return { value: result };
       },
     });

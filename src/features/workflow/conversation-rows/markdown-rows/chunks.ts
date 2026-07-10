@@ -6,13 +6,18 @@ import {
   isMarkdownFenceCloseLine as isFenceCloseLine,
   isMarkdownFenceStartLine as isFenceStartLine,
   isMarkdownHeadingLine as isHeadingLine,
+  isMarkdownHtmlCommentStartLine as isHtmlCommentStartLine,
   isMarkdownListItemLine as isListItemLine,
+  isMarkdownTableLine as isTableLine,
+  isMarkdownTableSeparatorLine as isTableSeparatorLine,
   isMarkdownThematicBreakLine as isThematicBreakLine,
   isMarkdownYamlContinuationLine as isYamlContinuationLine,
   markdownFenceMarker as fenceMarker,
+  markdownHtmlCommentEndsOnLine as commentEndsOnLine,
   parseMarkdownYamlKey as parseYamlKey,
 } from '../../../../utils/markdown/grammar.js';
 import { layoutMarkdown } from '../../../../utils/markdown/layout.js';
+import { repairMarkdownTailChunk } from '../../../../utils/markdown/repair.js';
 import type {
   MarkdownLayoutChunk,
   MarkdownRowsCacheEntry,
@@ -30,6 +35,7 @@ export function appendMarkdownRowsCacheEntry(input: {
   sourceText: string;
   keyPrefix: string;
   width: number;
+  projectDir: string | undefined;
 }): MarkdownRowsCacheEntry {
   const reuseCount = appendMarkdownRowsReuseCount(input.cached, input.sourceText);
   const reusedChunks = input.cached.chunks.slice(0, reuseCount);
@@ -44,6 +50,7 @@ export function appendMarkdownRowsCacheEntry(input: {
     sourceText: input.sourceText,
     keyPrefix: input.keyPrefix,
     chunks: [...reusedChunks, ...tailChunks],
+    projectDir: input.projectDir,
   });
 }
 
@@ -53,11 +60,13 @@ export function createMarkdownRowsCacheEntry(input: {
   width: number;
   startChunkIndex: number;
   startOffset: number;
+  projectDir: string | undefined;
 }): MarkdownRowsCacheEntry {
   return createMarkdownRowsCacheEntryFromChunks({
     sourceText: input.sourceText,
     keyPrefix: input.keyPrefix,
     chunks: createMarkdownLayoutChunks(input),
+    projectDir: input.projectDir,
   });
 }
 
@@ -186,11 +195,13 @@ function createMarkdownLayoutChunks(input: {
   startChunkIndex: number;
   startOffset: number;
 }): MarkdownLayoutChunk[] {
-  return markdownSourceChunks(input.sourceText, input.startOffset).map((chunk, index) =>
+  const sourceChunks = markdownSourceChunks(input.sourceText, input.startOffset);
+  return sourceChunks.map((chunk, index) =>
     layoutMarkdownSourceChunk({
       chunk,
       width: input.width,
       chunkIndex: input.startChunkIndex + index,
+      isTailChunk: index === sourceChunks.length - 1,
     }),
   );
 }
@@ -199,23 +210,53 @@ function layoutMarkdownSourceChunk(input: {
   chunk: MarkdownSourceChunk;
   width: number;
   chunkIndex: number;
+  isTailChunk: boolean;
 }): MarkdownLayoutChunk {
+  const laidOut = buildMarkdownLayoutChunk(input.chunk, input.width, input.chunkIndex);
+  if (!input.isTailChunk) return laidOut;
+  const firstLine = firstChunkLine(input.chunk.text);
+  // Blockquote/table bodies can hold fence backticks or odd inline backticks that tail repair
+  // would "close" with a stray literal backtick, so they skip repair like fence chunks do.
+  if (isFenceStartLine(firstLine) || isBlockquoteLine(firstLine) || isTableLine(firstLine)) {
+    return laidOut;
+  }
+  if (isMetadataChunk(laidOut)) return laidOut;
+
+  const repairedText = repairMarkdownTailChunk(input.chunk.text);
+  if (repairedText === input.chunk.text) return laidOut;
+  return buildMarkdownLayoutChunk(
+    { ...input.chunk, text: repairedText },
+    input.width,
+    input.chunkIndex,
+  );
+}
+
+function buildMarkdownLayoutChunk(
+  chunk: MarkdownSourceChunk,
+  width: number,
+  chunkIndex: number,
+): MarkdownLayoutChunk {
   const document =
-    input.chunk.startOffset === 0
-      ? parseMarkdownBlocks(input.chunk.text)
-      : parseMarkdownContinuationChunk(input.chunk.text);
-  const layout = layoutMarkdown(document, { width: input.width });
+    chunk.startOffset === 0
+      ? parseMarkdownBlocks(chunk.text)
+      : parseMarkdownContinuationChunk(chunk.text);
+  const layout = layoutMarkdown(document, { width });
   const rows = layout.rows.map((rowValue) => ({
     ...rowValue,
-    key: `chunk-${input.chunkIndex}-${rowValue.key}`,
+    key: `chunk-${chunkIndex}-${rowValue.key}`,
   }));
 
   return {
-    startOffset: input.chunk.startOffset,
-    endOffset: input.chunk.endOffset,
+    startOffset: chunk.startOffset,
+    endOffset: chunk.endOffset,
     rows,
     height: layout.height,
   };
+}
+
+function firstChunkLine(text: string): string {
+  const newlineIndex = text.indexOf('\n');
+  return newlineIndex === -1 ? text : text.slice(0, newlineIndex);
 }
 
 function parseMarkdownContinuationChunk(text: string): ReturnType<typeof parseMarkdownBlocks> {
@@ -254,6 +295,20 @@ function markdownSourceChunks(sourceText: string, startOffset: number): Markdown
     if (isHeadingLine(line.text) || isThematicBreakLine(line.text)) {
       chunks.push(sourceChunkFromLines(sourceText, startOffset, lines, index, index + 1));
       index += 1;
+      continue;
+    }
+
+    if (isTableLine(line.text) && isTableSeparatorLine(lines[index + 1]?.text ?? '')) {
+      const endIndex = tableEndIndex(lines, index);
+      chunks.push(sourceChunkFromLines(sourceText, startOffset, lines, index, endIndex));
+      index = endIndex;
+      continue;
+    }
+
+    if (isHtmlCommentStartLine(line.text)) {
+      const endIndex = htmlCommentEndIndex(lines, index);
+      chunks.push(sourceChunkFromLines(sourceText, startOffset, lines, index, endIndex));
+      index = endIndex;
       continue;
     }
 
@@ -483,29 +538,49 @@ function blockquoteEndIndex(lines: readonly MarkdownSourceLine[], startIndex: nu
   return cursor;
 }
 
+function tableEndIndex(lines: readonly MarkdownSourceLine[], startIndex: number): number {
+  let cursor = startIndex;
+  while (cursor < lines.length && isTableLine(lines[cursor]?.text ?? '')) {
+    cursor += 1;
+  }
+  return cursor;
+}
+
+function htmlCommentEndIndex(lines: readonly MarkdownSourceLine[], startIndex: number): number {
+  let cursor = startIndex;
+  while (cursor < lines.length) {
+    const text = lines[cursor]?.text ?? '';
+    cursor += 1;
+    if (commentEndsOnLine(text)) return cursor;
+  }
+  return lines.length;
+}
+
 function paragraphEndIndex(lines: readonly MarkdownSourceLine[], startIndex: number): number {
   let cursor = startIndex;
 
   while (cursor < lines.length) {
     const line = lines[cursor];
     if (line === undefined || line.text.trim().length === 0) break;
-    if (cursor > startIndex && startsMarkdownBlock(line.text)) break;
+    if (cursor > startIndex && startsMarkdownBlock(line.text, lines[cursor + 1]?.text)) break;
 
     cursor += 1;
 
     const next = lines[cursor];
-    if (next !== undefined && startsMarkdownBlock(next.text)) break;
+    if (next !== undefined && startsMarkdownBlock(next.text, lines[cursor + 1]?.text)) break;
   }
 
   return cursor;
 }
 
-function startsMarkdownBlock(line: string): boolean {
+function startsMarkdownBlock(line: string, nextLine: string | undefined): boolean {
   return (
     isFenceStartLine(line) ||
     isHeadingLine(line) ||
     isThematicBreakLine(line) ||
     isListItemLine(line) ||
-    isBlockquoteLine(line)
+    isBlockquoteLine(line) ||
+    (isTableLine(line) && isTableSeparatorLine(nextLine ?? '')) ||
+    isHtmlCommentStartLine(line)
   );
 }

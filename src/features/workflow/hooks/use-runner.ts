@@ -8,6 +8,9 @@ import type { EngineEvent } from '../../../engine/events/types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import { resetWorkflow } from '../../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows.js';
+import { resetConversationRowsProjectionCache } from '../conversation-rows/projection-cache.js';
+import { resetEventBlockCache } from '../conversation-rows/block-cache.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache.js';
@@ -139,6 +142,9 @@ export function useWorkflowRunner({
     }
 
     resetWorkflow(stateForRun);
+    resetMarkdownConversationRowsCache();
+    resetConversationRowsProjectionCache();
+    resetEventBlockCache();
     if (pendingRewindEventRef.current) {
       addTuiEvent(pendingRewindEventRef.current, {
         persistTranscript: activeConfig().workflow.persistTranscript,

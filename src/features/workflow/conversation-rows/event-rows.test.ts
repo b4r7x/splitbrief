@@ -62,7 +62,7 @@ describe('eventRows', () => {
     expect(text).not.toContain('```');
     expect(heading?.segments).toContainEqual({
       text: 'Description',
-      tone: 'text',
+      tone: 'markdownHeading',
       bold: true,
     });
   });

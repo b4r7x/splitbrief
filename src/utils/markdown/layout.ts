@@ -1,6 +1,7 @@
 import type {
   MarkdownBlock,
   MarkdownDocument,
+  MarkdownHeadingDepth,
   MarkdownInlineToken,
   MarkdownLayout,
   MarkdownLayoutLine,
@@ -9,6 +10,14 @@ import type {
   MarkdownListItem,
 } from './types.js';
 import { getTerminalCellWidth, splitTerminalGraphemes } from '../display-text.js';
+import { highlightMarkdownCode, type MarkdownHighlightSpan } from './highlight.js';
+import {
+  appendSegment,
+  inlineTokenToSegment,
+  measureSegments,
+  trimTrailingSpace,
+} from './layout-segments.js';
+import { layoutMarkdownTable } from './layout-table.js';
 import { assertNever } from '../type-guards.js';
 
 interface LayoutOptions {
@@ -51,7 +60,13 @@ function layoutBlock(block: MarkdownBlock, width: number, key: string): Markdown
         createRow(
           key,
           block.kind,
-          wrapSegments(block.inlines.map(headingTokenToSegment), [], [], width, 'word'),
+          wrapSegments(
+            block.inlines.map((token) => headingTokenToSegment(token, block.depth)),
+            [],
+            [],
+            width,
+            'word',
+          ),
         ),
       ];
     case 'thematicBreak':
@@ -60,7 +75,11 @@ function layoutBlock(block: MarkdownBlock, width: number, key: string): Markdown
           { segments: [{ kind: 'rule', text: THEMATIC_BREAK_CHAR.repeat(Math.max(1, width)) }] },
         ]),
       ];
-    case 'code':
+    case 'code': {
+      const highlighted = highlightMarkdownCode({ lines: block.lines, language: block.language });
+      if (highlighted !== null) {
+        return [layoutHighlightedCode(key, highlighted, width)];
+      }
       return [
         layoutLiteralLines(
           block.kind,
@@ -72,10 +91,15 @@ function layoutBlock(block: MarkdownBlock, width: number, key: string): Markdown
           width,
         ),
       ];
+    }
     case 'list':
       return block.items.map((item, index) => layoutListItem(item, width, `${key}-${index}`));
     case 'blockquote':
       return layoutBlockquote(block.blocks, width, key);
+    case 'table':
+      return layoutMarkdownTable({ block, width, key });
+    case 'htmlComment':
+      return [];
     case 'paragraph':
       return [
         createRow(
@@ -109,6 +133,31 @@ function layoutLiteralLines(
     ),
   );
   return createRow(key, kind, layoutLines);
+}
+
+function layoutHighlightedCode(
+  key: string,
+  spanLines: readonly (readonly MarkdownHighlightSpan[])[],
+  width: number,
+): MarkdownLayoutRow {
+  const lines = spanLines.length > 0 ? spanLines : [[]];
+  const layoutLines = lines.flatMap((spans) =>
+    wrapSegments(
+      spans.map(highlightSpanToSegment),
+      literalPrefix(),
+      literalPrefix(),
+      width,
+      'hard',
+    ),
+  );
+  return createRow(key, 'code', layoutLines);
+}
+
+function highlightSpanToSegment(span: MarkdownHighlightSpan): MarkdownLayoutSegment {
+  if (span.scope === undefined) {
+    return { kind: 'code', text: span.text };
+  }
+  return { kind: 'code', text: span.text, scope: span.scope };
 }
 
 function layoutListItem(item: MarkdownListItem, width: number, key: string): MarkdownLayoutRow {
@@ -191,13 +240,7 @@ function wrapSegments(
   };
 
   const appendPart = (segment: MarkdownLayoutSegment, text: string) => {
-    if (text.length === 0) return;
-    const last = current[current.length - 1];
-    if (last?.kind === segment.kind) {
-      current[current.length - 1] = { kind: last.kind, text: `${last.text}${text}` };
-    } else {
-      current.push({ kind: segment.kind, text });
-    }
+    appendSegment(current, { ...segment, text });
     currentLength += getTerminalCellWidth(text);
   };
 
@@ -272,28 +315,14 @@ function wrapSegments(
   return lines;
 }
 
-function headingTokenToSegment(token: MarkdownInlineToken): MarkdownLayoutSegment {
+function headingTokenToSegment(
+  token: MarkdownInlineToken,
+  depth: MarkdownHeadingDepth,
+): MarkdownLayoutSegment {
   if (token.kind === 'text') {
-    return { kind: 'heading', text: token.text };
+    return { kind: 'heading', text: token.text, depth };
   }
   return inlineTokenToSegment(token);
-}
-
-function inlineTokenToSegment(token: MarkdownInlineToken): MarkdownLayoutSegment {
-  switch (token.kind) {
-    case 'text':
-      return { kind: 'text', text: token.text };
-    case 'code':
-      return { kind: 'code', text: token.text };
-    case 'bold':
-      return { kind: 'bold', text: token.text };
-    case 'italic':
-      return { kind: 'italic', text: token.text };
-    case 'boldItalic':
-      return { kind: 'boldItalic', text: token.text };
-    default:
-      return assertNever(token);
-  }
 }
 
 function literalPrefix(): MarkdownLayoutSegment[] {
@@ -304,23 +333,8 @@ function isHardWrappedSegment(segment: MarkdownLayoutSegment): boolean {
   return segment.kind === 'code';
 }
 
-function trimTrailingSpace(segments: readonly MarkdownLayoutSegment[]): MarkdownLayoutSegment[] {
-  const trimmed = cloneSegments(segments);
-  while (trimmed.length > 0) {
-    const last = trimmed[trimmed.length - 1];
-    if (last === undefined) break;
-    const text = last.text.replace(/\s+$/g, '');
-    if (text.length > 0) {
-      trimmed[trimmed.length - 1] = { kind: last.kind, text };
-      break;
-    }
-    trimmed.pop();
-  }
-  return trimmed;
-}
-
 function cloneSegments(segments: readonly MarkdownLayoutSegment[]): MarkdownLayoutSegment[] {
-  return segments.map((segment) => ({ kind: segment.kind, text: segment.text }));
+  return segments.map((segment) => ({ ...segment }));
 }
 
 function takeLeadingGraphemes(
@@ -338,10 +352,6 @@ function takeLeadingGraphemes(
   }
 
   return { text: parts.join(''), count: parts.length };
-}
-
-function measureSegments(segments: readonly MarkdownLayoutSegment[]): number {
-  return segments.reduce((sum, segment) => sum + getTerminalCellWidth(segment.text), 0);
 }
 
 function normalizeWidth(width: number): number {

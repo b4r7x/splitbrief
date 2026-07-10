@@ -54,7 +54,7 @@ export function isMarkdownFenceCloseLine(line: string, marker: string): boolean 
 }
 
 export function parseMarkdownHeadingStart(line: string): MarkdownHeadingStart | undefined {
-  const match = /^(#{1,3})\s+(.+?)\s*$/.exec(line);
+  const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
   const marker = match?.[1];
   const text = match?.[2];
   return marker && text ? { marker, text } : undefined;
@@ -74,6 +74,22 @@ export function isMarkdownListItemLine(line: string): boolean {
 
 export function isMarkdownBlockquoteLine(line: string): boolean {
   return /^ {0,3}>\s?.*$/.test(line);
+}
+
+export function isMarkdownTableLine(line: string): boolean {
+  return line.trimStart().startsWith('|');
+}
+
+export function isMarkdownTableSeparatorLine(line: string): boolean {
+  return /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/.test(line);
+}
+
+export function isMarkdownHtmlCommentStartLine(line: string): boolean {
+  return line.trimStart().startsWith('<!--');
+}
+
+export function markdownHtmlCommentEndsOnLine(line: string): boolean {
+  return line.includes('-->');
 }
 
 export function isMarkdownYamlLikeLine(line: string): boolean {

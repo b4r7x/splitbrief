@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme, type Theme } from '../../../../components/theme.js';
 import { glyph } from '../../../../lib/glyphs.js';
+import { osc8Hyperlink, terminalSupportsHyperlinks } from '../../../../lib/terminal/hyperlinks.js';
 import { getTerminalCellWidth, stripTerminalControls } from '../../../../utils/display-text.js';
 import type { ConversationRow, ConversationRowSegment } from '../../conversation-rows/types.js';
 import {
@@ -14,14 +15,19 @@ import { prefersReducedMotion } from '../../display/reduce-motion.js';
 
 function RowSegment({ segment }: { segment: ConversationRowSegment }) {
   const t = useTheme();
-  const text = stripTerminalControls(segment.text);
+  const cleanText = stripTerminalControls(segment.text);
+  const content =
+    segment.href !== undefined && terminalSupportsHyperlinks()
+      ? osc8Hyperlink({ label: cleanText, href: segment.href })
+      : cleanText;
   return (
     <Text
       color={colorForTone(segment.tone, t)}
       bold={segment.bold === true}
       italic={segment.italic === true}
+      strikethrough={segment.strikethrough === true}
     >
-      {text}
+      {content}
     </Text>
   );
 }

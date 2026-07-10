@@ -35,6 +35,19 @@ export interface Theme {
     blockquote: string;
     list: string;
     rule: string;
+    link: string;
+    strike: string;
+    tableBorder: string;
+  };
+  syntax: {
+    keyword: string;
+    string: string;
+    comment: string;
+    number: string;
+    literal: string;
+    type: string;
+    function: string;
+    punctuation: string;
   };
   cursor: {
     fg: string;
@@ -84,6 +97,19 @@ const terminalTheme: Theme = {
     blockquote: 'gray',
     list: 'cyan',
     rule: 'gray',
+    link: 'cyan',
+    strike: 'gray',
+    tableBorder: 'gray',
+  },
+  syntax: {
+    keyword: 'magenta',
+    string: 'green',
+    comment: 'gray',
+    number: 'yellow',
+    literal: 'yellow',
+    type: 'cyan',
+    function: 'blue',
+    punctuation: 'gray',
   },
   cursor: {
     fg: 'black',
@@ -133,6 +159,19 @@ const monoTheme: Theme = {
     blockquote: '#828bb8',
     list: '#7aa2f7',
     rule: '#3b3b3b',
+    link: '#7aa2f7',
+    strike: '#666666',
+    tableBorder: '#3b3b3b',
+  },
+  syntax: {
+    keyword: '#bb9af7',
+    string: '#9ece6a',
+    comment: '#565f89',
+    number: '#ff9e64',
+    literal: '#ff9e64',
+    type: '#2ac3de',
+    function: '#7aa2f7',
+    punctuation: '#828bb8',
   },
   cursor: {
     fg: '#1a1a1a',

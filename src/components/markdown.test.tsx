@@ -1,9 +1,53 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { Box } from 'ink';
-import { renderMarkdownRows } from './markdown.js';
+import { getTerminalCellWidth } from '../utils/display-text.js';
+import { renderMarkdownRows, type RenderMarkdownRowsOptions } from './markdown.js';
 import { getTheme } from './theme.js';
+
+// ink-testing-library's stdout mock resolves chalk color level 0 unless FORCE_COLOR is set before
+// ink (and its chalk dependency) first load, so every color assertion below would silently no-op
+// without this. Restored in afterAll so it never leaks into other test files.
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
+
+const NAMED_COLOR_CODES: Record<string, number> = { cyan: 36, white: 37, gray: 90 };
+function sgrFor(color: string): string {
+  if (!color.startsWith('#')) {
+    const code = NAMED_COLOR_CODES[color];
+    if (code === undefined) throw new Error(`unmapped color ${color}`);
+    return `\x1b[${code}m`;
+  }
+  const [r, g, b] = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
+  return `\x1b[38;2;${r};${g};${b}m`;
+}
+
+async function renderMarkdown(
+  options: RenderMarkdownRowsOptions,
+): Promise<{ raw: string; stripped: string; unmount: () => void }> {
+  const rows = renderMarkdownRows(options);
+  const ui = renderFeature(
+    <Box flexDirection="column">
+      {rows.map((row) => (
+        <Box key={row.key} flexDirection="column">
+          {row.node}
+        </Box>
+      ))}
+    </Box>,
+  );
+  await tick(20);
+  const raw = ui.lastFrame() ?? '';
+  return { raw, stripped: stripAnsiStyles(raw), unmount: ui.unmount };
+}
 
 const markdownSample = [
   '---',
@@ -126,5 +170,227 @@ describe('Markdown', () => {
     expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz');
 
     ui.unmount();
+  });
+});
+
+describe('inline links (REQ-002, REQ-010)', () => {
+  const originalForceHyperlink = process.env['FORCE_HYPERLINK'];
+
+  beforeEach(() => {
+    process.env['FORCE_HYPERLINK'] = '0';
+  });
+
+  afterEach(() => {
+    if (originalForceHyperlink === undefined) delete process.env['FORCE_HYPERLINK'];
+    else process.env['FORCE_HYPERLINK'] = originalForceHyperlink;
+  });
+
+  it('renders a styled label without the raw link syntax or target', async () => {
+    const theme = getTheme();
+    const { raw, stripped, unmount } = await renderMarkdown({
+      source: '[Read the docs](https://example.com/docs)',
+      width: 60,
+      theme,
+    });
+
+    expect(stripped).toContain('Read the docs');
+    expect(stripped).not.toContain('](');
+    expect(stripped).not.toContain('https://example.com/docs');
+    expect(raw).toContain(sgrFor(theme.markdown.link));
+    expect(raw).toContain('\x1b[4m');
+    unmount();
+  });
+
+  it('keeps a non-URL link target out of the visible frame', async () => {
+    const { stripped, unmount } = await renderMarkdown({
+      source: '[README](docs/readme.md)',
+      width: 60,
+      theme: getTheme(),
+    });
+
+    expect(stripped).toContain('README');
+    expect(stripped).not.toContain('docs/readme.md');
+    unmount();
+  });
+});
+
+describe('GFM pipe tables (REQ-003)', () => {
+  it('renders a well-formed table with aligned columns and a distinguished header', async () => {
+    const theme = getTheme();
+    const source = ['| Name | Age |', '| --- | --- |', '| Alice | 30 |', '| Bob | 40 |'].join('\n');
+    const { raw, stripped, unmount } = await renderMarkdown({ source, width: 40, theme });
+
+    expect(stripped).toContain('Name');
+    expect(stripped).toContain('Age');
+    expect(stripped).toContain('Alice');
+    expect(stripped).toContain('Bob');
+    expect(stripped).not.toContain('---');
+    expect(raw).toContain(sgrFor(theme.markdown.heading));
+
+    const tableLines = stripped.split('\n').filter((line) => line.includes('│'));
+    expect(tableLines.length).toBeGreaterThan(1);
+    const separatorColumns = tableLines.map((line) => line.indexOf('│'));
+    expect(new Set(separatorColumns).size).toBe(1);
+    unmount();
+  });
+
+  it('degrades a table wider than the available width without exceeding it', async () => {
+    const width = 20;
+    const source = [
+      '| VeryLongHeaderColumnNameHere | Short |',
+      '| --- | --- |',
+      '| an overflowing body cell value | y |',
+    ].join('\n');
+    const { stripped, unmount } = await renderMarkdown({ source, width, theme: getTheme() });
+
+    const lines = stripped.split('\n').filter((line) => line.length > 0);
+    expect(lines.length).toBeGreaterThan(0);
+    for (const line of lines) {
+      expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(width);
+    }
+    expect(stripped).not.toContain('---');
+    unmount();
+  });
+});
+
+describe('headings depth 4-6 (REQ-004)', () => {
+  it.each([
+    { depth: 4, marker: '####' },
+    { depth: 5, marker: '#####' },
+    { depth: 6, marker: '######' },
+  ])('renders a depth-$depth heading without a literal marker prefix', async ({ marker }) => {
+    const { stripped, unmount } = await renderMarkdown({
+      source: `${marker} Section Title`,
+      width: 40,
+      theme: getTheme(),
+    });
+
+    expect(stripped).toContain('Section Title');
+    expect(stripped).not.toContain('#');
+    unmount();
+  });
+});
+
+describe('strikethrough (REQ-005)', () => {
+  it('renders strikethrough text without the tilde delimiters', async () => {
+    const { stripped, unmount } = await renderMarkdown({
+      source: '~~deprecated~~',
+      width: 40,
+      theme: getTheme(),
+    });
+
+    expect(stripped).toContain('deprecated');
+    expect(stripped).not.toContain('~~');
+    unmount();
+  });
+});
+
+describe('heading color theming (REQ-006)', () => {
+  it.each([
+    { preset: 'terminal' as const, source: '## T', depth: 2 },
+    { preset: 'terminal' as const, source: '##### T', depth: 5 },
+    { preset: 'mono' as const, source: '## T', depth: 2 },
+    { preset: 'mono' as const, source: '##### T', depth: 5 },
+  ])('resolves the heading color from theme.markdown.heading ($preset depth $depth)', async ({
+    preset,
+    source,
+  }) => {
+    const theme = getTheme(preset);
+    const { raw, unmount } = await renderMarkdown({ source, width: 40, theme });
+
+    expect(raw).toContain(sgrFor(theme.markdown.heading));
+    unmount();
+  });
+});
+
+describe('fenced code highlighting (REQ-007)', () => {
+  it('renders a ts fence with at least two distinct syntax colors', async () => {
+    const theme = getTheme('mono');
+    const source = ['```ts', "const x = 'y';", '```'].join('\n');
+    const { raw, unmount } = await renderMarkdown({ source, width: 40, theme });
+
+    expect(raw).toContain(sgrFor(theme.syntax.keyword));
+    expect(raw).toContain(sgrFor(theme.syntax.string));
+    unmount();
+  });
+
+  it('renders an unknown-tag fence in the monochrome code style with no syntax color', async () => {
+    const theme = getTheme('mono');
+    const source = ['```zzz', "const x = 'y';", '```'].join('\n');
+    const { raw, stripped, unmount } = await renderMarkdown({ source, width: 40, theme });
+
+    for (const scopeColor of Object.values(theme.syntax)) {
+      expect(raw).not.toContain(sgrFor(scopeColor));
+    }
+    expect(stripped).toContain("const x = 'y';");
+    unmount();
+  });
+});
+
+describe('OSC 8 hyperlink environment (REQ-012, REQ-013)', () => {
+  const originalForceHyperlink = process.env['FORCE_HYPERLINK'];
+  const originalTermProgram = process.env['TERM_PROGRAM'];
+
+  afterEach(() => {
+    if (originalForceHyperlink === undefined) delete process.env['FORCE_HYPERLINK'];
+    else process.env['FORCE_HYPERLINK'] = originalForceHyperlink;
+    if (originalTermProgram === undefined) delete process.env['TERM_PROGRAM'];
+    else process.env['TERM_PROGRAM'] = originalTermProgram;
+  });
+
+  it('wraps a file-path link label in an OSC 8 file:// sequence when forced on', async () => {
+    process.env['FORCE_HYPERLINK'] = '1';
+    const { raw, unmount } = await renderMarkdown({
+      source: '[src/app/root.tsx:14](src/app/root.tsx:14)',
+      width: 60,
+      theme: getTheme(),
+      projectDir: '/repo',
+    });
+
+    expect(raw).toContain('\x1b]8;;file://');
+    unmount();
+  });
+
+  it('falls back to themed styled text with zero OSC 8 bytes when forced off', async () => {
+    process.env['FORCE_HYPERLINK'] = '0';
+    const { raw, stripped, unmount } = await renderMarkdown({
+      source: '[src/app/root.tsx:14](src/app/root.tsx:14)',
+      width: 60,
+      theme: getTheme(),
+      projectDir: '/repo',
+    });
+
+    expect(raw).not.toContain('\x1b]8');
+    expect(stripped).toContain('src/app/root.tsx:14');
+    unmount();
+  });
+
+  it('falls back to plain labels under Apple Terminal with no forcing env set', async () => {
+    delete process.env['FORCE_HYPERLINK'];
+    process.env['TERM_PROGRAM'] = 'Apple_Terminal';
+    const { raw, unmount } = await renderMarkdown({
+      source: '[src/app/root.tsx:14](src/app/root.tsx:14)',
+      width: 60,
+      theme: getTheme(),
+      projectDir: '/repo',
+    });
+
+    expect(raw).not.toContain('\x1b]8');
+    unmount();
+  });
+});
+
+describe('HTML comments render invisibly (REQ-016)', () => {
+  it.each([
+    { name: 'a generic comment', source: '<!-- note -->' },
+    {
+      name: 'a Q-marker comment',
+      source: '<!-- Q:{"id":"q1","type":"choice","text":"?","options":["a","b"],"default":0} -->',
+    },
+  ])('produces no visible text for $name', async ({ source }) => {
+    const { stripped, unmount } = await renderMarkdown({ source, width: 40, theme: getTheme() });
+
+    expect(stripped.trim()).toBe('');
+    unmount();
   });
 });

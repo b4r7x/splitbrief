@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { Box } from 'ink';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from '../../composer.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -65,10 +65,15 @@ describe('useCommandCompletion submit routing', () => {
 
     ui.stdin.write('/nope');
     await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('/nope');
+    });
     ui.stdin.write(ENTER);
     await tick(20);
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/nope']);
+    });
 
-    expect(commandCalls).toEqual(['/nope']);
     expect(submits).toEqual([]);
     ui.unmount();
   });
@@ -78,10 +83,15 @@ describe('useCommandCompletion submit routing', () => {
 
     ui.stdin.write('/copy path');
     await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('/copy path');
+    });
     ui.stdin.write(ENTER);
     await tick(20);
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/copy path']);
+    });
 
-    expect(commandCalls).toEqual(['/copy path']);
     expect(submits).toEqual([]);
     ui.unmount();
   });
@@ -91,10 +101,14 @@ describe('useCommandCompletion submit routing', () => {
 
     ui.stdin.write('/queue clear');
     await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('/queue clear');
+    });
     ui.stdin.write(ENTER);
     await tick(20);
-
-    expect(commandCalls).toEqual(['/queue clear']);
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/queue clear']);
+    });
     ui.unmount();
   });
 
@@ -103,10 +117,14 @@ describe('useCommandCompletion submit routing', () => {
 
     ui.stdin.write('/cop');
     await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('/cop');
+    });
     ui.stdin.write(ENTER);
     await tick(20);
-
-    expect(commandCalls).toEqual(['/copy']);
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/copy']);
+    });
     ui.unmount();
   });
 });

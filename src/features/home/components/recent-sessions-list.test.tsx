@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLIPBOARD_EXEC_WAIT_MS,
   installClipboardExecFixture,
   readClipboardExecCalls,
   resetClipboardExecFixture,
@@ -250,7 +251,7 @@ describe('RecentSessionsList', () => {
 
     await vi.waitFor(() => {
       expect(readClipboardExecCalls().at(-1)?.stdin).toBe('alpha');
-    });
+    }, CLIPBOARD_EXEC_WAIT_MS);
     expect(selected).toBeNull();
     expect(closed).toBe(0);
     const frame = ui.lastFrame() ?? '';
@@ -280,7 +281,7 @@ describe('RecentSessionsList', () => {
 
     await vi.waitFor(() => {
       expect(readClipboardExecCalls().at(-1)?.stdin).toBe('bravo');
-    });
+    }, CLIPBOARD_EXEC_WAIT_MS);
     ui.unmount();
   });
 

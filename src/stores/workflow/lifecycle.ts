@@ -22,9 +22,11 @@ function isInfrastructurePhaseEvent(event: EngineEvent): boolean {
 
 type RunningPhase = Exclude<Phase, 'complete'>;
 type LifecycleStatus = 'idle' | 'running' | 'complete' | 'cancelled';
+type PhaseFirstSeenTs = Readonly<Partial<Record<Phase, number>>>;
 
 interface LifecycleBase {
   queueDepth: number;
+  phaseFirstSeenTs: PhaseFirstSeenTs;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
@@ -78,6 +80,7 @@ interface LifecycleResetState {
   status?: LifecycleStatus | undefined;
   cancelled?: boolean | undefined;
   queueDepth?: number | undefined;
+  phaseFirstSeenTs?: PhaseFirstSeenTs | undefined;
   startedAt?: number | null | undefined;
   endedAt?: number | null | undefined;
   durationMs?: number | null | undefined;
@@ -89,6 +92,7 @@ const initial: LifecycleState = {
   status: 'idle',
   cancelled: false,
   queueDepth: 0,
+  phaseFirstSeenTs: {},
   startedAt: null,
   endedAt: null,
   durationMs: null,
@@ -119,6 +123,7 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
     return runningLifecycleState({
       phase: phase ?? state.phase,
       queueDepth: state.queueDepth,
+      phaseFirstSeenTs: phase === undefined ? {} : { [phase]: event.ts },
       startedAt: event.ts,
     });
   }
@@ -127,6 +132,7 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
     return runningLifecycleState({
       phase: phase ?? state.phase,
       queueDepth: state.queueDepth,
+      phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, event.ts),
       startedAt: state.startedAt ?? event.ts,
     });
   }
@@ -194,6 +200,7 @@ export function markLifecycleCancellationRequested(
     status: 'cancelled',
     cancelled: true,
     queueDepth: state.queueDepth,
+    phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, cancellation.ts),
     startedAt: state.startedAt,
     endedAt: cancellation.ts,
     durationMs: durationFromStart(state.startedAt, cancellation.ts),
@@ -212,6 +219,7 @@ function markLifecycleComplete(
     status: 'complete',
     cancelled: false,
     queueDepth: state.queueDepth,
+    phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, endedAt),
     startedAt: state.startedAt,
     endedAt,
     durationMs: durationFromStart(state.startedAt, endedAt),
@@ -223,9 +231,20 @@ function durationFromStart(startedAt: number | null, endedAt: number): number {
   return Math.max(0, endedAt - (startedAt ?? endedAt));
 }
 
+// Allocates a new map only when a phase is first seen — footer selectors rely on the stable reference.
+function withPhaseFirstSeen(
+  firstSeen: PhaseFirstSeenTs,
+  phase: Phase | undefined,
+  ts: number,
+): PhaseFirstSeenTs {
+  if (phase === undefined || firstSeen[phase] !== undefined) return firstSeen;
+  return { ...firstSeen, [phase]: ts };
+}
+
 function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   const phase = next.phase ?? initial.phase;
   const queueDepth = next.queueDepth ?? initial.queueDepth;
+  const phaseFirstSeenTs = next.phaseFirstSeenTs ?? initial.phaseFirstSeenTs;
   const startedAt = next.startedAt ?? null;
 
   if (next.status === 'complete') {
@@ -235,6 +254,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       status: 'complete',
       cancelled: false,
       queueDepth,
+      phaseFirstSeenTs,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -249,6 +269,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       status: 'cancelled',
       cancelled: true,
       queueDepth,
+      phaseFirstSeenTs,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -257,12 +278,13 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   }
 
   if (next.status === 'running' || phase !== 'idle') {
-    return runningLifecycleState({ phase, queueDepth, startedAt });
+    return runningLifecycleState({ phase, queueDepth, phaseFirstSeenTs, startedAt });
   }
 
   return {
     ...initial,
     queueDepth,
+    phaseFirstSeenTs,
   };
 }
 
@@ -272,22 +294,25 @@ function applyRunningPhase(
   ts: number,
 ): LifecycleState {
   if (phase === undefined || state.phase === phase) return state;
+  const phaseFirstSeenTs = withPhaseFirstSeen(state.phaseFirstSeenTs, phase, ts);
   if (state.status === 'idle') {
     return runningLifecycleState({
       phase,
       queueDepth: state.queueDepth,
+      phaseFirstSeenTs,
       startedAt: ts,
     });
   }
   if (state.status === 'running') {
-    return { ...state, phase: runningPhase(phase) };
+    return { ...state, phase: runningPhase(phase), phaseFirstSeenTs };
   }
-  return { ...state, phase };
+  return { ...state, phase, phaseFirstSeenTs };
 }
 
 function runningLifecycleState(input: {
   phase: Phase;
   queueDepth: number;
+  phaseFirstSeenTs: PhaseFirstSeenTs;
   startedAt: number | null;
 }): RunningLifecycleState {
   return {
@@ -295,6 +320,7 @@ function runningLifecycleState(input: {
     status: 'running',
     cancelled: false,
     queueDepth: input.queueDepth,
+    phaseFirstSeenTs: input.phaseFirstSeenTs,
     startedAt: input.startedAt,
     endedAt: null,
     durationMs: null,

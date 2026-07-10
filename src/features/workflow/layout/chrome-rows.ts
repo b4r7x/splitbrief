@@ -1,4 +1,4 @@
-import type { Phase } from '../../../core/schemas/enums.js';
+import { PHASES, type Phase } from '../../../core/schemas/enums.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -106,31 +106,22 @@ export function getActiveRailStage(phase: Phase): RailStageState | null {
   return getRailStages(phase).find((state) => state.status === 'active') ?? null;
 }
 
-// Wall-clock completion time per stage, read from the event log: a stage is done at the timestamp
-// of the first event whose phase advances the active index past it. 0 means not yet completed.
-function isPhaseEvent(event: EngineEvent): event is Extract<EngineEvent, { phase: Phase }> {
-  return 'phase' in event && event.phase !== undefined;
-}
-
-let cachedCompletionEvents: readonly EngineEvent[] | null = null;
-let cachedCompletionTimes: number[] | null = null;
-
-export function getRailStageCompletionTimes(events: readonly EngineEvent[]): number[] {
-  if (events === cachedCompletionEvents && cachedCompletionTimes !== null) {
-    return cachedCompletionTimes;
-  }
-  const times = RAIL_STAGES.map(() => 0);
-  for (const event of events) {
-    if (!isPhaseEvent(event)) continue;
-    const active = getRailActiveIndex(event.phase);
-    for (let stage = 0; stage < times.length; stage++) {
-      if (active > stage && times[stage] === 0) times[stage] = event.ts;
+// Wall-clock completion time per stage, derived from the lifecycle's per-phase first-seen map: a
+// stage is done at the earliest first-seen timestamp among phases that advance the active index
+// past it, 0 when none has. Equivalent to scanning the event log for the first phase-advancing
+// event because event `ts` is monotonic, so a phase's first-seen ts is already its earliest.
+export function railStageCompletionTimesFromPhaseFirstSeen(
+  firstSeen: Readonly<Partial<Record<Phase, number>>>,
+): number[] {
+  return RAIL_STAGES.map((_, stage) => {
+    let completion = 0;
+    for (const phase of PHASES) {
+      if (getRailActiveIndex(phase) <= stage) continue;
+      const ts = firstSeen[phase];
+      if (ts !== undefined && (completion === 0 || ts < completion)) completion = ts;
     }
-  }
-  // Projection-cache house pattern: repeated chrome renders reuse the same event-array projection.
-  cachedCompletionEvents = events;
-  cachedCompletionTimes = times;
-  return times;
+    return completion;
+  });
 }
 
 // The most recent drift verdict from the event log, used for the verify-stage done tail.

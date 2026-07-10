@@ -133,4 +133,84 @@ describe('lifecycleStore', () => {
       reason: 'user_cancelled',
     });
   });
+
+  it('records first-seen timestamp per phase', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    addEvent(makePlannerStatus({ phase: 'specifying', ts: 2_000 }));
+    addEvent(makePlannerStatus({ phase: 'researching', ts: 3_000 }));
+
+    expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({
+      researching: 1_000,
+      specifying: 2_000,
+    });
+  });
+
+  it('keeps map reference stable when phase already seen', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    const seeded = lifecycleStore.get().phaseFirstSeenTs;
+
+    addEvent(makePlannerStatus({ phase: 'specifying', ts: 2_000 }));
+    const afterNewPhase = lifecycleStore.get().phaseFirstSeenTs;
+    expect(afterNewPhase).not.toBe(seeded);
+
+    addEvent(makePlannerStatus({ phase: 'researching', ts: 3_000 }));
+    expect(lifecycleStore.get().phaseFirstSeenTs).toBe(afterNewPhase);
+
+    addEvent({
+      type: 'message_queued',
+      ts: 3_500,
+      id: 'm1',
+      phase: 'researching',
+      preview: 'queued',
+    });
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    expect(lifecycleStore.get().phaseFirstSeenTs).toBe(afterNewPhase);
+  });
+
+  it('reseeds phaseFirstSeenTs on workflow_started', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    addEvent(makePlannerStatus({ phase: 'specifying', ts: 2_000 }));
+
+    addEvent({ type: 'workflow_started', ts: 5_000, phase: 'researching', feature: 'again' });
+
+    expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({ researching: 5_000 });
+  });
+
+  it('records phaseFirstSeenTs for the resumed phase on workflow_resumed', () => {
+    resetWorkflow({
+      stateVersion: 1,
+      phase: 'specifying',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [],
+      startedAt: new Date().toISOString(),
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      awaitingContinue: false,
+      messageQueue: [],
+    });
+    expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({});
+
+    addEvent({ type: 'workflow_resumed', ts: 9_000, phase: 'specifying' });
+
+    expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({ specifying: 9_000 });
+  });
+
+  it('carries phaseFirstSeenTs into terminal states', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    addEvent({ type: 'workflow_complete', ts: 2_000, phase: 'complete' });
+
+    expect(lifecycleStore.get().status).toBe('complete');
+    expect(lifecycleStore.get().phaseFirstSeenTs).toEqual({
+      researching: 1_000,
+      complete: 2_000,
+    });
+  });
 });

@@ -1,10 +1,9 @@
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { EngineEvent } from '../../../engine/events/types.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   getActiveRailStage,
   getRailActiveIndex,
-  getRailStageCompletionTimes,
+  railStageCompletionTimesFromPhaseFirstSeen,
   railStageRole,
   type RailRole,
 } from '../layout/chrome-rows.js';
@@ -86,14 +85,14 @@ export function deriveLiveStatus(input: {
   phase: Phase;
   cancelled: boolean;
   startedAt: number | null;
-  events: readonly EngineEvent[];
+  phaseFirstSeenTs: Readonly<Partial<Record<Phase, number>>>;
 }): LiveStatus | null {
   if (input.cancelled) return null;
   if (RAIL_GATE_PHASES.has(input.phase)) return null;
   const activeIndex = getRailActiveIndex(input.phase);
   const activeStage = getActiveRailStage(input.phase);
   if (activeIndex < 0 || activeStage === null) return null;
-  const completionTimes = getRailStageCompletionTimes(input.events);
+  const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs);
   const stageStart =
     activeIndex > 0 ? (completionTimes[activeIndex - 1] ?? 0) : (input.startedAt ?? 0);
   return {

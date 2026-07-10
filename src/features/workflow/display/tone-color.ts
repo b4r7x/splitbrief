@@ -35,6 +35,28 @@ export function colorForTone(tone: ConversationRowTone | undefined, theme: Theme
       return theme.markdown.list;
     case 'markdownRule':
       return theme.markdown.rule;
+    case 'markdownLink':
+      return theme.markdown.link;
+    case 'markdownStrike':
+      return theme.markdown.strike;
+    case 'markdownTableBorder':
+      return theme.markdown.tableBorder;
+    case 'syntaxKeyword':
+      return theme.syntax.keyword;
+    case 'syntaxString':
+      return theme.syntax.string;
+    case 'syntaxComment':
+      return theme.syntax.comment;
+    case 'syntaxNumber':
+      return theme.syntax.number;
+    case 'syntaxLiteral':
+      return theme.syntax.literal;
+    case 'syntaxType':
+      return theme.syntax.type;
+    case 'syntaxFunction':
+      return theme.syntax.function;
+    case 'syntaxPunctuation':
+      return theme.syntax.punctuation;
     case 'reviewFile':
       return theme.review.file;
     case 'border':
