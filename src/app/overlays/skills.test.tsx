@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
@@ -45,14 +45,22 @@ describe('SkillsPicker', () => {
     await tick(20);
 
     ui.stdin.write(PAGE_DOWN);
-    await tick(20);
+    // The hint flips to 'space toggle' in the same commit that moves the cursor,
+    // so waiting on it guarantees Space acts on the post-PageDown cursor row.
+    await vi.waitFor(
+      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('space toggle'),
+      { timeout: 5000 },
+    );
     ui.stdin.write(SPACE);
-    await tick(20);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 1 selected');
+    await vi.waitFor(
+      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 1 selected'),
+      { timeout: 5000 },
+    );
 
     ui.stdin.write(ENTER);
-    await tick(20);
-    expect([...skillsStore.get().selected]).toEqual(['skill-7']);
+    await vi.waitFor(() => expect([...skillsStore.get().selected]).toEqual(['skill-7']), {
+      timeout: 5000,
+    });
     ui.unmount();
   });
 

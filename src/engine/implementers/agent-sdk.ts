@@ -19,6 +19,10 @@ export function createAgentSdkImplementer(
     config.implementer.kind === 'agent-sdk'
       ? resolveApiKeyOverride(config.implementer.apiKey)
       : undefined;
+  const idleWarnMs =
+    config.implementer.kind === 'agent-sdk' ? config.implementer.idleWarnMs : undefined;
+  const idleKillMs =
+    config.implementer.kind === 'agent-sdk' ? config.implementer.idleKillMs : undefined;
   const timeout = config.implementer.timeout;
   const effectiveModel =
     resolveAutoModel(config.implementer.model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
@@ -26,6 +30,8 @@ export function createAgentSdkImplementer(
     allowedTools: [...IMPLEMENTER_ALLOWED_TOOLS],
     detectChanges: true,
     apiKey,
+    idleWarnMs,
+    idleKillMs,
   });
 
   return createImplementerBase({

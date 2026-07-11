@@ -238,6 +238,9 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('workflow_cancelled').extend({
     reason: WorkflowCancelReasonSchema.optional(),
   }),
+  phaseEvent('turn_interrupted').extend({
+    source: z.enum(['user', 'watchdog']).optional(),
+  }),
   phaseEvent('workflow_config').extend({
     mode: WorkflowModeSchema,
     plannerTool: z.string(),
@@ -338,6 +341,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     partial: z.literal(false),
     ...runnerCallTerminalFields,
   }),
+  strictCallPhaseEvent('runner_call_stalled').extend({
+    silentMs: z.number().int().nonnegative(),
+  }),
+  strictCallPhaseEvent('runner_call_stall_cleared'),
   phaseEvent('spec_rejected'),
   phaseEvent('spec_regenerated').extend({ comment: z.string() }),
   phaseEvent('plan_approved'),

@@ -3,6 +3,7 @@ import { writeFileSync, chmodSync, symlinkSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createCliPlanner } from './cli.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
@@ -21,16 +22,11 @@ import type { RunnerCallEvent } from '../calls/types.js';
 
 let projectDir: string;
 let shimDir: string;
-let originalPath: string | undefined;
+let restorePath: () => void;
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
 function installShim(command: string, bodyLines: string[]): void {
-  const shimPath = join(shimDir, command);
-  const body = bodyLines
-    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
-    .join('\n');
-  writeFileSync(shimPath, `#!/bin/bash\n${body}\n`, 'utf8');
-  chmodSync(shimPath, 0o755);
+  writeCommandShim({ dir: shimDir, command, lines: bodyLines });
 }
 
 function installRecordingShim(command: string, bodyLines: string[]): { argvFile: string } {
@@ -52,13 +48,11 @@ beforeEach(() => {
   projectDir = createTempDir('cli-planner-project');
   createTestGitRepo(projectDir);
   shimDir = createTempDir('cli-planner-shim');
-  originalPath = process.env['PATH'];
-  process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+  restorePath = prependPath(shimDir);
 });
 
 afterEach(() => {
-  if (originalPath === undefined) delete process.env['PATH'];
-  else process.env['PATH'] = originalPath;
+  restorePath();
   cleanupTempDir(projectDir);
   cleanupTempDir(shimDir);
 });
@@ -419,5 +413,52 @@ Outside task content.
     const result = await planner.review('prompt', projectDir, { onOutput: vi.fn() });
 
     expect(result.text).toContain('plain text line');
+  });
+
+  it('cli planner threads idle defaults and config overrides into the spawn', async () => {
+    installShim('codex', [
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'agent_message', text: 'fast response' },
+      }),
+    ]);
+    const defaultEvents: RunnerCallEvent[] = [];
+    const defaultPlanner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+    );
+
+    const defaultResult = await defaultPlanner.review('prompt', projectDir, {
+      onOutput: vi.fn(),
+      onCallEvent: (event) => defaultEvents.push(event),
+    });
+
+    expect(defaultResult.text).toContain('fast response');
+    expect(defaultEvents.some((event) => event.type === 'call_stalled')).toBe(false);
+
+    writeCommandShim({
+      dir: shimDir,
+      command: 'codex',
+      lines: [
+        JSON.stringify({
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'slow response' },
+        }),
+      ],
+      sleepSeconds: 0.15,
+    });
+
+    const overrideEvents: RunnerCallEvent[] = [];
+    const overridePlanner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'codex', idleWarnMs: 30 } }),
+    );
+
+    const overrideResult = await overridePlanner.review('prompt', projectDir, {
+      onOutput: vi.fn(),
+      onCallEvent: (event) => overrideEvents.push(event),
+    });
+
+    expect(overrideResult.text).toContain('slow response');
+    const stalled = overrideEvents.find((event) => event.type === 'call_stalled');
+    expect(stalled).toMatchObject({ type: 'call_stalled', silentMs: expect.any(Number) });
   });
 });

@@ -8,6 +8,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -15,15 +16,22 @@ import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner } from './use-runner.js';
-import { resetWorkflow } from '../../../stores/workflow/actions.js';
+import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { abortTurn, requestCancel, requestRewind, clearAllHandlers } from '../handlers.js';
+import {
+  abortTurn,
+  interruptTurn,
+  requestCancel,
+  requestRewind,
+  clearAllHandlers,
+} from '../handlers.js';
 import { writeActive } from '../../../core/sessions/lifecycle.js';
 import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
+import { saveSummary } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { sessionDir } from '../../../core/paths.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -218,6 +226,76 @@ describe('useWorkflowRunner', () => {
       expect(runWorkflowStub).toHaveBeenCalled();
     });
     expect(seenPersistTranscript).toBe(false);
+
+    inst.unmount();
+  });
+
+  it('a session record with failed status completes the workflow as failed', async () => {
+    const sessionId = '2026-06-18-failed-session';
+    ensureSessionDir(projectDir, sessionId);
+    saveSummary({ projectDir, sessionId }, makeSession({ id: sessionId, status: 'failed' }));
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
+    let completion: WorkflowCompletion | undefined;
+
+    const inst = render(
+      <Harness
+        feature="add auth"
+        projectDir={projectDir}
+        onComplete={(c) => {
+          completion = c;
+        }}
+        sessionId={sessionId}
+        runWorkflow={runWorkflowStub}
+      />,
+    );
+
+    await vi.waitFor(() => {
+      expect(completion?.status).toBe('failed');
+    });
+    expect(completion?.sessionId).toBe(sessionId);
+
+    inst.unmount();
+  });
+
+  it('completes as interrupted when the run returns un-parked while the lifecycle is interrupted', async () => {
+    const sessionId = '2026-07-10-interrupted-regen';
+    ensureSessionDir(projectDir, sessionId);
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (opts) => {
+      // Esc-Esc during an approval-gate regeneration: an abort handler is live
+      // (runLiveRegenerate), interruptTurn marks the lifecycle interrupted and
+      // aborts the regen, and the engine run returns without parking a
+      // continuation prompt or publishing a cancellation event.
+      addEvent({
+        type: 'workflow_started',
+        ts: Date.now(),
+        phase: 'reviewing-spec',
+        feature: 'add auth',
+      });
+      opts.sinks.setAbortHandler(() => {});
+      interruptTurn();
+      opts.sinks.setAbortHandler(null);
+      return makeSummary();
+    });
+    let completion: WorkflowCompletion | undefined;
+
+    const inst = render(
+      <Harness
+        feature="add auth"
+        projectDir={projectDir}
+        onComplete={(c) => {
+          completion = c;
+        }}
+        sessionId={sessionId}
+        runWorkflow={runWorkflowStub}
+      />,
+    );
+
+    // The workflow screen must reach a real terminal state instead of a dead
+    // "interrupted — Enter retry" byline with no parked prompt behind it.
+    await vi.waitFor(() => {
+      expect(completion?.status).toBe('interrupted');
+    });
+    expect(completion?.sessionId).toBe(sessionId);
 
     inst.unmount();
   });

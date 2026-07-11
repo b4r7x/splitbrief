@@ -393,6 +393,33 @@ describe('runClaudePlannerStream', () => {
     });
   });
 
+  it('an idle-killed call finishes failed with code runner_idle_timeout', async () => {
+    // Emits one line, then goes silent long past the kill threshold: the idle
+    // watchdog terminates the process and the recorded call-event code must be
+    // the shared runner_idle_timeout contract, not the raw error kind.
+    installSlowShim(['{"type":"system","session_id":"sess-idle"}']);
+
+    const events: RunnerCallEvent[] = [];
+    await expect(
+      runClaudePlannerStream({
+        prompt: 'p',
+        projectDir: shimDir,
+        sessionId: null,
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+        idleWarnMs: 40,
+        idleKillMs: 120,
+      }),
+    ).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+
+    const errors = runnerCallErrors(events);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      status: 'failed',
+      error: { code: 'runner_idle_timeout' },
+    });
+  });
+
   it('emits one call_error for a stream that exits 0 without a result terminal', async () => {
     installShim(['{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}']);
 

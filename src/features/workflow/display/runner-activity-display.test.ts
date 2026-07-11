@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { RUNNER_CALL_ROLES } from '../../../core/runner-call-contract.js';
 import {
   cleanRunnerActivityText,
   runnerActivityDiagnosticPreview,
   runnerActivityLedgerItem,
+  runnerActivityRoleLabel,
 } from './runner-activity-display.js';
 
 describe('runnerActivityLedgerItem', () => {
@@ -127,5 +129,13 @@ describe('cleanRunnerActivityText', () => {
         '\u001b[31mrunner_interrupted\u001b[0m sk-abcdefghijklmnopqrstuvwxyz',
       ),
     ).toBe('interrupted sk-***REDACTED***');
+  });
+});
+
+describe('runnerActivityRoleLabel', () => {
+  it('activity role labels are Title Case', () => {
+    for (const role of RUNNER_CALL_ROLES) {
+      expect(runnerActivityRoleLabel(role)).toMatch(/^[A-Z]/);
+    }
   });
 });

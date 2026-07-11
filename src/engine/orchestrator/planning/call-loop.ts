@@ -6,6 +6,7 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
 import { buildRejectionContext } from '../evidence/reporting.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';
+import { composeSteeredPrompt } from '../../implementers/types.js';
 import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { PlannerCallRunResult, PlannerCallOptions } from './types.js';
 
@@ -43,14 +44,14 @@ export async function runPlannerCallInContinuationLoop(
 
   try {
     const loop = await withContinuationLoop<PlanResult>({
-      ctx: { projectDir, sessionId, callbacks, signal, sinks },
+      ctx: { projectDir, sessionId, callbacks, bus: wctx.bus, signal, sinks },
       state,
       onStateChange: (s) => {
         state = s;
       },
-      body: async ({ signal: callSignal, continuationPrompt, recordOutput }) => {
+      body: async ({ signal: callSignal, continuationPrompt, steer, recordOutput }) => {
         const stripper = createQuestionMarkerStripper();
-        let prompt = continuationPrompt ?? feature;
+        let prompt = composeSteeredPrompt(continuationPrompt ?? feature, steer);
 
         if (config.approval?.feedRejectionsToPlanner !== false) {
           try {
@@ -125,7 +126,7 @@ export async function runPlannerCallInContinuationLoop(
           });
           const rest = stripper.flush();
           if (rest.length > 0) textHandler(rest);
-          return { value: result };
+          return result;
         }
         const result = await planner.plan({
           feature: prompt,
@@ -136,11 +137,10 @@ export async function runPlannerCallInContinuationLoop(
         });
         const rest = stripper.flush();
         if (rest.length > 0) textHandler(rest);
-        return { value: result };
+        return result;
       },
     });
 
-    state = loop.state;
     return { state, result: loop.value };
   } finally {
     heartbeat.stop();

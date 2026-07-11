@@ -1,5 +1,5 @@
 import { Text } from 'ink';
-import { capitalize } from '../../../utils/capitalize.js';
+import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
@@ -24,7 +24,7 @@ export function buildPhaseTimingRows(
     rows.push({
       key: `phase:${phase}`,
       node: (
-        <LabeledRow label={`  ${capitalize(phase)}`} labelWidth={labelWidth}>
+        <LabeledRow label={`  ${formatStageLabel(phase)}`} labelWidth={labelWidth}>
           <Text color={theme.textDim}>{formatTime(duration)}</Text>
         </LabeledRow>
       ),

@@ -17,6 +17,9 @@ import { publishPlannerStatus, publishWarning } from './events.js';
 import { runPlannerReview } from './planner-review.js';
 import { commitQueueMessagesDrained, formatDrainedMessages, readQueueForPrompt } from './queue.js';
 import { readPersistedTasks } from './planning/io.js';
+import { processError } from '../../lib/process/errors.js';
+import { throwIfAborted } from '../../utils/abort.js';
+import { composeSteeredPrompt } from '../implementers/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 
 export function buildContinuationPrompt(partialResponse: string, userMessage: string): string {
@@ -30,6 +33,7 @@ export interface ContinuationLoopCtx {
   /** When execution cwd differs from the real session tree, persist transitions here. */
   persistRef?: { projectDir: string; sessionId: string } | undefined;
   callbacks: OrchestratorCallbacks;
+  bus: EventBus;
   signal?: AbortSignal | undefined;
   sinks: WorkflowSinks;
 }
@@ -37,29 +41,27 @@ export interface ContinuationLoopCtx {
 export interface ContinuationLoopBodyArgs {
   signal: AbortSignal;
   continuationPrompt: string | undefined;
+  /** Steer text from a parked boundary interrupt; bodies prefix it to their primary prompt via composeSteeredPrompt. */
+  steer: string | undefined;
   recordOutput: (text: string) => void;
-}
-
-export interface AttemptResult<T> {
-  value: T;
-  continueIfAborted?: boolean | undefined;
 }
 
 export interface WithContinuationLoopOpts<T> {
   ctx: ContinuationLoopCtx;
   state: WorkflowState;
   onStateChange?: ((s: WorkflowState) => void) | undefined;
-  body: (args: ContinuationLoopBodyArgs) => Promise<AttemptResult<T>>;
+  body: (args: ContinuationLoopBodyArgs) => Promise<T>;
 }
 
 export async function withContinuationLoop<T>(
   opts: WithContinuationLoopOpts<T>,
 ): Promise<{ state: WorkflowState; value: T }> {
   const { ctx, onStateChange, body } = opts;
-  const { projectDir, sessionId, callbacks, sinks } = ctx;
+  const { projectDir, sessionId, callbacks, sinks, bus } = ctx;
   const persistRef = ctx.persistRef ?? { projectDir, sessionId };
   let state = opts.state;
   let continuationPrompt: string | undefined;
+  let steer: string | undefined;
   let partialOutput = '';
 
   const applyState = (next: WorkflowState) => {
@@ -73,14 +75,21 @@ export async function withContinuationLoop<T>(
 
   const continueAfterAbort = async (
     onContinuationNeeded: NonNullable<OrchestratorCallbacks['onContinuationNeeded']>,
+    source: 'user' | 'watchdog',
   ): Promise<string> => {
     applyState(transitionAndSave(persistRef, state, { type: 'ABORT_TURN' }));
+    bus.publish({ type: 'turn_interrupted', ts: Date.now(), phase: state.phase, source });
     const userText = await onContinuationNeeded(partialOutput);
+    throwIfAborted(ctx.signal);
     applyState(transitionAndSave(persistRef, state, { type: 'CONTINUE_TURN' }));
-    return buildContinuationPrompt(partialOutput, userText);
+    return userText;
   };
 
   while (true) {
+    if (sinks.consumeBoundaryInterrupt?.() && callbacks.onContinuationNeeded) {
+      const userText = await continueAfterAbort(callbacks.onContinuationNeeded, 'user');
+      steer = userText.trim() === '' ? undefined : userText;
+    }
     const callController = new AbortController();
     sinks.setAbortHandler(() => callController.abort());
     partialOutput = '';
@@ -89,14 +98,23 @@ export async function withContinuationLoop<T>(
       ? AbortSignal.any([ctx.signal, callController.signal])
       : callController.signal;
 
-    let attempt: AttemptResult<T>;
+    let attempt: T;
     try {
-      attempt = await body({ signal: bodySignal, continuationPrompt, recordOutput });
+      attempt = await body({ signal: bodySignal, continuationPrompt, steer, recordOutput });
     } catch (err) {
       sinks.setAbortHandler(null);
 
-      if (callController.signal.aborted && !ctx.signal?.aborted && callbacks.onContinuationNeeded) {
-        continuationPrompt = await continueAfterAbort(callbacks.onContinuationNeeded);
+      if (
+        (callController.signal.aborted || processError.isIdleTimeout(err)) &&
+        !ctx.signal?.aborted &&
+        callbacks.onContinuationNeeded
+      ) {
+        const userText = await continueAfterAbort(
+          callbacks.onContinuationNeeded,
+          callController.signal.aborted ? 'user' : 'watchdog',
+        );
+        continuationPrompt = buildContinuationPrompt(partialOutput, userText);
+        steer = undefined;
         continue;
       }
 
@@ -105,17 +123,14 @@ export async function withContinuationLoop<T>(
 
     sinks.setAbortHandler(null);
 
-    if (
-      attempt.continueIfAborted &&
-      callController.signal.aborted &&
-      !ctx.signal?.aborted &&
-      callbacks.onContinuationNeeded
-    ) {
-      continuationPrompt = await continueAfterAbort(callbacks.onContinuationNeeded);
+    if (callController.signal.aborted && !ctx.signal?.aborted && callbacks.onContinuationNeeded) {
+      const userText = await continueAfterAbort(callbacks.onContinuationNeeded, 'user');
+      continuationPrompt = buildContinuationPrompt(partialOutput, userText);
+      steer = undefined;
       continue;
     }
 
-    return { state, value: attempt.value };
+    return { state, value: attempt };
   }
 }
 
@@ -249,15 +264,15 @@ async function runRegenerationReview(opts: {
   const summary =
     opts.ctx.statusSummary ??
     (opts.kind === 'plan' ? 'regenerating plan from feedback' : 'regenerating Task Briefs');
-  const controller = opts.ctx.sinks ? new AbortController() : null;
-  const signal = controller
-    ? opts.ctx.signal === undefined
-      ? controller.signal
-      : AbortSignal.any([opts.ctx.signal, controller.signal])
-    : opts.ctx.signal;
+  // Without sinks (auto-split review) the loop still routes watchdog idle-kills
+  // through the retry prompt; abort handling stays with the outer signal.
+  const sinks: WorkflowSinks = opts.ctx.sinks ?? {
+    setAbortHandler: () => {},
+    setQueueHandler: () => {},
+  };
+  let state = opts.state;
 
-  if (controller) opts.ctx.sinks?.setAbortHandler(() => controller.abort());
-  publishPlannerStatus(opts.ctx.bus, { ...opts.state, phase: statusPhase }, 'running');
+  publishPlannerStatus(opts.ctx.bus, { ...state, phase: statusPhase }, 'running');
   opts.ctx.bus.publish({
     type: 'planner_heartbeat',
     ts: Date.now(),
@@ -268,19 +283,34 @@ async function runRegenerationReview(opts: {
   });
 
   try {
-    return await runPlannerReview({
-      planner: opts.ctx.planner,
-      prompt: opts.prompt,
-      projectDir: opts.ctx.projectDir,
-      sessionId: opts.ctx.sessionId,
-      bus: opts.ctx.bus,
-      state: opts.state,
-      metadata: opts.ctx.metadata,
-      writeTo: opts.writeTo,
-      signal,
+    const loop = await withContinuationLoop<{ state: WorkflowState; text: string }>({
+      ctx: {
+        projectDir: opts.ctx.projectDir,
+        sessionId: opts.ctx.sessionId,
+        callbacks: opts.ctx.callbacks,
+        bus: opts.ctx.bus,
+        signal: opts.ctx.signal,
+        sinks,
+      },
+      state,
+      onStateChange: (s) => {
+        state = s;
+      },
+      body: ({ signal, continuationPrompt, steer }) =>
+        runPlannerReview({
+          planner: opts.ctx.planner,
+          prompt: composeSteeredPrompt(continuationPrompt ?? opts.prompt, steer),
+          projectDir: opts.ctx.projectDir,
+          sessionId: opts.ctx.sessionId,
+          bus: opts.ctx.bus,
+          state,
+          metadata: opts.ctx.metadata,
+          writeTo: opts.writeTo,
+          signal,
+        }),
     });
+    return loop.value;
   } finally {
-    opts.ctx.sinks?.setAbortHandler(null);
-    publishPlannerStatus(opts.ctx.bus, { ...opts.state, phase: statusPhase }, 'done');
+    publishPlannerStatus(opts.ctx.bus, { ...state, phase: statusPhase }, 'done');
   }
 }

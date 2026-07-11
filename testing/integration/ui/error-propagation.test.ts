@@ -71,15 +71,17 @@ describe('error event → UI propagation', () => {
   });
 
   describe('feedbackStore shows user-action errors', () => {
-    it('setError persists and does not auto-clear', () => {
+    it('setError auto-clears after the error TTL', () => {
       feedbackStore.setError('Cannot attach: session not found');
 
       expect(feedbackStore.get().message).toBe('Cannot attach: session not found');
       expect(feedbackStore.get().isError).toBe(true);
 
-      vi.advanceTimersByTime(10_000);
+      vi.advanceTimersByTime(4999);
       expect(feedbackStore.get().message).toBe('Cannot attach: session not found');
-      expect(feedbackStore.get().isError).toBe(true);
+
+      vi.advanceTimersByTime(1);
+      expect(feedbackStore.get().message).toBeNull();
     });
 
     it('setMessage auto-clears after timeout', () => {
@@ -99,9 +101,13 @@ describe('error event → UI propagation', () => {
       expect(feedbackStore.get().message).toBe('Connection lost');
       expect(feedbackStore.get().isError).toBe(true);
 
-      // The auto-clear timer from setMessage should not fire
-      vi.advanceTimersByTime(5000);
+      // The auto-clear timer from setMessage must not fire early
+      vi.advanceTimersByTime(3000);
       expect(feedbackStore.get().message).toBe('Connection lost');
+
+      // The error clears on its own TTL
+      vi.advanceTimersByTime(2000);
+      expect(feedbackStore.get().message).toBeNull();
     });
   });
 });

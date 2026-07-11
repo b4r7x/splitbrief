@@ -2,7 +2,7 @@ import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import { toTokenDelta } from '../calls/projection.js';
-import { runnerCallInterruptedStatus } from '../calls/status.js';
+import { runnerCallIdleTimeoutError, runnerCallInterruptedStatus } from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { getLineParser } from '../streaming/output-parsers.js';
@@ -20,6 +20,7 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
 import { finishRunnerCallOutputLimit, runnerCallLineOutputLimit } from '../calls/output-limit.js';
 import { commandName, isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
+import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
 
@@ -32,6 +33,8 @@ export interface CommandBasedOptions {
   timeout?: number | undefined;
   notFoundMessage?: string | undefined;
   allowShellEvaluatedPrompt?: boolean | undefined;
+  idleWarnMs?: number | undefined;
+  idleKillMs?: number | undefined;
 }
 
 export interface CommandBasedResult {
@@ -114,6 +117,8 @@ export async function invokeCommandBasedRunner(
   const { prompt, projectDir, onOutput, signal } = opts;
   const rawArgs = opts.args ?? [];
   const format: OutputFormat = opts.outputFormat ?? 'text';
+  const idleWarnMs = opts.idleWarnMs ?? RUNNER_IDLE_WARN_MS;
+  const idleKillMs = opts.idleKillMs ?? RUNNER_IDLE_KILL_MS;
 
   rejectPromptPlaceholderCommand(opts.command);
   rejectShellEvaluatedPrompt(opts.command, rawArgs, opts.allowShellEvaluatedPrompt);
@@ -182,6 +187,12 @@ export async function invokeCommandBasedRunner(
         stdinInput: useStdin ? prompt : undefined,
         notFoundMessage: opts.notFoundMessage,
         signal,
+        idle: {
+          warnMs: idleWarnMs,
+          killMs: idleKillMs,
+          onWarn: (silentMs) => recorder.stalled({ silentMs }),
+          onClear: () => recorder.stallCleared(),
+        },
       });
       liveOutputBuffer.flush();
       stderrBuffer.flush();
@@ -211,10 +222,17 @@ export async function invokeCommandBasedRunner(
       liveOutputBuffer.flush();
       stderrBuffer.flush();
       if (!recorder.hasTerminal()) {
-        recorder.finishFailed({
-          status: signal?.aborted ? runnerCallInterruptedStatus(signal) : 'failed',
-          error: { code: 'command_failed', message: toErrorMessage(err) },
-        });
+        if (processError.isIdleTimeout(err)) {
+          recorder.finishFailed({
+            status: 'failed',
+            error: runnerCallIdleTimeoutError(err),
+          });
+        } else {
+          recorder.finishFailed({
+            status: signal?.aborted ? runnerCallInterruptedStatus(signal) : 'failed',
+            error: { code: 'command_failed', message: toErrorMessage(err) },
+          });
+        }
       }
       throw err;
     }
@@ -236,6 +254,7 @@ export async function invokeCommandBasedRunner(
       onCallEvent: opts.onCallEvent,
       callContext: context,
       signal,
+      idle: { warnMs: idleWarnMs, killMs: idleKillMs },
       onStderr: (chunk) => {
         stderrOutput.append(chunk);
       },

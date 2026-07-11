@@ -2,7 +2,11 @@ import { z } from 'zod';
 import type { ParsedLine } from '../runners/types.js';
 import { TokenUsageLikeSchema, toTokenDelta } from './token-usage.js';
 import { isRecord, narrowRecord, optionalString } from '../../utils/type-guards.js';
-import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
+import {
+  parsedMalformedRecordWarning,
+  parsedUnknownRecordWarning,
+  parsedUpstreamFailureWarning,
+} from './parser-warnings.js';
 
 const JsonlTextBlock = z.object({
   type: z.enum(['text', 'output_text']),
@@ -31,6 +35,25 @@ const ThreadStartedEvent = z.object({
 const CodexItemEvent = z.object({
   type: z.enum(['item.started', 'item.completed']),
   item: z.record(z.string(), z.unknown()),
+});
+
+const TurnStartedEvent = z.object({
+  type: z.literal('turn.started'),
+});
+
+const ItemUpdatedEvent = z.object({
+  type: z.literal('item.updated'),
+  item: z.record(z.string(), z.unknown()),
+});
+
+const TurnFailedEvent = z.object({
+  type: z.literal('turn.failed'),
+  error: z.object({ message: z.string().optional() }).optional(),
+});
+
+const CodexErrorEvent = z.object({
+  type: z.literal('error'),
+  message: z.string().optional(),
 });
 
 function firstString(...values: unknown[]): string | undefined {
@@ -127,6 +150,35 @@ export function parseJsonlLine(line: string): ParsedLine {
     if (turn.success) {
       const usage = toTokenDelta(turn.data.usage);
       if (usage) return { usage, usageSemantics: 'final' };
+    }
+
+    if (TurnStartedEvent.safeParse(event).success) return {};
+    if (ItemUpdatedEvent.safeParse(event).success) return {};
+
+    const turnFailed = TurnFailedEvent.safeParse(event);
+    if (turnFailed.success) {
+      return {
+        warning: [
+          parsedUpstreamFailureWarning({
+            parser: 'jsonl',
+            upstreamType: 'turn.failed',
+            message: turnFailed.data.error?.message ?? 'turn.failed',
+          }),
+        ],
+      };
+    }
+
+    const codexError = CodexErrorEvent.safeParse(event);
+    if (codexError.success) {
+      return {
+        warning: [
+          parsedUpstreamFailureWarning({
+            parser: 'jsonl',
+            upstreamType: 'error',
+            message: codexError.data.message ?? 'error',
+          }),
+        ],
+      };
     }
 
     const e = narrowRecord(event);

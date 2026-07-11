@@ -44,6 +44,23 @@ function callCompleted(ts: number): RunnerCallEvent {
   };
 }
 
+function callStalled(ts: number): RunnerCallEvent {
+  return {
+    type: 'call_stalled',
+    ts,
+    ...runnerContext,
+    silentMs: 60_000,
+  };
+}
+
+function callStallCleared(ts: number): RunnerCallEvent {
+  return {
+    type: 'call_stall_cleared',
+    ts,
+    ...runnerContext,
+  };
+}
+
 describe('createRunnerAttemptCallbackBuffer', () => {
   it('emits one bounded overflow warning and preserves terminal call events', () => {
     const output: string[] = [];
@@ -89,5 +106,23 @@ describe('createRunnerAttemptCallbackBuffer', () => {
     buffer.callbacks.onOutput('after flush');
 
     expect(output).toEqual(['before flush', 'after flush']);
+  });
+
+  it('call_stalled and call_stall_cleared are delivered before flush', () => {
+    const events: RunnerCallEvent[] = [];
+    const buffer = createRunnerAttemptCallbackBuffer({
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    buffer.callbacks.onCallEvent?.(textDelta(1));
+    buffer.callbacks.onCallEvent?.(callStalled(2));
+    buffer.callbacks.onCallEvent?.(callStallCleared(3));
+
+    expect(events).toEqual([callStalled(2), callStallCleared(3)]);
+
+    buffer.flush();
+
+    expect(events).toEqual([callStalled(2), callStallCleared(3), textDelta(1)]);
   });
 });

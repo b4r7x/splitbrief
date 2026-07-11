@@ -7,6 +7,7 @@ import { openCostApprovalPrompt } from '../../stores/cost-approval/prompt.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { CONTINUATION_PROMPT } from './prompt-callbacks.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 import {
   formatUserEditConflictPrompt,
@@ -146,9 +147,7 @@ export function createIpcPromptDispatcher(
     }
 
     if (request.kind === 'continuation_needed') {
-      const text = await inputMode.setQuestionMode(
-        'Task interrupted. Enter instructions to continue (or press Enter to retry):',
-      );
+      const text = await inputMode.setQuestionMode(CONTINUATION_PROMPT);
       return { kind: 'continuation_needed', text };
     }
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getPlannerToolId } from './runner-config.js';
+import {
+  getPlannerToolId,
+  getRunnerCatalogDisplayName,
+  getRunnerDisplayName,
+} from './runner-config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
 
 describe('getPlannerToolId', () => {
@@ -41,5 +45,44 @@ describe('getPlannerToolId', () => {
   it('returns agent-sdk for agent-sdk kind', () => {
     const config: PlannerConfig = { kind: 'agent-sdk' };
     expect(getPlannerToolId(config)).toBe('agent-sdk');
+  });
+});
+
+describe('getRunnerCatalogDisplayName maps runners to catalog display names', () => {
+  it('cli opencode → OpenCode', () => {
+    const config: PlannerConfig = { kind: 'cli', tool: 'opencode' };
+    expect(getRunnerCatalogDisplayName(config)).toBe('OpenCode');
+  });
+
+  it('api anthropic → Anthropic', () => {
+    const config: PlannerConfig = {
+      kind: 'api',
+      provider: 'anthropic',
+      apiBase: 'https://api.anthropic.com/v1',
+      model: 'claude-opus-4-5',
+    };
+    expect(getRunnerCatalogDisplayName(config)).toBe('Anthropic');
+  });
+
+  it('shell → Custom Shell', () => {
+    const config: PlannerConfig = { kind: 'shell', command: 'my-planner' };
+    expect(getRunnerCatalogDisplayName(config)).toBe('Custom Shell');
+  });
+
+  it('agent → Agent', () => {
+    const config: PlannerConfig = { kind: 'agent', command: 'my-agent' };
+    expect(getRunnerCatalogDisplayName(config)).toBe('Agent');
+  });
+
+  it('agent-sdk → Agent SDK', () => {
+    const config: PlannerConfig = { kind: 'agent-sdk' };
+    expect(getRunnerCatalogDisplayName(config)).toBe('Agent SDK');
+  });
+});
+
+describe('getRunnerDisplayName still returns raw lowercase ids', () => {
+  it('cli opencode → opencode', () => {
+    const config: PlannerConfig = { kind: 'cli', tool: 'opencode' };
+    expect(getRunnerDisplayName(config)).toBe('opencode');
   });
 });

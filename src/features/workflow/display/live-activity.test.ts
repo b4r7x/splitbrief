@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { PHASES } from '../../../core/schemas/enums.js';
 import { deriveLiveStatus } from './live-activity.js';
 
-const base = { cancelled: false, startedAt: 1000, phaseFirstSeenTs: {} };
+const base = {
+  status: 'running' as const,
+  cancelled: false,
+  startedAt: 1000,
+  phaseFirstSeenTs: {},
+};
 
 describe('deriveLiveStatus', () => {
   it('is null when idle, complete, cancelled, or at a review gate', () => {
@@ -9,6 +15,10 @@ describe('deriveLiveStatus', () => {
     expect(deriveLiveStatus({ ...base, phase: 'complete' })).toBeNull();
     expect(deriveLiveStatus({ ...base, phase: 'researching', cancelled: true })).toBeNull();
     expect(deriveLiveStatus({ ...base, phase: 'reviewing-spec' })).toBeNull();
+  });
+
+  it('deriveLiveStatus returns null unless the lifecycle is running', () => {
+    expect(deriveLiveStatus({ ...base, phase: 'researching', status: 'interrupted' })).toBeNull();
   });
 
   it('carries the verb, the stage start, and the role tone for a live planner stage', () => {
@@ -24,5 +34,13 @@ describe('deriveLiveStatus', () => {
     });
     expect(status?.tone).toBe('implementer');
     expect(status?.stageStart).toBe(5000);
+  });
+
+  it('live verbs are Title Case', () => {
+    const verbs = PHASES.flatMap((phase) => deriveLiveStatus({ ...base, phase })?.verb ?? []);
+    expect(verbs.length).toBeGreaterThan(0);
+    for (const verb of verbs) {
+      expect(verb).toMatch(/^[A-Z]/);
+    }
   });
 });

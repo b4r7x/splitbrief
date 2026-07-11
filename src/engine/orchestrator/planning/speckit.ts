@@ -30,6 +30,8 @@ import { narrowRecord } from '../../../utils/type-guards.js';
 import { extractJsonBlock } from '../../../utils/extract-json-block.js';
 import { clamp01 } from '../../../utils/math.js';
 import { runPlannerReview } from '../planner-review.js';
+import { withContinuationLoop } from '../continuation.js';
+import { composeSteeredPrompt } from '../../implementers/types.js';
 
 const DEFAULT_MIN_COVERAGE = 0.9;
 
@@ -127,17 +129,32 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     readArtifact(dir, TASKS_FILE),
   ]);
   const analyzePrompt = buildAnalyzePrompt({ spec: specText, plan: planText, tasks: tasksText });
-  const review = await runPlannerReview({
-    planner,
-    prompt: analyzePrompt,
-    projectDir,
-    sessionId,
-    bus,
+  const analyzeLoop = await withContinuationLoop<{ state: WorkflowState; text: string }>({
+    ctx: {
+      projectDir,
+      sessionId,
+      callbacks: wctx.callbacks,
+      bus,
+      signal: wctx.signal,
+      sinks: wctx.sinks,
+    },
     state,
-    signal: wctx.signal,
+    onStateChange: (s) => {
+      state = s;
+    },
+    body: ({ signal, continuationPrompt, steer }) =>
+      runPlannerReview({
+        planner,
+        prompt: composeSteeredPrompt(continuationPrompt ?? analyzePrompt, steer),
+        projectDir,
+        sessionId,
+        bus,
+        state,
+        signal,
+      }),
   });
-  state = review.state;
-  const analysis = parseAnalyze(review.text);
+  state = analyzeLoop.value.state;
+  const analysis = parseAnalyze(analyzeLoop.value.text);
   writeSecureFile(join(dir, ANALYZE_FILE), JSON.stringify(analysis, null, 2));
 
   const { minCoverage } = readSpeckitConfig(opts);
@@ -199,22 +216,37 @@ async function runConstitutionGate(
     constitutionResult = { passed: true, violations: [] };
   } else {
     const specText = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
-    const prompt = buildConstitutionPrompt({
+    const constitutionPrompt = buildConstitutionPrompt({
       feature: opts.feature,
       spec: specText,
       constitutionContent,
     });
-    const review = await runPlannerReview({
-      planner,
-      prompt,
-      projectDir,
-      sessionId,
-      bus,
+    const constitutionLoop = await withContinuationLoop<{ state: WorkflowState; text: string }>({
+      ctx: {
+        projectDir,
+        sessionId,
+        callbacks: wctx.callbacks,
+        bus,
+        signal: wctx.signal,
+        sinks: wctx.sinks,
+      },
       state,
-      signal: wctx.signal,
+      onStateChange: (s) => {
+        state = s;
+      },
+      body: ({ signal, continuationPrompt, steer }) =>
+        runPlannerReview({
+          planner,
+          prompt: composeSteeredPrompt(continuationPrompt ?? constitutionPrompt, steer),
+          projectDir,
+          sessionId,
+          bus,
+          state,
+          signal,
+        }),
     });
-    state = review.state;
-    constitutionResult = parseConstitutionCheck(review.text);
+    state = constitutionLoop.value.state;
+    constitutionResult = parseConstitutionCheck(constitutionLoop.value.text);
   }
   writeSecureFile(join(dir, CONSTITUTION_CHECK_FILE), JSON.stringify(constitutionResult, null, 2));
 

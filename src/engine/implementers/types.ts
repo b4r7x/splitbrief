@@ -46,11 +46,17 @@ export interface ImplementerOptions {
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
   fileIgnoreProjectDir?: string | undefined;
   continuationPrompt?: string | undefined;
+  steer?: string | undefined;
   languageContext?: LanguageContext | undefined;
   phase?: Phase | undefined;
   approveWrite?:
     | ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>)
     | undefined;
+}
+
+export function composeSteeredPrompt(primary: string, steer: string | undefined): string {
+  if (steer === undefined) return primary;
+  return `User interrupted before this call: ${steer}\n\n${primary}`;
 }
 
 export interface RetryOptions extends ImplementerOptions {

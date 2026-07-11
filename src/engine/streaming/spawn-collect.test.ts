@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn.js';
 import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
 import { spawnAndCollect } from './spawn-collect.js';
@@ -226,6 +226,64 @@ describe('spawnAndCollect', () => {
     });
     expect(result.text).toBe('x\n'.repeat(RUNNER_CALL_OUTPUT_MAX_EVENTS));
     expect(textEvents).toHaveLength(RUNNER_CALL_OUTPUT_MAX_EVENTS);
+  });
+
+  it('idle warnings emit call_stalled and call_stall_cleared events', async () => {
+    vi.useFakeTimers();
+    try {
+      const events: RunnerCallEvent[] = [];
+      const promise = spawnAndCollect({
+        command: 'node',
+        args: ['-e', 'setTimeout(() => { console.log("late output"); }, 50)'],
+        cwd: process.cwd(),
+        onCallEvent: (event) => events.push(event),
+        idle: { warnMs: 1_000, killMs: 600_000 },
+      });
+
+      vi.advanceTimersByTime(1_000);
+      vi.useRealTimers();
+      const result = await promise;
+
+      expect(result.status).toBe('completed');
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: 'call_stalled', silentMs: 1_000 }),
+      );
+      expect(events).toContainEqual(expect.objectContaining({ type: 'call_stall_cleared' }));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an idle-killed call finishes failed with code runner_idle_timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const events: RunnerCallEvent[] = [];
+      const promise = spawnAndCollect({
+        command: 'node',
+        args: ['-e', 'setTimeout(() => {}, 60_000)'],
+        cwd: process.cwd(),
+        onCallEvent: (event) => events.push(event),
+        idle: { warnMs: 500, killMs: 1_000 },
+      });
+      const settled = expect(promise).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+
+      vi.advanceTimersByTime(1_000);
+      vi.useRealTimers();
+      await settled;
+
+      const errors = runnerCallErrors(events);
+      expect(runnerCallTerminals(events)).toHaveLength(1);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toMatchObject({
+        status: 'failed',
+        error: {
+          code: 'runner_idle_timeout',
+          message: expect.stringContaining('produced no output for 1s'),
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

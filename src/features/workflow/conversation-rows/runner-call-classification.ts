@@ -36,10 +36,6 @@ export function isRunnerCallEvent(event: EngineEvent): event is RunnerCallEvent 
   }
 }
 
-export function runnerCallId(event: EngineEvent): string | null {
-  return isRunnerCallEvent(event) ? event.callId : null;
-}
-
 export function isRunnerCallTranscriptRowSuppressed(
   event: EngineEvent,
 ): event is RunnerCallTranscriptSuppressedEvent {

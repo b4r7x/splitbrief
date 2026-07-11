@@ -517,4 +517,45 @@ describe('parseEngineEvent', () => {
       }),
     );
   });
+
+  it('turn_interrupted parses with and without source', () => {
+    expect(
+      parseEngineEvent({
+        type: 'turn_interrupted',
+        ts: 1,
+        phase: 'implementing',
+      }),
+    ).toEqual(expect.objectContaining({ type: 'turn_interrupted' }));
+    expect(
+      parseEngineEvent({
+        type: 'turn_interrupted',
+        ts: 1,
+        phase: 'implementing',
+        source: 'watchdog',
+      }),
+    ).toEqual(expect.objectContaining({ type: 'turn_interrupted', source: 'watchdog' }));
+  });
+
+  it('runner_call_stalled requires silentMs and runner_call_stall_cleared parses', () => {
+    const base = {
+      ts: 1,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'api',
+      sequence: 0,
+    } as const;
+
+    expect(
+      parseEngineEvent({
+        type: 'runner_call_stalled',
+        ...base,
+        silentMs: 60_000,
+      }),
+    ).toEqual(expect.objectContaining({ type: 'runner_call_stalled', silentMs: 60_000 }));
+    expect(parseEngineEvent({ type: 'runner_call_stalled', ...base })).toBeNull();
+    expect(parseEngineEvent({ type: 'runner_call_stall_cleared', ...base })).toEqual(
+      expect.objectContaining({ type: 'runner_call_stall_cleared' }),
+    );
+  });
 });

@@ -56,12 +56,13 @@ export async function runImplementation(opts: {
         sessionId,
         persistRef: { projectDir, sessionId },
         callbacks,
+        bus: wctx.bus,
         signal: wctx.signal,
         sinks: wctx.sinks,
       },
       state,
       onStateChange: setTrackedState,
-      body: async ({ signal, continuationPrompt, recordOutput }) => {
+      body: async ({ signal, continuationPrompt, steer, recordOutput }) => {
         const result = await wctx.implementer.implement({
           task,
           projectDir: staged?.projectDir ?? projectDir,
@@ -81,6 +82,7 @@ export async function runImplementation(opts: {
           sandboxEnv: staged?.sandboxEnv,
           fileIgnoreProjectDir: staged ? projectDir : undefined,
           continuationPrompt,
+          steer,
           phase: state.phase,
           approveWrite: async (file) => {
             if (staged) return { allow: true };
@@ -111,7 +113,7 @@ export async function runImplementation(opts: {
             return { allow: true };
           },
         });
-        return { value: result, continueIfAborted: !result.success };
+        return result;
       },
     });
   } catch (err) {

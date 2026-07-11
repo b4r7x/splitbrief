@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import type { AdvisorResult } from '../../../engine/orchestrator/planning/mode-advisor.js';
@@ -8,13 +9,14 @@ import { _eventsInternal, eventsStore } from '../../../stores/workflow/events.js
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { _lifecycleInternal, lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { markInterruptParked } from '../../../stores/workflow/actions.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
-import { glyph } from '../../../lib/glyphs.js';
+import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { buildInputFooterByline, InputFooter } from './input-footer.js';
@@ -40,6 +42,10 @@ function publishAdvisory(advisory: AdvisorResult): void {
   }));
 }
 
+function fullByline(byline: { lead: string; queued: string; rest: string }): string {
+  return `${byline.lead}${byline.queued}${byline.rest}`;
+}
+
 describe('buildInputFooterByline', () => {
   const marker = glyph('stageDone');
   const stageLead = `${marker} build 3/7`;
@@ -48,12 +54,13 @@ describe('buildInputFooterByline', () => {
     const byline = buildInputFooterByline({
       cols: 120,
       lead: stageLead,
+      queuedText: null,
       etaText: '~2m left',
       gitLabel: 'git:branch+squash',
       advisoryText: 'use --quick for trivial edits',
     });
 
-    expect(byline).toBe(
+    expect(fullByline(byline)).toBe(
       `${marker} build 3/7 · ~2m left · git:branch+squash · use --quick for trivial edits`,
     );
   });
@@ -66,29 +73,32 @@ describe('buildInputFooterByline', () => {
     const byline = buildInputFooterByline({
       cols: 120,
       lead: '⠋ Researching… 2:24',
+      queuedText: null,
       etaText: null,
       gitLabel: 'git:none',
       advisoryText: null,
     });
 
-    expect(byline).toBe('⠋ Researching… 2:24 · git:none');
+    expect(fullByline(byline)).toBe('⠋ Researching… 2:24 · git:none');
   });
 
   it('never includes the resting Ctrl+C control cluster', () => {
     const byline = buildInputFooterByline({
       cols: 120,
       lead: stageLead,
+      queuedText: null,
       etaText: '~2m left',
       gitLabel: 'git:squash',
       advisoryText: null,
     });
 
-    expect(byline).not.toContain('Ctrl+C');
+    expect(fullByline(byline)).not.toContain('Ctrl+C');
   });
 
   it('drops advisory, then eta, then git as width tightens, then truncates the lead', () => {
     const base = {
       lead: stageLead,
+      queuedText: null,
       etaText: '~2m left',
       gitLabel: 'git:squash',
       advisoryText: 'use --quick for trivial edits',
@@ -100,12 +110,14 @@ describe('buildInputFooterByline', () => {
     const noEta = `${stageLead} · git:squash`;
     const noGit = stageLead;
 
-    expect(buildInputFooterByline({ ...base, cols: colsFor(noAdvisory) })).toBe(noAdvisory);
-    expect(buildInputFooterByline({ ...base, cols: colsFor(noEta) })).toBe(noEta);
-    expect(buildInputFooterByline({ ...base, cols: colsFor(noGit) })).toBe(noGit);
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(noAdvisory) }))).toBe(
+      noAdvisory,
+    );
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(noEta) }))).toBe(noEta);
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(noGit) }))).toBe(noGit);
 
     const crampedWidth = colsFor(stageLead) - 2;
-    const cramped = buildInputFooterByline({ ...base, cols: crampedWidth });
+    const cramped = fullByline(buildInputFooterByline({ ...base, cols: crampedWidth }));
     expect(getTerminalCellWidth(cramped)).toBeLessThanOrEqual(crampedWidth);
   });
 
@@ -113,13 +125,14 @@ describe('buildInputFooterByline', () => {
     const base = {
       cols: 120,
       lead: stageLead,
+      queuedText: null,
       etaText: null,
       gitLabel: 'git:none',
       advisoryText: null,
     } as const;
 
-    expect(buildInputFooterByline(base)).not.toContain('y copy');
-    expect(buildInputFooterByline({ ...base, copyHint: 'y copy' })).toBe(
+    expect(fullByline(buildInputFooterByline(base))).not.toContain('y copy');
+    expect(fullByline(buildInputFooterByline({ ...base, copyHint: 'y copy' }))).toBe(
       `${marker} build 3/7 · git:none · y copy`,
     );
   });
@@ -127,6 +140,7 @@ describe('buildInputFooterByline', () => {
   it('drops the copy hint first as width tightens: y copy → bare y → gone', () => {
     const base = {
       lead: stageLead,
+      queuedText: null,
       etaText: null,
       gitLabel: 'git:none',
       advisoryText: null,
@@ -135,13 +149,13 @@ describe('buildInputFooterByline', () => {
     // content width is the full cols (getChromeContentWidth); size cols so each variant just fits.
     const colsFor = (width: number) => width;
 
-    expect(buildInputFooterByline({ ...base, cols: colsFor(31) })).toBe(
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(31) }))).toBe(
       `${marker} build 3/7 · git:none · y copy`,
     );
-    expect(buildInputFooterByline({ ...base, cols: colsFor(28) })).toBe(
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(28) }))).toBe(
       `${marker} build 3/7 · git:none · y`,
     );
-    expect(buildInputFooterByline({ ...base, cols: colsFor(24) })).toBe(
+    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(24) }))).toBe(
       `${marker} build 3/7 · git:none`,
     );
   });
@@ -150,30 +164,35 @@ describe('buildInputFooterByline', () => {
     const byline = buildInputFooterByline({
       cols: 120,
       lead: stageLead,
+      queuedText: null,
       etaText: null,
       gitLabel: 'git:none',
       advisoryText: null,
       worktreeLabel: 'my-feature',
     });
 
-    expect(byline).toBe(`${marker} build 3/7 · git:none · ${glyph('cursor')} my-feature`);
+    expect(fullByline(byline)).toBe(
+      `${marker} build 3/7 · git:none · ${glyph('cursor')} my-feature`,
+    );
   });
 
   it('omits the worktree marker when no worktree name is set', () => {
     const byline = buildInputFooterByline({
       cols: 120,
       lead: stageLead,
+      queuedText: null,
       etaText: null,
       gitLabel: 'git:none',
       advisoryText: null,
     });
 
-    expect(byline).not.toContain(glyph('cursor'));
+    expect(fullByline(byline)).not.toContain(glyph('cursor'));
   });
 
   it('drops the worktree name rather than crowding the core when width is tight', () => {
     const base = {
       lead: stageLead,
+      queuedText: null,
       etaText: null,
       gitLabel: 'git:none',
       advisoryText: null,
@@ -183,7 +202,7 @@ describe('buildInputFooterByline', () => {
     // Exactly enough for the core leaves no room for the ` · ▸ …` tail, so the worktree drops.
     const cols = getTerminalCellWidth(core);
 
-    expect(buildInputFooterByline({ ...base, cols })).toBe(core);
+    expect(fullByline(buildInputFooterByline({ ...base, cols }))).toBe(core);
   });
 
   it('truncates the worktree name to the room that remains', () => {
@@ -191,14 +210,17 @@ describe('buildInputFooterByline', () => {
     const worktreeLabel = 'a-very-long-worktree-branch-name';
     // Leave 12 content cells past the core+separator: enough for a truncated tail, not the whole name.
     const width = getTerminalCellWidth(core) + getTerminalCellWidth(' · ') + 12;
-    const byline = buildInputFooterByline({
-      cols: width,
-      lead: stageLead,
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-      worktreeLabel,
-    });
+    const byline = fullByline(
+      buildInputFooterByline({
+        cols: width,
+        lead: stageLead,
+        queuedText: null,
+        etaText: null,
+        gitLabel: 'git:none',
+        advisoryText: null,
+        worktreeLabel,
+      }),
+    );
 
     expect(byline.startsWith(`${core} · ${glyph('cursor')}`)).toBe(true);
     expect(byline).not.toContain(worktreeLabel);
@@ -207,15 +229,46 @@ describe('buildInputFooterByline', () => {
 
   it('stays within the chrome content width', () => {
     const cols = 64;
-    const byline = buildInputFooterByline({
-      cols,
-      lead: stageLead,
-      etaText: '~2m left',
-      gitLabel: 'git:branch+squash',
-      advisoryText: 'use --quick for trivial edits',
-    });
+    const byline = fullByline(
+      buildInputFooterByline({
+        cols,
+        lead: stageLead,
+        queuedText: null,
+        etaText: '~2m left',
+        gitLabel: 'git:branch+squash',
+        advisoryText: 'use --quick for trivial edits',
+      }),
+    );
 
     expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeContentWidth(cols));
+  });
+
+  it('renders the queued segment as its own tone-carrying part, separate from the lead', () => {
+    const byline = buildInputFooterByline({
+      cols: 120,
+      lead: stageLead,
+      queuedText: '2 queued',
+      etaText: null,
+      gitLabel: 'git:none',
+      advisoryText: null,
+    });
+
+    expect(byline.queued).toBe(`${SOFT_SEP}2 queued`);
+    expect(fullByline(byline)).toBe(`${stageLead} · 2 queued · git:none`);
+  });
+
+  it('the queued segment carries no leading separator when the lead is empty', () => {
+    const byline = buildInputFooterByline({
+      cols: 120,
+      lead: '',
+      queuedText: '2 queued',
+      etaText: null,
+      gitLabel: 'git:none',
+      advisoryText: null,
+    });
+
+    expect(byline.queued).toBe('2 queued');
+    expect(fullByline(byline)).toBe('2 queued · git:none');
   });
 });
 
@@ -305,7 +358,7 @@ describe('InputFooter', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toMatch(/Researching… \d+:\d\d/);
-    expect(frame).not.toContain(`${glyph('stageDone')} spec`);
+    expect(frame).not.toContain(`${glyph('stageDone')} Spec`);
     expect(frame).toContain('git:none');
 
     ui.unmount();
@@ -342,7 +395,7 @@ describe('InputFooter', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toMatch(/Specifying… \d+:\d\d/);
-    expect(frame).not.toContain(`${glyph('stageDone')} spec`);
+    expect(frame).not.toContain(`${glyph('stageDone')} Spec`);
 
     ui.unmount();
     terminalSizeStore.reset();
@@ -355,7 +408,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`${glyph('stageDone')} spec · git:none`);
+    expect(frame).toContain(`${glyph('stageDone')} Spec · git:none`);
     expect(frame).not.toContain('Researching…');
 
     ui.unmount();
@@ -370,7 +423,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('build 3/7');
+    expect(frame).toContain('Build 3/7');
     expect(frame).not.toContain('Ctrl+C');
 
     ui.unmount();
@@ -429,16 +482,103 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
-  it('keeps the queue notice out of the resting footer byline', () => {
+  it('shows the queue notice in the resting footer byline', () => {
     terminalSizeStore.__testReset({ cols: 140, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'planning', queueDepth: 2 });
 
     const ui = renderFeature(<InputFooter />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).not.toContain('queued');
+    expect(frame).toContain('2 queued');
 
     ui.unmount();
+  });
+
+  it('interrupted byline replaces the spinner with a static interrupted lead', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing' });
+    markInterruptParked();
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('interrupted — Enter retry · type to steer');
+    expect(BRAILLE_SPINNER_FRAMES.some((spinnerFrame) => frame.includes(spinnerFrame))).toBe(false);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('the interrupted lead shows the interim text until the continuation prompt parks', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing' });
+
+    const pending = renderFeature(<InputFooter />);
+    const pendingFrame = stripAnsiStyles(pending.lastFrame() ?? '');
+    expect(pendingFrame).toContain('interrupted — finishing current step…');
+    expect(pendingFrame).not.toContain('Enter retry');
+    pending.unmount();
+
+    markInterruptParked();
+
+    const parked = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain(
+      'interrupted — Enter retry · type to steer',
+    );
+    parked.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('a stalled running call shows the still-working silence warning', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'implementing',
+      startedAt: Date.now() - 120_000,
+    });
+    _lifecycleInternal.set((state) => ({
+      ...state,
+      stall: { since: Date.now() - 5_000, silentMs: 60_000 },
+    }));
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    // The shown span includes the silence that elapsed before the warning fired:
+    // 5s since the warning + the 60s warn threshold = 1:05.
+    expect(frame).toContain(`${glyph('statusWarning')} still working — silent 1:05`);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('queued count renders as an info byline segment that survives narrow widths', () => {
+    lifecycleStore.__testReset({ phase: 'implementing', cancelled: true, queueDepth: 2 });
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const wide = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(wide.lastFrame() ?? '')).toContain('2 queued');
+    wide.unmount();
+
+    terminalSizeStore.__testReset({ cols: 20, rows: 24, isSmall: false });
+    const narrow = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(narrow.lastFrame() ?? '')).toContain('2 queued');
+    narrow.unmount();
+
+    terminalSizeStore.reset();
+  });
+
+  it('byline stage labels are Title Case', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'planning', cancelled: true });
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain(`${glyph('stageDone')} Plan`);
+
+    ui.unmount();
+    terminalSizeStore.reset();
   });
 
   it('renders the sanitized worktree name and strips injected control sequences', () => {

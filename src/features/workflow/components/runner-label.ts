@@ -1,5 +1,5 @@
 import {
-  getRunnerDisplayName,
+  getRunnerCatalogDisplayName,
   getRunnerModelName,
   type RunnerConfig,
 } from '../../../core/config/accessors/runner-config.js';
@@ -8,6 +8,6 @@ import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 
 export function runnerShortLabel(runner: RunnerConfig): string {
   const model = getRunnerModelName(runner);
-  const raw = model ? formatModelName(model) : getRunnerDisplayName(runner);
+  const raw = model ? formatModelName(model) : getRunnerCatalogDisplayName(runner);
   return sanitizeTerminalDisplayText(raw);
 }

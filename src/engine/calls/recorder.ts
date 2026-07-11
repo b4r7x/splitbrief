@@ -74,6 +74,8 @@ export interface RunnerCallRecorder {
     backendMetadata: RunnerCallUnknownUpstreamMetadata;
     ts?: number | undefined;
   }) => void;
+  stalled: (opts: { silentMs: number; ts?: number | undefined }) => void;
+  stallCleared: (opts?: { ts?: number | undefined }) => void;
   finishCompleted: (opts?: {
     usage?: RunnerCallUsage | null | undefined;
     nativeSessionId?: string | null | undefined;
@@ -478,6 +480,19 @@ export function createRunnerCallRecorder(opts: {
         backendMetadata: eventOpts.backendMetadata,
       });
     },
+    stalled: (eventOpts) =>
+      emit({
+        type: 'call_stalled',
+        ts: eventOpts.ts ?? Date.now(),
+        ...opts.context,
+        silentMs: eventOpts.silentMs,
+      }),
+    stallCleared: (eventOpts) =>
+      emit({
+        type: 'call_stall_cleared',
+        ts: eventOpts?.ts ?? Date.now(),
+        ...opts.context,
+      }),
     finishCompleted,
     finishFailed,
     finishIncomplete,

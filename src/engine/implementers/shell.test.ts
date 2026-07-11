@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Config } from '../../core/schemas/config.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+import type { ImplementerPublisher } from './types.js';
 import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createImplementer } from '../runners/factory.js';
@@ -170,5 +172,29 @@ describe('shell implementer', () => {
 
     const fullOutput = progressCalls.join('');
     expect(fullOutput).toContain('TypeError: x is not a function');
+  });
+
+  it('threads a configured idleWarnMs override into the spawn', async () => {
+    const config = makeConfig({ command: 'bash', args: ['-c', 'sleep 0.15'], idleWarnMs: 30 });
+    const task = makeTask();
+    const events: RunnerCallEvent[] = [];
+    const publisher: ImplementerPublisher = {
+      publishRunning: () => {},
+      publishCallEvent: ({ event }) => events.push(event),
+      publishDone: () => {},
+      publishFailed: () => {},
+    };
+
+    const implementer = await createImplementer(config, { publisher });
+    await implementer.implement({
+      task,
+      projectDir: '/tmp',
+      config,
+      context,
+      onOutput: () => {},
+      phase: 'implementing',
+    });
+
+    expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
   });
 });

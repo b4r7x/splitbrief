@@ -127,6 +127,10 @@ export function createRunnerAttemptCallbackBuffer(
       },
       onCallEvent: (event) => {
         captureCallContext(event);
+        if (event.type === 'call_stalled' || event.type === 'call_stall_cleared') {
+          callbacks.onCallEvent?.(event);
+          return;
+        }
         queueOverflowWarningIfPossible();
         addOrMarkOverflow(() => callbacks.onCallEvent?.(event), {
           bytes: Buffer.byteLength(JSON.stringify(event), 'utf8'),

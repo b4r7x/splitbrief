@@ -8,7 +8,9 @@ export function createTempDir(prefix: string): string {
 }
 
 export function cleanupTempDir(dir: string): void {
-  rmSync(dir, { recursive: true, force: true });
+  // maxRetries re-walks the tree when a straggler process (e.g. a fixture's fake command still
+  // draining stdin) recreates an entry mid-delete and rmdir reports ENOTEMPTY.
+  rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
 }
 
 export async function withTempDir<T>(prefix: string, fn: (dir: string) => Promise<T>): Promise<T> {

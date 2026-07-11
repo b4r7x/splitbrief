@@ -129,4 +129,39 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.details?.join('\n')).toContain('file-write approval prompts are disabled');
     expect(check?.metadata?.fileWriteApprovalEnabled).toBe(false);
   });
+
+  it('warns when timeout is at or below the effective idleKillMs', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'auto', timeout: 100_000 },
+    });
+
+    const check = buildRunnerChecks(config).find(
+      (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
+    );
+
+    expect(check).toMatchObject({
+      severity: 'warning',
+      metadata: { timeout: 100_000, idleKillMs: 300_000 },
+    });
+  });
+
+  it('does not warn when timeout leaves room above the idle-kill threshold', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'auto', timeout: 400_000 },
+    });
+
+    const check = buildRunnerChecks(config).find(
+      (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
+    );
+
+    expect(check).toBeUndefined();
+  });
+
+  it('readiness summaries capitalize roles via formatRoleLabel', () => {
+    const config = makeConfig();
+
+    const check = buildRunnerChecks(config).find((c) => c.id === 'runners.planner.configured');
+
+    expect(check?.summary).toMatch(/^Planner /);
+  });
 });

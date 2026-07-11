@@ -528,6 +528,27 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
+  it('summary runner rows label planner and implementer in lowercase', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    showSummaryRoute({
+      summary: makeSummary({
+        plannerTool: 'codex',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen-small',
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('planner');
+    expect(frame).toContain('implementer');
+    expect(frame).not.toContain('Planner');
+    expect(frame).not.toContain('Implementer');
+
+    ui.unmount();
+  });
+
   it('does not render "full" mode label anywhere', () => {
     showSummaryRoute({ summary: makeSummary({ mode: 'standard' }) });
 

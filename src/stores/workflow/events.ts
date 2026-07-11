@@ -44,6 +44,10 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
     case 'runner_call_warning':
     case 'runner_call_error':
     case 'runner_call_completed':
+    case 'runner_call_stalled':
+    case 'runner_call_stall_cleared':
+      return null;
+    case 'planner_heartbeat':
       return null;
     case 'warning':
       return { ...event, message: sanitizeTerminalDiagnosticText(event.message) };
@@ -79,11 +83,6 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     last?.type === 'validate' &&
     last.status === 'running'
   ) {
-    const next = events.slice();
-    next[next.length - 1] = event;
-    return next;
-  }
-  if (event.type === 'planner_heartbeat' && last?.type === 'planner_heartbeat') {
     const next = events.slice();
     next[next.length - 1] = event;
     return next;

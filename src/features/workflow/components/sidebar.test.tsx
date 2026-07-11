@@ -116,7 +116,7 @@ describe('Sidebar — completed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Planner claude-code');
+    expect(frame).toContain('Planner Claude Code');
     expect(frame).toContain('Implementer');
     expect(frame).toContain('Qwen 2.5 Coder 7B');
     expect(frame).toContain(glyph('connectorHandoff'));
@@ -133,8 +133,8 @@ describe('Sidebar — completed count', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('no tasks yet');
-    expect(frame).toContain('planner is working');
-    expect(frame).toContain('spec');
+    expect(frame).toContain('Planner is working');
+    expect(frame).toContain('Spec');
 
     ui.unmount();
   });
@@ -154,7 +154,7 @@ describe('Sidebar — completed count', () => {
       const firstFrame = stripAnsiStyles(ui.lastFrame() ?? '');
       const firstSpinnerFrame = spinnerFrames()[0] ?? '';
 
-      expect(firstFrame).toContain(`${firstSpinnerFrame} spec`);
+      expect(firstFrame).toContain(`${firstSpinnerFrame} Spec`);
       expect(firstFrame).toContain('0:00');
 
       await act(async () => {
@@ -162,7 +162,7 @@ describe('Sidebar — completed count', () => {
       });
 
       const nextFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(nextFrame).toContain(`${firstSpinnerFrame} spec`);
+      expect(nextFrame).toContain(`${firstSpinnerFrame} Spec`);
       expect(nextFrame).toContain('0:01');
     } finally {
       ui?.unmount();
@@ -183,6 +183,41 @@ describe('Sidebar — completed count', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('no tasks yet');
+    expect(frame).not.toContain('Planner is working');
+
+    ui.unmount();
+  });
+
+  it('sidebar shows a static interrupted line without spinner frames', async () => {
+    tasksStore.__testReset({ tasks: [] });
+    lifecycleStore.__testReset({
+      phase: 'researching',
+      status: 'interrupted',
+      startedAt: Date.now() - 5_000,
+    });
+
+    const ui = renderFeature(<Sidebar width={30} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Planner interrupted');
+    expect(frame).not.toContain('Planner is working');
+    expect(frame).not.toContain('Spec');
+
+    ui.unmount();
+  });
+
+  it('sidebar role and waiting labels are Title Case', async () => {
+    tasksStore.__testReset({ tasks: [] });
+    lifecycleStore.__testReset({ phase: 'researching', startedAt: Date.now() - 1_000 });
+
+    const ui = renderFeature(<Sidebar width={60} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Planner is working');
+    expect(frame).toContain('Planner Claude Code');
+    expect(frame).toContain('Implementer');
     expect(frame).not.toContain('planner is working');
 
     ui.unmount();

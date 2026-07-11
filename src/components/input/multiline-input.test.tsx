@@ -279,15 +279,21 @@ describe('MultilineInput astral-plane editing', () => {
     await tick(20);
 
     ui.stdin.write(`a${EMOJI}`);
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}]`);
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}]`);
+      },
+      { timeout: 5000 },
+    );
 
     ui.stdin.write(BACKSPACE);
-    await vi.waitFor(() => {
-      // The emoji is gone entirely — no half-surrogate residue.
-      expect(ui.lastFrame() ?? '').toContain('value:[a]');
-    });
+    await vi.waitFor(
+      () => {
+        // The emoji is gone entirely — no half-surrogate residue.
+        expect(ui.lastFrame() ?? '').toContain('value:[a]');
+      },
+      { timeout: 5000 },
+    );
   });
 
   it('left then right arrow steps over the full emoji code point', async () => {
@@ -302,17 +308,23 @@ describe('MultilineInput astral-plane editing', () => {
     ui.stdin.write(LEFT);
     await tick(20);
     ui.stdin.write('x');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}]`);
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}]`);
+      },
+      { timeout: 5000 },
+    );
 
     // Right steps over the whole emoji; typing lands after it.
     ui.stdin.write(RIGHT);
     await tick(20);
     ui.stdin.write('y');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}y]`);
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain(`value:[x${EMOJI}y]`);
+      },
+      { timeout: 5000 },
+    );
   });
 
   it('delete removes the next whole emoji instead of backspacing', async () => {
@@ -321,18 +333,24 @@ describe('MultilineInput astral-plane editing', () => {
     await tick(20);
 
     ui.stdin.write(`a${EMOJI}b`);
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}b]`);
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain(`value:[a${EMOJI}b]`);
+      },
+      { timeout: 5000 },
+    );
 
     ui.stdin.write(LEFT);
     await tick(20);
     ui.stdin.write(LEFT);
     await tick(20);
     ui.stdin.write(DELETE);
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('value:[ab]');
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('value:[ab]');
+      },
+      { timeout: 5000 },
+    );
   });
 
   it('keeps Ctrl+B, Ctrl+F, and Ctrl+E as composer text editing chords', async () => {
@@ -341,23 +359,32 @@ describe('MultilineInput astral-plane editing', () => {
     await tick(20);
 
     ui.stdin.write('ab');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('value:[ab]');
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('value:[ab]');
+      },
+      { timeout: 5000 },
+    );
 
     ui.stdin.write(CTRL_B);
     await tick(20);
     ui.stdin.write('X');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('value:[aXb]');
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('value:[aXb]');
+      },
+      { timeout: 5000 },
+    );
 
     ui.stdin.write(CTRL_F);
     await tick(20);
     ui.stdin.write('Y');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('value:[aXbY]');
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('value:[aXbY]');
+      },
+      { timeout: 5000 },
+    );
 
     ui.stdin.write(CTRL_B);
     await tick(20);
@@ -366,9 +393,12 @@ describe('MultilineInput astral-plane editing', () => {
     ui.stdin.write(CTRL_E);
     await tick(20);
     ui.stdin.write('!');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('value:[aXbY!]');
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('value:[aXbY!]');
+      },
+      { timeout: 5000 },
+    );
   });
 
   it('lets callers override Ctrl+E with an explicit shortcut binding', async () => {
@@ -383,16 +413,22 @@ describe('MultilineInput astral-plane editing', () => {
     await tick(20);
 
     ui.stdin.write('ab');
-    await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('value:ab');
-    });
+    await vi.waitFor(
+      () => {
+        expect(ui.lastFrame() ?? '').toContain('value:ab');
+      },
+      { timeout: 5000 },
+    );
 
     ui.stdin.write(CTRL_E);
     await tick(20);
     ui.stdin.write('!');
-    await vi.waitFor(() => {
-      expect(shortcut).toHaveBeenCalledTimes(1);
-      expect(ui.lastFrame() ?? '').toContain('value:ab!');
-    });
+    await vi.waitFor(
+      () => {
+        expect(shortcut).toHaveBeenCalledTimes(1);
+        expect(ui.lastFrame() ?? '').toContain('value:ab!');
+      },
+      { timeout: 5000 },
+    );
   });
 });

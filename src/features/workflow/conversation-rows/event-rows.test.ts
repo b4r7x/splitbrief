@@ -6,7 +6,7 @@ import type { StreamingOutputState } from '../../../stores/workflow/streaming-ou
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
-import { eventRowBlock } from './event-rows.js';
+import { eventRowBlock, isTranscriptRowlessEvent } from './event-rows.js';
 import { rowText } from './row-format.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
@@ -334,7 +334,9 @@ describe('eventRows', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toContain('Message queued during implementing: ship it sk-***REDACTED***');
+    expect(text).toContain(
+      'Queued — applies at the next planner prompt: ship it sk-***REDACTED***',
+    );
     expect(text).toContain(
       'Message delivered to live session: Authorization: Bearer ***REDACTED***',
     );
@@ -758,5 +760,106 @@ describe('eventRows', () => {
 
     expect(text).toContain('ship the redesign');
     expect(text).not.toContain('❯');
+  });
+
+  it('isTranscriptRowlessEvent is true for row-less event types and false for visible rows', () => {
+    const heartbeat: EngineEvent = {
+      type: 'planner_heartbeat',
+      ts: 0,
+      phase: 'planning',
+      elapsedMs: 1000,
+      accumulatedTokens: 10,
+    };
+    const status: EngineEvent = {
+      type: 'planner_status',
+      ts: 0,
+      phase: 'planning',
+      status: 'running',
+    };
+    const tokens: EngineEventOf<'task_tokens'> = {
+      type: 'task_tokens',
+      ts: 0,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      method: 'local',
+      implementerTokens: 10,
+      escalationTokens: 0,
+      retryCount: 0,
+    };
+    const text: EngineEvent = {
+      type: 'planner_text',
+      ts: 0,
+      phase: 'planning',
+      text: 'hello',
+    };
+    const stalled: EngineEvent = {
+      type: 'runner_call_stalled',
+      ts: 0,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 1,
+      silentMs: 60_000,
+    };
+    const stallCleared: EngineEvent = {
+      type: 'runner_call_stall_cleared',
+      ts: 0,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 2,
+    };
+
+    expect(isTranscriptRowlessEvent(heartbeat)).toBe(true);
+    expect(isTranscriptRowlessEvent(status)).toBe(true);
+    expect(isTranscriptRowlessEvent(tokens)).toBe(true);
+    expect(isTranscriptRowlessEvent(stalled)).toBe(true);
+    expect(isTranscriptRowlessEvent(stallCleared)).toBe(true);
+    expect(isTranscriptRowlessEvent(text)).toBe(false);
+  });
+
+  it('turn_interrupted renders a warning callout row', () => {
+    const event: EngineEventOf<'turn_interrupted'> = {
+      type: 'turn_interrupted',
+      ts: 0,
+      phase: 'implementing',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText).join('\n')).toContain(
+      'Turn stopped — type instructions to steer, or press Enter to retry.',
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((rowValue) => rowValue.markerTone === 'warning')).toBe(true);
+  });
+
+  it('message_queued renders info label and marker with normal-tone value', () => {
+    const event: EngineEventOf<'message_queued'> = {
+      type: 'message_queued',
+      ts: 0,
+      phase: 'implementing',
+      id: 'queued-1',
+      preview: 'ship it',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.map(rowText).join('\n')).toContain('Queued — applies at the next planner prompt');
+    expect(rows[0]?.markerTone).toBe('info');
+    expect(rows[0]?.segments[0]?.tone).toBe('info');
+    expect(rows[0]?.segments[1]?.tone).toBe('text');
   });
 });

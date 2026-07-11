@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { listSessions, listAllSessions, saveSummary } from './io.js';
+import { listSessions, listAllSessions, saveSummary, readSession } from './io.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 import { saveState, loadState } from '../state/persistence.js';
 import { isResumable } from '../phases.js';
@@ -403,6 +403,26 @@ describe('saveSummary', () => {
       implementerTokens: 500_000,
       tool: 'deepseek',
     });
+  });
+});
+
+describe('readSession', () => {
+  it('readSession returns the summary saved by saveSummary', () => {
+    tmp = createTempDir('sessions-io-test');
+    const session = makeSession({ id: '2024-01-01-read-1', feature: 'read-me' });
+    saveSummary({ projectDir: tmp, sessionId: '2024-01-01-read-1' }, session);
+
+    expect(readSession({ projectDir: tmp, sessionId: '2024-01-01-read-1' })).toEqual(session);
+  });
+
+  it('readSession returns null for a missing or invalid record', () => {
+    tmp = createTempDir('sessions-io-test');
+    expect(readSession({ projectDir: tmp, sessionId: '2024-01-01-missing' })).toBeNull();
+
+    const badDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-invalid');
+    mkdirSync(badDir, { recursive: true });
+    writeFileSync(join(badDir, 'summary.json'), JSON.stringify({ id: 'x' }));
+    expect(readSession({ projectDir: tmp, sessionId: '2024-01-01-invalid' })).toBeNull();
   });
 });
 

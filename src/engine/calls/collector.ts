@@ -337,6 +337,9 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
         message: sanitizeRunnerCallRawPreview(event.rawPreview),
       });
       return;
+    case 'call_stalled':
+    case 'call_stall_cleared':
+      return;
     default:
       assertNever(event);
   }

@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { eventsStore, MAX_EVENTS, MAX_MERGED_TEXT_LENGTH, mergeEvent } from './events.js';
+import {
+  eventsStore,
+  MAX_EVENTS,
+  MAX_MERGED_TEXT_LENGTH,
+  mergeEvent,
+  projectEventForTuiEventLog,
+} from './events.js';
 import { addEvent, resetWorkflow } from './actions.js';
 import { taskId } from '../../core/schemas/task.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
@@ -469,7 +475,7 @@ describe('eventsStore — append via addEvent', () => {
   });
 
   describe('planner_heartbeat coalescing', () => {
-    it('replaces consecutive heartbeat with the latest', () => {
+    it('drops heartbeats from the retained event log', () => {
       addEvent({
         type: 'planner_heartbeat',
         ts: 1000,
@@ -484,14 +490,11 @@ describe('eventsStore — append via addEvent', () => {
         elapsedMs: 7000,
         accumulatedTokens: 200,
       });
-      const events = eventsStore.get().events;
-      expect(events).toHaveLength(1);
-      const hb = events[0] as { type: string; elapsedMs: number; accumulatedTokens: number };
-      expect(hb.elapsedMs).toBe(7000);
-      expect(hb.accumulatedTokens).toBe(200);
+      expect(eventsStore.get().events).toHaveLength(0);
     });
 
-    it('does not replace heartbeat when a different event type intervenes', () => {
+    it('does not split visible rows around a heartbeat', () => {
+      addEvent(makePlannerText({ text: 'a' }));
       addEvent({
         type: 'planner_heartbeat',
         ts: 1000,
@@ -499,15 +502,50 @@ describe('eventsStore — append via addEvent', () => {
         elapsedMs: 5000,
         accumulatedTokens: 100,
       });
-      addEvent(makePlannerText({ text: 'thinking' }));
-      addEvent({
-        type: 'planner_heartbeat',
-        ts: 3000,
-        phase: 'planning',
-        elapsedMs: 7000,
-        accumulatedTokens: 200,
-      });
-      expect(eventsStore.get().events).toHaveLength(3);
+      addEvent(makePlannerText({ text: 'b' }));
+      const events = eventsStore.get().events;
+      expect(events).toHaveLength(1);
+      expect((events[0] as { text: string }).text).toBe('ab');
     });
+  });
+});
+
+describe('projectEventForTuiEventLog', () => {
+  it('drops planner_heartbeat', () => {
+    expect(
+      projectEventForTuiEventLog({
+        type: 'planner_heartbeat',
+        ts: 1000,
+        phase: 'planning',
+        elapsedMs: 5000,
+        accumulatedTokens: 100,
+      }),
+    ).toBeNull();
+  });
+
+  it('drops runner_call_stalled and runner_call_stall_cleared', () => {
+    expect(
+      projectEventForTuiEventLog({
+        type: 'runner_call_stalled',
+        ts: 1000,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 1,
+        silentMs: 60_000,
+      }),
+    ).toBeNull();
+    expect(
+      projectEventForTuiEventLog({
+        type: 'runner_call_stall_cleared',
+        ts: 2000,
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        sequence: 2,
+      }),
+    ).toBeNull();
   });
 });

@@ -1,6 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../core/schemas/config.js';
+import type { RunnerCallEvent } from '../calls/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createImplementer, createPlanner } from './factory.js';
 
 function withPlanner(planner: Config['planner']): Config {
@@ -96,6 +99,47 @@ describe('createPlanner', () => {
     };
 
     await expect(createPlanner(config)).rejects.toThrow(/invalid/i);
+  });
+
+  describe('claude-code idle wiring', () => {
+    let shimDir: string;
+    let restorePath: () => void;
+
+    beforeEach(() => {
+      shimDir = createTempDir('factory-claude-code-idle');
+      restorePath = prependPath(shimDir);
+    });
+
+    afterEach(() => {
+      restorePath();
+      cleanupTempDir(shimDir);
+    });
+
+    it('threads a configured idleWarnMs override into the claude-code planner spawn', async () => {
+      writeCommandShim({
+        dir: shimDir,
+        command: 'claude',
+        lines: [JSON.stringify({ type: 'result', result: 'slow response' })],
+        sleepSeconds: 0.15,
+      });
+
+      const config = withPlanner({
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'test',
+        idleWarnMs: 30,
+      });
+      const planner = await createPlanner(config);
+
+      const events: RunnerCallEvent[] = [];
+      const result = await planner.review('prompt', shimDir, {
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+      });
+
+      expect(result.text).toContain('slow response');
+      expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
+    });
   });
 });
 

@@ -85,6 +85,38 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     ui.unmount();
   });
 
+  it('Ctrl+C while the workflow is interrupted arms exit without re-interrupting', async () => {
+    const exit = vi.fn();
+    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
+    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
+    await tick();
+
+    writeCtrlC(ui);
+    await tick();
+
+    expect(abortStore.get().armed).toBe('exit');
+    expect(interruptWorkflow).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('Ctrl+C in question mode arms exit without interrupting the turn', async () => {
+    const exit = vi.fn();
+    const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
+    controlsStore.setInputMode('question');
+    const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
+    await tick();
+
+    writeCtrlC(ui);
+    await tick();
+
+    expect(abortStore.get().armed).toBe('exit');
+    expect(interruptWorkflow).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
   it('interrupting a live workflow closes a pending tiered approval prompt', async () => {
     const exit = vi.fn();
     const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'turn');
@@ -220,7 +252,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
 
   it('ESC during a live phase arms interrupt, then a second ESC interrupts the turn', async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
     await tick();
@@ -278,9 +310,31 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     ui.unmount();
   });
 
+  it('double Esc while interrupted arms and fires workflow cancel', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
+    const exit = vi.fn();
+    const cancelWorkflow = vi.fn();
+    const ui = renderFeature(
+      <Harness exit={exit} interruptWorkflow={() => 'none'} cancelWorkflow={cancelWorkflow} />,
+    );
+    await tick();
+
+    writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+    expect(abortStore.get().armed).toBe('cancel');
+
+    writeEsc(ui);
+    await tick();
+
+    expect(cancelWorkflow).toHaveBeenCalledTimes(1);
+    expect(exit).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
   it('a split escape sequence (ESC then an arrow tail) does not arm', async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
     await tick();
@@ -412,7 +466,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
 
   it('ESC does not arm while a tiered approval prompt is pending', async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     void openApprovalPrompt({
       tier: 'sticky',
@@ -438,7 +492,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
 
   it('ESC does not arm while a cost-approval prompt is pending', async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     void openCostApprovalPrompt(makeCostPrediction());
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
@@ -457,7 +511,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
 
   it('ESC does not arm while a completion menu is open', async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     completionStore.setOpen(true);
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);

@@ -12,6 +12,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { formatRoleLabel, formatStageLabel } from '../../../core/phase-display.js';
 import { formatStageElapsed } from '../display/live-activity.js';
 import { getActiveRailStage } from '../layout/chrome-rows.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
@@ -108,22 +109,31 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
 function SidebarWaiting() {
   const t = useTheme();
   const phase = lifecycleStore.use((s) => s.phase);
-  const running = lifecycleStore.use((s) => s.status === 'running');
+  const status = lifecycleStore.use((s) => s.status);
   const startedAt = lifecycleStore.use((s) => s.startedAt);
+  const running = status === 'running';
   const { frame } = useSpinnerFrame(running);
 
-  if (!running) return <Text color={t.textDim}>no tasks yet</Text>;
+  if (status !== 'running' && status !== 'interrupted') {
+    return <Text color={t.textDim}>no tasks yet</Text>;
+  }
 
   const stage = getActiveRailStage(phase)?.stage ?? '';
   const elapsed = startedAt !== null ? formatStageElapsed(Date.now() - startedAt) : '';
   return (
     <Box flexDirection="column">
       <Text color={t.textDim}>no tasks yet</Text>
-      <Text color={t.textDim}>planner is working</Text>
-      <Text color={t.textDim}>
-        {`${frame} ${stage}`}
-        {elapsed === '' ? '' : `${SOFT_SEP}${elapsed}`}
-      </Text>
+      {status === 'interrupted' ? (
+        <Text color={t.textDim}>Planner interrupted</Text>
+      ) : (
+        <>
+          <Text color={t.textDim}>Planner is working</Text>
+          <Text color={t.textDim}>
+            {`${frame} ${formatStageLabel(stage)}`}
+            {elapsed === '' ? '' : `${SOFT_SEP}${elapsed}`}
+          </Text>
+        </>
+      )}
     </Box>
   );
 }
@@ -226,12 +236,12 @@ export function Sidebar({ width }: SidebarProps) {
           )}
           <Text wrap="truncate">
             <Text color={t.planner} bold>
-              Planner
+              {formatRoleLabel('planner')}
             </Text>
             {plannerLabel !== '' && <Text color={t.planner}>{` ${plannerLabel}`}</Text>}
             <Text color={t.textDim}>{ARROW_SEP}</Text>
             <Text color={t.implementer} bold>
-              Implementer
+              {formatRoleLabel('implementer')}
             </Text>
             {implLabel !== '' && <Text color={t.implementer}>{` ${implLabel}`}</Text>}
           </Text>

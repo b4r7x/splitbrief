@@ -18,6 +18,7 @@ interface ComposerHistory {
   handleBoundaryNavigate: (direction: 'up' | 'down') => boolean;
   resetHistory: () => void;
   onChange: (nextValue: string) => void;
+  historyActive: boolean;
 }
 
 export function useHistory({
@@ -61,5 +62,12 @@ export function useHistory({
   const resetHistory = () => setHistoryState(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
   const bumpEpoch = () => setInputEpoch((epoch) => epoch + 1);
 
-  return { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange };
+  return {
+    inputEpoch,
+    bumpEpoch,
+    handleBoundaryNavigate,
+    resetHistory,
+    onChange,
+    historyActive: historyState.historyIndex !== null,
+  };
 }

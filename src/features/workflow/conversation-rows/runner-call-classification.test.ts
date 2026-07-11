@@ -3,7 +3,6 @@ import type { EngineEventOf } from '../../../engine/events/types.js';
 import {
   isRunnerCallEvent,
   isRunnerCallTranscriptRowSuppressed,
-  runnerCallId,
 } from './runner-call-classification.js';
 
 function runnerActivity(
@@ -26,16 +25,6 @@ function runnerActivity(
     ...overrides,
   };
 }
-
-describe('runnerCallId', () => {
-  it('returns the call id for runner-call events', () => {
-    expect(runnerCallId(runnerActivity({ callId: 'call-42' }))).toBe('call-42');
-  });
-
-  it('returns null for non-runner events', () => {
-    expect(runnerCallId({ type: 'planner_text', ts: 0, phase: 'planning', text: 'hi' })).toBeNull();
-  });
-});
 
 describe('isRunnerCallTranscriptRowSuppressed', () => {
   it('suppresses non-activity runner-call rows but keeps activity rows renderable', () => {

@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import { formatStageLabel } from '../../../core/phase-display.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { SOFT_SEP } from '../../../components/separators.js';
@@ -58,7 +59,7 @@ export function railFormCText(stages: RailStageState[], fraction: string): strin
   const state = railFormCState(stages);
   const status = state?.status ?? 'pending';
   const stage = state?.stage ?? 'spec';
-  const text = `${stageMarkerGlyph(status)} ${stage}`;
+  const text = `${stageMarkerGlyph(status)} ${formatStageLabel(stage)}`;
   if (status === 'cancelled') return `${text}${RAIL_FORM_C_CANCELLED_SUFFIX}`;
   if (status === 'active' && fraction !== '') return `${text}  task ${fraction}`;
   return text;

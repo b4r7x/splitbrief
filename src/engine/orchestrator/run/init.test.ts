@@ -297,7 +297,7 @@ describe('initializeWorkflow', () => {
     });
   });
 
-  it('keeps install wording when a cli planner is unavailable', async () => {
+  it('cli planner without a reason keeps the install hint', async () => {
     await withTempDir('diptych-init-cli-unavailable', async (projectDir) => {
       const feature = 'needs an installed cli';
       const sessionId = 'session-init-cli-unavailable';
@@ -350,6 +350,66 @@ describe('initializeWorkflow', () => {
       );
       expect(errorEvent?.message).toBe(
         "Planner 'claude-code' is not available. Make sure it's installed.",
+      );
+    });
+  });
+
+  it('cli planner unavailability message includes the probe reason when present', async () => {
+    await withTempDir('diptych-init-cli-unavailable-reason', async (projectDir) => {
+      const feature = 'needs an installed cli';
+      const sessionId = 'session-init-cli-unavailable-reason';
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+      });
+      const { callbacks } = makeCallbacks();
+      const events: EngineEvent[] = [];
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'claude-code',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+
+      const init = await initializeWorkflow({
+        opts: {
+          feature,
+          projectDir,
+          config,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          _planner: makePlanner({
+            isAvailable: vi.fn().mockResolvedValue(false),
+            unavailabilityReason: () => 'probe timed out after 5s',
+          }),
+          _implementer: makeImplementer(),
+          allowHooks: true,
+          _eventSink: (e) => events.push(e),
+        },
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: () => {},
+        resumeHolder: { messages: [] },
+      });
+
+      expect(init.ok).toBe(false);
+      const errorEvent = events.find(
+        (e): e is Extract<EngineEvent, { type: 'error' }> => e.type === 'error',
+      );
+      expect(errorEvent?.message).toBe(
+        "Planner 'claude-code' is not available: probe timed out after 5s.",
       );
     });
   });

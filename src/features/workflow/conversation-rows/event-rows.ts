@@ -32,6 +32,63 @@ import {
 import { taskStartedRowBlock } from './task-started-row-block.js';
 import { isRunnerCallTranscriptRowSuppressed } from './runner-call-classification.js';
 
+// Single source for "renders no transcript row": eventRowBlock early-returns null
+// through the same predicate the three scan loops (rows, row actions, batch key)
+// share, so the two views cannot drift. A new event type not listed here lands in
+// eventRowBlock's switch, where assertNever forces an explicit decision.
+const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
+  'workflow_started',
+  'workflow_resumed',
+  'workflow_complete',
+  'workflow_config',
+  'spec_rejected',
+  'spec_regenerated',
+  'plan_approved',
+  'plan_rejected',
+  'plan_regenerated',
+  'all_tasks_done',
+  'planner_status',
+  'planner_heartbeat',
+  'drift_chain_detected',
+  'snapshot_created',
+  'snapshot_restored',
+  'snapshot_restore_conflict',
+  'mode_resolved',
+  'mode_advice',
+  'instant_plan_received',
+  'task_completed',
+  'task_escalating',
+  'task_tokens',
+  'task_review_needed',
+  'hint_failed',
+  'cost_update',
+  'approval_prompted',
+  'approval_granted',
+  'approval_rejected',
+  'approval_sticky_recorded',
+  'ipc_server_started',
+  'ipc_client_attached',
+  'ipc_client_detached',
+  'ipc_reconnect_attempt',
+  'ipc_reconnect_failed',
+  'replay_started',
+  'replay_complete',
+  'clarifications_collected',
+  'clarification_answered',
+  'runner_call_stalled',
+  'runner_call_stall_cleared',
+] as const satisfies readonly EngineEvent['type'][];
+
+type TranscriptRowlessEventType = (typeof TRANSCRIPT_ROWLESS_EVENT_TYPES)[number];
+
+const transcriptRowlessEventTypes: ReadonlySet<string> = new Set(TRANSCRIPT_ROWLESS_EVENT_TYPES);
+
+export function isTranscriptRowlessEvent(
+  event: EngineEvent,
+): event is Extract<EngineEvent, { type: TranscriptRowlessEventType }> {
+  return transcriptRowlessEventTypes.has(event.type);
+}
+
 export function eventRowBlock(options: {
   event: EngineEvent;
   globalIndex: number;
@@ -43,47 +100,9 @@ export function eventRowBlock(options: {
   const keyPrefix = `event-${globalIndex}-${event.type}`;
 
   if (isRunnerCallTranscriptRowSuppressed(event)) return null;
+  if (isTranscriptRowlessEvent(event)) return null;
 
   switch (event.type) {
-    case 'workflow_started':
-    case 'workflow_resumed':
-    case 'workflow_complete':
-    case 'workflow_config':
-    case 'spec_rejected':
-    case 'spec_regenerated':
-    case 'plan_approved':
-    case 'plan_rejected':
-    case 'plan_regenerated':
-    case 'all_tasks_done':
-    case 'planner_status':
-    case 'planner_heartbeat':
-    case 'drift_chain_detected':
-    case 'snapshot_created':
-    case 'snapshot_restored':
-    case 'snapshot_restore_conflict':
-    case 'mode_resolved':
-    case 'mode_advice':
-    case 'instant_plan_received':
-    case 'task_completed':
-    case 'task_escalating':
-    case 'task_tokens':
-    case 'task_review_needed':
-    case 'hint_failed':
-    case 'cost_update':
-    case 'approval_prompted':
-    case 'approval_granted':
-    case 'approval_rejected':
-    case 'approval_sticky_recorded':
-    case 'ipc_server_started':
-    case 'ipc_client_attached':
-    case 'ipc_client_detached':
-    case 'ipc_reconnect_attempt':
-    case 'ipc_reconnect_failed':
-    case 'replay_started':
-    case 'replay_complete':
-    case 'clarifications_collected':
-    case 'clarification_answered':
-      return null;
     case 'workflow_cancelled':
       return rowSeedsBlock(keyPrefix, [
         { key: `${keyPrefix}-title`, text: 'Workflow cancelled', tone: 'textDim', bold: true },
@@ -279,9 +298,11 @@ export function eventRowBlock(options: {
       return cardRowsBlock({
         keyPrefix,
         label: 'queued',
-        value: queueMessageValue(`Message queued during ${event.phase}`, event.preview),
+        value: queueMessageValue('Queued — applies at the next planner prompt', event.preview),
         width: ctx.width,
-        labelTone: 'textDim',
+        labelTone: 'info',
+        valueTone: 'text',
+        markerTone: 'info',
       });
     case 'message_injected_native':
       return cardRowsBlock({
@@ -374,6 +395,14 @@ export function eventRowBlock(options: {
         events: [event],
         batchKey: keyPrefix,
         width: ctx.width,
+      });
+    case 'turn_interrupted':
+      return calloutRowsBlock({
+        keyPrefix,
+        label: 'interrupted',
+        value: 'Turn stopped — type instructions to steer, or press Enter to retry.',
+        width: ctx.width,
+        severity: 'warning',
       });
     default:
       return assertNever(event);

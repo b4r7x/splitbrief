@@ -1,7 +1,8 @@
 import { createStore, storeBase } from '../create-store.js';
-import { subscribeFeedbackErrors } from '../channels/feedback.js';
+import { subscribeFeedbackErrors, subscribeFeedbackReset } from '../channels/feedback.js';
 
 const FEEDBACK_AUTO_CLEAR_MS = 3000;
+const FEEDBACK_ERROR_AUTO_CLEAR_MS = 5000;
 
 interface FeedbackState {
   message: string | null;
@@ -19,39 +20,43 @@ const clearFeedback = () => {
   store.set({ message: null, isError: false });
 };
 
-const scheduleAutoClear = () => {
-  clearTimer = setTimeout(clearFeedback, FEEDBACK_AUTO_CLEAR_MS);
+const scheduleAutoClear = (ms: number) => {
+  clearTimer = setTimeout(clearFeedback, ms);
 };
 
 const setError = (msg: string | null) => {
   clearTimeout(clearTimer);
   clearTimer = undefined;
+  if (msg) scheduleAutoClear(FEEDBACK_ERROR_AUTO_CLEAR_MS);
   store.set({ message: msg, isError: msg !== null });
 };
 
 const setMessage = (msg: string | null) => {
   clearTimeout(clearTimer);
   clearTimer = undefined;
-  if (msg) scheduleAutoClear();
+  if (msg) scheduleAutoClear(FEEDBACK_AUTO_CLEAR_MS);
   store.set({ message: msg, isError: false });
 };
 
 const setTransientError = (msg: string) => {
   clearTimeout(clearTimer);
-  scheduleAutoClear();
+  scheduleAutoClear(FEEDBACK_AUTO_CLEAR_MS);
   store.set({ message: msg, isError: true });
 };
 
+const reset = () => {
+  clearTimeout(clearTimer);
+  clearTimer = undefined;
+  store.reset();
+};
+
 subscribeFeedbackErrors(setError);
+subscribeFeedbackReset(reset);
 
 export const feedbackStore = {
   ...storeBase(store),
   setError,
   setMessage,
   setTransientError,
-  reset: () => {
-    clearTimeout(clearTimer);
-    clearTimer = undefined;
-    store.reset();
-  },
+  reset,
 };

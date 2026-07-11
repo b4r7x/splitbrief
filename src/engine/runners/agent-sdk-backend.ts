@@ -15,8 +15,14 @@ import {
 import { error } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { processError } from '../../lib/process/errors.js';
+import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
-import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
+import {
+  runnerCallErrorFromUnknown,
+  runnerCallIdleTimeoutError,
+  runnerCallInterruptedStatus,
+} from '../calls/status.js';
 import { runnerCallUnknownUpstreamPreview } from '../calls/unknown-upstream.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
 import {
@@ -81,10 +87,18 @@ const SdkResultMessageSchema = z.looseObject({
     .optional(),
 });
 
+// Partial messages (includePartialMessages: true) exist so the idle watchdog
+// sees genuine stream liveness during long tool-less turns; they carry no
+// extractable output, so the stream loop has no handler for them.
+const SdkStreamEventMessageSchema = z.looseObject({
+  type: z.literal('stream_event'),
+});
+
 const SdkMessageSchema = z.discriminatedUnion('type', [
   SdkSystemMessageSchema,
   SdkAssistantMessageSchema,
   SdkResultMessageSchema,
+  SdkStreamEventMessageSchema,
 ]);
 
 type SdkMessage = z.infer<typeof SdkMessageSchema>;
@@ -96,10 +110,11 @@ interface SdkQueryOptions {
     permissionMode: string;
     model: string;
     cwd: string;
+    includePartialMessages: boolean;
     resume?: string | undefined;
     env?: Record<string, string | undefined>;
     effort?: EffortLevel | undefined;
-    abortController?: AbortController | undefined;
+    abortController: AbortController;
   };
 }
 
@@ -208,6 +223,10 @@ export interface ProcessStreamOptions {
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext?: RunnerCallContext | undefined;
   signal?: AbortSignal | undefined;
+  forwardedAbortController?: AbortController | undefined;
+  // Defaults are applied here in processStream, the single defaulting site —
+  // callers pass configured overrides through raw.
+  idle?: { warnMs?: number | undefined; killMs?: number | undefined } | undefined;
 }
 
 let sdkCallSequence = 0;
@@ -300,8 +319,62 @@ function blockType(value: unknown): string | undefined {
   return isRecord(value) && typeof value.type === 'string' ? value.type : undefined;
 }
 
+interface IdleWatchdog {
+  readonly killed: Promise<never>;
+  reset: () => void;
+  stop: () => void;
+}
+
+function createIdleWatchdog(opts: {
+  recorder: RunnerCallRecorder;
+  onKill: (err: Error) => void;
+  warnMs: number;
+  killMs: number;
+}): IdleWatchdog {
+  let warnTimer: ReturnType<typeof setTimeout> | undefined;
+  let killTimer: ReturnType<typeof setTimeout> | undefined;
+  let stalled = false;
+  let rejectKilled: (err: Error) => void = () => {};
+  const killed = new Promise<never>((_resolve, reject) => {
+    rejectKilled = reject;
+  });
+
+  function arm(): void {
+    warnTimer = setTimeout(() => {
+      stalled = true;
+      opts.recorder.stalled({ silentMs: opts.warnMs });
+    }, opts.warnMs);
+    killTimer = setTimeout(() => {
+      const idleError = processError.idleTimeout({
+        command: opts.recorder.context.runnerName ?? 'Agent SDK',
+        idleMs: opts.killMs,
+      });
+      rejectKilled(idleError);
+      opts.onKill(idleError);
+    }, opts.killMs);
+  }
+
+  function stop(): void {
+    clearTimeout(warnTimer);
+    clearTimeout(killTimer);
+  }
+
+  function reset(): void {
+    stop();
+    if (stalled) {
+      stalled = false;
+      opts.recorder.stallCleared();
+    }
+    arm();
+  }
+
+  arm();
+
+  return { killed, reset, stop };
+}
+
 export async function processStream(opts: ProcessStreamOptions): Promise<StreamResult> {
-  const { stream, onOutput, onSessionId, onCallEvent, signal } = opts;
+  const { stream, onOutput, onSessionId, onCallEvent, signal, forwardedAbortController } = opts;
   const context = opts.callContext ?? createSdkCallContext({ permissionMode: 'acceptEdits' });
   const recorder = createRunnerCallRecorder({ context, onEvent: onCallEvent });
   let collectedText = '';
@@ -320,9 +393,29 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
     recorder.sessionId({ nativeSessionId: nextSessionId });
   }
 
+  const watchdog = createIdleWatchdog({
+    recorder,
+    onKill: (idleError) => forwardedAbortController?.abort(idleError),
+    warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
+    killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
+  });
+
+  let iterator: AsyncIterator<unknown> | undefined;
+  let iteratorDone = false;
+
   try {
     throwIfAborted(signal);
-    for await (const rawMessage of stream) {
+    iterator = stream[Symbol.asyncIterator]();
+    while (true) {
+      const nextResult = iterator.next();
+      nextResult.catch(() => {});
+      const next = await Promise.race([nextResult, watchdog.killed]);
+      watchdog.reset();
+      if (next.done) {
+        iteratorDone = true;
+        break;
+      }
+      const rawMessage = next.value;
       throwIfAborted(signal);
       const message = parseSdkMessage(rawMessage, recorder);
       if (message === null) continue;
@@ -427,13 +520,18 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
     } else if (!recorder.hasTerminal()) {
       recorder.finishFailed({
         status: 'failed',
-        error: runnerCallErrorFromUnknown(err, 'agent_sdk_stream_error'),
+        error: processError.isIdleTimeout(err)
+          ? runnerCallIdleTimeoutError(err)
+          : runnerCallErrorFromUnknown(err, 'agent_sdk_stream_error'),
         usage,
         nativeSessionId: sessionId,
       });
     }
     recorder.finalResult();
     throw err;
+  } finally {
+    if (iterator && !iteratorDone) iterator.return?.().catch(() => {});
+    watchdog.stop();
   }
 
   const result = recorder.finalResult();
@@ -443,12 +541,12 @@ export async function processStream(opts: ProcessStreamOptions): Promise<StreamR
 }
 
 function createForwardedAbortController(signal: AbortSignal | undefined): {
-  controller?: AbortController;
+  controller: AbortController;
   cleanup: () => void;
 } {
-  if (!signal) return { cleanup: () => {} };
   throwIfAborted(signal);
   const controller = new AbortController();
+  if (signal === undefined) return { controller, cleanup: () => {} };
   const abort = () => controller.abort(signal.reason);
   signal.addEventListener('abort', abort, { once: true });
   return {
@@ -463,6 +561,8 @@ export interface AgentSdkBackendOpts {
   detectChanges?: boolean | undefined;
   apiKey?: string | undefined;
   initialSessionId?: string | null | undefined;
+  idleWarnMs?: number | undefined;
+  idleKillMs?: number | undefined;
 }
 
 export interface AgentSdkInvokeOpts {
@@ -548,6 +648,8 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
           permissionMode,
           model,
           cwd: projectDir,
+          includePartialMessages: true,
+          abortController: forwardedAbort.controller,
         };
         if (resumeId) options.resume = resumeId;
         if (effort) options.effort = effort;
@@ -562,7 +664,6 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
             ...(apiKey ? { ANTHROPIC_API_KEY: apiKey } : {}),
           };
         }
-        if (forwardedAbort.controller) options.abortController = forwardedAbort.controller;
         try {
           const result = await processStream({
             stream: query({ prompt: finalPrompt, options }),
@@ -571,6 +672,8 @@ export function createAgentSdkBackend(opts: AgentSdkBackendOpts): AgentSdkBacken
             onCallEvent: attemptCallbacks.onCallEvent,
             callContext: createSessionAttemptCallContext(baseCallContext, attempt),
             signal,
+            forwardedAbortController: forwardedAbort.controller,
+            idle: { warnMs: opts.idleWarnMs, killMs: opts.idleKillMs },
           });
           const returnedSessionId = result.sessionId ?? unexpectedResumeSessionId;
           if (

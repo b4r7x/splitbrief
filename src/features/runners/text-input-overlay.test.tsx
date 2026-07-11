@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { glyph } from '../../lib/glyphs.js';
@@ -21,23 +21,23 @@ describe('TextInputOverlay', () => {
         }}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('abc');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame()).not.toContain('abc');
 
     ui.stdin.write('\r');
-    await tick(20);
+    await flushEffects();
     expect(submitted).toEqual([]);
 
     overlayStore.close();
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('hello');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\r');
-    await tick(20);
+    await flushEffects();
     expect(submitted).toEqual(['hello']);
     ui.unmount();
   });

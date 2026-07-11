@@ -295,6 +295,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'planner_status':
     case 'planner_text':
     case 'planner_heartbeat':
+    case 'turn_interrupted':
     case 'runner_call_started':
     case 'runner_call_text_delta':
     case 'runner_call_usage':
@@ -305,6 +306,8 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'runner_call_warning':
     case 'runner_call_error':
     case 'runner_call_completed':
+    case 'runner_call_stalled':
+    case 'runner_call_stall_cleared':
     case 'spec_rejected':
     case 'spec_regenerated':
     case 'plan_approved':

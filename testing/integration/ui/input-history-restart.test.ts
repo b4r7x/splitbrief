@@ -9,12 +9,10 @@ import type { RuntimeCommandDef } from '../../../src/core/runtime/commands/types
 const ENTER = '\r';
 const UP = '\u001b[A';
 
-function tick(ms = 0): Promise<void> {
-  if (ms > 0) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-  return new Promise((resolve) => setImmediate(resolve));
-}
+// React/Ink commits (typed text, completion menu open/close) can outlive a fixed
+// 20ms tick and vi.waitFor's 1s default under full-suite load; every step waits
+// on its observable outcome instead, with the same headroom home.test.tsx uses.
+const COMPOSER_WAIT_MS = 5000;
 
 async function loadRuntime() {
   const React = await import('react');
@@ -80,11 +78,13 @@ describe('composer input history restart flow', () => {
       });
 
       firstUi.stdin.write('persisted workflow prompt');
-      await tick(20);
+      await vi.waitFor(() => {
+        expect(firstUi.lastFrame()).toContain('persisted workflow prompt');
+      }, COMPOSER_WAIT_MS);
       firstUi.stdin.write(ENTER);
-      await tick(20);
-
-      expect(firstSubmissions).toEqual(['persisted workflow prompt']);
+      await vi.waitFor(() => {
+        expect(firstSubmissions).toEqual(['persisted workflow prompt']);
+      }, COMPOSER_WAIT_MS);
       runtime.teardownStores();
       firstUi.unmount();
 
@@ -109,7 +109,7 @@ describe('composer input history restart flow', () => {
       secondUi.stdin.write(UP);
       await vi.waitFor(() => {
         expect(secondUi.lastFrame()).toContain('persisted workflow prompt');
-      });
+      }, COMPOSER_WAIT_MS);
 
       runtime.teardownStores();
       secondUi.unmount();
@@ -140,15 +140,18 @@ describe('composer input history screens', () => {
       });
 
       ui.stdin.write(`${screen} prompt`);
-      await tick(20);
+      await vi.waitFor(() => {
+        expect(ui.lastFrame()).toContain(`${screen} prompt`);
+      }, COMPOSER_WAIT_MS);
       ui.stdin.write(ENTER);
-      await tick(20);
+      await vi.waitFor(() => {
+        expect(submissions).toEqual([`${screen} prompt`]);
+      }, COMPOSER_WAIT_MS);
       ui.stdin.write(UP);
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain(`${screen} prompt`);
-      });
+      }, COMPOSER_WAIT_MS);
 
-      expect(submissions).toEqual([`${screen} prompt`]);
       ui.unmount();
     }
   });
@@ -179,15 +182,20 @@ describe('composer input history screens', () => {
     });
 
     ui.stdin.write('/res');
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame()).toContain('Resume workflow');
+    }, COMPOSER_WAIT_MS);
     ui.stdin.write(ENTER);
-    await tick(20);
+    // The accept must both dispatch and close the menu before Up is pressed —
+    // while the menu is still open, Up moves its selection instead of history.
+    await vi.waitFor(() => {
+      expect(commandCalls).toEqual(['/resume']);
+      expect(ui.lastFrame()).not.toContain('Resume workflow');
+    }, COMPOSER_WAIT_MS);
     ui.stdin.write(UP);
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('/resume');
-    });
-
-    expect(commandCalls).toEqual(['/resume']);
+    }, COMPOSER_WAIT_MS);
     ui.unmount();
   });
 });

@@ -1,8 +1,14 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
+import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
-import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
+import {
+  runnerCallErrorFromUnknown,
+  runnerCallIdleTimeoutError,
+  runnerCallInterruptedStatus,
+} from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type { ParsedLine } from '../runners/types.js';
+import { processError } from '../../lib/process/errors.js';
 import { spawnWithStdin } from '../../lib/process/spawn.js';
 import {
   finishRunnerCallOutputLimit,
@@ -29,6 +35,9 @@ interface SpawnAndCollectOptions {
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext?: RunnerCallContext | undefined;
   signal?: AbortSignal | undefined;
+  // Defaults are applied here in spawnAndCollect, the single defaulting site —
+  // callers pass configured overrides through.
+  idle?: { warnMs?: number | undefined; killMs?: number | undefined } | undefined;
 }
 
 let callSequence = 0;
@@ -67,6 +76,12 @@ export async function spawnAndCollect(
         opts.onStderr?.(chunk);
       },
       signal: opts.signal,
+      idle: {
+        warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
+        killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
+        onWarn: (silentMs) => recorder.stalled({ silentMs }),
+        onClear: () => recorder.stallCleared(),
+      },
       onStdoutLineOverflow: (overflow) => {
         const limit = runnerCallLineOutputLimit({
           code: 'stdout_line_overflow',
@@ -93,13 +108,20 @@ export async function spawnAndCollect(
   } catch (err) {
     stderrBuffer.flush();
     if (!recorder.hasTerminal()) {
-      recorder.finishFailed({
-        status: opts.signal?.aborted ? runnerCallInterruptedStatus(opts.signal) : 'failed',
-        error: runnerCallErrorFromUnknown(
-          err,
-          opts.signal?.aborted ? 'runner_interrupted' : 'runner_process_error',
-        ),
-      });
+      if (processError.isIdleTimeout(err)) {
+        recorder.finishFailed({
+          status: 'failed',
+          error: runnerCallIdleTimeoutError(err),
+        });
+      } else {
+        recorder.finishFailed({
+          status: opts.signal?.aborted ? runnerCallInterruptedStatus(opts.signal) : 'failed',
+          error: runnerCallErrorFromUnknown(
+            err,
+            opts.signal?.aborted ? 'runner_interrupted' : 'runner_process_error',
+          ),
+        });
+      }
     }
     throw err;
   }

@@ -1,6 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Implementer, ImplementerFactoryOptions } from './types.js';
-import { IMPLEMENTER_TIMEOUT_MS } from '../constants.js';
 import { assertImplementerKind } from '../config-assertions.js';
 import { createCommandBasedImplementer } from './command-invoke.js';
 
@@ -21,7 +20,9 @@ export function createShellImplementer(
           command: impl.command,
           args: impl.args ?? [],
           outputFormat: impl.outputFormat,
-          timeout: config.implementer.timeout ?? IMPLEMENTER_TIMEOUT_MS,
+          timeout: config.implementer.timeout,
+          idleWarnMs: impl.idleWarnMs,
+          idleKillMs: impl.idleKillMs,
         };
       },
     },

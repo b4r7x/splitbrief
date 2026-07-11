@@ -1,3 +1,4 @@
+import { formatStageLabel } from '../../../core/phase-display.js';
 import { PHASES, type Phase } from '../../../core/schemas/enums.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
@@ -141,15 +142,15 @@ export type RailForm = 'B' | 'C';
 export const RAIL_MARKER_SLOT_WIDTH = 2;
 
 export const RAIL_SHORT_LABEL: Record<RailStage, string> = {
-  spec: 'spc',
-  plan: 'pln',
-  briefs: 'brf',
-  build: 'bld',
-  verify: 'vfy',
+  spec: 'Spc',
+  plan: 'Pln',
+  briefs: 'Brf',
+  build: 'Bld',
+  verify: 'Vfy',
 };
 
 export function railFormBLabel(state: RailStageState, options: { short: boolean }): string {
-  return options.short ? RAIL_SHORT_LABEL[state.stage] : state.stage;
+  return options.short ? RAIL_SHORT_LABEL[state.stage] : formatStageLabel(state.stage);
 }
 
 // Same-role and handoff connectors, each wrapped in single spaces. Measured through the glyph tier so a

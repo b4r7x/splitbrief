@@ -7,7 +7,6 @@ import { abortStore } from '../stores/workflow/abort.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import { costApprovalStore, closeCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
 import { completionStore } from '../stores/ui/completion.js';
-import { killAllProcesses } from '../lib/process/registry.js';
 import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin.js';
 import {
   scheduleEscapeAction,
@@ -59,7 +58,8 @@ function applyAction(action: AppKeyAction, exit: () => void) {
 // What an ESC press would arm to, given the current workflow state.
 function escapeArmTarget(): 'interrupt' | 'cancel' | null {
   if (controlsStore.get().inputMode === 'question') return 'cancel';
-  const { phase, cancelled } = lifecycleStore.get();
+  const { phase, cancelled, status } = lifecycleStore.get();
+  if (status === 'interrupted') return 'cancel';
   if (!cancelled && isLivePhase(phase)) return 'interrupt';
   return null;
 }
@@ -67,7 +67,6 @@ function escapeArmTarget(): 'interrupt' | 'cancel' | null {
 function fireInterrupt(interruptWorkflow: () => InterruptResult) {
   cancelEscapeAction();
   interruptWorkflow();
-  killAllProcesses();
   closeApprovalPrompt();
   closeCostApprovalPrompt({ approved: false });
   abortStore.clear();
@@ -132,8 +131,11 @@ export function useAppKeys({
       exit();
       return;
     }
-    const { phase, cancelled } = lifecycleStore.get();
-    if (!cancelled && isLivePhase(phase)) {
+    // Same stand-down as the Esc ladder: while a question prompt or the
+    // interrupted continuation prompt owns the composer there is no turn to
+    // interrupt, and firing one would plant a stale boundary flag that discards
+    // the user's next submission.
+    if (escapeArmTarget() === 'interrupt') {
       fireInterrupt(interruptWorkflow);
     }
     abortStore.arm('exit');

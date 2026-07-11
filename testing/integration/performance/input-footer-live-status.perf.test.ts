@@ -44,6 +44,7 @@ function lifecycleAfterWorkflow(eventCount: number): LifecycleState {
 function derivationLoopMs(state: LifecycleState): number {
   const input = {
     phase: state.phase,
+    status: state.status,
     cancelled: state.cancelled,
     startedAt: state.startedAt,
     phaseFirstSeenTs: state.phaseFirstSeenTs,

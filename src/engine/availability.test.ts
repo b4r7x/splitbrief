@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createCommandExistsAvailability } from './availability.js';
+import { createCommandAvailability, createCommandExistsAvailability } from './availability.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let dir: string;
@@ -65,5 +65,38 @@ describe('createCommandExistsAvailability', () => {
       if (originalPath === undefined) delete process.env['PATH'];
       else process.env['PATH'] = originalPath;
     }
+  });
+});
+
+describe('createCommandAvailability', () => {
+  it('probe classifies missing commands as not installed', async () => {
+    const availability = createCommandAvailability('nonexistent-command-that-does-not-exist-xyz');
+
+    expect(await availability.isAvailable()).toBe(false);
+    expect(availability.unavailabilityReason()).toBe('not installed');
+  });
+
+  itUnix('probe timeout and probe failure produce diagnostic reasons', async () => {
+    const timeoutScript = join(dir, 'slow.sh');
+    writeFileSync(timeoutScript, '#!/bin/bash\nsleep 5\n', 'utf8');
+    chmodSync(timeoutScript, 0o755);
+    const timeoutAvailability = createCommandAvailability(timeoutScript, { timeout: 100 });
+    expect(await timeoutAvailability.isAvailable()).toBe(false);
+    expect(timeoutAvailability.unavailabilityReason()).toMatch(/^probe timed out after \d+s$/);
+
+    const failingScript = join(dir, 'failing.sh');
+    writeFileSync(failingScript, '#!/bin/bash\necho boom >&2\nexit 3\n', 'utf8');
+    chmodSync(failingScript, 0o755);
+    const failingAvailability = createCommandAvailability(failingScript);
+    expect(await failingAvailability.isAvailable()).toBe(false);
+    expect(failingAvailability.unavailabilityReason()).toBe('probe failed: boom');
+  });
+
+  it('unavailabilityReason exposes the probe reason after isAvailable resolves', async () => {
+    const availability = createCommandAvailability('nonexistent-command-that-does-not-exist-xyz');
+
+    expect(availability.unavailabilityReason()).toBeUndefined();
+    await availability.isAvailable();
+    expect(availability.unavailabilityReason()).toBe('not installed');
   });
 });

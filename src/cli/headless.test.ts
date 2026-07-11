@@ -21,6 +21,7 @@ import { listSessions } from '../core/sessions/io.js';
 import { DIPTYCH_DIR, CONFIG_FILE, sessionDir } from '../core/paths.js';
 import { readLockfile, checkServerStatus } from '../engine/ipc/lockfile.js';
 import type { LockfileData } from '../engine/ipc/lockfile.js';
+import { processError } from '../lib/process/errors.js';
 import { runHeadless } from './headless.js';
 
 let stderrSpy: ReturnType<typeof vi.spyOn>;
@@ -481,6 +482,69 @@ describe('runHeadless — recovery stops', () => {
       .map((line) => JSON.parse(line) as { type?: string; sessionId?: string });
     expect(jsonLines).toContainEqual(
       expect.objectContaining({ type: 'final_review_failed', sessionId }),
+    );
+  }, 20_000);
+});
+
+describe('runHeadless — failed session exits non-zero', () => {
+  let stdoutChunks: string[];
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stdoutChunks = [];
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    vi.clearAllMocks();
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  it('exits non-zero when a watchdog idle-kill fails the session during planning', async () => {
+    const projectDir = createTempDir('headless-failed-session');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    writeMinimalConfigYaml(projectDir);
+    const sessionId = beginSession(projectDir, 'stall out');
+
+    const stalledPlanner = makePlanner({
+      quickPlan: vi
+        .fn()
+        .mockRejectedValue(processError.idleTimeout({ command: 'fake-planner', idleMs: 300_000 })),
+    });
+
+    await expect(
+      runHeadless({
+        feature: 'stall out',
+        projectDir,
+        opts: {},
+        sessionId,
+        _planner: stalledPlanner,
+        _implementer: makeImplementer(),
+      }),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('Workflow failed'),
+    });
+
+    const jsonLines = stdoutChunks
+      .join('')
+      .trim()
+      .split('\n')
+      .filter((line) => line.trim().startsWith('{'))
+      .map((line) => JSON.parse(line) as { type?: string; message?: string });
+    expect(jsonLines).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('status failed'),
+      }),
     );
   }, 20_000);
 });

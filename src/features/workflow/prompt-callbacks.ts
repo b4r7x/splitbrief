@@ -1,5 +1,7 @@
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { openCostApprovalPrompt } from '../../stores/cost-approval/prompt.js';
+import { markInterruptParked, markInterruptRequested } from '../../stores/workflow/actions.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
@@ -10,6 +12,9 @@ import {
 } from './user-edit-conflict-prompt.js';
 import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
+
+export const CONTINUATION_PROMPT =
+  'Interrupted. Type instructions to steer, or press Enter to retry.';
 
 interface BuildCallbacksOptions {
   inputMode: UseInputModeResult;
@@ -34,10 +39,17 @@ export function buildPromptCallbacks(): (opts: BuildCallbacksOptions) => Orchest
         return parseUserEditConflictAnswer(answer, conflict.availableActions);
       },
       onCostApprovalNeeded: async (prediction) => openCostApprovalPrompt(prediction),
-      onContinuationNeeded: async (_partial) =>
-        inputMode.setQuestionMode(
-          'Task interrupted. Enter instructions to continue (or press Enter to retry):',
-        ),
+      onContinuationNeeded: async (_partial) => {
+        markInterruptRequested();
+        while (!controller.signal.aborted && !abortedRef.current) {
+          markInterruptParked();
+          // Contract: resolvers of this prompt must call markInterruptResumed()
+          // before resolving, or the answer is treated as superseded and re-asked.
+          const text = await inputMode.setQuestionMode(CONTINUATION_PROMPT);
+          if (lifecycleStore.get().status !== 'interrupted') return text;
+        }
+        return '';
+      },
       onTieredApproval: (request) => openApprovalPrompt(request),
       onTaskReviewNeeded: async (request) => {
         const prompt = formatTaskReviewPrompt(request);

@@ -20,11 +20,37 @@ const PlannerCapabilitiesSchema = z.strictObject({
   supportsSelfSummarisation: z.boolean(),
 });
 
+export const RUNNER_IDLE_WARN_MS = 60_000;
+export const RUNNER_IDLE_KILL_MS = 300_000;
+
+const WatchdogFields = {
+  idleWarnMs: z.number().int().positive().max(3_600_000).optional(),
+  idleKillMs: z.number().int().positive().max(3_600_000).optional(),
+};
+
+// The kill threshold must not fire before the warn threshold, or the runner is
+// silently killed without ever warning. Unset fields take the runtime defaults
+// above, so the mixed cases are validated too: a lone idleKillMs below the
+// default warn (killed before the default warn timer fires) and a lone
+// idleWarnMs above the default kill are both rejected.
+function idleThresholdsOrdered(runner: Record<string, unknown>): boolean {
+  const { idleWarnMs, idleKillMs } = runner;
+  const warn = typeof idleWarnMs === 'number' ? idleWarnMs : RUNNER_IDLE_WARN_MS;
+  const kill = typeof idleKillMs === 'number' ? idleKillMs : RUNNER_IDLE_KILL_MS;
+  return kill >= warn;
+}
+
+const IDLE_THRESHOLD_ORDER = {
+  message: `idleKillMs must be at least idleWarnMs (the warning fires before the kill); an unset field takes its default (${RUNNER_IDLE_WARN_MS} warn / ${RUNNER_IDLE_KILL_MS} kill)`,
+  path: ['idleKillMs'],
+};
+
 const CliRunnerFields = {
   kind: z.literal('cli'),
   tool: CliToolIdSchema,
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
+  ...WatchdogFields,
 };
 
 const ApiRunnerFields = {
@@ -43,6 +69,7 @@ const ShellRunnerFields = {
   command: CommandFieldSchema,
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
+  ...WatchdogFields,
 };
 
 const AgentRunnerFields = {
@@ -50,11 +77,13 @@ const AgentRunnerFields = {
   command: CommandFieldSchema,
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
+  ...WatchdogFields,
 };
 
 const AgentSdkRunnerFields = {
   kind: z.literal('agent-sdk'),
   apiKey: z.string().optional(),
+  ...WatchdogFields,
 };
 
 export const GenerationCommonFields = {
@@ -214,29 +243,33 @@ export function getRunnerTrustMeta(
 }
 
 export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
-  return z.discriminatedUnion('kind', [
-    z.strictObject({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }),
-    z.strictObject({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }),
-    z.strictObject({ ...RUNNER_DESCRIPTORS.shell.fields, ...commonFields }),
-    z.strictObject({ ...RUNNER_DESCRIPTORS.agent.fields, ...commonFields }),
-    z.strictObject({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }),
-  ]);
+  return z
+    .discriminatedUnion('kind', [
+      z.strictObject({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }),
+      z.strictObject({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }),
+      z.strictObject({ ...RUNNER_DESCRIPTORS.shell.fields, ...commonFields }),
+      z.strictObject({ ...RUNNER_DESCRIPTORS.agent.fields, ...commonFields }),
+      z.strictObject({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }),
+    ])
+    .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
 }
 
 export function createPlannerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
-  return z.discriminatedUnion('kind', [
-    z.strictObject({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }),
-    z.strictObject({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }),
-    z.strictObject({
-      ...RUNNER_DESCRIPTORS.shell.fields,
-      ...PlannerCapabilitiesField,
-      ...commonFields,
-    }),
-    z.strictObject({
-      ...RUNNER_DESCRIPTORS.agent.fields,
-      ...PlannerCapabilitiesField,
-      ...commonFields,
-    }),
-    z.strictObject({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }),
-  ]);
+  return z
+    .discriminatedUnion('kind', [
+      z.strictObject({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }),
+      z.strictObject({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }),
+      z.strictObject({
+        ...RUNNER_DESCRIPTORS.shell.fields,
+        ...PlannerCapabilitiesField,
+        ...commonFields,
+      }),
+      z.strictObject({
+        ...RUNNER_DESCRIPTORS.agent.fields,
+        ...PlannerCapabilitiesField,
+        ...commonFields,
+      }),
+      z.strictObject({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }),
+    ])
+    .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
 }

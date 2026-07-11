@@ -6,6 +6,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import type { RunnerCallEvent } from '../calls/types.js';
 
 let projectDir: string;
 
@@ -235,5 +236,25 @@ Create the main feature.
     expect(result.success).toBe(true);
     expect(readFileSync(preExistingFile, 'utf-8')).toBe('// pre-existing');
     expect(readFileSync(newFile, 'utf-8')).toBe('// escalated\n');
+  });
+
+  it('threads a configured idleWarnMs override into the spawn', async () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'agent',
+        command: 'bash',
+        args: ['-c', 'sleep 0.15'],
+        idleWarnMs: 30,
+      },
+    });
+    const planner = createAgentPlanner(config);
+    const events: RunnerCallEvent[] = [];
+
+    await planner.review('prompt', projectDir, {
+      onOutput: vi.fn(),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
   });
 });

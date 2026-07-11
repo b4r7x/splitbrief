@@ -5,6 +5,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { join } from 'node:path';
+import type { RunnerCallEvent } from '../calls/types.js';
 
 let projectDir: string;
 
@@ -63,5 +64,25 @@ describe('createShellPlanner', () => {
     });
     expect(result.success).toBe(false);
     expect(result.code).toBe(null);
+  });
+
+  it('threads a configured idleWarnMs override into the spawn', async () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'shell',
+        command: 'bash',
+        args: ['-c', 'sleep 0.15'],
+        idleWarnMs: 30,
+      },
+    });
+    const planner = createShellPlanner(config);
+    const events: RunnerCallEvent[] = [];
+
+    await planner.review('prompt', projectDir, {
+      onOutput: vi.fn(),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
   });
 });

@@ -3,6 +3,7 @@ import { writeFileSync, chmodSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createClaudeCodePlanner } from './claude-code.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
@@ -223,5 +224,27 @@ Create the Claude mismatch fallback file.
     });
 
     expect(events).toEqual([]);
+  });
+
+  it('threads a configured idleWarnMs override into the spawn', async () => {
+    writeCommandShim({
+      dir: shimDir,
+      command: 'claude',
+      lines: [JSON.stringify({ type: 'result', result: 'slow response' })],
+      sleepSeconds: 0.15,
+    });
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const events: RunnerCallEvent[] = [];
+    const planner = createClaudeCodePlanner({ idleWarnMs: 30 });
+
+    const result = await planner.review('prompt', shimDir, {
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(result.text).toContain('slow response');
+    const stalled = events.find((event) => event.type === 'call_stalled');
+    expect(stalled).toMatchObject({ type: 'call_stalled', silentMs: expect.any(Number) });
   });
 });

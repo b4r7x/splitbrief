@@ -37,6 +37,7 @@ import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
 import { drainQueue, formatDrainedMessages } from './queue.js';
 import { withContinuationLoop } from './continuation.js';
+import { composeSteeredPrompt } from '../implementers/types.js';
 import { RUN_COMMIT_MESSAGE_PREFIX } from './task/commit.js';
 
 export type FinalReviewResult = { summary: Summary; state: WorkflowState };
@@ -187,6 +188,7 @@ export async function runFinalReviewPhase(
           projectDir,
           sessionId,
           callbacks,
+          bus,
           signal: opts.signal,
           sinks: opts.sinks,
         },
@@ -194,11 +196,10 @@ export async function runFinalReviewPhase(
         onStateChange: (s) => {
           state = s;
         },
-        body: async ({ signal: callSignal, continuationPrompt }) => {
-          const prompt = continuationPrompt ?? fullPrompt;
-          const result = await runPlannerReview({
+        body: ({ signal: callSignal, continuationPrompt, steer }) =>
+          runPlannerReview({
             planner,
-            prompt,
+            prompt: composeSteeredPrompt(continuationPrompt ?? fullPrompt, steer),
             projectDir,
             sessionId,
             bus,
@@ -206,12 +207,9 @@ export async function runFinalReviewPhase(
             metadata,
             writeTo: REVIEW_FILE,
             signal: callSignal,
-          });
-          state = result.state;
-          return { value: result };
-        },
+          }),
       });
-      state = loop.state;
+      state = loop.value.state;
     } else {
       const review = await runPlannerReview({
         planner,

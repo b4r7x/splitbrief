@@ -1,4 +1,5 @@
 import type { Phase } from '../../../core/schemas/enums.js';
+import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   getActiveRailStage,
@@ -80,13 +81,15 @@ export interface LiveStatus {
 }
 
 // The single source of truth for "is a stage live and what does its status row say". Null unless a
-// stage is genuinely running: not cancelled, not a review gate, not idle/complete.
+// stage is genuinely running: lifecycle status is 'running', not cancelled, not a review gate, not idle/complete.
 export function deriveLiveStatus(input: {
   phase: Phase;
+  status: LifecycleState['status'];
   cancelled: boolean;
   startedAt: number | null;
   phaseFirstSeenTs: Readonly<Partial<Record<Phase, number>>>;
 }): LiveStatus | null {
+  if (input.status !== 'running') return null;
   if (input.cancelled) return null;
   if (RAIL_GATE_PHASES.has(input.phase)) return null;
   const activeIndex = getRailActiveIndex(input.phase);

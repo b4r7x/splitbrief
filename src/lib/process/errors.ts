@@ -16,6 +16,12 @@ export interface TimeoutErrorOptions {
   output: string;
 }
 
+export interface IdleTimeoutErrorOptions {
+  command: string;
+  label?: string | undefined;
+  idleMs: number;
+}
+
 export interface ExitCodeErrorOptions {
   command: string;
   label?: string | undefined;
@@ -51,6 +57,22 @@ export const processError = {
     });
   },
 
+  idleTimeout: (opts: IdleTimeoutErrorOptions) => {
+    const command = sanitizeTerminalDiagnosticText(opts.command);
+    const label = opts.label === undefined ? undefined : sanitizeTerminalDiagnosticText(opts.label);
+    const subject = label ?? command;
+    const seconds = Math.round(opts.idleMs / 1000);
+    return error(
+      'command-idle-timeout',
+      `${subject} produced no output for ${seconds}s and was terminated`,
+      {
+        command,
+        label,
+        idleMs: opts.idleMs,
+      },
+    );
+  },
+
   exitCode: (opts: ExitCodeErrorOptions) => {
     const command = sanitizeTerminalDiagnosticText(opts.command);
     const label = opts.label === undefined ? undefined : sanitizeTerminalDiagnosticText(opts.label);
@@ -72,6 +94,7 @@ export const processError = {
 
   isNotFound: matches('command-not-found'),
   isTimeout: matches('command-timeout'),
+  isIdleTimeout: matches('command-idle-timeout'),
   isExitCode: (err: unknown): err is ProcessOutputError => isProcessOutputError(err),
 } as const;
 

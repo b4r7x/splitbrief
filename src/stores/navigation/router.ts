@@ -1,5 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
-import { publishFeedbackError } from '../channels/feedback.js';
+import { publishFeedbackError, publishFeedbackReset } from '../channels/feedback.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
@@ -64,6 +64,8 @@ function navigate(args: NavigateArgs) {
     publishFeedbackError(`Cannot navigate from "${current}" to "${to}"`);
     return;
   }
+
+  publishFeedbackReset();
 
   switch (args.to) {
     case 'home':

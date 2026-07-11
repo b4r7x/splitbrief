@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -28,6 +29,8 @@ import {
 } from '../../../core/sessions/lifecycle.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
+import { registerProcess } from '../../../lib/process/registry.js';
+import { readRunnerPids } from '../../../core/sessions/runner-pids.js';
 import { simpleGit } from 'simple-git';
 import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../types.js';
@@ -124,6 +127,31 @@ describe('runWorkflow — smoke', () => {
     expect(events.find((e) => e.type === 'error')).toBeDefined();
   });
 
+  it('drains a stale pending boundary interrupt at run start', async () => {
+    // A dead-zone Esc-Esc in a previous run that ended into recovery without
+    // passing another continuation boundary leaves the pending flag set; a fresh
+    // run must drain it up front or its first call boundary parks on an
+    // interrupt prompt nobody asked for.
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const consumeBoundaryInterrupt = vi.fn(() => true);
+
+    await runWorkflow({
+      feature: 'stale boundary interrupt',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks,
+      sinks: {
+        setAbortHandler: () => {},
+        setQueueHandler: () => {},
+        consumeBoundaryInterrupt,
+      },
+    });
+
+    // Drained exactly once, before any call boundary could observe the flag.
+    expect(consumeBoundaryInterrupt).toHaveBeenCalledTimes(1);
+  });
+
   it('records the session status as failed (not interrupted) when planning fails', async () => {
     const projectDir = setupProject();
     const sessionId = 'planning-failed-sid';
@@ -157,6 +185,29 @@ describe('runWorkflow — smoke', () => {
           usage: { inputTokens: 50, outputTokens: 25 },
         }),
       }),
+    });
+
+    const { listAllSessions } = await import('../../../core/sessions/io.js');
+    const persisted = listAllSessions(projectDir).find((s) => s.id === sessionId);
+    expect(persisted?.status).toBe('failed');
+  });
+
+  it('initialization failure yields a failed session status', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'init-failed-sid';
+    const { callbacks } = makeCallbacks();
+    const config = unavailablePlannerConfig();
+
+    // The planner is unavailable, so initializeWorkflow returns `ok: false` before any
+    // planning work starts. The persisted session must read as 'failed', not the default
+    // 'interrupted' status.
+    await runWorkflow({
+      feature: 'init-failure',
+      projectDir,
+      config,
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
     });
 
     const { listAllSessions } = await import('../../../core/sessions/io.js');
@@ -199,6 +250,59 @@ describe('runWorkflow — smoke', () => {
       status = await checkServerStatus(dir);
     }
     expect(status.alive).toBe(false);
+  });
+
+  it('records a runner pid to the session ledger during the run and uninstalls the ledger once runWorkflow returns', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'process-ledger-sid';
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: {
+        autoApproveSpec: true,
+        autoApprovePlan: true,
+        commitStrategy: 'none',
+        mode: 'quick',
+        persistTranscript: false,
+      },
+    });
+
+    const groupChild = spawn('sleep', ['5'], { detached: true, stdio: 'ignore' });
+    let entriesDuringRun: ReturnType<typeof readRunnerPids> = [];
+
+    await runWorkflow({
+      feature: 'ledger-during-run',
+      projectDir,
+      config,
+      callbacks,
+      sessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: makePlanner({
+        quickPlan: vi.fn().mockImplementation(async () => {
+          registerProcess(groupChild, { group: true });
+          entriesDuringRun = readRunnerPids({ projectDir, sessionId });
+          return {
+            spec: '',
+            plan: '',
+            tasks: [makeTask()],
+            usage: { inputTokens: 50, outputTokens: 25 },
+          };
+        }),
+      }),
+      _implementer: makeImplementer(),
+    });
+
+    expect(entriesDuringRun.some((entry) => entry.pid === groupChild.pid)).toBe(true);
+
+    // The run's finally arm calls clearProcessLedger, so a process registered after
+    // runWorkflow has returned must not be written to this session's ledger.
+    const laterChild = spawn('sleep', ['1'], { detached: true, stdio: 'ignore' });
+    registerProcess(laterChild, { group: true });
+    const entriesAfterRun = readRunnerPids({ projectDir, sessionId });
+    expect(entriesAfterRun.some((entry) => entry.pid === laterChild.pid)).toBe(false);
+
+    groupChild.kill('SIGKILL');
+    laterChild.kill('SIGKILL');
   });
 
   it('refuses to run when the same session already has a live non-detached owner', async () => {

@@ -166,6 +166,10 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
             }
           : undefined,
         signal: effectiveSignal,
+        idle: {
+          warnMs: plannerCfg.idleWarnMs,
+          killMs: plannerCfg.idleKillMs,
+        },
         ...(supportsSessionResume && {
           onSessionId: (id: string) => {
             if (resumeId && id !== resumeId) {
