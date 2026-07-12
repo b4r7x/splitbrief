@@ -1,4 +1,5 @@
 import type { SettingDef } from '../../core/settings/catalog.js';
+import { formatContextLength } from '../../core/formatting.js';
 import { glyph } from '../../lib/glyphs.js';
 
 export function matchesFilter(def: SettingDef, query: string): boolean {
@@ -21,10 +22,24 @@ export function validateNumber(value: string, def: SettingDef): number | null {
   return num;
 }
 
-export function displayValue(def: SettingDef, value: unknown): string {
+export function displayValue(
+  def: SettingDef,
+  value: unknown,
+  ctx?: { detectedContextLength?: number | undefined },
+): string {
   if (def.kind === 'boolean') return value ? glyph('check') : 'off';
+  const detectedContextLength = ctx?.detectedContextLength;
+  if (
+    def.id === 'implementer.contextLength' &&
+    value !== undefined &&
+    value !== null &&
+    detectedContextLength !== undefined &&
+    value === detectedContextLength
+  ) {
+    return `auto (${formatContextLength(detectedContextLength)})`;
+  }
   if (value !== undefined && value !== null) {
     return def.formatValue ? def.formatValue(value) : String(value);
   }
-  return '—';
+  return def.unsetLabel ?? '—';
 }

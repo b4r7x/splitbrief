@@ -10,7 +10,7 @@ export function RecentSessionsShell({ children }: { children: ReactNode }) {
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box marginBottom={isSmall ? 0 : 1}>
-        <Text color={theme.textDim}>RECENT SESSIONS</Text>
+        <Text color={theme.textDim}>Recent sessions</Text>
       </Box>
       {children}
     </Box>

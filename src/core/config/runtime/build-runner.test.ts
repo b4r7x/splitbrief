@@ -163,6 +163,88 @@ describe('buildRunnerConfig', () => {
       });
       expect(result.model).toBe('new-model');
     });
+
+    it('switching tool drops contextLength and temperature', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'anthropic',
+        model: 'qwen2.5:7b',
+        existing: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5:7b',
+          contextLength: 8192,
+          temperature: 0.3,
+        },
+      });
+
+      const api = expectApi(result);
+      expect(api.contextLength).toBeUndefined();
+      expect(api.temperature).toBeUndefined();
+    });
+
+    it('switching model on the same tool drops them', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'ollama',
+        model: 'new-model',
+        existing: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'old-model',
+          contextLength: 8192,
+          temperature: 0.3,
+        },
+      });
+
+      const api = expectApi(result);
+      expect(api.contextLength).toBeUndefined();
+      expect(api.temperature).toBeUndefined();
+    });
+
+    it('same target + same model keeps them', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'ollama',
+        model: 'qwen2.5:7b',
+        existing: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5:7b',
+          contextLength: 8192,
+          temperature: 0.3,
+        },
+      });
+
+      const api = expectApi(result);
+      expect(api.contextLength).toBe(8192);
+      expect(api.temperature).toBe(0.3);
+    });
+
+    it('timeout and customModels always carry', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'anthropic',
+        model: 'new-model',
+        existing: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'old-model',
+          contextLength: 8192,
+          temperature: 0.3,
+          timeout: 120000,
+          customModels: ['old-model', 'other-model'],
+        },
+      });
+
+      const api = expectApi(result);
+      expect(api.timeout).toBe(120000);
+      expect(api.customModels).toEqual(['old-model', 'other-model']);
+    });
   });
 
   describe('missing required field errors', () => {

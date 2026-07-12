@@ -81,7 +81,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
         markerColor: t.warning,
         labelColor: t.text,
         bold: false,
-        tail: { text: 'escalated', color: t.textDim },
+        tail: { text: 'Escalated', color: t.textDim },
       };
     case 'failed':
       return {
@@ -90,7 +90,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
         markerColor: t.error,
         labelColor: t.text,
         bold: false,
-        tail: { text: 'failed', color: t.error, dim: true },
+        tail: { text: 'Failed', color: t.error, dim: true },
       };
     case 'skipped':
       return {
@@ -99,7 +99,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
         markerColor: t.textDim,
         labelColor: t.textDim,
         bold: false,
-        tail: { text: 'skipped', color: t.textDim },
+        tail: { text: 'Skipped', color: t.textDim },
       };
     default:
       return assertNever(status);
@@ -115,14 +115,14 @@ function SidebarWaiting() {
   const { frame } = useSpinnerFrame(running);
 
   if (status !== 'running' && status !== 'interrupted') {
-    return <Text color={t.textDim}>no tasks yet</Text>;
+    return <Text color={t.textDim}>No tasks yet</Text>;
   }
 
   const stage = getActiveRailStage(phase)?.stage ?? '';
   const elapsed = startedAt !== null ? formatStageElapsed(Date.now() - startedAt) : '';
   return (
     <Box flexDirection="column">
-      <Text color={t.textDim}>no tasks yet</Text>
+      <Text color={t.textDim}>No tasks yet</Text>
       {status === 'interrupted' ? (
         <Text color={t.textDim}>Planner interrupted</Text>
       ) : (
@@ -172,7 +172,7 @@ export function Sidebar({ width }: SidebarProps) {
       borderDimColor
     >
       <Box paddingX={1} flexShrink={0}>
-        <Text color={t.textDim}>{` tasks  ${completedCount}/${tasks.length}`}</Text>
+        <Text color={t.textDim}>{`Tasks ${completedCount}/${tasks.length}`}</Text>
       </Box>
 
       <Box
@@ -230,8 +230,8 @@ export function Sidebar({ width }: SidebarProps) {
           )}
           {escalatedCount > 0 && (
             <Text color={t.textDim}>
-              {localCount} local{SOFT_SEP}
-              {escalatedCount} escalated
+              {localCount} Local{SOFT_SEP}
+              {escalatedCount} Escalated
             </Text>
           )}
           <Text wrap="truncate">
@@ -246,13 +246,13 @@ export function Sidebar({ width }: SidebarProps) {
             {implLabel !== '' && <Text color={t.implementer}>{` ${implLabel}`}</Text>}
           </Text>
           <Text color={t.textDim}>
-            local{' '}
+            Local{' '}
             <Text color={rateColor(cost.localRate, cost.routedTasks, t)}>
               {costFmt.localRatePct}
             </Text>
             {costFmt.hasPricedUsage && (
               <Text>
-                {'  ·  '}
+                {SOFT_SEP}
                 {costFmt.spentText}
               </Text>
             )}

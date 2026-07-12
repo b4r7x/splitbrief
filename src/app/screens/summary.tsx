@@ -98,7 +98,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
       footer={
         <Box flexDirection="column" width={contentWidth}>
           <Box justifyContent="center" height={1}>
-            <Text color={theme.textDim}>press enter to continue</Text>
+            <Text color={theme.textDim}>Press enter to continue</Text>
           </Box>
           <Composer
             disabled={hasOverlay}
@@ -143,13 +143,13 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
           <SummaryCompactRunDetails summary={summary} routeSummary={routeSummary} />
         ) : (
           <Box flexDirection="column" marginTop={1} gap={isSmall ? 0 : 1}>
-            <LabeledRow label="feature" labelWidth={labelWidth}>
+            <LabeledRow label="Feature" labelWidth={labelWidth}>
               <Text bold wrap="truncate-end">
                 {stripTerminalControls(summary.feature)}
               </Text>
             </LabeledRow>
             {summary.plannerTool && (
-              <LabeledRow label="planner" labelWidth={labelWidth}>
+              <LabeledRow label="Planner" labelWidth={labelWidth}>
                 <Text wrap="truncate-end">
                   {stripTerminalControls(
                     formatToolModel(summary.plannerTool, summary.plannerModel),
@@ -158,17 +158,17 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
               </LabeledRow>
             )}
             {implementerSummary && (
-              <LabeledRow label="implementer" labelWidth={labelWidth}>
+              <LabeledRow label="Implementer" labelWidth={labelWidth}>
                 <Text wrap="truncate-end">{implementerSummary}</Text>
               </LabeledRow>
             )}
-            <LabeledRow label="brief quality" labelWidth={labelWidth}>
+            <LabeledRow label="Brief quality" labelWidth={labelWidth}>
               <Text color={bq && !bq.passed ? theme.warning : theme.textDim} wrap="truncate-end">
                 {briefQualityText}
               </Text>
             </LabeledRow>
             {driftText && (
-              <LabeledRow label="drift" labelWidth={labelWidth}>
+              <LabeledRow label="Drift" labelWidth={labelWidth}>
                 <Text
                   color={drift && !drift.passed ? theme.warning : theme.textDim}
                   wrap="truncate-end"
@@ -178,7 +178,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
               </LabeledRow>
             )}
             {summary.chainDriftSummary && (
-              <LabeledRow label="drift chain" labelWidth={labelWidth}>
+              <LabeledRow label="Drift chain" labelWidth={labelWidth}>
                 <Text color={theme.textDim} wrap="truncate-end">
                   {summary.chainDriftSummary.chainLength} tasks{ARROW_SEP}
                   {stripTerminalControls(summary.chainDriftSummary.representativePath)}
@@ -191,7 +191,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
               </LabeledRow>
             )}
             {!summary.costBreakdown && summary.estimatedCostSavings !== 'unavailable' && (
-              <LabeledRow label="saved" labelWidth={labelWidth}>
+              <LabeledRow label="Saved" labelWidth={labelWidth}>
                 <Text bold color={theme.success} wrap="truncate-end">
                   {stripTerminalControls(summary.estimatedCostSavings)}
                 </Text>

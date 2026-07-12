@@ -58,7 +58,7 @@ describe('RecentSessions', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('RECENT SESSIONS');
+    expect(frame).toContain('Recent sessions');
     expect(frame).toContain('alpha');
     expect(frame).toContain('bravo');
     expect(frame).not.toContain(FOCUS_BAR);
@@ -67,7 +67,7 @@ describe('RecentSessions', () => {
     ui.unmount();
   });
 
-  it('shows the true total (not the recent cap) in the footnote', async () => {
+  it('uses the total session count in the footnote', async () => {
     seed(
       Array.from({ length: 35 }, (_, i) => ({
         id: `cap-${i}`,
@@ -80,21 +80,20 @@ describe('RecentSessions', () => {
     await tick(20);
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    // The recent list is capped at 30 loaded rows, but the footnote must reflect
-    // the TRUE total (35 total - 5 visible = 30 more), not the cap.
+    // 35 total sessions - 5 visible sessions = 30 more.
     expect(frame).toMatch(/\b30 more\b/);
     ui.unmount();
   });
 
-  it('renders the empty state under the uppercase header when no sessions are loaded', async () => {
+  it('renders the empty state under the sentence-case header when no sessions are loaded', async () => {
     sessionsStore.load(projectDir);
 
     const ui = renderFeature(<RecentSessions />);
     await tick(20);
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('no recent sessions');
-    expect(frame.split('\n').some((line) => line.includes('RECENT SESSIONS'))).toBe(true);
+    expect(frame).toContain('No recent sessions');
+    expect(frame.split('\n').some((line) => line.includes('Recent sessions'))).toBe(true);
     ui.unmount();
   });
 
@@ -161,8 +160,8 @@ describe('RecentSessions', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).not.toContain('RECENT SESSIONS');
-    expect(frame).not.toContain('no recent sessions');
+    expect(frame).not.toContain('Recent sessions');
+    expect(frame).not.toContain('No recent sessions');
     expect(frame).not.toContain('should-not-load');
     expect(sessionsStore.get().sessions.length).toBe(0);
     ui.unmount();
@@ -213,11 +212,11 @@ describe('RecentSessions', () => {
       { id: 'small-0', feature: 'older-small-home', startedAt: 1_700_000_000 },
       { id: 'small-1', feature: 'newest-small-home', startedAt: 1_700_000_001 },
     ]);
-    const terminalRows = 16;
+    const terminalRows = 18;
     terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
     const layout = getHomeLayout({
       cols: 80,
-      rows: 16,
+      rows: terminalRows,
       isSmall: true,
       sessionCount: 2,
       sessionsFocused: false,
@@ -230,10 +229,10 @@ describe('RecentSessions', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('RECENT SESSIONS');
+    expect(frame).toContain('Recent sessions');
     expect(frame).toContain('newest-small-home');
     expect(frame).toContain('older-small-home');
-    expect(frame).not.toContain('filter sessions');
+    expect(frame).not.toContain('Type to filter…');
     expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toMatch(/\b\d+ more\b/);
     ui.unmount();
@@ -245,7 +244,7 @@ describe('RecentSessions', () => {
       { id: 'focus-small-1', feature: 'middle-focused-small-home', startedAt: 1_700_000_001 },
       { id: 'focus-small-2', feature: 'newest-focused-small-home', startedAt: 1_700_000_002 },
     ]);
-    const terminalRows = 21;
+    const terminalRows = 23;
     terminalSizeStore.__testReset({ cols: 80, rows: terminalRows, isSmall: true });
     const layout = getHomeLayout({
       cols: 80,
@@ -274,7 +273,7 @@ describe('RecentSessions', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('filter sessions');
+    expect(frame).toContain('Type to filter…');
     expect(frame).toContain('selection failed');
     expect(frame).toContain('newest-focused-small-home');
     expect(frame).toContain('↓ 2 more');
@@ -293,7 +292,7 @@ describe('RecentSessions', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('RECENT SESSIONS');
+    expect(frame).toContain('Recent sessions');
     expect(frame).not.toContain(FOCUS_BAR);
     expect(frame).not.toContain('Esc back');
     ui.unmount();

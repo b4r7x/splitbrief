@@ -79,7 +79,7 @@ describe('useEditBuffer commit on invalid input', () => {
 
     const feedback = feedbackStore.get();
     expect(feedback.isError).toBe(true);
-    expect(feedback.message).toContain('Max Retries');
+    expect(feedback.message).toContain('Max retries');
 
     ui.unmount();
   });
@@ -97,7 +97,7 @@ describe('useEditBuffer commit on invalid input', () => {
     expect(committed).toHaveLength(0);
     expect(ui.lastFrame() ?? '').toContain('active=true');
     expect(feedbackStore.get().isError).toBe(true);
-    expect(feedbackStore.get().message).toContain('Max Retries');
+    expect(feedbackStore.get().message).toContain('Max retries');
 
     ui.unmount();
   });
@@ -121,7 +121,7 @@ describe('useEditBuffer commit on invalid input', () => {
 
     const feedback = feedbackStore.get();
     expect(feedback.isError).toBe(true);
-    expect(feedback.message).toContain('Test Command');
+    expect(feedback.message).toContain('Test command');
 
     ui.unmount();
   });

@@ -502,7 +502,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('interrupted — Enter retry · type to steer');
+    expect(frame).toContain('Interrupted — ⏎ retry · type to steer');
     expect(BRAILLE_SPINNER_FRAMES.some((spinnerFrame) => frame.includes(spinnerFrame))).toBe(false);
 
     ui.unmount();
@@ -515,15 +515,15 @@ describe('InputFooter', () => {
 
     const pending = renderFeature(<InputFooter />);
     const pendingFrame = stripAnsiStyles(pending.lastFrame() ?? '');
-    expect(pendingFrame).toContain('interrupted — finishing current step…');
-    expect(pendingFrame).not.toContain('Enter retry');
+    expect(pendingFrame).toContain('Interrupted — finishing current step…');
+    expect(pendingFrame).not.toContain('⏎ retry');
     pending.unmount();
 
     markInterruptParked();
 
     const parked = renderFeature(<InputFooter />);
     expect(stripAnsiStyles(parked.lastFrame() ?? '')).toContain(
-      'interrupted — Enter retry · type to steer',
+      'Interrupted — ⏎ retry · type to steer',
     );
     parked.unmount();
     terminalSizeStore.reset();
@@ -546,7 +546,7 @@ describe('InputFooter', () => {
 
     // The shown span includes the silence that elapsed before the warning fired:
     // 5s since the warning + the 60s warn threshold = 1:05.
-    expect(frame).toContain(`${glyph('statusWarning')} still working — silent 1:05`);
+    expect(frame).toContain(`${glyph('statusWarning')} Still working — silent 1:05`);
 
     ui.unmount();
     terminalSizeStore.reset();

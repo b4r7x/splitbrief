@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
+import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { initStores } from './init-stores.js';
 import { configStore } from '../stores/project/config.js';
@@ -10,12 +11,15 @@ import { skillsStore } from '../stores/project/skills.js';
 import { DIPTYCH_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
 import { createDefaultConfig } from '../core/config/load/io.js';
+import { detectCapabilities } from '../engine/providers/registry.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
-// Bootstrap runs real disk reads + provider-detection probes. Probes fail
-// fast with no servers running and land in the `catch { return [] }` branches.
+// Bootstrap runs real disk reads + provider-detection probes. HTTP probes return
+// empty responses so this file never contacts a live provider.
+setupFetchMock();
 
 let tmp: string;
+let savedContextLengthEnv: string | undefined;
 
 function requireConfig() {
   const state = configStore.get();
@@ -55,11 +59,16 @@ function writeConfigYaml(projectDir: string, obj: Record<string, unknown>): void
 }
 
 beforeEach(() => {
+  vi.mocked(globalThis.fetch).mockImplementation(async () => new Response('{}', { status: 200 }));
+  savedContextLengthEnv = process.env.DIPTYCH_CONTEXT_LENGTH;
+  delete process.env.DIPTYCH_CONTEXT_LENGTH;
   resetAllStores();
 });
 
 afterEach(() => {
   resetAllStores();
+  if (savedContextLengthEnv === undefined) delete process.env.DIPTYCH_CONTEXT_LENGTH;
+  else process.env.DIPTYCH_CONTEXT_LENGTH = savedContextLengthEnv;
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -282,6 +291,58 @@ describe('initStores', () => {
       if (savedEnv === undefined) delete process.env.DIPTYCH_CONTEXT_LENGTH;
       else process.env.DIPTYCH_CONTEXT_LENGTH = savedEnv;
     }
+  }, 30_000);
+
+  it('does not push a fallback-origin context length into the store', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5.4-mini' },
+      }),
+    );
+
+    await initStores(dir);
+
+    expect(requireConfig().implementer.contextLength).toBeUndefined();
+    expect(configStore.getDetectedContextLength()).toBeUndefined();
+  }, 30_000);
+
+  it('pushes a catalog-origin context length with detected=true', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen3-coder:30b',
+        },
+      }),
+    );
+
+    await initStores(dir);
+
+    expect(requireConfig().implementer.contextLength).toBe(262_144);
+    expect(configStore.getDetectedContextLength()).toBe(262_144);
+  }, 30_000);
+
+  it("fresh default config with no live provider resolves origin 'catalog' with 262144 from the bundled qwen3-coder:30b entry", async () => {
+    const dir = makeProjectDir();
+    const caps = await detectCapabilities(createDefaultConfig());
+
+    expect(caps).toEqual({ contextLength: 262_144, origin: 'catalog' });
+
+    await initStores(dir);
+
+    expect(requireConfig().implementer.model).toBe('qwen3-coder:30b');
+    expect(requireConfig().implementer.contextLength).toBe(262_144);
+    expect(configStore.getDetectedContextLength()).toBe(262_144);
   }, 30_000);
 
   it('throws a CLI error when config loading yields no config state', async () => {

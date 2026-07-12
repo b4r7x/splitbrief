@@ -80,8 +80,8 @@ describe('Sidebar — completed count', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('3/3');
-    expect(frame).toContain('2 local');
-    expect(frame).toContain('1 escalated');
+    expect(frame).toContain('2 Local');
+    expect(frame).toContain('1 Escalated');
 
     ui.unmount();
   });
@@ -132,7 +132,7 @@ describe('Sidebar — completed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('no tasks yet');
+    expect(frame).toContain('No tasks yet');
     expect(frame).toContain('Planner is working');
     expect(frame).toContain('Spec');
 
@@ -182,7 +182,7 @@ describe('Sidebar — completed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('no tasks yet');
+    expect(frame).toContain('No tasks yet');
     expect(frame).not.toContain('Planner is working');
 
     ui.unmount();
@@ -239,7 +239,7 @@ describe('Sidebar — completed count', () => {
 
     expect(frame).toContain('20/40');
     expect(frame).toContain('standard');
-    expect(frame).toContain('local');
+    expect(frame).toContain('Local');
 
     ui.unmount();
   });

@@ -41,7 +41,7 @@ export function SessionsPicker() {
       filterFn={filterSession}
       getKey={(session) => session.id}
       onConfirm={(session) => handleSessionSelect(session, projectDir)}
-      title={`sessions${SOFT_SEP}${sessions.length}`}
+      title={`Sessions${SOFT_SEP}${sessions.length}`}
       hint={hint}
       chromeRows={12}
       listFloor={0}
@@ -49,8 +49,8 @@ export function SessionsPicker() {
       placeholder={
         <Text color={t.textDim}>
           {sessions.length === 0
-            ? '  no sessions yet — run a task to start one'
-            : '  no matching sessions'}
+            ? 'No sessions yet — run a task to start one'
+            : 'No matching sessions'}
         </Text>
       }
       renderItem={(session, { isCursor }) => (

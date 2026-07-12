@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import YAML, { parseDocument } from 'yaml';
 import { ConfigSchema, type Config } from '../../schemas/config.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../../providers/catalog.js';
 import { validateConfig } from './validate.js';
 import { fromYaml, toYaml } from './transform.js';
@@ -27,10 +28,9 @@ export function createDefaultConfig(): Config {
     implementer: {
       kind: 'api',
       provider: 'ollama',
-      model: 'qwen2.5-coder:7b',
+      model: 'qwen3-coder:30b',
       apiBase: resolveDefaultApiBase('ollama') ?? KNOWN_PROVIDER_BASE_URLS.ollama,
-      contextLength: 32768,
-      temperature: 0.3,
+      temperature: DEFAULT_IMPLEMENTER_TEMPERATURE,
     },
     validation: {
       typecheck: true,

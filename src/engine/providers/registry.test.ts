@@ -6,6 +6,7 @@ import {
   detectCapabilities,
 } from './registry.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { Config } from '../../core/schemas/config.js';
 
 describe('getProvider', () => {
@@ -194,14 +195,14 @@ describe('detectCapabilities', () => {
     expect(result.origin).toBe('config');
   });
 
-  it('returns default 8192 for non-api implementer without contextLength', async () => {
+  it('returns 32768 fallback when nothing resolves', async () => {
     const config = {
       implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'gpt-5.4-mini' },
       planner: { kind: 'cli' as const, tool: 'claude-code' as const },
     } as Config;
 
     const result = await detectCapabilities(config);
-    expect(result.contextLength).toBe(8192);
+    expect(result.contextLength).toBe(32768);
     expect(result.origin).toBe('fallback');
   });
 
@@ -239,6 +240,20 @@ describe('detectCapabilities', () => {
       );
     }
 
+    function deepseekConfig(): Config {
+      const config = makeConfig({
+        implementer: {
+          kind: 'api',
+          provider: 'deepseek',
+          apiBase: 'https://api.deepseek.com/v1',
+          apiKey: 'test-key',
+          model: 'deepseek-chat',
+        },
+      });
+      delete config.implementer.contextLength;
+      return config;
+    }
+
     it('env DIPTYCH_CONTEXT_LENGTH wins over provider detection', async () => {
       process.env.DIPTYCH_CONTEXT_LENGTH = '4096';
       mockDetectedContext(131072);
@@ -258,13 +273,22 @@ describe('detectCapabilities', () => {
       expect(result.origin).toBe('config');
     });
 
-    it('falls back to provider detection when neither env nor config is set', async () => {
+    it('prefers live detection over catalog', async () => {
       mockDetectedContext(131072);
 
       const result = await detectCapabilities(ollamaConfig());
 
       expect(result.contextLength).toBe(131072);
       expect(result.origin).toBe('detected');
+    });
+
+    it('falls back to the bundled catalog entry when detection fails', async () => {
+      vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('offline'));
+
+      const result = await detectCapabilities(deepseekConfig());
+
+      expect(result.contextLength).toBe(128_000);
+      expect(result.origin).toBe('catalog');
     });
   });
 });

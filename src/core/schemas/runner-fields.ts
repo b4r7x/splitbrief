@@ -22,6 +22,7 @@ const PlannerCapabilitiesSchema = z.strictObject({
 
 export const RUNNER_IDLE_WARN_MS = 300_000;
 export const RUNNER_IDLE_KILL_MS = 1_800_000;
+export const DEFAULT_IMPLEMENTER_TEMPERATURE = 0.3;
 
 const WatchdogFields = {
   idleWarnMs: z.number().int().positive().max(3_600_000).optional(),

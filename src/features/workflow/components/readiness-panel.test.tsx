@@ -43,15 +43,15 @@ describe('ReadinessPanel', () => {
 
     await tick();
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('readiness');
-    expect(frame).toContain('blocked');
+    expect(frame).toContain('Readiness');
+    expect(frame).toContain('Blocked');
     expect(frame).toContain('required');
     expect(frame).toContain('dismiss');
     expect(frame).not.toContain('open fix');
 
     ui.stdin.write('\r');
     await tick(20);
-    expect(ui.lastFrame() ?? '').toContain('blocked');
+    expect(ui.lastFrame() ?? '').toContain('Blocked');
     expect(onDismiss).not.toHaveBeenCalled();
     ui.unmount();
   });

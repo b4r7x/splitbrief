@@ -8,9 +8,9 @@ import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
 import { hintStateSeverity } from '../input-hints.js';
 
 const ARMED_MESSAGES: Record<Exclude<ArmedKind, 'none'>, string> = {
-  exit: 'Ctrl+C again to exit',
-  interrupt: 'Esc again to interrupt',
-  cancel: 'Esc again to cancel workflow',
+  exit: 'ctrl+c again to exit',
+  interrupt: 'esc again to interrupt',
+  cancel: 'esc again to cancel workflow',
 };
 
 function summarizeDisplayLine(text: string): string {

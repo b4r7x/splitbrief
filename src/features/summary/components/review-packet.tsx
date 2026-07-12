@@ -77,7 +77,7 @@ export function buildReviewPacketDetailRows(
     return [
       {
         key: 'review-packet-heading',
-        node: <Text color={theme.textDim}>review packet</Text>,
+        node: <Text color={theme.textDim}>Review packet</Text>,
       },
       {
         key: 'review-packet-md',
@@ -121,7 +121,7 @@ export function buildReviewPacketDetailRows(
   return [
     {
       key: 'review-packet-heading',
-      node: <Text color={theme.textDim}>review packet</Text>,
+      node: <Text color={theme.textDim}>Review packet</Text>,
     },
     {
       key: 'review-packet-md',

@@ -18,6 +18,7 @@ import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient, type StreamClient } from '../providers/openai-stream.js';
 import { clampToMaxOutput } from '../providers/capability-inference.js';
 import { DEFAULT_API_CONTEXT_LENGTH } from '../spec/token-budget.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 
 export function createApiImplementer(
@@ -56,7 +57,7 @@ export function createApiImplementer(
     async invoke(opts: InvokeOpts) {
       const { prompt, config, onOutput, signal, systemPreamble } = opts;
       const impl = assertImplementerKind(config, 'api');
-      const temperature = opts.temperature ?? impl.temperature ?? 0.7;
+      const temperature = opts.temperature ?? impl.temperature ?? DEFAULT_IMPLEMENTER_TEMPERATURE;
       const contextLength = impl.contextLength ?? DEFAULT_API_CONTEXT_LENGTH;
       const effectiveSignal = composeAbortSignal(signal, impl.timeout);
 

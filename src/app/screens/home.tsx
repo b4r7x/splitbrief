@@ -4,6 +4,7 @@ import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useTheme } from '../../components/theme.js';
 import { Composer } from '../../components/composer/composer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { HomeConfigSummary } from '../../features/home/components/config-summary.js';
 import { RecentSessions } from '../../features/home/components/recent-sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -19,8 +20,8 @@ import { getLogo } from '../../features/home/logo.js';
 import { RECENT_SESSIONS_HINT } from '../../features/home/components/recent-sessions-list.js';
 import { useRecentSessionsFocus } from '../../features/home/use-recent-sessions-focus.js';
 
-const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k commands';
-const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k commands';
+const DEFAULT_HOME_HINT = `/help${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+k commands`;
+const HOME_HINT = `/help${SOFT_SEP}/settings${SOFT_SEP}/skills${SOFT_SEP}ctrl+r recent${SOFT_SEP}ctrl+k commands`;
 const HOME_SELECTION_ERROR_CLEAR_MS = 3000;
 
 interface HomeScreenProps {
@@ -96,7 +97,7 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
     <ScreenShell justifyContent="flex-start" alignItems="center">
       <Box flexDirection="column" width={layout.inputWidth} height="100%">
         <Box flexDirection="column" flexGrow={1} overflowY="hidden" alignItems="center">
-          <Box flexDirection="column" width={layout.bodyWidth} gap={isSmall ? 0 : 1}>
+          <Box flexDirection="column" width={layout.bodyWidth} gap={1}>
             <Box flexDirection="column" alignItems="center" flexShrink={0}>
               <Text color={theme.accent}>{getLogo(layout.logoTier)}</Text>
             </Box>
@@ -132,7 +133,7 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
             onRuntimeCommand={onRuntimeCommand}
             commands={commands}
             mode="normal"
-            hint="describe your feature…"
+            hint="Describe your feature…"
             currentScreen="home"
             width={layout.inputWidth}
             homeHint={homeHint}

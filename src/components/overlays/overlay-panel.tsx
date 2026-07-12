@@ -54,9 +54,10 @@ export function OverlayPanel({
       ? undefined
       : getClampedTerminalWidth({ cols, maxWidth: widthProp ?? resolvedMaxWidth });
 
-  // Surface titles are quiet dim metadata (§1.1 accent budget): the single accent cell per region is
-  // the focused row bar, never the title head. Real role titles (the runner picker) hand-roll their
-  // own accent rather than routing through OverlayPanel.
+  // Surface titles stay quiet dim metadata (§1.1 accent budget) and use sentence case — first word
+  // capitalized — like every TUI title, label, status, and empty state. Three token classes stay lowercase
+  // even at string start: key tokens (esc, ctrl+k, ⏎, space), slash commands (/settings), and config enum
+  // values (standard, auto, cli). Real role titles (the runner picker) still hand-roll their own accent.
   const titleNode = title && (
     <Box marginBottom={1}>
       <Text color={t.textDim}>{title}</Text>

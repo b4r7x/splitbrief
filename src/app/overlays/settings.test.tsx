@@ -12,6 +12,14 @@ const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
 const RAW_TEST_COMMAND = `safe${ESC}]8;;http://evil${BEL}${ESC}[31mcmd`;
 
+function frameLineCount(frame: string): number {
+  return frame.split('\n').length;
+}
+
+function topBorderRow(frame: string): number {
+  return frame.split('\n').findIndex((line) => /^[ \t]*(?:[+╭┌])/.test(line));
+}
+
 describe('SettingsOverlay edit mode', () => {
   beforeEach(() => {
     configStore.__testReset({
@@ -55,6 +63,42 @@ describe('SettingsOverlay edit mode', () => {
     await tick(20);
 
     expect(configStore.get().config?.validation.typecheck).toBe(true);
+    ui.unmount();
+  });
+
+  it('frame line count identical when moving between a 1-line and a 2-line description row', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
+    overlayStore.setFocus('planner.model');
+    const shortDescriptionUi = renderFeature(<SettingsOverlay />);
+    await tick(20);
+    const shortFrame = stripAnsiStyles(shortDescriptionUi.lastFrame() ?? '');
+    shortDescriptionUi.unmount();
+
+    overlayStore.setFocus('planner.effort');
+    const longDescriptionUi = renderFeature(<SettingsOverlay />);
+    await tick(20);
+    const longFrame = stripAnsiStyles(longDescriptionUi.lastFrame() ?? '');
+    const shortTop = topBorderRow(shortFrame);
+    const longTop = topBorderRow(longFrame);
+
+    expect(shortFrame).toContain('Planner model');
+    expect(longFrame).toContain('Reasoning hint');
+    expect(frameLineCount(longFrame)).toBe(frameLineCount(shortFrame));
+    expect(shortTop).toBeGreaterThanOrEqual(0);
+    expect(longTop).toBe(shortTop);
+
+    longDescriptionUi.unmount();
+  });
+
+  it('renders the title through OverlayPanel chrome', async () => {
+    overlayStore.setFocus('planner.model');
+    const ui = renderFeature(<SettingsOverlay />);
+    await tick(20);
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Settings');
+    expect(frame).toContain('esc close');
+
     ui.unmount();
   });
 });

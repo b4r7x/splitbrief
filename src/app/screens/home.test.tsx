@@ -32,8 +32,8 @@ const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k commands';
-const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k commands';
+const DEFAULT_HOME_HINT = '/help · /settings · /skills · ctrl+k commands';
+const HOME_HINT = '/help · /settings · /skills · ctrl+r recent · ctrl+k commands';
 const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
 const FOCUS_BAR = '▌';
 // Real session-file I/O (saveSummary + load/loadAll) can outlive vi.waitFor's 1s default
@@ -117,7 +117,7 @@ describe('HomeScreen', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('__|_||_|');
     expect(frame).toContain('standard');
-    expect(frame).toContain('no recent sessions');
+    expect(frame).toContain('No recent sessions');
     ui.unmount();
   });
 
@@ -183,7 +183,7 @@ describe('HomeScreen', () => {
   });
 
   it('shows recent sessions on short terminals', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
+    terminalSizeStore.__testReset({ cols: 80, rows: 18, isSmall: true });
     saveSummary(
       { projectDir: projectDir, sessionId: 'short-session' },
       makeSession({
@@ -372,8 +372,8 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('RECENT SESSIONS');
-      expect(frame).toContain('filter sessions');
+      expect(frame).toContain('Recent sessions');
+      expect(frame).toContain('Type to filter…');
       expect(frame).toContain(RECENT_SESSIONS_HINT);
       expect(frame).toContain(FOCUS_BAR);
     }, SESSION_FILTER_WAIT_MS);
@@ -391,8 +391,8 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain(FOCUS_BAR);
-    expect(frame).not.toContain('filter sessions');
-    expect(frame).toContain('RECENT SESSIONS');
+    expect(frame).not.toContain('Type to filter…');
+    expect(frame).not.toContain('Recent sessions');
     ui.unmount();
   });
 
@@ -443,7 +443,8 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.unmount();
   });
 
-  it('Ctrl+R can filter to a session older than the recent preview cap', async () => {
+  it('Ctrl+R can filter beyond the unfocused preview budget', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
     for (let i = 0; i < 35; i++) {
       saveSummary(
         { projectDir, sessionId: `focus-session-${i}` },
@@ -536,7 +537,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('filter sessions');
+      expect(frame).toContain('Type to filter…');
       expect(frame).toContain('invisible feature');
     }, SESSION_FILTER_WAIT_MS);
     await flushEffects();
@@ -572,7 +573,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('filter sessions');
+      expect(frame).toContain('Type to filter…');
       expect(frame).toContain('invisible copy feature');
     }, SESSION_FILTER_WAIT_MS);
     await flushEffects();

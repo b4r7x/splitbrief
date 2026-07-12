@@ -3,6 +3,7 @@ import { Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
+import { ListRow } from '../list-row.js';
 import { SingleColumnPicker } from './single-column.js';
 
 beforeEach(() => {
@@ -89,6 +90,34 @@ describe('SingleColumnPicker row zones', () => {
     await tick();
 
     expect(collectClickableZones({ cols: 60, rows: 40 }).size).toBe(0);
+    ui.unmount();
+  });
+
+  it('reserves a 2-cell scrollbar gutter so metadata keeps its last character', async () => {
+    const ui = renderFeature(
+      <SingleColumnPicker
+        label="Models"
+        items={['one', 'two', 'three']}
+        filter=""
+        selectedIndex={0}
+        isActive
+        height={6}
+        visibleRows={2}
+        getKey={(item) => item}
+        contentMaxWidth={17}
+        renderRow={(item, isCursor, maxWidth) => (
+          <ListRow
+            label={item}
+            metadata="1.0M"
+            state={isCursor ? 'active' : 'default'}
+            width={maxWidth}
+          />
+        )}
+      />,
+    );
+    await tick();
+
+    expect(ui.lastFrame() ?? '').toContain('1.0M');
     ui.unmount();
   });
 });

@@ -328,12 +328,12 @@ export function useWorkflowRunner({
     const sessionId = sessionIdRef.current ?? readActive(projectDir);
     const saved = sessionId ? loadState({ projectDir, sessionId }) : null;
     if (!saved || !sessionId) {
-      feedbackStore.setError('No saved state to resume. Press ESC to return home.');
+      feedbackStore.setError('No saved state to resume. Press esc to return home.');
       return;
     }
     if (!isResumable(saved)) {
       feedbackStore.setError(
-        'This cancelled workflow cannot be resumed. Press ESC to return home.',
+        'This cancelled workflow cannot be resumed. Press esc to return home.',
       );
       return;
     }

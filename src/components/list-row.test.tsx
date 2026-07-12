@@ -4,7 +4,7 @@ import { render } from 'ink-testing-library';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../lib/glyphs.js';
-import { ListGroupHeader, ListRow } from './list-row.js';
+import { ListGroupHeader, ListRow, listRowLead } from './list-row.js';
 
 const envSnapshot = { ...process.env };
 let ttyDescriptor: PropertyDescriptor | undefined;
@@ -46,6 +46,11 @@ describe('ListRow', () => {
     forceUnicodeGlyphs();
   });
 
+  it('exports listRowLead', () => {
+    expect(listRowLead('active')).toBe(`${glyph('liveBar')} `);
+    expect(listRowLead('default')).toBe('  ');
+  });
+
   it('renders a default row with no focus or active glyph', () => {
     const frame = frameOf(<ListRow label="claude code" />);
     expect(frame).toContain('claude code');
@@ -85,6 +90,36 @@ describe('ListRow', () => {
     const frame = frameOf(<ListRow label="sonnet 4.5" metadata="200k" />);
     expect(frame).toContain('sonnet 4.5');
     expect(frame).toContain('200k');
+  });
+
+  it('reserves a blank 2-cell check column when selected is false', () => {
+    const withoutCheckColumn = stripAnsiStyles(
+      frameOf(<ListRow label="tool" metadata="1.2" width={24} />, 24),
+    );
+    const withBlankCheckColumn = stripAnsiStyles(
+      frameOf(<ListRow label="tool" metadata="1.2" selected={false} width={24} />, 24),
+    );
+
+    expect(withBlankCheckColumn).not.toContain(glyph('check'));
+    expect(withBlankCheckColumn.indexOf('1.2')).toBe(withoutCheckColumn.indexOf('1.2') - 2);
+  });
+
+  it('renders metadata flush right with the check column when selected', () => {
+    const line = stripAnsiStyles(
+      frameOf(<ListRow label="tool" metadata="1.2" selected width={24} />, 24).split('\n')[0] ?? '',
+    );
+
+    expect(line.trimEnd().endsWith(`1.2 ${glyph('check')}`)).toBe(true);
+  });
+
+  it('truncates label with … when width overflows', () => {
+    const line = stripAnsiStyles(
+      frameOf(<ListRow label="a very long label that overflows" width={14} />, 40).split('\n')[0] ??
+        '',
+    );
+
+    expect(line).toContain('…');
+    expect(line).not.toContain('overflows');
   });
 
   it('right-aligns dim trailing metadata at the row edge', () => {

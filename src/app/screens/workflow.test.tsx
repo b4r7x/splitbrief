@@ -153,7 +153,7 @@ describe('WorkflowScreen key arbitration', () => {
     await tick(PAST_GRACE);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toContain('approve once');
+    expect(ui.lastFrame() ?? '').toContain('Approve once');
 
     // A single 's' must produce exactly one semantic action: the prompt's session-approve.
     // If the composer were still focused it would also append 's' to the input box.
@@ -322,7 +322,7 @@ describe('WorkflowScreen key arbitration', () => {
 
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('approve | Ctrl+E/e edit');
+      expect(frame).toContain('approve · ctrl+e edit');
       expect(frame).not.toContain('queue message to running workflow');
     });
     await settleReviewInput();
@@ -546,7 +546,7 @@ describe('WorkflowScreen key arbitration', () => {
       });
       await tick(20);
 
-      expect(ui.lastFrame() ?? '').not.toContain('Enter to resume');
+      expect(ui.lastFrame() ?? '').not.toContain('enter to resume');
 
       ui.stdin.write(ENTER);
       await tick(40);
@@ -653,7 +653,7 @@ describe('WorkflowScreen key arbitration', () => {
 
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Rich footer task');
-        expect(ui.lastFrame() ?? '').toContain('approve | Ctrl+E/e edit-file');
+        expect(ui.lastFrame() ?? '').toContain('approve · ctrl+e edit-file');
       });
       const frame = ui.lastFrame() ?? '';
       // The Ctrl+C cluster left the resting InputFooter; it now lives only in the armed FeedbackRow.
@@ -662,7 +662,7 @@ describe('WorkflowScreen key arbitration', () => {
 
       abortStore.arm('exit');
       await tick(20);
-      expect(ui.lastFrame() ?? '').toContain('Ctrl+C again to exit');
+      expect(ui.lastFrame() ?? '').toContain('ctrl+c again to exit');
       abortStore.clear();
 
       ui.unmount();

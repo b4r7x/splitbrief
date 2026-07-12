@@ -16,6 +16,11 @@ import { FilterableList } from '../../components/pickers/filterable-list.js';
 const filterSkill = (s: SkillMeta, query: string): boolean =>
   filterByFields(s, query, ['name', 'description']);
 
+const SECTION_LABELS = {
+  project: 'Project',
+  global: 'Global',
+} as const;
+
 interface SkillRowProps {
   skill: SkillMeta;
   isCursor: boolean;
@@ -94,7 +99,7 @@ export function SkillsPicker() {
       getKey={(skill) => skill.id}
       onConfirm={handleConfirm}
       onActivate={(skill) => toggle(skill.id)}
-      title={`skills${SOFT_SEP}${checked.size} selected`}
+      title={`Skills${SOFT_SEP}${checked.size} selected`}
       hint={hintText}
       chromeRows={12}
       width={panelWidth}
@@ -135,10 +140,10 @@ export function SkillsPicker() {
       placeholder={
         skills.length === 0 ? (
           <Text color={t.textDim}>
-            {'  no skills yet — add them under .claude/skills/ or .diptych/skills/'}
+            No skills yet — add them under .claude/skills/ or .diptych/skills/
           </Text>
         ) : (
-          <Text color={t.textDim}>{'  no matching skills'}</Text>
+          <Text color={t.textDim}>No matching skills</Text>
         )
       }
       section={{
@@ -146,8 +151,7 @@ export function SkillsPicker() {
         gapBetweenSections: true,
         renderHeader: (section) => (
           <Text color={t.textDim}>
-            {'  '}
-            {section}
+            {section === 'project' ? SECTION_LABELS.project : SECTION_LABELS.global}
           </Text>
         ),
       }}

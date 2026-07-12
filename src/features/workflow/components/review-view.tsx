@@ -4,6 +4,7 @@ import { renderMarkdownRows } from '../../../components/markdown.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
+import { ScrollIndicator } from '../../../components/scroll-indicator.js';
 import {
   clampScrollableDocumentOffset,
   getScrollableDocumentLineCount,
@@ -52,7 +53,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   if (!filePath) return null;
 
   const remaining = Math.max(0, renderedLineCount - clampedOffset - contentHeight);
-  const footerLabel = remaining > 0 ? `↓  ${remaining} more` : 'end of file';
+  const footerLabel = remaining > 0 ? `↓ ${remaining} more` : 'End of file';
   const scrollHint = `↑↓ scroll${SOFT_SEP}g/G ends`;
   const showScrollHint =
     remaining > 0 &&
@@ -77,7 +78,11 @@ export function ReviewView({ height, width }: ReviewViewProps) {
           <>
             <Divider width={frameInnerWidth} />
             <Box height={1} width={frameInnerWidth} overflow="hidden">
-              <Text color={t.textDim}>{footerLabel}</Text>
+              {remaining > 0 ? (
+                <ScrollIndicator show={remaining > 0} direction="down" count={remaining} />
+              ) : (
+                <Text color={t.textDim}>{footerLabel}</Text>
+              )}
               <Box flexGrow={1} />
               {showScrollHint && <Text color={t.textDim}>{scrollHint}</Text>}
             </Box>

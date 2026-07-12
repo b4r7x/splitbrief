@@ -44,7 +44,7 @@ describe('settings overlay integration', () => {
     overlayStore.open('settings', 'validation.typecheck');
     const ui = renderFeature(<SettingsOverlay />);
     await tick(20);
-    expect(ui.lastFrame()).toContain('Type Check');
+    expect(ui.lastFrame()).toContain('Type check');
 
     ui.stdin.write(' ');
     await tick(20);
@@ -60,7 +60,7 @@ describe('settings overlay integration', () => {
     overlayStore.open('settings', 'validation.typecheck');
     const ui = renderFeature(<SettingsOverlay />);
     await tick(20);
-    expect(ui.lastFrame()).toContain('Type Check');
+    expect(ui.lastFrame()).toContain('Type check');
 
     collectClickableZones({ cols: 100, rows: 50 }).get('list-row:validation.typecheck')?.();
     await tick(20);
@@ -73,24 +73,24 @@ describe('settings overlay integration', () => {
     overlayStore.open('settings', 'workflow.maxRetries');
     const ui = renderFeature(<SettingsOverlay />);
     await tick(20);
-    expect(ui.lastFrame()).toContain('Max Retries');
+    expect(ui.lastFrame()).toContain('Max retries');
 
     ui.stdin.write('\r'); // Enter edit mode on the numeric field.
     await tick(40);
     const editingFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(editingFrame).toContain('Max Retries'); // the field row is rendered
+    expect(editingFrame).toContain('Max retries'); // the field row is rendered
     expect(editingFrame).toContain('3'); // seeded value shown in the edit buffer
 
     ui.stdin.write('\x7f'); // backspace — clear seeded "3"
     await tick(40);
     const clearedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(clearedFrame).toContain('Max Retries');
+    expect(clearedFrame).toContain('Max retries');
     expect(clearedFrame).not.toContain('3'); // buffer cleared, no value digit shown
 
     ui.stdin.write('5');
     await tick(40);
     const typedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(typedFrame).toContain('Max Retries');
+    expect(typedFrame).toContain('Max retries');
     expect(typedFrame).toContain('5'); // typed value shown in the edit buffer
 
     ui.stdin.write('\r'); // commit
@@ -125,7 +125,7 @@ describe('settings overlay integration', () => {
     // A feedback error was surfaced.
     const feedback = feedbackStore.get();
     expect(feedback.isError).toBe(true);
-    expect(feedback.message).toContain('Max Retries');
+    expect(feedback.message).toContain('Max retries');
 
     ui.unmount();
   });
@@ -134,7 +134,7 @@ describe('settings overlay integration', () => {
     overlayStore.open('settings', 'workflow.maxRetries');
     const ui = renderFeature(<SettingsOverlay />);
     await tick(20);
-    expect(ui.lastFrame()).toContain('Max Retries');
+    expect(ui.lastFrame()).toContain('Max retries');
 
     ui.stdin.write('\r');
     await tick(20);
@@ -160,7 +160,7 @@ describe('settings overlay integration', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Validation');
-    expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Type Check');
+    expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Timeout');
     ui.unmount();
   });
 

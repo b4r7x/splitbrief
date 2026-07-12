@@ -236,13 +236,13 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
   const overflowNotice =
     previousCount > 0 || nextCount > 0
       ? [
-          previousCount > 0 ? `${previousCount} earlier` : null,
-          nextCount > 0 ? `${nextCount} more` : null,
+          previousCount > 0 ? `↑ ${previousCount} more` : null,
+          nextCount > 0 ? `↓ ${nextCount} more` : null,
         ]
           .filter((part): part is string => part !== null)
           .join(SOFT_SEP)
       : null;
-  const pagingHint = rowWidth < 72 ? 'PgUp/PgDn' : 'PageUp/PageDown';
+  const pagingHint = 'pgup/pgdn scroll';
   const overflowLine =
     overflowNotice !== null
       ? truncateTerminalDisplayText(`${overflowNotice}${SOFT_SEP}${pagingHint}`, innerWidth)

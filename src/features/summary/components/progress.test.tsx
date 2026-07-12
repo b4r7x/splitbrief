@@ -39,7 +39,7 @@ describe('SummaryProgress', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('no task briefs compiled');
+    expect(frame).toContain('No task briefs compiled');
     expect(frame).not.toContain('0/0');
 
     ui.unmount();

@@ -49,6 +49,17 @@ describe('ScrollableDocument', () => {
     ui.unmount();
   });
 
+  it('hides both indicator rows when lineCount <= visibleHeight', async () => {
+    const ui = renderFeature(<ScrollableDocument rows={makeRows(3)} height={3} />);
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toBe('line-0\nline-1\nline-2');
+    expect(frame).not.toContain('more');
+
+    ui.unmount();
+  });
+
   it('pages down by viewport height and reaches the last rows', async () => {
     const ui = renderFeature(<ScrollableDocument rows={makeRows(8)} height={3} />);
     await tick(20);

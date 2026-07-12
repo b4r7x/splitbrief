@@ -219,7 +219,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('drift');
+    expect(frame).toContain('Drift');
     expect(frame).toContain('1 warning');
 
     ui.unmount();
@@ -253,7 +253,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('no task briefs compiled');
+    expect(frame).toContain('No task briefs compiled');
     expect(frame).not.toContain('0/0');
     expect(frame).not.toContain('No savings this run');
 
@@ -293,11 +293,11 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('checkpoints');
+    expect(frame).toContain('Checkpoints');
     expect(frame).toContain('2 checkpoints');
     expect(frame).toContain('snap-pre-final');
     expect(frame).toContain('diptych snapshot diff snap-post-1');
-    expect(frame).toContain('review packet');
+    expect(frame).toContain('Review packet');
     expect(frame).toContain('.diptych/sessions/summary-session/review-packet.md');
     expect(frame).toContain('final review: written');
     expect(frame).toContain('evidence: 2/2');
@@ -528,7 +528,7 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
-  it('summary runner rows label planner and implementer in lowercase', () => {
+  it('summary runner rows label planner and implementer in sentence case', () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     showSummaryRoute({
       summary: makeSummary({
@@ -541,10 +541,8 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('planner');
-    expect(frame).toContain('implementer');
-    expect(frame).not.toContain('Planner');
-    expect(frame).not.toContain('Implementer');
+    expect(frame).toContain('Planner');
+    expect(frame).toContain('Implementer');
 
     ui.unmount();
   });
@@ -640,7 +638,7 @@ describe('SummaryScreen', () => {
     expect(frame).toContain('diptych');
     expect(frame).toContain('failed');
     expect(frame).toContain(`Codex ${glyph('connectorHandoff')} Codex`);
-    const continueCount = frame.split('press enter to continue').length - 1;
+    const continueCount = frame.split('Press enter to continue').length - 1;
     expect(continueCount).toBe(1);
     expect(maxLineLength(frame)).toBeLessThanOrEqual(48);
 
@@ -707,7 +705,7 @@ describe('SummaryScreen', () => {
     await tick(20);
     frames.push(ui.lastFrame() ?? '');
 
-    expect(frames.some((frame) => frame.includes('review packet'))).toBe(true);
+    expect(frames.some((frame) => frame.includes('Review packet'))).toBe(true);
     expect(frames.some((frame) => frame.includes('review-packet.md'))).toBe(true);
 
     ui.unmount();
@@ -789,7 +787,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('extra cost');
+    expect(frame).toContain('Extra cost');
     expect(frame).not.toContain('saved $0.00 (-50%)');
     expect((frame.match(/◆/g) ?? []).length).toBe(1);
 

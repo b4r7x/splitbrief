@@ -7,7 +7,8 @@ import YAML from 'yaml';
 import { createDefaultConfig, initConfig, loadConfig, writeConfig } from './io.js';
 import { toYaml } from './transform.js';
 import { DIPTYCH_DIR, TREES_DIR } from '../../paths.js';
-import { expectCli } from '#testing/helpers/config-narrowing.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
+import { expectApi, expectCli } from '#testing/helpers/config-narrowing.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-loading-test');
 
@@ -83,6 +84,9 @@ describe('config loading', () => {
       const { config } = loadConfig(dir);
       const defaults = createDefaultConfig();
       expect(config).toEqual(defaults);
+      expect(defaults.implementer).not.toHaveProperty('contextLength');
+      expect(expectApi(defaults.implementer).model).toBe('qwen3-coder:30b');
+      expect(expectApi(defaults.implementer).temperature).toBe(DEFAULT_IMPLEMENTER_TEMPERATURE);
       expect(config.workflow.taskReview).toBe('none');
     });
 
@@ -532,10 +536,11 @@ describe('config loading', () => {
       expect(config.validation).toEqual(defaults.validation);
       expect(config.workflow).toEqual(defaults.workflow);
       // v2 uses 'provider' instead of 'tool' for API implementers
-      const defaultImpl = defaults.implementer as { provider: string; contextLength: number };
-      const configImpl = config.implementer as { provider: string; contextLength: number };
+      const defaultImpl = expectApi(defaults.implementer);
+      const configImpl = expectApi(config.implementer);
       expect(configImpl.provider).toBe(defaultImpl.provider);
-      expect(configImpl.contextLength).toBe(defaultImpl.contextLength);
+      expect(defaultImpl.contextLength).toBeUndefined();
+      expect(configImpl.contextLength).toBeUndefined();
     });
 
     it('returns security warnings in the warnings array', () => {
@@ -612,9 +617,10 @@ describe('config loading', () => {
 
       const { config } = loadConfig(dir);
       expect(config.implementer.kind).toBe('api');
-      expect(config.implementer.model).toBe('llama3');
-      expect((config.implementer as Record<string, unknown>).contextLength).toBe(32768);
-      expect((config.implementer as Record<string, unknown>).temperature).toBe(0.3);
+      const implementer = expectApi(config.implementer);
+      expect(implementer.model).toBe('llama3');
+      expect(implementer.contextLength).toBeUndefined();
+      expect(implementer.temperature).toBe(DEFAULT_IMPLEMENTER_TEMPERATURE);
     });
 
     it('does not leak ollama defaults into a different-provider implementer (model omitted)', () => {

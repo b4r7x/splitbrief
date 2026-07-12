@@ -9,6 +9,7 @@ import { configStore } from '../../stores/project/config.js';
 import { externalEditRequestStore } from '../../stores/ui/external-edit-request.js';
 import { writeSpecFile } from '../../core/paths-io.js';
 import { useTheme } from '../../components/theme.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { useEditorKeys } from '../../features/editor/use-editor-keys.js';
 import { EditorBufferView } from '../../features/editor/editor-buffer-view.js';
 import { FramePanel, OVERLAY_FRAME_COLS } from '../../features/workflow/components/frame-panel.js';
@@ -82,7 +83,7 @@ export function EditorOverlay() {
       </Box>
       <Box height={1}>
         <Text color={t.textDim} wrap="truncate">
-          Ctrl+S save · Ctrl+O external · Esc cancel
+          {`ctrl+s save${SOFT_SEP}ctrl+o external${SOFT_SEP}esc cancel`}
         </Text>
       </Box>
     </FramePanel>

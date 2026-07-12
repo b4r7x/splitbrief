@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { glyph } from '../../lib/glyphs.js';
 import { TextInputOverlay } from './text-input-overlay.js';
@@ -13,8 +14,8 @@ describe('TextInputOverlay', () => {
     const submitted: string[] = [];
     const ui = renderFeature(
       <TextInputOverlay
-        title="Custom Command"
-        label="Command to run:"
+        title="Custom command"
+        label="Command to run"
         placeholder="cmd"
         onSubmit={(value) => {
           submitted.push(value);
@@ -45,9 +46,10 @@ describe('TextInputOverlay', () => {
   it('renders a single rounded input frame with an accent prompt and dim footer', async () => {
     const ui = renderFeature(
       <TextInputOverlay
-        title="custom command"
-        label="command to run"
+        title="Custom command"
+        label="Command to run"
         placeholder="cmd"
+        examples={['my-tool']}
         onSubmit={() => {}}
       />,
     );
@@ -56,7 +58,8 @@ describe('TextInputOverlay', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('╭').length - 1).toBe(1);
     expect(frame).toContain(`${glyph('prompt')} `);
-    expect(frame).toContain('⏎ save · esc back');
+    expect(frame).toContain(`⏎ save${SOFT_SEP}esc back`);
+    expect(frame).toContain('Examples');
     ui.unmount();
   });
 });

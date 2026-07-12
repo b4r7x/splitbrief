@@ -3,11 +3,13 @@ import type { ReactNode } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
 import { useTheme } from '../../components/theme.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import {
   OverlayPanel,
   computeOverlayInnerRowCapacity,
 } from '../../components/overlays/overlay-panel.js';
 import { ListGroupHeader, ListRow } from '../../components/list-row.js';
+import { ScrollIndicator } from '../../components/scroll-indicator.js';
 import { windowSlice } from '../../components/pickers/scroll-window.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from '../../components/pickers/row-zone.js';
 import { dropLastGrapheme } from '../../components/input/text-editing.js';
@@ -28,7 +30,6 @@ import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 
-const MAX_VISIBLE = 8;
 const PALETTE_MAX_WIDTH = 86;
 const MAX_LABEL_WIDTH = 24;
 const LABEL_COLUMN_GAP = 2;
@@ -36,12 +37,12 @@ const PROMPT_ROWS = 2;
 const HINT_ROWS = 2;
 
 const SOURCE_HEADERS: Record<PaletteSource, string> = {
-  command: 'commands',
-  mode: 'modes',
-  picker: 'pickers',
-  task: 'tasks',
-  session: 'sessions',
-  custom: 'actions',
+  command: 'Commands',
+  mode: 'Modes',
+  picker: 'Pickers',
+  task: 'Tasks',
+  session: 'Sessions',
+  custom: 'Actions',
 };
 
 function countSourceHeaders(items: PaletteResult[]): number {
@@ -60,23 +61,33 @@ function fitPaletteWindow(
   results: PaletteResult[],
   cursor: number,
   listBudget: number,
-): { scrollOffset: number; visible: PaletteResult[] } {
+): {
+  scrollOffset: number;
+  visible: PaletteResult[];
+  showUp: boolean;
+  showDown: boolean;
+} {
   if (listBudget <= 0 || results.length === 0) {
-    return { scrollOffset: 0, visible: [] };
+    return { scrollOffset: 0, visible: [], showUp: false, showDown: false };
   }
-  const maxSize = Math.min(MAX_VISIBLE, listBudget, results.length);
-  for (let size = maxSize; size >= 1; size--) {
+  for (let size = Math.min(listBudget, results.length); size >= 1; size--) {
     const { scrollOffset, visibleSlice } = windowSlice({
       items: results,
       selectedIndex: cursor,
       windowSize: size,
     });
-    const overflow = results.length > visibleSlice.length ? 1 : 0;
-    if (visibleSlice.length + countSourceHeaders(visibleSlice) + overflow <= listBudget) {
-      return { scrollOffset, visible: visibleSlice };
+    const showUp = scrollOffset > 0;
+    const showDown = scrollOffset + size < results.length;
+    const listRows =
+      visibleSlice.length +
+      countSourceHeaders(visibleSlice) +
+      (showUp ? 1 : 0) +
+      (showDown ? 1 : 0);
+    if (listRows <= listBudget) {
+      return { scrollOffset, visible: visibleSlice, showUp, showDown };
     }
   }
-  return { scrollOffset: 0, visible: [] };
+  return { scrollOffset: 0, visible: [], showUp: false, showDown: false };
 }
 
 function isPaletteResultVisible(
@@ -187,15 +198,16 @@ export function CommandPaletteOverlay({
   );
 
   const t = useTheme();
-  const { scrollOffset, visible } = fitPaletteWindow(results, cursor, listBudget);
+  const { scrollOffset, visible, showUp, showDown } = fitPaletteWindow(results, cursor, listBudget);
   const labelWidth =
     Math.min(
       MAX_LABEL_WIDTH,
       Math.max(0, ...visible.map((result) => getTerminalCellWidth(result.label))),
     ) + LABEL_COLUMN_GAP;
   const hasResults = visible.length > 0;
-  const hint = hasResults ? '↑↓ navigate · ⏎ select · esc close' : '↑↓ navigate · esc close';
-  const hasOverflow = results.length > visible.length;
+  const hint = hasResults
+    ? ['↑↓ navigate', '⏎ select', 'esc close'].join(SOFT_SEP)
+    : ['↑↓ navigate', 'esc close'].join(SOFT_SEP);
 
   const listNodes: ReactNode[] = [];
   let lastSource: PaletteSource | null = null;
@@ -236,13 +248,14 @@ export function CommandPaletteOverlay({
       </Box>
 
       <Box flexDirection="column">
-        {!hasResults && query.length > 0 && <Text color={t.textDim}>no matching commands</Text>}
+        {!hasResults && query.length > 0 && <Text color={t.textDim}>No matching commands</Text>}
+        <ScrollIndicator show={showUp} direction="up" />
         {listNodes}
-        {hasOverflow && (
-          <Text color={t.textDim}>
-            {scrollOffset + visible.length}/{results.length} ↓
-          </Text>
-        )}
+        <ScrollIndicator
+          show={showDown}
+          direction="down"
+          count={results.length - scrollOffset - visible.length}
+        />
       </Box>
     </OverlayPanel>
   );

@@ -42,9 +42,9 @@ import {
   type ChangeDetector,
   type ChangeDetectorBaseline,
 } from '../change-detection.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
 
 const MAX_RETRY_TEMPERATURE = 2;
-const DEFAULT_RETRY_TEMPERATURE = 0.7;
 let implementerCallSequence = 0;
 
 export function extractedCodeApprovalRaceError(file: string): string {
@@ -134,7 +134,10 @@ function retryTemperature(
   attempt: number,
 ): number | undefined {
   if (step == null) return undefined;
-  return Math.min((base ?? DEFAULT_RETRY_TEMPERATURE) + step * attempt, MAX_RETRY_TEMPERATURE);
+  return Math.min(
+    (base ?? DEFAULT_IMPLEMENTER_TEMPERATURE) + step * attempt,
+    MAX_RETRY_TEMPERATURE,
+  );
 }
 
 function implementerRunnerName(config: ImplementerOptions['config']['implementer']): string {

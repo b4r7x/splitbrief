@@ -66,10 +66,11 @@ export function useSettingsEditor({
   };
 
   const isListActive = !editor.isEditing;
+  const applicableDefs = SETTINGS_DEFS.filter((def) => def.appliesTo?.(config) ?? true);
   const initialIndex = focusSetting
     ? Math.max(
         0,
-        SETTINGS_DEFS.findIndex((d) => d.id === focusSetting),
+        applicableDefs.findIndex((d) => d.id === focusSetting),
       )
     : 0;
 
@@ -85,7 +86,7 @@ export function useSettingsEditor({
   };
 
   const list = useFilterableList<SettingDef>({
-    items: SETTINGS_DEFS,
+    items: applicableDefs,
     filterFn: matchesFilter,
     onSelect: runSelect,
     onClose,

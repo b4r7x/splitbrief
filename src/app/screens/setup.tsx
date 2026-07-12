@@ -155,11 +155,11 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   if (step === 'no-planners') {
     const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
     return (
-      <OverlayPanel width={panelWidth} title={`setup${SOFT_SEP}planner${SOFT_SEP}1 of 2`}>
-        <Text color={t.textDim}>{`${glyph('statusPending')} no planner detected`}</Text>
+      <OverlayPanel width={panelWidth} title={`Setup${SOFT_SEP}planner${SOFT_SEP}1 of 2`}>
+        <Text color={t.textDim}>{`${glyph('statusPending')} No planner detected`}</Text>
         <Box height={1} />
         <Text color={t.textDim}>
-          diptych compiles task briefs with a planner. install one, then re-run init:
+          Diptych compiles task briefs with a planner. Install one, then re-run init:
         </Text>
         <Box height={1} />
         {INSTALL_COMMANDS.slice(0, visibleInstallCount).map((command, i) => {
@@ -190,7 +190,7 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
           <Text color={t.border}>{glyph('divider').repeat(panelWidth)}</Text>
         </Box>
         <Text color={t.textDim}>
-          {visibleInstallCount > 0 ? `↑↓ pick${SOFT_SEP}y copy${SOFT_SEP}esc quit` : `esc quit`}
+          {visibleInstallCount > 0 ? `↑↓ navigate${SOFT_SEP}y copy${SOFT_SEP}esc quit` : `esc quit`}
         </Text>
       </OverlayPanel>
     );
@@ -199,7 +199,7 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   if (step === 'planner') {
     return renderToolPicker({
       role: 'planner',
-      stepLabel: `choose planner${SOFT_SEP}1 of 2`,
+      stepLabel: `Choose planner${SOFT_SEP}1 of 2`,
       onConfirm: (updated) => {
         const result = configStore.save(updated);
         if (result.ok) {
@@ -214,7 +214,7 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
 
   return renderToolPicker({
     role: 'implementer',
-    stepLabel: `choose model${SOFT_SEP}2 of 2`,
+    stepLabel: `Choose model${SOFT_SEP}2 of 2`,
     onConfirm: finalize,
     onCancel: () => setStep('planner'),
   });

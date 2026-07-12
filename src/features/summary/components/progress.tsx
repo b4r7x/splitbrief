@@ -22,7 +22,7 @@ export function SummaryProgress({
   if (total === 0) {
     return (
       <Box flexDirection="column" marginTop={1}>
-        <Text color={t.textDim}>no task briefs compiled</Text>
+        <Text color={t.textDim}>No task briefs compiled</Text>
         {failed > 0 && <Text color={t.error}>{failed} failed</Text>}
       </Box>
     );

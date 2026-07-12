@@ -230,7 +230,7 @@ describe('BriefFieldEditor multi-field editing and save gate', () => {
 
     const lines = (ui.lastFrame() ?? '').split('\n');
     expect(lines.length).toBeLessThanOrEqual(8); // without the clamp: 1 + 12 + 1 === 14
-    expect(ui.lastFrame()).toContain('Ctrl+S save');
+    expect(ui.lastFrame()).toContain('ctrl+s save');
   });
 
   it('rejects a save that fails the brief gate: surfaces the first error, does not write or resolve, keeps the session open', async () => {
@@ -295,7 +295,7 @@ describe('BriefFieldEditor footer stays one controls row (F-201)', () => {
   // A footer that wraps produces a second row carrying the "Esc cancel" tail; a truncated footer
   // keeps only the "Tab field" head. Counting both markers distinguishes one row from two.
   function footerRowCount(frame: string | undefined): number {
-    return (frame ?? '').split('\n').filter((line) => /Tab field|Esc cancel/.test(line)).length;
+    return (frame ?? '').split('\n').filter((line) => /tab field|esc cancel/.test(line)).length;
   }
 
   it('keeps the controls hint on one row at a narrow inner width with a full field and save error', async () => {
@@ -310,7 +310,7 @@ describe('BriefFieldEditor footer stays one controls row (F-201)', () => {
     await tick(20);
 
     const frame = ui.lastFrame();
-    expect(frame).toContain('Tab field');
+    expect(frame).toContain('tab field');
     expect(frame).toMatch(/vague|round-trip/);
     // Exactly one footer row (reverting the truncate guard yields two: head + "Esc cancel" tail).
     expect(footerRowCount(frame)).toBe(1);
@@ -330,7 +330,7 @@ describe('BriefFieldEditor footer stays one controls row (F-201)', () => {
     await tick(20);
 
     const frame = ui.lastFrame();
-    expect(frame).toContain('Esc cancel');
+    expect(frame).toContain('esc cancel');
     expect(footerRowCount(frame)).toBe(1);
   });
 });

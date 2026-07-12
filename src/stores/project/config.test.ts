@@ -80,7 +80,10 @@ describe('configStore.load', () => {
     configStore.load(tmpDir);
     const config = loadedConfig();
     expect(expectCli(config.planner).tool).toBe('claude-code');
-    expect(expectApi(config.implementer).provider).toBe('ollama');
+    const implementer = expectApi(config.implementer);
+    expect(implementer.provider).toBe('ollama');
+    expect(implementer.model).toBe('qwen3-coder:30b');
+    expect(implementer.contextLength).toBeUndefined();
   });
 
   it('applies implementer override to provider and model', () => {

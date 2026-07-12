@@ -7,8 +7,8 @@ const TRUNCATION_HEADER_WIDTH = 50;
 // The context window assumed for an api backend that declares no contextLength and
 // whose provider exposes no detected window. Both the prompt builder (currentCode
 // truncation) and the request builder (max_tokens) resolve to this same value so an
-// omitted contextLength never means "unlimited" to one consumer and 8192 to the other.
-export const DEFAULT_API_CONTEXT_LENGTH = 8192;
+// omitted contextLength never means "unlimited" to one consumer and 32768 to the other.
+export const DEFAULT_API_CONTEXT_LENGTH = 32768;
 
 export function truncateMiddle(text: string, maxTokens: number, modelId?: string): string {
   const charsPerToken = resolveCharsPerToken(modelId);

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../components/theme.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { externalEditRequestStore } from '../../stores/ui/external-edit-request.js';
 import { reviewStore } from '../../stores/workflow/review.js';
@@ -139,7 +140,7 @@ export function BriefFieldEditor({
       )}
       <Box width="100%" overflow="hidden">
         <Text color={t.textDim} wrap="truncate">
-          Tab field · Ctrl+S save · Ctrl+O tasks.md (discards edit) · Esc cancel
+          {`tab field${SOFT_SEP}ctrl+s save${SOFT_SEP}ctrl+o tasks.md (discards edit)${SOFT_SEP}esc cancel`}
         </Text>
       </Box>
     </Box>

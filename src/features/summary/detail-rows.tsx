@@ -61,7 +61,7 @@ export function buildSummaryDetailRows(
 
   if (summary.taskBreakdown && summary.taskBreakdown.length > 0) {
     if (rows.length > 0) rows.push(spacerRow('tasks-spacer'));
-    rows.push(sectionHeaderRow('tasks-heading', 'tasks', theme));
+    rows.push(sectionHeaderRow('tasks-heading', 'Tasks', theme));
     for (const task of summary.taskBreakdown) {
       const method = getMethodDisplay(task.method, theme);
       rows.push({
@@ -133,7 +133,7 @@ function buildEvidenceDetailRows(
       key: 'evidence-heading',
       node: (
         <Text color={theme.textDim} wrap="truncate-end">
-          evidence{'   '}
+          Evidence{SOFT_SEP}
           {stripTerminalControls(e.path)}
           {SOFT_SEP}
           {e.tasksWithValidationEvidence}/{e.totalTasks} validated{SOFT_SEP}

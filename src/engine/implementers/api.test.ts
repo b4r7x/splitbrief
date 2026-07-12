@@ -6,6 +6,7 @@ import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { createApiImplementer } from './api.js';
+import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
 
 function makeAnthropicSseResponse(
   text: string,
@@ -181,6 +182,27 @@ describe('api implementer — OpenAI-compatible path', () => {
 
     expect(result.success).toBe(true);
     if (result.success) expect(result.usage).toEqual({ inputTokens: 777, outputTokens: 333 });
+  });
+
+  it('unset implementer temperature sends DEFAULT_IMPLEMENTER_TEMPERATURE', async () => {
+    const code = '```ts\nexport const x = 1;\n```';
+    fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
+
+    const cfg = makeConfig({ implementer: { temperature: undefined } });
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T016', file: 'src/temperature.ts', action: 'create' });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    const init = fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined;
+    const body = JSON.parse(String(init?.body)) as { temperature?: number };
+    expect(body.temperature).toBe(DEFAULT_IMPLEMENTER_TEMPERATURE);
   });
 
   it('retry() bumps temperature for attempt N (local kind)', async () => {

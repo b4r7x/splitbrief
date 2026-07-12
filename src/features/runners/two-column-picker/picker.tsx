@@ -1,6 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { ListRow } from '../../../components/list-row.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { availableRows } from '../../../components/pickers/scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -49,19 +50,19 @@ function getHint(
   maxVisible: number,
 ): string {
   if (maxVisible <= 0) {
-    return 'terminal too short \u00b7 esc cancel';
+    return `Terminal too short${SOFT_SEP}esc cancel`;
   }
-  const refreshHint = hasRefresh ? ' \u00b7 \u2303r refresh' : '';
+  const refreshHint = hasRefresh ? `${SOFT_SEP}ctrl+r refresh` : '';
   if (nav.isOnLeftCustomItem) {
-    return `\u2190\u2192 column \u00b7 \u23ce add custom \u00b7 esc cancel${refreshHint}`;
+    return `←→ column${SOFT_SEP}⏎ add custom${SOFT_SEP}esc cancel${refreshHint}`;
   }
   if (nav.isOnCustomItem) {
-    return `\u2190\u2192 column \u00b7 \u2191\u2193 select \u00b7 \u23ce add custom \u00b7 esc cancel${refreshHint}`;
+    return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ add custom${SOFT_SEP}esc cancel${refreshHint}`;
   }
   if (nav.currentRightIsCustom) {
-    return `\u2190\u2192 column \u00b7 \u2191\u2193 select \u00b7 \u23ce confirm \u00b7 \u2303d delete \u00b7 esc cancel${refreshHint}`;
+    return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}ctrl+d delete${SOFT_SEP}esc cancel${refreshHint}`;
   }
-  return `\u2190\u2192 column \u00b7 \u2191\u2193 select \u00b7 \u23ce confirm \u00b7 esc cancel${refreshHint}`;
+  return `←→ column${SOFT_SEP}↑↓ select${SOFT_SEP}⏎ confirm${SOFT_SEP}esc cancel${refreshHint}`;
 }
 
 export function TwoColumnPicker<L extends FilterableItem, R extends { id: string }>({
@@ -81,9 +82,9 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
 
   const contentMaxWidth = isSmall ? 76 : 110;
   const outerChrome = 6;
-  const innerChrome = 6;
+  const innerChrome = 4;
   const maxVisible = Math.min(availableRows({ rows, chromeRows: outerChrome + innerChrome }), 20);
-  const columnHeight = maxVisible + innerChrome;
+  const columnHeight = maxVisible + 4;
   const totalBoxWidth = getResponsivePanelWidth({
     cols,
     size: isSmall ? 'small' : 'large',
@@ -123,7 +124,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const previewText =
     rawPreview === undefined ? undefined : sanitizeTerminalDisplayText(rawPreview);
   const showPreview = previewText !== undefined && previewText !== '' && cols > PREVIEW_MIN_COLS;
-  const leftEmptyText = `no ${(leftProps.label ?? 'items').toLowerCase()} match`;
+  const leftEmptyText = `No ${(leftProps.label ?? 'items').toLowerCase()} match`;
 
   return (
     <Box
@@ -136,7 +137,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
       <Box width={totalBoxWidth} marginBottom={1} justifyContent="space-between">
         <Box>
           <Text color={t.accent}>{title}</Text>
-          {subtitle ? <Text color={t.textDim}>{` · ${subtitle}`}</Text> : null}
+          {subtitle ? <Text color={t.textDim}>{`${SOFT_SEP}${subtitle}`}</Text> : null}
         </Box>
         {stepLabel ? <Text color={t.textDim}>{stepLabel}</Text> : null}
       </Box>
@@ -183,7 +184,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
             if (isVirtualCustomItem(item)) {
               return (
                 <ListRow
-                  label="+ custom model…"
+                  label="+ Add custom model…"
                   state={isCursor ? 'active' : 'default'}
                   defaultLead="dot"
                   width={maxWidth}

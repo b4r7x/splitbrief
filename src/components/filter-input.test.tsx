@@ -22,6 +22,11 @@ describe('FilterInput', () => {
     expect(frame).toContain(glyph('prompt'));
   });
 
+  it('renders the sentence-case default placeholder', () => {
+    const frame = frameOf(<FilterInput filter="" />);
+    expect(frame).toContain('Type to filter…');
+  });
+
   it('shows the dim placeholder while the filter is empty', () => {
     const frame = frameOf(<FilterInput filter="" placeholder="filter sessions" />);
     expect(frame).toContain('filter sessions');

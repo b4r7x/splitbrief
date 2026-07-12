@@ -36,7 +36,7 @@ function getContentAwareSessionLimit(input: SessionLimitInput): {
 } {
   const { rows, isSmall, logoTier, inputBottomMargin, sessionCount, sessionsFocused } = input;
   const inputDock = 1 + 3 + inputBottomMargin;
-  const bodyGaps = isSmall ? 0 : 2;
+  const bodyGaps = 2;
   const logoBlock = getLogoHeight(logoTier) + 1;
   const configBlock = 1 + 1;
   const sessionsChrome = 1 + (isSmall ? 0 : 1) + 1;

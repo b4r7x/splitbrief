@@ -16,8 +16,8 @@ const BORDER_ROWS = 2;
 const APPROVAL_HORIZONTAL_CHROME = 4;
 const COST_HORIZONTAL_CHROME = 4;
 
-export const APPROVAL_TITLE = 'approval';
-export const CONFIRM_TITLE = 'confirm';
+export const APPROVAL_TITLE = 'Approval';
+export const CONFIRM_TITLE = 'Confirm';
 
 export const STICKY_HINTS = `a s w x choose${SOFT_SEP}esc cancel`;
 export const CONFIRM_HINTS = `⏎ confirm${SOFT_SEP}esc cancel`;
@@ -26,7 +26,7 @@ export const COST_HINTS = `⏎/y approve${SOFT_SEP}esc reject`;
 export const CONFIRM_INSTRUCTION_PREFIX = 'type  ';
 export const CONFIRM_INSTRUCTION_SUFFIX = '  to proceed';
 const CONFIRM_INSTRUCTION = `${CONFIRM_INSTRUCTION_PREFIX}${CONFIRM_PHRASE}${CONFIRM_INSTRUCTION_SUFFIX}`;
-export const CONFIRM_QUESTION = 'why are you making this change?';
+export const CONFIRM_QUESTION = 'Why are you making this change?';
 export const PHRASE_ACCEPTED = 'phrase accepted';
 
 export interface StickyOption {
@@ -36,10 +36,10 @@ export interface StickyOption {
 }
 
 export const STICKY_OPTIONS: ReadonlyArray<StickyOption> = [
-  { key: 'a', label: 'approve once' },
-  { key: 's', label: 'approve this session' },
-  { key: 'w', label: 'approve always', note: 'saved to .diptych/approvals.json' },
-  { key: 'x', label: 'deny' },
+  { key: 'a', label: 'Approve once' },
+  { key: 's', label: 'Approve this session' },
+  { key: 'w', label: 'Approve always', note: 'saved to .diptych/approvals.json' },
+  { key: 'x', label: 'Deny' },
 ];
 
 function wrappedRows(text: string, width: number): number {
@@ -66,7 +66,7 @@ export function getApprovalSeverityWord(actionClass: ActionClass): string {
   if (actionClass === 'package_change') return 'package';
   if (actionClass === 'network') return 'network';
   if (actionClass === 'write_out_of_scope') return 'scope';
-  return 'confirm';
+  return 'Confirm';
 }
 
 export function formatApprovalActionDescription(actionDescription: string): string {

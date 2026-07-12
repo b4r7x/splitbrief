@@ -25,28 +25,28 @@ describe('FeedbackRow', () => {
     const ui = renderFeature(<FeedbackRow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame.indexOf('Esc again to interrupt')).toBe(WORKFLOW_CONTENT_PADDING_X);
+    expect(frame.indexOf('esc again to interrupt')).toBe(WORKFLOW_CONTENT_PADDING_X);
 
     ui.unmount();
   });
 
   it('keeps review hints visible even while the composer is focused', () => {
-    const ui = renderFeature(<FeedbackRow inputHint="approve | Ctrl+E/e edit" />);
+    const ui = renderFeature(<FeedbackRow inputHint="approve · ctrl+e/e edit" />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('approve | Ctrl+E/e edit');
+    expect(frame).toContain('approve · ctrl+e/e edit');
 
     ui.unmount();
   });
 
   it('leads a failed connection hint with the error word and a dim cause', () => {
     const ui = renderFeature(
-      <FeedbackRow inputHint="failed server connection lost — Ctrl+D to exit, retry with resume" />,
+      <FeedbackRow inputHint="Failed server connection lost — ctrl+d to exit, retry with resume" />,
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('failed');
-    expect(frame).toContain('server connection lost — Ctrl+D to exit, retry with resume');
+    expect(frame).toContain('Failed');
+    expect(frame).toContain('server connection lost — ctrl+d to exit, retry with resume');
 
     ui.unmount();
   });
@@ -62,21 +62,21 @@ describe('FeedbackRow', () => {
   });
 
   it('renders the reconnecting connection hint as a single warning state word line', () => {
-    const ui = renderFeature(<FeedbackRow inputHint="reconnecting to server…" />);
+    const ui = renderFeature(<FeedbackRow inputHint="Reconnecting to server…" />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('reconnecting to server…');
+    expect(frame).toContain('Reconnecting to server…');
 
     ui.unmount();
   });
 
   it('renders an error as a leading state word plus a dim cause', () => {
-    feedbackStore.setError('failed planner timed out — press r to retry');
+    feedbackStore.setError('Failed planner timed out — press r to retry');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('failed');
+    expect(frame).toContain('Failed');
     expect(frame).toContain('planner timed out — press r to retry');
 
     ui.unmount();
@@ -106,11 +106,11 @@ describe('FeedbackRow', () => {
   it('keeps explicit feedback visible alongside the hint text', () => {
     feedbackStore.setMessage('Message queued for the next planner turn.');
 
-    const ui = renderFeature(<FeedbackRow inputHint="approve | Ctrl+E/e edit" />);
+    const ui = renderFeature(<FeedbackRow inputHint="approve · ctrl+e/e edit" />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Message queued for the next planner turn.');
-    expect(frame).toContain('approve | Ctrl+E/e edit');
+    expect(frame).toContain('approve · ctrl+e/e edit');
 
     ui.unmount();
   });

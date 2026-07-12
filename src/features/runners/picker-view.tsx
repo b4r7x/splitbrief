@@ -1,5 +1,6 @@
 import { Box, Text } from 'ink';
 import { TwoColumnPicker, type PreviewContext } from './two-column-picker/picker.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { refreshDetectionStores } from '../../stores/discovery/detection-adapter.js';
@@ -24,10 +25,10 @@ function toolPreview(item: PickerOption, modelCount: number): string {
   const name = item.displayName;
   const isCommandBased = item.kind === 'shell' || item.kind === 'agent';
   if (!item.available && !isCommandBased && item.kind !== 'agent-sdk') {
-    return `${name} · ${item.kind} · ${isProviderLocal(item.id) ? 'no models' : 'unavailable'}`;
+    return [name, item.kind, isProviderLocal(item.id) ? 'no models' : 'unavailable'].join(SOFT_SEP);
   }
   const noun = modelCount === 1 ? 'model' : 'models';
-  return `${name} · ${item.kind} · ${modelCount} ${noun} detected`;
+  return [name, item.kind, `${modelCount} ${noun} detected`].join(SOFT_SEP);
 }
 
 function modelPreview(model: ModelOption, tool: PickerOption | undefined): string {
@@ -35,7 +36,7 @@ function modelPreview(model: ModelOption, tool: PickerOption | undefined): strin
   const ctx = formatContextLength(model.contextLength);
   if (ctx) parts.push(`${ctx} context`);
   if (tool) parts.push(`via ${tool.displayName}`);
-  return parts.join(' · ');
+  return parts.join(SOFT_SEP);
 }
 
 interface PickerViewProps {
@@ -48,7 +49,7 @@ interface PickerViewProps {
 
 function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }) {
   const t = useTheme();
-  if (!currentItem) return <Text color={t.textDim}>no models available.</Text>;
+  if (!currentItem) return <Text color={t.textDim}>No models available</Text>;
 
   const isOllama = currentItem.id === 'ollama';
   const isLmStudio = currentItem.id === 'lm-studio';
@@ -56,9 +57,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   if (isOllama) {
     return (
       <Box flexDirection="column">
-        <Text color={t.textDim}>no models pulled.</Text>
+        <Text color={t.textDim}>No models pulled</Text>
         <Text color={t.textDim} dimColor>
-          run: ollama pull qwen2.5-coder:7b
+          Run: ollama pull qwen3-coder:30b
         </Text>
       </Box>
     );
@@ -67,9 +68,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
   if (isLmStudio) {
     return (
       <Box flexDirection="column">
-        <Text color={t.textDim}>no models loaded.</Text>
+        <Text color={t.textDim}>No models loaded</Text>
         <Text color={t.textDim} dimColor>
-          download a model in lm studio.
+          Download a model in LM Studio
         </Text>
       </Box>
     );
@@ -81,9 +82,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
     if (envVar) {
       return (
         <Box flexDirection="column">
-          <Text color={t.textDim}>provider not configured.</Text>
+          <Text color={t.textDim}>Provider not configured</Text>
           <Text color={t.textDim} dimColor>
-            set {envVar} to enable.
+            Set {envVar} to enable
           </Text>
         </Box>
       );
@@ -92,9 +93,9 @@ function ProviderHint({ currentItem }: { currentItem: PickerOption | undefined }
 
   return (
     <Box flexDirection="column">
-      <Text color={t.textDim}>no models available.</Text>
+      <Text color={t.textDim}>No models available</Text>
       <Text color={t.textDim} dimColor>
-        press ⌃r to refresh.
+        Press ctrl+r to refresh
       </Text>
     </Box>
   );
@@ -107,7 +108,7 @@ export async function refreshPickerDetection(
   projectDir: string,
   refresh: (projectDir: string | undefined) => Promise<void> = defaultRefresh,
 ): Promise<void> {
-  feedbackStore.setMessage('Refreshing models...');
+  feedbackStore.setMessage('Refreshing models…');
   try {
     await refresh(projectDir);
     feedbackStore.setMessage('Models refreshed');
@@ -119,6 +120,7 @@ export async function refreshPickerDetection(
 export function PickerView({ role, stepLabel, onCancel, catalog, actions }: PickerViewProps) {
   const t = useTheme();
   const projectDir = configStore.use((s) => s.projectDir);
+  const roleTitle = role === 'planner' ? 'Planner' : 'Implementer';
 
   const currentModelIdx = catalog.focusModels
     ? catalog.rightModels.findIndex((m) => m.id === catalog.currentModel)
@@ -144,8 +146,8 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
 
   return (
     <TwoColumnPicker<PickerOption, ModelOption>
-      title={role}
-      subtitle={role === 'planner' ? 'tool & model' : 'model'}
+      title={roleTitle}
+      subtitle={role === 'planner' ? 'Tool & model' : 'Model'}
       stepLabel={stepLabel}
       initialColumn={catalog.focusModels ? 'right' : 'left'}
       onConfirm={actions.confirm}
@@ -154,7 +156,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
       preview={resolvePreview}
       leftProps={{
         items: catalog.items,
-        label: 'tools',
+        label: 'Tools',
         getKey: (item) => item.id,
         isSpecial: (item) => item.kind === 'shell' || item.kind === 'agent',
         isDisabled: (item) => !item.available && item.kind !== 'shell' && item.kind !== 'agent',
@@ -177,7 +179,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
       }}
       rightProps={{
         items: catalog.rightModels,
-        label: 'models',
+        label: 'Models',
         getKey: (item) => item.id,
         initialIndex: initialRightIndex,
         onLeftChange: actions.leftChange,

@@ -162,6 +162,32 @@ describe('buildPaletteSources attached-client boundary', () => {
   });
 });
 
+describe('buildPaletteSources display descriptions', () => {
+  it('uses sentence-cased descriptions for modes and pickers', () => {
+    const sources = buildPaletteSources({
+      commands: [],
+      screen: 'home',
+      config: makeConfig(),
+      phase: 'idle',
+      tasks: [],
+      sessions: [],
+      projectDir: '/tmp/diptych-test',
+      onRuntimeCommand: noop,
+      onWorkflowMode: noop,
+    });
+
+    expect(sources.modeItems.find((item) => item.label === 'instant')?.description).toBe(
+      'Switch to instant mode',
+    );
+    expect(sources.pickerItems.map((item) => item.description)).toEqual([
+      'Select planner tool',
+      'Select implementer',
+      'Browse past sessions',
+      'Planner, model & settings',
+    ]);
+  });
+});
+
 describe('buildPaletteSources session items', () => {
   let tmp: string;
 

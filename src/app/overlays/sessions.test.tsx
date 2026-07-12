@@ -73,7 +73,7 @@ describe('SessionsPicker', () => {
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('add authentication');
     expect(frame).toContain('refactor payments');
-    expect(stripAnsiStyles(frame)).toContain('sessions · 2');
+    expect(stripAnsiStyles(frame)).toContain('Sessions · 2');
 
     instance.unmount();
   });
@@ -110,7 +110,7 @@ describe('SessionsPicker', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(stripAnsiStyles(frame)).toContain('sessions · 0');
+    expect(stripAnsiStyles(frame)).toContain('Sessions · 0');
     expect(frame.toLowerCase()).toMatch(/no.*sessions/);
 
     instance.unmount();
@@ -213,7 +213,7 @@ describe('SessionsPicker', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(stripAnsiStyles(frame)).toContain('sessions · 1');
+    expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
     expect(frame).toContain('alpha-feature');
     expect(frame).toContain('navigate');
 
@@ -242,10 +242,10 @@ describe('SessionsPicker', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(stripAnsiStyles(frame)).toContain('sessions · 1');
+    expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
     expect(frame).toContain('navigate');
     expect(frame).toContain('alpha-feature');
-    expect(frame).not.toContain('no matching sessions');
+    expect(frame).not.toContain('No matching sessions');
 
     instance.unmount();
   });
@@ -272,10 +272,10 @@ describe('SessionsPicker', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(stripAnsiStyles(frame)).toContain('sessions · 1');
+    expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
     expect(frame).toContain('alpha-feature');
     expect(frame).toContain('navigate');
-    expect(frame).not.toContain('no matching sessions');
+    expect(frame).not.toContain('No matching sessions');
     expect(frame).not.toContain('╭');
     expect(frame).not.toContain('╰');
 

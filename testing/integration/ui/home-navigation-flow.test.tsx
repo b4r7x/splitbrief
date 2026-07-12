@@ -21,7 +21,7 @@ const ARROW_DOWN = '\u001b[B';
 const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
-const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k';
+const HOME_HINT = '/help · /settings · /skills · ctrl+r recent · ctrl+k commands';
 const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
 const FOCUS_BAR = '▌';
 
@@ -81,7 +81,7 @@ describe('home navigation flow (through real App)', () => {
 
     const boot = ui.lastFrame() ?? '';
     expect(boot).toContain('__| (_)');
-    expect(boot).toContain('RECENT SESSIONS');
+    expect(boot).toContain('Recent sessions');
 
     await focusRecentSessions(ui);
 

@@ -1,7 +1,7 @@
 import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
 import { glyph } from '../lib/glyphs.js';
-import { stripTerminalControls } from '../utils/display-text.js';
+import { getTerminalCellWidth, stripTerminalControls } from '../utils/display-text.js';
 
 export type ListRowState = 'default' | 'active';
 export type ListRowDefaultLead = 'blank' | 'dot';
@@ -12,6 +12,7 @@ interface ListRowProps {
   defaultLead?: ListRowDefaultLead | undefined;
   metadata?: string | undefined;
   trailing?: string | undefined;
+  trailingColor?: string | undefined;
   selected?: boolean | undefined;
   hover?: boolean | undefined;
   width?: number | undefined;
@@ -20,7 +21,7 @@ interface ListRowProps {
 
 const LEAD_BLANK = '  ';
 
-function listRowLead(state: ListRowState): string {
+export function listRowLead(state: ListRowState): string {
   return state === 'active' ? `${glyph('liveBar')} ` : LEAD_BLANK;
 }
 
@@ -30,6 +31,7 @@ export function ListRow({
   defaultLead = 'blank',
   metadata,
   trailing,
+  trailingColor,
   selected,
   hover,
   width,
@@ -44,14 +46,32 @@ export function ListRow({
   const cleanLabel = stripTerminalControls(label);
   const cleanMeta = metadata === undefined ? undefined : stripTerminalControls(metadata);
   const cleanTrailing = trailing === undefined ? undefined : stripTerminalControls(trailing);
+  const hasMetadata = cleanMeta !== undefined && cleanMeta !== '';
+  const hasTrailing = cleanTrailing !== undefined && cleanTrailing !== '';
+  const leadW = 2;
+  const checkW = typeof selected === 'boolean' ? 2 : 0;
+  const trailW = hasTrailing ? getTerminalCellWidth(cleanTrailing) + 1 : 0;
+  const metaW =
+    width === undefined
+      ? undefined
+      : hasMetadata
+        ? Math.min(
+            getTerminalCellWidth(cleanMeta) + 1,
+            Math.max(0, width - leadW - checkW - trailW - 8),
+          )
+        : 0;
+  const labelW =
+    width === undefined
+      ? labelWidth
+      : (labelWidth ?? Math.max(1, width - leadW - (metaW ?? 0) - trailW - checkW));
 
   return (
     <Box width={width} height={1} overflow="hidden" backgroundColor={backgroundColor}>
       <Text color={leadColor}>{lead}</Text>
       <Box
-        {...(labelWidth === undefined
+        {...(labelW === undefined
           ? { flexGrow: 1, flexShrink: 1 }
-          : { width: labelWidth, flexShrink: 0 })}
+          : { width: labelW, flexShrink: 0 })}
         minWidth={0}
         overflow="hidden"
         backgroundColor={backgroundColor}
@@ -60,34 +80,34 @@ export function ListRow({
           {cleanLabel}
         </Text>
       </Box>
-      {cleanMeta !== undefined && cleanMeta !== '' ? (
-        <Box flexShrink={1} minWidth={0} overflow="hidden" backgroundColor={backgroundColor}>
+      {hasMetadata ? (
+        <Box
+          {...(metaW === undefined ? { flexShrink: 1 } : { width: metaW, flexShrink: 0 })}
+          minWidth={0}
+          overflow="hidden"
+          backgroundColor={backgroundColor}
+        >
           <Text color={t.textDim} wrap="truncate-end">
             {' '}
             {cleanMeta}
           </Text>
         </Box>
       ) : null}
-      {cleanTrailing !== undefined && cleanTrailing !== '' ? (
-        <>
-          <Box flexGrow={1} backgroundColor={backgroundColor} />
-          <Box flexShrink={0} backgroundColor={backgroundColor}>
-            <Text color={t.textDim} wrap="truncate-end">
-              {' '}
-              {cleanTrailing}
-            </Text>
-          </Box>
-        </>
+      {labelWidth !== undefined ? <Box flexGrow={1} backgroundColor={backgroundColor} /> : null}
+      {hasTrailing ? (
+        <Box flexShrink={0} backgroundColor={backgroundColor}>
+          <Text color={trailingColor ?? t.textDim} wrap="truncate-end">
+            {' '}
+            {cleanTrailing}
+          </Text>
+        </Box>
       ) : null}
-      {selected ? (
-        <>
-          {cleanTrailing === undefined || cleanTrailing === '' ? (
-            <Box flexGrow={1} backgroundColor={backgroundColor} />
-          ) : null}
-          <Box flexShrink={0} backgroundColor={backgroundColor}>
-            <Text color={t.success}> {glyph('check')}</Text>
-          </Box>
-        </>
+      {typeof selected === 'boolean' ? (
+        <Box width={checkW} flexShrink={0} backgroundColor={backgroundColor}>
+          <Text {...(selected ? { color: t.success } : {})}>
+            {selected ? ` ${glyph('check')}` : '  '}
+          </Text>
+        </Box>
       ) : null}
     </Box>
   );

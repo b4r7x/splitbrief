@@ -322,7 +322,7 @@ describe('formatTaskPrompt with contextLength', () => {
   });
 
   it('truncates large currentCode at the default api context window when that window is passed', () => {
-    const largeCode = 'x'.repeat(50000);
+    const largeCode = 'x'.repeat(150_000);
     const task = makeTask({
       action: 'modify',
       currentCode: largeCode,

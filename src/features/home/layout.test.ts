@@ -35,24 +35,26 @@ describe('getHomeLayout', () => {
     expect(layout.logoTier).toBe('compact');
   });
 
-  it('uses the short-terminal logo gap for recent session capacity', () => {
-    const layout = getHomeLayout({ cols: 80, rows: 16, isSmall: true });
-    expect(layout.recentSessionLimit).toBe(2);
+  it('budgets two body gap rows in small and large layouts', () => {
+    const small = getHomeLayout({ cols: 80, rows: 18, isSmall: true });
+    const large = getHomeLayout({ cols: 120, rows: 18, isSmall: false });
+    expect(small.recentSessionLimit).toBe(2);
+    expect(large.recentSessionLimit).toBe(1);
   });
 
-  it('uses both safe rows when two sessions fit before the input', () => {
+  it('does not allocate sessions when the body gaps consume a short terminal', () => {
     const layout = getHomeLayout({
       cols: 80,
       rows: 16,
       isSmall: true,
       sessionCount: 2,
     });
-    expect(layout.recentSessionLimit).toBe(2);
+    expect(layout.recentSessionLimit).toBe(0);
     expect(layout.showHiddenCount).toBe(false);
   });
 
   it('accounts focused prompt and selection-error rows before session capacity', () => {
-    const baseRows = 16;
+    const baseRows = 18;
     const focusedChromeRows = 5;
     const sessionCount = 2;
 
@@ -90,7 +92,7 @@ describe('getHomeLayout', () => {
       isSmall: true,
       sessionCount: 25,
     });
-    expect(layout.recentSessionLimit).toBe(3);
+    expect(layout.recentSessionLimit).toBe(1);
     expect(layout.showHiddenCount).toBe(true);
   });
 

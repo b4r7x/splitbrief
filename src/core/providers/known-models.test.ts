@@ -22,6 +22,18 @@ describe('KNOWN_MODELS deepseek fallbacks', () => {
   });
 });
 
+describe('KNOWN_MODELS ollama entries', () => {
+  const ollama = KNOWN_MODELS.ollama ?? [];
+  const defaultModel = ollama.find((model) => model.isDefault);
+
+  it('uses qwen3-coder:30b with bundled context metadata', () => {
+    expect(defaultModel?.name).toBe('qwen3-coder:30b');
+    expect(defaultModel?.contextLength).toBe(262_144);
+    expect(defaultModel?.provenance).toContain('Ollama library');
+    expect(defaultModel?.provenance).toContain('2026-07');
+  });
+});
+
 describe('KNOWN_MODELS agent-sdk entries', () => {
   const agentSdk = KNOWN_MODELS['agent-sdk'] ?? [];
 

@@ -169,7 +169,7 @@ describe('raw editor overlay Ctrl+O external escape hatch', () => {
 });
 
 describe('raw editor overlay frame layout (REQ-122/123/124/125)', () => {
-  const FOOTER = 'Ctrl+S save';
+  const FOOTER = 'ctrl+s save';
 
   function openEditor(projectDir: string): void {
     const filePath = join(projectDir, SESSION_ID, SPEC_FILE);

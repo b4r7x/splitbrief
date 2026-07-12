@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveModelCatalog } from './catalog.js';
+import { lookupCatalogContextLength, resolveModelCatalog } from './catalog.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 describe('resolveModelCatalog', () => {
@@ -257,5 +257,15 @@ describe('resolveModelCatalog', () => {
     const models = resolveModelCatalog('anthropic', cache);
     const sonnet = models.find((e) => e.id === 'claude-sonnet-4-6');
     expect(sonnet?.contextLength).toBe(500_000);
+  });
+});
+
+describe('lookupCatalogContextLength', () => {
+  it('looks up context length by comparable catalog keys', () => {
+    expect(lookupCatalogContextLength('deepseek', 'deepseek/deepseek-chat')).toBe(128_000);
+  });
+
+  it('returns undefined for an unknown provider', () => {
+    expect(lookupCatalogContextLength('unknown-provider', 'deepseek-chat')).toBeUndefined();
   });
 });

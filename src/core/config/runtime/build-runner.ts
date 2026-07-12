@@ -58,12 +58,39 @@ interface GenerationParams {
   customModels?: string[] | undefined;
 }
 
-function resolveGenerationParams(opts: BuildRunnerOpts): GenerationParams {
+interface RunnerTarget {
+  kind: RunnerKind;
+  id?: string | undefined;
+}
+
+function existingTargetId(existing: PlannerConfig | ImplementerConfig): string | undefined {
+  switch (existing.kind) {
+    case 'cli':
+      return existing.tool;
+    case 'api':
+      return existing.provider;
+    case 'shell':
+    case 'agent':
+      return existing.command;
+    case 'agent-sdk':
+      return undefined;
+    default:
+      return assertNever(existing);
+  }
+}
+
+function resolveGenerationParams(opts: BuildRunnerOpts, target: RunnerTarget): GenerationParams {
   const ex = opts.existing;
+  const sameTarget =
+    ex !== undefined && ex.kind === target.kind && existingTargetId(ex) === target.id;
+  const model = opts.model ?? ex?.model;
+  const carryGen = sameTarget && model === ex?.model;
+
   return {
-    model: opts.model ?? ex?.model,
-    contextLength: opts.contextLength ?? ex?.contextLength,
-    temperature: opts.temperature !== undefined ? opts.temperature : ex?.temperature,
+    model,
+    contextLength: opts.contextLength ?? (carryGen ? ex?.contextLength : undefined),
+    temperature:
+      opts.temperature !== undefined ? opts.temperature : carryGen ? ex?.temperature : undefined,
     timeout: opts.timeout ?? ex?.timeout,
     customModels: opts.customModels ?? ex?.customModels,
   };
@@ -140,7 +167,7 @@ function buildCliConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
     throw configError.unknownCliTool(opts.tool, CLI_TOOL_IDS);
   }
 
-  const gen = resolveGenerationParams(opts);
+  const gen = resolveGenerationParams(opts, { kind: 'cli', id: opts.tool });
   assertModelPresent(role, gen.model);
 
   const config: Record<string, unknown> = {
@@ -164,7 +191,7 @@ function buildApiConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
   }
 
   const existingApiKey = getExistingApiKey(opts.existing, 'api', provider);
-  const gen = resolveGenerationParams(opts);
+  const gen = resolveGenerationParams(opts, { kind: 'api', id: provider });
   assertModelPresent(role, gen.model);
 
   const config: Record<string, unknown> = {
@@ -185,7 +212,7 @@ function buildCommandConfig(
 ): PlannerConfig | ImplementerConfig {
   if (!opts.command) throw configError.runnerMissingField(role, kind, 'command');
 
-  const gen = resolveGenerationParams(opts);
+  const gen = resolveGenerationParams(opts, { kind, id: opts.command });
   assertModelPresent(role, gen.model);
 
   const config: Record<string, unknown> = {
@@ -201,7 +228,7 @@ function buildCommandConfig(
 
 function buildAgentSdkConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | ImplementerConfig {
   const existingApiKey = getExistingApiKey(opts.existing, 'agent-sdk');
-  const gen = resolveGenerationParams(opts);
+  const gen = resolveGenerationParams(opts, { kind: 'agent-sdk' });
   assertModelPresent(role, gen.model);
 
   const config: Record<string, unknown> = {

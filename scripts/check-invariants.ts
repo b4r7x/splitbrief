@@ -210,6 +210,14 @@ const gates: Gate[] = [
     command: `{ rg -n "\\breadFileSync\\b|\\breadFile\\b|from 'node:fs'|from 'fs'" src/features/editor/ src/stores/ui/editor.ts src/app/overlays/editor.tsx --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l`,
     expected: 0,
   },
+  {
+    id: '26',
+    description:
+      'TUI key-token notation: no Ctrl+/Shift+/ESC/Esc/⌃/PgUp/PgDn in rendered TUI sources (lowercase tokens only)',
+    command:
+      "{ rg -n \"Ctrl\\+|Shift\\+|\\bESC\\b|\\bEsc\\b|⌃|PgUp|PgDn\" src/app src/features src/components src/core/keybindings src/core/settings src/core/runtime/commands -g '!**/*.test.*' | rg -v ':\\s*(//|\\*|/\\*)' | rg -v '^src/core/keybindings/normalize\\.ts:' || true; } | wc -l",
+    expected: 0,
+  },
 ];
 
 type ExecGateCommand = (command: string) => string;
