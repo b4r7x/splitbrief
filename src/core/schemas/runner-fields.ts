@@ -20,8 +20,8 @@ const PlannerCapabilitiesSchema = z.strictObject({
   supportsSelfSummarisation: z.boolean(),
 });
 
-export const RUNNER_IDLE_WARN_MS = 60_000;
-export const RUNNER_IDLE_KILL_MS = 300_000;
+export const RUNNER_IDLE_WARN_MS = 300_000;
+export const RUNNER_IDLE_KILL_MS = 1_800_000;
 
 const WatchdogFields = {
   idleWarnMs: z.number().int().positive().max(3_600_000).optional(),

@@ -141,13 +141,19 @@ describe('buildRunnerChecks availability guidance', () => {
 
     expect(check).toMatchObject({
       severity: 'warning',
-      metadata: { timeout: 100_000, idleKillMs: 300_000 },
+      metadata: { timeout: 100_000, idleKillMs: 1_800_000 },
     });
   });
 
   it('does not warn when timeout leaves room above the idle-kill threshold', () => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'auto', timeout: 400_000 },
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'auto',
+        timeout: 400_000,
+        idleKillMs: 300_000,
+      },
     });
 
     const check = buildRunnerChecks(config).find(
