@@ -2,13 +2,18 @@ import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import { spawnWithStdin } from '../../lib/process/spawn.js';
+import { spawnWithStdin, type SpawnIdleOptions } from '../../lib/process/spawn.js';
 import { processError } from '../../lib/process/errors.js';
+import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { parseStreamLine } from '../streaming/parse-stream-json.js';
 import { reconcileFinalText } from '../streaming/final-text.js';
 import { createQuestionAccumulator } from '../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../calls/recorder.js';
-import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../calls/status.js';
+import {
+  runnerCallErrorFromUnknown,
+  runnerCallIdleTimeoutError,
+  runnerCallInterruptedStatus,
+} from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import {
   createRunnerCallDeltaLimiter,
@@ -242,6 +247,18 @@ function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   return { state, handleLine };
 }
 
+function buildClaudeIdleOptions(
+  state: StreamHandlerState,
+  opts: { idleWarnMs?: number | undefined; idleKillMs?: number | undefined },
+): SpawnIdleOptions {
+  return {
+    warnMs: opts.idleWarnMs ?? RUNNER_IDLE_WARN_MS,
+    killMs: opts.idleKillMs ?? RUNNER_IDLE_KILL_MS,
+    onWarn: (silentMs) => state.recorder.stalled({ silentMs }),
+    onClear: () => state.recorder.stallCleared(),
+  };
+}
+
 function finishClaudeOutputLimit(state: StreamHandlerState, limit: RunnerCallOutputLimit): void {
   finishRunnerCallOutputLimit(state.recorder, limit, {
     usage: state.usage,
@@ -342,7 +359,12 @@ function markFailedClaudeStream(state: StreamHandlerState, err: unknown): void {
   if (state.recorder.hasTerminal()) return;
   state.recorder.finishFailed({
     status: 'failed',
-    error: runnerCallErrorFromUnknown(err, 'claude_process_error'),
+    // Idle kills report through the shared runner_idle_timeout contract
+    // (calls/status.ts), matching every other backend; runnerCallErrorFromUnknown
+    // would leak the raw 'command-idle-timeout' kind as the event code.
+    error: processError.isIdleTimeout(err)
+      ? runnerCallIdleTimeoutError(err)
+      : runnerCallErrorFromUnknown(err, 'claude_process_error'),
     usage: state.usage,
     nativeSessionId: state.sessionId,
   });
@@ -399,6 +421,8 @@ export interface ClaudePlannerStreamOpts {
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
+  idleWarnMs?: number | undefined;
+  idleKillMs?: number | undefined;
 }
 
 export async function runClaudePlannerStream(
@@ -451,6 +475,7 @@ export async function runClaudePlannerStream(
       },
       errorDetail: () => state.resultText ?? undefined,
       signal,
+      idle: buildClaudeIdleOptions(state, opts),
     });
   } catch (err) {
     markInterruptedClaudeStream(state, signal);
@@ -475,6 +500,8 @@ export interface ClaudeOneShotOpts {
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
   env?: NodeJS.ProcessEnv | undefined;
+  idleWarnMs?: number | undefined;
+  idleKillMs?: number | undefined;
 }
 
 export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerCallResult> {
@@ -527,6 +554,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
       },
       errorDetail: () => state.resultText ?? undefined,
       signal,
+      idle: buildClaudeIdleOptions(state, opts),
     });
   } catch (err) {
     markInterruptedClaudeStream(state, signal);

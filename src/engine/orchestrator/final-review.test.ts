@@ -145,6 +145,40 @@ describe('runFinalReviewPhase', () => {
     );
   });
 
+  it('persists the review usage through the continuation loop on the sinks path', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async () => ({ text: 'ok', usage: { inputTokens: 200, outputTokens: 40 } }),
+    });
+
+    const { state } = await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]),
+        planner,
+        metadata: TEST_METADATA,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    expect(state.tokenUsage.plannerInput).toBe(200);
+    expect(state.tokenUsage.plannerOutput).toBe(40);
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted?.phase).toBe('complete');
+    expect(persisted?.tokenUsage.plannerInput).toBe(200);
+    expect(persisted?.tokenUsage.plannerOutput).toBe(40);
+  });
+
   it('reviews the task brief packet, falling back to current state tasks when tasks.md is missing', async () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nSparse spec.\n', null);

@@ -166,8 +166,23 @@ describe('rail Form-B width primitives', () => {
     expect(railFormBSegmentWidth(spec, true)).toBe(
       RAIL_MARKER_SLOT_WIDTH + RAIL_SHORT_LABEL.spec.length,
     );
-    expect(railFormBLabel(spec, { short: false })).toBe('spec');
-    expect(railFormBLabel(spec, { short: true })).toBe('spc');
+    expect(railFormBLabel(spec, { short: false })).toBe('Spec');
+    expect(railFormBLabel(spec, { short: true })).toBe('Spc');
+  });
+
+  it('rail stage labels render in Title Case across every stage', () => {
+    const expected: Record<string, [string, string]> = {
+      spec: ['Spec', 'Spc'],
+      plan: ['Plan', 'Pln'],
+      briefs: ['Briefs', 'Brf'],
+      build: ['Build', 'Bld'],
+      verify: ['Verify', 'Vfy'],
+    };
+    for (const stage of getRailStages('idle')) {
+      const [full, short] = expected[stage.stage] ?? ['', ''];
+      expect(railFormBLabel(stage, { short: false })).toBe(full);
+      expect(railFormBLabel(stage, { short: true })).toBe(short);
+    }
   });
 
   it('measures the same-role chevron at 3 cells and the handoff arrow per tier', () => {

@@ -20,6 +20,7 @@ interface UseCommandCompletionOptions {
   setValue: (v: string) => void;
   onRuntimeCommand: (command: string) => void;
   disabled?: boolean | undefined;
+  suppressed?: boolean | undefined;
 }
 
 interface UseCommandCompletionResult {
@@ -65,6 +66,7 @@ export function useCommandCompletion({
   setValue,
   onRuntimeCommand,
   disabled,
+  suppressed,
 }: UseCommandCompletionOptions): UseCommandCompletionResult {
   const phase = lifecycleStore.use((s) => s.phase);
 
@@ -80,7 +82,7 @@ export function useCommandCompletion({
   });
   // Suggestions match the command token only and close once arguments begin, so the menu never
   // swallows Enter for an argument'd command — the composer submits the raw line to dispatch instead.
-  const showSuggestions = commandMode && !hasArgs;
+  const showSuggestions = commandMode && !hasArgs && !suppressed;
   const filtered = showSuggestions
     ? validCommands.filter((cmd) => matchesCommandQuery(cmd, query))
     : [];

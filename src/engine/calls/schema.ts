@@ -176,6 +176,10 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
     rawPreview: z.string().max(UNKNOWN_UPSTREAM_RAW_PREVIEW_MAX_LENGTH),
     backendMetadata: RunnerCallUnknownUpstreamBackendMetadataSchema,
   }),
+  callEvent('call_stalled', {
+    silentMs: nonnegativeInteger,
+  }),
+  callEvent('call_stall_cleared', {}),
 ]);
 
 const runnerCallResultBaseFields = {

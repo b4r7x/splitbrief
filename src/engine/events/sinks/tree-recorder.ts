@@ -357,6 +357,7 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
       case 'planner_status':
       case 'planner_text':
       case 'planner_heartbeat':
+      case 'turn_interrupted':
       case 'spec_rejected':
       case 'spec_regenerated':
       case 'plan_approved':
@@ -420,6 +421,8 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
       case 'runner_call_activity':
       case 'runner_call_session_id':
       case 'runner_call_artifact':
+      case 'runner_call_stalled':
+      case 'runner_call_stall_cleared':
       case 'warning':
       case 'error':
         return;

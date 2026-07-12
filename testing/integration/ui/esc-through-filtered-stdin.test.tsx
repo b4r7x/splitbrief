@@ -92,7 +92,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
 
   it("interrupts the turn on the SECOND lone ESC (the user's exact two-press scenario)", async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
     await tick(30);
 
@@ -113,7 +113,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
 
   it('a batched double ESC (\\x1b\\x1b in one chunk) interrupts immediately', async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
     await tick(30);
 
@@ -130,7 +130,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
 
   it('runs the full ESC ladder to completion: interrupt -> cancel -> home', async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     const harness = renderThroughFilteredStdin(<InstantWorkflowApp exit={exit} />);
     await tick(30);
@@ -256,7 +256,7 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
 
   it('runs the Ctrl+C ladder through the real FilteredStdin: first interrupts and arms exit, second exits', async () => {
     const abort = vi.fn();
-    handlers.setAbortHandler(abort);
+    handlers.createAbortHandlerScope()(abort);
     const exit = vi.fn();
     const harness = renderThroughFilteredStdin(<InstantWorkflowApp exit={exit} />);
     await tick(30);

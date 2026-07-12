@@ -20,9 +20,12 @@ import {
   rememberEventRowBlock,
   type EventBlockCacheKey,
 } from './block-cache.js';
-import { eventRowBlock, isPlannerTextRenderedAsMarkdown } from './event-rows.js';
+import {
+  eventRowBlock,
+  isPlannerTextRenderedAsMarkdown,
+  isTranscriptRowlessEvent,
+} from './event-rows.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
-import { runnerCallId } from './runner-call-classification.js';
 import {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRowsCacheKey,
@@ -166,7 +169,7 @@ function buildConversationRowsProjectionWithContext(
         rememberEventRowBlock(event, blockKey, block);
       }
       if (block === null) {
-        if (!belongsToActivityBatch(event, activityBatch)) flushActivityBatch();
+        if (!isTranscriptRowlessEvent(event)) flushActivityBatch();
         continue;
       }
       flushActivityBatch();
@@ -299,17 +302,9 @@ export function buildConversationRowActions(
         }
         continue;
       }
-      if (!belongsToActivityBatch(event, activityBatch)) flushActivityBatch();
+      if (!isTranscriptRowlessEvent(event)) flushActivityBatch();
     }
   }
   flushActivityBatch();
   return actions;
-}
-
-function belongsToActivityBatch(
-  event: EngineEvent,
-  activityBatch: RunnerActivityBatch | null,
-): boolean {
-  if (activityBatch === null) return false;
-  return runnerCallId(event) === activityBatch.callId;
 }

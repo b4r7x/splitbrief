@@ -1,5 +1,6 @@
 import type { Config } from '../../schemas/config.js';
 import { resolveAutoModel } from '../../providers/model-selection.js';
+import { getProviderDisplayName } from '../../providers/catalog.js';
 import { isPlannerToolId, type PlannerToolId } from '../../schemas/enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
@@ -17,6 +18,21 @@ export function getRunnerDisplayName(runner: RunnerConfig): string {
       return 'agent';
     case 'agent-sdk':
       return 'agent-sdk';
+    default:
+      return assertNever(runner);
+  }
+}
+
+export function getRunnerCatalogDisplayName(runner: RunnerConfig): string {
+  switch (runner.kind) {
+    case 'cli':
+      return getProviderDisplayName(runner.tool);
+    case 'api':
+      return getProviderDisplayName(runner.provider);
+    case 'shell':
+    case 'agent':
+    case 'agent-sdk':
+      return getProviderDisplayName(runner.kind);
     default:
       return assertNever(runner);
   }

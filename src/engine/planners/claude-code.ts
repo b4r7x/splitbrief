@@ -26,8 +26,10 @@ export function createClaudeCodePlanner(opts: {
   initialSessionId?: string | null | undefined;
   effort?: EffortLevel | undefined;
   timeout?: number | undefined;
+  idleWarnMs?: number | undefined;
+  idleKillMs?: number | undefined;
 }): Planner {
-  const { model, initialSessionId, effort, timeout } = opts;
+  const { model, initialSessionId, effort, timeout, idleWarnMs, idleKillMs } = opts;
   const resolvedModel = resolveAutoModel(model, 'claude-code');
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
@@ -68,6 +70,8 @@ export function createClaudeCodePlanner(opts: {
             ...(effort !== undefined && { effort }),
             ...(images && images.length > 0 ? { images } : {}),
             ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
+            ...(idleWarnMs !== undefined && { idleWarnMs }),
+            ...(idleKillMs !== undefined && { idleKillMs }),
           });
           const returnedSessionId = result.sessionId ?? result.nativeSessionId;
           if (
@@ -119,6 +123,8 @@ export function createClaudeCodePlanner(opts: {
         ...(effort !== undefined && { effort }),
         ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
         ...(sandboxEnv !== undefined && { env: sandboxEnv }),
+        ...(idleWarnMs !== undefined && { idleWarnMs }),
+        ...(idleKillMs !== undefined && { idleKillMs }),
       });
     },
 
@@ -146,6 +152,8 @@ export function createClaudeCodePlanner(opts: {
           model: resolvedModel,
           ...(effort !== undefined && { effort }),
           ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
+          ...(idleWarnMs !== undefined && { idleWarnMs }),
+          ...(idleKillMs !== undefined && { idleKillMs }),
         });
         const returnedSessionId = result.sessionId ?? result.nativeSessionId;
         if (returnedSessionId !== null && returnedSessionId !== sessionId) {

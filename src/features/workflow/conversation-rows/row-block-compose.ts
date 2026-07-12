@@ -133,6 +133,7 @@ export function cardRowsBlock(input: {
   labelTone: ConversationRowTone;
   valueTone?: ConversationRowTone;
   kind?: ConversationRowKind;
+  markerTone?: ConversationRowTone;
 }): ConversationRowBlock | null {
   const keyPrefix = input.keyPrefix;
   const label = sanitizeRowDisplayText(input.label);
@@ -141,6 +142,7 @@ export function cardRowsBlock(input: {
   const labelTone = input.labelTone;
   const valueTone = input.valueTone;
   const kind = input.kind;
+  const markerTone = input.markerTone;
   const labelText = value ? `${label}  ` : label;
   const rowCount = countWrappedRowTexts(`${labelText}${value ?? ''}`, wrapWidth);
   if (rowCount === 0) return null;
@@ -161,6 +163,7 @@ export function cardRowsBlock(input: {
         labelTone,
         ...(valueTone !== undefined && { valueTone }),
         ...(kind !== undefined && { kind }),
+        ...(markerTone !== undefined && { markerTone }),
         windowStart,
         windowEnd,
       }),

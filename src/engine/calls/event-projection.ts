@@ -132,6 +132,10 @@ export function projectRunnerCallEvent(
           message: boundedRunnerCallMessage(sanitizeRunnerCallRawPreview(event.rawPreview)),
         }),
       };
+    case 'call_stalled':
+      return { type: 'runner_call_stalled', ...base, silentMs: event.silentMs };
+    case 'call_stall_cleared':
+      return { type: 'runner_call_stall_cleared', ...base };
     default:
       return assertNever(event);
   }

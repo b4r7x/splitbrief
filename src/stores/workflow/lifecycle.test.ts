@@ -1,7 +1,28 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { lifecycleStore } from './lifecycle.js';
-import { addEvent, resetWorkflow } from './actions.js';
-import { makePlannerStatus } from '#testing/helpers/events.js';
+import {
+  clearLifecycleInterrupted,
+  lifecycleStore,
+  markLifecycleInterrupted,
+  updateStall,
+} from './lifecycle.js';
+import {
+  addEvent,
+  markInterruptParked,
+  markInterruptRequested,
+  markInterruptResumed,
+  resetWorkflow,
+} from './actions.js';
+import {
+  makePlannerStatus,
+  makePlannerText,
+  makeRunnerCallActivity,
+  makeRunnerCallCompleted,
+  makeRunnerCallError,
+  makeRunnerCallStalled,
+  makeRunnerCallStallCleared,
+  makeRunnerCallStarted,
+  makeTaskStart,
+} from '#testing/helpers/events.js';
 import { taskId } from '../../core/schemas/task.js';
 
 describe('lifecycleStore', () => {
@@ -212,5 +233,172 @@ describe('lifecycleStore', () => {
       researching: 1_000,
       complete: 2_000,
     });
+  });
+});
+
+describe('interrupted lifecycle', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('markLifecycleInterrupted moves running to interrupted', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    const running = lifecycleStore.get();
+
+    const interrupted = markLifecycleInterrupted(running);
+
+    expect(interrupted).toMatchObject({
+      status: 'interrupted',
+      phase: 'implementing',
+      cancelled: false,
+      startedAt: 1_000,
+      endedAt: null,
+      durationMs: null,
+    });
+    expect(markLifecycleInterrupted(interrupted)).toBe(interrupted);
+  });
+
+  it('markLifecycleInterrupted is a no-op on idle, complete, and cancelled', () => {
+    const idle = lifecycleStore.get();
+    expect(markLifecycleInterrupted(idle)).toBe(idle);
+
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    addEvent({ type: 'workflow_complete', ts: 2_000, phase: 'complete' });
+    const complete = lifecycleStore.get();
+    expect(markLifecycleInterrupted(complete)).toBe(complete);
+
+    lifecycleStore.__testReset({ status: 'cancelled', phase: 'implementing' });
+    const cancelled = lifecycleStore.get();
+    expect(markLifecycleInterrupted(cancelled)).toBe(cancelled);
+  });
+
+  it('phase events do not resurrect running from interrupted', () => {
+    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing', startedAt: 1_000 });
+
+    addEvent(makePlannerStatus({ phase: 'validating-task', ts: 2_000 }));
+    expect(lifecycleStore.get().status).toBe('interrupted');
+    expect(lifecycleStore.get().phase).toBe('validating-task');
+
+    addEvent(makeTaskStart({ phase: 'escalating', ts: 3_000 }));
+    expect(lifecycleStore.get().status).toBe('interrupted');
+    expect(lifecycleStore.get().phase).toBe('escalating');
+  });
+
+  it('workflow_cancelled and workflow_complete win over interrupted', () => {
+    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing', startedAt: 1_000 });
+    addEvent({ type: 'workflow_complete', ts: 2_000, phase: 'complete' });
+    expect(lifecycleStore.get()).toMatchObject({ status: 'complete', endedAt: 2_000 });
+
+    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing', startedAt: 1_000 });
+    addEvent({
+      type: 'workflow_cancelled',
+      ts: 3_000,
+      phase: 'implementing',
+      reason: 'user_cancelled',
+    });
+    expect(lifecycleStore.get()).toMatchObject({
+      status: 'cancelled',
+      cancelled: true,
+      endedAt: 3_000,
+      reason: 'user_cancelled',
+    });
+  });
+
+  it('turn_interrupted marks a running lifecycle interrupted and parked for attach clients', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+
+    addEvent({ type: 'turn_interrupted', ts: 2_000, phase: 'implementing', source: 'user' });
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: true });
+    // Terminal states are not resurrected by a straggler turn_interrupted.
+    addEvent({ type: 'workflow_complete', ts: 3_000, phase: 'complete' });
+    addEvent({ type: 'turn_interrupted', ts: 4_000, phase: 'implementing', source: 'user' });
+    expect(lifecycleStore.get().status).toBe('complete');
+  });
+
+  it('turn_interrupted parks a host interrupt already requested via Esc-Esc', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    markInterruptRequested();
+    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: false });
+
+    addEvent({ type: 'turn_interrupted', ts: 2_000, phase: 'implementing', source: 'user' });
+
+    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: true });
+  });
+
+  it('a new runner call clears an event-set interrupt', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({ type: 'turn_interrupted', ts: 2_000, phase: 'implementing', source: 'user' });
+    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: true });
+
+    addEvent(makeRunnerCallStarted({ ts: 3_000 }));
+
+    expect(lifecycleStore.get().status).toBe('running');
+    expect(lifecycleStore.get().interruptParked).toBe(false);
+    expect(lifecycleStore.get().phase).toBe('implementing');
+  });
+
+  it('tracks the continuation-prompt park across interrupt, park, and resume', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    markInterruptParked();
+    expect(lifecycleStore.get().interruptParked).toBe(false);
+
+    markInterruptRequested();
+    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: false });
+
+    markInterruptParked();
+    expect(lifecycleStore.get()).toMatchObject({ status: 'interrupted', interruptParked: true });
+
+    markInterruptResumed();
+    expect(lifecycleStore.get()).toMatchObject({ status: 'running', interruptParked: false });
+  });
+
+  it('clearLifecycleInterrupted returns interrupted to running', () => {
+    lifecycleStore.__testReset({ status: 'interrupted', phase: 'implementing', startedAt: 1_000 });
+    const interrupted = lifecycleStore.get();
+    expect(interrupted.status).toBe('interrupted');
+
+    const resumed = clearLifecycleInterrupted(interrupted);
+
+    expect(resumed).toMatchObject({
+      status: 'running',
+      phase: 'implementing',
+      cancelled: false,
+      startedAt: 1_000,
+      endedAt: null,
+    });
+    expect(clearLifecycleInterrupted(resumed)).toBe(resumed);
+  });
+});
+
+describe('runner call stall', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('runner_call_stalled sets stall and runner_call_stall_cleared clears it', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    const running = lifecycleStore.get();
+
+    const stalled = updateStall(running, makeRunnerCallStalled());
+    expect(stalled.stall).toEqual({ since: 2_000, silentMs: 60_000 });
+
+    const cleared = updateStall(stalled, makeRunnerCallStallCleared());
+    expect(cleared.stall).toBeNull();
+  });
+
+  it('call activity, completion, error, planner text, and phase changes clear stall', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    const running = lifecycleStore.get();
+    const stalled = updateStall(running, makeRunnerCallStalled());
+    expect(stalled.stall).not.toBeNull();
+
+    expect(updateStall(stalled, makeRunnerCallActivity()).stall).toBeNull();
+    expect(updateStall(stalled, makeRunnerCallCompleted()).stall).toBeNull();
+    expect(updateStall(stalled, makeRunnerCallError()).stall).toBeNull();
+    expect(updateStall(stalled, makePlannerText({ text: 'thinking' })).stall).toBeNull();
+
+    // Phase changes clear stall through updatePhase (applyRunningPhase), which
+    // runs before updateStall in the addEvent reducer chain.
+    addEvent(makeRunnerCallStalled());
+    expect(lifecycleStore.get().stall).not.toBeNull();
+    addEvent(makePlannerStatus({ phase: 'validating-task' }));
+    expect(lifecycleStore.get().stall).toBeNull();
   });
 });

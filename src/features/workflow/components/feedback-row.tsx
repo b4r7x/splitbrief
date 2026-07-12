@@ -2,7 +2,6 @@ import { Box, Text } from 'ink';
 import { useTheme } from '../../../components/theme.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { abortStore, type ArmedKind } from '../../../stores/workflow/abort.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
@@ -13,11 +12,6 @@ const ARMED_MESSAGES: Record<Exclude<ArmedKind, 'none'>, string> = {
   interrupt: 'Esc again to interrupt',
   cancel: 'Esc again to cancel workflow',
 };
-
-function formatCompactQueueNotice(queueDepth: number): string | null {
-  if (queueDepth <= 0) return null;
-  return `queued ${queueDepth}`;
-}
 
 function summarizeDisplayLine(text: string): string {
   const safeText = sanitizeTerminalDisplayText(text, { preserveLineBreaks: true });
@@ -30,21 +24,16 @@ function summarizeDisplayLine(text: string): string {
 }
 
 export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined }) {
-  const [{ message, isError }, { queueDepth }] = useStores(feedbackStore, lifecycleStore);
+  const [{ message, isError }] = useStores(feedbackStore);
   const armed = abortStore.use((s) => s.armed);
   const t = useTheme();
 
-  const compactQueueNotice = formatCompactQueueNotice(queueDepth);
   const safeInputHint = summarizeDisplayLine(inputHint);
   const safeMessage = message === null ? null : summarizeDisplayLine(message);
-  const hintMessage =
-    compactQueueNotice && safeInputHint
-      ? `${safeInputHint} · ${compactQueueNotice}`
-      : (compactQueueNotice ?? safeInputHint);
   const feedbackMessage =
     safeMessage && safeInputHint ? `${safeMessage} ${safeInputHint}` : safeMessage;
   const displayMessage =
-    armed !== 'none' ? ARMED_MESSAGES[armed] : (feedbackMessage ?? hintMessage);
+    armed !== 'none' ? ARMED_MESSAGES[armed] : (feedbackMessage ?? safeInputHint);
   const showArmed = armed !== 'none';
   const severity = showArmed
     ? null

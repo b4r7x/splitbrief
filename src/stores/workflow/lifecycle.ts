@@ -20,18 +20,30 @@ function isInfrastructurePhaseEvent(event: EngineEvent): boolean {
   return INFRASTRUCTURE_PHASE_EVENT_TYPES.has(event.type);
 }
 
+const STALL_CLEARING_EVENT_TYPES = new Set<EngineEvent['type']>([
+  'runner_call_stall_cleared',
+  'runner_call_activity',
+  'runner_call_completed',
+  'runner_call_error',
+  'planner_text',
+]);
+
 type RunningPhase = Exclude<Phase, 'complete'>;
-type LifecycleStatus = 'idle' | 'running' | 'complete' | 'cancelled';
+type LifecycleStatus = 'idle' | 'running' | 'interrupted' | 'complete' | 'cancelled';
 type PhaseFirstSeenTs = Readonly<Partial<Record<Phase, number>>>;
+
+type LifecycleStall = { since: number; silentMs: number } | null;
 
 interface LifecycleBase {
   queueDepth: number;
   phaseFirstSeenTs: PhaseFirstSeenTs;
+  stall: LifecycleStall;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
   phase: 'idle';
   status: 'idle';
+  interruptParked: false;
   cancelled: false;
   startedAt: null;
   endedAt: null;
@@ -42,6 +54,21 @@ interface IdleLifecycleState extends LifecycleBase {
 interface RunningLifecycleState extends LifecycleBase {
   phase: RunningPhase;
   status: 'running';
+  interruptParked: false;
+  cancelled: false;
+  startedAt: number | null;
+  endedAt: null;
+  durationMs: null;
+  reason: null;
+}
+
+// interruptParked distinguishes the dead-zone window (Esc-Esc landed but the
+// continuation prompt has not reached a call boundary yet) from a parked prompt
+// that actually owns the composer.
+interface InterruptedLifecycleState extends LifecycleBase {
+  phase: RunningPhase;
+  status: 'interrupted';
+  interruptParked: boolean;
   cancelled: false;
   startedAt: number | null;
   endedAt: null;
@@ -52,6 +79,7 @@ interface RunningLifecycleState extends LifecycleBase {
 interface CompleteLifecycleState extends LifecycleBase {
   phase: Phase;
   status: 'complete';
+  interruptParked: false;
   cancelled: false;
   startedAt: number | null;
   endedAt: number;
@@ -62,6 +90,7 @@ interface CompleteLifecycleState extends LifecycleBase {
 interface CancelledLifecycleState extends LifecycleBase {
   phase: Phase;
   status: 'cancelled';
+  interruptParked: false;
   cancelled: true;
   startedAt: number | null;
   endedAt: number;
@@ -72,6 +101,7 @@ interface CancelledLifecycleState extends LifecycleBase {
 export type LifecycleState =
   | IdleLifecycleState
   | RunningLifecycleState
+  | InterruptedLifecycleState
   | CompleteLifecycleState
   | CancelledLifecycleState;
 
@@ -90,9 +120,11 @@ interface LifecycleResetState {
 const initial: LifecycleState = {
   phase: 'idle',
   status: 'idle',
+  interruptParked: false,
   cancelled: false,
   queueDepth: 0,
   phaseFirstSeenTs: {},
+  stall: null,
   startedAt: null,
   endedAt: null,
   durationMs: null,
@@ -152,6 +184,24 @@ export function updatePhase(state: LifecycleState, event: EngineEvent): Lifecycl
     );
   }
 
+  // Attach clients have no markInterruptRequested keypress path — the bus event
+  // is their only interrupt signal. The engine publishes it at the moment the
+  // continuation prompt parks, so the park is marked here too; the host's
+  // prompt-callbacks marks are idempotent re-marks.
+  if (event.type === 'turn_interrupted') {
+    return markLifecycleInterruptParked(
+      markLifecycleInterrupted(applyRunningPhase(state, phase, event.ts)),
+    );
+  }
+
+  // A spawning runner call is proof the work resumed: it clears an event-set
+  // interrupt for attach viewers. It cannot fight a live host interrupt — no
+  // call spawns while the turn is parked, and the host clears via
+  // markInterruptResumed at the submit that triggers the resume.
+  if (event.type === 'runner_call_started') {
+    return applyRunningPhase(clearLifecycleInterrupted(state), phase, event.ts);
+  }
+
   return applyRunningPhase(state, phase, event.ts);
 }
 
@@ -189,6 +239,20 @@ export function updateQueueDepth(state: LifecycleState, event: EngineEvent): Lif
   return state;
 }
 
+// Phase changes also clear stall, but that rule lives in applyRunningPhase:
+// updatePhase runs before updateStall in the addEvent reducer chain, so by the
+// time updateStall sees the state the phase transition has already cleared it.
+export function updateStall(state: LifecycleState, event: EngineEvent): LifecycleState {
+  if (event.type === 'runner_call_stalled') {
+    return { ...state, stall: { since: event.ts, silentMs: event.silentMs } };
+  }
+  if (state.stall === null) return state;
+  if (STALL_CLEARING_EVENT_TYPES.has(event.type)) {
+    return { ...state, stall: null };
+  }
+  return state;
+}
+
 export function markLifecycleCancellationRequested(
   state: LifecycleState,
   cancellation: { ts: number; reason: string },
@@ -198,14 +262,31 @@ export function markLifecycleCancellationRequested(
   return {
     phase: phase ?? state.phase,
     status: 'cancelled',
+    interruptParked: false,
     cancelled: true,
     queueDepth: state.queueDepth,
     phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, cancellation.ts),
+    stall: null,
     startedAt: state.startedAt,
     endedAt: cancellation.ts,
     durationMs: durationFromStart(state.startedAt, cancellation.ts),
     reason: cancellation.reason,
   };
+}
+
+export function markLifecycleInterrupted(state: LifecycleState): LifecycleState {
+  if (state.status !== 'running') return state;
+  return { ...state, status: 'interrupted' };
+}
+
+export function markLifecycleInterruptParked(state: LifecycleState): LifecycleState {
+  if (state.status !== 'interrupted' || state.interruptParked) return state;
+  return { ...state, interruptParked: true };
+}
+
+export function clearLifecycleInterrupted(state: LifecycleState): LifecycleState {
+  if (state.status !== 'interrupted') return state;
+  return { ...state, status: 'running', interruptParked: false };
 }
 
 function markLifecycleComplete(
@@ -217,9 +298,11 @@ function markLifecycleComplete(
   return {
     phase: phase ?? state.phase,
     status: 'complete',
+    interruptParked: false,
     cancelled: false,
     queueDepth: state.queueDepth,
     phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, endedAt),
+    stall: null,
     startedAt: state.startedAt,
     endedAt,
     durationMs: durationFromStart(state.startedAt, endedAt),
@@ -252,9 +335,11 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
     return {
       phase,
       status: 'complete',
+      interruptParked: false,
       cancelled: false,
       queueDepth,
       phaseFirstSeenTs,
+      stall: null,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
@@ -267,14 +352,22 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
     return {
       phase,
       status: 'cancelled',
+      interruptParked: false,
       cancelled: true,
       queueDepth,
       phaseFirstSeenTs,
+      stall: null,
       startedAt,
       endedAt,
       durationMs: next.durationMs ?? durationFromStart(startedAt, endedAt),
       reason: next.reason ?? 'user_cancelled',
     };
+  }
+
+  if (next.status === 'interrupted') {
+    return markLifecycleInterrupted(
+      runningLifecycleState({ phase, queueDepth, phaseFirstSeenTs, startedAt }),
+    );
   }
 
   if (next.status === 'running' || phase !== 'idle') {
@@ -303,8 +396,8 @@ function applyRunningPhase(
       startedAt: ts,
     });
   }
-  if (state.status === 'running') {
-    return { ...state, phase: runningPhase(phase), phaseFirstSeenTs };
+  if (state.status === 'running' || state.status === 'interrupted') {
+    return { ...state, phase: runningPhase(phase), phaseFirstSeenTs, stall: null };
   }
   return { ...state, phase, phaseFirstSeenTs };
 }
@@ -318,9 +411,11 @@ function runningLifecycleState(input: {
   return {
     phase: runningPhase(input.phase),
     status: 'running',
+    interruptParked: false,
     cancelled: false,
     queueDepth: input.queueDepth,
     phaseFirstSeenTs: input.phaseFirstSeenTs,
+    stall: null,
     startedAt: input.startedAt,
     endedAt: null,
     durationMs: null,

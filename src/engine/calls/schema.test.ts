@@ -203,6 +203,31 @@ describe('RunnerCallEventSchema', () => {
     expect(first.warning.fingerprint).toBe(repeated.warning.fingerprint);
   });
 
+  it('call_stalled and call_stall_cleared round-trip through RunnerCallEventSchema', () => {
+    const stalled = RunnerCallEventSchema.safeParse({
+      type: 'call_stalled',
+      ts: 1,
+      ...context,
+      silentMs: 60_000,
+    });
+    expect(stalled.success).toBe(true);
+    if (stalled.success) {
+      expect(stalled.data).toMatchObject({ type: 'call_stalled', silentMs: 60_000 });
+    }
+
+    expect(
+      RunnerCallEventSchema.safeParse({ type: 'call_stalled', ts: 1, ...context }).success,
+    ).toBe(false);
+
+    expect(
+      RunnerCallEventSchema.safeParse({
+        type: 'call_stall_cleared',
+        ts: 1,
+        ...context,
+      }).success,
+    ).toBe(true);
+  });
+
   it('rejects unknown fields on known event variants', () => {
     expect(
       RunnerCallEventSchema.safeParse({

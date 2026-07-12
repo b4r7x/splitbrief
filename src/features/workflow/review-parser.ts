@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { markInterruptResumed } from '../../stores/workflow/actions.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -71,7 +72,16 @@ export interface ReviewInputHandler {
 export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewInputHandler {
   const handleInput = async (text: string) => {
     if (inputMode.mode === 'normal') {
-      const phase = lifecycleStore.get().phase;
+      const lifecycle = lifecycleStore.get();
+      // Dead-zone window: the interrupt landed but the continuation prompt has not
+      // parked yet, so typed text can neither steer nor queue — tell the user why.
+      if (lifecycle.status === 'interrupted' && !lifecycle.interruptParked) {
+        if (text.trim()) {
+          feedbackStore.setMessage('Interrupt pending — stopping at the next step boundary.');
+        }
+        return;
+      }
+      const phase = lifecycle.phase;
       if (isImplementerPhase(phase)) {
         feedbackStore.setError(
           'Input disabled during task implementation. Press Ctrl-C to abort, or /redo-task <id> after the task finishes.',
@@ -125,6 +135,9 @@ export function createReviewInputHandler(inputMode: UseInputModeResult): ReviewI
     }
 
     if (inputMode.mode === 'question') {
+      // Contract: must call markInterruptResumed() before resolve() — a resolve
+      // reaching a still-'interrupted' loop is treated as superseded and re-asked.
+      if (lifecycleStore.get().status === 'interrupted') markInterruptResumed();
       inputMode.resolve(text);
     }
   };

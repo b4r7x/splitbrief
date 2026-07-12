@@ -20,6 +20,7 @@ interface UseReferenceCompletionOptions {
   value: string;
   setValue: (value: string) => void;
   disabled?: boolean | undefined;
+  suppressed?: boolean | undefined;
 }
 
 interface UseReferenceCompletionResult {
@@ -82,12 +83,14 @@ export function useReferenceCompletion({
   value,
   setValue,
   disabled,
+  suppressed,
 }: UseReferenceCompletionOptions): UseReferenceCompletionResult {
   const [dismissedValue, setDismissedValue] = useState<string | null>(null);
 
   const token = findReferenceToken(value);
   const filtered = token ? filterFiles(files, token.query) : [];
-  const showSuggestions = token !== null && filtered.length > 0 && dismissedValue !== value;
+  const showSuggestions =
+    token !== null && filtered.length > 0 && dismissedValue !== value && !suppressed;
   const selectionKey = buildReferenceSelectionKey(token, filtered);
   const { effectiveSelectedIndex, latestRef, moveSelection } =
     useCompletionSelection<LatestReferenceState>({

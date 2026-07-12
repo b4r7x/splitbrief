@@ -4,7 +4,6 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { abortStore } from '../../../stores/workflow/abort.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
 import { resolveAttachFeedbackHint } from '../input-hints.js';
 import { FeedbackRow } from './feedback-row.js';
@@ -36,33 +35,6 @@ describe('FeedbackRow', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('approve | Ctrl+E/e edit');
-
-    ui.unmount();
-  });
-
-  it('shows pending queue state without hiding the active hint', () => {
-    lifecycleStore.__testReset({ queueDepth: 1 });
-
-    const ui = renderFeature(<FeedbackRow inputHint="approve | Ctrl+E/e edit" />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('approve | Ctrl+E/e edit');
-    expect(frame).toContain('queued 1');
-    expect(frame.indexOf('approve | Ctrl+E/e edit')).toBeLessThan(frame.indexOf('queued 1'));
-
-    ui.unmount();
-  });
-
-  it('keeps review commands visible with a compact queue label', () => {
-    lifecycleStore.__testReset({ queueDepth: 12 });
-
-    const ui = renderFeature(<FeedbackRow inputHint="approve | Ctrl+E/e edit" />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('approve | Ctrl+E/e edit');
-    expect(frame).toContain('queued 12');
-    expect(frame).not.toContain('pending next planner turn');
-    expect(frame).not.toContain('queued:');
 
     ui.unmount();
   });
@@ -131,8 +103,7 @@ describe('FeedbackRow', () => {
     ui.unmount();
   });
 
-  it('keeps explicit feedback above queue and hint text', () => {
-    lifecycleStore.__testReset({ queueDepth: 1 });
+  it('keeps explicit feedback visible alongside the hint text', () => {
     feedbackStore.setMessage('Message queued for the next planner turn.');
 
     const ui = renderFeature(<FeedbackRow inputHint="approve | Ctrl+E/e edit" />);
@@ -140,7 +111,6 @@ describe('FeedbackRow', () => {
 
     expect(frame).toContain('Message queued for the next planner turn.');
     expect(frame).toContain('approve | Ctrl+E/e edit');
-    expect(frame).not.toContain('Queued 1 message pending next planner turn.');
 
     ui.unmount();
   });

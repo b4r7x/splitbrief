@@ -21,7 +21,13 @@ export function resolveCapabilities(
 }
 
 export function createCommandBasedPlanner(
-  config: { command: string; args?: string[] | undefined; outputFormat?: OutputFormat | undefined },
+  config: {
+    command: string;
+    args?: string[] | undefined;
+    outputFormat?: OutputFormat | undefined;
+    idleWarnMs?: number | undefined;
+    idleKillMs?: number | undefined;
+  },
   label: string,
   overrides?: {
     readPhaseOutput?: PlannerBaseConfig['readPhaseOutput'] | undefined;
@@ -59,6 +65,8 @@ export function createCommandBasedPlanner(
       onCallEvent: callbacks.onCallEvent,
       callContext,
       signal,
+      ...(config.idleWarnMs !== undefined && { idleWarnMs: config.idleWarnMs }),
+      ...(config.idleKillMs !== undefined && { idleKillMs: config.idleKillMs }),
     });
 
     if (callbacks.onQuestion) {

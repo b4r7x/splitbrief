@@ -27,11 +27,15 @@ import {
 } from './tokens.js';
 import {
   _lifecycleInternal,
+  clearLifecycleInterrupted,
   lifecycleStore,
   type LifecycleState,
   markLifecycleCancellationRequested,
+  markLifecycleInterrupted,
+  markLifecycleInterruptParked,
   updatePhase,
   updateQueueDepth,
+  updateStall,
 } from './lifecycle.js';
 import {
   _operationsInternal,
@@ -83,7 +87,8 @@ export function addEvent(event: EngineEvent): void {
 
   _lifecycleInternal.set((s) => {
     const afterPhase = updatePhase(s, event);
-    return updateQueueDepth(afterPhase, event);
+    const afterQueue = updateQueueDepth(afterPhase, event);
+    return updateStall(afterQueue, event);
   });
 
   _operationsInternal.set((s) => updateOperations(s, event));
@@ -104,6 +109,20 @@ export function markCancellationRequested(intent: CancellationIntent = {}): bool
   _operationsInternal.set((s) => markOperationsCancellationRequested(s, cancellation));
   _lifecycleInternal.set((s) => markLifecycleCancellationRequested(s, cancellation));
   return true;
+}
+
+export function markInterruptRequested(): boolean {
+  if (lifecycleStore.get().status !== 'running') return false;
+  _lifecycleInternal.set((s) => markLifecycleInterrupted(s));
+  return true;
+}
+
+export function markInterruptParked(): void {
+  _lifecycleInternal.set((s) => markLifecycleInterruptParked(s));
+}
+
+export function markInterruptResumed(): void {
+  _lifecycleInternal.set((s) => clearLifecycleInterrupted(s));
 }
 
 export function resetWorkflow(resume?: WorkflowState): void {
@@ -135,9 +154,11 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
     return {
       phase: resume.phase,
       status: 'complete',
+      interruptParked: false,
       cancelled: false,
       queueDepth,
       phaseFirstSeenTs: {},
+      stall: null,
       startedAt,
       endedAt,
       durationMs: Math.max(0, endedAt - (startedAt ?? endedAt)),
@@ -147,9 +168,11 @@ function lifecycleStateFromResume(resume: WorkflowState): LifecycleState {
   return {
     phase: resume.phase,
     status: 'running',
+    interruptParked: false,
     cancelled: false,
     queueDepth,
     phaseFirstSeenTs: {},
+    stall: null,
     startedAt,
     endedAt: null,
     durationMs: null,

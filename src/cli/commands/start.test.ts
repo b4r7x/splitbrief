@@ -1073,17 +1073,24 @@ describe('start command — liveness record', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, realHeadlessDeps);
-    await program.parseAsync([
-      'node',
-      'diptych',
-      'start',
-      '--json',
-      '--mode',
-      'quick',
-      'implement X',
-      '--project',
-      tmp,
-    ]);
+    // The zero-tasks quickPlan fails the session, so the run exits non-zero;
+    // the liveness record must still be created mid-run and released after.
+    await expect(
+      program.parseAsync([
+        'node',
+        'diptych',
+        'start',
+        '--json',
+        '--mode',
+        'quick',
+        'implement X',
+        '--project',
+        tmp,
+      ]),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('Workflow failed'),
+    });
 
     const sessionId = onlySessionId(tmp);
     const dir = sessionDir(tmp, sessionId);

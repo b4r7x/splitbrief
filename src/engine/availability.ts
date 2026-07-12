@@ -2,6 +2,7 @@ import { access } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
 import { runCommand } from '../lib/process/spawn.js';
+import { isENOENT, processError } from '../lib/process/errors.js';
 
 export const DEFAULT_AVAILABILITY = {
   isAvailable: async (): Promise<boolean> => true,
@@ -38,15 +39,35 @@ export function parseMajorVersion(version: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+interface ProbeResult {
+  available: boolean;
+  version: string | null;
+  reason: string | null;
+}
+
 async function probeCommand(
   command: string,
   opts?: { timeout?: number | undefined },
-): Promise<{ available: boolean; version: string | null }> {
+): Promise<ProbeResult> {
   try {
-    const { stdout } = await runCommand(command, ['--version'], opts);
-    return { available: true, version: parseVersion(stdout) };
-  } catch {
-    return { available: false, version: null };
+    const { stdout } = await runCommand(command, ['--version'], { ...opts, label: 'probe' });
+    return { available: true, version: parseVersion(stdout), reason: null };
+  } catch (err) {
+    if (isENOENT(err) || processError.isNotFound(err)) {
+      return { available: false, version: null, reason: 'not installed' };
+    }
+    if (processError.isTimeout(err)) {
+      return { available: false, version: null, reason: err.message };
+    }
+    if (processError.isExitCode(err)) {
+      const tail = err.data.stderr.trim() || `exit code ${err.data.code}`;
+      return { available: false, version: null, reason: `probe failed: ${tail}` };
+    }
+    return {
+      available: false,
+      version: null,
+      reason: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -58,13 +79,20 @@ export function createCommandAvailability(
     return {
       isAvailable: async (): Promise<boolean> => false,
       getVersion: async (): Promise<string | null> => null,
+      unavailabilityReason: (): string | undefined => 'no command configured',
     };
   }
-  let cached: Promise<{ available: boolean; version: string | null }> | undefined;
-  const probe = () => (cached ??= probeCommand(command, opts));
+  let cached: Promise<ProbeResult> | undefined;
+  let lastReason: string | undefined;
+  const probe = () =>
+    (cached ??= probeCommand(command, opts).then((result) => {
+      lastReason = result.reason ?? undefined;
+      return result;
+    }));
   return {
     isAvailable: async () => (await probe()).available,
     getVersion: async () => (await probe()).version,
+    unavailabilityReason: (): string | undefined => lastReason,
   };
 }
 

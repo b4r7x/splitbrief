@@ -11,6 +11,7 @@ export type GlyphName =
   | 'statusPending'
   | 'statusCancelled'
   | 'statusSkipped'
+  | 'statusWarning'
   | 'connectorSame'
   | 'connectorHandoff'
   | 'cursor'
@@ -42,6 +43,7 @@ const UNICODE_GLYPHS: Record<GlyphName, string> = {
   statusPending: '○',
   statusCancelled: '×',
   statusSkipped: '–',
+  statusWarning: '⚠',
   connectorSame: '›',
   connectorHandoff: '→',
   cursor: '▸',
@@ -71,6 +73,7 @@ const ASCII_GLYPHS: Record<GlyphName, string> = {
   statusPending: 'o',
   statusCancelled: 'x',
   statusSkipped: '-',
+  statusWarning: '!',
   connectorSame: '>',
   connectorHandoff: '->',
   cursor: '>',

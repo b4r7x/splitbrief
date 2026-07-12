@@ -160,13 +160,14 @@ export function Composer({
   const refreshEpoch = projectFilesStore.use((s) => s.refreshEpoch);
   const rowFocusHeld = focusStore.use((f) => f !== null) && currentScreen === 'workflow';
 
-  const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange } = useHistory({
-    disabled,
-    value,
-    setValue,
-    currentScreen,
-    persistTranscript,
-  });
+  const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange, historyActive } =
+    useHistory({
+      disabled,
+      value,
+      setValue,
+      currentScreen,
+      persistTranscript,
+    });
 
   const handleChange = (next: string) => {
     const capture = extractPasteCapture(value, next);
@@ -196,6 +197,7 @@ export function Composer({
     setValue: onChange,
     onRuntimeCommand,
     disabled,
+    suppressed: historyActive,
   });
 
   const reference = useReferenceCompletion({
@@ -203,6 +205,7 @@ export function Composer({
     value: completionValue,
     setValue: onChange,
     disabled,
+    suppressed: historyActive,
   });
 
   const showCommandSuggestions = command.showSuggestions;

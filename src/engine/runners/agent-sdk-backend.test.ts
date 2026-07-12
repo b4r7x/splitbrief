@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   isModuleNotFoundError,
   loadSdk,
@@ -14,9 +14,14 @@ import {
 } from '../calls/output-limit.js';
 import { RunnerCallEventSchema } from '../calls/schema.js';
 import type { RunnerCallEvent } from '../calls/types.js';
+import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 
 async function* asyncIter<T>(items: T[]): AsyncIterable<T> {
   for (const item of items) yield item;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe('isModuleNotFoundError', () => {
@@ -84,6 +89,41 @@ describe('createAgentSdkBackend', () => {
         signal: controller.signal,
       }),
     ).rejects.toThrow('cancelled');
+  });
+
+  it('idle kill aborts the SDK query when invoked without an external signal', async () => {
+    let queryAbortController: AbortController | undefined;
+    vi.doMock('@anthropic-ai/claude-agent-sdk', () => ({
+      query: (params: { options: { abortController?: AbortController } }) => {
+        queryAbortController = params.options.abortController;
+        return {
+          [Symbol.asyncIterator]: (): AsyncIterator<never> => ({
+            next: () => new Promise<IteratorResult<never>>(() => {}),
+          }),
+        };
+      },
+    }));
+    try {
+      const backend = createAgentSdkBackend({
+        allowedTools: ['Read'],
+        idleWarnMs: 10,
+        idleKillMs: 25,
+      });
+
+      await expect(
+        backend.invoke({
+          prompt: 'hello',
+          projectDir: '/tmp/proj',
+          model: 'claude-sonnet-4-5',
+          onOutput: () => {},
+        }),
+      ).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+
+      expect(queryAbortController).toBeDefined();
+      expect(queryAbortController?.signal.aborted).toBe(true);
+    } finally {
+      vi.doUnmock('@anthropic-ai/claude-agent-sdk');
+    }
   });
 });
 
@@ -236,6 +276,30 @@ describe('processStream', () => {
     );
   });
 
+  it('closes the abandoned iterator when the output limit truncates the stream', async () => {
+    const messages = Array.from({ length: RUNNER_CALL_OUTPUT_MAX_EVENTS + 1 }, () => ({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'x' }] },
+    }));
+    let index = 0;
+    const returnSpy = vi.fn(async () => ({ done: true, value: undefined }));
+    const stream: AsyncIterable<unknown> = {
+      [Symbol.asyncIterator]: () => ({
+        next: async () =>
+          index < messages.length
+            ? { done: false, value: messages[index++] }
+            : { done: true, value: undefined },
+        return: returnSpy,
+      }),
+    };
+
+    await expect(
+      processStream({ stream, onOutput: () => {}, onCallEvent: () => {} }),
+    ).rejects.toMatchObject({ kind: 'runner-call-failed' });
+
+    expect(returnSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('caps one huge SDK result before recorder and output callbacks', async () => {
     const chunks: string[] = [];
     const events: RunnerCallEvent[] = [];
@@ -268,6 +332,130 @@ describe('processStream', () => {
         error: { code: 'agent_sdk_output_text_limit', message: expect.any(String) },
       }),
     );
+  });
+
+  it('a silent agent-sdk stream is aborted after the idle kill threshold with command-idle-timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const forwardedAbortController = new AbortController();
+      const events: RunnerCallEvent[] = [];
+      const silentStream: AsyncIterable<unknown> = {
+        [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
+      };
+
+      const pending = processStream({
+        stream: silentStream,
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+        forwardedAbortController,
+      });
+      pending.catch(() => {});
+
+      await vi.advanceTimersByTimeAsync(RUNNER_IDLE_KILL_MS);
+
+      await expect(pending).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+      expect(forwardedAbortController.signal.aborted).toBe(true);
+      expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'call_error',
+          error: expect.objectContaining({ code: 'runner_idle_timeout' }),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a configured idle threshold override kills the stream before the default threshold', async () => {
+    vi.useFakeTimers();
+    try {
+      const forwardedAbortController = new AbortController();
+      const events: RunnerCallEvent[] = [];
+      const silentStream: AsyncIterable<unknown> = {
+        [Symbol.asyncIterator]: () => ({ next: () => new Promise(() => {}) }),
+      };
+
+      const pending = processStream({
+        stream: silentStream,
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+        forwardedAbortController,
+        idle: { warnMs: 1_000, killMs: 2_000 },
+      });
+      pending.catch(() => {});
+
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      await expect(pending).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+      expect(forwardedAbortController.signal.aborted).toBe(true);
+      expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('partial stream events reset the idle watchdog', async () => {
+    vi.useFakeTimers();
+    try {
+      const gap = 800;
+      const partialCount = 4;
+      async function* partials(): AsyncGenerator<unknown> {
+        for (let i = 0; i < partialCount; i++) {
+          await sleep(gap);
+          yield { type: 'stream_event', event: { type: 'content_block_delta' } };
+        }
+        yield { type: 'result', subtype: 'success', result: 'done' };
+      }
+
+      const events: RunnerCallEvent[] = [];
+      const pending = processStream({
+        stream: partials(),
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+        idle: { warnMs: 1_000, killMs: 2_000 },
+      });
+
+      for (let i = 0; i < partialCount; i++) {
+        await vi.advanceTimersByTimeAsync(gap);
+      }
+      const result = await pending;
+
+      expect(result.text).toBe('done');
+      expect(events.some((event) => event.type === 'call_stalled')).toBe(false);
+      expect(events.some((event) => event.type === 'call_unknown_upstream')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('messages reset the agent-sdk idle timer', async () => {
+    vi.useFakeTimers();
+    try {
+      const gap = RUNNER_IDLE_WARN_MS - 1000;
+      async function* trickle(): AsyncGenerator<unknown> {
+        await sleep(gap);
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'a' }] } };
+        await sleep(gap);
+        yield { type: 'result', subtype: 'success', result: 'a' };
+      }
+
+      const events: RunnerCallEvent[] = [];
+      const pending = processStream({
+        stream: trickle(),
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+      });
+
+      await vi.advanceTimersByTimeAsync(gap);
+      await vi.advanceTimersByTimeAsync(gap);
+      const result = await pending;
+
+      expect(result.text).toBe('a');
+      expect(events.some((event) => event.type === 'call_stalled')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

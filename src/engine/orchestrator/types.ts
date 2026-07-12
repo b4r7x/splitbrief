@@ -88,6 +88,7 @@ export interface WorkflowSinks {
   setAbortHandler: (handler: (() => void) | null) => void;
   setQueueHandler: (handler: QueueHandler | null) => void;
   setClearQueueHandler?: ((handler: ClearQueueHandler | null) => void) | undefined;
+  consumeBoundaryInterrupt?: () => boolean;
 }
 
 export interface WorkflowContext {

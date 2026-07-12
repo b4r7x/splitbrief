@@ -18,6 +18,8 @@ export interface CommandBasedImplementerOpts {
     args?: string[] | undefined;
     outputFormat?: OutputFormat | undefined;
     timeout?: number | undefined;
+    idleWarnMs?: number | undefined;
+    idleKillMs?: number | undefined;
   };
   detectChanges?: ChangeDetector | undefined;
   shouldThrow?: ((err: unknown) => boolean) | undefined;
@@ -46,6 +48,8 @@ export function createCommandBasedImplementer(
         ...(opts.supportPromptPlaceholder &&
           options?.allowRepoRunners && { allowShellEvaluatedPrompt: true }),
         ...(cfg.timeout !== undefined && { timeout: cfg.timeout }),
+        ...(cfg.idleWarnMs !== undefined && { idleWarnMs: cfg.idleWarnMs }),
+        ...(cfg.idleKillMs !== undefined && { idleKillMs: cfg.idleKillMs }),
         notFoundMessage,
         prompt,
         projectDir,

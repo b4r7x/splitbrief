@@ -47,14 +47,14 @@ describe('mono legibility — the pipeline rail without colour', () => {
     const ui = renderFeature(<Rail form="B" />);
     await tick();
     const frame = monoFrame(ui.lastFrame());
-    const railLine = frame.split('\n').find((row) => row.includes('spec')) ?? '';
+    const railLine = frame.split('\n').find((row) => row.includes('Spec')) ?? '';
 
     // The three marker shapes are mutually distinct and each still binds to its stage by position,
     // so progress reads with hue and faint both stripped.
     expect(new Set([PENDING, ACTIVE, DONE]).size).toBe(3);
-    expect(railLine).toContain(`${DONE} spec`);
-    expect(railLine).toContain(`${ACTIVE} build`);
-    expect(railLine).toContain(`${PENDING} verify`);
+    expect(railLine).toContain(`${DONE} Spec`);
+    expect(railLine).toContain(`${ACTIVE} Build`);
+    expect(railLine).toContain(`${PENDING} Verify`);
     // Exactly one stage is active — not inferable from a hue/bold that the strip removed.
     expect(railLine.split(ACTIVE).length - 1).toBe(1);
     ui.unmount();
@@ -69,7 +69,7 @@ describe('mono legibility — the pipeline rail without colour', () => {
     const railLine =
       monoFrame(ui.lastFrame())
         .split('\n')
-        .find((row) => row.includes('spec')) ?? '';
+        .find((row) => row.includes('Spec')) ?? '';
 
     const handoff = railConnectorString(true);
     const sameRole = railConnectorString(false);

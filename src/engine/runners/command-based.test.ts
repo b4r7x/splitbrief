@@ -203,6 +203,29 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.callResult.warnings).toEqual([]);
   });
 
+  it('marks an idle kill on the timeout branch with the runner_idle_timeout code', async () => {
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      invokeCommandBasedRunner({
+        command: 'sh',
+        args: ['-c', 'sleep 1'],
+        timeout: 30_000,
+        idleWarnMs: 10,
+        idleKillMs: 20,
+        prompt: '',
+        projectDir: process.cwd(),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toThrow();
+
+    const errorEvent = events.find((event) => event.type === 'call_error');
+    expect(errorEvent).toMatchObject({
+      type: 'call_error',
+      error: { code: 'runner_idle_timeout' },
+    });
+  });
+
   it('returns stdout and stderr', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'echo',

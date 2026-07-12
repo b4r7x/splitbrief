@@ -74,6 +74,39 @@ describe('processError.timeout', () => {
   });
 });
 
+describe('processError.idleTimeout', () => {
+  it('idleTimeout builds a command-idle-timeout error with seconds in the message', () => {
+    const err = processError.idleTimeout({ command: 'codex', label: 'Codex', idleMs: 90_000 });
+
+    expect(err).toMatchObject({
+      kind: 'command-idle-timeout',
+      message: 'Codex produced no output for 90s and was terminated',
+      data: { command: 'codex', label: 'Codex', idleMs: 90_000 },
+    });
+    expect(processError.isIdleTimeout(err)).toBe(true);
+  });
+
+  it('falls back to the command when no label is given', () => {
+    const err = processError.idleTimeout({ command: 'codex', idleMs: 60_000 });
+
+    expect(err.message).toBe('codex produced no output for 60s and was terminated');
+  });
+
+  it('sanitizes idle timeout command and label payloads', () => {
+    const err = processError.idleTimeout({
+      command: `cmd-${JWT_FIXTURE}`,
+      label: `\u001b]0;owned\u0007label-${JWT_FIXTURE}`,
+      idleMs: 1000,
+    });
+
+    expect(err.message).toBe('label-***REDACTED*** produced no output for 1s and was terminated');
+    expect(err.data).toMatchObject({
+      command: 'cmd-***REDACTED***',
+      label: 'label-***REDACTED***',
+    });
+  });
+});
+
 describe('processError.exitCode', () => {
   it.each([
     {

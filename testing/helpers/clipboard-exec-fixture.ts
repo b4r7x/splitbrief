@@ -25,33 +25,35 @@ const COMMANDS = ['pbcopy', 'clip', 'wl-copy', 'xclip', 'xsel', 'tmux'] as const
 const CALLS_ENV = 'DIPTYCH_TEST_CLIPBOARD_CALLS';
 const EXIT_CODES_ENV = 'DIPTYCH_TEST_CLIPBOARD_EXIT_CODES';
 
-// The fake commands are node scripts whose spawn can outlive vi.waitFor's 1s default
-// under full-suite load; polls of fire-and-forget copies pass this deadline instead.
-export const CLIPBOARD_EXEC_WAIT_MS = 5000;
+// Copies are fire-and-forget spawns polled from the test; under multi-fork load the spawn plus
+// the record append can still take seconds, so give the poll generous headroom.
+export const CLIPBOARD_EXEC_WAIT_MS = 15_000;
 
 let active: ClipboardExecFixture | null = null;
 
+// The fakes are /bin/sh scripts, not node scripts: the production clipboard runner kills the tool
+// after NATIVE_TIMEOUT_MS (2s), and a cold node startup can outlive that on a box running several
+// vitest forks at once — the killed fake then records nothing and the copy falls through to OSC-52.
+// Each record line is `file<TAB>base64(arg),…<TAB>base64(stdin)` so arbitrary stdin survives sh.
 function commandScript(): string {
-  return `#!/usr/bin/env node
-const fs = require('node:fs');
-const path = require('node:path');
-
-const callsPath = process.env.${CALLS_ENV};
-const exitCodes = JSON.parse(process.env.${EXIT_CODES_ENV} || '{}');
-let stdin = '';
-
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  stdin += chunk;
-});
-process.stdin.on('end', () => {
-  const file = path.basename(process.argv[1] || '');
-  if (callsPath) {
-    fs.appendFileSync(callsPath, JSON.stringify({ file, args: process.argv.slice(2), stdin }) + '\\n');
-  }
-  const code = Number(exitCodes[file] ?? 0);
-  process.exit(Number.isFinite(code) ? code : 1);
-});
+  return `#!/bin/sh
+stdin_b64=$(base64 | tr -d '\\n')
+args_b64=''
+for a in "$@"; do
+  e=$(printf %s "$a" | base64 | tr -d '\\n')
+  if [ -z "$args_b64" ]; then args_b64="$e"; else args_b64="$args_b64,$e"; fi
+done
+file=$(basename "$0")
+if [ -n "\${${CALLS_ENV}}" ]; then
+  printf '%s\\t%s\\t%s\\n' "$file" "$args_b64" "$stdin_b64" >> "\${${CALLS_ENV}}"
+fi
+code=0
+for pair in \${${EXIT_CODES_ENV}}; do
+  case "$pair" in
+    "$file="*) code=\${pair#*=} ;;
+  esac
+done
+exit "$code"
 `;
 }
 
@@ -66,14 +68,22 @@ function restoreEnv(saved: SavedEnv): void {
   else process.env[EXIT_CODES_ENV] = saved.exitCodes;
 }
 
+function decodeBase64(value: string): string {
+  return Buffer.from(value, 'base64').toString('utf8');
+}
+
 function readCalls(callsPath: string): ClipboardExecCall[] {
   if (!existsSync(callsPath)) return [];
   return readFileSync(callsPath, 'utf8')
     .split('\n')
     .filter(Boolean)
     .map((line) => {
-      const call: ClipboardExecCall = JSON.parse(line);
-      return call;
+      const [file = '', argsField = '', stdinField = ''] = line.split('\t');
+      return {
+        file,
+        args: argsField ? argsField.split(',').map(decodeBase64) : [],
+        stdin: decodeBase64(stdinField),
+      };
     });
 }
 
@@ -98,21 +108,28 @@ export function installClipboardExecFixture(): ClipboardExecFixture {
 
   process.env['PATH'] = [bin, saved.path].filter(Boolean).join(delimiter);
   process.env[CALLS_ENV] = callsPath;
-  process.env[EXIT_CODES_ENV] = '{}';
+  process.env[EXIT_CODES_ENV] = '';
 
   const fixture: ClipboardExecFixture = {
     calls: () => readCalls(callsPath),
     reset: () => {
       rmSync(callsPath, { force: true });
-      process.env[EXIT_CODES_ENV] = '{}';
+      process.env[EXIT_CODES_ENV] = '';
     },
     restore: () => {
       restoreEnv(saved);
-      cleanupTempDir(root);
+      try {
+        cleanupTempDir(root);
+      } catch {
+        // A straggler fake killed by the production 2s stdin window can recreate calls.jsonl
+        // while the dir is deleted; the orphan sits under os.tmpdir(), so leave it to the OS.
+      }
       if (active === fixture) active = null;
     },
     setExitCodes: (codes) => {
-      process.env[EXIT_CODES_ENV] = JSON.stringify(codes);
+      process.env[EXIT_CODES_ENV] = Object.entries(codes)
+        .map(([file, code]) => `${file}=${code}`)
+        .join(' ');
     },
   };
 

@@ -6,7 +6,7 @@ import {
   restoreClipboardExecFixture,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -36,8 +36,8 @@ const DEFAULT_HOME_HINT = '/help · /config · /skills · ctrl+k commands';
 const HOME_HINT = '/help · /config · /skills · ctrl+r recent · ctrl+k commands';
 const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
 const FOCUS_BAR = '▌';
-// 35 real session files (saveSummary + loadAll) can outlive vi.waitFor's 1s default
-// under full-suite load; this filter-settle poll needs more headroom.
+// Real session-file I/O (saveSummary + load/loadAll) can outlive vi.waitFor's 1s default
+// under full-suite load; filter-settle polls need more headroom.
 const SESSION_FILTER_WAIT_MS = 5000;
 
 const COMMANDS: RuntimeCommandDef[] = [
@@ -98,7 +98,7 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 42, isSmall: false });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     const plannerLine = frame.split('\n').find((line) => line.includes('Claude Code')) ?? '';
@@ -112,7 +112,7 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('__|_||_|');
@@ -125,9 +125,9 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 34, isSmall: false });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('/');
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('/help');
@@ -148,7 +148,7 @@ describe('HomeScreen', () => {
     });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     const summaryLine = lineContaining(frame, 'Codex');
@@ -173,7 +173,7 @@ describe('HomeScreen', () => {
     }
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('feature 24');
@@ -193,7 +193,7 @@ describe('HomeScreen', () => {
     );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame() ?? '').toContain('short feature');
     expect(sessionsStore.get().sessions.length).toBeGreaterThan(0);
@@ -204,14 +204,14 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 42, isSmall: false });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const before = ui.lastFrame() ?? '';
     const plannerLine = lineContaining(before, 'Claude Code');
     const modeLine = lineContaining(before, 'standard');
 
     ui.stdin.write('/');
-    await tick(20);
+    await flushEffects();
 
     const after = ui.lastFrame() ?? '';
     expect(after).toContain('tab fill');
@@ -224,7 +224,7 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('__| (_)');
@@ -239,7 +239,7 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('__|_||_|');
@@ -251,7 +251,7 @@ describe('HomeScreen', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('__|_||_|');
@@ -274,7 +274,7 @@ describe('HomeScreen', () => {
     }
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     const visibleCount = Array.from({ length: 30 }, (_, i) => `tall feature ${i}`).filter((label) =>
@@ -301,7 +301,7 @@ describe('HomeScreen', () => {
     );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
@@ -350,12 +350,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   it('Ctrl+R focuses the recent-sessions list', async () => {
     seedSessions(3);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame() ?? '').not.toContain(FOCUS_BAR);
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(FOCUS_BAR);
@@ -367,7 +367,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     seedSessions(30);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
@@ -376,7 +376,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       expect(frame).toContain('filter sessions');
       expect(frame).toContain(RECENT_SESSIONS_HINT);
       expect(frame).toContain(FOCUS_BAR);
-    });
+    }, SESSION_FILTER_WAIT_MS);
     ui.unmount();
   });
 
@@ -384,10 +384,10 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
     seedSessions(30);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain(FOCUS_BAR);
@@ -400,12 +400,12 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     seedSessions(3);
     const marker = 'focus feature 1';
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     const before = columnIndexOf(ui.lastFrame() ?? '', marker);
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await flushEffects();
 
     const after = columnIndexOf(ui.lastFrame() ?? '', marker);
     expect(after).toBe(before);
@@ -414,10 +414,10 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   it('Ctrl+R is a no-op when there are no sessions', async () => {
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(DEFAULT_HOME_HINT);
@@ -428,17 +428,18 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   it('Down moves the cursor to the next visible session', async () => {
     seedSessions(3);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expectLineContains(ui.lastFrame() ?? '', 'focus feature 2', FOCUS_BAR);
-    });
+    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
       expectLineContains(ui.lastFrame() ?? '', 'focus feature 1', FOCUS_BAR);
-    });
+    }, SESSION_FILTER_WAIT_MS);
     ui.unmount();
   });
 
@@ -457,7 +458,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     }
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame() ?? '').not.toContain('ancient hidden focus target');
 
@@ -465,6 +466,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
     }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
     ui.stdin.write('ancient');
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
@@ -478,36 +480,40 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   it('Esc returns focus to the composer', async () => {
     seedSessions(3);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
+    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
 
     ui.stdin.write(ESC);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain(FOCUS_BAR);
       expect(frame).toContain(HOME_HINT);
-    });
+    }, SESSION_FILTER_WAIT_MS);
     ui.unmount();
   });
 
   it('Up at the top returns focus to the composer without wrapping', async () => {
     seedSessions(3);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
-    expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
+    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
 
     ui.stdin.write(ARROW_UP);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).not.toContain(FOCUS_BAR);
       expect(frame).toContain(HOME_HINT);
-    });
+    }, SESSION_FILTER_WAIT_MS);
     ui.unmount();
   });
 
@@ -525,22 +531,23 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('filter sessions');
       expect(frame).toContain('invisible feature');
-    });
+    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
 
     ui.stdin.write('zzznomatch');
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').not.toContain('invisible feature');
-    });
+    }, SESSION_FILTER_WAIT_MS);
 
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(routerStore.get().screen).toBe('home');
     ui.unmount();
@@ -560,22 +567,23 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('filter sessions');
       expect(frame).toContain('invisible copy feature');
-    });
+    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
 
     ui.stdin.write('zzznomatch');
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').not.toContain('invisible copy feature');
-    });
+    }, SESSION_FILTER_WAIT_MS);
 
     ui.stdin.write('y');
-    await tick(20);
+    await flushEffects();
 
     expect(readClipboardExecCalls()).toHaveLength(0);
     ui.unmount();
@@ -599,12 +607,17 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     saveState({ projectDir, sessionId: 'resume-me' }, savedState);
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
+    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(routerStore.get().screen).toBe('workflow');
+    }, SESSION_FILTER_WAIT_MS);
 
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
@@ -628,16 +641,17 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    });
+    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('summary');
-    });
+    }, SESSION_FILTER_WAIT_MS);
 
     const route = routerStore.get();
     if (route.screen === 'summary') {
@@ -660,16 +674,17 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     );
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
-    });
+    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain('failed without a summary');
-    });
+    }, SESSION_FILTER_WAIT_MS);
 
     expect(routerStore.get().screen).toBe('home');
     expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
@@ -681,10 +696,10 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     inputHistoryStore.push('recalled prompt');
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_UP);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('recalled prompt');
@@ -695,18 +710,18 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   it('drops focus and keeps the composer usable when the terminal shrinks below the list', async () => {
     seedSessions(3);
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
 
     terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').not.toContain(FOCUS_BAR);
 
     ui.stdin.write('hi');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('hi');
     ui.unmount();
   });

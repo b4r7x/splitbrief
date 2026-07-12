@@ -9,6 +9,7 @@ import {
 } from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { markInterruptResumed } from '../../stores/workflow/actions.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
@@ -172,8 +173,60 @@ describe('buildPromptCallbacks onTaskReviewNeeded', () => {
 });
 
 describe('buildPromptCallbacks onContinuationNeeded', () => {
-  it('returns an empty answer so the continuation loop can use its default retry text', async () => {
-    const result = await makeCallbacks('').onContinuationNeeded?.('partial output');
+  beforeEach(() => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+  });
+
+  it('returns an empty answer without asking when the workflow is already unwinding', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>();
+    const callbacks = buildPromptCallbacks()({
+      inputMode: { ...makeInputMode(''), setQuestionMode },
+      abortedRef: { current: false },
+      controller,
+      onComplete: () => {},
+    });
+
+    const result = await callbacks.onContinuationNeeded?.('partial output');
+
     expect(result).toBe('');
+    expect(setQuestionMode).not.toHaveBeenCalled();
+  });
+
+  it('onContinuationNeeded marks the workflow interrupted and re-asks after a superseded empty resolution', async () => {
+    const statuses: string[] = [];
+    const setQuestionMode = vi
+      .fn<UseInputModeResult['setQuestionMode']>()
+      .mockImplementationOnce(async () => {
+        statuses.push(lifecycleStore.get().status);
+        return '';
+      })
+      .mockImplementationOnce(async () => {
+        statuses.push(lifecycleStore.get().status);
+        markInterruptResumed();
+        return 'focus on retries';
+      });
+    const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setQuestionMode });
+
+    const result = await callbacks.onContinuationNeeded?.('partial output');
+
+    expect(result).toBe('focus on retries');
+    expect(setQuestionMode).toHaveBeenCalledTimes(2);
+    expect(statuses).toEqual(['interrupted', 'interrupted']);
+  });
+
+  it('onContinuationNeeded returns the submission once the interrupt is cleared', async () => {
+    const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>(async () => {
+      markInterruptResumed();
+      return '';
+    });
+    const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setQuestionMode });
+
+    const result = await callbacks.onContinuationNeeded?.('partial output');
+
+    expect(result).toBe('');
+    expect(setQuestionMode).toHaveBeenCalledTimes(1);
+    expect(lifecycleStore.get().status).toBe('running');
   });
 });

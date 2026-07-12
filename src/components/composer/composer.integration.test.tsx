@@ -9,7 +9,7 @@ import {
   composerHintZoneRects,
   computeComposerHintBudget,
 } from './hint-zones.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -56,6 +56,10 @@ const TAB = '\t';
 const ENTER = '\r';
 const CTRL_B = '\x02';
 const CTRL_E = '\x05';
+// The @-reference suggestions wait on an async project-file scan (a git ls-files attempt, then a
+// readdir walk); that subprocess spawn can take multiple seconds when the box runs several vitest
+// forks at once.
+const FILE_SCAN_WAIT_MS = 15_000;
 
 function renderDockedComposer(props: ComponentProps<typeof Composer>) {
   return renderFeature(
@@ -95,19 +99,20 @@ describe('composer integration: completions', () => {
       onSubmit: (t) => submits.push(t),
       onRuntimeCommand: (c) => commandCalls.push(c),
     });
+    await flushEffects();
 
     ui.stdin.write('/mde');
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame()).toContain('/mde');
 
     ui.stdin.write(TAB);
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame()).toContain('/mode');
 
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(commandCalls).toEqual(['/mode']);
     expect(submits).toEqual([]);
@@ -125,16 +130,17 @@ describe('composer integration: completions', () => {
       onSubmit: () => {},
       onRuntimeCommand: (c) => commandCalls.push(c),
     });
+    await flushEffects();
 
     ui.stdin.write('/');
-    await tick(20);
+    await flushEffects();
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('/mode');
     });
     ui.stdin.write(DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(TAB);
-    await tick(20);
+    await flushEffects();
 
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('/mode');
@@ -143,7 +149,7 @@ describe('composer integration: completions', () => {
     expect(commandCalls).toEqual([]);
 
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
     await vi.waitFor(() => {
       expect(commandCalls).toEqual(['/mode']);
     });
@@ -163,29 +169,30 @@ describe('composer integration: completions', () => {
         onRuntimeCommand: () => {},
       });
 
+      await flushEffects();
       ui.stdin.write('@src/');
-      await tick(20);
+      await flushEffects();
 
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain('src/app.ts');
-      });
-      await tick(20);
+      }, FILE_SCAN_WAIT_MS);
+      await flushEffects();
 
       ui.stdin.write(TAB);
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain('@src/app.ts');
       });
       ui.stdin.write(' done');
-      await tick(20);
+      await flushEffects();
       ui.stdin.write(ENTER);
-      await tick(20);
+      await flushEffects();
 
       expect(submits).toEqual(['@src/app.ts done']);
       ui.unmount();
     } finally {
       cleanupTempDir(projectDir);
     }
-  });
+  }, 20_000);
 
   it('accepts the arrow-highlighted file suggestion with Enter, then submits on the next Enter', async () => {
     const projectDir = seedProjectFiles('composer-at-file-arrow', [
@@ -202,20 +209,21 @@ describe('composer integration: completions', () => {
         onSubmit: (text) => submits.push(text),
         onRuntimeCommand: () => {},
       });
+      await flushEffects();
 
       ui.stdin.write('@src');
-      await tick(20);
+      await flushEffects();
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain('src/app.ts');
         expect(ui.lastFrame()).toContain('src/components/composer/composer.tsx');
         expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(
           new RegExp(`${glyph('cursor')}\\s+src/app\\.ts`),
         );
-      });
-      await tick(20);
+      }, FILE_SCAN_WAIT_MS);
+      await flushEffects();
 
       ui.stdin.write(DOWN);
-      await tick(20);
+      await flushEffects();
       await vi.waitFor(() => {
         expect(stripAnsiStyles(ui.lastFrame() ?? '')).toMatch(
           new RegExp(`${glyph('cursor')}\\s+src/components/composer/composer\\.tsx`),
@@ -228,14 +236,14 @@ describe('composer integration: completions', () => {
       expect(submits).toEqual([]);
 
       ui.stdin.write(ENTER);
-      await tick(20);
+      await flushEffects();
 
       expect(submits).toEqual(['@src/components/composer/composer.tsx']);
       ui.unmount();
     } finally {
       cleanupTempDir(projectDir);
     }
-  });
+  }, 20_000);
 
   it('Escape dismisses file suggestions without clearing the typed reference', async () => {
     const projectDir = seedProjectFiles('composer-at-file-escape', ['src/app.ts']);
@@ -249,30 +257,31 @@ describe('composer integration: completions', () => {
         onSubmit: (text) => submits.push(text),
         onRuntimeCommand: () => {},
       });
+      await flushEffects();
 
       ui.stdin.write('@src');
-      await tick(20);
+      await flushEffects();
 
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain('src/app.ts');
-      });
+      }, FILE_SCAN_WAIT_MS);
 
       ui.stdin.write('\u001b');
-      await tick(20);
+      await flushEffects();
 
       const dismissedFrame = ui.lastFrame() ?? '';
       expect(dismissedFrame).toContain('@src');
       expect(dismissedFrame).not.toContain('src/app.ts');
 
       ui.stdin.write(ENTER);
-      await tick(20);
+      await flushEffects();
 
       expect(submits).toEqual(['@src']);
       ui.unmount();
     } finally {
       cleanupTempDir(projectDir);
     }
-  });
+  }, 20_000);
 
   it('routes Ctrl+E to the review edit shortcut only in review mode', async () => {
     const edit = vi.fn();
@@ -286,9 +295,10 @@ describe('composer integration: completions', () => {
       onRuntimeCommand: () => {},
       onEditShortcut: edit,
     });
+    await flushEffects();
 
     ui.stdin.write(CTRL_E);
-    await tick(20);
+    await flushEffects();
 
     expect(edit).toHaveBeenCalledTimes(1);
     expect(submits).toEqual([]);
@@ -309,16 +319,17 @@ describe('composer integration: completions', () => {
       onEditShortcut: edit,
     });
 
+    await flushEffects();
     ui.stdin.write('ab');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(CTRL_B);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(CTRL_E);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('!');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(edit).not.toHaveBeenCalled();
     expect(submits).toEqual(['ab!']);
@@ -348,10 +359,11 @@ describe('composer integration: completions', () => {
       onRuntimeCommand: (command) => commandCalls.push(command),
     });
 
+    await flushEffects();
     ui.stdin.write('/tmp/path');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(submits).toEqual(['/tmp/path']);
     expect(commandCalls).toEqual([]);
@@ -371,9 +383,10 @@ describe('composer integration: completions', () => {
       onRuntimeCommand: () => {},
       onEmptySubmit: () => emptySubmits.push('empty'),
     });
+    await flushEffects();
 
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(submits).toEqual(['']);
     expect(emptySubmits).toEqual([]);
@@ -394,10 +407,11 @@ describe('composer integration: completions', () => {
       onEmptySubmit: () => emptySubmits.push('empty'),
     });
 
+    await flushEffects();
     ui.stdin.write('   ');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(submits).toEqual(['   ']);
     expect(emptySubmits).toEqual([]);
@@ -418,15 +432,16 @@ describe('composer integration: completions', () => {
         onRuntimeCommand: () => {},
       });
 
+      await flushEffects();
       ui.stdin.write('email user@example.com');
-      await tick(20);
+      await flushEffects();
 
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('user@example.com');
       expect(frame).not.toContain('src/app.ts');
 
       ui.stdin.write(ENTER);
-      await tick(20);
+      await flushEffects();
 
       expect(submits).toEqual(['email user@example.com']);
       ui.unmount();
@@ -451,8 +466,9 @@ describe('composer paste capture', () => {
       onRuntimeCommand: () => {},
     });
 
+    await flushEffects();
     ui.stdin.write('line 1\nline 2\nline 3\nline 4\nline 5');
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('[paste #1 +5 lines]');
@@ -472,12 +488,13 @@ describe('composer paste capture', () => {
       onRuntimeCommand: () => {},
     });
 
+    await flushEffects();
     ui.stdin.write('alpha\nbeta\ngamma\ndelta');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('fix the log');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(submits).toEqual(['fix the log\n\nalpha\nbeta\ngamma\ndelta']);
     ui.unmount();
@@ -498,9 +515,10 @@ describe('composer row-focus hand-off', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
+    await flushEffects();
 
     ui.stdin.write('hello');
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame()).toContain('hello');
     ui.unmount();
@@ -517,9 +535,10 @@ describe('composer row-focus hand-off', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
+    await flushEffects();
 
     ui.stdin.write('hello');
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame()).not.toContain('hello');
     ui.unmount();
@@ -541,7 +560,7 @@ describe('composer in-box footer hints', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Ctrl+D detach');
@@ -560,7 +579,7 @@ describe('composer in-box footer hints', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Ctrl+D detach');
@@ -580,8 +599,9 @@ describe('composer in-box footer hints', () => {
       onSubmit: (text) => submits.push(text),
       onRuntimeCommand: () => {},
     });
+    await flushEffects();
     ui.stdin.write('stale answer');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame()).toContain('stale answer');
 
     ui.rerender(
@@ -597,11 +617,11 @@ describe('composer in-box footer hints', () => {
         />
       </Box>,
     );
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame()).not.toContain('stale answer');
 
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
     expect(submits).not.toContain('stale answer');
     ui.unmount();
   });
@@ -627,7 +647,7 @@ describe('composer feedback', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Session "alpha');
@@ -653,7 +673,7 @@ describe('composer feedback', () => {
       onSubmit: () => {},
       onRuntimeCommand: () => {},
     });
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Cannot resume "');
@@ -683,7 +703,7 @@ describe('composer integration: in-box hint click zones fire store actions', () 
       boxHints: { keys: 'Ctrl+G', cost: '$0.41' },
     });
 
-    await tick(20);
+    await flushEffects();
 
     // The docked composer is bottom-anchored above the one-row footer: the single-line hint row sits
     // at rows-visibleRows-1.
@@ -698,7 +718,7 @@ describe('composer integration: in-box hint click zones fire store actions', () 
     const costZone = hitTopmostZone(costRect.left, costRect.top);
     expect(costZone?.id).toBe('composer-hint-cost');
     costZone?.onClick?.();
-    await tick(20);
+    await flushEffects();
     expect(overlayStore.get().active).toBe('cost-drilldown');
 
     ui.unmount();
@@ -721,7 +741,7 @@ describe('composer integration: in-box hint click zones fire store actions', () 
       </Box>,
     );
 
-    await tick(20);
+    await flushEffects();
 
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     const hintRowIndex = lines.findIndex((line) => line.includes(cost));
@@ -751,7 +771,7 @@ describe('composer integration: in-box hint click zones fire store actions', () 
       boxHints: { keys: 'Ctrl+G', cost: '$0.41' },
     });
 
-    await tick(20);
+    await flushEffects();
 
     const display = compactComposerHints(
       { keys: 'Ctrl+G', cost: '$0.41' },
@@ -790,7 +810,7 @@ describe('composer review-column hint zones register against the inset box', () 
       boxLeftOffset: REVIEW_LEFT_OFFSET,
     });
 
-    await tick(20);
+    await flushEffects();
 
     const display = compactComposerHints(
       { keys: 'Ctrl+G', cost: '$0.41' },
@@ -824,7 +844,7 @@ describe('composer review-column hint zones register against the inset box', () 
       width: REVIEW_WIDTH,
     });
 
-    await tick(20);
+    await flushEffects();
 
     const display = compactComposerHints(
       { keys: 'Ctrl+G', cost: '$0.41' },

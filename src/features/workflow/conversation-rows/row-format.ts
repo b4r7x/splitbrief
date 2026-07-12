@@ -89,6 +89,7 @@ export interface CardRowsInput {
   labelTone: ConversationRowTone;
   valueTone?: ConversationRowTone;
   kind?: ConversationRowKind;
+  markerTone?: ConversationRowTone;
 }
 
 export interface CardRowsWindowInput extends CardRowsInput {
@@ -97,7 +98,16 @@ export interface CardRowsWindowInput extends CardRowsInput {
 }
 
 export function cardRowsWindow(input: CardRowsWindowInput): ConversationRow[] {
-  const { keyPrefix, label, value, width, labelTone, valueTone = 'textDim', kind = 'card' } = input;
+  const {
+    keyPrefix,
+    label,
+    value,
+    width,
+    labelTone,
+    valueTone = 'textDim',
+    kind = 'card',
+    markerTone,
+  } = input;
   const cleanLabel = sanitizeRowDisplayText(label);
   const cleanValue = value === undefined ? undefined : sanitizeRowDisplayText(value);
   const labelText = cleanValue ? `${cleanLabel}  ` : cleanLabel;
@@ -109,21 +119,27 @@ export function cardRowsWindow(input: CardRowsWindowInput): ConversationRow[] {
   return wrapped.slice(start, end).map((line, offset) => {
     const index = start + offset;
     if (index > 0 || !cleanValue) {
-      return row({
-        key: `${keyPrefix}-${index}`,
-        text: line,
-        tone: index > 0 ? valueTone : labelTone,
-        kind,
-      });
+      return {
+        ...row({
+          key: `${keyPrefix}-${index}`,
+          text: line,
+          tone: index > 0 ? valueTone : labelTone,
+          kind,
+        }),
+        ...(markerTone === undefined ? {} : { markerTone }),
+      };
     }
-    return segmentedRow(
-      `${keyPrefix}-${index}`,
-      [
-        { text: labelText, tone: labelTone },
-        { text: line.slice(labelText.length), tone: valueTone },
-      ],
-      kind,
-    );
+    return {
+      ...segmentedRow(
+        `${keyPrefix}-${index}`,
+        [
+          { text: labelText, tone: labelTone },
+          { text: line.slice(labelText.length), tone: valueTone },
+        ],
+        kind,
+      ),
+      ...(markerTone === undefined ? {} : { markerTone }),
+    };
   });
 }
 

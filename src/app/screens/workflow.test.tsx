@@ -45,6 +45,14 @@ const reviewParser = await import('../../features/workflow/review-parser.js');
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 const ENTER = '\r';
 const CTRL_E = '\x05';
+// The fake $EDITOR subprocess round-trip can outlive vi.waitFor's 1s default under full-suite load.
+const REVIEW_EDITOR_WAIT_MS = 5000;
+// Entering review mode remounts the footer composer (WorkflowFooter re-parents it into the
+// review column), and the remounted input re-attaches its stdin listener in a passive-effect
+// flush one task after the frame first shows the review surface — keystrokes written before
+// that flush are delivered to the deleted instance and lost. Settle one timer turn (which is
+// ordered after the already-queued flush) before typing review commands.
+const settleReviewInput = () => tick(20);
 
 const ipcServers: IpcServer[] = [];
 const ipcTempDirs: string[] = [];
@@ -317,6 +325,7 @@ describe('WorkflowScreen key arbitration', () => {
       expect(frame).toContain('approve | Ctrl+E/e edit');
       expect(frame).not.toContain('queue message to running workflow');
     });
+    await settleReviewInput();
 
     ui.stdin.write('reject');
     await tick(20);
@@ -704,6 +713,7 @@ describe('WorkflowScreen key arbitration', () => {
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Review shortcut task');
       });
+      await settleReviewInput();
 
       ui.stdin.write('edit');
       await tick(20);
@@ -711,7 +721,7 @@ describe('WorkflowScreen key arbitration', () => {
 
       await vi.waitFor(() => {
         expect(approvalResult).toEqual({ approved: false, action: 'edit' });
-      });
+      }, REVIEW_EDITOR_WAIT_MS);
       expect(readFileSync(logPath, 'utf-8')).toContain(tasksPath);
       expect(readFileSync(tasksPath, 'utf-8')).toContain('Review shortcut task edited');
 
@@ -800,6 +810,7 @@ describe('WorkflowScreen key arbitration', () => {
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain(`Original ${type} review`);
       });
+      await settleReviewInput();
 
       ui.stdin.write('edit');
       await tick(20);
@@ -807,7 +818,7 @@ describe('WorkflowScreen key arbitration', () => {
 
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain(`Edited ${type} review`);
-      });
+      }, REVIEW_EDITOR_WAIT_MS);
       expect(readFileSync(logPath, 'utf-8')).toContain(reviewPath);
       expect(approvalResult).toBeUndefined();
 

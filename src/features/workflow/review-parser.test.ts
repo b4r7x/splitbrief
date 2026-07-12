@@ -115,6 +115,38 @@ describe('createReviewInputHandler – implementer-phase guard (Bug #5)', () => 
   });
 });
 
+describe('createReviewInputHandler – pending un-parked boundary interrupt', () => {
+  it('typed text shows the pending-interrupt notice instead of the input-disabled error', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('steer toward smaller diffs');
+
+    const { message, isError } = feedbackStore.get();
+    expect(message).not.toContain('Input disabled during task implementation');
+    expect(isError).toBe(false);
+    expect(message).toBe('Interrupt pending — stopping at the next step boundary.');
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('typed text is not queued as a planner message during the un-parked window', async () => {
+    lifecycleStore.__testReset({ phase: 'researching', status: 'interrupted' });
+    const enqueue = vi.fn(() => ({ status: 'accepted' as const, messageId: 'msg-1' }));
+    setQueueHandler(enqueue);
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
+    await handleInput('add error handling');
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Interrupt pending — stopping at the next step boundary.',
+    });
+  });
+});
+
 describe('createReviewInputHandler – enqueue during live planner phase (Bug #4)', () => {
   it('queues user input while the planner is researching', async () => {
     setPhase('researching');
@@ -419,5 +451,21 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     expect(exitIndex).toBeGreaterThanOrEqual(0);
     expect(enterIndex).toBeGreaterThan(exitIndex);
     expect(stdinCalls).toEqual(['pause', 'resume']);
+  });
+});
+
+describe('createReviewInputHandler – question mode', () => {
+  it('question submission clears the interrupted state before resolving', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'interrupted' });
+    const resolved: Array<{ value: unknown; status: string }> = [];
+    const { handleInput } = createReviewInputHandler(
+      makeInputMode('question', (value) => {
+        resolved.push({ value, status: lifecycleStore.get().status });
+      }),
+    );
+
+    await handleInput('steer toward smaller diffs');
+
+    expect(resolved).toEqual([{ value: 'steer toward smaller diffs', status: 'running' }]);
   });
 });

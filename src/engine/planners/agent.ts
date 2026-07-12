@@ -12,6 +12,8 @@ export function createAgentPlanner(config: Config): Planner {
       command: plannerCfg.command,
       args: plannerCfg.args ?? [],
       outputFormat: plannerCfg.outputFormat ?? 'text',
+      idleWarnMs: plannerCfg.idleWarnMs,
+      idleKillMs: plannerCfg.idleKillMs,
     },
     'Agent planner',
     {

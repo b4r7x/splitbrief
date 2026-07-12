@@ -1,10 +1,11 @@
-import type {
-  Implementer,
-  ImplementerOptions,
-  ImplementerPublisher,
-  ImplementerResult,
-  InvokeOpts,
-  RetryOptions,
+import {
+  composeSteeredPrompt,
+  type Implementer,
+  type ImplementerOptions,
+  type ImplementerPublisher,
+  type ImplementerResult,
+  type InvokeOpts,
+  type RetryOptions,
 } from './types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
@@ -119,6 +120,10 @@ export interface ImplementerBaseConfig {
   publisher?: ImplementerPublisher | undefined;
 }
 
+// Watchdog idle-kills deliberately resolve to a failed result instead of throwing:
+// the continuation loop's parked retry prompt would replace the one-shot task prompt
+// with interruption boilerplate, while the task retry/escalation ladder rebuilds the
+// full Task Brief per attempt (docs/CONFIGURATION.md, idleKillMs).
 function defaultShouldThrow(err: unknown): boolean {
   return processError.isNotFound(err) || processError.isTimeout(err);
 }
@@ -417,7 +422,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
 
   return {
     async implement(opts: ImplementerOptions): Promise<ImplementerResult> {
-      const prompt = opts.continuationPrompt ?? buildPrompt(opts);
+      const prompt = composeSteeredPrompt(opts.continuationPrompt ?? buildPrompt(opts), opts.steer);
       return runPipeline(opts, prompt, 0);
     },
 

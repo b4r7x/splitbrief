@@ -5,6 +5,8 @@ import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+import type { ImplementerPublisher } from './types.js';
 import { createAgentSdkImplementer } from './agent-sdk.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 
@@ -352,5 +354,41 @@ describe('createAgentSdkImplementer', () => {
       if (origEnv === undefined) delete process.env['ANTHROPIC_API_KEY'];
       else process.env['ANTHROPIC_API_KEY'] = origEnv;
     }
+  });
+
+  it('threads a configured idleWarnMs override into the SDK backend', async () => {
+    queryMock.mockImplementationOnce(async function* () {
+      yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      writeFileSync(join(projectDir, 'touched.txt'), 'v2\n');
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'ok' }] } };
+      yield {
+        type: 'result',
+        result: 'ok',
+        session_id: 'sess-1',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      };
+    });
+
+    const cfg = makeAgentSdkConfig({ idleWarnMs: 30 });
+    const events: RunnerCallEvent[] = [];
+    const publisher: ImplementerPublisher = {
+      publishRunning: () => {},
+      publishCallEvent: ({ event }) => events.push(event),
+      publishDone: () => {},
+      publishFailed: () => {},
+    };
+    const implementer = createAgentSdkImplementer(cfg, { publisher });
+
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+    });
+
+    expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
   });
 });

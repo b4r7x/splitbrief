@@ -11,7 +11,6 @@ import { createCommandExistsAvailability } from '../availability.js';
 import { runClaudeOneShot } from '../runners/claude-invoke.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { runnerConfigError } from '../runners/errors.js';
-import { IMPLEMENTER_TIMEOUT_MS } from '../constants.js';
 
 export function createCliImplementer(
   config: CliImplementerConfig,
@@ -19,7 +18,7 @@ export function createCliImplementer(
 ): Implementer {
   const toolName = config.tool;
   const tool = CLI_TOOLS[toolName];
-  const timeout = config.timeout ?? IMPLEMENTER_TIMEOUT_MS;
+  const timeout = config.timeout;
 
   return createImplementerBase({
     extractsCode: false,
@@ -29,8 +28,11 @@ export function createCliImplementer(
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput, signal, callContext } = opts;
       const effectiveModel = resolveAutoModel(config.model, toolName);
-      const timeoutSignal = AbortSignal.timeout(timeout);
-      const composedSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+      const timeoutSignal = timeout !== undefined ? AbortSignal.timeout(timeout) : undefined;
+      const composedSignal =
+        signal && timeoutSignal
+          ? AbortSignal.any([signal, timeoutSignal])
+          : (timeoutSignal ?? signal);
       const env = opts.sandboxEnv;
 
       try {
@@ -45,6 +47,8 @@ export function createCliImplementer(
             permissionMode: 'acceptEdits',
             signal: composedSignal,
             env,
+            idleWarnMs: config.idleWarnMs,
+            idleKillMs: config.idleKillMs,
           });
         }
 
@@ -66,9 +70,13 @@ export function createCliImplementer(
           onCallEvent: opts.onCallEvent,
           callContext,
           signal: composedSignal,
+          idle: {
+            warnMs: config.idleWarnMs,
+            killMs: config.idleKillMs,
+          },
         });
       } catch (err: unknown) {
-        if (timeoutSignal.aborted && !signal?.aborted) {
+        if (timeout !== undefined && timeoutSignal?.aborted && !signal?.aborted) {
           throw processError.timeout({
             command: `Tool implementer (${toolName})`,
             label: `Tool implementer (${toolName})`,

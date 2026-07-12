@@ -23,8 +23,10 @@ export function createAgentSdkPlanner(opts: {
   initialSessionId?: string | null | undefined;
   effort?: EffortLevel | undefined;
   timeout?: number | undefined;
+  idleWarnMs?: number | undefined;
+  idleKillMs?: number | undefined;
 }): Planner {
-  const { model, initialSessionId, effort, timeout } = opts;
+  const { model, initialSessionId, effort, timeout, idleWarnMs, idleKillMs } = opts;
   const apiKey = resolveApiKeyOverride(opts.apiKey);
   const effectiveModel = resolveAutoModel(model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({
@@ -32,6 +34,8 @@ export function createAgentSdkPlanner(opts: {
     permissionMode: PLANNER_PERMISSION_MODE,
     apiKey,
     initialSessionId: initialSessionId ?? null,
+    idleWarnMs,
+    idleKillMs,
   });
 
   const invoke = ({

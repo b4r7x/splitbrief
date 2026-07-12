@@ -119,7 +119,7 @@ describe('Header — runner summary', () => {
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
     expect(frame).toContain('Planner');
-    expect(frame).toContain('claude-code');
+    expect(frame).toContain('Claude Code');
     expect(frame).toContain('Implementer');
     expect(frame).toContain('Qwen 2.5 Coder 7B');
     expect(frame).toContain(glyph('connectorSame'));
@@ -134,7 +134,7 @@ describe('Header — runner summary', () => {
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
-    expect(frame).toContain('claude-code');
+    expect(frame).toContain('Claude Code');
     expect(frame).toContain('Qwen 2.5 Coder 7B');
     expect(frame).toContain(glyph('connectorSame'));
     expect(frame).not.toContain('Planner');
@@ -151,7 +151,7 @@ describe('Header — runner summary', () => {
     const instance = render(<Header startedAt={STARTED_AT} />);
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
-    expect(frame).not.toContain('claude-code');
+    expect(frame).not.toContain('Claude Code');
     expect(frame).not.toContain('Qwen');
     expect(frame).toContain('0:05');
     instance.unmount();
@@ -194,8 +194,8 @@ describe('Header — rail and elapsed', () => {
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
     // The rail's stage labels are present; the verbose phase verb never reaches the header.
-    expect(frame).toContain('plan');
-    expect(frame).toContain('build');
+    expect(frame).toContain('Plan');
+    expect(frame).toContain('Build');
     expect(frame).not.toContain('planning');
     instance.unmount();
   });

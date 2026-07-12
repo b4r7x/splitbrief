@@ -28,19 +28,20 @@ import { addTuiEvent, createTuiSink } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
 import {
-  setAbortHandler,
+  createAbortHandlerScope,
   setCancelHandler,
   setClearQueueHandler,
   setQueueHandler,
   setRewindHandler,
   clearAllHandlers,
+  consumeBoundaryInterrupt,
 } from '../handlers.js';
 import { killAllProcesses } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { generateSessionId, readActive } from '../../../core/sessions/lifecycle.js';
-import { configForSessionTranscriptPolicy } from '../../../core/sessions/io.js';
+import { configForSessionTranscriptPolicy, readSession } from '../../../core/sessions/io.js';
 import { transition } from '../../../core/state/machine.js';
 import { isResumable } from '../../../core/phases.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -110,16 +111,19 @@ export function useWorkflowRunner({
 
   const resumeState = inlineResume ?? initialResumeState;
 
-  const sinks: WorkflowSinks = {
-    setAbortHandler,
-    setClearQueueHandler,
-    setQueueHandler,
-  };
-
   const buildCallbacks = buildPromptCallbacks();
   const recoveryDriverFactory = createRecoveryDriver();
 
   const startWorkflow = useEffectEvent(async (controller: AbortController) => {
+    // A fresh abort-handler scope per run: a superseded run's late pops (its
+    // aborted body settles after the rewind cleanup) drain its own scope and
+    // cannot steal this run's live handler.
+    const sinks: WorkflowSinks = {
+      setAbortHandler: createAbortHandlerScope(),
+      setClearQueueHandler,
+      setQueueHandler,
+      consumeBoundaryInterrupt,
+    };
     let stateForRun = resumeState;
     const rewindFeedbackForRun = pendingRewindFeedbackRef.current;
     pendingRewindFeedbackRef.current = undefined;
@@ -250,6 +254,12 @@ export function useWorkflowRunner({
 
         if (isWorkflowAborted(controller, abortedRef)) return;
 
+        const session = readSession({ projectDir, sessionId: activeSessionId });
+        if (session?.status === 'failed') {
+          onComplete({ summary, sessionId: activeSessionId, status: 'failed' });
+          return;
+        }
+
         const savedSessionId = activeSessionId;
         const saved = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
 
@@ -260,7 +270,18 @@ export function useWorkflowRunner({
           onComplete({ summary, sessionId: savedSessionId, status: 'interrupted' });
           return;
         }
-        if (!saved?.pendingRecovery) return;
+        if (!saved?.pendingRecovery) {
+          // The engine run returned while the lifecycle still says interrupted —
+          // e.g. Esc-Esc aborted an approval-gate regeneration, which cancels the
+          // planning phase without publishing a cancellation event or parking a
+          // continuation prompt. Nothing is parked, so the interrupted byline's
+          // Enter-retry promise cannot be kept here; drive to the terminal
+          // summary view instead of leaving a dead workflow screen.
+          if (lifecycleStore.get().status === 'interrupted') {
+            onComplete({ summary, sessionId: savedSessionId, status: 'interrupted' });
+          }
+          return;
+        }
 
         activeSessionId = savedSessionId;
         sessionIdRef.current = savedSessionId;

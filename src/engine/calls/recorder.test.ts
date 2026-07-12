@@ -218,6 +218,23 @@ describe('createRunnerCallRecorder', () => {
     );
   });
 
+  it('stalled and stallCleared emit stall events', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 5,
+      onEvent: (event) => events.push(event),
+    });
+
+    recorder.stalled({ silentMs: 60_000, ts: 6 });
+    recorder.stallCleared({ ts: 7 });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'call_stalled', silentMs: 60_000 }),
+    );
+    expect(events).toContainEqual(expect.objectContaining({ type: 'call_stall_cleared' }));
+  });
+
   it('sanitizes direct unknown-upstream raw previews before emitting events', () => {
     const events: RunnerCallEvent[] = [];
     const recorder = createRunnerCallRecorder({

@@ -124,6 +124,8 @@ export function projectRunnerCallActivity(
       });
     case 'call_started':
     case 'call_usage':
+    case 'call_stalled':
+    case 'call_stall_cleared':
       return null;
   }
 }

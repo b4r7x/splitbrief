@@ -54,6 +54,11 @@ export function saveSummary(ref: SessionRef, session: Session): void {
   );
 }
 
+export function readSession(ref: SessionRef): Session | null {
+  const { projectDir, sessionId } = ref;
+  return readSummaryFile(join(sessionDir(projectDir, sessionId), 'summary.json'), sessionId);
+}
+
 function recoveredFeature(projectDir: string, sessionId: string, state: WorkflowState): string {
   const lockfile = readSessionLockfileData({ sessionDir: sessionDir(projectDir, sessionId) });
   if (lockfile.kind === 'valid' && lockfile.data.feature === TRANSCRIPT_OMITTED_FEATURE) {

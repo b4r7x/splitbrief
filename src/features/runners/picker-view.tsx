@@ -21,7 +21,7 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 const CUSTOM_ROW_OFFSET = 1;
 
 function toolPreview(item: PickerOption, modelCount: number): string {
-  const name = item.displayName.toLowerCase();
+  const name = item.displayName;
   const isCommandBased = item.kind === 'shell' || item.kind === 'agent';
   if (!item.available && !isCommandBased && item.kind !== 'agent-sdk') {
     return `${name} · ${item.kind} · ${isProviderLocal(item.id) ? 'no models' : 'unavailable'}`;
@@ -31,10 +31,10 @@ function toolPreview(item: PickerOption, modelCount: number): string {
 }
 
 function modelPreview(model: ModelOption, tool: PickerOption | undefined): string {
-  const parts = [formatModelName(model.id).toLowerCase()];
-  const ctx = formatContextLength(model.contextLength).toLowerCase();
+  const parts = [formatModelName(model.id)];
+  const ctx = formatContextLength(model.contextLength);
   if (ctx) parts.push(`${ctx} context`);
-  if (tool) parts.push(`via ${tool.displayName.toLowerCase()}`);
+  if (tool) parts.push(`via ${tool.displayName}`);
   return parts.join(' · ');
 }
 
@@ -132,7 +132,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
   const resolvePreview = (ctx: PreviewContext<PickerOption, ModelOption>): string | undefined => {
     if (ctx.isOnLeftCustomItem) return undefined;
     if (ctx.isOnCustomItem) {
-      const toolName = (catalog.currentItem?.displayName ?? role).toLowerCase();
+      const toolName = catalog.currentItem?.displayName ?? role;
       return `add a model id ${toolName} can't auto-detect`;
     }
     if (ctx.activeColumn === 'right' && ctx.rightItem) {

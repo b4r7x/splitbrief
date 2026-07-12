@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { makeImplementerGenerate } from '#testing/helpers/events.js';
+import {
+  makeImplementerGenerate,
+  makePlannerHeartbeat,
+  makePlannerStatus,
+  makeTaskTokens,
+} from '#testing/helpers/events.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { resetEventBlockCache } from './block-cache.js';
@@ -429,6 +434,235 @@ describe('buildConversationRows', () => {
     );
     expect(text).toContain(activityLine('ERR', 'exit_code_1: Command failed: npm test'));
     expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
+  });
+
+  it('row-less events never split an activity batch', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' }),
+          makePlannerHeartbeat({ ts: 1 }),
+          activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
+          makePlannerStatus({ ts: 2, phase: 'researching' }),
+          activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
+          makeTaskTokens({ ts: 3 }),
+          activity({ sequence: 4, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
+        ],
+      },
+    ];
+
+    const { rows, renderableCount } = buildConversationRows({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(renderableCount).toBe(4);
+    expect(text.match(/Plan activity/g)).toHaveLength(1);
+    expect(text).toContain('Plan activity  4 updates  [Codex]');
+    expect(text).not.toContain('a.ts');
+    expect(text).toContain('b.ts');
+    expect(text).toContain('c.ts');
+    expect(text).toContain('d.ts');
+  });
+
+  it('a visible foreign row closes the activity batch', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' }),
+          activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
+          activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
+          activity({ sequence: 4, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
+          { type: 'planner_text', ts: 5, phase: 'researching', text: 'Status update.' },
+          activity({ sequence: 5, activityId: 'e', kind: 'read', label: 'reading e.ts' }),
+          activity({ sequence: 6, activityId: 'f', kind: 'read', label: 'reading f.ts' }),
+          activity({ sequence: 7, activityId: 'g', kind: 'read', label: 'reading g.ts' }),
+          activity({ sequence: 8, activityId: 'h', kind: 'read', label: 'reading h.ts' }),
+        ],
+      },
+    ];
+
+    const { rows } = buildConversationRows({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text.match(/Plan activity/g)).toHaveLength(2);
+    expect(text).toContain('Status update.');
+    expect(text).not.toContain('a.ts');
+    expect(text).toContain('d.ts');
+    expect(text).not.toContain('e.ts');
+    expect(text).toContain('h.ts');
+  });
+
+  it('a long runner call with interleaved heartbeats yields one coalescing ledger', () => {
+    const longCall: EngineEvent[] = [
+      activity({ sequence: 1, activityId: 'read-app', kind: 'read', label: 'reading src/app.ts' }),
+      makePlannerHeartbeat({ ts: 1 }),
+      activity({
+        sequence: 2,
+        activityId: 'typecheck',
+        kind: 'command',
+        label: 'running npm run typecheck',
+        target: 'npm run typecheck',
+      }),
+      makePlannerStatus({ ts: 2, phase: 'researching' }),
+      activity({
+        sequence: 3,
+        activityId: 'read-config',
+        kind: 'read',
+        label: 'reading src/config.ts',
+      }),
+      makePlannerHeartbeat({ ts: 3 }),
+      makeTaskTokens({ ts: 4 }),
+      activity({
+        sequence: 4,
+        activityId: 'search-store',
+        kind: 'search',
+        label: 'searching createStore',
+      }),
+      makePlannerHeartbeat({ ts: 5 }),
+      activity({
+        sequence: 5,
+        activityId: 'read-store',
+        kind: 'read',
+        label: 'reading src/stores/create-store.ts',
+      }),
+      makePlannerStatus({ ts: 6, phase: 'researching' }),
+      activity({
+        sequence: 6,
+        activityId: 'plan-briefs',
+        kind: 'plan',
+        label: 'planning task briefs',
+      }),
+      makePlannerHeartbeat({ ts: 7 }),
+      makeTaskTokens({ ts: 8 }),
+      activity({
+        sequence: 7,
+        activityId: 'read-docs',
+        kind: 'read',
+        label: 'reading docs/STORES.md',
+      }),
+      makePlannerHeartbeat({ ts: 9 }),
+      activity({
+        sequence: 8,
+        activityId: 'run-tests',
+        kind: 'command',
+        label: 'running npm test',
+        target: 'npm test',
+      }),
+    ];
+
+    const single = buildConversationRows({
+      sections: [{ type: 'events', startIndex: 0, items: longCall }],
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+    const singleText = single.rows.map(rowText).join('\n');
+
+    expect(singleText.match(/Plan activity/g)).toHaveLength(1);
+    expect(singleText).toContain('Plan activity  8 updates  [Codex]');
+    expect(single.renderableCount).toBe(8);
+
+    const continued: EngineEvent[] = [
+      ...longCall,
+      { type: 'planner_text', ts: 10, phase: 'researching', text: 'Draft plan ready.' },
+      activity({
+        sequence: 9,
+        activityId: 'read-router',
+        kind: 'read',
+        label: 'reading src/router.ts',
+      }),
+      activity({
+        callId: 'call-2',
+        sequence: 1,
+        activityId: 'read-verify',
+        kind: 'read',
+        label: 'reading src/verify.ts',
+      }),
+    ];
+
+    const resumed = buildConversationRows({
+      sections: [{ type: 'events', startIndex: 0, items: continued }],
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+    });
+    const resumedText = resumed.rows.map(rowText).join('\n');
+
+    expect(resumedText).toContain('Draft plan ready.');
+    expect(resumedText.match(/Plan activity/g)).toHaveLength(3);
+  });
+
+  it('planner and implementer calls coalesce identically', () => {
+    const read = (
+      role: 'planner' | 'implementer',
+      runnerName: string,
+      sequence: number,
+      file: string,
+    ) =>
+      activity({
+        role,
+        runnerName,
+        sequence,
+        activityId: file,
+        kind: 'read',
+        label: `reading ${file}`,
+      });
+    const callEvents = (role: 'planner' | 'implementer', runnerName: string): EngineEvent[] => [
+      read(role, runnerName, 1, 'a.ts'),
+      makePlannerHeartbeat({ ts: 1 }),
+      read(role, runnerName, 2, 'b.ts'),
+      makePlannerStatus({ ts: 2, phase: 'researching' }),
+      read(role, runnerName, 3, 'c.ts'),
+      makeTaskTokens({ ts: 3 }),
+      read(role, runnerName, 4, 'd.ts'),
+      makePlannerHeartbeat({ ts: 4 }),
+      read(role, runnerName, 5, 'e.ts'),
+      read(role, runnerName, 6, 'f.ts'),
+    ];
+    const buildFor = (items: EngineEvent[]) =>
+      buildConversationRows({
+        sections: [{ type: 'events', startIndex: 0, items }],
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 88,
+        viewportHeight: 20,
+        streaming,
+      });
+
+    const planner = buildFor(callEvents('planner', 'codex'));
+    const implementer = buildFor(callEvents('implementer', 'claude-code'));
+    const plannerText = planner.rows.map(rowText).join('\n');
+    const implementerText = implementer.rows.map(rowText).join('\n');
+
+    expect(plannerText.match(/Plan activity/g)).toHaveLength(1);
+    expect(implementerText.match(/Implementer activity/g)).toHaveLength(1);
+    expect(plannerText).toContain('Plan activity  6 updates  [Codex]');
+    expect(implementerText).toContain('Implementer activity  6 updates  [Claude Code]');
+    expect(plannerText).toContain('+3 more');
+    expect(implementerText).toContain('+3 more');
+    expect(implementer.renderableCount).toBe(planner.renderableCount);
+    expect(implementer.rows).toHaveLength(planner.rows.length);
   });
 
   it('expands two same-timestamp diffs independently', () => {

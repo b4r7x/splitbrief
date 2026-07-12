@@ -12,8 +12,13 @@ import {
   generateSessionId,
   writeActive,
 } from '../../../core/sessions/lifecycle.js';
+import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
-import { killAllProcesses } from '../../../lib/process/registry.js';
+import {
+  clearProcessLedger,
+  killAllProcesses,
+  setProcessLedger,
+} from '../../../lib/process/registry.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { sessionDir } from '../../../core/paths.js';
@@ -47,6 +52,7 @@ import {
 } from '../session-lifecycle.js';
 
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
+import { reapOrphanRunners } from './orphan-reaper.js';
 import { runPlanningPhases, runTasksAndReview } from './phases.js';
 
 export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
@@ -278,6 +284,11 @@ function resolveSessionStart(savedState: WorkflowState | undefined): number {
 
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const { feature, projectDir, config, savedState, selectedSkills } = opts;
+  // A boundary interrupt raised before this run started (Esc-Esc in a dead zone
+  // of a previous run that then ended into recovery without passing a call
+  // boundary) is stale: drain it so it cannot park this run's first call
+  // boundary on an interrupt nobody requested.
+  opts.sinks.consumeBoundaryInterrupt?.();
   const startTime = resolveSessionStart(savedState);
   const ident = runPricingIdentity(config);
   const persistTranscript = config.workflow.persistTranscript;
@@ -331,6 +342,8 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     cancellationPublished = true;
   };
 
+  await reapOrphanRunners(projectDir);
+
   const releaseLiveness = await acquireLiveness({
     projectDir,
     sessionId,
@@ -339,6 +352,15 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     persistTranscript,
     signal: opts.signal,
   });
+
+  const ref = { projectDir, sessionId };
+  const runProcessLedger = {
+    // A null start time is recorded as null: the orphan reaper refuses to kill
+    // entries without start-time identity, which a 0 sentinel would defeat.
+    record: (pid: number, startTimeMs: number | null) => recordRunnerPid(ref, pid, startTimeMs),
+    release: (pid: number) => releaseRunnerPid(ref, pid),
+  };
+  setProcessLedger(runProcessLedger);
 
   writeActive({ projectDir, sessionId });
 
@@ -367,6 +389,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             workflowBus = init.bus;
             workflowPhase = init.phase;
             result = init.summary;
+            sessionStatus = 'failed';
             return;
           }
 
@@ -530,6 +553,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     });
     return result;
   } finally {
+    // Ownership-guarded: acquireLiveness's warn-and-continue escape hatches can
+    // let a successor run install its ledger before this superseded run's
+    // teardown executes — a bare setProcessLedger(null) would silently disable
+    // the successor's runner-pid recording (and with it orphan reaping).
+    clearProcessLedger(runProcessLedger);
     await releaseLiveness();
   }
 }

@@ -4,7 +4,7 @@ import {
   COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT,
   runnerActivityDisplayKey,
 } from './activity-batch-model.js';
-import { runnerCallId } from './runner-call-classification.js';
+import { isTranscriptRowlessEvent } from './event-rows.js';
 
 type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
 
@@ -52,7 +52,7 @@ export function findLatestExpandableActivityBatchKey(
         continue;
       }
 
-      if (batch !== null && runnerCallId(event) !== batch.callId) {
+      if (batch !== null && !isTranscriptRowlessEvent(event)) {
         flushBatch();
       }
     }

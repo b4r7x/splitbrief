@@ -13,7 +13,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
 
-const RAIL_STAGES = ['spec', 'plan', 'briefs', 'build', 'verify'];
+const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Verify'];
 
 describe('WorkflowHeader', () => {
   beforeEach(() => {

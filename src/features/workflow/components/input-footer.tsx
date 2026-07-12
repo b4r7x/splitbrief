@@ -22,10 +22,12 @@ import {
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { formatStageLabel } from '../../../core/phase-display.js';
 
 export interface InputFooterBylineInput {
   cols: number;
   lead: string;
+  queuedText: string | null;
   etaText: string | null;
   gitLabel: string;
   advisoryText: string | null;
@@ -43,21 +45,65 @@ function bylineCells(text: string): number {
   return getTerminalCellWidth(text);
 }
 
-export function buildInputFooterByline(input: InputFooterBylineInput): string {
-  const width = getChromeContentWidth(input.cols);
+export interface InputFooterByline {
+  lead: string;
+  queued: string;
+  rest: string;
+}
 
-  const candidates = [
-    joinBylineParts([input.lead, input.etaText, input.gitLabel, input.advisoryText]),
-    joinBylineParts([input.lead, input.etaText, input.gitLabel]),
-    joinBylineParts([input.lead, input.gitLabel]),
-    joinBylineParts([input.lead]),
+export function buildInputFooterByline(input: InputFooterBylineInput): InputFooterByline {
+  const width = getChromeContentWidth(input.cols);
+  const queuedPart = input.queuedText && input.queuedText.length > 0 ? input.queuedText : null;
+
+  // Widest first; advisory, then eta, then git degrade first. Each candidate records whether
+  // the queued segment survived at that width so the caller can color it independently.
+  const candidates: Array<{ queued: boolean; tail: (string | null)[] }> = [
+    { queued: true, tail: [input.etaText, input.gitLabel, input.advisoryText] },
+    { queued: true, tail: [input.etaText, input.gitLabel] },
+    { queued: true, tail: [input.gitLabel] },
+    { queued: true, tail: [] },
+    { queued: false, tail: [] },
   ];
 
-  const chosenCore =
-    candidates.find((candidate) => bylineCells(candidate) <= width) ??
-    truncateTerminalDisplayText(input.lead, width);
+  let leadOut = input.lead;
+  let queuedIncluded = false;
+  let tail: (string | null)[] = [];
+  let line = '';
+  let matched = false;
 
-  let line = chosenCore;
+  for (const candidate of candidates) {
+    const candidateStr = joinBylineParts([
+      input.lead,
+      candidate.queued ? queuedPart : null,
+      ...candidate.tail,
+    ]);
+    if (bylineCells(candidateStr) <= width) {
+      line = candidateStr;
+      queuedIncluded = candidate.queued;
+      tail = candidate.tail;
+      matched = true;
+      break;
+    }
+  }
+
+  if (!matched) {
+    leadOut = truncateTerminalDisplayText(input.lead, width);
+    line = leadOut;
+  }
+
+  const queuedOut =
+    queuedIncluded && queuedPart !== null
+      ? leadOut.length > 0
+        ? `${SOFT_SEP}${queuedPart}`
+        : queuedPart
+      : '';
+  const restCore = joinBylineParts(tail);
+  let restOut =
+    restCore.length > 0
+      ? leadOut.length > 0 || queuedOut.length > 0
+        ? `${SOFT_SEP}${restCore}`
+        : restCore
+      : '';
 
   // The copy hint is metadata: it is the first accessory to go under width pressure, degrading
   // `y copy`, then bare `y`, then gone, and only appended when the richest core still leaves room.
@@ -68,6 +114,7 @@ export function buildInputFooterByline(input: InputFooterBylineInput): string {
     for (const variant of copyVariants) {
       const combined = joinBylineParts([line, variant]);
       if (bylineCells(combined) <= width) {
+        restOut += combined.slice(line.length);
         line = combined;
         break;
       }
@@ -86,11 +133,13 @@ export function buildInputFooterByline(input: InputFooterBylineInput): string {
         bylineCells(labeled) <= remaining
           ? labeled
           : truncateTerminalDisplayText(labeled, remaining);
-      line = joinBylineParts([line, fitted]);
+      const combined = joinBylineParts([line, fitted]);
+      restOut += combined.slice(line.length);
+      line = combined;
     }
   }
 
-  return line;
+  return { lead: leadOut, queued: queuedOut, rest: restOut };
 }
 
 export function InputFooter({
@@ -113,22 +162,22 @@ export function InputFooter({
   const createBranchEnabled = workflow.git?.createBranch ?? false;
   const gitLabel = createBranchEnabled ? `git:branch+${commitStrategy}` : `git:${commitStrategy}`;
   const activeStage = getActiveRailStage(lifecycle.phase);
-  const stageText = activeStage?.stage ?? '';
+  const stageText = activeStage ? formatStageLabel(activeStage.stage) : '';
   const fractionText = totalTasks > 0 ? `${currentTask}/${totalTasks}` : '';
   // Only advertise `y copy` when the focused region actually resolves a value, so the affordance
   // never promises a yank that would toast "Nothing to copy".
   const focus = focusStore.use((f) => f);
   const copyResolvable = focusHasResolvableCopy(focus);
 
-  const liveStatus =
-    lifecycle.status === 'running' && !waiting
-      ? deriveLiveStatus({
-          phase: lifecycle.phase,
-          cancelled: lifecycle.cancelled,
-          startedAt: lifecycle.startedAt,
-          phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
-        })
-      : null;
+  const liveStatus = waiting
+    ? null
+    : deriveLiveStatus({
+        phase: lifecycle.phase,
+        status: lifecycle.status,
+        cancelled: lifecycle.cancelled,
+        startedAt: lifecycle.startedAt,
+        phaseFirstSeenTs: lifecycle.phaseFirstSeenTs,
+      });
   const live = liveStatus !== null;
   const { frame } = useSpinnerFrame(live);
 
@@ -143,11 +192,39 @@ export function InputFooter({
     liveStatus !== null
       ? [`${frame} ${liveStatus.verb}`, elapsed].filter((part) => part.length > 0).join(' ')
       : '';
-  const lead = waiting ? waitingLead : liveStatus !== null ? liveLead : stageLead;
+
+  const interrupted = lifecycle.status === 'interrupted';
+  // Until the continuation prompt parks at a call boundary, Enter/steer would go
+  // nowhere — advertise the retry affordance only once the prompt owns the composer.
+  const interruptedLead = lifecycle.interruptParked
+    ? `${glyph('statusPending')} interrupted — Enter retry · type to steer`
+    : `${glyph('statusPending')} interrupted — finishing current step…`;
+  const stall = lifecycle.status === 'running' ? lifecycle.stall : null;
+  // stall.since is the warning time; silentMs is the silence already elapsed when
+  // the warning fired, so the byline shows the full span since the last output.
+  const stalledFor =
+    stall !== null ? formatStageElapsed(Date.now() - stall.since + stall.silentMs) : '';
+  const stalledLead =
+    stall !== null ? `${glyph('statusWarning')} still working — silent ${stalledFor}` : '';
+
+  // One derivation encodes the interrupted → waiting → stalled → live priority
+  // order so the lead text and its color can never drift apart.
+  const { lead, leadColor } = interrupted
+    ? { lead: interruptedLead, leadColor: t.warning }
+    : waiting
+      ? { lead: waitingLead, leadColor: null }
+      : stall !== null
+        ? { lead: stalledLead, leadColor: t.warning }
+        : liveStatus !== null
+          ? { lead: liveLead, leadColor: colorForTone(liveStatus.tone, t) }
+          : { lead: stageLead, leadColor: null };
+
+  const queuedText = lifecycle.queueDepth > 0 ? `${lifecycle.queueDepth} queued` : null;
 
   const byline = buildInputFooterByline({
     cols: width ?? cols,
     lead,
+    queuedText,
     etaText,
     gitLabel,
     advisoryText:
@@ -156,18 +233,12 @@ export function InputFooter({
     worktreeLabel: worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
   });
 
-  const leadText = byline.startsWith(lead) ? lead : byline;
-  const restText = byline.startsWith(lead) ? byline.slice(lead.length) : '';
-
   return (
     <Box width="100%" paddingX={0} height={1} flexShrink={0}>
       <Text color={t.textDim} wrap="truncate-end">
-        {liveStatus !== null ? (
-          <Text color={colorForTone(liveStatus.tone, t)}>{leadText}</Text>
-        ) : (
-          leadText
-        )}
-        {restText}
+        {leadColor !== null ? <Text color={leadColor}>{byline.lead}</Text> : byline.lead}
+        {byline.queued.length > 0 ? <Text color={t.info}>{byline.queued}</Text> : null}
+        {byline.rest}
       </Text>
     </Box>
   );

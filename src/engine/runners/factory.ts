@@ -32,6 +32,8 @@ async function loadPlanner(config: Config, initialSessionId?: string | null): Pr
           initialSessionId,
           effort: config.planner.effort,
           timeout: config.planner.timeout,
+          idleWarnMs: config.planner.idleWarnMs,
+          idleKillMs: config.planner.idleKillMs,
         });
       }
       const mod = await loadCliPlanner();
@@ -57,6 +59,8 @@ async function loadPlanner(config: Config, initialSessionId?: string | null): Pr
         initialSessionId,
         effort: config.planner.effort,
         timeout: config.planner.timeout,
+        idleWarnMs: config.planner.idleWarnMs,
+        idleKillMs: config.planner.idleKillMs,
       });
     }
     default:

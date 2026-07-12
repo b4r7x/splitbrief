@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+import type { ImplementerPublisher } from './types.js';
 import { createAgentImplementer } from './agent.js';
 import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -273,5 +275,32 @@ describe('agent implementer', () => {
 
     expect(result.success).toBe(true);
     expect(chunks.join('')).toContain('agent progress output');
+  });
+
+  it('threads a configured idleWarnMs override into the spawn', async () => {
+    const config = makeConfig({
+      command: 'bash',
+      args: ['-c', 'sleep 0.15'],
+      idleWarnMs: 30,
+    });
+    const events: RunnerCallEvent[] = [];
+    const publisher: ImplementerPublisher = {
+      publishRunning: () => {},
+      publishCallEvent: ({ event }) => events.push(event),
+      publishDone: () => {},
+      publishFailed: () => {},
+    };
+
+    const implementer = createAgentImplementer(config, { publisher });
+    await implementer.implement({
+      task: makeTask(),
+      projectDir: testDir,
+      config,
+      context: { ...context, dir: testDir },
+      onOutput: () => {},
+      phase: 'implementing',
+    });
+
+    expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
   });
 });

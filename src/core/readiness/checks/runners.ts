@@ -2,9 +2,13 @@ import { resolveImplementerProfiles } from '../../config/accessors/implementer-p
 import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors/runner-config.js';
 import { resolveApproveLevel, resolveMode } from '../../config/runtime/resolve.js';
 import type { Config } from '../../schemas/config.js';
-import { getRunnerTrustMeta, type RunnerTrustMetadata } from '../../schemas/runner-fields.js';
+import {
+  getRunnerTrustMeta,
+  RUNNER_IDLE_KILL_MS,
+  type RunnerTrustMetadata,
+} from '../../schemas/runner-fields.js';
 import type { ReadinessCheck } from '../types.js';
-import { capitalize } from '../../../utils/capitalize.js';
+import { formatRoleLabel } from '../../phase-display.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 
 function formatRunner(runner: Config['planner'] | Config['implementer']): string {
@@ -37,6 +41,7 @@ export function buildRunnerChecks(config: Config): ReadinessCheck[] {
     });
     checks.push(...buildImplementerProfileMetadataChecks(config, resolved.profiles));
     checks.push(...buildRunnerTrustBoundaryChecks(config, resolved.profiles));
+    checks.push(...buildWatchdogTimeoutChecks(config, resolved.profiles));
   } catch (err) {
     checks.push({
       id: 'runners.implementer.profiles-invalid',
@@ -171,6 +176,65 @@ function runnerTrustBoundaryCheck(opts: {
   ];
 }
 
+function buildWatchdogTimeoutChecks(
+  config: Config,
+  profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
+): ReadinessCheck[] {
+  const checks: ReadinessCheck[] = [];
+  checks.push(
+    ...watchdogTimeoutCheck({
+      id: 'runners.planner.timeout-disables-watchdog',
+      label: `Planner ${formatRunner(config.planner)}`,
+      runner: config.planner,
+    }),
+  );
+
+  for (const profile of profiles) {
+    checks.push(
+      ...watchdogTimeoutCheck({
+        id: 'runners.implementer.timeout-disables-watchdog',
+        label: profile.isDefault
+          ? `Default implementer ${formatRunner(profile.config)}`
+          : `Implementer profile ${profile.name} ${formatRunner(profile.config)}`,
+        runner: profile.config,
+      }),
+    );
+  }
+
+  return checks;
+}
+
+function watchdogTimeoutCheck(opts: {
+  id: string;
+  label: string;
+  runner: Config['planner'] | Config['implementer'];
+}): ReadinessCheck[] {
+  if (opts.runner.kind === 'api') return [];
+
+  const { timeout, idleKillMs } = opts.runner;
+  if (timeout === undefined) return [];
+
+  const effectiveIdleKillMs = idleKillMs ?? RUNNER_IDLE_KILL_MS;
+  if (timeout > effectiveIdleKillMs) return [];
+
+  return [
+    {
+      id: opts.id,
+      severity: 'warning',
+      summary: `${opts.label} timeout (${timeout}ms) is at or below the idle-kill threshold (${effectiveIdleKillMs}ms); the watchdog kill-and-retry never gets a chance to fire.`,
+      details: [
+        `Configured timeout: ${timeout}ms.`,
+        `Effective idle-kill threshold: ${effectiveIdleKillMs}ms.`,
+        'Raise timeout above the idle-kill threshold, or remove it, to let a stalled call be killed and retried instead of failing outright.',
+      ],
+      metadata: {
+        timeout,
+        idleKillMs: effectiveIdleKillMs,
+      },
+    },
+  ];
+}
+
 function buildImplementerProfileMetadataChecks(
   config: Config,
   profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
@@ -213,7 +277,7 @@ function runnerCheck(
   return {
     id: `runners.${role}.configured`,
     severity: 'ok',
-    summary: `${capitalize(role)} ${formatRunner(runner)} configured.`,
+    summary: `${formatRoleLabel(role)} ${formatRunner(runner)} configured.`,
     metadata: {
       role,
       kind: runner.kind,

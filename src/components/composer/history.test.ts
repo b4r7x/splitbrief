@@ -66,4 +66,37 @@ describe('stepInputHistory', () => {
     expect(result.nextValue).toBe('second');
     expect(result.nextState).toEqual({ historyIndex: 1, draftValue: 'draft' });
   });
+
+  it('history position is preserved across recalls', () => {
+    const entries = ['/sidebar', 'older-a', 'older-b'];
+
+    const first = stepInputHistory({
+      entries,
+      state: INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
+      direction: 'up',
+      currentValue: '',
+    });
+    expect(first.nextValue).toBe('/sidebar');
+    expect(first.nextState.historyIndex).toBe(0);
+
+    const second = stepInputHistory({
+      entries,
+      state: first.nextState,
+      direction: 'up',
+      currentValue: first.nextValue,
+    });
+    expect(second.changed).toBe(true);
+    expect(second.nextValue).toBe('older-a');
+    expect(second.nextState.historyIndex).toBe(1);
+
+    const third = stepInputHistory({
+      entries,
+      state: second.nextState,
+      direction: 'up',
+      currentValue: second.nextValue,
+    });
+    expect(third.changed).toBe(true);
+    expect(third.nextValue).toBe('older-b');
+    expect(third.nextState.historyIndex).toBe(2);
+  });
 });

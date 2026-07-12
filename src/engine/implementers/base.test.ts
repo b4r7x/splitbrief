@@ -10,6 +10,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { buildLanguageContext } from '../spec/prompts/language-context.js';
 import { createChangeDetector } from '../change-detection.js';
+import { processError } from '../../lib/process/errors.js';
 
 let projectDir: string;
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -129,6 +130,24 @@ describe('createImplementerBase — error paths', () => {
         onOutput: vi.fn(),
       }),
     ).rejects.toThrow('command not found');
+  });
+
+  it('resolves a watchdog idle-kill to a failed result so the task retry ladder handles it', async () => {
+    const invoke = vi
+      .fn()
+      .mockRejectedValue(processError.idleTimeout({ command: 'fake-runner', idleMs: 300_000 }));
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toContain('produced no output for 300s');
   });
 
   it('returns failure when the invoke output contains no extractable code', async () => {

@@ -10,9 +10,9 @@ describe('runnerShortLabel', () => {
     expect(runnerShortLabel(config.implementer)).toBe('Qwen 2.5 Coder 7B');
   });
 
-  it('falls back to the tool name when a cli planner declares no model', () => {
-    const config = makeConfig();
-    expect(runnerShortLabel(config.planner)).toBe('claude-code');
+  it('falls back to the catalog display name', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'opencode' } });
+    expect(runnerShortLabel(config.planner)).toBe('OpenCode');
   });
 
   it('strips terminal control bytes from a raw config model id', () => {

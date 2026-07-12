@@ -8,7 +8,7 @@ import {
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { Box } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { Session } from '../../../core/schemas/session.js';
@@ -75,7 +75,7 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('RECENT SESSIONS');
@@ -106,7 +106,7 @@ describe('RecentSessionsList', () => {
         />
       </Box>,
     );
-    await tick(20);
+    await flushEffects();
 
     const nonBlank = (ui.lastFrame() ?? '').split('\n').filter((line) => line.trim().length > 0);
     expect(nonBlank.length).toBeLessThanOrEqual(7);
@@ -123,20 +123,20 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     const firstRow = lineIndexContaining(ui.lastFrame() ?? '', 'alpha');
     const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
     const after = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
     expect(after).toBeGreaterThan(before);
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
 
     const wrapped = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
     expect(wrapped).toBe(firstRow);
@@ -153,12 +153,12 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
 
     ui.stdin.write(ARROW_UP);
-    await tick(20);
+    await flushEffects();
 
     expect(closed).toBe(1);
     expect(selected).toBeNull();
@@ -176,12 +176,12 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(selected?.id).toBe(sessions[1]?.id);
     expect(closed).toBe(0);
@@ -198,10 +198,10 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ESC);
-    await tick(20);
+    await flushEffects();
 
     expect(closed).toBe(1);
     expect(selected).toBeNull();
@@ -218,13 +218,13 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('gamma');
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('gamma task');
@@ -244,14 +244,17 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
-    ui.stdin.write('y');
-    await tick(20);
-
-    await vi.waitFor(() => {
-      expect(readClipboardExecCalls().at(-1)?.stdin).toBe('alpha');
-    }, CLIPBOARD_EXEC_WAIT_MS);
+    // The copy runs the clipboard tool under the production 2s kill window, so a badly starved
+    // box can lose an attempt outright; press again while nothing has recorded yet.
+    await vi.waitFor(
+      () => {
+        if (readClipboardExecCalls().length === 0) ui.stdin.write('y');
+        expect(readClipboardExecCalls().at(-1)?.stdin).toBe('alpha');
+      },
+      { timeout: CLIPBOARD_EXEC_WAIT_MS, interval: 500 },
+    );
     expect(selected).toBeNull();
     expect(closed).toBe(0);
     const frame = ui.lastFrame() ?? '';
@@ -260,7 +263,7 @@ describe('RecentSessionsList', () => {
     expect(frame).toContain('charlie');
     expect(frame).not.toContain('No matching sessions');
     ui.unmount();
-  });
+  }, 20_000);
 
   it('y copies the currently highlighted session, not always the first', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
@@ -272,18 +275,20 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
-    ui.stdin.write('y');
-    await tick(20);
+    await flushEffects();
 
-    await vi.waitFor(() => {
-      expect(readClipboardExecCalls().at(-1)?.stdin).toBe('bravo');
-    }, CLIPBOARD_EXEC_WAIT_MS);
+    await vi.waitFor(
+      () => {
+        if (readClipboardExecCalls().length === 0) ui.stdin.write('y');
+        expect(readClipboardExecCalls().at(-1)?.stdin).toBe('bravo');
+      },
+      { timeout: CLIPBOARD_EXEC_WAIT_MS, interval: 500 },
+    );
     ui.unmount();
-  });
+  }, 20_000);
 
   it('keeps the focused row clean with no per-row "y copy" affordance', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
@@ -295,7 +300,7 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).not.toContain('y copy');
@@ -316,10 +321,10 @@ describe('RecentSessionsList', () => {
         maxVisible={0}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('y');
-    await tick(20);
+    await flushEffects();
 
     expect(readClipboardExecCalls()).toHaveLength(0);
     ui.unmount();
@@ -335,16 +340,16 @@ describe('RecentSessionsList', () => {
         onClose={onClose}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ESC);
-    await tick(20);
+    await flushEffects();
 
     expect(lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR)).toBe(before);
     expect(selected).toBeNull();

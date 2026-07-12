@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runHook, hookError } from './dispatch.js';
+import { setProcessLedger } from '../../lib/process/registry.js';
 import type { EngineEvent } from '../events/types.js';
 import type { HookModuleEntry } from '../../core/schemas/hooks.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -86,6 +87,23 @@ describe('runHook', () => {
   it('returns allow for a successful command (echo)', async () => {
     const outcome = await runHook(mkEntry({ command: 'echo', args: ['hello'] }), event, ctx);
     expect(outcome.kind).toBe('allow');
+  });
+
+  it('command hook spawns bypass the runner-pid ledger', async () => {
+    const recorded: number[] = [];
+    const released: number[] = [];
+    setProcessLedger({
+      record: (pid) => recorded.push(pid),
+      release: (pid) => released.push(pid),
+    });
+    try {
+      await runHook(mkEntry({ command: 'echo', args: ['hello'] }), event, ctx);
+    } finally {
+      setProcessLedger(null);
+    }
+
+    expect(recorded).toEqual([]);
+    expect(released).toEqual([]);
   });
 
   it('returns deny on non-zero exit (false) when on_failure=block', async () => {

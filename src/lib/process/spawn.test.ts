@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { runCommand, spawnWithTimeout, spawnWithStdin, spawnError } from './spawn.js';
-import { killProcess } from './registry.js';
+import { killProcess, setProcessLedger } from './registry.js';
 import { isENOENT, processError } from './errors.js';
 import { spawn } from 'node:child_process';
 
@@ -161,6 +161,23 @@ describe('runCommand', () => {
       expect(err.data.stderr).toContain('output truncated');
     }
   });
+
+  it('runCommand spawns bypass the runner-pid ledger', async () => {
+    const recorded: number[] = [];
+    const released: number[] = [];
+    setProcessLedger({
+      record: (pid) => recorded.push(pid),
+      release: (pid) => released.push(pid),
+    });
+    try {
+      await runCommand('echo', ['hello']);
+    } finally {
+      setProcessLedger(null);
+    }
+
+    expect(recorded).toEqual([]);
+    expect(released).toEqual([]);
+  });
 });
 
 describe('isENOENT', () => {
@@ -211,6 +228,30 @@ describe('spawnWithTimeout', () => {
 
     expect(result.stderr).toContain('err');
     expect(stderrChunks.join('')).toContain('err');
+  });
+
+  it('ledger: false bypasses the runner-pid ledger', async () => {
+    const recorded: number[] = [];
+    const released: number[] = [];
+    setProcessLedger({
+      record: (pid) => recorded.push(pid),
+      release: (pid) => released.push(pid),
+    });
+    try {
+      await spawnWithTimeout({
+        command: 'echo',
+        args: ['hello'],
+        cwd: process.cwd(),
+        timeout: 5000,
+        onProgress: () => {},
+        ledger: false,
+      });
+    } finally {
+      setProcessLedger(null);
+    }
+
+    expect(recorded).toEqual([]);
+    expect(released).toEqual([]);
   });
 
   it('streams every stdout chunk while retaining only bounded output', async () => {
@@ -607,6 +648,212 @@ describe('spawnWithStdin', () => {
     }
 
     expect(stillAlive()).toBe(false);
+  });
+});
+
+describe('idle watchdog', () => {
+  it('idle kill terminates the process group and surfaces command-idle-timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveGrandchild: (pid: number) => void = () => {};
+      const grandchildPid = new Promise<number>((resolve) => {
+        resolveGrandchild = resolve;
+      });
+
+      // The child detaches a long-lived grandchild and prints its PID, then goes
+      // silent; the idle kill must take down the entire group, not just the child.
+      const childProgram = [
+        "const { spawn } = require('node:child_process');",
+        "const gc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });",
+        'process.stdout.write(String(gc.pid) + "\\n");',
+        'setTimeout(() => {}, 60_000);',
+      ].join('');
+
+      const promise = spawnWithStdin({
+        command: 'node',
+        args: ['-e', childProgram],
+        cwd: '.',
+        onLine: (line) => {
+          const pid = Number.parseInt(line.trim(), 10);
+          if (Number.isInteger(pid)) resolveGrandchild(pid);
+        },
+        idle: { warnMs: 500, killMs: 1_000 },
+      });
+      const settled = expect(promise).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+
+      const pid = await grandchildPid;
+      vi.advanceTimersByTime(1_000);
+      vi.useRealTimers();
+      await settled;
+
+      const stillAlive = () => {
+        try {
+          process.kill(pid, 0);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const deadline = Date.now() + 5_000;
+      while (stillAlive() && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(stillAlive()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('output chunks reset the idle timers', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    try {
+      const onWarn = vi.fn();
+      let sawOutput: () => void = () => {};
+      const outputSeen = new Promise<void>((resolve) => {
+        sawOutput = resolve;
+      });
+
+      const promise = spawnWithTimeout({
+        command: 'node',
+        args: [
+          '-e',
+          'setTimeout(() => { process.stdout.write("tick\\n"); setTimeout(() => {}, 60_000); }, 50)',
+        ],
+        cwd: process.cwd(),
+        timeout: 600_000,
+        onProgress: () => sawOutput(),
+        signal: controller.signal,
+        idle: { warnMs: 1_000, killMs: 600_000, onWarn },
+      });
+      const settled = expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+
+      vi.advanceTimersByTime(600);
+      await outputSeen;
+      vi.advanceTimersByTime(600);
+      expect(onWarn).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(400);
+      expect(onWarn).toHaveBeenCalledWith(1_000);
+
+      controller.abort();
+      vi.useRealTimers();
+      await settled;
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
+
+  it('onWarn fires once per silence episode and onClear fires on the next output', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    try {
+      const onWarn = vi.fn();
+      const onClear = vi.fn();
+      let sawFirst: () => void = () => {};
+      const firstSeen = new Promise<void>((resolve) => {
+        sawFirst = resolve;
+      });
+      let sawSecond: () => void = () => {};
+      const secondSeen = new Promise<void>((resolve) => {
+        sawSecond = resolve;
+      });
+
+      const childProgram = [
+        'process.stdout.write("one\\n");',
+        'setTimeout(() => { process.stdout.write("two\\n"); }, 400);',
+        'setTimeout(() => {}, 60_000);',
+      ].join('');
+
+      const promise = spawnWithStdin({
+        command: 'node',
+        args: ['-e', childProgram],
+        cwd: '.',
+        onLine: (line) => {
+          if (line === 'one') sawFirst();
+          if (line === 'two') sawSecond();
+        },
+        signal: controller.signal,
+        idle: { warnMs: 1_000, killMs: 600_000, onWarn, onClear },
+      });
+      const settled = expect(promise).rejects.toMatchObject({ name: 'AbortError' });
+
+      await firstSeen;
+      vi.advanceTimersByTime(1_000);
+      expect(onWarn).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(3_000);
+      expect(onWarn).toHaveBeenCalledTimes(1);
+      expect(onClear).not.toHaveBeenCalled();
+
+      await secondSeen;
+      expect(onClear).toHaveBeenCalledTimes(1);
+
+      vi.advanceTimersByTime(1_000);
+      expect(onWarn).toHaveBeenCalledTimes(2);
+
+      controller.abort();
+      vi.useRealTimers();
+      await settled;
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
+
+  it('output after the idle kill fires does not emit onClear or re-arm timers', async () => {
+    vi.useFakeTimers();
+    try {
+      const onWarn = vi.fn();
+      const onClear = vi.fn();
+      let resolveReady: () => void = () => {};
+      const readySeen = new Promise<void>((resolve) => {
+        resolveReady = resolve;
+      });
+      let resolveLate: () => void = () => {};
+      const lateSeen = new Promise<void>((resolve) => {
+        resolveLate = resolve;
+      });
+
+      // Ignores SIGTERM so the idle-kill grace window stays open long enough to
+      // flush one more line, then self-exits like a dying runner finally giving up.
+      const childProgram = [
+        "process.on('SIGTERM', () => {});",
+        "process.stdout.write('ready\\n');",
+        'setTimeout(() => {',
+        "  process.stdout.write('late\\n');",
+        '  setTimeout(() => process.exit(0), 20);',
+        '}, 50);',
+        'setTimeout(() => {}, 60_000);',
+      ].join('');
+
+      const promise = spawnWithStdin({
+        command: 'node',
+        args: ['-e', childProgram],
+        cwd: '.',
+        onLine: (line) => {
+          if (line === 'ready') resolveReady();
+          if (line === 'late') resolveLate();
+        },
+        idle: { warnMs: 500, killMs: 1_000, onWarn, onClear },
+      });
+      const settled = expect(promise).rejects.toMatchObject({ kind: 'command-idle-timeout' });
+
+      await readySeen;
+      vi.advanceTimersByTime(1_000);
+      expect(onWarn).toHaveBeenCalledTimes(1);
+
+      await lateSeen;
+      expect(onClear).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(500);
+      expect(onWarn).toHaveBeenCalledTimes(1);
+
+      vi.useRealTimers();
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

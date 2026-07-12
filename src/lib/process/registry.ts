@@ -1,6 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { warnError } from '../warn.js';
 import { isNodeError } from './errors.js';
+import { readProcessStartTimeMs } from './start-time.js';
 
 const SIGKILL_DELAY = 2000;
 const ABORT_KILL_DELAY = 2000;
@@ -8,16 +9,63 @@ const ABORT_KILL_DELAY = 2000;
 type RegisteredProcess = {
   proc: ChildProcess;
   group: boolean;
+  ledgered: boolean;
+};
+
+type ProcessLedger = {
+  record(pid: number, startTimeMs: number | null): void;
+  release(pid: number): void;
 };
 
 const activeProcesses = new Map<ChildProcess, RegisteredProcess>();
+let processLedger: ProcessLedger | null = null;
 
-export function registerProcess(proc: ChildProcess, options?: { group?: boolean }): void {
-  activeProcesses.set(proc, { proc, group: options?.group ?? false });
+// src/lib/ stays session-agnostic; the engine installs a session-bound ledger via setProcessLedger.
+export function setProcessLedger(ledger: ProcessLedger | null): void {
+  processLedger = ledger;
+}
+
+// Ownership-guarded uninstall: a superseded run's late teardown must not null a
+// ledger a successor run has already installed — last-write-wins here would
+// silently disable runner-pid recording for the rest of the successor run.
+export function clearProcessLedger(ledger: ProcessLedger): void {
+  if (processLedger === ledger) processLedger = null;
+}
+
+export function registerProcess(
+  proc: ChildProcess,
+  options?: { group?: boolean | undefined; ledger?: boolean | undefined },
+): void {
+  const group = options?.group ?? false;
+  // Ledger recording costs a synchronous `ps` exec plus a jsonl rewrite per
+  // spawn; short-lived commands (git, probes, validation) opt out with
+  // ledger: false so only long-lived runner spawns pay it.
+  const ledgered = group && (options?.ledger ?? true);
+  activeProcesses.set(proc, { proc, group, ledgered });
+  if (ledgered && processLedger && proc.pid !== undefined) {
+    // The ledger is best-effort crash-recovery bookkeeping: a failed write must
+    // not reject the runner call that just spawned this process.
+    try {
+      processLedger.record(proc.pid, readProcessStartTimeMs(proc.pid));
+    } catch (err) {
+      warnError('process ledger: failed to record runner pid', err);
+    }
+  }
 }
 
 export function unregisterProcess(proc: ChildProcess): void {
+  const entry = activeProcesses.get(proc);
   activeProcesses.delete(proc);
+  if (entry?.ledgered && processLedger && proc.pid !== undefined) {
+    // Called from process 'close'/'error' handlers with no catcher above: a
+    // failed ledger release (ENOSPC, EACCES, planted symlink) must not become
+    // an uncaughtException that tears down the app.
+    try {
+      processLedger.release(proc.pid);
+    } catch (err) {
+      warnError('process ledger: failed to release runner pid', err);
+    }
+  }
 }
 
 export function killProcess(

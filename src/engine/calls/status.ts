@@ -33,6 +33,15 @@ export function runnerCallErrorFromUnknown(err: unknown, fallbackCode: string): 
   return { code, message: boundedRunnerCallMessage(toErrorMessage(err)) };
 }
 
+// The one place that owns the code+message contract for idle-killed calls;
+// every backend that catches a 'command-idle-timeout' error reports through it.
+export function runnerCallIdleTimeoutError(err: unknown): RunnerCallError {
+  return {
+    code: 'runner_idle_timeout',
+    message: boundedRunnerCallMessage(toErrorMessage(err)),
+  };
+}
+
 export function runnerCallCompletedEvent(
   context: RunnerCallContext,
   opts: {

@@ -257,6 +257,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'recovery_resolved':
       case 'planner_text':
       case 'planner_heartbeat':
+      case 'turn_interrupted':
       case 'spec_rejected':
       case 'spec_regenerated':
       case 'plan_approved':
@@ -323,6 +324,8 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'runner_call_warning':
       case 'runner_call_error':
       case 'runner_call_completed':
+      case 'runner_call_stalled':
+      case 'runner_call_stall_cleared':
         return;
       default:
         return assertNever(event);

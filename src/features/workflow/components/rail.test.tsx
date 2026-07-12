@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { formatStageLabel } from '../../../core/phase-display.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -21,7 +22,7 @@ import {
 } from '../layout/hit-test.js';
 import { Rail, railFormCText } from './rail.js';
 
-const STAGES = ['spec', 'plan', 'briefs', 'build', 'verify'];
+const STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Verify'];
 
 const ACTIVE = glyph('stageActive');
 const DONE = glyph('stageDone');
@@ -77,13 +78,13 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    const railLine = frame.split('\n').find((row) => row.includes('spec')) ?? '';
+    const railLine = frame.split('\n').find((row) => row.includes('Spec')) ?? '';
     for (const stage of STAGES) expect(railLine).toContain(stage);
     // spec/plan/briefs done (●), build active (◉), verify pending (○).
     expect(countActiveMarkers(frame)).toBe(1);
-    expect(railLine).toContain(`${ACTIVE} build`);
-    expect(railLine).toContain(`${DONE} spec`);
-    expect(railLine).toContain(`${PENDING} verify`);
+    expect(railLine).toContain(`${ACTIVE} Build`);
+    expect(railLine).toContain(`${DONE} Spec`);
+    expect(railLine).toContain(`${PENDING} Verify`);
     ui.unmount();
   });
 
@@ -105,7 +106,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     expect(idleFrame).not.toContain(ACTIVE);
     expect(countActiveMarkers(runningFrame)).toBe(1);
     // The active marker sits on the first stage, ahead of its label.
-    expect(runningFrame).toContain(`${ACTIVE} spec`);
+    expect(runningFrame).toContain(`${ACTIVE} Spec`);
   });
 
   it('aligns every Form-B stage label with its hit-test zone (marker at the zone left edge)', async () => {
@@ -121,7 +122,9 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     expect(zones).toHaveLength(5);
     for (const zone of zones) {
       // The label is painted one marker slot to the right of the zone's left edge (the marker).
-      expect(renderedStageCol(frame, zone.stage)).toBe(zone.left + RAIL_MARKER_SLOT_WIDTH);
+      expect(renderedStageCol(frame, formatStageLabel(zone.stage))).toBe(
+        zone.left + RAIL_MARKER_SLOT_WIDTH,
+      );
     }
     ui.unmount();
   });
@@ -145,7 +148,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     tasksStore.__testReset({ currentTask: 3, totalTasks: 7 });
     const ui = renderRail('B');
     await tick();
-    const railLine = lineContaining(ui.lastFrame() ?? '', 'spec');
+    const railLine = lineContaining(ui.lastFrame() ?? '', 'Spec');
 
     // With ANSI stripped the role hue is gone, so the seam reads only by the connector shape: the
     // two role seams (briefs→build, build→verify) paint the arrow; the other gaps paint chevrons.
@@ -212,7 +215,7 @@ describe('Rail — completion reward', () => {
     expect(frame).toContain('7/7 local');
     expect(frame).toContain('no drift');
     expect(countActiveMarkers(frame)).toBe(0);
-    expect(frame).not.toContain('spec');
+    expect(frame).not.toContain('Spec');
     ui.unmount();
   });
 
@@ -251,16 +254,16 @@ describe('Rail — completion reward', () => {
 
 describe('Rail — Form C (narrow floor)', () => {
   it('builds the active stage line without a task fraction outside task stages', () => {
-    expect(railFormCText(getRailStages('planning'), '')).toBe(`${ACTIVE} plan`);
+    expect(railFormCText(getRailStages('planning'), '')).toBe(`${ACTIVE} Plan`);
   });
 
   it('builds the active task stage line with its task fraction', () => {
-    expect(railFormCText(getRailStages('implementing'), '3/7')).toBe(`${ACTIVE} build  task 3/7`);
+    expect(railFormCText(getRailStages('implementing'), '3/7')).toBe(`${ACTIVE} Build  task 3/7`);
   });
 
   it('builds the cancelled stage line without a task fraction', () => {
     expect(railFormCText(getRailStages('implementing', { cancelled: true }), '3/7')).toBe(
-      `${PENDING} build${RAIL_FORM_C_CANCELLED_SUFFIX}`,
+      `${PENDING} Build${RAIL_FORM_C_CANCELLED_SUFFIX}`,
     );
   });
 
@@ -272,11 +275,11 @@ describe('Rail — Form C (narrow floor)', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('build');
+    expect(frame).toContain('Build');
     expect(frame).toContain(ACTIVE);
     expect(frame).toContain('task 3/7');
     expect(frame).not.toContain('implementing');
-    expect(frame).not.toContain('verify');
+    expect(frame).not.toContain('Verify');
     ui.unmount();
   });
 
@@ -298,7 +301,7 @@ describe('Rail — Form C (narrow floor)', () => {
     const buildZone = zones.find((zone) => zone.stage === 'build');
     expect(buildZone).toBeDefined();
     // The marker opens the zone; the label sits one marker slot in.
-    expect(renderedStageCol(frame, 'build')).toBe((buildZone?.left ?? 0) + RAIL_MARKER_SLOT_WIDTH);
+    expect(renderedStageCol(frame, 'Build')).toBe((buildZone?.left ?? 0) + RAIL_MARKER_SLOT_WIDTH);
     ui.unmount();
   });
 
@@ -331,7 +334,7 @@ describe('Rail — Form C (narrow floor)', () => {
       cancelled: true,
     });
     const buildZone = zones.find((zone) => zone.stage === 'build');
-    const buildLine = frame.split('\n').find((line) => line.includes('build')) ?? '';
+    const buildLine = frame.split('\n').find((line) => line.includes('Build')) ?? '';
     const cancelledEnd = buildLine.indexOf('cancelled') + 'cancelled'.length;
     expect(cancelledEnd).toBeLessThanOrEqual(buildZone?.right ?? 0);
     ui.unmount();

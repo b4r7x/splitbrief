@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { addEvent, markCancellationRequested, resetWorkflow, getSections } from './actions.js';
+import {
+  addEvent,
+  markCancellationRequested,
+  markInterruptRequested,
+  markInterruptResumed,
+  resetWorkflow,
+  getSections,
+} from './actions.js';
 import { eventsStore, MAX_EVENTS } from './events.js';
 import { tasksStore } from './tasks.js';
 import { tokensStore } from './tokens.js';
@@ -68,6 +75,83 @@ describe('markCancellationRequested', () => {
     expect(events).toHaveLength(MAX_EVENTS);
     expect((events[0] as { taskId: string }).taskId).toBe('T002');
     expect(events[events.length - 1]?.type).toBe('workflow_cancelled');
+  });
+});
+
+describe('markInterruptRequested / markInterruptResumed', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('markInterruptRequested flips a running lifecycle to interrupted and returns true', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+
+    expect(markInterruptRequested()).toBe(true);
+
+    expect(lifecycleStore.get()).toMatchObject({
+      status: 'interrupted',
+      phase: 'implementing',
+      cancelled: false,
+    });
+  });
+
+  it('markInterruptRequested returns false when no workflow is running', () => {
+    expect(markInterruptRequested()).toBe(false);
+    expect(lifecycleStore.get().status).toBe('idle');
+
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    markInterruptRequested();
+    expect(markInterruptRequested()).toBe(false);
+    expect(lifecycleStore.get().status).toBe('interrupted');
+
+    resetWorkflow();
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'researching', feature: 'test' });
+    addEvent({ type: 'workflow_complete', ts: 2_000, phase: 'complete' });
+    expect(markInterruptRequested()).toBe(false);
+    expect(lifecycleStore.get().status).toBe('complete');
+  });
+
+  it('markInterruptResumed restores running', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    markInterruptRequested();
+    expect(lifecycleStore.get().status).toBe('interrupted');
+
+    markInterruptResumed();
+
+    expect(lifecycleStore.get()).toMatchObject({
+      status: 'running',
+      phase: 'implementing',
+      startedAt: 1_000,
+    });
+  });
+});
+
+describe('addEvent — runner call stall', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('applies runner_call_stalled and runner_call_stall_cleared to the lifecycle stall field', () => {
+    lifecycleStore.__testReset({ phase: 'implementing' });
+
+    addEvent({
+      type: 'runner_call_stalled',
+      ts: 2_000,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 1,
+      silentMs: 60_000,
+    });
+    expect(lifecycleStore.get().stall).toEqual({ since: 2_000, silentMs: 60_000 });
+
+    addEvent({
+      type: 'runner_call_stall_cleared',
+      ts: 2_500,
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 2,
+    });
+    expect(lifecycleStore.get().stall).toBeNull();
   });
 });
 

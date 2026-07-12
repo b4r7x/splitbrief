@@ -14,14 +14,23 @@ export const spawnError = {
   streamsUnavailable: () => error('process-streams-unavailable', 'Process streams not available'),
 } as const;
 
+export interface SpawnIdleOptions {
+  warnMs: number;
+  killMs: number;
+  onWarn?: ((silentMs: number) => void) | undefined;
+  onClear?: (() => void) | undefined;
+}
+
 interface SpawnPipeOptions<T> {
   command: string;
   args: string[];
   cwd?: string | undefined;
   env?: NodeJS.ProcessEnv | undefined;
   detached?: boolean | undefined;
+  ledger?: boolean | undefined;
   stdin?: string | undefined;
   signal?: AbortSignal | undefined;
+  idle?: SpawnIdleOptions | undefined;
   onStdout: (chunk: string) => void;
   onStderr: (chunk: string) => void;
   onClose: (code: number | null, signal: string | null) => T | Promise<T>;
@@ -40,17 +49,55 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       return;
     }
 
+    const idle = opts.idle;
+    let idleKilledAfterMs: number | null = null;
+    let idleWarned = false;
+    let idleWarnTimer: NodeJS.Timeout | undefined;
+    let idleKillTimer: NodeJS.Timeout | undefined;
+    const clearIdleTimers = () => {
+      if (idleWarnTimer !== undefined) clearTimeout(idleWarnTimer);
+      if (idleKillTimer !== undefined) clearTimeout(idleKillTimer);
+      idleWarnTimer = undefined;
+      idleKillTimer = undefined;
+    };
+
     let proc: ChildProcess;
     let settled = false;
     const fail = (err: unknown) => {
       if (settled) return;
       settled = true;
+      clearIdleTimers();
       reject(err);
     };
     const done = (value: T) => {
       if (settled) return;
       settled = true;
+      clearIdleTimers();
       resolve(value);
+    };
+
+    const armIdleTimers = () => {
+      if (idle === undefined) return;
+      clearIdleTimers();
+      const since = Date.now();
+      idleWarnTimer = setTimeout(() => {
+        idleWarned = true;
+        idle.onWarn?.(Date.now() - since);
+      }, idle.warnMs);
+      idleWarnTimer.unref?.();
+      idleKillTimer = setTimeout(() => {
+        idleKilledAfterMs = idle.killMs;
+        killProcess(proc, { group: opts.detached ?? false });
+      }, idle.killMs);
+      idleKillTimer.unref?.();
+    };
+    const noteIdleOutput = () => {
+      if (idle === undefined || settled || idleKilledAfterMs !== null) return;
+      if (idleWarned) {
+        idleWarned = false;
+        idle.onClear?.();
+      }
+      armIdleTimers();
     };
     try {
       proc = spawn(opts.command, opts.args, {
@@ -64,7 +111,7 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       return;
     }
 
-    registerProcess(proc, { group: opts.detached ?? false });
+    registerProcess(proc, { group: opts.detached ?? false, ledger: opts.ledger });
     opts.onSpawned?.(proc);
 
     if (opts.signal) {
@@ -80,8 +127,15 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
 
     stdout.setEncoding('utf8');
     stderr.setEncoding('utf8');
-    stdout.on('data', (chunk: string) => opts.onStdout(chunk));
-    stderr.on('data', (chunk: string) => opts.onStderr(chunk));
+    stdout.on('data', (chunk: string) => {
+      noteIdleOutput();
+      opts.onStdout(chunk);
+    });
+    stderr.on('data', (chunk: string) => {
+      noteIdleOutput();
+      opts.onStderr(chunk);
+    });
+    armIdleTimers();
 
     proc.on('error', (err: NodeJS.ErrnoException) => {
       unregisterProcess(proc);
@@ -90,9 +144,14 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     });
 
     proc.on('close', (code, signal) => {
+      clearIdleTimers();
       unregisterProcess(proc);
       if (opts.signal?.aborted) {
         fail(abortError());
+        return;
+      }
+      if (idleKilledAfterMs !== null) {
+        fail(processError.idleTimeout({ command: opts.command, idleMs: idleKilledAfterMs }));
         return;
       }
       try {
@@ -104,7 +163,10 @@ function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
 
     stdin.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EPIPE') return;
-      unregisterProcess(proc);
+      // The child may still be running: kill it and let the 'close' handler
+      // unregister + release its ledger entry. Unregistering here would leave a
+      // live process invisible to killAllProcesses and the orphan reaper.
+      killProcess(proc, { group: opts.detached ?? false });
       fail(err);
     });
 
@@ -156,6 +218,10 @@ export function runCommand(
     args,
     cwd: options?.cwd,
     detached: true,
+    // Short-lived probe/validation/git commands skip the runner-pid ledger: at
+    // dozens of spawns per validation pipeline, the per-spawn sync `ps` exec and
+    // jsonl rewrites would block the TUI event loop for no recovery benefit.
+    ledger: false,
     signal: options?.signal,
     onSpawned: (proc) => {
       if (timeoutSignal.aborted) {
@@ -227,8 +293,10 @@ export interface SpawnOptions {
   stdinInput?: string | undefined;
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
+  idle?: SpawnIdleOptions | undefined;
   outputMaxBytes?: number | undefined;
   stderrMaxBytes?: number | undefined;
+  ledger?: boolean | undefined;
 }
 
 export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
@@ -248,8 +316,10 @@ export function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult> {
     cwd: opts.cwd,
     env: opts.env,
     detached: true,
+    ledger: opts.ledger,
     stdin: opts.stdinInput,
     signal: opts.signal,
+    idle: opts.idle,
     onSpawned: (proc) => {
       if (timeoutSignal.aborted) {
         killProcess(proc, { group: true });
@@ -338,6 +408,7 @@ export async function spawnWithStdin(opts: {
   errorDetail?: (() => string | undefined) | undefined;
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
+  idle?: SpawnIdleOptions | undefined;
   outputMaxBytes?: number | undefined;
   stderrMaxBytes?: number | undefined;
   stdoutLineMaxBytes?: number | undefined;
@@ -369,6 +440,7 @@ export async function spawnWithStdin(opts: {
     detached: true,
     stdin: opts.stdin,
     signal: opts.signal,
+    idle: opts.idle,
     onStdout: (chunk) => {
       rawText.append(chunk);
       stdoutBuf.push(chunk);

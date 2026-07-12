@@ -54,11 +54,10 @@ const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
   const name = getRunnerDisplayName(plannerConfig);
+  const reason = planner.unavailabilityReason?.();
+  if (reason) return `Planner '${name}' is not available: ${reason}.`;
   if (plannerConfig.kind === 'api') {
-    const reason = planner.unavailabilityReason?.();
-    return reason
-      ? `Planner '${name}' is not available: ${reason}.`
-      : `Planner '${name}' is not available. Check the API key, endpoint, and model.`;
+    return `Planner '${name}' is not available. Check the API key, endpoint, and model.`;
   }
   return `Planner '${name}' is not available. Make sure it's installed.`;
 }

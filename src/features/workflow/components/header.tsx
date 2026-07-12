@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
+import { formatRoleLabel } from '../../../core/phase-display.js';
 import { useTheme } from '../../../components/theme.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -134,7 +135,7 @@ export function Header({ startedAt, railForm }: HeaderProps) {
   const implLabel = config ? runnerShortLabel(config.implementer) : '';
   const hasRunner = plannerLabel !== '' && implLabel !== '';
   const runnerFull = hasRunner
-    ? `Planner ${plannerLabel}${CHEVRON_SEP}Implementer ${implLabel}`
+    ? `${formatRoleLabel('planner')} ${plannerLabel}${CHEVRON_SEP}${formatRoleLabel('implementer')} ${implLabel}`
     : '';
   const runnerCompact = hasRunner ? `${plannerLabel}${CHEVRON_SEP}${implLabel}` : '';
   const layout = getHeaderLayout({
@@ -156,12 +157,12 @@ export function Header({ startedAt, railForm }: HeaderProps) {
           {layout.runnerVariant === 'full' ? (
             <Text>
               <Text color={t.planner} bold>
-                {'Planner '}
+                {`${formatRoleLabel('planner')} `}
               </Text>
               <Text color={t.planner}>{plannerLabel}</Text>
               <Text color={t.textDim}>{CHEVRON_SEP}</Text>
               <Text color={t.implementer} bold>
-                {'Implementer '}
+                {`${formatRoleLabel('implementer')} `}
               </Text>
               <Text color={t.implementer}>{implLabel}</Text>
             </Text>

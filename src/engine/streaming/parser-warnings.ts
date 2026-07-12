@@ -37,6 +37,21 @@ export function parsedUnknownRecordWarning(opts: {
   return warning;
 }
 
+export function parsedUpstreamFailureWarning(opts: {
+  parser: string;
+  upstreamType: string;
+  message: string;
+}): ParsedWarningInfo {
+  return parsedRecordWarning({
+    parser: opts.parser,
+    code: `${opts.parser}_upstream_failure`,
+    label: `${opts.parser} upstream failure`,
+    value: opts.message,
+    upstreamType: opts.upstreamType,
+    message: opts.message,
+  });
+}
+
 function parsedRecordWarning(opts: {
   parser: string;
   code: string;

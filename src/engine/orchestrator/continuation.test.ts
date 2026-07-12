@@ -21,6 +21,9 @@ import {
   regenerateFromFeedback,
   type ContinuationLoopCtx,
 } from './continuation.js';
+import { composeSteeredPrompt } from '../implementers/types.js';
+import { createEventBus } from '../events/bus.js';
+import { processError } from '../../lib/process/errors.js';
 import type { WorkflowSinks } from './types.js';
 
 function makeSinks(): WorkflowSinks & { trigger: () => boolean; hasHandler: () => boolean } {
@@ -75,12 +78,18 @@ describe('withContinuationLoop', () => {
     const { callbacks } = makeCallbacks();
     const sinks = makeSinks();
     const state: WorkflowState = createInitialState('feat');
-    const ctx: ContinuationLoopCtx = { projectDir, sessionId, callbacks, sinks };
+    const ctx: ContinuationLoopCtx = {
+      projectDir,
+      sessionId,
+      callbacks,
+      bus: createEventBus(),
+      sinks,
+    };
 
     const result = await withContinuationLoop<number>({
       ctx,
       state,
-      body: async () => ({ value: 42 }),
+      body: async () => 42,
     });
 
     expect(result.value).toBe(42);
@@ -103,7 +112,7 @@ describe('withContinuationLoop', () => {
     const seenContinuationPrompts: (string | undefined)[] = [];
 
     const result = await withContinuationLoop<string>({
-      ctx: { projectDir, sessionId, callbacks, sinks },
+      ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
       state,
       body: async ({ signal, continuationPrompt, recordOutput }) => {
         attempt += 1;
@@ -115,7 +124,7 @@ describe('withContinuationLoop', () => {
           sinks.trigger();
           if (signal.aborted) throw new Error('aborted');
         }
-        return { value: 'ok' };
+        return 'ok';
       },
     });
 
@@ -130,7 +139,7 @@ describe('withContinuationLoop', () => {
     expect(result.state.awaitingContinue).toBe(false);
   });
 
-  it('continues when body returns continueIfAborted=true and the per-call signal aborted', async () => {
+  it('an aborted call never proceeds as success even when the runner exits cleanly', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { callbacks } = makeCallbacks({
       onContinuationNeeded: async () => 'keep going',
@@ -140,7 +149,7 @@ describe('withContinuationLoop', () => {
 
     let attempt = 0;
     const result = await withContinuationLoop<string>({
-      ctx: { projectDir, sessionId, callbacks, sinks },
+      ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
       state,
       body: async ({ signal, recordOutput }) => {
         attempt += 1;
@@ -148,14 +157,203 @@ describe('withContinuationLoop', () => {
           recordOutput('first try');
           sinks.trigger();
           expect(signal.aborted).toBe(true);
-          return { value: 'failure-that-should-retry', continueIfAborted: true };
+          return 'clean-exit-from-killed-runner';
         }
-        return { value: 'final-success' };
+        return 'final-success';
       },
     });
 
     expect(attempt).toBe(2);
     expect(result.value).toBe('final-success');
+  });
+
+  it('a pending boundary interrupt parks at the next call boundary', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    let pending = true;
+    const sinks = {
+      ...makeSinks(),
+      consumeBoundaryInterrupt: () => {
+        const wasPending = pending;
+        pending = false;
+        return wasPending;
+      },
+    };
+    const partials: string[] = [];
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: async (partial) => {
+        partials.push(partial);
+        return 'steer this way';
+      },
+    });
+    const state: WorkflowState = createInitialState('feat');
+
+    const prompts: string[] = [];
+    const result = await withContinuationLoop<string>({
+      ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
+      state,
+      body: async ({ continuationPrompt, steer }) => {
+        prompts.push(composeSteeredPrompt(continuationPrompt ?? 'the primary prompt', steer));
+        return 'done';
+      },
+    });
+
+    expect(result.value).toBe('done');
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('steer this way');
+    expect(prompts[0]).toContain('the primary prompt');
+    expect(partials).toEqual(['']);
+    expect(result.state.awaitingContinue).toBe(false);
+  });
+
+  it('a parked boundary interrupt preserves the primary prompt', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const state: WorkflowState = createInitialState('feat');
+
+    const runParked = async (reply: string) => {
+      let pending = true;
+      const sinks = {
+        ...makeSinks(),
+        consumeBoundaryInterrupt: () => {
+          const wasPending = pending;
+          pending = false;
+          return wasPending;
+        },
+      };
+      const { callbacks } = makeCallbacks({ onContinuationNeeded: async () => reply });
+      const bodyArgs: { continuationPrompt: string | undefined; steer: string | undefined }[] = [];
+      const prompts: string[] = [];
+      await withContinuationLoop<string>({
+        ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
+        state,
+        body: async ({ continuationPrompt, steer }) => {
+          bodyArgs.push({ continuationPrompt, steer });
+          prompts.push(composeSteeredPrompt(continuationPrompt ?? 'PRIMARY PROMPT', steer));
+          return 'done';
+        },
+      });
+      return { bodyArgs, prompts };
+    };
+
+    const emptyEnter = await runParked('');
+    expect(emptyEnter.bodyArgs).toEqual([{ continuationPrompt: undefined, steer: undefined }]);
+    expect(emptyEnter.prompts).toEqual(['PRIMARY PROMPT']);
+
+    const steered = await runParked('focus on the auth module');
+    expect(steered.bodyArgs[0]?.continuationPrompt).toBeUndefined();
+    expect(steered.prompts[0]).toContain('focus on the auth module');
+    expect(steered.prompts[0]).toContain('PRIMARY PROMPT');
+  });
+
+  it('an outer-signal abort while parked skips the CONTINUE_TURN save', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const outer = new AbortController();
+    let resolvePrompt: (text: string) => void = () => {};
+    let promptOpened: () => void = () => {};
+    const parked = new Promise<void>((resolve) => {
+      promptOpened = resolve;
+    });
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: () => {
+        promptOpened();
+        return new Promise<string>((resolve) => {
+          resolvePrompt = resolve;
+        });
+      },
+    });
+    const sinks = makeSinks();
+    const state: WorkflowState = createInitialState('feat');
+
+    const loop = withContinuationLoop<string>({
+      ctx: {
+        projectDir,
+        sessionId,
+        callbacks,
+        bus: createEventBus(),
+        sinks,
+        signal: outer.signal,
+      },
+      state,
+      body: async ({ signal }) => {
+        sinks.trigger();
+        if (signal.aborted) throw new Error('aborted');
+        return 'never';
+      },
+    });
+
+    await parked;
+    outer.abort(new Error('workflow rewound'));
+    resolvePrompt('resume anyway');
+
+    await expect(loop).rejects.toThrow('workflow rewound');
+    const statePath = join(projectDir, '.diptych', 'sessions', sessionId, STATE_FILE);
+    const saved = JSON.parse(readFileSync(statePath, 'utf8')) as { awaitingContinue?: boolean };
+    expect(saved.awaitingContinue).toBe(true);
+  });
+
+  it('a command-idle-timeout failure routes to the continuation prompt', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: async () => 'retry please',
+    });
+    const sinks = makeSinks();
+    const state: WorkflowState = createInitialState('feat');
+
+    let attempt = 0;
+    const result = await withContinuationLoop<string>({
+      ctx: { projectDir, sessionId, callbacks, bus, sinks },
+      state,
+      body: async ({ signal, continuationPrompt, recordOutput }) => {
+        attempt += 1;
+        if (attempt === 1) {
+          recordOutput('silent partial');
+          expect(signal.aborted).toBe(false);
+          throw processError.idleTimeout({ command: 'opencode', idleMs: 300_000 });
+        }
+        expect(continuationPrompt).toContain('silent partial');
+        expect(continuationPrompt).toContain('retry please');
+        return 'recovered';
+      },
+    });
+
+    expect(attempt).toBe(2);
+    expect(result.value).toBe('recovered');
+    expect(events.filter((e) => e.type === 'turn_interrupted')[0]).toMatchObject({
+      source: 'watchdog',
+    });
+  });
+
+  it('continueAfterAbort publishes turn_interrupted', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    const publishedBeforePrompt: boolean[] = [];
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: async () => {
+        publishedBeforePrompt.push(events.some((e) => e.type === 'turn_interrupted'));
+        return 'go on';
+      },
+    });
+    const sinks = makeSinks();
+    const state: WorkflowState = createInitialState('feat');
+
+    let attempt = 0;
+    await withContinuationLoop<string>({
+      ctx: { projectDir, sessionId, callbacks, bus, sinks },
+      state,
+      body: async ({ signal }) => {
+        attempt += 1;
+        if (attempt === 1) {
+          sinks.trigger();
+          if (signal.aborted) throw new Error('aborted');
+        }
+        return 'ok';
+      },
+    });
+
+    expect(publishedBeforePrompt).toEqual([true]);
+    const interrupted = events.filter((e) => e.type === 'turn_interrupted');
+    expect(interrupted).toHaveLength(1);
+    expect(interrupted[0]).toMatchObject({ source: 'user' });
   });
 
   it('propagates a non-abort throw immediately when no continuation handler is set', async () => {
@@ -169,7 +367,7 @@ describe('withContinuationLoop', () => {
     const err = new Error('planner exploded');
     await expect(
       withContinuationLoop<number>({
-        ctx: { projectDir, sessionId, callbacks, sinks },
+        ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
         state,
         body: async () => {
           throw err;
@@ -189,7 +387,14 @@ describe('withContinuationLoop', () => {
     const err = new Error('aborted');
     await expect(
       withContinuationLoop<number>({
-        ctx: { projectDir, sessionId, callbacks, sinks, signal: outer.signal },
+        ctx: {
+          projectDir,
+          sessionId,
+          callbacks,
+          bus: createEventBus(),
+          sinks,
+          signal: outer.signal,
+        },
         state,
         body: async ({ signal }) => {
           sinks.trigger();
@@ -217,6 +422,7 @@ describe('withContinuationLoop', () => {
         sessionId,
         persistRef: { projectDir, sessionId },
         callbacks,
+        bus: createEventBus(),
         sinks,
       },
       state,
@@ -227,7 +433,7 @@ describe('withContinuationLoop', () => {
           sinks.trigger();
           if (signal.aborted) throw new Error('aborted');
         }
-        return { value: 'done' };
+        return 'done';
       },
     });
 
@@ -246,16 +452,16 @@ describe('withContinuationLoop', () => {
     const state: WorkflowState = createInitialState('feat');
 
     await withContinuationLoop<number>({
-      ctx: { projectDir, sessionId, callbacks, sinks },
+      ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
       state,
-      body: async () => ({ value: 1 }),
+      body: async () => 1,
     });
     expect(sinks.hasHandler()).toBe(false);
 
     callbacks.onContinuationNeeded = undefined;
     await expect(
       withContinuationLoop<number>({
-        ctx: { projectDir, sessionId, callbacks, sinks },
+        ctx: { projectDir, sessionId, callbacks, bus: createEventBus(), sinks },
         state,
         body: async () => {
           throw new Error('boom');
@@ -358,5 +564,43 @@ describe('regenerateFromFeedback (tasks)', () => {
       (e) => e.type === 'warning' && e.message.includes('Future Considerations'),
     );
     expect(warning).toBeDefined();
+  });
+
+  it('an abort during regeneration review parks the retry prompt instead of failing', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    const sinks = makeSinks();
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: async () => 'retry with more detail',
+    });
+
+    const regenerated = makeTask({ id: 'T001', title: 'Regenerated brief' });
+    const prompts: string[] = [];
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        prompts.push(prompt);
+        if (prompts.length === 1) {
+          sinks.trigger();
+          throw new Error('aborted');
+        }
+        return { text: formatTasks([regenerated]), usage: null };
+      },
+    });
+
+    const result = await regenerateFromFeedback('tasks', {
+      projectDir,
+      sessionId,
+      planner,
+      callbacks,
+      bus,
+      state: createInitialState('feat'),
+      metadata: TEST_METADATA,
+      sinks,
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain('retry with more detail');
+    expect(result.tasks).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'turn_interrupted')).toHaveLength(1);
   });
 });

@@ -3,7 +3,7 @@ import { resolveMode } from '../../config/runtime/resolve.js';
 import type { Config } from '../../schemas/config.js';
 import type { WorkflowMode } from '../../schemas/enums.js';
 import type { ReadinessCheck } from '../types.js';
-import { capitalize } from '../../../utils/capitalize.js';
+import { formatRoleLabel } from '../../phase-display.js';
 
 const MODE_CONTEXT_FLOORS: Record<WorkflowMode, number> = {
   instant: 8_000,
@@ -40,7 +40,7 @@ function contextLengthCheck(
     return {
       id: `context.${role}.missing`,
       severity: 'warning',
-      summary: `${capitalize(role)} context length is not configured.`,
+      summary: `${formatRoleLabel(role)} context length is not configured.`,
       fix: `Set ${role}.contextLength if the provider reports an unreliable context window.`,
       nextAction: 'raise-context',
       metadata: { role, contextLength: null, recommendedMinimum: floor },
@@ -51,7 +51,7 @@ function contextLengthCheck(
     return {
       id: `context.${role}.tight`,
       severity: 'warning',
-      summary: `${capitalize(role)} context length ${contextLength} may be tight for this mode.`,
+      summary: `${formatRoleLabel(role)} context length ${contextLength} may be tight for this mode.`,
       fix: 'Use a larger model/context window or choose a smaller workflow mode.',
       nextAction: 'raise-context',
       metadata: { role, contextLength, recommendedMinimum: floor },
@@ -61,7 +61,7 @@ function contextLengthCheck(
   return {
     id: `context.${role}.ok`,
     severity: 'ok',
-    summary: `${capitalize(role)} context length ${contextLength} is configured.`,
+    summary: `${formatRoleLabel(role)} context length ${contextLength} is configured.`,
     metadata: { role, contextLength, recommendedMinimum: floor },
   };
 }

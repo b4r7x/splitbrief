@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
@@ -63,15 +63,15 @@ describe('useEditBuffer commit on invalid input', () => {
   it('keeps edit mode open and surfaces an error for out-of-range numbers', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\x7f'); // backspace seeded "3"
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('9');
     ui.stdin.write('9'); // "99" exceeds max (10)
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\r'); // attempt commit
-    await tick(20);
+    await flushEffects();
 
     expect(committed).toHaveLength(0);
     expect(ui.lastFrame() ?? '').toContain('active=true');
@@ -87,12 +87,12 @@ describe('useEditBuffer commit on invalid input', () => {
   it('keeps edit mode open and surfaces an error for empty numeric values', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
-    await tick(20);
+    await flushEffects();
 
     for (let i = 0; i < '3'.length; i++) ui.stdin.write('\x7f');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\r');
-    await tick(20);
+    await flushEffects();
 
     expect(committed).toHaveLength(0);
     expect(ui.lastFrame() ?? '').toContain('active=true');
@@ -107,14 +107,14 @@ describe('useEditBuffer commit on invalid input', () => {
     const ui = renderFeature(
       <Harness def={stringDef} initialValue="npm test" committed={committed} />,
     );
-    await tick(20);
+    await flushEffects();
 
     for (let i = 0; i < 'npm test'.length; i++) ui.stdin.write('\x7f'); // clear buffer
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(' '); // whitespace-only buffer
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\r'); // attempt commit
-    await tick(20);
+    await flushEffects();
 
     expect(committed).toHaveLength(0);
     expect(ui.lastFrame() ?? '').toContain('active=true');
@@ -129,14 +129,14 @@ describe('useEditBuffer commit on invalid input', () => {
   it('backspace removes a whole emoji from the buffer, not a lone surrogate', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(<Harness def={stringDef} initialValue="hi" committed={committed} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('😀');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('buffer=[hi😀]');
 
     ui.stdin.write('\x7f'); // backspace the emoji
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('buffer=[hi]');
@@ -149,14 +149,14 @@ describe('useEditBuffer commit on invalid input', () => {
   it('commits valid input and closes edit mode without an error', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\x7f'); // backspace seeded "3"
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('5');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\r'); // commit
-    await tick(20);
+    await flushEffects();
 
     expect(committed).toEqual([{ id: 'workflow.maxRetries', value: 5 }]);
     expect(ui.lastFrame() ?? '').toContain('active=false');

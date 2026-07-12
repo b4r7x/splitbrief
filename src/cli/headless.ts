@@ -4,7 +4,7 @@ import type { Planner } from '../engine/planners/types.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import { loadState } from '../core/state/persistence.js';
 import { readActive } from '../core/sessions/lifecycle.js';
-import { configForSessionTranscriptPolicy } from '../core/sessions/io.js';
+import { configForSessionTranscriptPolicy, readSession } from '../core/sessions/io.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
 import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
@@ -60,6 +60,18 @@ function failIfFinalReviewIncomplete(projectDir: string, sessionId: string | und
   if (state?.phase !== 'final-review') return;
   writeHeadlessJsonRecord({ type: 'final_review_failed', sessionId: reviewSessionId });
   throw cliError('Final review did not pass — workflow is incomplete.', 1);
+}
+
+function failIfSessionFailed(projectDir: string, sessionId: string | undefined): void {
+  const failedSessionId = sessionId ?? readActive(projectDir);
+  if (!failedSessionId) return;
+  const session = readSession({ projectDir, sessionId: failedSessionId });
+  if (session?.status !== 'failed') return;
+  writeHeadlessJsonRecord({
+    type: 'error',
+    message: `Session ${failedSessionId} ended with status failed.`,
+  });
+  throw cliError('Workflow failed — see the error output above.', 1);
 }
 
 export interface RunHeadlessOptions {
@@ -129,7 +141,6 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onQuestionAsked: async () => '',
-        onContinuationNeeded: async () => '',
         onComplete: () => undefined,
       },
     });
@@ -143,4 +154,5 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
 
   emitRecoveryAndFailIfPending(projectDir, sessionId, runConfig.workflow.persistTranscript);
   failIfFinalReviewIncomplete(projectDir, sessionId);
+  failIfSessionFailed(projectDir, sessionId);
 }

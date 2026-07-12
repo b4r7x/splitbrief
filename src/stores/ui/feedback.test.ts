@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { feedbackStore } from './feedback.js';
+import { publishFeedbackReset } from '../channels/feedback.js';
 
 describe('feedbackStore', () => {
   beforeEach(() => {
@@ -22,15 +23,8 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().message).toBeNull();
     expect(feedbackStore.get().isError).toBe(false);
 
-    // setError persists and does not auto-clear.
-    feedbackStore.setError('persistent');
-    expect(feedbackStore.get().message).toBe('persistent');
-    expect(feedbackStore.get().isError).toBe(true);
-    vi.advanceTimersByTime(5000);
-    expect(feedbackStore.get().message).toBe('persistent');
-    expect(feedbackStore.get().isError).toBe(true);
-
     // setError(null) clears the error.
+    feedbackStore.setError('persistent');
     feedbackStore.setError(null);
     expect(feedbackStore.get().message).toBeNull();
     expect(feedbackStore.get().isError).toBe(false);
@@ -49,5 +43,42 @@ describe('feedbackStore', () => {
     vi.advanceTimersByTime(3000);
     expect(feedbackStore.get().message).toBeNull();
     expect(feedbackStore.get().isError).toBe(false);
+  });
+
+  it('setError auto-clears after the 5s error TTL', () => {
+    feedbackStore.setError('persistent');
+    expect(feedbackStore.get().message).toBe('persistent');
+    expect(feedbackStore.get().isError).toBe(true);
+
+    vi.advanceTimersByTime(4999);
+    expect(feedbackStore.get().message).toBe('persistent');
+
+    vi.advanceTimersByTime(1);
+    expect(feedbackStore.get().message).toBeNull();
+    expect(feedbackStore.get().isError).toBe(false);
+  });
+
+  it('transient errors keep the 3s TTL', () => {
+    feedbackStore.setTransientError('temporary failure');
+    expect(feedbackStore.get().message).toBe('temporary failure');
+
+    vi.advanceTimersByTime(2999);
+    expect(feedbackStore.get().message).toBe('temporary failure');
+
+    vi.advanceTimersByTime(1);
+    expect(feedbackStore.get().message).toBeNull();
+    expect(feedbackStore.get().isError).toBe(false);
+  });
+
+  it('publishFeedbackReset clears feedback immediately', () => {
+    feedbackStore.setError('persistent');
+    expect(feedbackStore.get().message).toBe('persistent');
+
+    publishFeedbackReset();
+    expect(feedbackStore.get().message).toBeNull();
+    expect(feedbackStore.get().isError).toBe(false);
+
+    vi.advanceTimersByTime(5000);
+    expect(feedbackStore.get().message).toBeNull();
   });
 });
