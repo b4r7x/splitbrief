@@ -295,15 +295,25 @@ export function eventRowBlock(options: {
         labelTone: 'success',
       });
     case 'message_queued':
-      return cardRowsBlock({
-        keyPrefix,
-        label: 'queued',
-        value: queueMessageValue('Queued — applies at the next planner prompt', event.preview),
-        width: ctx.width,
-        labelTone: 'info',
-        valueTone: 'text',
-        markerTone: 'info',
-      });
+      return compositeBlock(keyPrefix, [
+        cardRowsBlock({
+          keyPrefix: `${keyPrefix}-header-0`,
+          label: 'Queued',
+          value: 'applies at the next planner prompt',
+          width: ctx.width,
+          labelTone: 'info',
+          valueTone: 'textDim',
+          markerTone: 'info',
+        }),
+        event.preview
+          ? wrappedTextBlock({
+              keyPrefix: `${keyPrefix}-preview-1`,
+              text: event.preview,
+              width: ctx.width,
+              tone: 'text',
+            })
+          : null,
+      ]);
     case 'message_injected_native':
       return cardRowsBlock({
         keyPrefix,

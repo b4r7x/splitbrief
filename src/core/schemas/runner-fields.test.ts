@@ -286,7 +286,7 @@ describe('createRunnerConfigSchema', () => {
   it('a lone threshold is validated against the other default: a kill below the default warn is rejected', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
 
-    // idleKillMs alone below the 60s default warn would kill the runner before
+    // idleKillMs alone below the 5min default warn would kill the runner before
     // the warning ever fires — the exact silent-kill case the ordering protects.
     const killBelowDefaultWarn = schema.safeParse({
       kind: 'shell',
@@ -297,14 +297,14 @@ describe('createRunnerConfigSchema', () => {
     expect(killBelowDefaultWarn.success).toBe(false);
     expect(killBelowDefaultWarn.error?.issues[0]?.message).toContain('idleKillMs must be at least');
 
-    // idleWarnMs alone above the 300s default kill arms a warning that can
+    // idleWarnMs alone above the 30min default kill arms a warning that can
     // never fire before the default kill.
     expect(
       schema.safeParse({
         kind: 'shell',
         command: './run',
         model: 'local-shell',
-        idleWarnMs: 400_000,
+        idleWarnMs: 2_000_000,
       }).success,
     ).toBe(false);
 
@@ -313,7 +313,7 @@ describe('createRunnerConfigSchema', () => {
         kind: 'shell',
         command: './run',
         model: 'local-shell',
-        idleKillMs: 90_000,
+        idleKillMs: 600_000,
       }).success,
     ).toBe(true);
     expect(

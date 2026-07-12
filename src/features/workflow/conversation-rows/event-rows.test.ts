@@ -334,9 +334,8 @@ describe('eventRows', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toContain(
-      'Queued — applies at the next planner prompt: ship it sk-***REDACTED***',
-    );
+    expect(text).toContain('Queued  applies at the next planner prompt');
+    expect(text).toContain('ship it sk-***REDACTED***');
     expect(text).toContain(
       'Message delivered to live session: Authorization: Bearer ***REDACTED***',
     );
@@ -841,7 +840,7 @@ describe('eventRows', () => {
     expect(rows.every((rowValue) => rowValue.markerTone === 'warning')).toBe(true);
   });
 
-  it('message_queued renders info label and marker with normal-tone value', () => {
+  it('message_queued renders a Queued header above the message text', () => {
     const event: EngineEventOf<'message_queued'> = {
       type: 'message_queued',
       ts: 0,
@@ -857,9 +856,13 @@ describe('eventRows', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText).join('\n')).toContain('Queued — applies at the next planner prompt');
+    const joined = rows.map(rowText).join('\n');
+    expect(joined).toContain('Queued  applies at the next planner prompt');
+    expect(joined.match(/queued/gi)).toHaveLength(1);
     expect(rows[0]?.markerTone).toBe('info');
     expect(rows[0]?.segments[0]?.tone).toBe('info');
-    expect(rows[0]?.segments[1]?.tone).toBe('text');
+    expect(rows[0]?.segments[1]?.tone).toBe('textDim');
+    expect(rows[1] && rowText(rows[1])).toBe('ship it');
+    expect(rows[1]?.segments[0]?.tone).toBe('text');
   });
 });
