@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { MultilineInput } from '../../components/input/multiline-input.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
@@ -84,7 +85,7 @@ export function TextInputOverlay({
         {examples && examples.length > 0 && (
           <Box marginTop={1} flexDirection="column">
             <Text color={t.textDim} dimColor>
-              examples
+              Examples
             </Text>
             {examples.map((ex) => (
               <Text key={ex} color={t.textDim} dimColor>
@@ -95,7 +96,7 @@ export function TextInputOverlay({
           </Box>
         )}
         <Box marginTop={1}>
-          <Text color={t.textDim}>⏎ save · esc back</Text>
+          <Text color={t.textDim}>{`⏎ save${SOFT_SEP}esc back`}</Text>
         </Box>
       </Box>
     </Box>

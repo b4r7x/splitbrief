@@ -50,7 +50,7 @@ export function RecentSessions({
   if (sessions.length === 0) {
     return (
       <RecentSessionsShell>
-        <Text color={theme.textDim}>no recent sessions</Text>
+        <Text color={theme.textDim}>No recent sessions</Text>
       </RecentSessionsShell>
     );
   }

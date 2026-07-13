@@ -1,6 +1,7 @@
 import type { InputMode } from '../../core/navigation/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { IpcClientStatus } from '../../engine/ipc/client.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { reviewHintForPhase } from './review-commands.js';
 
 export interface InputHintInput {
@@ -24,17 +25,17 @@ export interface CancelledHints {
 
 export function resolveCancelledHints(canResumeCancelled: boolean): CancelledHints {
   return canResumeCancelled
-    ? { placeholder: 'Enter to resume…', byline: 'ESC home · /quit' }
-    : { placeholder: 'Esc for home…', byline: '/quit to exit' };
+    ? { placeholder: 'enter to resume…', byline: `esc home${SOFT_SEP}/quit` }
+    : { placeholder: 'esc for home…', byline: '/quit to exit' };
 }
 
 export function resolveAttachInputHint(status: IpcClientStatus): string {
-  if (status === 'connected') return 'queue a message to the running workflow';
-  if (status === 'reconnecting') return 'reconnecting to server…';
+  if (status === 'connected') return 'Queue a message to the running workflow';
+  if (status === 'reconnecting') return 'Reconnecting to server…';
   if (status === 'failed')
-    return 'failed server connection lost — Ctrl+D to exit, retry with resume';
-  if (status === 'detached') return 'detached';
-  return 'connecting to server…';
+    return 'Failed server connection lost — ctrl+d to exit, retry with resume';
+  if (status === 'detached') return 'Detached';
+  return 'Connecting to server…';
 }
 
 export function resolveAttachFeedbackHint(status: IpcClientStatus): string {
@@ -47,11 +48,11 @@ export interface ComposerBoxHintOverride {
   cost: boolean;
 }
 
-// The attached client always offers `Ctrl+D detach` on the composer line, but only the live
+// The attached client always offers `ctrl+d detach` on the composer line, but only the live
 // connected state shows the cost token; once it has detached the byline goes blank.
 export function resolveAttachBoxHint(status: IpcClientStatus): ComposerBoxHintOverride {
   if (status === 'detached') return { keys: '', cost: false };
-  return { keys: 'Ctrl+D detach', cost: status === 'connected' };
+  return { keys: 'ctrl+d detach', cost: status === 'connected' };
 }
 
 export type HintStateSeverity = 'error' | 'warning';
@@ -63,5 +64,5 @@ const HINT_STATE_LEADS: Record<string, HintStateSeverity> = {
 
 export function hintStateSeverity(line: string): HintStateSeverity | null {
   const firstWord = line.trimStart().split(/\s/, 1)[0] ?? '';
-  return HINT_STATE_LEADS[firstWord] ?? null;
+  return HINT_STATE_LEADS[firstWord.toLowerCase()] ?? null;
 }

@@ -121,7 +121,7 @@ function renderAttachedCommandPalette(): ReturnType<typeof render> {
   );
 }
 
-const GROUP_HEADERS = ['commands', 'modes', 'pickers', 'tasks', 'sessions', 'actions'];
+const GROUP_HEADERS = ['Commands', 'Modes', 'Pickers', 'Tasks', 'Sessions', 'Actions'];
 
 function paletteResultRows(frame: string): string[] {
   return frame.split('\n').filter((line) => {
@@ -136,8 +136,8 @@ function paletteResultRows(frame: string): string[] {
     if (text.startsWith('palette')) return false;
     if (text.startsWith(`${glyph('prompt')} `)) return false;
     if (text.includes('navigate')) return false;
-    if (text === 'no matching commands') return false;
-    if (/^\d+\/\d+/.test(text)) return false;
+    if (text === 'No matching commands') return false;
+    if (/^[↑↓] (?:\d+ )?more$/.test(text)) return false;
     if (GROUP_HEADERS.includes(text)) return false;
     return true;
   });
@@ -204,7 +204,7 @@ describe('CommandPaletteOverlay', () => {
     expect(frame).toContain('palette');
     expect(frame).toContain('navigate');
     expect(frame).toContain('esc close');
-    expect(frame).toContain('commands');
+    expect(frame).toContain('Commands');
     instance.unmount();
   });
 
@@ -262,7 +262,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame.toLowerCase()).toContain('no matching commands');
+    expect(frame).toContain('No matching commands');
     instance.unmount();
   });
 
@@ -352,7 +352,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('sessions');
+    expect(frame).toContain('Sessions');
     expect(frame).toContain('add login form');
     instance.unmount();
   });
@@ -386,7 +386,7 @@ describe('CommandPaletteOverlay', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(frame).toContain('SuperUniquePaletteAction');
-    expect(frame).toContain('actions');
+    expect(frame).toContain('Actions');
     instance.unmount();
   });
 
@@ -444,7 +444,7 @@ describe('CommandPaletteOverlay', () => {
     const frame = instance.lastFrame() ?? '';
     if (showsTask) {
       expect(paletteResultRows(frame).some((row) => row.includes('uniquetasktitle123'))).toBe(true);
-      expect(frame).toContain('tasks');
+      expect(frame).toContain('Tasks');
     } else {
       expect(paletteResultRows(frame).some((row) => row.includes('uniquetasktitle123'))).toBe(
         false,
@@ -462,7 +462,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('modes');
+    expect(frame).toContain('Modes');
     instance.unmount();
   });
 
@@ -492,7 +492,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('pickers');
+    expect(frame).toContain('Pickers');
     instance.unmount();
   });
 
@@ -529,25 +529,48 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('shows visible palette actions within the result budget', async () => {
+  it('shows visible palette actions within the terminal-derived result budget', async () => {
     terminalSizeStore.__testReset({ cols: 140, rows: 36, isSmall: false });
     const instance = renderCommandPalette();
     await tick(1);
     await tick(1);
 
     const rows = paletteResultRows(instance.lastFrame() ?? '');
-    expect(rows.length).toBeLessThanOrEqual(8);
+    expect(rows.length).toBeGreaterThan(8);
 
     const helpRow = rowContaining(rows, '/help');
     const settingsRow = rowContaining(rows, '/settings');
-    expect(helpRow).toContain('show help overlay');
-    expect(settingsRow).toContain('planner');
-    expect(settingsRow).toContain('settings');
+    expect(helpRow).toContain('Show help overlay');
+    expect(settingsRow).toContain('Planner, model & settings');
 
     instance.unmount();
   });
 
-  it('keeps the filter prompt and hints visible on a short terminal', async () => {
+  it('shows more than 8 result rows on a 50-row terminal', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 50, isSmall: false });
+    const commands: RuntimeCommandDef[] = Array.from({ length: 40 }, (_, index) => ({
+      kind: 'noarg',
+      name: `/palette-test-${index}`,
+      label: `/palette-test-${index}`,
+      description: `Palette test command ${index}`,
+      validScreens: ['home'],
+      handler: () => {},
+    }));
+    const instance = render(
+      <CommandPaletteOverlay
+        commands={commands}
+        onRuntimeCommand={() => {}}
+        onWorkflowMode={setWorkflowModeForTest}
+      />,
+    );
+    await tick(1);
+    await tick(1);
+
+    expect(paletteResultRows(instance.lastFrame() ?? '').length).toBeGreaterThan(8);
+    instance.unmount();
+  });
+
+  it('renders the shared ↓ N more indicator instead of the n/total counter', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 12, isSmall: false });
     const instance = renderCommandPalette();
     await tick(1);
@@ -557,7 +580,8 @@ describe('CommandPaletteOverlay', () => {
     expect(frame).toContain(glyph('prompt'));
     expect(frame).toContain('navigate');
     expect(frame).toContain('esc close');
-    expect(frame).toMatch(/\d+\/\d+\s*↓/);
+    expect(frame).toMatch(/↓ \d+ more/);
+    expect(frame).not.toMatch(/\d+\/\d+\s*↓/);
 
     instance.unmount();
   });
@@ -579,7 +603,7 @@ describe('CommandPaletteOverlay', () => {
 
     expect(shortRows.length).toBeGreaterThan(0);
     expect(shortRows.length).toBeLessThan(tallRows.length);
-    expect(tallRows.length).toBeLessThanOrEqual(8);
+    expect(tallRows.length).toBeGreaterThan(8);
   });
 
   it('keeps palette command shortcuts visible when descriptions overflow', async () => {
@@ -593,11 +617,11 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    const settingsRow = rowContaining(paletteResultRows(frame), 'Ctrl+,');
+    const settingsRow = rowContaining(paletteResultRows(frame), 'ctrl+,');
     expect(settingsRow).toContain('/settings');
-    expect(settingsRow).toContain('Ctrl+,');
-    expect(frame).not.toContain('[Ctrl+,]');
-    expect(frame.split('\n').filter((line) => line.includes('Ctrl+,'))).toHaveLength(1);
+    expect(settingsRow).toContain('ctrl+,');
+    expect(frame).not.toContain('[ctrl+,]');
+    expect(frame.split('\n').filter((line) => line.includes('ctrl+,'))).toHaveLength(1);
 
     instance.unmount();
   });
@@ -608,15 +632,15 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame).not.toContain('modes');
-    expect(frame).not.toContain('planner');
+    expect(frame).not.toContain('Modes');
+    expect(frame).not.toContain('Planner');
     expect(frame).not.toContain('implementer');
     expect(frame).not.toContain('settings');
 
     write(instance, 'instant');
     await tick(1);
     await tick(1);
-    expect(instance.lastFrame() ?? '').toContain('no matching commands');
+    expect(instance.lastFrame() ?? '').toContain('No matching commands');
 
     instance.unmount();
   });
@@ -645,7 +669,7 @@ describe('CommandPaletteOverlay', () => {
 
     const frame = instance.lastFrame() ?? '';
     expect(paletteResultRows(frame).some((row) => row.includes(uniqueFeature))).toBe(true);
-    expect(frame).toContain('sessions');
+    expect(frame).toContain('Sessions');
 
     write(instance, ENTER);
     await tick(1);

@@ -244,7 +244,7 @@ function handleShortcutKeys(
   if (key.ctrl && input === 's' && screen === 'home')
     return { type: 'open-overlay', overlay: 'skills' };
   if (input === '\x1f' || (key.ctrl && input === '/'))
-    return { type: 'open-overlay', overlay: 'help' }; // Ctrl+/
+    return { type: 'open-overlay', overlay: 'help' };
   if (key.ctrl && input === ',') {
     if (route.screen === 'workflow' && route.attach !== undefined) return NONE;
     return { type: 'open-overlay', overlay: 'settings' };

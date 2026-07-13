@@ -60,10 +60,10 @@ export function ReadinessPanel({ report, onOpenFix, onDismiss }: ReadinessPanelP
           <>
             <Box justifyContent="space-between">
               <Text>
-                readiness
+                Readiness
                 <Text color={t.textDim}>{SOFT_SEP}</Text>
                 <Text color={isBlocked ? t.error : t.textDim}>
-                  {isBlocked ? 'blocked' : 'warnings'}
+                  {isBlocked ? 'Blocked' : 'Warnings'}
                 </Text>
               </Text>
               <Text color={t.textDim}>
@@ -87,22 +87,16 @@ export function ReadinessPanel({ report, onOpenFix, onDismiss }: ReadinessPanelP
             ))}
             <Divider width={innerWidth} tone="textDim" />
             <Text color={t.textDim}>
-              {'esc  dismiss'}
-              {onOpenFix ? (
-                <>
-                  {SOFT_SEP}
-                  {'enter  open fix'}
-                </>
-              ) : null}
+              {onOpenFix ? `esc dismiss${SOFT_SEP}⏎ open fix` : 'esc dismiss'}
             </Text>
           </>
         ) : (
           <Text>
             <Text color={t.success}>{`${glyph('statusDone')} `}</Text>
-            ready
+            Ready
             <Text color={t.textDim}>
               {SOFT_SEP}
-              no blockers, start can continue
+              No blockers, start can continue
             </Text>
           </Text>
         )}

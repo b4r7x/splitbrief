@@ -1,5 +1,6 @@
 import { Box, Text, type Key } from 'ink';
 import type { Session } from '../../../core/schemas/session.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { useTheme } from '../../../components/theme.js';
 import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import { SessionRow } from '../../../components/session-row.js';
@@ -10,7 +11,7 @@ import { ROW_ZONE_Z_SCREEN } from '../../../components/pickers/row-zone.js';
 import { filterSession } from '../../../core/sessions/search.js';
 import { copyToClipboard } from '../../../lib/clipboard/clipboard.js';
 
-export const RECENT_SESSIONS_HINT = '↑↓ navigate · ⏎ open · y copy · esc back';
+export const RECENT_SESSIONS_HINT = `↑↓ navigate${SOFT_SEP}⏎ open${SOFT_SEP}y copy${SOFT_SEP}esc back`;
 
 interface RecentSessionsListProps {
   sessions: Session[];
@@ -61,7 +62,7 @@ export function RecentSessionsList({
   return (
     <RecentSessionsShell>
       <Box borderStyle="round" borderColor={theme.border} paddingX={1} marginBottom={1}>
-        <FilterInput filter={filter} placeholder="filter sessions" />
+        <FilterInput filter={filter} />
       </Box>
       <Box flexDirection="column">
         <ListViewport

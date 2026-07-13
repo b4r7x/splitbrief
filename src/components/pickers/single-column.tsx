@@ -4,10 +4,7 @@ import { useTheme } from '../theme.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { getScrollbarThumb, scrollbarCell } from '../scrollbar.js';
 import { windowSlice } from './scroll-window.js';
-import { CursorCell } from './cursor-cell.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from './row-zone.js';
-
-const CURSOR_WIDTH = 2;
 
 interface SingleColumnPickerProps<T> {
   label: string;
@@ -43,7 +40,7 @@ export function SingleColumnPicker<T>({
   placeholderWhenEmpty,
   hideFilterRow,
   customFilterPrompt,
-  emptyText = 'no items',
+  emptyText = 'No items',
   onRowActivate,
   rowZonePrefix = 'single-column-row',
   rowZoneZ = ROW_ZONE_Z_OVERLAY,
@@ -63,7 +60,7 @@ export function SingleColumnPicker<T>({
     lineCount: items.length,
     visibleHeight: slice.length,
   });
-  const rowContentWidth = Math.max(1, contentMaxWidth - CURSOR_WIDTH - (overflow ? 1 : 0));
+  const rowContentWidth = Math.max(1, contentMaxWidth - (overflow ? 2 : 0));
 
   return (
     <Box
@@ -85,7 +82,7 @@ export function SingleColumnPicker<T>({
             (filter ? (
               <Text color={t.text}>{filter}</Text>
             ) : (
-              <Text color={t.textDim}>type to filter…</Text>
+              <Text color={t.textDim}>Type to filter…</Text>
             ))}
         </Box>
       )}
@@ -98,14 +95,15 @@ export function SingleColumnPicker<T>({
             const onThumb = scrollbarCell(i, thumb);
             const rowNode = (
               <Box key={getKey(item)}>
-                <CursorCell isCursor={isCursor} dimWhenInactive />
                 <Box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
                   {renderRow(item, isCursor, rowContentWidth)}
                 </Box>
                 {overflow ? (
-                  <Text color={onThumb ? t.accent : t.scrollIndicator}>
-                    {onThumb ? glyph('scrollThumb') : glyph('scrollTrack')}
-                  </Text>
+                  <Box marginLeft={1}>
+                    <Text color={onThumb ? t.accent : t.scrollIndicator}>
+                      {onThumb ? glyph('scrollThumb') : glyph('scrollTrack')}
+                    </Text>
+                  </Box>
                 ) : null}
               </Box>
             );

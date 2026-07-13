@@ -42,14 +42,14 @@ describe('buildCostBreakdownRows', () => {
     const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('◆ cost');
-    expect(frame).toContain('actual cost');
+    expect(frame).toContain('◆ Cost');
+    expect(frame).toContain('Actual cost');
     expect(frame).toContain('$1.50');
-    expect(frame).toContain('planner cost');
-    expect(frame).toContain('implementer cost');
-    expect(frame).toContain('all-planner baseline');
+    expect(frame).toContain('Planner cost');
+    expect(frame).toContain('Implementer cost');
+    expect(frame).toContain('All-planner baseline');
     expect(frame).toContain('$5.00');
-    expect(frame).toContain('saved');
+    expect(frame).toContain('Saved');
     expect(frame).toContain('$4.50 (75%)');
     expect(frame).not.toContain('Local/cheap rate');
     expect(frame).toContain('Anthropic');
@@ -79,12 +79,12 @@ describe('buildCostBreakdownRows', () => {
     const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('actual cost');
+    expect(frame).toContain('Actual cost');
     expect(frame).toContain('$1.00 + unknown');
-    expect(frame).toContain('all-planner baseline');
+    expect(frame).toContain('All-planner baseline');
     expect(frame).toContain('$18.00');
-    expect(frame).toContain('saved');
-    expect(frame).toContain('unknown price');
+    expect(frame).toContain('Saved');
+    expect(frame).toContain('Unknown price');
     expect(frame).not.toContain('Local/cheap rate');
     expect(frame).not.toContain('$0.00');
 
@@ -111,8 +111,8 @@ describe('buildCostBreakdownRows', () => {
     const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('extra cost');
-    expect(frame).toContain('extra $0.05 (-50%)');
+    expect(frame).toContain('Extra cost');
+    expect(frame).toContain('Extra $0.05 (-50%)');
     expect(frame).not.toContain('saved $0.00');
 
     ui.unmount();

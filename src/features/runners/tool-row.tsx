@@ -14,6 +14,11 @@ interface ToolRowParams {
   currentCommandKind: 'shell' | 'agent' | undefined;
 }
 
+const COMMAND_LABELS = {
+  shell: '+ Add shell command…',
+  agent: '+ Add agent command…',
+} satisfies Record<'shell' | 'agent', string>;
+
 export function renderToolRow({
   item,
   isCursor,
@@ -30,9 +35,11 @@ export function renderToolRow({
   const label = isCommandBased
     ? showConfiguredCommand
       ? `${item.kind}: ${currentCommand}`
-      : '+ add custom…'
+      : item.kind === 'shell'
+        ? COMMAND_LABELS.shell
+        : COMMAND_LABELS.agent
     : item.displayName;
-  const status = dimmed ? (isLocal ? 'no models' : 'unavailable') : undefined;
+  const status = dimmed ? (isLocal ? 'No models' : 'Unavailable') : undefined;
   const metadata = status ?? (!isCommandBased ? (item.version ?? undefined) : undefined);
 
   return (
@@ -60,7 +67,7 @@ export function renderModelRow({ item, isCursor, maxWidth, currentModel }: Model
   const isAutoModel = item.isDefault && item.id === 'auto';
   const contextStr =
     !isAutoModel && item.contextLength ? formatContextLength(item.contextLength) : '';
-  const badge = isCustomModel(item) ? 'custom' : isAutoModel ? 'default' : '';
+  const badge = isCustomModel(item) ? 'Custom' : isAutoModel ? 'Default' : '';
   const metadata = [contextStr, badge].filter(Boolean).join(' ') || undefined;
 
   return (

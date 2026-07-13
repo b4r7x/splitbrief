@@ -60,7 +60,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/help',
       label: 'help',
-      description: 'show help overlay',
+      description: 'Show help overlay',
       shortcut: getShortcutKey('help'),
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('help'),
@@ -69,7 +69,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/palette',
       label: 'palette',
-      description: 'open command palette',
+      description: 'Open command palette',
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('command-palette'),
     },
@@ -77,7 +77,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/skills',
       label: 'skills',
-      description: 'select planner skills',
+      description: 'Select planner skills',
       shortcut: getShortcutKey('skills'),
       validScreens: ['home'],
       handler: () => ctx.openOverlay('skills'),
@@ -86,7 +86,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/sessions',
       label: 'sessions',
-      description: 'browse past sessions',
+      description: 'Browse past sessions',
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('sessions'),
     },
@@ -95,7 +95,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       name: '/settings',
       aliases: ['/config'],
       label: 'settings',
-      description: 'planner, model & settings',
+      description: 'Planner, model & settings',
       shortcut: getShortcutKey('settings'),
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('settings'),
@@ -104,7 +104,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/mode',
       label: 'mode',
-      description: `select workflow mode ${glyph('connectorHandoff')}`,
+      description: `Select workflow mode ${glyph('connectorHandoff')}`,
       validScreens: ALL_SCREENS,
       handler: (args) => {
         if (!args) {
@@ -125,7 +125,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/copy',
       label: 'copy',
-      description: `copy to clipboard: ${COPY_TARGETS.join(' | ')}`,
+      description: `Copy to clipboard: ${COPY_TARGETS.join(' | ')}`,
       validScreens: ['workflow'],
       handler: async (args) => {
         const target = parseCopyTarget(args);
@@ -142,7 +142,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/effort',
       label: 'effort',
-      description: `set planner effort: ${EFFORT_LEVELS.join(' | ')}`,
+      description: `Set planner effort: ${EFFORT_LEVELS.join(' | ')}`,
       validScreens: ALL_SCREENS,
       handler: (args) => {
         const value = args?.trim().toLowerCase();
@@ -163,7 +163,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/planner',
       label: 'planner',
-      description: 'select planner tool',
+      description: 'Select planner tool',
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('planner-picker'),
     },
@@ -171,7 +171,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/implementer',
       label: 'implementer',
-      description: 'select implementer',
+      description: 'Select implementer',
       validScreens: ALL_SCREENS,
       handler: () => ctx.openOverlay('implementer-picker'),
     },
@@ -179,7 +179,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/home',
       label: 'home',
-      description: 'return to home screen',
+      description: 'Return to home screen',
       validScreens: ['workflow', 'summary'],
       handler: () => ctx.navigate('home'),
     },
@@ -187,7 +187,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/scroll',
       label: 'scroll',
-      description: `scroll conversation: ${SCROLL_COMMAND_TARGETS.join(' | ')}`,
+      description: `Scroll conversation: ${SCROLL_COMMAND_TARGETS.join(' | ')}`,
       validScreens: ['workflow'],
       handler: (args) => {
         const target = parseScrollCommandTarget(args);
@@ -209,7 +209,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/activity',
       label: 'activity',
-      description: 'expand or collapse the latest activity batch',
+      description: 'Expand or collapse the latest activity batch',
       shortcut: getShortcutKey('activity'),
       validScreens: ['workflow'],
       handler: () => {
@@ -227,7 +227,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/sidebar',
       label: 'sidebar',
-      description: 'show or hide workflow sidebar',
+      description: 'Show or hide workflow sidebar',
       validScreens: ['workflow'],
       handler: () => {
         const result = ctx.toggleSidebar();
@@ -242,7 +242,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/refresh',
       label: 'refresh',
-      description: 're-detect available tools',
+      description: 'Re-detect available tools',
       validScreens: ALL_SCREENS,
       handler: async () => {
         ctx.setFeedbackMessage('Refreshing tool detection…');
@@ -259,7 +259,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/revise-spec',
       label: 'revise spec',
-      description: 'rewind to spec phase with optional feedback',
+      description: 'Rewind to spec phase with optional feedback',
       validScreens: ['workflow'],
       phaseGuard: canReviseSpec,
       handler: (args) => {
@@ -273,7 +273,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/revise-plan',
       label: 'revise plan',
-      description: 'rewind to plan phase with optional feedback',
+      description: 'Rewind to plan phase with optional feedback',
       validScreens: ['workflow'],
       phaseGuard: canRevisePlan,
       handler: (args) => {
@@ -287,7 +287,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/redo-task',
       label: 'redo task',
-      description: 'reset a task to pending and re-run it',
+      description: 'Reset a task to pending and re-run it',
       validScreens: ['workflow'],
       phaseGuard: canRedoTask,
       handler: (args) => {
@@ -310,7 +310,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/queue',
       label: 'queue',
-      description: 'show or clear the message queue',
+      description: 'Show or clear the message queue',
       validScreens: ['workflow'],
       handler: async (args) => {
         const sub = args?.trim().toLowerCase();
@@ -345,7 +345,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/handoff',
       label: 'handoff',
-      description: `export handoff pack for an external agent ${glyph('connectorHandoff')}`,
+      description: `Export handoff pack for an external agent ${glyph('connectorHandoff')}`,
       validScreens: ['workflow', 'summary'],
       handler: async (args) => {
         if (!args) {
@@ -370,7 +370,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/export',
       label: 'export',
-      description: 'export session as HTML report',
+      description: 'Export session as HTML report',
       validScreens: ['workflow', 'summary'],
       handler: async () => {
         const result = await ctx.exportSession();
@@ -385,7 +385,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/compact-transcript',
       label: 'compact transcript',
-      description: 'summarize older transcript turns',
+      description: 'Summarize older transcript turns',
       validScreens: ['workflow', 'summary'],
       handler: async () => {
         try {
@@ -409,7 +409,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/repomap',
       label: 'repomap',
-      description: 'manage the repo-map cache',
+      description: 'Manage the repo-map cache',
       validScreens: ALL_SCREENS,
       handler: async (args) => {
         const sub = args?.trim().toLowerCase();
@@ -435,7 +435,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/attach',
       label: 'attach',
-      description: 'attach an image for the next planner call',
+      description: 'Attach an image for the next planner call',
       validScreens: ['home', 'workflow'],
       handler: (args) => {
         const value = args?.trim();
@@ -461,7 +461,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/detach',
       label: 'detach',
-      description: 'remove a pending image attachment by index or id',
+      description: 'Remove a pending image attachment by index or id',
       validScreens: ['home', 'workflow'],
       handler: (args) => {
         const value = args?.trim();
@@ -480,7 +480,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/approval',
       label: 'approval',
-      description: 'list or clear sticky approval grants',
+      description: 'List or clear sticky approval grants',
       validScreens: ['workflow', 'summary'],
       handler: (args) => {
         const sub = args?.trim().toLowerCase();
@@ -508,7 +508,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/accept-run',
       label: 'accept run',
-      description: 'accept current run changes and prevent run rejection',
+      description: 'Accept current run changes and prevent run rejection',
       validScreens: ['workflow', 'summary'],
       handler: async () => {
         try {
@@ -523,7 +523,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/reject-run',
       label: 'reject run',
-      description: 'restore diptych-written files from the run baseline',
+      description: 'Restore diptych-written files from the run baseline',
       validScreens: ['workflow', 'summary'],
       handler: async (args) => {
         if (args?.trim().toLowerCase() !== 'confirm') {
@@ -559,7 +559,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/yolo',
       label: 'yolo',
-      description: 'toggle file-write tiered approvals off/on',
+      description: 'Toggle file-write tiered approvals off/on',
       validScreens: ALL_SCREENS,
       handler: () => {
         const current = ctx.getApprovalEnabled();
@@ -576,7 +576,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'noarg',
       name: '/quit',
       label: 'quit',
-      description: 'exit application',
+      description: 'Exit application',
       shortcut: getShortcutKey('quit'),
       validScreens: ALL_SCREENS,
       handler: () => ctx.quit(),

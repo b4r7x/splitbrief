@@ -152,7 +152,7 @@ describe('ApprovalPrompt', () => {
     });
     await tick(1);
     expect(settled).toBe(false);
-    expect(ui.lastFrame() ?? '').toContain('approve once');
+    expect(ui.lastFrame() ?? '').toContain('Approve once');
 
     // Once the grace elapses the same key is honoured.
     await tick(PAST_GRACE);

@@ -1,7 +1,9 @@
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListGroupHeader, ListRow } from '../../components/list-row.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import {
   ScrollableDocument,
+  getScrollableDocumentLineCount,
   type ScrollableDocumentRow,
 } from '../../components/scrollable-document.js';
 import type { Screen } from '../../core/navigation/types.js';
@@ -41,7 +43,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
   const documentRows: ScrollableDocumentRow[] = [
     {
       key: 'commands-heading',
-      node: <ListGroupHeader label="commands" />,
+      node: <ListGroupHeader label="Commands" />,
     },
     ...visibleCommands.map((cmd) => ({
       key: `command:${cmd.name}`,
@@ -49,7 +51,7 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
     })),
     {
       key: 'shortcuts-heading',
-      node: <ListGroupHeader label="keyboard shortcuts" />,
+      node: <ListGroupHeader label="Keyboard shortcuts" />,
     },
     ...shortcuts.map((shortcut) => ({
       key: `shortcut:${shortcut.id}`,
@@ -61,13 +63,16 @@ export function HelpOverlay({ currentScreen, commands }: HelpOverlayProps) {
 
   return (
     <OverlayPanel
-      title="help · commands & shortcuts"
-      hint="↑↓ scroll · esc close"
+      title="Help · commands & shortcuts"
+      hint={`↑↓ scroll${SOFT_SEP}esc close`}
       maxWidth={labelColWidth + maxDescWidth + PADDING_BORDER}
     >
       <ScrollableDocument
         rows={documentRows}
-        height={Math.max(1, rows - HELP_CHROME_ROWS)}
+        height={Math.max(
+          1,
+          Math.min(getScrollableDocumentLineCount(documentRows), rows - HELP_CHROME_ROWS),
+        )}
         keyboardMode="line-and-page"
       />
     </OverlayPanel>

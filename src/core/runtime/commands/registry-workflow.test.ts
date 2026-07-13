@@ -464,7 +464,7 @@ describe('/activity command', () => {
     expect(commands.find((command) => command.name === '/scroll')?.label).toBe('scroll');
     expect(commands.find((command) => command.name === '/activity')?.label).toBe('activity');
     expect(commands.find((command) => command.name === '/activity')?.shortcut).toBe(
-      '/activity, Ctrl+A',
+      '/activity, ctrl+a',
     );
   });
 });
@@ -573,7 +573,7 @@ describe('/sidebar command', () => {
 
     expect(command).toMatchObject({
       label: 'sidebar',
-      description: 'show or hide workflow sidebar',
+      description: 'Show or hide workflow sidebar',
       validScreens: ['workflow'],
     });
     expect(command?.shortcut).toBeUndefined();

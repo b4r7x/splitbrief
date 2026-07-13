@@ -1,4 +1,5 @@
 import { Box, Text } from 'ink';
+import { ListRow } from '../../components/list-row.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { useTheme } from '../../components/theme.js';
@@ -14,6 +15,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
 import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
+import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
 import { WORKFLOW_MODES, type WorkflowMode } from '../../core/schemas/enums.js';
 import { getWorkflowMode } from '../../core/config/accessors/values.js';
@@ -33,6 +35,21 @@ const MODE_METADATA: Record<WorkflowMode, { cost: string; size: string }> = {
 
 const MODE_SELECTOR_TITLE_ROWS = 2;
 const MODE_SELECTOR_HINT_ROWS = 2;
+const MODE_LABEL_WIDTH = 12;
+const MODE_LEAD_WIDTH = 2;
+const MODE_CHECK_WIDTH = 2;
+const MODE_METADATA_PREFIX_WIDTH = 1;
+
+function smallModeMetadata(mode: ModeDef, panelInnerWidth: number): string {
+  const metadata = `${mode.cost}${SOFT_SEP}${mode.size}`;
+  const metadataWidth =
+    panelInnerWidth -
+    MODE_LEAD_WIDTH -
+    MODE_LABEL_WIDTH -
+    MODE_CHECK_WIDTH -
+    MODE_METADATA_PREFIX_WIDTH;
+  return truncateTerminalDisplayText(metadata, Math.max(0, metadataWidth));
+}
 
 function modeEntryRows(index: number, isSmall: boolean, total: number): number {
   if (isSmall) return 1;
@@ -93,20 +110,19 @@ export function ModeSelector() {
   });
 
   const hint = hasActionableModes
-    ? '↑↓ select  enter confirm  esc close'
-    : '↑↓ navigate  esc close';
+    ? `↑↓ navigate${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`
+    : `↑↓ navigate${SOFT_SEP}esc close`;
 
   return (
     <OverlayPanel hint={hint} maxWidth={panelOuterWidth}>
       <Box marginBottom={1}>
-        <Text color={t.textDim}>workflow mode</Text>
+        <Text color={t.textDim}>Workflow mode</Text>
       </Box>
 
       {MODES.map((m, i) => {
         if (!actionableModeIndices.has(i)) return null;
         const isSelected = i === selectedIndex;
         const isCurrent = m.mode === currentMode;
-        const labelColor = isSelected ? t.accent : t.textDim;
         return (
           <RowZone
             key={m.mode}
@@ -115,28 +131,18 @@ export function ModeSelector() {
             onActivate={() => selectMode(m, i)}
           >
             <Box flexDirection="column" marginBottom={i < MODES.length - 1 && !isSmall ? 1 : 0}>
-              <Box width={panelInnerWidth}>
-                <Text color={isSelected ? t.accent : t.textDim}>
-                  {isSelected ? `${glyph('liveBar')} ` : '  '}
-                </Text>
-                <Box width={12}>
-                  <Text color={labelColor} bold={isSelected}>
-                    {m.mode}
-                  </Text>
-                </Box>
-                <Box flexGrow={1}>
-                  <Text color={t.textDim}>
-                    {isSmall ? `${m.cost}${SOFT_SEP}${m.size}` : m.cost}
-                  </Text>
-                </Box>
-                {isCurrent && (
-                  <Text color={t.success}>
-                    {isSmall ? glyph('check') : `${glyph('check')} current`}
-                  </Text>
-                )}
-              </Box>
+              <ListRow
+                label={m.mode}
+                state={isSelected ? 'active' : 'default'}
+                labelWidth={MODE_LABEL_WIDTH}
+                metadata={isSmall ? smallModeMetadata(m, panelInnerWidth) : m.cost}
+                width={panelInnerWidth}
+                selected={isSmall ? isCurrent : undefined}
+                trailing={!isSmall && isCurrent ? `${glyph('check')} Current` : undefined}
+                trailingColor={t.success}
+              />
               {!isSmall && (
-                <Box marginLeft={4}>
+                <Box marginLeft={14}>
                   <Text color={t.textDim}>{m.size}</Text>
                 </Box>
               )}

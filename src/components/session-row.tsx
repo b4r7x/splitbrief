@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
-import { glyph } from '../lib/glyphs.js';
+import { listRowLead } from './list-row.js';
 import { SOFT_SEP } from './separators.js';
 import type { Session } from '../core/schemas/session.js';
 import { getSessionStatusDisplay } from '../core/sessions/display.js';
@@ -60,13 +60,12 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
   const feature = sanitizeTerminalDisplayText(session.feature);
   const selected = isSelected(cursor);
   const bg = selected ? t.selectionBg : undefined;
-  const liveBar = `${glyph('liveBar')} `;
   const row = (
     <Box width="100%" backgroundColor={bg}>
       {cursor.kind === 'inline' && (
         <Box flexShrink={0} backgroundColor={bg}>
           <Text color={t.accent} bold>
-            {selected ? liveBar : '  '}
+            {listRowLead(selected ? 'active' : 'default')}
           </Text>
         </Box>
       )}
@@ -103,7 +102,7 @@ export function SessionRow({ session, cursor = NO_ROW_CURSOR }: SessionRowProps)
       {cursor.isCursor && (
         <Box position="absolute" marginLeft={-2} backgroundColor={bg}>
           <Text color={t.accent} bold>
-            {liveBar}
+            {listRowLead('active')}
           </Text>
         </Box>
       )}

@@ -16,7 +16,7 @@ export function buildPhaseTimingRows(
   const rows: ScrollableDocumentRow[] = [
     {
       key: 'phase-heading',
-      node: <Text color={theme.textDim}>phase breakdown</Text>,
+      node: <Text color={theme.textDim}>Phase breakdown</Text>,
     },
   ];
 
@@ -24,7 +24,7 @@ export function buildPhaseTimingRows(
     rows.push({
       key: `phase:${phase}`,
       node: (
-        <LabeledRow label={`  ${formatStageLabel(phase)}`} labelWidth={labelWidth}>
+        <LabeledRow label={formatStageLabel(phase)} labelWidth={labelWidth}>
           <Text color={theme.textDim}>{formatTime(duration)}</Text>
         </LabeledRow>
       ),

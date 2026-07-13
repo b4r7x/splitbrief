@@ -7,7 +7,7 @@ interface FilterInputProps {
   placeholder?: string;
 }
 
-export function FilterInput({ filter, placeholder = 'type to filter…' }: FilterInputProps) {
+export function FilterInput({ filter, placeholder = 'Type to filter…' }: FilterInputProps) {
   const t = useTheme();
   return (
     <Box height={1} overflow="hidden">

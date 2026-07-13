@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones } from '../../../lib/terminal/mouse-zones.js';
@@ -10,6 +10,8 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { ListRow } from '../../../components/list-row.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { TwoColumnPicker } from './picker.js';
+import { renderToolRow } from '../tool-row.js';
+import type { PickerOption } from '../model-catalog.js';
 
 interface Tool {
   id: string;
@@ -118,11 +120,11 @@ describe('TwoColumnPicker', () => {
       );
     }
     const ui = renderFeature(<Consumer />);
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame()).toContain('alpha-1');
 
     ui.stdin.write('\r'); // Enter left -> focus right
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\r'); // Enter right -> confirm
     await tick(20);
 
@@ -264,7 +266,7 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
-  it('marks the cursor row with the ▌ active bar, never the ▸ focus cursor', async () => {
+  it('renders exactly one cursor glyph on the focused row', async () => {
     const ui = renderFeature(
       <TwoColumnPicker<Tool, Model>
         title="picker"
@@ -294,6 +296,84 @@ describe('TwoColumnPicker', () => {
     const liveBar = glyph('liveBar', 'unicode');
     const alphaLine = frame.split('\n').find((line) => line.includes('Alpha')) ?? '';
     expect(alphaLine).toContain(liveBar);
+    expect(alphaLine.match(/▌/g)).toHaveLength(1);
+    expect(alphaLine).not.toContain('▸');
+    ui.unmount();
+  });
+
+  it('fills the panel with 20 list rows at 30 terminal rows', async () => {
+    const { terminalSizeStore } = await import('../../../stores/ui/terminal-size.js');
+    terminalSizeStore.__testReset({ cols: 140, rows: 30, isSmall: false });
+    const items: Tool[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `tool-${i}`,
+      displayName: `Tool ${i}`,
+    }));
+    const ui = renderFeature(
+      <TwoColumnPicker<Tool, Model>
+        title="Picker"
+        leftProps={{
+          items,
+          getKey: (item) => item.id,
+          renderRow: (item) => <Text>{item.displayName}</Text>,
+        }}
+        rightProps={{
+          items: [],
+          getKey: (item) => item.id,
+          renderRow: (item) => <Text>{item.displayName}</Text>,
+        }}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    const renderedRows = frame.split('\n').filter((line) => /\bTool \d+\b/.test(line));
+    expect(renderedRows).toHaveLength(20);
+    expect(frame).toContain('Tool 19');
+    expect(frame).not.toContain('Tool 20');
+    ui.unmount();
+  });
+
+  it('renders distinct add-shell and add-agent labels', async () => {
+    const shell: PickerOption = {
+      id: 'shell',
+      displayName: 'Shell',
+      kind: 'shell',
+      available: true,
+      badge: 'Custom',
+    };
+    const agent: PickerOption = {
+      id: 'agent',
+      displayName: 'Agent',
+      kind: 'agent',
+      available: true,
+      badge: 'Custom',
+    };
+    const ui = renderFeature(
+      <Box flexDirection="column">
+        {renderToolRow({
+          item: shell,
+          isCursor: false,
+          isSelected: false,
+          maxWidth: 40,
+          currentCommand: undefined,
+          currentCommandKind: undefined,
+        })}
+        {renderToolRow({
+          item: agent,
+          isCursor: false,
+          isSelected: false,
+          maxWidth: 40,
+          currentCommand: undefined,
+          currentCommandKind: undefined,
+        })}
+      </Box>,
+    );
+    await tick();
+
+    expect(ui.lastFrame()).toContain('+ Add shell command…');
+    expect(ui.lastFrame()).toContain('+ Add agent command…');
     ui.unmount();
   });
 
@@ -418,7 +498,7 @@ describe('TwoColumnPicker', () => {
       />,
     );
     await tick(20);
-    expect(empty.lastFrame() ?? '').toContain('no tools match');
+    expect(empty.lastFrame() ?? '').toContain('No tools match');
     empty.unmount();
   });
 

@@ -170,9 +170,9 @@ describe('BriefReviewView', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('T013');
       expect(frame).not.toContain('T001');
-      expect(frame).toContain('earlier');
-      expect(frame).toContain('more');
-      expect(frame).toContain('PageUp/PageDown');
+      expect(frame).toContain('↑ 5 more');
+      expect(frame).toContain('↓');
+      expect(frame).toContain('pgup/pgdn scroll');
       ui.unmount();
     } finally {
       reviewStore.clearReview();

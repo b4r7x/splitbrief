@@ -161,7 +161,14 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       provenance: 'Minimal bundled fallback (2026-04)',
     },
   ],
-  ollama: [{ name: 'qwen2.5-coder:7b', isDefault: true }],
+  ollama: [
+    {
+      name: 'qwen3-coder:30b',
+      isDefault: true,
+      contextLength: 262_144,
+      provenance: 'Ollama library qwen3-coder:30b listing (2026-07)',
+    },
+  ],
   'lm-studio': [{ name: 'qwen2.5-coder-7b', isDefault: true }],
   deepseek: [
     {

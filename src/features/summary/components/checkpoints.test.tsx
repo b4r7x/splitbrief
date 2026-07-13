@@ -51,7 +51,7 @@ describe('buildCheckpointDetailRows', () => {
     const ui = renderFeature(<CheckpointRows checkpointSummary={checkpointSummary} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('checkpoints');
+    expect(frame).toContain('Checkpoints');
     expect(frame).toContain('3 checkpoints');
     expect(frame).toContain('latest');
     expect(frame).toContain('post-task');

@@ -112,9 +112,6 @@ export function configForSessionTranscriptPolicy(
   return { ...config, workflow: { ...config.workflow, persistTranscript } };
 }
 
-// Home windows the list by terminal fit and the palette caps session items to 10, so 30 is a safe upper bound.
-const MAX_RECENT_SESSIONS = 30;
-
 function isValidSessionDirectory(sessionId: string): boolean {
   if (!isValidSessionId(sessionId)) {
     warnError(`Skipping session directory '${sessionId}'`, sessionError.invalidId(sessionId));
@@ -144,7 +141,7 @@ function readSessions(projectDir: string): Session[] {
 
 export function listRecentSessions(projectDir: string): { sessions: Session[]; total: number } {
   const all = readSessions(projectDir);
-  return { sessions: all.slice(0, MAX_RECENT_SESSIONS), total: all.length };
+  return { sessions: all, total: all.length };
 }
 
 export function listSessions(projectDir: string): Session[] {

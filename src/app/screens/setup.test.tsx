@@ -40,7 +40,7 @@ describe('SetupScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('no planner detected');
+    expect(frame).toContain('No planner detected');
     // The guidance sentence reflows inside the restored OverlayPanel frame, so "re-run" and "init:"
     // can land on separate wrapped lines; assert the phrase that stays intact.
     expect(frame).toContain('re-run');
@@ -66,7 +66,7 @@ describe('SetupScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('no planner detected');
+    expect(frame).toContain('No planner detected');
 
     ui.unmount();
   });
@@ -86,8 +86,8 @@ describe('SetupScreen', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).not.toContain('no planner detected');
-    expect(frame).toContain('choose planner · 1 of 2');
+    expect(frame).not.toContain('No planner detected');
+    expect(frame).toContain('Choose planner · 1 of 2');
 
     ui.unmount();
   });
@@ -118,7 +118,7 @@ describe('SetupScreen', () => {
     await tick(20);
 
     expect(readClipboardExecCalls()).toHaveLength(0);
-    expect(ui.lastFrame() ?? '').toContain('no planner detected');
+    expect(ui.lastFrame() ?? '').toContain('No planner detected');
 
     ui.unmount();
   });

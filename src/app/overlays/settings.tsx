@@ -21,15 +21,17 @@ import { useStores } from '../../stores/use-stores.js';
 import { FilterInput } from '../../components/filter-input.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
+import { SOFT_SEP } from '../../components/separators.js';
 
 const DESCRIPTION_MIN_TERMINAL_ROWS = 18;
 const MAX_PANEL_WIDTH = 80;
 const BASE_CHROME_ROWS = 9;
-const DESCRIPTION_ROWS = 3;
+const DESCRIPTION_ROWS = 4;
 
 export function SettingsOverlay() {
   const t = useTheme();
   const config = configStore.useConfig();
+  const detectedContextLength = configStore.use((state) => state.detectedContextLength);
   const onClose = overlayStore.close;
   const [{ focus: focusSetting }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
@@ -83,20 +85,15 @@ export function SettingsOverlay() {
 
   const hasVisibleSettings = filtered.length > 0 && canActOnIndex(filtered, effectiveIndex);
   const hintText = editingId
-    ? 'enter confirm  esc cancel'
+    ? `⏎ confirm${SOFT_SEP}esc cancel`
     : hasVisibleSettings
-      ? '\u2191\u2193 nav  space toggle  enter edit  esc close'
-      : '\u2191\u2193 nav  esc close';
+      ? `↑↓ navigate${SOFT_SEP}space toggle${SOFT_SEP}⏎ edit${SOFT_SEP}esc close`
+      : `↑↓ navigate${SOFT_SEP}esc close`;
 
   return (
-    <OverlayPanel hint={hintText} maxWidth={panelOuterWidth}>
-      <Box width={panelInnerWidth} justifyContent="space-between" marginBottom={1}>
-        <Text color={t.textDim}>settings</Text>
-        <Text color={t.textDim}>esc</Text>
-      </Box>
-
+    <OverlayPanel title="Settings" hint={hintText} maxWidth={panelOuterWidth}>
       <Box marginBottom={1}>
-        <FilterInput filter={filter} placeholder={'filter\u2026'} />
+        <FilterInput filter={filter} />
       </Box>
 
       <ListViewport
@@ -134,7 +131,9 @@ export function SettingsOverlay() {
           const boolTrue = def.kind === 'boolean' && value === true;
           const metadata = boolTrue
             ? undefined
-            : `${displayValue(def, value)}${def.kind === 'picker' ? ` ${glyph('connectorHandoff')}` : ''}`;
+            : `${displayValue(def, value, { detectedContextLength })}${
+                def.kind === 'picker' ? ` ${glyph('connectorHandoff')}` : ''
+              }`;
 
           return (
             <ListRow
@@ -148,12 +147,16 @@ export function SettingsOverlay() {
         }}
       />
 
-      {filtered.length === 0 && <Text color={t.textDim}>no settings match filter</Text>}
+      {filtered.length === 0 && <Text color={t.textDim}>No settings match filter</Text>}
 
       {showDescription && selectedDef && (
         <Box flexDirection="column" marginTop={1}>
           <Text color={t.border}>{glyph('divider').repeat(panelInnerWidth)}</Text>
-          <Text color={t.textDim}>{selectedDef.description}</Text>
+          <Box height={2} width={panelInnerWidth} overflow="hidden">
+            <Text color={t.textDim} wrap="wrap">
+              {selectedDef.description}
+            </Text>
+          </Box>
         </Box>
       )}
     </OverlayPanel>

@@ -1,7 +1,13 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { listSessions, listAllSessions, saveSummary, readSession } from './io.js';
+import {
+  listRecentSessions,
+  listSessions,
+  listAllSessions,
+  saveSummary,
+  readSession,
+} from './io.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 import { saveState, loadState } from '../state/persistence.js';
 import { isResumable } from '../phases.js';
@@ -102,17 +108,19 @@ describe('listSessions', () => {
     ]);
   });
 
-  it('limits to MAX_RECENT_SESSIONS (30), newest first', () => {
+  it('returns every stored session newest first with total = count', () => {
     tmp = createTempDir('sessions-io-test');
     for (let i = 0; i < 35; i++) {
       const id = `2024-01-01-sess-${i}`;
       writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
     }
 
-    const sessions = listSessions(tmp);
-    expect(sessions).toHaveLength(30);
-    expect(sessions[0]?.startedAt).toBe(34000);
-    expect(sessions[29]?.startedAt).toBe(5000);
+    const recent = listRecentSessions(tmp);
+    expect(recent.sessions).toHaveLength(35);
+    expect(recent.total).toBe(35);
+    expect(recent.sessions[0]?.startedAt).toBe(34000);
+    expect(recent.sessions[34]?.startedAt).toBe(0);
+    expect(listSessions(tmp)).toHaveLength(35);
   });
 
   it('skips subdirectories with neither summary.json nor a recoverable state.json', () => {
@@ -252,26 +260,26 @@ describe('listAllSessions', () => {
   });
 });
 
-describe('listSessions vs listAllSessions divergence above the cap', () => {
-  it('caps listSessions at 30 newest while listAllSessions returns all 35 from the same directory', () => {
+describe('listSessions and listAllSessions', () => {
+  it('return the same complete session set from one directory', () => {
     tmp = createTempDir('sessions-io-test');
     for (let i = 0; i < 35; i++) {
       const id = `2024-01-01-sess-${i}`;
       writeSessionSubdir(tmp, id, makeSession({ id, startedAt: i * 1000 }));
     }
 
-    const capped = listSessions(tmp);
+    const sessions = listSessions(tmp);
     const all = listAllSessions(tmp);
 
-    expect(capped).toHaveLength(30);
+    expect(sessions).toHaveLength(35);
     expect(all).toHaveLength(35);
-    expect(capped[0]?.startedAt).toBe(all[0]?.startedAt);
-    expect(capped[0]?.startedAt).toBe(34000);
+    expect(sessions[0]?.startedAt).toBe(all[0]?.startedAt);
+    expect(sessions[34]?.startedAt).toBe(all[34]?.startedAt);
   });
 });
 
-describe('listSessions cap boundary', () => {
-  it('retains all 30 sessions at the exact cap', () => {
+describe('listSessions preserves sessions beyond the previous cap', () => {
+  it('retains every session at the old cap boundary', () => {
     tmp = createTempDir('sessions-io-test');
     for (let i = 0; i < 30; i++) {
       const id = `2024-01-01-sess-${i}`;
@@ -281,7 +289,7 @@ describe('listSessions cap boundary', () => {
     expect(listSessions(tmp)).toHaveLength(30);
   });
 
-  it('drops only the single oldest session at 31', () => {
+  it('retains the oldest session when there are 31 stored sessions', () => {
     tmp = createTempDir('sessions-io-test');
     for (let i = 0; i < 31; i++) {
       const id = `2024-01-01-sess-${i}`;
@@ -289,9 +297,9 @@ describe('listSessions cap boundary', () => {
     }
 
     const out = listSessions(tmp);
-    expect(out).toHaveLength(30);
-    expect(out.some((s) => s.startedAt === 0)).toBe(false);
-    expect(out.some((s) => s.id === '2024-01-01-sess-0')).toBe(false);
+    expect(out).toHaveLength(31);
+    expect(out.some((s) => s.startedAt === 0)).toBe(true);
+    expect(out.some((s) => s.id === '2024-01-01-sess-0')).toBe(true);
     expect(out.some((s) => s.startedAt === 30000)).toBe(true);
   });
 });

@@ -189,7 +189,8 @@ export function ScrollableDocument({
     showScrollbar && width !== undefined
       ? Math.max(1, getScrollViewportContentWidth(width))
       : undefined;
-  const showGutter = showScrollbar && windowState.lineCount > windowState.visibleHeight;
+  const hasOverflow = windowState.lineCount > windowState.visibleHeight;
+  const showGutter = showScrollbar && hasOverflow;
   const thumb = getScrollbarThumb({
     offset: windowState.offset,
     lineCount: windowState.lineCount,
@@ -222,7 +223,7 @@ export function ScrollableDocument({
 
   return (
     <Box flexDirection="column">
-      {showScrollIndicators && (
+      {showScrollIndicators && hasOverflow && (
         <Box height={1} overflow="hidden">
           <ScrollIndicator show={windowState.showScrollUp} direction="up" />
         </Box>
@@ -249,7 +250,7 @@ export function ScrollableDocument({
       ) : (
         viewport
       )}
-      {showScrollIndicators && (
+      {showScrollIndicators && hasOverflow && (
         <Box height={1} overflow="hidden">
           <ScrollIndicator show={windowState.showScrollDown} direction="down" />
         </Box>

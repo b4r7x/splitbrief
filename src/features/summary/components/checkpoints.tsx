@@ -86,7 +86,7 @@ export function buildCheckpointDetailRows(
   const rows: ScrollableDocumentRow[] = [
     {
       key: 'checkpoints-heading',
-      node: <Text color={theme.textDim}>checkpoints</Text>,
+      node: <Text color={theme.textDim}>Checkpoints</Text>,
     },
     {
       key: 'checkpoints-summary',

@@ -67,7 +67,7 @@ function placeholderForMode(mode: InputMode, hint?: string): string {
   if (hint) return hint;
   if (mode === 'review') return 'approve, comment, or edit…';
   if (mode === 'question') return 'type your answer…';
-  return 'describe a change…';
+  return 'Describe a change…';
 }
 
 const SESSIONS_REL_DIR = `${DIPTYCH_DIR}/${SESSIONS_DIR}`;

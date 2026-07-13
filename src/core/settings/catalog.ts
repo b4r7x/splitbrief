@@ -10,8 +10,13 @@ import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { getProviderDisplayName } from '../providers/catalog.js';
 import { formatModelName } from '../model-display.js';
 import { getRunnerDisplayName } from '../config/accessors/runner-config.js';
+import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
+import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 
 const MAX_RETRIES_LIMIT = 10;
+
+const isApiImplementer = (config: Config): boolean =>
+  resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
 
 export type SettingKind = 'boolean' | 'number' | 'string' | 'enum' | 'picker';
 
@@ -25,6 +30,8 @@ export interface SettingDef {
   min?: number;
   max?: number;
   integer?: boolean;
+  appliesTo?: (config: Config) => boolean;
+  unsetLabel?: string;
   /**
    * Override for reading the display value. Used when the DU makes a direct
    * dot-path read impossible (e.g. `planner.tool` only exists on cli variant,
@@ -61,6 +68,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     kind: 'enum',
     options: [...EFFORT_LEVELS],
     readValue: (config) => config.planner.effort,
+    unsetLabel: 'auto (tool default)',
   },
   {
     id: 'implementer.tool',
@@ -87,15 +95,29 @@ export const SETTINGS_DEFS: SettingDef[] = [
     kind: 'number',
     min: 0,
     max: 2,
+    appliesTo: isApiImplementer,
   },
   {
     id: 'implementer.contextLength',
-    label: 'Context Length',
+    label: 'Context length',
     section: 'Implementer',
-    description: 'Token context window',
+    description: 'Token context window (auto = detected from the model)',
     kind: 'number',
     min: 1024,
     integer: true,
+    appliesTo: isApiImplementer,
+    unsetLabel: 'auto',
+  },
+  {
+    id: 'implementer.contextLength',
+    label: 'Prompt budget',
+    section: 'Implementer',
+    description: 'Token budget for prompt code-context truncation',
+    kind: 'number',
+    min: 1024,
+    integer: true,
+    appliesTo: (config) => !isApiImplementer(config),
+    unsetLabel: 'auto',
   },
   {
     id: 'implementer.timeout',
@@ -106,10 +128,12 @@ export const SETTINGS_DEFS: SettingDef[] = [
     min: 1,
     max: 600000,
     integer: true,
+    appliesTo: isApiImplementer,
+    unsetLabel: `auto (idle kill ${RUNNER_IDLE_KILL_MS / 60_000}m)`,
   },
   {
     id: 'validation.typecheck',
-    label: 'Type Check',
+    label: 'Type check',
     section: 'Validation',
     description: 'Run tsc type checking',
     kind: 'boolean',
@@ -130,7 +154,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
   },
   {
     id: 'validation.testCommand',
-    label: 'Test Command',
+    label: 'Test command',
     section: 'Validation',
     description: 'Argv-style test runner command',
     kind: 'string',
@@ -145,7 +169,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
   },
   {
     id: 'workflow.approve',
-    label: 'Spec/Plan Gates',
+    label: 'Spec/plan gates',
     section: 'Workflow',
     description: 'Which spec/plan document gates block the workflow ("default" follows mode)',
     kind: 'enum',
@@ -153,7 +177,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
   },
   {
     id: 'workflow.maxRetries',
-    label: 'Max Retries',
+    label: 'Max retries',
     section: 'Workflow',
     description: 'Max retry attempts per task',
     kind: 'number',
@@ -163,7 +187,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
   },
   {
     id: 'workflow.compactionFormat',
-    label: 'Compaction Format',
+    label: 'Compaction format',
     section: 'Workflow',
     description: 'Summary format for transcript compaction',
     kind: 'enum',
@@ -171,7 +195,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
   },
   {
     id: 'workflow.git.commitStrategy',
-    label: 'Commit Strategy',
+    label: 'Commit strategy',
     section: 'Workflow',
     description: 'none | checkpoint (tags) | per-task (commits)',
     kind: 'enum',
@@ -180,7 +204,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
   },
   {
     id: 'workflow.git.createBranch',
-    label: 'Create Branch',
+    label: 'Create branch',
     section: 'Workflow',
     description: 'Auto-create a diptych/<slug> branch at workflow start',
     kind: 'boolean',

@@ -3,10 +3,10 @@ import type {
   BriefReviewCommand,
   BriefReviewCommandAction,
 } from '../../core/schemas/brief-review-command.js';
+import { SOFT_SEP } from '../../components/separators.js';
 
-export const REVIEW_HINT = 'approve | Ctrl+E/e edit | comment <text> revises | quit';
-export const BRIEFS_REVIEW_HINT =
-  'approve | Ctrl+E/e edit-file | comment <text> revises | reject/q';
+export const REVIEW_HINT = `approve${SOFT_SEP}ctrl+e edit${SOFT_SEP}comment <text> revises${SOFT_SEP}quit`;
+export const BRIEFS_REVIEW_HINT = `approve${SOFT_SEP}ctrl+e edit-file${SOFT_SEP}comment <text> revises${SOFT_SEP}reject/q`;
 export const REVIEW_UNKNOWN_COMMAND_MESSAGE =
   'Unknown command. Use: approve, edit-file, comment <text>, or quit';
 

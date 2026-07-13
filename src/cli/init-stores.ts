@@ -61,21 +61,14 @@ async function loadDiscovery(projectDir: string): Promise<void> {
   const storeConfig = configStore.get().config;
   if (!storeConfig) return;
 
-  let contextLength: number | undefined;
-  let contextLengthDetected = false;
   try {
     const caps = await detectCapabilities(storeConfig);
-    if (caps.contextLength) {
-      contextLength = caps.contextLength;
-      contextLengthDetected = caps.origin === 'detected';
+    if (caps.origin === 'env' || caps.origin === 'detected' || caps.origin === 'catalog') {
+      configStore.setContextLength(caps.contextLength, caps.origin !== 'env');
     }
   } catch (err) {
     warnError('Could not detect provider capabilities', err);
     feedbackStore.setMessage('Provider detection failed — using defaults');
-  }
-
-  if (contextLength !== undefined) {
-    configStore.setContextLength(contextLength, contextLengthDetected);
   }
 
   await Promise.all([

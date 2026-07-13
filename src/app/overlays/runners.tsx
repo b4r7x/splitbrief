@@ -40,10 +40,10 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
       <TextInputOverlay
         title={
           <>
-            custom <Text color={t.accent}>{role}</Text> command
+            Custom <Text color={t.accent}>{role}</Text> command
           </>
         }
-        label="command to run"
+        label="Command to run"
         placeholder="e.g. my-ai-tool --format stream-json"
         initialValue={catalog.currentCommand ?? ''}
         rows={1}
@@ -59,12 +59,12 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
       <TextInputOverlay
         title={
           <>
-            custom <Text color={t.accent}>{role}</Text> model
+            Custom <Text color={t.accent}>{role}</Text> model
           </>
         }
         label={
           <>
-            enter a custom model id for <Text color={t.accent}>{item.displayName}</Text>
+            Enter a custom model id for <Text color={t.accent}>{item.displayName}</Text>
           </>
         }
         placeholder="e.g. my-org/custom-model or llama3.3:latest"

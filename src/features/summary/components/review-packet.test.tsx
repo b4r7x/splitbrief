@@ -70,7 +70,7 @@ describe('buildReviewPacketDetailRows', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('review packet');
+    expect(frame).toContain('Review packet');
     expect(frame).toContain('.diptych/sessions/s1/review-packet.md');
     expect(frame).toContain('.diptych/sessions/s1/review-packet.json');
     expect(frame).toContain('final review: written');

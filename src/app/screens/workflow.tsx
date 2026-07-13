@@ -97,7 +97,7 @@ export function WorkflowScreen({
     return (
       <ScreenShell>
         <Box paddingX={2}>
-          <Spinner label="checking readiness…" color={t.textDim} />
+          <Spinner label="Checking readiness…" color={t.textDim} />
         </Box>
       </ScreenShell>
     );

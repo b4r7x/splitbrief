@@ -5,6 +5,7 @@ import {
   resolveAttachInputHint,
   resolveCancelledHints,
   resolveInputHint,
+  hintStateSeverity,
 } from './input-hints.js';
 
 describe('resolveInputHint', () => {
@@ -25,14 +26,14 @@ describe('resolveInputHint', () => {
         inputMode: 'review',
         phase: 'reviewing-spec',
       }),
-    ).toBe('approve | Ctrl+E/e edit | comment <text> revises | quit');
+    ).toBe('approve · ctrl+e edit · comment <text> revises · quit');
     expect(
       resolveInputHint({
         inputHint: '',
         inputMode: 'review',
         phase: 'reviewing-briefs',
       }),
-    ).toBe('approve | Ctrl+E/e edit-file | comment <text> revises | reject/q');
+    ).toBe('approve · ctrl+e edit-file · comment <text> revises · reject/q');
   });
 
   it('prefers the question placeholder over review hints when awaiting a prompt answer', () => {
@@ -49,14 +50,14 @@ describe('resolveInputHint', () => {
 describe('resolveCancelledHints', () => {
   it('splits a resumable cancel into an Enter-to-resume placeholder and a dim exit byline', () => {
     expect(resolveCancelledHints(true)).toEqual({
-      placeholder: 'Enter to resume…',
-      byline: 'ESC home · /quit',
+      placeholder: 'enter to resume…',
+      byline: 'esc home · /quit',
     });
   });
 
   it('splits a non-resumable cancel into an Esc-for-home placeholder and a /quit byline', () => {
     expect(resolveCancelledHints(false)).toEqual({
-      placeholder: 'Esc for home…',
+      placeholder: 'esc for home…',
       byline: '/quit to exit',
     });
   });
@@ -64,16 +65,17 @@ describe('resolveCancelledHints', () => {
 
 describe('resolveAttachInputHint', () => {
   it('renders connection states as a single concrete dim line', () => {
-    expect(resolveAttachInputHint('reconnecting')).toBe('reconnecting to server…');
-    expect(resolveAttachInputHint('detached')).toBe('detached');
-    expect(resolveAttachInputHint('connecting')).toBe('connecting to server…');
+    expect(resolveAttachInputHint('connected')).toBe('Queue a message to the running workflow');
+    expect(resolveAttachInputHint('reconnecting')).toBe('Reconnecting to server…');
+    expect(resolveAttachInputHint('detached')).toBe('Detached');
+    expect(resolveAttachInputHint('connecting')).toBe('Connecting to server…');
   });
 
   it('leads the failed line with the error word in the project error voice', () => {
     const hint = resolveAttachInputHint('failed');
 
-    expect(hint.startsWith('failed ')).toBe(true);
-    expect(hint).toContain('Ctrl+D to exit');
+    expect(hint.startsWith('Failed ')).toBe(true);
+    expect(hint).toContain('ctrl+d to exit');
   });
 });
 
@@ -83,25 +85,34 @@ describe('resolveAttachFeedbackHint', () => {
   });
 
   it('keeps the connection status as the feedback byline while not connected', () => {
-    expect(resolveAttachFeedbackHint('reconnecting')).toBe('reconnecting to server…');
-    expect(resolveAttachFeedbackHint('detached')).toBe('detached');
-    expect(resolveAttachFeedbackHint('connecting')).toBe('connecting to server…');
-    expect(resolveAttachFeedbackHint('failed').startsWith('failed ')).toBe(true);
+    expect(resolveAttachFeedbackHint('reconnecting')).toBe('Reconnecting to server…');
+    expect(resolveAttachFeedbackHint('detached')).toBe('Detached');
+    expect(resolveAttachFeedbackHint('connecting')).toBe('Connecting to server…');
+    expect(resolveAttachFeedbackHint('failed').startsWith('Failed ')).toBe(true);
   });
 });
 
 describe('resolveAttachBoxHint', () => {
   it('shows the detach byline with the cost token only while connected', () => {
-    expect(resolveAttachBoxHint('connected')).toEqual({ keys: 'Ctrl+D detach', cost: true });
+    expect(resolveAttachBoxHint('connected')).toEqual({ keys: 'ctrl+d detach', cost: true });
   });
 
   it('keeps the detach byline but drops the cost token while not yet connected', () => {
-    expect(resolveAttachBoxHint('connecting')).toEqual({ keys: 'Ctrl+D detach', cost: false });
-    expect(resolveAttachBoxHint('reconnecting')).toEqual({ keys: 'Ctrl+D detach', cost: false });
-    expect(resolveAttachBoxHint('failed')).toEqual({ keys: 'Ctrl+D detach', cost: false });
+    expect(resolveAttachBoxHint('connecting')).toEqual({ keys: 'ctrl+d detach', cost: false });
+    expect(resolveAttachBoxHint('reconnecting')).toEqual({ keys: 'ctrl+d detach', cost: false });
+    expect(resolveAttachBoxHint('failed')).toEqual({ keys: 'ctrl+d detach', cost: false });
   });
 
   it('blanks the byline once detached so the composer shows no control', () => {
     expect(resolveAttachBoxHint('detached')).toEqual({ keys: '', cost: false });
+  });
+});
+
+describe('hintStateSeverity', () => {
+  it('maps sentence-cased attach leads to severities', () => {
+    expect(
+      hintStateSeverity('Failed server connection lost — ctrl+d to exit, retry with resume'),
+    ).toBe('error');
+    expect(hintStateSeverity('Reconnecting to server…')).toBe('warning');
   });
 });

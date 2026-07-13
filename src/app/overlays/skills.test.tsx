@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -42,7 +42,7 @@ describe('SkillsPicker', () => {
     skillsStore.setAvailable(skills);
 
     const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(PAGE_DOWN);
     // The hint flips to 'space toggle' in the same commit that moves the cursor,
@@ -51,9 +51,10 @@ describe('SkillsPicker', () => {
       () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('space toggle'),
       { timeout: 5000 },
     );
+    await flushEffects();
     ui.stdin.write(SPACE);
     await vi.waitFor(
-      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 1 selected'),
+      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 1 selected'),
       { timeout: 5000 },
     );
 
@@ -68,9 +69,9 @@ describe('SkillsPicker', () => {
     skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
 
     const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(SPACE);
     await tick(20);
 
@@ -88,14 +89,18 @@ describe('SkillsPicker', () => {
     skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
 
     const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(SPACE);
-    await tick(20);
+    await vi.waitFor(
+      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 1 selected'),
+      { timeout: 5000 },
+    );
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect([...skillsStore.get().selected]).toEqual(['bravo']);
     ui.unmount();
@@ -130,7 +135,7 @@ describe('SkillsPicker', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    for (const label of ['project', 'global', 'project-alpha', 'project-bravo', 'global-charlie']) {
+    for (const label of ['Project', 'Global', 'project-alpha', 'project-bravo', 'global-charlie']) {
       expect(frame).toContain(label);
     }
     expect(frame).not.toContain('more');
@@ -150,10 +155,10 @@ describe('SkillsPicker', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(stripAnsiStyles(frame)).toContain('skills · 0 selected');
+    expect(stripAnsiStyles(frame)).toContain('Skills · 0 selected');
     expect(frame).toContain('alpha-filter');
     expect(frame).toContain('⏎ confirm');
-    expect(frame).not.toContain('no matching skills');
+    expect(frame).not.toContain('No matching skills');
     expect(frame).not.toContain('╭');
     expect(frame).not.toContain('╰');
     ui.unmount();
@@ -187,24 +192,24 @@ describe('SkillsPicker', () => {
     skillsStore.setAvailable(skills);
 
     const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(END);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(SPACE);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(HOME);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(SPACE);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect([...skillsStore.get().selected].sort()).toEqual(['skill-0', 'skill-3']);
     ui.unmount();
   });
 
-  it('marks a selected skill with a trailing selected marker and drops the checkbox column', async () => {
+  it('marks a selected skill with a trailing selected marker and reserves the checkbox column', async () => {
     skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
 
     const ui = renderFeature(<SkillsPicker />);
@@ -233,7 +238,7 @@ describe('SkillsPicker', () => {
     ui.stdin.write(SPACE);
     await tick(20);
 
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 0 selected');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 0 selected');
     ui.unmount();
   });
 
@@ -244,10 +249,8 @@ describe('SkillsPicker', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('project');
-    expect(frame).toContain('global');
-    expect(frame).not.toContain('Project');
-    expect(frame).not.toContain('Global');
+    expect(frame).toContain('Project');
+    expect(frame).toContain('Global');
     ui.unmount();
   });
 });
@@ -269,13 +272,13 @@ describe('SkillsPicker row activation', () => {
 
     const ui = renderFeature(<SkillsPicker />);
     await tick(20);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 0 selected');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 0 selected');
 
     const zones = collectClickableZones({ cols: 100, rows: 28 });
     zones.get('list-row:bravo')?.();
     await tick(20);
 
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('skills · 1 selected');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 1 selected');
     expect(skillsStore.get().selected.size).toBe(0);
     ui.unmount();
   });
@@ -288,11 +291,15 @@ describe('SkillsPicker row activation', () => {
 
     const zones = collectClickableZones({ cols: 100, rows: 28 });
     zones.get('list-row:bravo')?.();
-    await tick(20);
+    await vi.waitFor(
+      () => expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 1 selected'),
+      { timeout: 5000 },
+    );
     expect(skillsStore.get().selected.size).toBe(0);
 
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect([...skillsStore.get().selected]).toEqual(['bravo']);
     ui.unmount();

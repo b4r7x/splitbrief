@@ -71,16 +71,44 @@ describe('HelpOverlay', () => {
     expect(frame).toContain('/scroll');
     expect(frame).toContain('/activity');
     expect(frame).toContain('/sidebar');
-    expect(frame).toContain('Shift+↑/↓, PgUp/PgDn, Home/End');
+    expect(frame).toContain('shift+↑/↓, pgup/pgdn, home/end');
     expect(frame).toContain('PageUp/PageDown');
     expect(frame).toContain('/scroll top|bottom');
-    expect(frame).toContain('/activity, Ctrl+A');
-    expect(frame).toContain('expand activity rows');
+    expect(frame).toContain('/activity, ctrl+a');
+    expect(frame).toContain('Expand activity rows');
     expect(frame).not.toContain('Alt+A');
     expect(frame).not.toContain('Ctrl+B/F');
     expect(frame).not.toContain('Ctrl+E');
 
     ui.unmount();
+  });
+
+  it('panel bottom border sits directly under the hint for a short document', async () => {
+    const ui = renderFeature(<HelpOverlay currentScreen="home" commands={[]} />);
+    await tick(20);
+
+    const lines = (ui.lastFrame() ?? '').split('\n');
+    const hintIndex = lines.findIndex((line) => line.includes('↑↓ scroll · esc close'));
+    expect(hintIndex).toBeGreaterThanOrEqual(0);
+    expect(lines[hintIndex + 1]?.trim()).not.toBe('');
+    expect(lines[hintIndex + 2]).toMatch(/[-─]/);
+
+    ui.unmount();
+  });
+
+  it('renders zero indicator rows when the document fits / indicators when it overflows', async () => {
+    const shortUi = renderFeature(<HelpOverlay currentScreen="home" commands={[]} />);
+    await tick(20);
+    expect(shortUi.lastFrame() ?? '').not.toContain('more');
+    shortUi.unmount();
+
+    terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
+    const commands = Array.from({ length: 8 }, (_, i) => command(`/cmd-${i}`, ['home']));
+    const overflowUi = renderFeature(<HelpOverlay currentScreen="home" commands={commands} />);
+    await tick(20);
+
+    expect(overflowUi.lastFrame() ?? '').toContain('more');
+    overflowUi.unmount();
   });
 
   it('shows Ctrl+E only when workflow help opens in review mode', async () => {
@@ -92,8 +120,8 @@ describe('HelpOverlay', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Ctrl+E');
-    expect(frame).toContain('open editor in review mode only');
+    expect(frame).toContain('ctrl+e');
+    expect(frame).toContain('Open editor in review mode only');
 
     ui.unmount();
   });

@@ -23,7 +23,7 @@ describe('buildPhaseTimingRows', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('phase breakdown');
+    expect(frame).toContain('Phase breakdown');
     expect(frame).toContain('Planning');
     expect(frame).toContain('Implementing');
     expect(frame).not.toContain('planning');

@@ -183,7 +183,7 @@ export function InputFooter({
 
   const stageCore = [stageText, fractionText].filter((part) => part.length > 0).join(' ');
   const stageLead = stageCore.length > 0 ? `${glyph('stageDone')} ${stageCore}` : '';
-  const waitingLead = joinBylineParts([`${glyph('statusPending')} waiting for you`, stageCore]);
+  const waitingLead = joinBylineParts([`${glyph('statusPending')} Waiting for you`, stageCore]);
   const elapsed =
     liveStatus !== null && liveStatus.stageStart > 0
       ? formatStageElapsed(Date.now() - liveStatus.stageStart)
@@ -197,15 +197,15 @@ export function InputFooter({
   // Until the continuation prompt parks at a call boundary, Enter/steer would go
   // nowhere — advertise the retry affordance only once the prompt owns the composer.
   const interruptedLead = lifecycle.interruptParked
-    ? `${glyph('statusPending')} interrupted — Enter retry · type to steer`
-    : `${glyph('statusPending')} interrupted — finishing current step…`;
+    ? `${glyph('statusPending')} Interrupted — ⏎ retry${SOFT_SEP}type to steer`
+    : `${glyph('statusPending')} Interrupted — finishing current step…`;
   const stall = lifecycle.status === 'running' ? lifecycle.stall : null;
   // stall.since is the warning time; silentMs is the silence already elapsed when
   // the warning fired, so the byline shows the full span since the last output.
   const stalledFor =
     stall !== null ? formatStageElapsed(Date.now() - stall.since + stall.silentMs) : '';
   const stalledLead =
-    stall !== null ? `${glyph('statusWarning')} still working — silent ${stalledFor}` : '';
+    stall !== null ? `${glyph('statusWarning')} Still working — silent ${stalledFor}` : '';
 
   // One derivation encodes the interrupted → waiting → stalled → live priority
   // order so the lead text and its color can never drift apart.

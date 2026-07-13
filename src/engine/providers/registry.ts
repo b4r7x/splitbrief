@@ -19,6 +19,7 @@ import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
 import { error } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact.js';
+import { lookupCatalogContextLength } from './model/catalog.js';
 
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 
@@ -110,11 +111,23 @@ function getImplementerProvider(config: Config): ProviderDef {
   });
 }
 
-export type ContextLengthOrigin = 'env' | 'config' | 'detected' | 'fallback';
+export type ContextLengthOrigin = 'env' | 'config' | 'detected' | 'catalog' | 'fallback';
 
 export interface DetectedCapabilities {
   contextLength: number;
   origin: ContextLengthOrigin;
+}
+
+function lookupConfiguredCatalogContextLength(config: Config): number | undefined {
+  const implementer = config.implementer;
+  if (implementer.model === undefined || implementer.model === 'auto') return undefined;
+  if (implementer.kind === 'api') {
+    return lookupCatalogContextLength(implementer.provider, implementer.model);
+  }
+  if (implementer.kind === 'cli') {
+    return lookupCatalogContextLength(implementer.tool, implementer.model);
+  }
+  return undefined;
 }
 
 export async function detectCapabilities(config: Config): Promise<DetectedCapabilities> {
@@ -138,7 +151,12 @@ export async function detectCapabilities(config: Config): Promise<DetectedCapabi
     }
   }
 
-  return { contextLength: 8192, origin: 'fallback' };
+  const catalogContextLength = lookupConfiguredCatalogContextLength(config);
+  if (catalogContextLength !== undefined) {
+    return { contextLength: catalogContextLength, origin: 'catalog' };
+  }
+
+  return { contextLength: 32768, origin: 'fallback' };
 }
 
 async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<ProviderDetection> {

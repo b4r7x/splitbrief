@@ -14,12 +14,12 @@ interface BuildCostBreakdownRowsInput {
 }
 
 function formatSavingsLabel(costBreakdown: CostBreakdown): string {
-  if (costBreakdown.hasSavingsEstimate === false) return 'unknown price';
+  if (costBreakdown.hasSavingsEstimate === false) return 'Unknown price';
   if (costBreakdown.savingsAmount < 0) {
-    return `extra ${formatCostFact(Math.abs(costBreakdown.savingsAmount))} (${costBreakdown.savingsPercentage.toFixed(0)}%)`;
+    return `Extra ${formatCostFact(Math.abs(costBreakdown.savingsAmount))} (${costBreakdown.savingsPercentage.toFixed(0)}%)`;
   }
   if (costBreakdown.savingsAmount === 0) {
-    return `no savings (${costBreakdown.savingsPercentage.toFixed(0)}%)`;
+    return `No savings (${costBreakdown.savingsPercentage.toFixed(0)}%)`;
   }
   return `${formatCostFact(costBreakdown.savingsAmount)} (${costBreakdown.savingsPercentage.toFixed(0)}%)`;
 }
@@ -31,8 +31,8 @@ function savingsColor(costBreakdown: CostBreakdown, theme: Theme): string {
 }
 
 function savingsRowLabel(costBreakdown: CostBreakdown): string {
-  if (costBreakdown.savingsAmount < 0) return '  extra cost';
-  return '  saved';
+  if (costBreakdown.savingsAmount < 0) return 'Extra cost';
+  return 'Saved';
 }
 
 export function buildCostBreakdownRows({
@@ -52,12 +52,12 @@ export function buildCostBreakdownRows({
   const rows: ScrollableDocumentRow[] = [
     {
       key: 'cost-heading',
-      node: <Text color={theme.textDim}>◆ cost</Text>,
+      node: <Text color={theme.textDim}>◆ Cost</Text>,
     },
     {
       key: 'cost-actual',
       node: (
-        <LabeledRow label="  actual cost" labelWidth={labelWidth}>
+        <LabeledRow label="Actual cost" labelWidth={labelWidth}>
           <Text bold>
             {formatKnownCost(costBreakdown.totalActualCost, totalCostKnown ? 'known' : 'partial')}
           </Text>
@@ -67,7 +67,7 @@ export function buildCostBreakdownRows({
     {
       key: 'cost-planner',
       node: (
-        <LabeledRow label="  planner cost" labelWidth={labelWidth}>
+        <LabeledRow label="Planner cost" labelWidth={labelWidth}>
           <Text color={theme.textDim}>
             {formatKnownCost(
               costBreakdown.actualPlannerCost,
@@ -80,7 +80,7 @@ export function buildCostBreakdownRows({
     {
       key: 'cost-implementer',
       node: (
-        <LabeledRow label="  implementer cost" labelWidth={labelWidth}>
+        <LabeledRow label="Implementer cost" labelWidth={labelWidth}>
           <Text color={theme.textDim}>
             {formatKnownCost(
               costBreakdown.actualImplementerCost,
@@ -93,7 +93,7 @@ export function buildCostBreakdownRows({
     {
       key: 'cost-baseline',
       node: (
-        <LabeledRow label="  all-planner baseline" labelWidth={labelWidth}>
+        <LabeledRow label="All-planner baseline" labelWidth={labelWidth}>
           <Text color={theme.textDim}>
             {formatKnownCost(
               costBreakdown.hypotheticalCost,
@@ -119,8 +119,8 @@ export function buildCostBreakdownRows({
     rows.push({
       key: 'cost-unknown-price',
       node: (
-        <LabeledRow label="  unknown price" labelWidth={labelWidth}>
-          <Text color={theme.textDim}>provider price unavailable</Text>
+        <LabeledRow label="Unknown price" labelWidth={labelWidth}>
+          <Text color={theme.textDim}>Provider price unavailable</Text>
         </LabeledRow>
       ),
     });
@@ -131,7 +131,7 @@ export function buildCostBreakdownRows({
       key: `cost-provider:${provider}`,
       node: (
         <LabeledRow
-          label={`  ${stripTerminalControls(getProviderDisplayName(provider))}`}
+          label={stripTerminalControls(getProviderDisplayName(provider))}
           labelWidth={labelWidth}
         >
           <Text color={theme.textDim}>{formatCost(providerCost.cost)}</Text>

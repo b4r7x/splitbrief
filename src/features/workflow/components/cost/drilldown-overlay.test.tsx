@@ -90,7 +90,7 @@ describe('CostDrilldownOverlay task metadata', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).not.toContain('Started only');
-    expect(frame).toContain('no task data yet');
+    expect(frame).toContain('No task data yet');
     ui.unmount();
   });
 
@@ -116,7 +116,7 @@ describe('CostDrilldownOverlay task metadata', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).not.toContain('Zero attempt');
-    expect(frame).toContain('no task data yet');
+    expect(frame).toContain('No task data yet');
     ui.unmount();
   });
 

@@ -260,3 +260,14 @@ export function resolveModelCatalog(
   if (isApiPricedProvider(providerId)) return resolveApiCatalog(providerId, cache);
   return resolveToolCatalog(providerId, cache);
 }
+
+export function lookupCatalogContextLength(
+  providerId: string,
+  modelId: string,
+): number | undefined {
+  const modelKeys = new Set(buildComparableKeys(modelId));
+  const entry = resolveModelCatalog(providerId).find((candidate) =>
+    buildComparableKeys(candidate.id).some((key) => modelKeys.has(key)),
+  );
+  return entry?.contextLength;
+}

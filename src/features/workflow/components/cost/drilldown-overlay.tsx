@@ -183,7 +183,7 @@ function formatTaskAttemptMetadata(
     pricing,
     routingReason,
   ];
-  return parts.filter(Boolean).join(' · ');
+  return parts.filter(Boolean).join(SOFT_SEP);
 }
 
 function shouldShowRoutingReason(attempt: TaskAttemptTokens, pricingLabel: string): boolean {
@@ -356,9 +356,9 @@ export function CostDrilldownOverlay() {
   const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
 
   return (
-    <OverlayPanel title="cost · breakdown" hint="esc · any key to close" width="auto">
+    <OverlayPanel title="Cost · breakdown" hint={`esc${SOFT_SEP}any key to close`} width="auto">
       <Box flexDirection="column">
-        <SectionHeader label="by phase" width={panelWidth} />
+        <SectionHeader label="By phase" width={panelWidth} />
         {phaseRows.map((row) => {
           const split = hasRoleSplit(row);
           const plannerActive = roleHasTokens(row, 'planner');
@@ -403,10 +403,10 @@ export function CostDrilldownOverlay() {
             </Box>
           );
         })}
-        {phaseRows.length === 0 && <Text color={t.textDim}>no phase data yet</Text>}
+        {phaseRows.length === 0 && <Text color={t.textDim}>No phase data yet</Text>}
 
         <Box height={1} />
-        <SectionHeader label="by task" width={panelWidth} />
+        <SectionHeader label="By task" width={panelWidth} />
         {taskRows.map((row) => (
           <Box key={row.taskId} flexDirection="column">
             <ListRow
@@ -427,7 +427,7 @@ export function CostDrilldownOverlay() {
             })}
           </Box>
         ))}
-        {taskRows.length === 0 && <Text color={t.textDim}>no task data yet</Text>}
+        {taskRows.length === 0 && <Text color={t.textDim}>No task data yet</Text>}
       </Box>
     </OverlayPanel>
   );

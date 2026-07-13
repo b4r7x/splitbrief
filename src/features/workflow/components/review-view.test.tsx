@@ -38,7 +38,7 @@ describe('ReviewView', () => {
     return ['```txt', ...lines, '```'].join('\n');
   }
 
-  it('uses rendered rows for narrow review scroll and footer height', async () => {
+  it('renders the shared ↓ N more indicator', async () => {
     const file = join(tmp, 'very-long-directory-name', 'nested-specification-file.md');
     mkdirSync(join(tmp, 'very-long-directory-name'));
     writeFileSync(
@@ -79,7 +79,7 @@ describe('ReviewView', () => {
       const frame = ui?.lastFrame() ?? '';
       expect(frame).toContain('line-4');
       expect(frame).toContain('line-6');
-      expect(frame).toContain('end of file');
+      expect(frame).toContain('End of file');
       expect(frame).not.toContain('more');
     });
   });
@@ -96,8 +96,8 @@ describe('ReviewView', () => {
 
     await vi.waitFor(() => {
       const frame = ui?.lastFrame() ?? '';
-      expect(frame).not.toContain('↑ more');
-      expect(frame).not.toContain('↓ more');
+      expect(frame).not.toContain('↑ 1 more');
+      expect(frame).not.toContain('↓ 1 more');
       expect(frame).toContain('more');
       expect(frame).not.toContain('line-0');
       expect(frame).toContain('line-1');

@@ -78,7 +78,7 @@ describe('RecentSessionsList', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('RECENT SESSIONS');
+    expect(frame).toContain('Recent sessions');
     expect(frame).toContain('alpha');
     expect(frame).toContain('bravo');
     expect(frame).toContain('charlie');

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { PickerView, refreshPickerDetection } from './picker-view.js';
@@ -29,8 +30,8 @@ describe('runner row grammar', () => {
     );
     await tick(20);
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('unavailable');
-    expect(frame).not.toContain('(unavailable)');
+    expect(frame).toContain('Unavailable');
+    expect(frame).not.toContain('(Unavailable)');
     ui.unmount();
   });
 
@@ -70,8 +71,8 @@ describe('runner row grammar', () => {
     );
     await tick(20);
     const customFrame = customUi.lastFrame() ?? '';
-    expect(customFrame).toContain('custom');
-    expect(customFrame).not.toContain('(custom)');
+    expect(customFrame).toContain('Custom');
+    expect(customFrame).not.toContain('(Custom)');
     customUi.unmount();
 
     const autoUi = renderFeature(
@@ -79,7 +80,7 @@ describe('runner row grammar', () => {
     );
     await tick(20);
     const autoFrame = autoUi.lastFrame() ?? '';
-    expect(autoFrame).toContain('default');
+    expect(autoFrame).toContain('Default');
     expect(autoFrame).not.toContain('(auto)');
     autoUi.unmount();
   });
@@ -125,7 +126,12 @@ describe('PickerView previews', () => {
 
     const ui = renderFeature(<PickerView role="planner" catalog={catalog} actions={actions} />);
     await flushEffects();
-    expect(ui.lastFrame() ?? '').toContain('OpenCode · cli · 1 model detected');
+    const initialFrame = ui.lastFrame() ?? '';
+    expect(initialFrame).toContain('Planner');
+    expect(initialFrame).toContain('Tool & model');
+    expect(initialFrame).toContain('Tools');
+    expect(initialFrame).toContain('Models');
+    expect(initialFrame).toContain(`OpenCode${SOFT_SEP}cli${SOFT_SEP}1 model detected`);
 
     ui.stdin.write('\u001b[C'); // right arrow -> focus the models column
     await flushEffects();
@@ -145,7 +151,12 @@ describe('refreshPickerDetection', () => {
   });
 
   it('replaces the in-progress refresh message after refresh succeeds', async () => {
-    await refreshPickerDetection('/tmp/project', async () => {});
+    await refreshPickerDetection('/tmp/project', async () => {
+      expect(feedbackStore.get()).toEqual({
+        message: 'Refreshing models…',
+        isError: false,
+      });
+    });
 
     expect(feedbackStore.get()).toEqual({
       message: 'Models refreshed',

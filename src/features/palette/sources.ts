@@ -73,7 +73,7 @@ function buildModeItems(
 ): PaletteSources['modeItems'] {
   return WORKFLOW_MODES.map((mode) => ({
     label: mode,
-    description: `switch to ${mode} mode`,
+    description: `Switch to ${mode} mode`,
     action: () => {
       void onWorkflowMode(mode);
     },
@@ -84,7 +84,7 @@ function buildPickerItems(opts: { isAttached: boolean }): PaletteSources['picker
   const shared = [
     {
       label: 'sessions',
-      description: 'browse past sessions',
+      description: 'Browse past sessions',
       action: () => {
         overlayStore.open('sessions');
       },
@@ -96,14 +96,14 @@ function buildPickerItems(opts: { isAttached: boolean }): PaletteSources['picker
   return [
     {
       label: 'planner',
-      description: 'select planner tool',
+      description: 'Select planner tool',
       action: () => {
         overlayStore.open('planner-picker');
       },
     },
     {
       label: 'implementer',
-      description: 'select implementer',
+      description: 'Select implementer',
       action: () => {
         overlayStore.open('implementer-picker');
       },
@@ -111,7 +111,7 @@ function buildPickerItems(opts: { isAttached: boolean }): PaletteSources['picker
     ...shared,
     {
       label: 'settings',
-      description: 'planner, model & settings',
+      description: 'Planner, model & settings',
       action: () => {
         overlayStore.open('settings');
       },
