@@ -1,0 +1,5 @@
+export const CATALOG_SCHEMA_VERSION = 1;
+export const CELL_GRID_SCHEMA_VERSION = 1;
+export const MANIFEST_SCHEMA_VERSION = 1;
+export const CONTROL_POLICY_VERSION = 1;
+export const HYPERLINK_POLICY_VERSION = 1;

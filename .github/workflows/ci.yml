@@ -19,3 +19,4 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test-ci
+      - run: npm run tui-shots -- --scenario home-empty --viewport 80x24 --output .test-artifacts/ui/ci-smoke
