@@ -5,8 +5,8 @@
     "src/**/*.{ts,tsx}",
     "scripts/**/*.ts",
     "evals/**/*.ts",
-    "testing/**/*.ts",
-    "!**/*.test.ts",
+    "testing/**/*.{ts,tsx}",
+    "!**/*.test.{ts,tsx}",
     "!evals/fixtures/**",
     "!testing/fixtures/**",
     "!testing/e2e/vitest.e2e.config.ts"

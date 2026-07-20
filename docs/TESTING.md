@@ -39,7 +39,7 @@ How many top-level folders does the test import from?
           engine-written store updates?      → testing/integration/ui/
 ```
 
-The flowchart covers `src/**` source. Two trees outside it also hold colocated tests: `scripts/` (repo tooling such as `check-invariants.test.ts` and `import-boundaries.test.ts`, kept next to `check-invariants.ts` / `import-boundaries.ts`) and the single eval driver `evals/eval.test.ts`. Discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'evals/eval.test.ts']` — five globs, all picked up by a single `npm test`.
+The flowchart covers `src/**` source. Three trees outside it also hold tests: `scripts/` for repo tooling, `testing/visual/` for the deterministic TUI gallery, and the single eval driver `evals/eval.test.ts`. Discovery is configured in `vitest.config.ts` with six globs for `src`, `scripts`, `testing/integration`, `testing/helpers`, `testing/visual`, and `evals`. A single `npm test` picks them all up.
 
 | Kind | Location | Suffix |
 |---|---|---|
@@ -51,6 +51,7 @@ The flowchart covers `src/**` source. Two trees outside it also hold colocated t
 | Multi-phase orchestrator flow (`runWorkflow()` + fakes) | `testing/integration/orchestrator/` | `.test.ts` |
 | Multi-store UI flow (Ink screen + engine events via stores) | `testing/integration/ui/` | `.test.tsx` |
 | End-to-end scenario (real planner/implementer or recorded cassette) | `testing/e2e/scenarios/` (cassettes in `testing/e2e/cassettes/`) | `.test.ts` — isolated by `testing/e2e/vitest.e2e.config.ts`, not by suffix |
+| Deterministic TUI visual gallery and PTY parity | `testing/visual/` | `.test.ts` / `.test.tsx` |
 | Shared factories (pure TS constructors) | `testing/helpers/factories/<domain>.ts` — ≥ 2 consumers | n/a |
 | Shared test helpers (fakes, renderers, resetters) | `testing/helpers/*.ts` — ≥ 2 consumers, no `expect()` | n/a |
 | Static fixtures (YAML, JSON, recorded HTTP bodies, migration snapshots) | `testing/fixtures/<domain>/` | n/a |
@@ -457,6 +458,125 @@ When a testing rule appears in multiple docs, the canonical source is cited firs
 | Zero `index.ts` barrels (incl. `testing/`) | `NO-BARRELS.md` | this doc §Zero barrels |
 | ESM `.js` imports for TS source | `CLAUDE.md` §Core conventions | `NO-BARRELS.md` §Why |
 | Store actions pattern (writes through actions module) | `STORES.md` §Domain Store Pattern, §Workflow actions module | — |
+
+## TUI visual gallery
+
+The visual gallery renders the production `App`, router, screens, and overlays against synthetic store fixtures. It writes terminal-cell diagnostics and derived images for design review. It does not run a planner, implementer, provider, or live workflow.
+
+Use it when changing Ink layout, copy, color, terminal controls, responsive behavior, or a semantic crop. The ordinary test suite checks the contracts under `testing/visual/`. The gallery command writes artifacts that a person or Codex can inspect.
+
+### Commands and selection
+
+List the catalog without mounting the app:
+
+```bash
+npm run tui-shots -- --list
+```
+
+Capture one named element at one viewport:
+
+```bash
+npm run tui-shots -- \
+  --scenario home-empty \
+  --viewport 80x24 \
+  --element header \
+  --output .test-artifacts/ui/local-smoke
+```
+
+The flags mean:
+
+- `--scenario <id>` selects a catalog scenario such as `home-empty`, `workflow-review`, or `overlay-help`.
+- `--viewport <cols>x<rows>` selects an exact terminal size. The catalog sizes are `120x40`, `80x24`, and `60x18`.
+- `--element <id>` selects a catalog-owned semantic crop such as `header`, `composer`, `sidebar`, or `approval-panel`. The element must belong to every selected scenario.
+- `--output <directory>` selects the artifact root. The default is `.test-artifacts/ui`.
+- `--list` prints scenario IDs, viewports, checkpoints, and element IDs, then exits without rendering.
+
+Repeat `--scenario`, `--viewport`, or `--element` to select more than one value. The command validates the complete selection before it mounts a fixture. With no filters, it captures every catalog scenario at all three viewports, including each full frame and every declared crop.
+
+The run directory is content-addressed from the normalized selection. Repeating the same command replaces that run atomically, so a failed or narrower rerun cannot leave stale success records in its manifest.
+
+### Artifact layout
+
+A successful filtered run has this shape:
+
+```text
+.test-artifacts/ui/local-smoke/
+└── catalog-1-<selection-digest>/
+    ├── manifest.json
+    └── home-empty/
+        └── 80x24/
+            └── ready/
+                ├── frame.ansi
+                ├── frame.txt
+                ├── frame.cells.json
+                ├── frame.svg
+                ├── frame.png
+                └── elements/
+                    └── header/
+                        ├── crop.ansi
+                        ├── crop.txt
+                        ├── crop.cells.json
+                        ├── crop.svg
+                        └── crop.png
+```
+
+`--output` names the first directory in the example. The `catalog-1-<selection-digest>` child is the deterministic run key. Scenario, viewport, and checkpoint form the path below it. Derived `frame.svg`, `frame.png`, `crop.svg`, or `crop.png` can be absent when their renderer reports a structured failure. The ANSI, TXT, and cells files are the diagnostic bundle.
+
+`manifest.json` records:
+
+- manifest, catalog, and cell schema versions;
+- tool version and git revision;
+- requested and resolved selection entries;
+- the deterministic timezone, locale, terminal, color, clock, random, hyperlink, and motion settings;
+- terminal-control and hyperlink policies;
+- renderer name, version, font family, and cell metrics when derived images exist;
+- every frame or crop identity, provenance, rectangle, dimensions, locator, and relative file path;
+- warnings and structured failures.
+
+A failed required artifact does not appear as a successful PNG. Its failure remains in the manifest with the stage and artifact identity.
+
+### Frames, crops, and diagnostic truth
+
+Each frame is a full viewport cell grid. Its identity includes scenario, checkpoint, fixture version, viewport, and a stable frame key. A crop is sliced from that frame's canonical cells before any serializer or renderer runs. Its manifest entry includes the semantic element ID, locator kind, rectangle, and parent frame key. This makes the crop an exact rectangular view of `frame.cells.json`, not a second render that may drift from its parent.
+
+The files have different jobs:
+
+- `*.cells.json` is the canonical structured cell grid. It preserves graphemes, wide-cell continuation, foreground and background colors, attributes, and sanitized hyperlink metadata.
+- `*.txt` is control-free text reconstructed from the same cells. It preserves the fixed row count, blank rows, and trailing spaces.
+- `*.ansi` is deterministic terminal diagnostic output. It retains documented styles and sanitized OSC-8 links.
+- `*.svg` and `*.png` are derived from the cell grid. They are for visual inspection, not diagnostic authority.
+
+Version 1 has no PNG baseline or pixel-diff gate. The manifest records the renderer and font metrics because font availability and rasterization can differ across machines. Do not expect byte-identical PNGs across different installed fonts or operating systems. Compare cells, TXT, ANSI, and SVG structure when deterministic equality matters.
+
+### Fixture-only CI policy
+
+CI uses synthetic fixtures only. It does not read live sessions, user prompts, provider credentials, real transcripts, or the contents of a developer's current project. The representative CI smoke captures a bounded fixture at `80x24`; the complete catalog remains a local command because it creates many raster files.
+
+The fixtures still use the production app composition. They reset stores, seed bounded data, mount one scenario, wait for its semantic checkpoint, capture it, unmount it, and only then start the next scenario. This tests real screen and overlay composition without network access.
+
+The real CLI E2E suite under `testing/e2e/` has a different purpose. It checks planner and implementer protocol flows with real tools or recorded cassettes. It does not enumerate the visual catalog, render every viewport, resolve semantic crops, or publish visual artifact bundles. Passing E2E tests is not evidence that the gallery is complete, and a gallery pass is not evidence that a provider workflow works.
+
+### Optional PTY parity smoke
+
+The in-process gallery is the main visual tool. The PTY smoke is a narrow, opt-in check of the terminal boundary:
+
+```bash
+npm run tui-shots:pty -- --viewport 80x24
+```
+
+It starts only the synthetic `home-empty` route through the production `start` command. It uses fixed argument arrays, an allowlisted environment, a temporary git/config project, a bounded marker wait, a resize round trip, and the supported Ctrl+Q exit. It captures raw PTY I/O in memory to confirm the app reached a TTY and restored the alternate buffer and cursor. Timeout or interruption sends `SIGTERM`, then `SIGKILL` to the child process group if needed. Exit handlers remove temporary directories and listeners.
+
+The smoke does not contact a provider and does not replace full-screen manual testing. It covers one route at `80x24`; it does not prove parity for every screen, overlay, terminal emulator, or resize sequence.
+
+`node-pty@1.1.0` is a tooling-only optional dependency in `optionalDependencies`. An ordinary `npm install` or `npm ci` may attempt to install its native binary. Use `npm ci --omit=optional` when that native tool is not wanted. The gallery and its ANSI, TXT, cells, SVG, and PNG output do not depend on `node-pty`.
+
+The PTY command loads `node-pty` dynamically. If the package, native binary, or platform PTY support is unavailable, it prints `PTY smoke SKIP` with a reason and exits `0`. A passing run reports successful marker detection, viewport, resize, clean exit, and terminal restoration. Node 22 is required. Some platforms may also need a working native toolchain or a compatible prebuilt `node-pty` binary.
+
+### Handing artifacts to Codex
+
+For a focused UI task, run `--list`, capture the smallest relevant scenario, viewport, and element, then give Codex the run's `manifest.json` path. Include `frame.png` for surrounding layout and `crop.png` for the component under review. Point to `frame.txt` or `frame.cells.json` when exact copy, spacing, width, color, or hyperlink metadata matters.
+
+Ask Codex to read the manifest before comparing files. The manifest distinguishes a missing derived file from a successful artifact and ties every crop to its source frame. Regenerate the same selection after a change and compare the diagnostic files. Do not hand off a live session directory or treat a cross-font PNG byte difference as a regression.
 
 ## Manual smoke checklist
 

@@ -9,6 +9,7 @@ export default defineConfig({
       'scripts/**/*.test.{ts,tsx}',
       'testing/integration/**/*.test.{ts,tsx}',
       'testing/helpers/**/*.test.{ts,tsx}',
+      'testing/visual/**/*.test.{ts,tsx}',
       'evals/eval.test.ts',
     ],
     exclude: ['node_modules', 'dist'],

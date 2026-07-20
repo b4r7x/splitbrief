@@ -16,6 +16,7 @@ import { CostDrilldownOverlay } from '../features/workflow/components/cost/drill
 import { focusHasResolvableCopy } from '../features/workflow/copy/resolve.js';
 import type { RuntimeCommandDef, CopyResult, CopyTarget } from '../core/runtime/commands/types.js';
 import type { OverlayType, Screen } from '../core/navigation/types.js';
+import type { WorkflowScreenDeps } from '../features/workflow/hooks/use-workflow-screen.js';
 import { assertNever } from '../utils/type-guards.js';
 
 interface RouterProps {
@@ -25,6 +26,7 @@ interface RouterProps {
   onRuntime: (raw: string, from: Screen) => void;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;
   onWorkflowMode: CommandPaletteOverlayProps['onWorkflowMode'];
+  workflowDeps?: WorkflowScreenDeps | undefined;
 }
 
 export function Router({
@@ -34,10 +36,11 @@ export function Router({
   onRuntime,
   copyTarget,
   onWorkflowMode,
+  workflowDeps,
 }: RouterProps) {
   return (
     <Layout
-      screen={renderScreen({ screen, commands, onRuntime, copyTarget })}
+      screen={renderScreen({ screen, commands, onRuntime, copyTarget, workflowDeps })}
       overlay={renderOverlay({
         active: overlayActive,
         screen,
@@ -54,11 +57,13 @@ function renderScreen({
   commands,
   onRuntime,
   copyTarget,
+  workflowDeps,
 }: {
   screen: Screen;
   commands: RuntimeCommandDef[];
   onRuntime: (raw: string, from: Screen) => void;
   copyTarget: (target: CopyTarget) => Promise<CopyResult>;
+  workflowDeps?: WorkflowScreenDeps | undefined;
 }): ReactNode {
   switch (screen) {
     case 'home':
@@ -70,6 +75,7 @@ function renderScreen({
           onRuntimeCommand={(raw) => onRuntime(raw, 'workflow')}
           copyTarget={copyTarget}
           canCopyFocused={focusHasResolvableCopy}
+          deps={workflowDeps}
         />
       );
     case 'summary':

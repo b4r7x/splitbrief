@@ -10,8 +10,13 @@ import { overlayStore } from '../stores/ui/overlay.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { useStores } from '../stores/use-stores.js';
 import { interruptTurn, requestCancel } from '../features/workflow/handlers.js';
+import type { WorkflowScreenDeps } from '../features/workflow/hooks/use-workflow-screen.js';
 
-export function App() {
+export interface AppProps {
+  readonly workflowDeps?: WorkflowScreenDeps | undefined;
+}
+
+export function App({ workflowDeps }: AppProps = {}) {
   const [{ screen }, { active: overlayActive }, { phase }] = useStores(
     routerStore,
     overlayStore,
@@ -37,6 +42,7 @@ export function App() {
         onRuntime={handleRuntimeCommand}
         copyTarget={copyTarget}
         onWorkflowMode={setWorkflowMode}
+        workflowDeps={workflowDeps}
       />
     </AppProvider>
   );

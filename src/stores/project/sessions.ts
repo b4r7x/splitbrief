@@ -21,4 +21,8 @@ function loadAll(projectDir: string) {
   store.set((s) => ({ ...s, allSessions: listAllSessions(projectDir) }));
 }
 
-export const sessionsStore = { ...storeBase(store), load, loadAll };
+function __testReset(next?: Partial<SessionsState>): void {
+  store.set(next ? { ...initial, ...next } : initial);
+}
+
+export const sessionsStore = { ...storeBase(store), load, loadAll, __testReset };

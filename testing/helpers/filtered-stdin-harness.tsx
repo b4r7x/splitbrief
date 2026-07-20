@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import { render } from 'ink';
 import {
   createFilteredStdin,
+  getActiveFilteredStdin,
   setActiveFilteredStdin,
   type FilteredStdin,
 } from '../../src/lib/terminal/filtered-stdin.js';
@@ -13,11 +14,19 @@ import {
 // production: createFilteredStdin(process.stdin) -> render({ stdin: filtered.stdin }).
 // Drive input via `pressBytes`.
 
-function makeCaptureStdout() {
+export interface FilteredStdinViewport {
+  readonly cols: number;
+  readonly rows: number;
+}
+
+const DEFAULT_VIEWPORT: FilteredStdinViewport = { cols: 100, rows: 24 };
+
+function makeCaptureStdout(viewport: FilteredStdinViewport) {
   let last: string | undefined;
   return Object.assign(new EventEmitter(), {
     isTTY: true,
-    columns: 100,
+    columns: viewport.cols,
+    rows: viewport.rows,
     write: (frame: string): boolean => {
       last = frame;
       return true;
@@ -51,11 +60,15 @@ export interface FilteredStdinHarness {
   unmount: () => void;
 }
 
+export interface FilteredStdinHarnessDependencies {
+  readonly render?: typeof render;
+}
+
 // Runs `fn` with process.stdout.write muted, so the mouse/paste enable/disable
 // sequences createFilteredStdin / filtered.disable() write to the real terminal do
 // not litter the test output. Restored in a finally even when `fn` throws.
 function withMutedStdout<T>(fn: () => T): T {
-  const realWrite = process.stdout.write.bind(process.stdout);
+  const realWrite = process.stdout.write;
   process.stdout.write = (() => true) as typeof process.stdout.write;
   try {
     return fn();
@@ -64,25 +77,41 @@ function withMutedStdout<T>(fn: () => T): T {
   }
 }
 
-export function renderThroughFilteredStdin(element: ReactElement): FilteredStdinHarness {
-  const stdout = makeCaptureStdout();
+export function renderThroughFilteredStdin(
+  element: ReactElement,
+  viewport: FilteredStdinViewport = DEFAULT_VIEWPORT,
+  dependencies: FilteredStdinHarnessDependencies = {},
+): FilteredStdinHarness {
+  assertViewport(viewport);
+  const stdout = makeCaptureStdout(viewport);
+  const previousActiveFilteredStdin = getActiveFilteredStdin();
 
   const { source, filtered, instance } = withMutedStdout(() => {
     const source = makeSourceStdin();
     const filtered = createFilteredStdin(source);
-    setActiveFilteredStdin(filtered);
-    const instance = render(element, {
-      stdin: filtered.stdin,
-      // Frame-capture stream that mirrors ink-testing-library's fake stdout; the cast is
-      // the interop boundary, the same shape Ink writes rendered frames to.
-      stdout: stdout as unknown as NodeJS.WriteStream,
-      exitOnCtrlC: false,
-      patchConsole: false,
-      debug: true,
-    });
-    return { source, filtered, instance };
+    try {
+      setActiveFilteredStdin(filtered);
+      const instance = (dependencies.render ?? render)(element, {
+        stdin: filtered.stdin,
+        // Frame-capture stream that mirrors ink-testing-library's fake stdout; the cast is
+        // the interop boundary, the same shape Ink writes rendered frames to.
+        stdout: stdout as unknown as NodeJS.WriteStream,
+        exitOnCtrlC: false,
+        patchConsole: false,
+        debug: true,
+      });
+      return { source, filtered, instance };
+    } catch (error) {
+      try {
+        filtered.disable();
+      } finally {
+        setActiveFilteredStdin(previousActiveFilteredStdin);
+      }
+      throw error;
+    }
   });
 
+  let mounted = true;
   return {
     lastFrame: stdout.lastFrame,
     filtered,
@@ -90,11 +119,30 @@ export function renderThroughFilteredStdin(element: ReactElement): FilteredStdin
       source.write(Buffer.from(bytes, 'utf8'));
     },
     unmount: () => {
-      withMutedStdout(() => {
-        instance.unmount();
-        filtered.disable();
-      });
-      setActiveFilteredStdin(undefined);
+      if (!mounted) return;
+      mounted = false;
+      try {
+        withMutedStdout(() => {
+          try {
+            instance.unmount();
+          } finally {
+            filtered.disable();
+          }
+        });
+      } finally {
+        setActiveFilteredStdin(previousActiveFilteredStdin);
+      }
     },
   };
+}
+
+function assertViewport(viewport: FilteredStdinViewport): void {
+  if (
+    !Number.isInteger(viewport.cols) ||
+    viewport.cols <= 0 ||
+    !Number.isInteger(viewport.rows) ||
+    viewport.rows <= 0
+  ) {
+    throw new Error('Filtered stdin viewport must contain positive integer cols and rows');
+  }
 }
