@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
@@ -43,13 +43,14 @@ describe('settings overlay integration', () => {
 
     overlayStore.open('settings', 'validation.typecheck');
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame()).toContain('Type check');
 
     ui.stdin.write(' ');
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(loadConfig(dir).config.validation.typecheck).toBe(false);
+    });
 
-    expect(loadConfig(dir).config.validation.typecheck).toBe(false);
     ui.unmount();
   });
 
@@ -59,73 +60,118 @@ describe('settings overlay integration', () => {
 
     overlayStore.open('settings', 'validation.typecheck');
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame()).toContain('Type check');
 
     collectClickableZones({ cols: 100, rows: 50 }).get('list-row:validation.typecheck')?.();
-    await tick(20);
+    await vi.waitFor(() => {
+      expect(loadConfig(dir).config.validation.typecheck).toBe(false);
+    });
 
-    expect(loadConfig(dir).config.validation.typecheck).toBe(false);
     ui.unmount();
   });
 
   it('typing edits a number, Enter commits via validation', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
     overlayStore.open('settings', 'workflow.maxRetries');
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame()).toContain('Max retries');
 
     ui.stdin.write('\r'); // Enter edit mode on the numeric field.
-    await tick(40);
-    const editingFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(editingFrame).toContain('Max retries'); // the field row is rendered
-    expect(editingFrame).toContain('3'); // seeded value shown in the edit buffer
+    await vi.waitFor(() => {
+      expect(overlayStore.get().exclusive).toBe(true);
+    });
+    await flushEffects();
 
     ui.stdin.write('\x7f'); // backspace — clear seeded "3"
-    await tick(40);
-    const clearedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(clearedFrame).toContain('Max retries');
-    expect(clearedFrame).not.toContain('3'); // buffer cleared, no value digit shown
+    await vi.waitFor(() => {
+      const clearedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(lineContaining(clearedFrame, 'Max retries')).not.toContain('3');
+    });
+    await flushEffects();
 
     ui.stdin.write('5');
-    await tick(40);
-    const typedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(typedFrame).toContain('Max retries');
-    expect(typedFrame).toContain('5'); // typed value shown in the edit buffer
+    await vi.waitFor(() => {
+      const typedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(lineContaining(typedFrame, 'Max retries')).toContain('5');
+    });
+    await flushEffects();
 
     ui.stdin.write('\r'); // commit
-    await tick(20);
 
     await vi.waitFor(() => {
       expect(loadConfig(dir).config.workflow.maxRetries).toBe(5);
     });
+
+    await vi.waitFor(() => {
+      expect(overlayStore.get().exclusive).toBe(false);
+      expect(feedbackStore.get().isError).toBe(false);
+    });
+
     ui.unmount();
   });
 
   it('keeps edit mode open and surfaces an error when committing invalid input', async () => {
+    terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
     overlayStore.open('settings', 'workflow.maxRetries');
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\r'); // enter edit mode (seeded "3")
-    await tick(40);
-    ui.stdin.write('\x7f'); // backspace — clear seeded value
-    await tick(40);
+    await vi.waitFor(() => {
+      expect(overlayStore.get().exclusive).toBe(true);
+    });
+
+    await flushEffects();
+    ui.stdin.write('\x7f');
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(lineContaining(frame, 'Max retries')).not.toContain('3');
+    });
+    await flushEffects();
+
     ui.stdin.write('9');
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(lineContaining(frame, 'Max retries')).toContain('9');
+    });
+    await flushEffects();
+
     ui.stdin.write('9'); // "99" is above max (10)
-    await tick(40);
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(lineContaining(frame, 'Max retries')).toContain('99');
+    });
+    await flushEffects();
 
     ui.stdin.write('\r'); // attempt commit of out-of-range value
-    await tick(40);
 
-    // Edit mode stays open: the buffer is still shown with its cursor marker.
-    expect(ui.lastFrame() ?? '').toContain('[99▏]');
-    // The invalid value was NOT persisted.
-    expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
-    // A feedback error was surfaced.
-    const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(true);
-    expect(feedback.message).toContain('Max retries');
+    await vi.waitFor(() => {
+      expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
+      const feedback = feedbackStore.get();
+      expect(feedback.isError).toBe(true);
+      expect(feedback.message).toContain('Max retries');
+      expect(overlayStore.get().exclusive).toBe(true);
+    });
+    await flushEffects();
+
+    ui.stdin.write('\x7f');
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const maxRetriesLine = lineContaining(frame, 'Max retries');
+      expect(maxRetriesLine).toContain('9');
+      expect(maxRetriesLine).not.toContain('99');
+    });
+    await flushEffects();
+
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(loadConfig(dir).config.workflow.maxRetries).toBe(9);
+      expect(overlayStore.get().exclusive).toBe(false);
+      expect(feedbackStore.get().isError).toBe(false);
+    });
 
     ui.unmount();
   });
@@ -133,19 +179,20 @@ describe('settings overlay integration', () => {
   it('Esc cancels an active edit without saving', async () => {
     overlayStore.open('settings', 'workflow.maxRetries');
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame()).toContain('Max retries');
 
     ui.stdin.write('\r');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\x7f');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('9');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\x1b'); // escape
-    await tick(20);
 
-    expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
+    await vi.waitFor(() => {
+      expect(loadConfig(dir).config.workflow.maxRetries).toBe(3);
+    });
     ui.unmount();
   });
 
@@ -153,21 +200,21 @@ describe('settings overlay integration', () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
     overlayStore.open('settings', 'planner.kind');
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(PAGE_DOWN);
-    await tick(20);
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Validation');
-    expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Timeout');
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Validation');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Timeout');
+    });
     ui.unmount();
   });
 
   it('does not show a false more row when sectioned settings fit', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 60, isSmall: false });
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Planner');

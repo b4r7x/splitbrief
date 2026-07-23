@@ -140,10 +140,10 @@ Types should live where their domain meaning is created — not in a central `ty
 
 ## Schemas — `src/core/schemas/`
 
-`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). It sits at the top of `core/` and is flat — no subfolders (the folder is itself cohesive: "runtime data shapes"). A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/sessions/tree/schemas.ts`, `core/config/runtime/overrides.ts`) rather than being hoisted here.
+`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." The sole current folder exception is `src/core/schemas/recovery/`, which keeps the coupled recovery schema, policy, IPC projection, and fact helpers together. A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/sessions/tree/schemas.ts`, `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
 
 ```
-src/core/schemas/          # ~29 files — representative subset below (non-exhaustive)
+src/core/schemas/          # ~40 flat leaves plus the intentional recovery/ exception
 ├── config.ts              # ConfigSchema + Config type
 ├── enums.ts               # PlannerKind, ImplementerKind, Mode enums
 ├── implementer-config.ts
@@ -157,7 +157,12 @@ src/core/schemas/          # ~29 files — representative subset below (non-exha
 ├── summary.ts
 ├── question.ts
 ├── models-dev.ts          # models.dev catalog — remote JSON boundary
-└── …                      # analyze, drift, evidence, recovery, snapshot, stats, hooks, … (flat, no subfolders)
+├── recovery/              # recovery's cohesive multi-module boundary; no recovery.ts facade
+│   ├── facts.ts           # RecoveryFact accessors
+│   ├── ipc.ts             # IPC recovery issue projection
+│   ├── policy.ts          # legal recovery actions and selection checks
+│   └── schemas.ts         # recovery Zod schemas + inferred types
+└── …                      # analyze, drift, evidence, snapshot, stats, hooks, … (flat leaves)
 ```
 
 **Inferred types co-locate with their schema.** Each file exports the schema *and* the inferred type:
@@ -180,7 +185,7 @@ Consumers import whichever they need (or both). They do **not** import `Task` fr
 
 **Enforcement — `core/types/` MUST NOT contain `z.infer`.** Inferred types live next to their schema in `core/schemas/`. `core/types/` is only for TS-only types with no runtime schema backing (e.g., `StateAction`, `ProjectContext`, `WorkflowOpts`). Anything derived from a Zod schema via `z.infer<>` belongs in the schema file.
 
-**Why the folder is flat**: schemas are a cohesive cross-cutting concern. Grouping them further (e.g., `schemas/config/` vs `schemas/workflow/`) adds depth without separating unrelated things — every consumer of one schema tends to consume others. Flat beats fake hierarchy.
+**Why the root is mostly flat**: schemas are a cohesive cross-cutting concern. Grouping unrelated domains further (e.g., `schemas/config/` vs `schemas/workflow/`) adds depth without separating them — every consumer of one schema tends to consume others. `src/core/schemas/recovery/` is the intentional exception because its schema, action policy, IPC projection, and fact helpers form one coupled recovery boundary. Keep other schema leaves flat unless they earn the same cohesive boundary.
 
 ---
 

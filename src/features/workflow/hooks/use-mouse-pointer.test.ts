@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { wireAppMouse } from '../../../app/mouse.js';
-import { _resetHoverThrottle } from './use-mouse-pointer.js';
-import type { FilteredStdin, MouseEvent } from '../../../lib/terminal/filtered-stdin.js';
+import {
+  _resetHoverThrottle,
+  handleWorkflowMouseMove,
+  handleWorkflowMousePress,
+} from './use-mouse-pointer.js';
+import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -11,7 +14,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { resetWorkflow } from '../../../stores/workflow/actions.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { _resetMouseZones, registerMouseZone } from '../../../lib/terminal/mouse-zones.js';
 import {
@@ -19,16 +22,16 @@ import {
   readConversationScrollSnapshot,
   readRailSnapshot,
 } from '../layout/snapshot.js';
-import * as snapshot from '../layout/snapshot.js';
 import { briefListTopOffset } from '../layout/hit-test.js';
 import { SIMPLE_TASK_ROW_HEIGHT } from '../layout/brief-review.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
-import { rowText } from '../conversation-rows/row-format.js';
-import { getSections } from '../../../stores/workflow/actions.js';
+import { rowText } from '../conversation-rows/row-format/rows.js';
+import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { makeImplementerGenerate, makePlannerText } from '#testing/helpers/events.js';
+import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
+import { makePlannerText } from '#testing/helpers/events/planner.js';
 
 function seedTallTranscript(): void {
   eventsStore.__testReset({
@@ -125,23 +128,12 @@ function transcriptRows() {
   }).rows;
 }
 
-function createMockFilteredStdin() {
-  let listener: ((event: MouseEvent) => void) | undefined;
-  return {
-    filtered: {
-      stdin: process.stdin as unknown as NodeJS.ReadStream,
-      onMouse: (next: (event: MouseEvent) => void) => {
-        listener = next;
-        return () => {
-          listener = undefined;
-        };
-      },
-      activate: () => {},
-      isPasteActive: () => false,
-      disable: () => {},
-    } satisfies FilteredStdin,
-    emit: (event: MouseEvent) => listener?.(event),
-  };
+function dispatchWorkflowPointer(event: MouseEvent): void {
+  if (event.type === 'move') {
+    handleWorkflowMouseMove(event);
+    return;
+  }
+  if (event.type === 'press') handleWorkflowMousePress(event);
 }
 
 function pointerEvent(type: MouseEvent['type'], x: number, y: number): MouseEvent {
@@ -158,7 +150,7 @@ function openBriefReview(taskCount: number) {
   return snapshot;
 }
 
-describe('wireAppMouse workflow pointer handling', () => {
+describe('workflow pointer handling', () => {
   beforeEach(() => {
     routerStore.reset();
     overlayStore.reset();
@@ -181,9 +173,9 @@ describe('wireAppMouse workflow pointer handling', () => {
 
     const sgrX = snapshot.rect.left;
     const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('press', sgrX, listTop + windowIndex * SIMPLE_TASK_ROW_HEIGHT));
+    dispatchWorkflowPointer(
+      pointerEvent('press', sgrX, listTop + windowIndex * SIMPLE_TASK_ROW_HEIGHT),
+    );
 
     expect(focusStore.get()).toEqual({
       region: 'brief',
@@ -191,30 +183,23 @@ describe('wireAppMouse workflow pointer handling', () => {
     });
     // The clicked row is already on screen, so focusing it must not snap the viewport.
     expect(reviewStore.get().scrollOffset).toBe(0);
-    dispose();
   });
 
   it('ignores a click outside any zone or row', () => {
     openBriefReview(12);
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('press', 1, 1));
+    dispatchWorkflowPointer(pointerEvent('press', 1, 1));
 
     expect(reviewStore.get().scrollOffset).toBe(0);
     expect(focusStore.get()).toBeNull();
-    dispose();
   });
 
   it('ignores wheel events (the scroll handler owns them)', () => {
     openBriefReview(12);
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('wheel-up', 5, 10));
-    mock.emit(pointerEvent('wheel-down', 5, 10));
+    dispatchWorkflowPointer(pointerEvent('wheel-up', 5, 10));
+    dispatchWorkflowPointer(pointerEvent('wheel-down', 5, 10));
 
     expect(reviewStore.get().scrollOffset).toBe(0);
     expect(focusStore.get()).toBeNull();
-    dispose();
   });
 
   it('opens the cost drilldown when a registered footer zone is clicked', () => {
@@ -228,24 +213,18 @@ describe('wireAppMouse workflow pointer handling', () => {
       z: 10,
       onClick: () => overlayStore.open('cost-drilldown'),
     });
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('press', 65, 28));
+    dispatchWorkflowPointer(pointerEvent('press', 65, 28));
 
     expect(overlayStore.get().active).toBe('cost-drilldown');
-    dispose();
   });
 
   it('ignores a release event so X10 button-3 releases do not click a zone', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
     const onClick = vi.fn();
     registerMouseZone({ id: 'z', left: 1, right: 80, top: 5, bottom: 5, z: 5, onClick });
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('release', 10, 5));
+    dispatchWorkflowPointer(pointerEvent('release', 10, 5));
 
     expect(onClick).not.toHaveBeenCalled();
-    dispose();
   });
 
   it('click on the active rail stage scrolls the transcript to the bottom without setting focus', () => {
@@ -261,15 +240,12 @@ describe('wireAppMouse workflow pointer handling', () => {
     });
     const buildZone = readRailSnapshot().zones.find((zone) => zone.index === 3);
     if (!buildZone) throw new Error('expected a build rail zone');
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('press', buildZone.left, buildZone.top));
+    dispatchWorkflowPointer(pointerEvent('press', buildZone.left, buildZone.top));
 
     const scroll = conversationScrollStore.get();
     expect(scroll.scrollOffset).toBe(0);
     expect(scroll.renderableCountAtScroll).toBe(snapshot.renderableCount);
     expect(focusStore.get()).toBeNull();
-    dispose();
   });
 
   it('routes distinct rail stages to distinct transcript scroll destinations', () => {
@@ -287,13 +263,10 @@ describe('wireAppMouse workflow pointer handling', () => {
       return zone;
     };
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-
     const clickStage = (index: number): number => {
       conversationScrollStore.reset();
       const zone = zoneFor(index);
-      mock.emit(pointerEvent('press', zone.left, zone.top));
+      dispatchWorkflowPointer(pointerEvent('press', zone.left, zone.top));
       return conversationScrollStore.get().scrollOffset;
     };
 
@@ -308,18 +281,14 @@ describe('wireAppMouse workflow pointer handling', () => {
     expect(briefs).toBe(0);
     expect(new Set([spec, plan, briefs]).size).toBe(3);
     expect(focusStore.get()).toBeNull();
-    dispose();
   });
 
   it('sets the hover store on a move over a brief row', () => {
     const snapshot = openBriefReview(12);
     const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('move', snapshot.rect.left, listTop));
+    dispatchWorkflowPointer(pointerEvent('move', snapshot.rect.left, listTop));
 
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
-    dispose();
   });
 
   it('clears hover on a move over the click-only rail', () => {
@@ -329,50 +298,40 @@ describe('wireAppMouse workflow pointer handling', () => {
     if (!railZone) throw new Error('expected a rail zone');
     // Seed a stale tint so the assertion proves the rail move actively clears it.
     hoverStore.set('conversation', 5);
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('move', railZone.left, railZone.top));
+    dispatchWorkflowPointer(pointerEvent('move', railZone.left, railZone.top));
 
     expect(hoverStore.get()).toBeNull();
-    dispose();
   });
 
   it('clears hover on a move over empty space', () => {
     openBriefReview(12);
     hoverStore.set('brief', 3);
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('move', 1, 1));
+    dispatchWorkflowPointer(pointerEvent('move', 1, 1));
 
     expect(hoverStore.get()).toBeNull();
-    dispose();
   });
 
   it('sets a conversation hover on a move over the transcript', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const snapshot = readConversationScrollSnapshot();
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('move', snapshot.conversationRect.left, snapshot.conversationRect.top));
+    dispatchWorkflowPointer(
+      pointerEvent('move', snapshot.conversationRect.left, snapshot.conversationRect.top),
+    );
 
     expect(hoverStore.get()).toEqual({ surface: 'conversation', index: 0 });
-    dispose();
   });
 
   it('clears hover on an invalid move even inside the throttle window', () => {
     const snapshot = openBriefReview(12);
     const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('move', snapshot.rect.left, listTop));
+    dispatchWorkflowPointer(pointerEvent('move', snapshot.rect.left, listTop));
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
 
     // A second move arriving within HOVER_THROTTLE_MS lands on empty space. Clearing is never
     // throttled, so the stale tint must not survive the invalid move.
-    mock.emit(pointerEvent('move', 1, 1));
+    dispatchWorkflowPointer(pointerEvent('move', 1, 1));
     expect(hoverStore.get()).toBeNull();
-    dispose();
   });
 
   it('click on a +N more activity row expands the batch', () => {
@@ -384,9 +343,7 @@ describe('wireAppMouse workflow pointer handling', () => {
     expect(windowIndex).toBeGreaterThanOrEqual(0);
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(false);
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(
+    dispatchWorkflowPointer(
       pointerEvent(
         'press',
         snapshot.conversationRect.left,
@@ -396,7 +353,6 @@ describe('wireAppMouse workflow pointer handling', () => {
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(true);
     expect(focusStore.get()).toBeNull();
-    dispose();
   });
 
   it('click on the collapse activity row collapses the expanded batch', () => {
@@ -410,9 +366,7 @@ describe('wireAppMouse workflow pointer handling', () => {
     const windowIndex = transcriptRows().findIndex((row) => row.kind === 'activity-more');
     expect(windowIndex).toBeGreaterThanOrEqual(0);
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(
+    dispatchWorkflowPointer(
       pointerEvent(
         'press',
         snapshot.conversationRect.left,
@@ -421,7 +375,6 @@ describe('wireAppMouse workflow pointer handling', () => {
     );
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(false);
-    dispose();
   });
 
   it('click on a collapsed diff hint row expands the diff', () => {
@@ -433,9 +386,7 @@ describe('wireAppMouse workflow pointer handling', () => {
     expect(windowIndex).toBeGreaterThanOrEqual(0);
     expect(conversationScrollStore.get().expandedDiffs.size).toBe(0);
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(
+    dispatchWorkflowPointer(
       pointerEvent(
         'press',
         snapshot.conversationRect.left,
@@ -447,7 +398,6 @@ describe('wireAppMouse workflow pointer handling', () => {
       true,
     );
     expect(focusStore.get()).toBeNull();
-    dispose();
   });
 
   it('resolves an activity disclosure click while a stage is live and the transcript is scrolled to the bottom', () => {
@@ -466,9 +416,7 @@ describe('wireAppMouse workflow pointer handling', () => {
     expect(batchKey).toMatch(/^activity-batch:/);
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(false);
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(
+    dispatchWorkflowPointer(
       pointerEvent(
         'press',
         snapshot.conversationRect.left,
@@ -478,7 +426,6 @@ describe('wireAppMouse workflow pointer handling', () => {
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(true);
     expect(focusStore.get()).toBeNull();
-    dispose();
   });
 
   it('click on a plain transcript row sets no focus and toggles nothing', () => {
@@ -487,56 +434,27 @@ describe('wireAppMouse workflow pointer handling', () => {
     seedTallTranscript();
     const snapshot = readConversationScrollSnapshot();
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(
+    dispatchWorkflowPointer(
       pointerEvent('press', snapshot.conversationRect.left, snapshot.conversationRect.top + 1),
     );
 
     expect(conversationScrollStore.get().expandedDiffs.size).toBe(0);
     expect(conversationScrollStore.get().expandedActivityBatches.size).toBe(0);
     expect(focusStore.get()).toBeNull();
-    dispose();
   });
 
   it('throttles a redundant valid hover update arriving within the window', () => {
     const snapshot = openBriefReview(12);
     const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
     expect(snapshot.visibleCount).toBeGreaterThan(1);
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit(pointerEvent('move', snapshot.rect.left, listTop));
+    dispatchWorkflowPointer(pointerEvent('move', snapshot.rect.left, listTop));
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
 
     // A second valid move to the next row within the throttle window is dropped, so the hover stays
     // on the first row rather than re-running on every high-frequency move event.
-    mock.emit(pointerEvent('move', snapshot.rect.left, listTop + SIMPLE_TASK_ROW_HEIGHT));
-    expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
-    dispose();
-  });
-
-  it('resolves transcript hover from the lightweight snapshot, not full scroll projection', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
-    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
-    seedTallTranscript();
-    const layout = readConversationScrollSnapshot();
-    const hoverSpy = vi.spyOn(snapshot, 'readConversationHoverSnapshot');
-    const scrollSpy = vi.spyOn(snapshot, 'readConversationScrollSnapshot');
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-
-    mock.emit(
-      pointerEvent(
-        'move',
-        layout.conversationRect.left,
-        layout.conversationRect.top + layout.stickyLeadingRows,
-      ),
+    dispatchWorkflowPointer(
+      pointerEvent('move', snapshot.rect.left, listTop + SIMPLE_TASK_ROW_HEIGHT),
     );
-
-    expect(hoverSpy.mock.calls.length).toBeGreaterThan(0);
-    expect(scrollSpy).not.toHaveBeenCalled();
-    hoverSpy.mockRestore();
-    scrollSpy.mockRestore();
-    dispose();
+    expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
   });
 });

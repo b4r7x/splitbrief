@@ -1,11 +1,12 @@
 import type { Command } from 'commander';
 import { resolveProjectDir } from '../setup.js';
 import { cliError, withCliErrors } from '../errors.js';
-import { listWorktrees, removeWorktree } from '../../engine/worktree.js';
+import { listWorktrees } from '../../engine/worktree/status.js';
+import { removeWorktree } from '../../engine/worktree/remove.js';
 import { worktreePath } from '../../core/paths.js';
-import { createGitClient } from '../../lib/git.js';
+import { createGitClient } from '../../lib/git/client.js';
 import { renderTable } from '../render-table.js';
-import type { WorktreeInfo } from '../../engine/worktree.js';
+import type { WorktreeInfo } from '../../engine/worktree/status.js';
 
 export interface WorktreeDeps {
   listWorktrees: typeof listWorktrees;

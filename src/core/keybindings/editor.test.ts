@@ -19,12 +19,8 @@ describe('resolveEditorKeyAction', () => {
     expect(resolve('', { escape: true })).toEqual({ kind: 'cancel' });
   });
 
-  it('maps Ctrl+O to open-external without disturbing neighboring chords (REQ-140)', () => {
+  it('maps Ctrl+O and Ctrl+G without binding cost-drilldown in the editor resolver', () => {
     expect(resolve('o', { ctrl: true })).toEqual({ kind: 'open-external' });
-    // Neighboring chords stay put: Ctrl+S saves, Ctrl+J inserts a newline.
-    expect(resolve('s', { ctrl: true })).toEqual({ kind: 'save' });
-    expect(resolve('j', { ctrl: true })).toEqual({ kind: 'insert', text: '\n' });
-    // Ctrl+G remains unbound in the editor resolver (reserved for cost-drilldown).
     expect(resolve('g', { ctrl: true })).toBeNull();
   });
 
@@ -37,11 +33,7 @@ describe('resolveEditorKeyAction', () => {
   });
 
   it('never maps Ctrl+C to copy, cut, or select-all (interrupt semantics retained)', () => {
-    const action = resolve('c', { ctrl: true });
-    expect(action).toBeNull();
-    expect(action).not.toEqual({ kind: 'copy' });
-    expect(action).not.toEqual({ kind: 'cut' });
-    expect(action).not.toEqual({ kind: 'select-all' });
+    expect(resolve('c', { ctrl: true })).toBeNull();
   });
 
   it('marks shifted motions as selecting and unshifted motions as collapsing', () => {

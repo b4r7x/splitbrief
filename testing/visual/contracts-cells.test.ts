@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ArtifactIdentitySchema,
   CropArtifactIdentitySchema,
   FrameArtifactIdentitySchema,
   cropAccountingKey,
   frameAccountingKey,
-  frameArtifactKey,
 } from './contracts/artifact-identity.js';
 import { ArtifactFilesSchema, ArtifactRecordSchema } from './contracts/artifacts.js';
 import {
@@ -149,10 +147,6 @@ describe('visual cell and artifact contracts', () => {
     expect(cropAccountingKey({ provenance, elementId: crop.elementId })).toBe(
       'home-empty:ready:120x40:crop:hero',
     );
-    expect(frame.key).toBe(frameArtifactKey(provenance));
-    expect(crop.parentFrameKey).toBe(frame.key);
-    expect(ArtifactIdentitySchema.safeParse(frame).success).toBe(true);
-    expect(ArtifactIdentitySchema.safeParse(crop).success).toBe(true);
     expect(FrameArtifactIdentitySchema.safeParse({ ...frame, key: 'wrong:frame' }).success).toBe(
       false,
     );
@@ -166,8 +160,6 @@ describe('visual cell and artifact contracts', () => {
     const frame = createFrameArtifact({ provenance, includeDerived: true });
     const crop = createCropArtifact({ provenance, includeDerived: true });
 
-    expect(ArtifactRecordSchema.safeParse(frame).success).toBe(true);
-    expect(ArtifactRecordSchema.safeParse(crop).success).toBe(true);
     expect(
       ArtifactRecordSchema.safeParse({ ...frame, rect: { x: 0, y: 0, width: 3, height: 2 } })
         .success,

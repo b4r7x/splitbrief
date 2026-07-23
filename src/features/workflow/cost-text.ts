@@ -2,7 +2,7 @@ import { tokensStore, type PerTaskTokens, type TokensState } from '../../stores/
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { configStore } from '../../stores/project/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
-import { calculateCostBreakdown } from '../../engine/providers/cost.js';
+import { calculateCostBreakdown } from '../../engine/providers/cost/breakdown.js';
 import { resolvePricing, type PricingMode } from '../../engine/providers/pricing-resolver.js';
 import type { ModelCacheAccessor } from '../../engine/providers/model/resolution.js';
 import { runPricingIdentity } from '../../core/providers/pricing-identity.js';

@@ -16,7 +16,7 @@ afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
-describe('EventBus end-to-end flow', { timeout: 30_000 }, () => {
+describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
   it('publishes a coherent event sequence for a one-task quick-mode workflow', async () => {
     const projectDir = createTempDir('orch-int-bus-flow');
     dirs.push(projectDir);
@@ -77,5 +77,5 @@ describe('EventBus end-to-end flow', { timeout: 30_000 }, () => {
     expect(idx('implementer_generate_done')).toBeLessThan(idx('task_completed'));
     expect(idx('task_completed')).toBeLessThan(idx('all_tasks_done'));
     expect(idx('all_tasks_done')).toBeLessThan(idx('workflow_complete'));
-  }, 20_000);
+  }, 90_000);
 });

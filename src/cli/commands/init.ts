@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { existsSync } from 'node:fs';
 import { App } from '../../app/root.js';
 import { configPath } from '../../core/config/load/io.js';
-import { renderApp } from '../render.js';
+import { renderApp } from '../render/app.js';
 import { resolveProjectDir, assertInteractiveTty } from '../setup.js';
 import { initStores } from '../init-stores.js';
 import { routerStore } from '../../stores/navigation/router.js';

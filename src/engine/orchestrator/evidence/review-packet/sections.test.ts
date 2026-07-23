@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../../../core/state/machine.js';
-import { createEvidenceLedger } from '../../../../core/evidence/ledger.js';
+import { createEvidenceLedger } from '../../../../core/evidence/ledger-state.js';
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import { buildValidation } from './sections.js';

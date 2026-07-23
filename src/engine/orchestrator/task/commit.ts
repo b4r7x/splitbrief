@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ValidationResult } from '../validation-result.js';
+import type { ValidationResult } from '../validation/result.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus, EngineEvent } from '../../events/types.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
@@ -10,9 +10,9 @@ import {
   createTaggedStash,
   stageFiles,
   getStagedFiles,
-  getInProgressGitOp,
   resetIndexPreservingStaged,
-} from '../../../lib/git.js';
+} from '../../../lib/git/staging.js';
+import { getInProgressGitOp } from '../../../lib/git/repository.js';
 import {
   publishWarning,
   publishWarningFromError,

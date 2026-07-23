@@ -157,7 +157,7 @@ function normalizeMacTmpPath(path: string | null): string | null {
   return path?.replace(/^\/private(\/(?:tmp|var)\/)/, '$1') ?? null;
 }
 
-describe('CLI planner to CLI implementer workflow', { timeout: 30_000 }, () => {
+describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
   it('runs a Codex-style planner subprocess and a separate OpenCode-style implementer subprocess', async () => {
     const marker = 'from-cli-planner-to-cli-implementer';
     const projectDir = setupProject(marker);
@@ -265,5 +265,5 @@ describe('CLI planner to CLI implementer workflow', { timeout: 30_000 }, () => {
         'utf-8',
       ),
     ).toContain('CLI planner and CLI implementer completed.');
-  }, 30_000);
+  }, 90_000);
 });

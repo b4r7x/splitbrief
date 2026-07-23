@@ -62,35 +62,6 @@ describe('WorkflowStateSchema recovery compatibility', () => {
     expect(result.data.plannerSessionId).toBeUndefined();
   });
 
-  it('accepts state with pendingRecovery field', () => {
-    const result = WorkflowStateSchema.safeParse({
-      stateVersion: 3,
-      phase: 'implementing',
-      feature: 'recover session',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [],
-      plannerSessionId: null,
-      startedAt: '2026-04-28T12:00:00.000Z',
-      tokenUsage,
-      pendingRecovery: {
-        id: 'rec_001',
-        reason: 'retry-exhausted',
-        phase: 'implementing',
-        status: 'awaiting-user',
-        files: [],
-        affectedTaskIds: [],
-        message: 'exhausted retries',
-        details: [],
-        availableActions: ['abort-workflow'],
-        recommendedAction: 'abort-workflow',
-        createdAt: '2026-04-28T12:00:00.000Z',
-      },
-    });
-
-    expect(result.success).toBe(true);
-  });
-
   it('rejects duplicate task IDs', () => {
     const result = WorkflowStateSchema.safeParse({
       stateVersion: 3,
@@ -131,30 +102,6 @@ describe('WorkflowStateSchema recovery compatibility', () => {
       tasks: [{ ...task, status: 'done' }],
       startedAt: '2026-04-28T12:00:00.000Z',
       tokenUsage,
-    });
-
-    expect(result.success).toBe(true);
-  });
-
-  it('accepts a changed-files baseline with an active task snapshot', () => {
-    const result = WorkflowStateSchema.safeParse({
-      stateVersion: 3,
-      phase: 'implementing',
-      feature: 'snapshot session',
-      currentTaskIndex: 0,
-      attempt: 0,
-      tasks: [task],
-      startedAt: '2026-04-28T12:00:00.000Z',
-      tokenUsage,
-      changedFilesBaseline: {
-        head: 'abc123',
-        fingerprints: { 'src/a.ts': 'hash-a' },
-        activeTaskSnapshot: {
-          head: 'abc123',
-          files: ['src/a.ts'],
-          dirtyFileContents: { 'src/a.ts': 'user edit a\n' },
-        },
-      },
     });
 
     expect(result.success).toBe(true);

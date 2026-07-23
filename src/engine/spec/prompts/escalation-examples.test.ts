@@ -44,9 +44,14 @@ describe('selectRelevantExamples', () => {
     expect(examples[0]!.label).toBe('Syntax error');
   });
 
-  it('caps at maxExamples', () => {
-    const examples = selectRelevantExamples('error', tsCtx, 1);
-    expect(examples.length).toBeLessThanOrEqual(1);
+  it('caps combined module-resolution and type errors at maxExamples', () => {
+    const combinedError =
+      "Cannot find module './utils' imported from src/engine/foo.ts.\nArgument of type 'string | undefined' is not assignable to parameter of type 'string'.";
+    const uncapped = selectRelevantExamples(combinedError, tsCtx);
+    const capped = selectRelevantExamples(combinedError, tsCtx, 1);
+
+    expect(uncapped).toHaveLength(2);
+    expect(capped).toHaveLength(1);
   });
 });
 

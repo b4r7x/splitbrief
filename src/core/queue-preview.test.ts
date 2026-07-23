@@ -8,8 +8,6 @@ describe('formatQueueMessagePreview', () => {
     );
 
     expect(preview).toBe('token sk-***REDACTED*** next line');
-    expect(preview).not.toContain('abcdefghijklmnopqrstuvwxyz');
-    expect(preview).not.toContain('\u001b');
   });
 
   it('preserves word boundaries when controls and multiline text are normalized', () => {

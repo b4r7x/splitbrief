@@ -28,12 +28,6 @@ describe('computePerTaskOutOfBounds', () => {
     expect(result).toEqual(new Set(['src/b.ts']));
   });
 
-  it('outOfBounds pattern matches via substring → included', () => {
-    const task = makeTask({ file: 'src/a.ts', scope: { outOfBounds: ['src/secrets'] } });
-    const result = computePerTaskOutOfBounds(task, ['src/a.ts', 'src/secrets/leak.ts']);
-    expect(result.has('src/secrets/leak.ts')).toBe(true);
-  });
-
   it('file matching approvedOutOfBounds → excluded from result', () => {
     const task = makeTask({
       file: 'src/a.ts',
@@ -74,18 +68,6 @@ describe('computePerTaskOutOfBounds', () => {
     const task = makeTask({ file: 'src/a.ts' });
     const result = computePerTaskOutOfBounds(task, []);
     expect(result.size).toBe(0);
-  });
-
-  it('undefined scope → no crash, empty set when only own file changed', () => {
-    const task = makeTask({ file: 'src/a.ts', scope: undefined });
-    const result = computePerTaskOutOfBounds(task, ['src/a.ts']);
-    expect(result.size).toBe(0);
-  });
-
-  it('undefined scope + extra file → extra file in set', () => {
-    const task = makeTask({ file: 'src/a.ts', scope: undefined });
-    const result = computePerTaskOutOfBounds(task, ['src/a.ts', 'src/c.ts']);
-    expect(result).toEqual(new Set(['src/c.ts']));
   });
 });
 
@@ -147,27 +129,18 @@ describe('analyzeDriftChain — extend semantics', () => {
     expect(update.state.activeChain.score).toBeGreaterThan(0);
   });
 
-  it('three consecutive with full overlap → length 3, score above 0.6', () => {
-    let state = makeState();
-    const files = new Set(['src/x.ts', 'src/y.ts', 'src/z.ts']);
-    state = analyzeDriftChain(state, taskId('T001'), files, 0.6).state;
-    state = analyzeDriftChain(state, taskId('T002'), files, 0.6).state;
-    const update = analyzeDriftChain(state, taskId('T003'), files, 0.6);
-    expect(update.state.activeChain.entries).toHaveLength(3);
-    expect(update.state.activeChain.score).toBeGreaterThan(0.6);
-  });
-
-  it('three consecutive crossing threshold → emitted defined on third call', () => {
+  it('three consecutive with full overlap extends chain, crosses threshold, and emits on third call', () => {
     let state = makeState();
     const files = new Set(['src/x.ts', 'src/y.ts', 'src/z.ts']);
     const r1 = analyzeDriftChain(state, taskId('T001'), files, 0.6);
     state = r1.state;
     expect(r1.emitted).toBeUndefined();
 
-    const r2 = analyzeDriftChain(state, taskId('T002'), files, 0.6);
-    state = r2.state;
+    state = analyzeDriftChain(state, taskId('T002'), files, 0.6).state;
 
     const r3 = analyzeDriftChain(state, taskId('T003'), files, 0.6);
+    expect(r3.state.activeChain.entries).toHaveLength(3);
+    expect(r3.state.activeChain.score).toBeGreaterThan(0.6);
     expect(r3.emitted).toBeDefined();
     expect(r3.emitted?.chainLength).toBe(3);
   });

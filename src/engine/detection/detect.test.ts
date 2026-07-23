@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { detectAvailablePlanners } from './detect.js';
-import { detectAvailableProviders } from '../providers/registry.js';
-import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliToolId } from '../../core/schemas/enums.js';
@@ -140,109 +138,5 @@ describe('detectAvailablePlanners CLI version matrix', () => {
 
     expect(codex).toMatchObject({ available: true, version: CLI_TOOLS.codex.testedVersion });
     expect(stderr).not.toContain('differs in major version');
-  });
-});
-
-describe('detectAvailableProviders', () => {
-  let originalFetch: typeof globalThis.fetch;
-
-  beforeEach(() => {
-    originalFetch = globalThis.fetch;
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    vi.useRealTimers();
-  });
-
-  it('returns results for ollama and lm-studio', async () => {
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString();
-      if (urlStr.includes('11434')) {
-        return new Response(
-          JSON.stringify({ models: [{ name: 'qwen2.5-coder:7b' }, { name: 'llama3:8b' }] }),
-          { status: 200 },
-        );
-      }
-      if (urlStr.includes('1234')) {
-        return new Response(JSON.stringify({ data: [{ id: 'deepseek-coder-v2' }] }), {
-          status: 200,
-        });
-      }
-      return new Response('', { status: 404 });
-    }) as typeof globalThis.fetch;
-
-    const results = await detectAvailableProviders();
-    expect(results.length).toBeGreaterThanOrEqual(2);
-
-    const ollama = results.find((r) => r.provider === 'ollama');
-    expect(ollama).toMatchObject({
-      available: true,
-      models: [{ id: 'qwen2.5-coder:7b' }, { id: 'llama3:8b' }],
-    });
-
-    const lmStudio = results.find((r) => r.provider === 'lm-studio');
-    expect(lmStudio).toMatchObject({ available: true, models: [{ id: 'deepseek-coder-v2' }] });
-  });
-
-  it('handles ollama running but lm-studio not running', async () => {
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString();
-      if (urlStr.includes('11434')) {
-        return new Response(JSON.stringify({ models: [{ name: 'codellama:7b' }] }), {
-          status: 200,
-        });
-      }
-      throw new Error('Connection refused');
-    }) as typeof globalThis.fetch;
-
-    const results = await detectAvailableProviders();
-    const ollama = results.find((r) => r.provider === 'ollama');
-    const lmStudio = results.find((r) => r.provider === 'lm-studio');
-
-    expect(ollama).toMatchObject({ available: true, models: [{ id: 'codellama:7b' }] });
-    expect(lmStudio).toMatchObject({ available: false, error: 'Connection refused' });
-    expect(lmStudio).not.toHaveProperty('models');
-  });
-
-  it.each([
-    [
-      'connection refused',
-      async () => {
-        throw new Error('Connection refused');
-      },
-    ],
-    [
-      'empty model list',
-      async (url: string | URL | Request) => {
-        const u = typeof url === 'string' ? url : url.toString();
-        if (u.includes('11434'))
-          return new Response(JSON.stringify({ models: [] }), { status: 200 });
-        if (u.includes('1234')) return new Response(JSON.stringify({ data: [] }), { status: 200 });
-        return new Response('', { status: 404 });
-      },
-    ],
-    ['non-ok HTTP response', async () => new Response('Internal Server Error', { status: 500 })],
-  ] as const)('all providers unavailable on %s', async (_label, mockFetch) => {
-    globalThis.fetch = vi.fn(mockFetch) as typeof globalThis.fetch;
-    const results = await detectAvailableProviders();
-    for (const r of results) {
-      expect(r.available).toBe(false);
-    }
-  });
-
-  it('handles timeout when a provider never responds', async () => {
-    vi.useFakeTimers();
-    globalThis.fetch = vi.fn(async () => {
-      return new Promise<Response>(() => {});
-    }) as typeof globalThis.fetch;
-
-    const pendingResults = detectAvailableProviders();
-    await vi.advanceTimersByTimeAsync(DETECTION_TIMEOUT_MS);
-    const results = await pendingResults;
-
-    for (const r of results) {
-      expect(r.available).toBe(false);
-    }
   });
 });

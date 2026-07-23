@@ -70,24 +70,36 @@ describe('resolveCopyValue', () => {
   it('returns null for the brief target with no compiled briefs', () => {
     expect(resolveCopyValue('brief')).toBeNull();
   });
+});
 
-  it('returns null when the focused brief index is out of range', () => {
-    seedVisibleBriefs(['only one']);
-    focusStore.set('brief', 5);
+describe('brief copy negative visibility matrix', () => {
+  it.each([
+    {
+      label: 'no compiled briefs',
+      seed: () => {},
+      focusIndex: 0,
+    },
+    {
+      label: 'focused brief index out of range',
+      seed: () => seedVisibleBriefs(['only one']),
+      focusIndex: 5,
+    },
+    {
+      label: 'brief sources exist but no row is rendered',
+      seed: () => seedVisibleBriefs(['hidden brief'], 0),
+      focusIndex: 0,
+    },
+    {
+      label: 'focused brief outside the visible window',
+      seed: () => seedVisibleBriefs(['b0', 'b1', 'b2', 'b3', 'b4'], 2),
+      focusIndex: 4,
+    },
+  ])('$label blocks resolvable brief copy', ({ seed, focusIndex }) => {
+    seed();
+    focusStore.set('brief', focusIndex);
+    const focus = focusStore.get();
 
-    expect(resolveCopyValue('brief')).toBeNull();
-  });
-
-  it('returns null when brief sources exist but no row is rendered', () => {
-    seedVisibleBriefs(['hidden brief'], 0);
-
-    expect(resolveCopyValue('brief')).toBeNull();
-  });
-
-  it('returns null when the focused brief is outside the visible window', () => {
-    seedVisibleBriefs(['b0', 'b1', 'b2', 'b3', 'b4'], 2);
-    focusStore.set('brief', 4);
-
+    expect(focusHasResolvableCopy(focus)).toBe(false);
     expect(resolveCopyValue('brief')).toBeNull();
   });
 });
@@ -189,32 +201,5 @@ describe('focusHasResolvableCopy', () => {
     focusStore.set('brief', 0);
 
     expect(focusHasResolvableCopy(focusStore.get())).toBe(true);
-  });
-
-  it('is false for a focused brief region with no compiled briefs', () => {
-    focusStore.set('brief', 0);
-
-    expect(focusHasResolvableCopy(focusStore.get())).toBe(false);
-  });
-
-  it('is false when the focused brief index is out of range', () => {
-    seedVisibleBriefs(['only one']);
-    focusStore.set('brief', 5);
-
-    expect(focusHasResolvableCopy(focusStore.get())).toBe(false);
-  });
-
-  it('is false when brief sources exist but no row is rendered', () => {
-    seedVisibleBriefs(['hidden brief'], 0);
-    focusStore.set('brief', 0);
-
-    expect(focusHasResolvableCopy(focusStore.get())).toBe(false);
-  });
-
-  it('is false when the focused brief is outside the visible window', () => {
-    seedVisibleBriefs(['b0', 'b1', 'b2'], 1);
-    focusStore.set('brief', 2);
-
-    expect(focusHasResolvableCopy(focusStore.get())).toBe(false);
   });
 });

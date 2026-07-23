@@ -9,7 +9,7 @@ import {
 } from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
-import { markInterruptResumed } from '../../stores/workflow/actions.js';
+import { markInterruptResumed } from '../../stores/workflow/actions/resume.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
@@ -129,11 +129,6 @@ describe('buildPromptCallbacks onTaskReviewNeeded', () => {
   beforeEach(() => {
     feedbackStore.reset();
     lifecycleStore.__testReset();
-  });
-
-  it('parses an empty answer as continue', async () => {
-    const result = await makeCallbacks('').onTaskReviewNeeded?.(makeReviewRequest());
-    expect(result).toEqual({ action: 'continue' });
   });
 
   it('parses a notes answer as continue with notes attached', async () => {

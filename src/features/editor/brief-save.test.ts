@@ -1,9 +1,6 @@
-import { isDeepStrictEqual } from 'node:util';
 import { describe, it, expect } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Task } from '../../core/schemas/task.js';
-import { formatTasks } from '../../engine/spec/formatter.js';
-import { parseTasksStrict } from '../../engine/spec/parser.js';
 import { checkBriefSave } from './brief-save.js';
 
 function validTask(overrides: Parameters<typeof makeTask>[0] = {}): Task {
@@ -31,17 +28,6 @@ describe('checkBriefSave', () => {
     expect(checkBriefSave([validTask()])).toEqual({ ok: true });
   });
 
-  it('accepts a dependency chain that preserves closure', () => {
-    const first = validTask();
-    const second = validTask({
-      id: 'T002',
-      title: 'Wire the greeting into the entry point',
-      file: 'src/main.ts',
-      dependsOn: ['T001'],
-    });
-    expect(checkBriefSave([first, second])).toEqual({ ok: true });
-  });
-
   it('round-trips every fixture deep-equal including multiline list fields', () => {
     const tasks = [
       validTask(),
@@ -57,7 +43,6 @@ describe('checkBriefSave', () => {
         evidence: ['boot log shows the greeting', 'npm start succeeds'],
       }),
     ];
-    expect(isDeepStrictEqual(parseTasksStrict(formatTasks(tasks)), tasks)).toBe(true);
     expect(checkBriefSave(tasks)).toEqual({ ok: true });
   });
 
@@ -65,7 +50,6 @@ describe('checkBriefSave', () => {
     const lossy = validTask({
       tests: ['returns hello for an empty name', 'includes the provided name '],
     });
-    expect(isDeepStrictEqual(parseTasksStrict(formatTasks([lossy])), [lossy])).toBe(false);
     const result = checkBriefSave([lossy]);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected rejection');

@@ -3,6 +3,7 @@ import { Box } from 'ink';
 import type { Key } from 'ink';
 import { OverlayPanel } from '../overlays/overlay-panel.js';
 import { FilterInput } from '../filter-input.js';
+import type { FilterableListKeyContext } from '../../hooks/use-filterable-list.js';
 import { useFilterableList } from '../../hooks/use-filterable-list.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -25,11 +26,7 @@ interface FilterableListProps<T> {
   width?: number;
   filterPlaceholder?: string | undefined;
   shouldAppendChar?: (ch: string) => boolean;
-  customKeys?: (
-    input: string,
-    key: Key,
-    ctx: { filtered: T[]; selectedIndex: number },
-  ) => boolean | undefined;
+  customKeys?: (input: string, key: Key, ctx: FilterableListKeyContext<T>) => boolean | undefined;
   section?: ListSectionConfig<T>;
 }
 

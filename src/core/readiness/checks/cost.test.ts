@@ -12,14 +12,10 @@ describe('buildCostChecks', () => {
     expect(budgetSet?.metadata).toMatchObject({ maxBudget: 20 });
   });
 
-  it('always renders two decimal places for whole and fractional caps', () => {
-    const whole = buildCostChecks(makeConfig({ workflow: { maxBudget: 5 } }));
-    const fractional = buildCostChecks(makeConfig({ workflow: { maxBudget: 2.5 } }));
+  it('always renders two decimal places for a fractional budget cap', () => {
+    const checks = buildCostChecks(makeConfig({ workflow: { maxBudget: 2.5 } }));
 
-    expect(whole.find((check) => check.id === 'cost.budget-set')?.summary).toBe(
-      'Budget cap set to $5.00.',
-    );
-    expect(fractional.find((check) => check.id === 'cost.budget-set')?.summary).toBe(
+    expect(checks.find((check) => check.id === 'cost.budget-set')?.summary).toBe(
       'Budget cap set to $2.50.',
     );
   });

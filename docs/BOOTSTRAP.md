@@ -50,7 +50,7 @@ initStores(projectDir, opts)
 | `ensureHooksTrusted` | `resolveHooksConfig()` → prompt for hook trust before any subprocess discovery | async |
 | `loadDiscovery` | `detectCapabilities()` → `configStore.setContextLength()`, skills + detection + catalog in parallel | async |
 
-`detectCapabilities → setContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe, writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
+`detectCapabilities → setContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe (`src/engine/providers/capabilities.ts`), writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
 
 ---
 
@@ -157,7 +157,7 @@ It does **not** touch stores. Stores know nothing about TTY flags or the git che
 
 ## Render handoff
 
-After `initStores()` returns, the subcommand handler calls `renderApp()` (from `src/cli/render.ts`). `renderApp()` does **not** know about stores — it sets up Ink's fullscreen rendering and mounts `<App />`. Components inside `<App />` subscribe via `store.use()` and see fully-populated state on first render.
+After `initStores()` returns, the subcommand handler calls `renderApp()` (from `src/cli/render/app.ts`). `renderApp()` does **not** know about stores — it sets up Ink's fullscreen rendering and mounts `<App />`. Components inside `<App />` subscribe via `store.use()` and see fully-populated state on first render.
 
 If a component calls `store.use()` on a field that was never set by `initStores()`, that is a contract violation: either the store has a sensible default, or `initStores()` populates the field.
 

@@ -15,7 +15,8 @@ import {
   STATE_FILE,
   sessionDir,
 } from '../../../core/paths.js';
-import { appendEngineEvent, saveState } from '../../../core/state/persistence.js';
+import { appendEngineEvent } from '../../../core/sessions/log-writer.js';
+import { saveState } from '../../../core/state/persistence.js';
 import { saveSummary } from '../../../core/sessions/io.js';
 import { fsError, writeSecureFile } from '../../../lib/fs.js';
 import { taskId } from '../../../core/schemas/task.js';

@@ -20,7 +20,7 @@ function __testReset(next?: Partial<EventsState>): void {
 }
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
-// Production use is limited to workflow/actions.ts (the dispatcher).
+// Production use is limited to workflow/actions/ (the dispatcher).
 export const _eventsInternal = { set: store.set };
 
 export const eventsStore = {

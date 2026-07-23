@@ -7,7 +7,7 @@ import {
   blocksPlanGate,
 } from './resolve.js';
 import type { Config } from '../../schemas/config.js';
-import type { ApproveLevel, EffortLevel, WorkflowMode } from '../../schemas/enums.js';
+import type { EffortLevel, WorkflowMode } from '../../schemas/enums.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
 const baseConfig = (mode?: WorkflowMode): Config =>
@@ -21,34 +21,49 @@ const baseConfig = (mode?: WorkflowMode): Config =>
   });
 
 describe('resolveMode', () => {
-  it('returns CLI override when present', () => {
-    expect(resolveMode({ config: baseConfig('standard'), cliOverride: 'instant' })).toBe('instant');
-  });
-  it('returns config mode when no override', () => {
-    expect(resolveMode({ config: baseConfig('speckit') })).toBe('speckit');
-  });
-  it('falls back to DEFAULT_WORKFLOW_MODE when config has no mode', () => {
-    expect(resolveMode({ config: baseConfig() })).toBe('standard');
-  });
-  it('prefers a saved mode over the config default', () => {
-    expect(resolveMode({ config: baseConfig('standard'), savedMode: 'speckit' })).toBe('speckit');
-  });
-  it('CLI override beats a saved mode', () => {
-    expect(
-      resolveMode({ config: baseConfig('standard'), savedMode: 'speckit', cliOverride: 'instant' }),
-    ).toBe('instant');
+  it.each([
+    {
+      description: 'returns CLI override when present',
+      input: { config: baseConfig('standard'), cliOverride: 'instant' as const },
+      expected: 'instant' as const,
+    },
+    {
+      description: 'returns config mode when no override',
+      input: { config: baseConfig('speckit') },
+      expected: 'speckit' as const,
+    },
+    {
+      description: 'falls back to DEFAULT_WORKFLOW_MODE when config has no mode',
+      input: { config: baseConfig() },
+      expected: 'standard' as const,
+    },
+    {
+      description: 'prefers a saved mode over the config default',
+      input: { config: baseConfig('standard'), savedMode: 'speckit' as const },
+      expected: 'speckit' as const,
+    },
+    {
+      description: 'CLI override beats a saved mode',
+      input: {
+        config: baseConfig('standard'),
+        savedMode: 'speckit' as const,
+        cliOverride: 'instant' as const,
+      },
+      expected: 'instant' as const,
+    },
+  ])('$description', ({ input, expected }) => {
+    expect(resolveMode(input)).toBe(expected);
   });
 });
 
 describe('resolveApproveLevel', () => {
-  const cases: Array<[WorkflowMode, ApproveLevel]> = [
-    ['instant', 'none'],
-    ['quick', 'none'],
-    ['standard', 'spec'],
-    ['speckit', 'all'],
-  ];
-  it.each(cases)('returns mode default for %s when no overrides', (mode, expected) => {
-    expect(resolveApproveLevel({ mode })).toBe(expected);
+  it.each([
+    { description: 'instant', input: { mode: 'instant' as const }, expected: 'none' as const },
+    { description: 'quick', input: { mode: 'quick' as const }, expected: 'none' as const },
+    { description: 'standard', input: { mode: 'standard' as const }, expected: 'spec' as const },
+    { description: 'speckit', input: { mode: 'speckit' as const }, expected: 'all' as const },
+  ])('returns mode default for $description when no overrides', ({ input, expected }) => {
+    expect(resolveApproveLevel(input)).toBe(expected);
   });
   it('returns mode default when configApprove is "default"', () => {
     expect(resolveApproveLevel({ mode: 'standard', configApprove: 'default' })).toBe('spec');
@@ -88,15 +103,19 @@ describe('resolveApproveLevel', () => {
 });
 
 describe('blocksSpecGate / blocksPlanGate', () => {
-  it.each<[ApproveLevel, boolean, boolean]>([
-    ['none', false, false],
-    ['spec', true, false],
-    ['plan', false, true],
-    ['all', true, true],
-    ['default', false, false],
-  ])('%s -> spec=%s plan=%s', (level, spec, plan) => {
-    expect(blocksSpecGate(level)).toBe(spec);
-    expect(blocksPlanGate(level)).toBe(plan);
+  it.each([
+    { description: 'none', input: 'none' as const, expectedSpec: false, expectedPlan: false },
+    { description: 'spec', input: 'spec' as const, expectedSpec: true, expectedPlan: false },
+    { description: 'plan', input: 'plan' as const, expectedSpec: false, expectedPlan: true },
+    { description: 'all', input: 'all' as const, expectedSpec: true, expectedPlan: true },
+    { description: 'default', input: 'default' as const, expectedSpec: false, expectedPlan: false },
+  ])('$description -> spec=$expectedSpec plan=$expectedPlan', ({
+    input,
+    expectedSpec,
+    expectedPlan,
+  }) => {
+    expect(blocksSpecGate(input)).toBe(expectedSpec);
+    expect(blocksPlanGate(input)).toBe(expectedPlan);
   });
 });
 
@@ -106,13 +125,26 @@ describe('resolveEffortLevel', () => {
     if (effort) (c.planner as { effort?: EffortLevel }).effort = effort;
     return c;
   }
-  it('returns CLI override when present', () => {
-    expect(resolveEffortLevel({ config: withEffort('low'), cliOverride: 'high' })).toBe('high');
-  });
-  it('returns config effort when no override', () => {
-    expect(resolveEffortLevel({ config: withEffort('medium') })).toBe('medium');
-  });
-  it('returns undefined when neither set', () => {
-    expect(resolveEffortLevel({ config: withEffort() })).toBeUndefined();
+  it.each([
+    {
+      description: 'returns CLI override when present',
+      configEffort: 'low' as const,
+      cliOverride: 'high' as const,
+      expected: 'high' as const,
+    },
+    {
+      description: 'returns config effort when no override',
+      configEffort: 'medium' as const,
+      cliOverride: undefined,
+      expected: 'medium' as const,
+    },
+    {
+      description: 'returns undefined when neither set',
+      configEffort: undefined,
+      cliOverride: undefined,
+      expected: undefined,
+    },
+  ])('$description', ({ configEffort, cliOverride, expected }) => {
+    expect(resolveEffortLevel({ config: withEffort(configEffort), cliOverride })).toBe(expected);
   });
 });

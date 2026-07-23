@@ -6,8 +6,11 @@ import {
   rawDocumentHasVersion,
   configPath,
 } from '../../core/config/load/io.js';
-import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
-import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
+import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
+import {
+  emitEffectiveConfigWarnings,
+  resolveEffectiveConfig,
+} from '../../core/config/runtime/effective-config.js';
 import {
   resolveImplementerProfiles,
   updateDefaultImplementerConfig,
@@ -15,7 +18,6 @@ import {
 import type { Config } from '../../core/schemas/config.js';
 import { defaultApprovalConfig } from '../../core/schemas/config.js';
 import { configError } from '../../core/config/errors.js';
-import { warnStderr } from '../../lib/warn.js';
 import {
   cloneConfig,
   cloneValue,
@@ -50,15 +52,14 @@ interface SaveResult {
 }
 
 function load(projectDir: string, overrides: CLIOverrides = {}) {
-  const { config: loaded, warnings, rawYaml } = loadConfig(projectDir);
-  for (const w of warnings) warnStderr(`⚠ ${w}`);
+  const { config: loaded, loaderDiagnostics, rawYaml } = loadConfig(projectDir);
   const base = cloneConfig(loaded);
-  const { config, warnings: effectiveWarnings } = resolveEffectiveConfig({
+  const { config, warnings } = resolveEffectiveConfig({
     base,
     overrides,
-    baseWarnings: warnings,
+    loaderDiagnostics,
   });
-  for (const w of effectiveWarnings) warnStderr(`⚠ ${w}`);
+  emitEffectiveConfigWarnings(warnings);
   store.set({
     config,
     diskConfig: cloneConfig(loaded),

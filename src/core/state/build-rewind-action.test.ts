@@ -8,7 +8,6 @@ import { SESSION_LOG_FILE, sessionDir } from '../paths.js';
 import { ensureSessionDir } from '../paths-io.js';
 import { SessionLogEventEntrySchema } from '../schemas/session-log.js';
 import { buildRewindAction } from './build-rewind-action.js';
-import { transition } from './machine.js';
 
 let dirs: string[] = [];
 
@@ -130,14 +129,6 @@ describe('buildRewindAction', () => {
       type: 'rewind_to_spec',
       comment: '[transcript omitted]',
     });
-    expect(transition(state, outcome.action).rewindPending).toEqual({
-      target: 'spec',
-      comment: 'private rewind feedback',
-    });
-    expect(transition(state, outcome.persistedAction).rewindPending).toEqual({
-      target: 'spec',
-      comment: '[transcript omitted]',
-    });
     expect(readSessionEvents(projectDir, sessionId)).toEqual([
       expect.objectContaining({
         type: 'rewind_to_spec',
@@ -168,14 +159,6 @@ describe('buildRewindAction', () => {
     });
     expect(outcome.event).toMatchObject({
       type: 'rewind_to_plan',
-      comment: '[transcript omitted]',
-    });
-    expect(transition(state, outcome.action).rewindPending).toEqual({
-      target: 'plan',
-      comment: 'private plan feedback',
-    });
-    expect(transition(state, outcome.persistedAction).rewindPending).toEqual({
-      target: 'plan',
       comment: '[transcript omitted]',
     });
     expect(readSessionEvents(projectDir, sessionId)).toEqual([

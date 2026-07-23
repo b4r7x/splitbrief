@@ -1,0 +1,132 @@
+import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
+import { resolvePricing } from '../pricing-resolver.js';
+import type { ModelCacheAccessor } from '../model/resolution.js';
+import {
+  allocatedCacheTokens,
+  buildProviderUsageSegment,
+  resolveTaskPricingModel,
+  splitTokens,
+  type ProviderUsageSegment,
+} from '../cost-math.js';
+
+export type TaskCostTokenUsage = Pick<
+  TokenUsage,
+  | 'implementerInput'
+  | 'implementerOutput'
+  | 'escalationInput'
+  | 'escalationOutput'
+  | 'implementerCacheRead'
+  | 'implementerCacheCreate'
+  | 'plannerCacheRead'
+  | 'plannerCacheCreate'
+>;
+
+export interface CalculateTaskUsageCostOptions {
+  task: TaskTokenUsage;
+  tokenUsage: TaskCostTokenUsage;
+  implementerTool: string;
+  plannerTool: string;
+  implementerModel?: string | undefined;
+  plannerModel?: string | undefined;
+  cache?: ModelCacheAccessor | undefined;
+}
+
+function buildTaskImplementerSegment(options: CalculateTaskUsageCostOptions): ProviderUsageSegment {
+  const { task, tokenUsage, implementerTool, implementerModel, cache } = options;
+  const totalImplementerTokens = tokenUsage.implementerInput + tokenUsage.implementerOutput;
+  const implementerSplit = splitTokens({
+    tokens: task.implementerTokens,
+    inputTotal: tokenUsage.implementerInput,
+    outputTotal: tokenUsage.implementerOutput,
+  });
+  const taskTool = task.tool ?? implementerTool;
+  const implementerPricing = resolvePricing(
+    taskTool,
+    cache,
+    resolveTaskPricingModel({
+      taskTool,
+      fallbackTool: implementerTool,
+      taskModel: task.model,
+      fallbackModel: implementerModel,
+    }),
+  );
+  const implementerCacheRead =
+    task.implementerCacheReadTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.implementerCacheRead,
+      tokens: task.implementerTokens,
+      totalTokens: totalImplementerTokens,
+    });
+  const implementerCacheCreate =
+    task.implementerCacheCreateTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.implementerCacheCreate,
+      tokens: task.implementerTokens,
+      totalTokens: totalImplementerTokens,
+    });
+  return buildProviderUsageSegment({
+    tool: taskTool,
+    model: resolveTaskPricingModel({
+      taskTool,
+      fallbackTool: implementerTool,
+      taskModel: task.model,
+      fallbackModel: implementerModel,
+    }),
+    inputTokens: implementerSplit.inputTokens,
+    outputTokens: implementerSplit.outputTokens,
+    primaryTokens: task.implementerTokens,
+    cacheReadTokens: implementerCacheRead,
+    cacheCreateTokens: implementerCacheCreate,
+    pricing: implementerPricing,
+  });
+}
+
+function buildTaskEscalationSegment(options: CalculateTaskUsageCostOptions): ProviderUsageSegment {
+  const { task, tokenUsage, plannerTool, plannerModel, cache } = options;
+  const escalationSplit = splitTokens({
+    tokens: task.escalationTokens,
+    inputTotal: tokenUsage.escalationInput,
+    outputTotal: tokenUsage.escalationOutput,
+  });
+  const totalEscalationTokens = tokenUsage.escalationInput + tokenUsage.escalationOutput;
+  const plannerPricing = resolvePricing(plannerTool, cache, plannerModel);
+  const escalationCacheRead =
+    task.escalationCacheReadTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.plannerCacheRead,
+      tokens: task.escalationTokens,
+      totalTokens: totalEscalationTokens,
+    });
+  const escalationCacheCreate =
+    task.escalationCacheCreateTokens ??
+    allocatedCacheTokens({
+      cacheTokens: tokenUsage.plannerCacheCreate,
+      tokens: task.escalationTokens,
+      totalTokens: totalEscalationTokens,
+    });
+  return buildProviderUsageSegment({
+    tool: plannerTool,
+    model: plannerModel,
+    inputTokens: escalationSplit.inputTokens,
+    outputTokens: escalationSplit.outputTokens,
+    primaryTokens: task.escalationTokens,
+    cacheReadTokens: escalationCacheRead,
+    cacheCreateTokens: escalationCacheCreate,
+    pricing: plannerPricing,
+  });
+}
+
+export function calculateTaskUsageCost(options: CalculateTaskUsageCostOptions): number {
+  const implementerSegment = buildTaskImplementerSegment(options);
+  const escalationSegment = buildTaskEscalationSegment(options);
+
+  return implementerSegment.cost + escalationSegment.cost;
+}
+
+export function isTaskUsageCostKnown(options: CalculateTaskUsageCostOptions): boolean {
+  const implementerSegment = buildTaskImplementerSegment(options);
+  const escalationSegment = buildTaskEscalationSegment(options);
+  const implementerKnown = implementerSegment.usageTokens <= 0 || implementerSegment.costKnown;
+  const plannerKnown = escalationSegment.usageTokens <= 0 || escalationSegment.costKnown;
+  return implementerKnown && plannerKnown;
+}

@@ -30,22 +30,6 @@ export const HYPERLINK_POLICY = HyperlinkPolicyMetadataSchema.parse({
   externalUrls: 'public-http-https-only',
 });
 
-export const TERMINAL_CONTROL_DISPOSITIONS = Object.freeze([
-  { control: 'csi', disposition: 'interpreted-isolated' },
-  { control: 'osc', disposition: 'removed' },
-  { control: 'osc-8', disposition: 'sanitized-structured' },
-  { control: 'cursor', disposition: 'interpreted-isolated' },
-  { control: 'alternate-buffer', disposition: 'interpreted-isolated' },
-  { control: 'kitty-graphics', disposition: 'removed' },
-  { control: 'kitty-keyboard', disposition: 'interpreted-isolated-no-input' },
-  { control: 'mouse', disposition: 'mode-only-no-input' },
-  { control: 'bracketed-paste', disposition: 'markers-only-no-input' },
-  { control: 'dcs-apc-pm-sos', disposition: 'removed' },
-] satisfies readonly {
-  readonly control: string;
-  readonly disposition: string;
-}[]);
-
 export interface SanitizeTerminalFrameOptions {
   readonly ansi: string;
   readonly projectRoot: string;

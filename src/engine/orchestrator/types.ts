@@ -7,7 +7,7 @@ import type { Implementer, ImplementerFactoryOptions } from '../implementers/typ
 import type { SpecMetadata } from '../../core/paths-io.js';
 import type { CostPrediction, Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
-import type { Validator } from './validation.js';
+import type { Validator } from './validation/types.js';
 import type { EventBus } from '../events/types.js';
 import type {
   ApprovalReviewResult,

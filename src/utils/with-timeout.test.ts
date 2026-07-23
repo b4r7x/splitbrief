@@ -1,5 +1,9 @@
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { timeoutError, withTimeout, withIdleTimeout } from './with-timeout.js';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe('timeoutError.idle factory', () => {
   test.each([
@@ -31,16 +35,23 @@ describe('timeoutError.isIdle predicate', () => {
 
 describe('withTimeout', () => {
   test('resolves when promise completes before timeout', async () => {
-    const result = await withTimeout(Promise.resolve(42), 100);
-    expect(result).toBe(42);
+    vi.useFakeTimers();
+    const result = withTimeout(Promise.resolve(42), 100);
+    await vi.runAllTimersAsync();
+    await expect(result).resolves.toBe(42);
   });
 
   test('rejects with a timeout-elapsed error carrying the elapsed ms', async () => {
-    const slow = new Promise((resolve) => setTimeout(resolve, 1000));
-    await expect(withTimeout(slow, 20)).rejects.toMatchObject({
+    vi.useFakeTimers();
+    const slow = new Promise<void>((resolve) => {
+      setTimeout(resolve, 1000);
+    });
+    const assertion = expect(withTimeout(slow, 20)).rejects.toMatchObject({
       kind: 'timeout-elapsed',
       data: { ms: 20 },
     });
+    await vi.advanceTimersByTimeAsync(20);
+    await assertion;
   });
 
   test('propagates original rejection if it fires before timeout', async () => {
@@ -69,22 +80,28 @@ describe('withIdleTimeout', () => {
   });
 
   test('throws timeoutError.idle when iterator stalls', async () => {
+    vi.useFakeTimers();
     const values: number[] = [];
-    try {
-      for await (const v of withIdleTimeout(slowGenerator(), 20, 'Slow stream')) {
-        values.push(v);
+    const iteration = (async () => {
+      try {
+        for await (const v of withIdleTimeout(slowGenerator(), 20, 'Slow stream')) {
+          values.push(v);
+        }
+        throw new Error('expected throw');
+      } catch (err) {
+        expect(timeoutError.isIdle(err)).toBe(true);
+        if (timeoutError.isIdle(err)) {
+          expect(err.data).toEqual({ message: 'Slow stream' });
+        }
+        expect(values).toEqual([1]);
       }
-      throw new Error('expected throw');
-    } catch (err) {
-      expect(timeoutError.isIdle(err)).toBe(true);
-      if (timeoutError.isIdle(err)) {
-        expect(err.data).toEqual({ message: 'Slow stream' });
-      }
-      expect(values).toEqual([1]);
-    }
+    })();
+    await vi.advanceTimersByTimeAsync(20);
+    await iteration;
   });
 
   test('calls iterator.return when the iterator stalls', async () => {
+    vi.useFakeTimers();
     let returnCalled = false;
     const iterator: AsyncIterator<number> = {
       next: async () => new Promise<IteratorResult<number>>(() => {}),
@@ -97,13 +114,15 @@ describe('withIdleTimeout', () => {
       [Symbol.asyncIterator]: () => iterator,
     };
 
-    await expect(
+    const assertion = expect(
       (async () => {
         for await (const value of withIdleTimeout(iterable, 20)) {
           expect(value).toBeUndefined();
         }
       })(),
     ).rejects.toSatisfy(timeoutError.isIdle);
+    await vi.advanceTimersByTimeAsync(20);
+    await assertion;
     expect(returnCalled).toBe(true);
   });
 
@@ -134,6 +153,7 @@ describe('withIdleTimeout', () => {
   });
 
   test('runs generator cleanup after timeout once the pending next call settles', async () => {
+    vi.useFakeTimers();
     let cleanedUp = false;
     async function* cleanupGenerator(): AsyncGenerator<number> {
       try {
@@ -145,14 +165,16 @@ describe('withIdleTimeout', () => {
       }
     }
 
-    await expect(
+    const assertion = expect(
       (async () => {
         for await (const value of withIdleTimeout(cleanupGenerator(), 10)) {
           expect(value).toBe(1);
         }
       })(),
     ).rejects.toSatisfy(timeoutError.isIdle);
-    await new Promise((resolve) => setTimeout(resolve, 40));
+    await vi.advanceTimersByTimeAsync(10);
+    await assertion;
+    await vi.advanceTimersByTimeAsync(40);
     expect(cleanedUp).toBe(true);
   });
 });

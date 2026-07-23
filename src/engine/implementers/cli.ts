@@ -1,14 +1,14 @@
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import { createChangeDetector } from '../change-detection.js';
-import { createImplementerBase } from './base.js';
+import { createImplementerBase } from './pipeline/run.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { parseTextLine } from '../streaming/parse-text.js';
 import { getLineParser } from '../streaming/output-parsers.js';
 import { processError } from '../../lib/process/errors.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
 import { createCommandExistsAvailability } from '../availability.js';
-import { runClaudeOneShot } from '../runners/claude-invoke.js';
+import { runClaudeOneShot } from '../runners/claude/invoke.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { runnerConfigError } from '../runners/errors.js';
 

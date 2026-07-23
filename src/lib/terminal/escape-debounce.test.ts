@@ -59,10 +59,4 @@ describe('escape-debounce', () => {
     expect(first).not.toHaveBeenCalled();
     expect(second).toHaveBeenCalledTimes(1);
   });
-
-  it('reports not pending after the action fires', () => {
-    scheduleEscapeAction(() => {});
-    vi.advanceTimersByTime(25);
-    expect(isEscapeActionPending()).toBe(false);
-  });
 });

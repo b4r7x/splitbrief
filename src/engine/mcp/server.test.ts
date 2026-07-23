@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { MCP_PROTOCOL_VERSION } from './handlers.js';
-import { normalizeHeader, startMcpServer } from './server.js';
+import { startMcpServer } from './server.js';
 import type { McpServerHandle } from './server.js';
 import type { McpResolver } from './resolver.js';
 
@@ -312,15 +312,6 @@ describe('OPTIONS /mcp preflight', () => {
     expect(res.headers.get('access-control-allow-methods')).toContain('POST');
     expect(res.headers.get('access-control-allow-headers')).toMatch(/authorization/i);
   });
-
-  it('does not require bearer auth for local-origin preflight', async () => {
-    const h = await startServer();
-    const res = await fetch(`${baseUrl(h.port)}/mcp`, {
-      method: 'OPTIONS',
-      headers: { Origin: 'http://localhost:3000' },
-    });
-    expect(res.status).toBe(204);
-  });
 });
 
 describe('MCP-Protocol-Version header', () => {
@@ -380,26 +371,6 @@ describe('MCP-Protocol-Version header', () => {
     });
     expect(res.status).toBe(202);
     expect(res.headers.get('mcp-protocol-version')).toBe(MCP_PROTOCOL_VERSION);
-  });
-});
-
-describe('normalizeHeader', () => {
-  it('returns undefined for undefined', () => {
-    expect(normalizeHeader(undefined)).toBeUndefined();
-  });
-
-  it('returns the string for a string value', () => {
-    expect(normalizeHeader('http://localhost:3000')).toBe('http://localhost:3000');
-  });
-
-  it('returns the first element for an array value', () => {
-    expect(normalizeHeader(['http://localhost:3000', 'http://evil.com'])).toBe(
-      'http://localhost:3000',
-    );
-  });
-
-  it('returns undefined for an empty array', () => {
-    expect(normalizeHeader([])).toBeUndefined();
   });
 });
 

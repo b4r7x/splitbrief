@@ -8,7 +8,7 @@ import {
   type HookCommandResponse,
 } from '../../core/schemas/hooks.js';
 import type { EngineEvent } from '../events/types.js';
-import { spawnWithTimeout } from '../../lib/process/spawn.js';
+import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import { isENOENT, isNodeError, processError } from '../../lib/process/errors.js';
 import { startsWithEventPlaceholder, substituteEventFields } from './substitute.js';
 import type { HookOutcome, HookContext } from './types.js';
@@ -19,7 +19,7 @@ import { protectConsumerPayload } from '../../core/consumer-policy.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { isHooksConfigTrusted } from '../../core/hooks/trust.js';
 
-export const hookError = {
+const hookError = {
   timedOut: (timeoutMs: number) =>
     error('hook-timed-out', `hook timed out after ${timeoutMs}ms`, { timeoutMs }),
 } as const;

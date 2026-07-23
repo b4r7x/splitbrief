@@ -238,19 +238,12 @@ describe('SkillsPicker', () => {
     ui.stdin.write(SPACE);
     await tick(20);
 
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 0 selected');
-    ui.unmount();
-  });
-
-  it('renders dim lowercase group headers', async () => {
-    skillsStore.setAvailable([skill('proj', 'project'), skill('glob', 'global')]);
-
-    const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Project');
-    expect(frame).toContain('Global');
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('a ');
+    expect(frame).toContain('No matching skills');
+    expect(frame).not.toContain('alpha');
+    expect(frame).not.toContain('bravo');
+    expect(frame).toContain('Skills · 0 selected');
     ui.unmount();
   });
 });
@@ -265,22 +258,6 @@ describe('SkillsPicker row activation', () => {
   afterEach(() => {
     resetAllStores();
     _resetMouseZones();
-  });
-
-  it('toggles the clicked skill without saving and closing', async () => {
-    skillsStore.setAvailable([skill('alpha', 'project'), skill('bravo', 'project')]);
-
-    const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 0 selected');
-
-    const zones = collectClickableZones({ cols: 100, rows: 28 });
-    zones.get('list-row:bravo')?.();
-    await tick(20);
-
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Skills · 1 selected');
-    expect(skillsStore.get().selected.size).toBe(0);
-    ui.unmount();
   });
 
   it('confirms the click-toggled selection on Enter', async () => {

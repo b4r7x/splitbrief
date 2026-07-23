@@ -8,6 +8,7 @@ import {
   normalizeRunnerCallUsage,
   normalizeRunnerCallUsageSample,
   toTokenDelta,
+  accumulateTokenUsage,
 } from './usage.js';
 
 describe('normalizeRunnerCallUsage', () => {
@@ -39,6 +40,61 @@ describe('normalizeRunnerCallUsage', () => {
       outputTokens: 30,
       cacheReadTokens: 60,
     });
+  });
+
+  it('subtracts codex cached_input_tokens from input_tokens for true input', () => {
+    expect(
+      normalizeRunnerCallUsage({
+        input_tokens: 100,
+        output_tokens: 30,
+        cached_input_tokens: 70,
+      }),
+    ).toEqual({
+      inputTokens: 30,
+      outputTokens: 30,
+      cacheReadTokens: 70,
+    });
+  });
+
+  it('clamps codex input at zero when cached exceeds input_tokens', () => {
+    const usage = normalizeRunnerCallUsage({
+      input_tokens: 50,
+      output_tokens: 10,
+      cached_input_tokens: 80,
+    });
+    expect(usage?.inputTokens).toBe(0);
+    expect(usage?.cacheReadTokens).toBe(80);
+  });
+
+  it('clamps prompt input at zero when cached exceeds prompt', () => {
+    const usage = normalizeRunnerCallUsage({
+      prompt_tokens: 50,
+      completion_tokens: 10,
+      prompt_tokens_details: { cached_tokens: 80 },
+    });
+    expect(usage?.inputTokens).toBe(0);
+  });
+
+  it('accepts camelCase usage with cache fields', () => {
+    expect(
+      normalizeRunnerCallUsage({
+        inputTokens: 12,
+        outputTokens: 8,
+        cacheReadTokens: 3,
+        cacheCreateTokens: 2,
+      }),
+    ).toEqual({
+      inputTokens: 12,
+      outputTokens: 8,
+      cacheReadTokens: 3,
+      cacheCreateTokens: 2,
+    });
+  });
+
+  it('returns null for empty or non-object usage payloads', () => {
+    expect(normalizeRunnerCallUsage(null)).toBeNull();
+    expect(normalizeRunnerCallUsage(undefined)).toBeNull();
+    expect(normalizeRunnerCallUsage(0)).toBeNull();
   });
 
   it('maps cache write and cache create aliases into cacheCreateTokens', () => {
@@ -201,5 +257,24 @@ describe('usage accumulation', () => {
 
     expect(usage).toEqual(sample.usage);
     expect(usage).not.toBe(sample.usage);
+  });
+
+  it('returns a copy of the delta when there is no current usage', () => {
+    const delta = { inputTokens: 5, outputTokens: 3 };
+    const result = accumulateTokenUsage(null, delta);
+    expect(result).toEqual(delta);
+    expect(result).not.toBe(delta);
+  });
+
+  it('sums zero deltas without changing totals', () => {
+    expect(
+      accumulateTokenUsage(
+        { inputTokens: 10, outputTokens: 4 },
+        {
+          inputTokens: 0,
+          outputTokens: 0,
+        },
+      ),
+    ).toEqual({ inputTokens: 10, outputTokens: 4 });
   });
 });

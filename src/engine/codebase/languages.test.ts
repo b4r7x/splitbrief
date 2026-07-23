@@ -15,11 +15,6 @@ const manifest = JSON.parse(
 };
 
 describe('language registry', () => {
-  it('.ts returns TypeScript config', () => {
-    const lang = getLanguageForExtension('.ts');
-    expect(lang?.id).toBe('typescript');
-  });
-
   it('.tsx returns TypeScript with tsx grammar', () => {
     const lang = getLanguageForExtension('.tsx');
     expect(lang?.resolveGrammarWasm('.tsx')).toBe('tree-sitter-tsx.wasm');

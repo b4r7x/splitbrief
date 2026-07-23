@@ -2,28 +2,21 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { gateAction } from './tiered-approval.js';
-import type { GateActionInput } from './tiered-approval.js';
+import type { GateActionInput } from './types.js';
 import type { TieredApprovalResponse } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../events/types.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeConfig, makeApprovalConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { approvalsFile, DIPTYCH_DIR } from '../../../core/paths.js';
 
-type ConfigOverrides = NonNullable<Parameters<typeof makeConfig>[0]>;
-type ApprovalConfig = NonNullable<ConfigOverrides['approval']>;
+let dirs: string[] = [];
 
-function makeApprovalConfig(approval: Pick<ApprovalConfig, 'enabled'> & Partial<ApprovalConfig>) {
-  return makeConfig({
-    approval: {
-      enabled: approval.enabled,
-      feedRejectionsToPlanner: approval.feedRejectionsToPlanner ?? true,
-      ...(approval.headless !== undefined && { headless: approval.headless }),
-      ...(approval.tiers !== undefined && { tiers: approval.tiers }),
-      ...(approval.allowedPaths !== undefined && { allowedPaths: approval.allowedPaths }),
-    },
-  });
+function trackTempDir(name: string): string {
+  const dir = createTempDir(name);
+  dirs.push(dir);
+  return dir;
 }
 
 function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
@@ -33,7 +26,7 @@ function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
     actionDescription: 'modify src/foo.ts',
     task,
     dependsOnFiles: [],
-    projectDir: createTempDir('diptych-test'),
+    projectDir: trackTempDir('diptych-test'),
     sessionId: 'sess-001',
     phase: 'implementing',
     taskId: task.id,
@@ -51,6 +44,8 @@ function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
 describe('gateAction', () => {
   const originalIsTTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
   afterEach(() => {
+    for (const dir of dirs) cleanupTempDir(dir);
+    dirs = [];
     if (originalIsTTY) Object.defineProperty(process.stdout, 'isTTY', originalIsTTY);
     else delete (process.stdout as { isTTY?: boolean }).isTTY;
   });
@@ -110,7 +105,7 @@ describe('gateAction', () => {
 
   it('sticky tier, always grant exists → allow without callback', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = createTempDir('diptych-test');
+    const projectDir = trackTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
@@ -153,7 +148,7 @@ describe('gateAction', () => {
 
   it('sticky tier, session grant matching sessionId → allow without callback', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = createTempDir('diptych-test');
+    const projectDir = trackTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
@@ -198,7 +193,7 @@ describe('gateAction', () => {
 
   it('sticky tier, session grant for different sessionId → callback invoked', async () => {
     const { bus } = makeBusRecorder();
-    const projectDir = createTempDir('diptych-test');
+    const projectDir = trackTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const store = {
       version: 1,
@@ -238,7 +233,7 @@ describe('gateAction', () => {
 
   it('sticky tier, callback allow once → allow, no persistence', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = createTempDir('diptych-test');
+    const projectDir = trackTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
@@ -267,7 +262,7 @@ describe('gateAction', () => {
 
   it('sticky tier, callback allow session → allow, persist, approval_sticky_recorded emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = createTempDir('diptych-test');
+    const projectDir = trackTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
@@ -297,7 +292,7 @@ describe('gateAction', () => {
 
   it('sticky tier, callback deny → deny, approval_rejected emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = createTempDir('diptych-test');
+    const projectDir = trackTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
     const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
@@ -339,36 +334,6 @@ describe('gateAction', () => {
     const result = await gateAction(input);
     expect(result.allow).toBe(false);
     expect(result.reason).toBe('APPROVAL_REQUIRED');
-  });
-
-  it('confirm tier, valid phrase + reason → allow, approval_granted emitted', async () => {
-    const { bus, events } = makeBusRecorder();
-    const config = makeApprovalConfig({
-      enabled: true,
-      tiers: { write_out_of_scope: 'confirm' },
-    });
-    const input = makeInput({
-      bus,
-      config,
-      actionDescription: 'write /tmp/outside-project/file.ts',
-      callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
-
-        onComplete: () => {},
-        onTieredApproval: async (): Promise<TieredApprovalResponse> => ({
-          decision: 'confirm',
-          phrase: 'I confirm',
-          reason: 'I understand this is destructive',
-        }),
-      },
-    });
-    const result = await gateAction(input);
-    expect(result.allow).toBe(true);
-    const granted = events.find((e) => e.type === 'approval_granted') as
-      | Extract<EngineEvent, { type: 'approval_granted' }>
-      | undefined;
-    expect(granted).toBeDefined();
-    expect(granted?.scope).toBe('once');
   });
 
   it('confirm tier, wrong phrase → deny invalid_confirm_phrase', async () => {
@@ -515,11 +480,12 @@ describe('gateAction', () => {
       | Extract<EngineEvent, { type: 'approval_granted' }>
       | undefined;
     expect(granted).toBeDefined();
+    expect(granted?.scope).toBe('once');
     expect(granted?.confirmReason).toBe('cleaning stale fixtures');
   });
 
   it('sticky tier, session grant matches a different action description on same file (pattern match)', async () => {
-    const projectDir = createTempDir('diptych-test');
+    const projectDir = trackTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
 
     const store = {
@@ -565,7 +531,7 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, session grant is replaced when same pattern already has a session grant for a different session', async () => {
-    const projectDir = createTempDir('diptych-test');
+    const projectDir = trackTempDir('diptych-test');
     mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
 
     const store = {

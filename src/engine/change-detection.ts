@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { getCurrentChangedFiles } from '../lib/git.js';
+import { getCurrentChangedFiles } from '../lib/git/files.js';
 import { collectTrackedFiles, hashFile } from './snapshots/files.js';
 
 function hasGitMetadata(projectDir: string): boolean {

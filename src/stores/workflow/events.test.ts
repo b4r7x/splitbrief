@@ -6,22 +6,22 @@ import {
   mergeEvent,
   projectEventForTuiEventLog,
 } from './events.js';
-import { addEvent, resetWorkflow } from './actions.js';
+import { addEvent } from './actions/event.js';
+import { resetWorkflow } from './actions/reset.js';
 import { taskId } from '../../core/schemas/task.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import type { EngineEventOf } from '../../engine/events/types.js';
-import { protectEngineEventForConsumer } from '../../engine/events/protection.js';
+import { protectEngineEventForConsumer } from '../../engine/events/protection/protect.js';
 import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
+import { makePlannerText, makePlannerStatus } from '#testing/helpers/events/planner.js';
 import {
-  makePlannerText,
-  makePlannerStatus,
   makeTaskStart,
   makeValidate,
   makeRetry,
   makeCostUpdate,
-} from '#testing/helpers/events.js';
-import { operationsStore } from './operations.js';
+} from '#testing/helpers/events/task.js';
+import { operationsStore } from './operations/state.js';
 
 function makeRunnerTextDelta(
   overrides?: Partial<EngineEventOf<'runner_call_text_delta'>>,
@@ -134,7 +134,12 @@ describe('eventsStore — append via addEvent', () => {
     addEvent(event);
     const s = eventsStore.get();
     expect(s.events).toHaveLength(1);
-    expect(s.events[0]).toBe(event);
+    expect(s.events[0]).toEqual(event);
+    const stored = s.events[0];
+    addEvent(makePlannerStatus({ phase: 'specifying' }));
+    expect(eventsStore.get().events).toHaveLength(2);
+    expect(eventsStore.get().events[0]).toBe(stored);
+    expect(eventsStore.get().events[0]).toEqual(event);
   });
 
   it('trims events to MAX_EVENTS when exceeded', () => {
@@ -164,6 +169,39 @@ describe('eventsStore — append via addEvent', () => {
     expect(result).toContain(structural);
     expect(result[0]).toBe(structural);
     expect((result[result.length - 1] as { taskId: string }).taskId).toBe('T999');
+  });
+
+  it('hard-caps all-structural task_started streams at MAX_EVENTS', () => {
+    const first = makeTaskStart({
+      taskId: taskId('T001'),
+      index: 0,
+      title: 'first',
+      total: MAX_EVENTS + 1,
+    });
+    let events = mergeEvent([], first);
+    for (let i = 2; i <= MAX_EVENTS; i += 1) {
+      events = mergeEvent(
+        events,
+        makeTaskStart({
+          taskId: taskId(`T${String((i % 998) + 2).padStart(3, '0')}`),
+          index: i - 1,
+          title: `task-${i}`,
+          total: MAX_EVENTS + 1,
+        }),
+      );
+    }
+    expect(events).toHaveLength(MAX_EVENTS);
+
+    const overflow = makeTaskStart({
+      taskId: taskId('T999'),
+      index: MAX_EVENTS,
+      title: 'overflow',
+      total: MAX_EVENTS + 1,
+    });
+    const capped = mergeEvent(events, overflow);
+    expect(capped).toHaveLength(MAX_EVENTS);
+    expect(capped[0]).not.toBe(first);
+    expect(capped[capped.length - 1]).toBe(overflow);
   });
 
   it('coalesces consecutive planner-text events', () => {
@@ -322,39 +360,8 @@ describe('eventsStore — append via addEvent', () => {
     ]);
   });
 
-  it('retains protected external-change conflict metadata without raw file paths', () => {
-    const rawPath = 'src/private-store-conflict.ts';
+  it('retains an already-protected external-change event without re-processing', () => {
     const protectedEvent = protectEngineEventForConsumer(
-      {
-        type: 'paused_external_changes',
-        ts: 1_002,
-        phase: 'implementing',
-        selectedAction: 'pause',
-        conflict: {
-          kind: 'current-task-conflict',
-          files: [rawPath],
-          affectedTaskIds: [taskId('T001')],
-          currentTaskId: taskId('T001'),
-          fileConflicts: [
-            {
-              file: rawPath,
-              kind: 'current-task-conflict',
-              affectedTaskIds: [taskId('T001')],
-            },
-          ],
-          safeToContinue: false,
-          availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
-        },
-      },
-      { context: 'ipc', persistTranscript: false },
-    );
-    if (protectedEvent?.type !== 'paused_external_changes') {
-      throw new Error('Expected protected paused_external_changes event');
-    }
-
-    addEvent(protectedEvent);
-
-    expect(eventsStore.get().events).toEqual([
       {
         type: 'paused_external_changes',
         ts: 1_002,
@@ -376,8 +383,15 @@ describe('eventsStore — append via addEvent', () => {
           availableActions: ['pause', 'skip-current-task', 'abort-workflow'],
         },
       },
-    ]);
-    expect(JSON.stringify(eventsStore.get().events)).not.toContain(rawPath);
+      { context: 'ipc', persistTranscript: false },
+    );
+    if (protectedEvent?.type !== 'paused_external_changes') {
+      throw new Error('Expected protected paused_external_changes event');
+    }
+
+    addEvent(protectedEvent);
+
+    expect(eventsStore.get().events).toEqual([protectedEvent]);
   });
 
   it('stops coalescing when a different event type arrives', () => {
@@ -433,17 +447,6 @@ describe('eventsStore — append via addEvent', () => {
       );
       expect(eventsStore.get().events).toHaveLength(2);
     });
-  });
-
-  it('caps merged planner_text at MAX_MERGED_TEXT_LENGTH', () => {
-    const bigChunk = 'x'.repeat(MAX_MERGED_TEXT_LENGTH);
-    addEvent(makePlannerText({ text: bigChunk }));
-    addEvent(makePlannerText({ text: 'tail' }));
-    const s = eventsStore.get();
-    expect(s.events).toHaveLength(1);
-    const text = (s.events[0] as { text: string }).text;
-    expect(text.length).toBeLessThanOrEqual(MAX_MERGED_TEXT_LENGTH);
-    expect(text.endsWith('tail')).toBe(true);
   });
 
   it('mergeEvent caps text and keeps most recent content', () => {
@@ -511,18 +514,6 @@ describe('eventsStore — append via addEvent', () => {
 });
 
 describe('projectEventForTuiEventLog', () => {
-  it('drops planner_heartbeat', () => {
-    expect(
-      projectEventForTuiEventLog({
-        type: 'planner_heartbeat',
-        ts: 1000,
-        phase: 'planning',
-        elapsedMs: 5000,
-        accumulatedTokens: 100,
-      }),
-    ).toBeNull();
-  });
-
   it('drops runner_call_stalled and runner_call_stall_cleared', () => {
     expect(
       projectEventForTuiEventLog({

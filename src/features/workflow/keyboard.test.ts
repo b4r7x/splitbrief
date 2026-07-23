@@ -60,11 +60,26 @@ describe('handleConversationScroll', () => {
     });
   });
 
+  const reviewScrollNeutralBase = {
+    input: '',
+    key: {} as Key,
+    reviewScrollOffset: 0,
+    reviewLineCount: 42,
+    visibleHeight: 12,
+  };
+
   it('ignores the plain printable g and G keys so they reach the composer as text', () => {
-    expect(handleConversationScroll({ ...base, key: { home: false } as Key })).toEqual({
+    const neutral = key({});
+    expect(handleConversationScroll({ ...base, input: 'g', key: neutral })).toEqual({
       type: 'none',
     });
-    expect(handleConversationScroll({ ...base, key: { end: false } as Key })).toEqual({
+    expect(handleConversationScroll({ ...base, input: 'G', key: neutral })).toEqual({
+      type: 'none',
+    });
+    expect(handleReviewScroll({ ...reviewScrollNeutralBase, input: 'g', key: neutral })).toEqual({
+      type: 'none',
+    });
+    expect(handleReviewScroll({ ...reviewScrollNeutralBase, input: 'G', key: neutral })).toEqual({
       type: 'none',
     });
   });
@@ -230,12 +245,6 @@ describe('handleReviewScroll', () => {
         reviewScrollOffset: 20,
       }),
     ).toEqual({ type: 'none' });
-  });
-
-  it('ignores the plain printable G key', () => {
-    expect(handleReviewScroll({ ...base, key: { end: false } as Key })).toEqual({
-      type: 'none',
-    });
   });
 });
 

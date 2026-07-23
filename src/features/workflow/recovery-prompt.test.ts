@@ -1,30 +1,27 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { RecoveryIssue } from '../../core/schemas/recovery.js';
+import { createElement } from 'react';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { PromptBody } from './components/prompt-body.js';
 import {
-  buildRecoveryPromptRows,
   formatActionRow,
   formatRecoveryActionLines,
   formatRecoveryPrompt,
   isActionRowLine,
   parseRecoveryActionAnswer,
   passHeadlinePrefix,
-  type PromptRow,
   recommendedRowPrefix,
 } from './recovery-prompt.js';
 
-function factItems(rows: PromptRow[]): string[] {
-  const row = rows.find((r): r is Extract<PromptRow, { kind: 'facts' }> => r.kind === 'facts');
-  return row?.items ?? [];
-}
-
-function actionRows(rows: PromptRow[]): Extract<PromptRow, { kind: 'action' }>[] {
-  return rows.filter((r): r is Extract<PromptRow, { kind: 'action' }> => r.kind === 'action');
-}
-
-function actionTexts(rows: PromptRow[]): string[] {
-  return actionRows(rows).map((r) => r.text);
+async function renderPromptBody(prompt: string): Promise<string> {
+  const ui = renderFeature(createElement(PromptBody, { prompt, height: 40, width: 120 }));
+  await tick(20);
+  const text = stripAnsiStyles(ui.lastFrame() ?? '');
+  ui.unmount();
+  return text;
 }
 
 const baseIssue: RecoveryIssue = {
@@ -70,29 +67,23 @@ describe('recovery prompt', () => {
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
   });
 
-  it('builds a compact validation recovery prompt with only available actions', () => {
-    const rows = buildRecoveryPromptRows(baseIssue);
+  it('builds a compact validation recovery prompt with only available actions', async () => {
+    const prompt = formatRecoveryPrompt(baseIssue);
+    const visible = await renderPromptBody(prompt);
 
-    expect(rows[0]).toEqual({
-      kind: 'headline',
-      tone: 'attention',
-      text: 'recovery needed · T003 validation failed after 3 attempts',
-    });
-    const facts = factItems(rows);
-    expect(facts).toContain('task T003 · Patch auth validation');
-    expect(facts).toContain('files src/auth/session.ts · src/auth/session.test.ts');
-    expect(facts).toContain(
+    expect(visible).toContain('recovery needed · T003 validation failed after 3 attempts');
+    expect(visible).toContain('task T003 · Patch auth validation');
+    expect(visible).toContain('files src/auth/session.ts · src/auth/session.test.ts');
+    expect(visible).toContain(
       'last check test failed: npm test -- auth failed in src/auth/session.test.ts',
     );
-    const texts = actionTexts(rows);
-    expect(texts).toContain('[r]  retry same worker');
-    expect(texts).toContain('[b]  route to bigger worker · cheap-cloud');
-    expect(texts).toContain('[s]  skip task');
-    expect(texts).toContain('[space]  pause');
-    expect(texts).toContain('[a]  abort');
-    expect(texts).not.toContain('[c]  continue');
-    expect(rows.some((r) => r.kind === 'note')).toBe(false);
-    expect(JSON.stringify(rows)).not.toContain('ask planner');
+    expect(visible).toContain('[r]  retry same worker');
+    expect(visible).toContain('[b]  route to bigger worker · cheap-cloud');
+    expect(visible).toContain('[s]  skip task');
+    expect(visible).toContain('[space]  pause');
+    expect(visible).toContain('[a]  abort');
+    expect(visible).not.toContain('[c]  continue');
+    expect(visible).not.toContain('ask planner');
   });
 
   it('emits the rebase action with its tail on a separate continuation line', () => {
@@ -133,12 +124,11 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('abort', baseIssue)).toBe('abort-workflow');
   });
 
-  it('marks the recommended action and applies it only for empty Enter', () => {
-    const rows = buildRecoveryPromptRows(baseIssue);
+  it('marks the recommended action and applies it only for empty Enter', async () => {
+    const prompt = formatRecoveryPrompt(baseIssue);
+    const visible = await renderPromptBody(prompt);
 
-    expect(actionRows(rows).find((r) => r.recommended)?.text).toBe(
-      '[b]  route to bigger worker · cheap-cloud',
-    );
+    expect(visible).toContain(`${glyph('liveBar')} [b]  route to bigger worker · cheap-cloud`);
     expect(parseRecoveryActionAnswer('', baseIssue)).toBe('route-bigger-worker');
   });
 
@@ -148,7 +138,7 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('nope', baseIssue)).toBeNull();
   });
 
-  it('marks and applies pause when the recommended action is not promptable', () => {
+  it('marks and applies pause when the recommended action is not promptable', async () => {
     const issue: RecoveryIssue = {
       ...baseIssue,
       id: 'rec_unpromptable',
@@ -156,9 +146,9 @@ describe('recovery prompt', () => {
       recommendedAction: 'planner-split-rebase',
     };
 
-    const rows = buildRecoveryPromptRows(issue);
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(actionRows(rows).find((r) => r.recommended)?.text).toBe('[space]  pause');
+    expect(visible).toContain(`${glyph('liveBar')} [space]  pause`);
     expect(parseRecoveryActionAnswer('', issue)).toBe('pause-run');
   });
 
@@ -181,7 +171,7 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('c', issue)).toBe('continue');
   });
 
-  it('hides ordinary continue for budget exceeded even if malformed state advertises it', () => {
+  it('hides ordinary continue for budget exceeded even if malformed state advertises it', async () => {
     const issue: RecoveryIssue = {
       id: 'rec_budget',
       reason: 'budget-exceeded',
@@ -201,22 +191,17 @@ describe('recovery prompt', () => {
       createdAt: '2026-04-29T12:00:00.000Z',
     };
 
-    const rows = buildRecoveryPromptRows(issue);
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(rows[0]).toEqual({
-      kind: 'headline',
-      tone: 'attention',
-      text: 'recovery needed · Budget exceeded at 105%',
-    });
-    expect(factItems(rows)).toContain('spent $5.25 of $5.00');
-    const texts = actionTexts(rows);
-    expect(texts).toContain('[space]  pause');
-    expect(texts).toContain('[a]  abort');
-    expect(texts).not.toContain('[c]  continue');
+    expect(visible).toContain('recovery needed · Budget exceeded at 105%');
+    expect(visible).toContain('spent $5.25 of $5.00');
+    expect(visible).toContain('[space]  pause');
+    expect(visible).toContain('[a]  abort');
+    expect(visible).not.toContain('[c]  continue');
     expect(parseRecoveryActionAnswer('c', issue)).toBeNull();
   });
 
-  it('hides legacy planner rebase actions and falls back to pause', () => {
+  it('hides legacy planner rebase actions and falls back to pause', async () => {
     const issue: RecoveryIssue = {
       id: 'rec_user_edit',
       reason: 'user-edit-conflict',
@@ -239,11 +224,10 @@ describe('recovery prompt', () => {
       createdAt: '2026-04-29T12:00:00.000Z',
     };
 
-    const rows = buildRecoveryPromptRows(issue);
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
 
-    expect(actionTexts(rows)).toContain('[space]  pause');
-    expect(rows.some((r) => r.kind === 'note')).toBe(false);
-    expect(JSON.stringify(rows)).not.toContain('ask planner');
+    expect(visible).toContain('[space]  pause');
+    expect(visible).not.toContain('ask planner');
     expect(parseRecoveryActionAnswer('p', issue)).toBeNull();
   });
 

@@ -4,7 +4,7 @@ import type {
   SnapshotPhase,
 } from '../../core/schemas/snapshot.js';
 import { SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
-import { readRunSnapshotLedger } from './run.js';
+import { readRunSnapshotLedger } from './run/ledger.js';
 import { listSnapshots } from './manifest.js';
 import { ALWAYS_EXCLUDED } from './files.js';
 

@@ -70,8 +70,8 @@ describe('visual catalog', () => {
     const routeBefore = routerStore.get();
     const configBefore = configStore.get();
 
-    expect(listVisualScenarios()).toBe(VISUAL_CATALOG);
-    expect(listVisualScenarios()).toBe(VISUAL_CATALOG);
+    const scenarios = listVisualScenarios();
+    expect(scenarios).toEqual(VISUAL_CATALOG);
     expect(routerStore.get()).toBe(routeBefore);
     expect(configStore.get()).toBe(configBefore);
     expect(fetch).not.toHaveBeenCalled();

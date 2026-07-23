@@ -3,7 +3,7 @@ import type { EventBus } from '../../events/types.js';
 import type { WorkflowContext } from '../types.js';
 import { publishWarningFromError } from '../events.js';
 import { createSnapshot } from '../../snapshots/create.js';
-import { recordRunSnapshot } from '../../snapshots/run.js';
+import { recordRunSnapshot } from '../../snapshots/run/ledger.js';
 
 export type AutoSnapshotOptions = {
   projectDir: string;

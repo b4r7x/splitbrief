@@ -15,7 +15,7 @@ import {
 } from './brief-review.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { getSections } from '../../../stores/workflow/actions.js';
+import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
@@ -25,7 +25,7 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
-import { getWorkflowPromptRows } from '../prompt-rows.js';
+import { getWorkflowPromptRows } from '../prompt-rows/workflow.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
 

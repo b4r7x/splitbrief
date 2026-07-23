@@ -1,9 +1,11 @@
+import { formatEffectiveConfigWarning } from '../../config/runtime/effective-config.js';
+import type { EffectiveConfigWarning } from '../../config/runtime/effective-config.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface ConfigReadinessInput {
   state: 'loaded' | 'missing' | 'invalid';
   path: string;
-  warnings: string[];
+  warnings: readonly EffectiveConfigWarning[];
   error?: string | undefined;
   migratedInMemory?: boolean | undefined;
 }
@@ -49,15 +51,18 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
     },
   ];
 
+  const displayedWarnings = new Set<string>();
   for (const warning of configLoad.warnings) {
+    const message = formatEffectiveConfigWarning(warning);
+    if (displayedWarnings.has(message)) continue;
+    displayedWarnings.add(message);
+    const migration = warning.source === 'loader' && warning.diagnostic.kind === 'config-migration';
     checks.push({
       id: 'config.warning',
       severity: 'warning',
-      summary: warning,
-      fix: warning.includes('version 2')
-        ? 'Run `diptych init --reconfigure` to write a current config.'
-        : undefined,
-      nextAction: warning.includes('version 2') ? 'fix-config' : undefined,
+      summary: message,
+      fix: migration ? 'Run `diptych init --reconfigure` to write a current config.' : undefined,
+      nextAction: migration ? 'fix-config' : undefined,
     });
   }
 

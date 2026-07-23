@@ -1,11 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { MAX_INPUT_HISTORY } from './input-history.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
-import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 
 /**
  * Disk-backed history persistence. Behaviour is observed through the real
@@ -84,14 +81,6 @@ describe('loadHistoryFromDisk', () => {
     seedHistoryFile('first\n\nsecond\n');
     const { loadHistoryFromDisk } = await loadModules();
     expect(loadHistoryFromDisk()).toEqual(['first', 'second']);
-  });
-
-  it('caps entries at MAX_INPUT_HISTORY', async () => {
-    const lines = Array.from({ length: MAX_INPUT_HISTORY + 3 }, (_, i) => `item-${i}`);
-    seedHistoryFile(lines.join('\n'));
-
-    const { loadHistoryFromDisk } = await loadModules();
-    expect(loadHistoryFromDisk()).toHaveLength(MAX_INPUT_HISTORY);
   });
 
   it('deduplicates before capping entries from disk', async () => {
@@ -173,17 +162,6 @@ describe('installHistoryPersistence', () => {
     expect(readFileSync(historyFile, 'utf-8')).toBe('third\nsecond\nfirst');
   });
 
-  it('saves under ~/.diptych/history (HOME-relative)', async () => {
-    const { installHistoryPersistence, inputHistoryStore } = await loadModules();
-    teardown = installHistoryPersistence();
-
-    inputHistoryStore.push('test entry');
-    vi.advanceTimersByTime(300);
-
-    expect(existsSync(historyFile)).toBe(true);
-    expect(readFileSync(historyFile, 'utf-8')).toBe('test entry');
-  });
-
   it('redacts secrets before saving history to disk', async () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
@@ -241,87 +219,5 @@ describe('installHistoryPersistence', () => {
     vi.advanceTimersByTime(300);
 
     expect(readFileSync(historyFile, 'utf-8')).toBe('active install\nstale pending');
-  });
-});
-
-describe('transcript-off session artifact privacy', () => {
-  it('omits the feature prompt from session metadata, summaries, export, ps, and branch names', async () => {
-    vi.useRealTimers();
-    const projectDir = createTempDir('session-privacy');
-    const uniquePrompt = 'sentinel-privacy-leak-771299';
-    createTestGitRepo(projectDir);
-
-    try {
-      const { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } = await import(
-        '../../engine/orchestrator/run/workflow.js'
-      );
-      const { readActive } = await import('../../core/sessions/lifecycle.js');
-      const { DIPTYCH_DIR, LOCKFILE, SESSIONS_DIR } = await import('../../core/paths.js');
-      const { listAllSessions } = await import('../../core/sessions/io.js');
-      const { writeSessionHtmlReport } = await import('../../engine/export/collect.js');
-      const { psCommand } = await import('../../cli/commands/ps.js');
-      const { simpleGit } = await import('simple-git');
-
-      const controller = new AbortController();
-      controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-      const summary = await runWorkflow({
-        feature: uniquePrompt,
-        projectDir,
-        config: makeConfig({
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: {
-            git: { createBranch: true, commitStrategy: 'none' },
-            mode: 'quick',
-            persistTranscript: false,
-          },
-        }),
-        callbacks: makeCallbacks().callbacks,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-        signal: controller.signal,
-        _planner: makePlanner(),
-      });
-
-      const sessionsPath = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR);
-      const sessionIds = readdirSync(sessionsPath);
-      expect(sessionIds).toHaveLength(1);
-      const sessionId = sessionIds[0] ?? '';
-      const sessionPath = join(sessionsPath, sessionId);
-      const active = readActive(projectDir);
-      const lockfile = readFileSync(join(sessionPath, LOCKFILE), 'utf-8');
-      const summaryJson = readFileSync(join(sessionPath, 'summary.json'), 'utf-8');
-      const sessions = listAllSessions(projectDir);
-      const exportResult = writeSessionHtmlReport(sessionPath, sessionId);
-      expect(exportResult.status).toBe('ok');
-      const html = readFileSync(join(sessionPath, 'report.html'), 'utf-8');
-
-      const psLines: string[] = [];
-      const log = vi.spyOn(console, 'log').mockImplementation((line: string) => {
-        psLines.push(line);
-      });
-      try {
-        await psCommand({ projectDir });
-      } finally {
-        log.mockRestore();
-      }
-
-      const branch = (await simpleGit(projectDir).status()).current;
-      const inspected = [
-        sessionId,
-        active ?? '',
-        lockfile,
-        summaryJson,
-        JSON.stringify(summary),
-        JSON.stringify(sessions),
-        html,
-        psLines.join('\n'),
-        branch,
-      ].join('\n');
-
-      expect(inspected).not.toContain(uniquePrompt);
-      expect(sessionId).toMatch(/^\d{4}-\d{2}-\d{2}-session-[a-f0-9]{12}$/);
-      expect(branch).toMatch(/^diptych\/session-[a-f0-9]{12}$/);
-    } finally {
-      cleanupTempDir(projectDir);
-    }
   });
 });

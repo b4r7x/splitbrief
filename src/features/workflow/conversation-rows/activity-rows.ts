@@ -11,7 +11,7 @@ import {
   type ActivityBatchViewModel,
   type RunnerActivityEvent,
 } from './activity-batch-model.js';
-import { row, segmentedRow } from './row-format.js';
+import { row, segmentedRow } from './row-format/rows.js';
 import { rowLeadingCells } from './row-markers.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
 

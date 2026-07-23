@@ -24,6 +24,13 @@ import {
 } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import { planningError } from './errors.js';
+import { createPlannerBase } from '../../planners/base.js';
+import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import {
+  setupProject as setupPlanningProject,
+  REAL_TASKS_MD,
+} from '#testing/helpers/planning-phase.js';
+import type { PlannerCapabilities } from '../../planners/types.js';
 import type { Planner, PlannerCallbacks, PlanResult } from '../../planners/types.js';
 import type { RunnerCallContext } from '../../calls/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
@@ -189,45 +196,7 @@ describe('runInstantPlanning', () => {
     expect(result.state.rewindPending).toBeUndefined();
   });
 
-  it('writes only tasks.md (no spec/plan/research)', async () => {
-    const { projectDir, sessionId } = await runInstant();
-    const dir = sessionDir(projectDir, sessionId);
-    expect(existsSync(join(dir, TASKS_FILE))).toBe(true);
-    expect(readFileSync(join(dir, TASKS_FILE), 'utf-8')).toContain('Rename foo to bar');
-    expect(existsSync(join(dir, SPEC_FILE))).toBe(false);
-    expect(existsSync(join(dir, PLAN_FILE))).toBe(false);
-    expect(existsSync(join(dir, RESEARCH_FILE))).toBe(false);
-  });
-
-  it('dispatches START_INSTANT and lands in implementing phase', async () => {
-    const { result } = await runInstant();
-    expect(result.cancelled).toBe(false);
-    expect(result.state.phase).toBe('implementing');
-    expect(result.tasks).toHaveLength(1);
-    expect(result.tasks[0]?.id).toBe('T099');
-  });
-
-  it('publishes a running planner_status at the implementing phase so its OTel span opens', async () => {
-    const { events } = await runInstant();
-    const implementingRunning = events.find(
-      (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'implementing',
-    );
-    expect(implementingRunning).toBeDefined();
-  });
-
-  it('publishes mode_resolved and instant_plan_received events', async () => {
-    const { events } = await runInstant();
-    const modeResolved = events.find((e) => e.type === 'mode_resolved');
-    const instantReceived = events.find((e) => e.type === 'instant_plan_received');
-    expect(modeResolved).toBeDefined();
-    expect(modeResolved && 'mode' in modeResolved ? modeResolved.mode : null).toBe('instant');
-    expect(instantReceived).toBeDefined();
-    expect(instantReceived && 'taskCount' in instantReceived ? instantReceived.taskCount : 0).toBe(
-      1,
-    );
-  });
-
-  it('reaches implementation without opening approval gates', async () => {
+  it('runs the nominal instant lifecycle without artifact approval', async () => {
     const onApprovalNeeded = async () => {
       throw new Error('instant mode should not request artifact approval');
     };
@@ -237,7 +206,8 @@ describe('runInstantPlanning', () => {
     });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const config = makeConfig({ workflow: { mode: 'instant' } });
-    const initial = createInitialState('feature');
+    const { bus, events } = makeBusRecorder();
+    const initial = createInitialState('rename foo to bar');
     const result = await runPlanningPhase({
       wctx: {
         projectDir,
@@ -245,16 +215,39 @@ describe('runInstantPlanning', () => {
         callbacks,
         metadata: TEST_METADATA,
         sessionId,
-        bus: makeBusRecorder().bus,
+        bus,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       },
       planner,
       state: { ...initial, phase: 'idle' },
-      feature: 'feature',
+      feature: 'rename foo to bar',
     });
+
+    const dir = sessionDir(projectDir, sessionId);
+    expect(existsSync(join(dir, TASKS_FILE))).toBe(true);
+    expect(readFileSync(join(dir, TASKS_FILE), 'utf-8')).toContain('Rename foo to bar');
+    expect(existsSync(join(dir, SPEC_FILE))).toBe(false);
+    expect(existsSync(join(dir, PLAN_FILE))).toBe(false);
+    expect(existsSync(join(dir, RESEARCH_FILE))).toBe(false);
 
     expect(result.cancelled).toBe(false);
     expect(result.state.phase).toBe('implementing');
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]?.id).toBe('T099');
+
+    const implementingRunning = events.find(
+      (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'implementing',
+    );
+    expect(implementingRunning).toBeDefined();
+
+    const modeResolved = events.find((e) => e.type === 'mode_resolved');
+    const instantReceived = events.find((e) => e.type === 'instant_plan_received');
+    expect(modeResolved).toBeDefined();
+    expect(modeResolved && 'mode' in modeResolved ? modeResolved.mode : null).toBe('instant');
+    expect(instantReceived).toBeDefined();
+    expect(instantReceived && 'taskCount' in instantReceived ? instantReceived.taskCount : 0).toBe(
+      1,
+    );
   });
 
   it('falls back to quickPlan when instantPlan is not provided', async () => {
@@ -560,5 +553,68 @@ describe('runInstantPlanning', () => {
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
     expect(result.cancelled).toBe(false);
     expect(result.state.phase).toBe('implementing');
+  });
+});
+
+const plannerBaseCapabilities: PlannerCapabilities = {
+  supportsConversationalPlanning: false,
+  supportsHintEscalation: true,
+  supportsSessionResume: false,
+  supportsEffort: false,
+  supportsImages: false,
+  supportsSelfSummarisation: false,
+};
+
+function completedPlannerBaseRunnerCall(text: string) {
+  return makeRunnerCallResult({ status: 'completed', text });
+}
+
+describe('createPlannerBase — unknown Task Brief section warning (F-429 / N399)', () => {
+  let dirs: string[] = [];
+  afterEach(() => {
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  const tasksWithUnknownSection = `${REAL_TASKS_MD}
+### Future Considerations
+
+- this heading is outside the canonical grammar and will be dropped
+`;
+
+  it('emits a warning event when planner-generated briefs contain an unknown ### section', async () => {
+    const { projectDir, sessionId } = setupPlanningProject(dirs);
+    const planner = createPlannerBase({
+      invokePlan: async () => completedPlannerBaseRunnerCall('raw stdout noise'),
+      invokeEscalate: async () => completedPlannerBaseRunnerCall(''),
+      isAvailable: async () => true,
+      capabilities: plannerBaseCapabilities,
+      readPhaseOutput: () => tasksWithUnknownSection,
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const initial = createInitialState('add auth');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config: makeConfig({ workflow: { mode: 'instant' } }),
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        drainPendingAttachments: () => [],
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'add auth',
+    });
+
+    expect(result.cancelled).toBe(false);
+    const warning = events.find(
+      (e) => e.type === 'warning' && e.message.includes('Future Considerations'),
+    );
+    expect(warning).toBeDefined();
   });
 });

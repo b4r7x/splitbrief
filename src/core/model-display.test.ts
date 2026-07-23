@@ -11,10 +11,6 @@ describe('formatModelName', () => {
       expect(formatModelName('default')).toBe('Default');
     });
 
-    it('returns the ID unchanged for single-word unknown model', () => {
-      expect(formatModelName('custom')).toBe('Custom');
-    });
-
     it('returns already-pretty names unchanged', () => {
       expect(formatModelName('MyModel')).toBe('MyModel');
     });

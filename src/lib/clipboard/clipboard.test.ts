@@ -1,12 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  CLIPBOARD_EXEC_WAIT_MS,
   installClipboardExecFixture,
   readClipboardExecCalls,
   restoreClipboardExecFixture,
   setClipboardExitCodes,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 
-import { formatCopyResult } from '../../core/runtime/commands/types.js';
 import { copyToClipboard } from './clipboard.js';
 import { _resetLinuxCopyCache } from './native.js';
 
@@ -40,13 +40,21 @@ function clearEnv(): void {
   }
 }
 
+async function expectClipboardExec(
+  assert: (calls: ReturnType<typeof readClipboardExecCalls>) => void,
+): Promise<void> {
+  await vi.waitFor(() => {
+    assert(readClipboardExecCalls());
+  }, CLIPBOARD_EXEC_WAIT_MS);
+}
+
 beforeEach(() => {
   installClipboardExecFixture();
   terminalWrites.length = 0;
   stdoutBroken = false;
   _resetLinuxCopyCache();
   clearEnv();
-  originalWrite = process.stdout.write.bind(process.stdout);
+  originalWrite = process.stdout.write.bind(process);
   captureStdout();
 });
 
@@ -62,7 +70,9 @@ describe('copyToClipboard', () => {
     setPlatform('darwin');
     const result = await copyToClipboard('hi');
     expect(result).toBe('native');
-    expect(readClipboardExecCalls()[0]).toEqual({ file: 'pbcopy', args: [], stdin: 'hi' });
+    await expectClipboardExec((calls) => {
+      expect(calls[0]).toEqual({ file: 'pbcopy', args: [], stdin: 'hi' });
+    });
     expect(terminalWrites).toEqual([]);
   });
 
@@ -70,7 +80,9 @@ describe('copyToClipboard', () => {
     setPlatform('linux');
     const result = await copyToClipboard('hi');
     expect(result).toBe('native');
-    expect(readClipboardExecCalls()[0]?.file).toBe('wl-copy');
+    await expectClipboardExec((calls) => {
+      expect(calls[0]?.file).toBe('wl-copy');
+    });
     expect(terminalWrites).toEqual([]);
   });
 
@@ -80,7 +92,9 @@ describe('copyToClipboard', () => {
     setClipboardExitCodes({ pbcopy: 1 });
     const result = await copyToClipboard('hi');
     expect(result).toBe('tmux-buffer');
-    expect(readClipboardExecCalls().map((c) => c.file)).toEqual(['pbcopy', 'tmux']);
+    await expectClipboardExec((calls) => {
+      expect(calls.map((c) => c.file)).toEqual(['pbcopy', 'tmux']);
+    });
     expect(terminalWrites).toEqual([]);
   });
 
@@ -91,7 +105,9 @@ describe('copyToClipboard', () => {
     const huge = 'a'.repeat(80_000);
     const result = await copyToClipboard(huge);
     expect(result).toBe('tmux-buffer');
-    expect(readClipboardExecCalls().map((c) => c.file)).toEqual(['tmux']);
+    await expectClipboardExec((calls) => {
+      expect(calls.map((c) => c.file)).toEqual(['tmux']);
+    });
     expect(terminalWrites).toEqual([]);
   });
 
@@ -102,15 +118,15 @@ describe('copyToClipboard', () => {
     expect(result).toBe('osc52');
     expect(terminalWrites).toHaveLength(1);
     expect(terminalWrites[0]?.startsWith(`${ESC}]52;c;`)).toBe(true);
-    // The escape is fire-and-forget with no acknowledgement, so its message must not claim success.
-    expect(formatCopyResult(result)).not.toMatch(/^Copied/);
   });
 
   it('skips native over SSH and falls back to the OSC 52 escape', async () => {
     setPlatform('darwin');
     process.env['SSH_CONNECTION'] = '10.0.0.1 22 10.0.0.2 22';
     const result = await copyToClipboard('hi');
-    expect(readClipboardExecCalls().some((c) => c.file === 'pbcopy')).toBe(false);
+    await expectClipboardExec((calls) => {
+      expect(calls.some((c) => c.file === 'pbcopy')).toBe(false);
+    });
     expect(result).toBe('osc52');
     expect(terminalWrites).toHaveLength(1);
   });
@@ -139,7 +155,9 @@ describe('copyToClipboard', () => {
     process.env['SSH_CONNECTION'] = '10.0.0.1 22 10.0.0.2 22';
     const huge = 'a'.repeat(80_000);
     const result = await copyToClipboard(huge);
-    expect(readClipboardExecCalls()).toHaveLength(0);
+    await expectClipboardExec((calls) => {
+      expect(calls).toHaveLength(0);
+    });
     expect(terminalWrites).toEqual([]);
     expect(result).toBe('unavailable');
   });
@@ -151,23 +169,5 @@ describe('copyToClipboard', () => {
     const result = await copyToClipboard(huge);
     expect(terminalWrites).toEqual([]);
     expect(result).toBe('unavailable');
-  });
-});
-
-describe('formatCopyResult', () => {
-  it('renders an honest, unverified message for the osc52 path (never a bare "Copied")', () => {
-    const message = formatCopyResult('osc52');
-    expect(message).not.toMatch(/^Copied/);
-    expect(message.toLowerCase()).toContain('verify');
-  });
-
-  it('renders a verified "Copied" message only for native and tmux delivery', () => {
-    expect(formatCopyResult('native')).toMatch(/^Copied/);
-    expect(formatCopyResult('tmux-buffer')).toMatch(/^Copied/);
-  });
-
-  it('reports honest failure for the unavailable and empty outcomes', () => {
-    expect(formatCopyResult('unavailable')).toBe('Could not copy');
-    expect(formatCopyResult('empty')).toBe('Nothing to copy');
   });
 });

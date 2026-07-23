@@ -1,25 +1,11 @@
-import type {
-  MarkdownRenderSegment,
-  MarkdownSegmentDecorator,
-} from '../../../../components/markdown.js';
-import type { Theme } from '../../../../components/theme.js';
 import { TaskIdSchema } from '../../../../core/schemas/task.js';
 import { stripTerminalControls } from '../../../../utils/display-text.js';
-import type {
-  MarkdownHighlightScope,
-  MarkdownLayoutSegment,
-} from '../../../../utils/markdown/types.js';
+import type { MarkdownLayoutSegment } from '../../../../utils/markdown/types.js';
 import { assertNever } from '../../../../utils/type-guards.js';
-import {
-  filePathUrl,
-  projectRelativePathLabel,
-  resolveMarkdownLinkTarget,
-} from '../../../../utils/path-links.js';
-import type { ConversationRowSegment, ConversationRowTone } from '../types.js';
 
-type WorkflowMarkdownMarkerKind = 'taskId' | 'filePath' | 'status' | 'risk';
+export type WorkflowMarkdownMarkerKind = 'taskId' | 'filePath' | 'status' | 'risk';
 
-type WorkflowMarkdownPart =
+export type WorkflowMarkdownPart =
   | { kind: 'base'; segment: MarkdownLayoutSegment }
   | { kind: WorkflowMarkdownMarkerKind; text: string; suppressHref?: boolean };
 
@@ -28,64 +14,19 @@ interface WorkflowMarkerMatch {
   text: string;
 }
 
-const STATUS_MARKERS: readonly string[] = [
-  'NOT VERIFIED',
-  'INCONCLUSIVE',
-  'VERIFIED',
-  'BLOCKED',
-  'FAILED',
-  'FAIL',
-  'ERROR',
-  'WARN',
-  'WARNING',
-  'DONE',
-  'PASS',
-  'OK',
-];
-
-const PROSE_STATUS_MARKERS: readonly string[] = [
-  'NOT VERIFIED',
-  'INCONCLUSIVE',
-  'VERIFIED',
-  'BLOCKED',
-  'FAILED',
-];
-
-const RISK_MARKERS: readonly string[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 const TASK_ID_PATTERN = /^T\d{3}/;
 const FILE_PATH_PATTERN =
   /^(?:\.{1,2}\/|\/|[A-Za-z0-9_.-]+\/)[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.[A-Za-z0-9]+(?::\d+)?/;
 
-export function workflowMarkdownConversationSegments(
-  segment: MarkdownLayoutSegment,
-  options: { projectDir: string | undefined; previousLineText?: string | undefined },
-): ConversationRowSegment[] {
-  return workflowMarkdownParts(segment, {
-    statusMarkers: STATUS_MARKERS,
-    previousLineText: options.previousLineText,
-  }).map((part) => workflowMarkdownPartToConversationSegment(part, options.projectDir));
-}
+const RISK_MARKERS: readonly string[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
-export const workflowMarkdownRenderSegments: MarkdownSegmentDecorator = ({
-  segment,
-  theme,
-  projectDir,
-  previousLineText,
-}) =>
-  workflowMarkdownParts(segment, {
-    statusMarkers: PROSE_STATUS_MARKERS,
-    previousLineText,
-  }).map((part) => workflowMarkdownPartToRenderSegment(part, theme, projectDir));
-
-function workflowMarkdownParts(
+export function workflowMarkdownParts(
   segment: MarkdownLayoutSegment,
   options: { statusMarkers: readonly string[]; previousLineText: string | undefined },
 ): WorkflowMarkdownPart[] {
   const cleanSegment = cloneSegmentWithText(segment, stripTerminalControls(segment.text));
   if (!isWorkflowScannableSegment(cleanSegment)) return [{ kind: 'base', segment: cleanSegment }];
 
-  // A column-0 match continuing a hard-wrapped word is a fragment of a longer path; minting an
-  // href for it would target a fabricated file, so it keeps the dim label only.
   const suppressLeadingFilePathHref =
     options.previousLineText !== undefined && /[A-Za-z0-9_./-]$/.test(options.previousLineText);
   const parts: WorkflowMarkdownPart[] = [];
@@ -197,161 +138,4 @@ function hasWordBoundary(text: string, index: number, length: number): boolean {
 
 function isWordChar(char: string | undefined): boolean {
   return char !== undefined && /[A-Za-z0-9_-]/.test(char);
-}
-
-function workflowMarkdownPartToConversationSegment(
-  part: WorkflowMarkdownPart,
-  projectDir: string | undefined,
-): ConversationRowSegment {
-  switch (part.kind) {
-    case 'base':
-      return markdownSegment(part.segment, projectDir);
-    case 'taskId':
-      return { text: part.text, tone: 'text', bold: true };
-    case 'filePath':
-      return filePathConversationSegment(part, projectDir);
-    case 'status':
-      return { text: part.text, tone: 'textDim' };
-    case 'risk':
-      return { text: part.text, tone: 'textDim' };
-    default:
-      return assertNever(part);
-  }
-}
-
-function workflowMarkdownPartToRenderSegment(
-  part: WorkflowMarkdownPart,
-  theme: Theme,
-  projectDir: string | undefined,
-): MarkdownRenderSegment {
-  switch (part.kind) {
-    case 'base':
-      return { text: part.segment.text };
-    case 'taskId':
-      return { text: part.text };
-    case 'filePath':
-      return filePathRenderSegment(part, theme, projectDir);
-    case 'status':
-      return { text: part.text, style: { color: statusColor(part.text, theme), bold: false } };
-    case 'risk':
-      return { text: part.text };
-    default:
-      return assertNever(part);
-  }
-}
-
-function filePathConversationSegment(
-  part: { text: string; suppressHref?: boolean },
-  projectDir: string | undefined,
-): ConversationRowSegment {
-  if (projectDir === undefined || part.suppressHref === true) {
-    return { text: part.text, tone: 'textDim' };
-  }
-  return {
-    text: projectRelativePathLabel({ path: part.text, rootDir: projectDir }),
-    tone: 'markdownLink',
-    href: filePathUrl({ path: part.text, rootDir: projectDir }),
-  };
-}
-
-function filePathRenderSegment(
-  part: { text: string; suppressHref?: boolean },
-  theme: Theme,
-  projectDir: string | undefined,
-): MarkdownRenderSegment {
-  if (projectDir === undefined || part.suppressHref === true) {
-    return { text: part.text, style: { color: theme.textDim } };
-  }
-  return {
-    text: projectRelativePathLabel({ path: part.text, rootDir: projectDir }),
-    style: { color: theme.markdown.link, underline: true },
-    href: filePathUrl({ path: part.text, rootDir: projectDir }),
-  };
-}
-
-function markdownSegment(
-  segment: MarkdownLayoutSegment,
-  projectDir: string | undefined,
-): ConversationRowSegment {
-  switch (segment.kind) {
-    case 'heading':
-      return { text: segment.text, tone: 'markdownHeading', bold: (segment.depth ?? 1) <= 3 };
-    case 'metadata':
-      return { text: segment.text, tone: 'textDim' };
-    case 'rule':
-      return { text: segment.text, tone: 'textDim' };
-    case 'listMarker':
-      return { text: segment.text, tone: 'text' };
-    case 'blockquoteMarker':
-      return { text: segment.text, tone: 'textDim' };
-    case 'code':
-      return segment.scope !== undefined
-        ? { text: segment.text, tone: syntaxScopeTone(segment.scope) }
-        : { text: segment.text, tone: 'textDim' };
-    case 'bold':
-      return { text: segment.text, tone: 'text', bold: true };
-    case 'italic':
-      return { text: segment.text, tone: 'textDim', italic: true };
-    case 'boldItalic':
-      return { text: segment.text, tone: 'text', bold: true, italic: true };
-    case 'strikethrough':
-      return { text: segment.text, tone: 'markdownStrike', strikethrough: true };
-    case 'link': {
-      const resolved = resolveMarkdownLinkTarget({
-        label: segment.text,
-        href: segment.href,
-        rootDir: projectDir,
-      });
-      return {
-        text: resolved.label,
-        tone: 'markdownLink',
-        ...(resolved.href === undefined ? {} : { href: resolved.href }),
-      };
-    }
-    case 'tableBorder':
-      return { text: segment.text, tone: 'markdownTableBorder' };
-    case 'tableHeader':
-      return { text: segment.text, tone: 'markdownHeading', bold: true };
-    case 'text':
-      return { text: segment.text, tone: 'text' };
-    default:
-      return assertNever(segment.kind);
-  }
-}
-
-function syntaxScopeTone(scope: MarkdownHighlightScope): ConversationRowTone {
-  switch (scope) {
-    case 'keyword':
-      return 'syntaxKeyword';
-    case 'string':
-      return 'syntaxString';
-    case 'comment':
-      return 'syntaxComment';
-    case 'number':
-      return 'syntaxNumber';
-    case 'literal':
-      return 'syntaxLiteral';
-    case 'type':
-      return 'syntaxType';
-    case 'function':
-      return 'syntaxFunction';
-    case 'punctuation':
-      return 'syntaxPunctuation';
-    default:
-      return assertNever(scope);
-  }
-}
-
-function statusColor(text: string, theme: Theme): string {
-  const value = text.toUpperCase();
-  if (
-    value.includes('FAIL') ||
-    value.includes('ERROR') ||
-    value.includes('BLOCKED') ||
-    value.includes('NOT VERIFIED')
-  ) {
-    return theme.dimError;
-  }
-  if (value.includes('WARN') || value.includes('INCONCLUSIVE')) return theme.textDim;
-  return theme.dimSuccess;
 }

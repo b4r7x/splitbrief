@@ -14,7 +14,7 @@ import { resolveRunningSession } from '../sessions/resolve.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { error } from '../../utils/error.js';
 
-export const detachError = {
+const detachError = {
   serverRejected: (message: string) => error('detach-server-rejected', message, { message }),
 } as const;
 

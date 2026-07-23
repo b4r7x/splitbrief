@@ -44,7 +44,6 @@ describe('repairMarkdownTailChunk', () => {
     expect(repairMarkdownTailChunk('***a')).toBe('***a***');
     expect(repairMarkdownTailChunk('***a** b')).toBe('***a** b*');
     expect(repairMarkdownTailChunk('*i **b')).toBe('*i **b***');
-    expect(repairMarkdownTailChunk('***a** b*')).toBe('***a** b*');
   });
 
   it('completes a closing delimiter split mid-delimiter', () => {

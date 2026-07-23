@@ -1,18 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { chmodSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { writeConfigYaml as persistConfigYaml } from '#testing/helpers/config-io.js';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { configStore } from './config.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { expectApi, expectCli, expectShell } from '#testing/helpers/config-narrowing.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { expectApi, expectCli } from '#testing/helpers/config-narrowing.js';
+import { DIPTYCH_DIR, TREES_DIR, CONFIG_FILE } from '../../core/paths.js';
 import { createDefaultConfig, loadConfig } from '../../core/config/load/io.js';
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 let tmpDir: string;
 
 function writeConfigYaml(extras: Record<string, unknown> = {}) {
-  mkdirSync(join(tmpDir, DIPTYCH_DIR), { recursive: true });
   const base = {
     planner: { tool: 'claude-code' },
     implementer: {
@@ -33,7 +35,7 @@ function writeConfigYaml(extras: Record<string, unknown> = {}) {
     sessions: { scope: 'project' },
     ...extras,
   };
-  writeFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), YAML.stringify(base), 'utf-8');
+  persistConfigYaml(tmpDir, base);
 }
 
 function loadedConfig() {
@@ -95,67 +97,21 @@ describe('configStore.load', () => {
     expect(config.implementer.model).toBe('deepseek-r1');
   });
 
-  it('applies planner overrides for cli tool', () => {
+  itUnix('prints stable loader warnings once after resolveEffectiveConfig', () => {
     writeConfigYaml();
-    configStore.load(tmpDir, { planner: { tool: 'aider', model: 'opus' } });
-    const planner = expectCli(loadedConfig().planner);
-    expect(planner.tool).toBe('aider');
-    expect(planner.model).toBe('opus');
-  });
-
-  it('applies planner overrides for shell command', () => {
-    writeConfigYaml();
-    configStore.load(tmpDir, { planner: { tool: 'shell', command: 'my-planner' } });
-    expect(expectShell(loadedConfig().planner).command).toBe('my-planner');
-  });
-
-  it('applies contextLength override', () => {
-    writeConfigYaml();
-    configStore.load(tmpDir, { contextLength: 16384 });
-    expect(loadedConfig().implementer.contextLength).toBe(16384);
-  });
-
-  it('applies mode override', () => {
-    writeConfigYaml();
-    configStore.load(tmpDir, { mode: 'full' as 'speckit' });
-    expect(loadedConfig().workflow.mode).toBe('speckit');
-  });
-
-  it('throws on NaN budget override', () => {
-    writeConfigYaml();
-    expect(() => configStore.load(tmpDir, { budget: NaN })).toThrow('Invalid budget');
-  });
-
-  it('throws on zero budget override', () => {
-    writeConfigYaml();
-    expect(() => configStore.load(tmpDir, { budget: 0 })).toThrow('Invalid budget');
-  });
-
-  it('throws on negative budget override', () => {
-    writeConfigYaml();
-    expect(() => configStore.load(tmpDir, { budget: -5 })).toThrow('Invalid budget');
-  });
-
-  it('applies valid budget override', () => {
-    writeConfigYaml();
-    configStore.load(tmpDir, { budget: 10.5 });
-    expect(loadedConfig().workflow.maxBudget).toBe(10.5);
-  });
-
-  it('autoApprove undefined preserves config-file values', () => {
-    writeConfigYaml({
-      workflow: {
-        auto_approve_spec: true,
-        auto_approve_plan: true,
-        max_retries: 3,
-        commit_strategy: 'none',
-        mode: 'standard',
-      },
+    const configPath = join(tmpDir, DIPTYCH_DIR, CONFIG_FILE);
+    chmodSync(configPath, 0o666);
+    const stderrChunks: string[] = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderrChunks.push(String(chunk));
+      return true;
     });
-    configStore.load(tmpDir, { autoApprove: undefined });
-    const config = loadedConfig();
-    expect(config.workflow.autoApproveSpec).toBe(true);
-    expect(config.workflow.autoApprovePlan).toBe(true);
+
+    configStore.load(tmpDir);
+
+    const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('overly permissive'));
+    expect(permissionWarnings).toHaveLength(1);
+    vi.restoreAllMocks();
   });
 });
 
@@ -415,6 +371,25 @@ implementer:
 theme: terminal
 my_custom_key: keep-this-too
 `;
+
+  it('preserves hand-edited document and creates .diptych/ and .diptych/trees/ gitignore entries once when absent', () => {
+    expect(existsSync(join(tmpDir, '.gitignore'))).toBe(false);
+    writeRawConfig(HAND_EDITED);
+    configStore.load(tmpDir);
+
+    const updated = { ...loadedConfig(), theme: 'mono' as const };
+    const result = configStore.save(updated, { changedPaths: ['theme'] });
+
+    expect(result.ok).toBe(true);
+    const raw = readRawConfig();
+    expect(raw).toContain('# diptych config — hand edited, keep me');
+    expect(raw).toContain('# my favourite model');
+    expect(raw).toContain('my_custom_key: keep-this-too');
+    expect(raw).toMatch(/theme: mono/);
+    const gitignore = readFileSync(join(tmpDir, '.gitignore'), 'utf-8');
+    expect(gitignore.split('\n').filter((line) => line === `${DIPTYCH_DIR}/`)).toHaveLength(1);
+    expect(gitignore.split('\n').filter((line) => line === `${TREES_DIR}/`)).toHaveLength(1);
+  });
 
   it('preserves comments, key order, and unknown keys when saving one setting', () => {
     writeRawConfig(HAND_EDITED);

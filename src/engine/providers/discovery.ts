@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { CliToolId } from '../../core/schemas/enums.js';
-import { runCommand } from '../../lib/process/spawn.js';
+import { runCommand } from '../../lib/process/spawn/run-command.js';
 import { isENOENT } from '../../lib/process/errors.js';
-import { fetchJsonWithTimeout } from './client.js';
+import { fetchJsonWithTimeout } from './client/request.js';
 import { buildPricingFields } from './metadata.js';
 import { warnError } from '../../lib/warn.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS, DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';

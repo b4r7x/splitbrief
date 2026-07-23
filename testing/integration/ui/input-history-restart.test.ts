@@ -1,7 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
+import { writeEmptyDetectionCache } from '#testing/helpers/write-empty-detection-cache.js';
+import { flushEffects } from '#testing/helpers/ink.js';
 import type { ReactElement } from 'react';
 import type { Composer } from '../../../src/components/composer/composer.js';
 import type { RuntimeCommandDef } from '../../../src/core/runtime/commands/types.js';
@@ -39,19 +42,10 @@ async function loadRuntime() {
 }
 
 function seedProject(projectDir: string): void {
-  const diptychDir = join(projectDir, '.diptych');
-  mkdirSync(diptychDir, { recursive: true });
-  writeFileSync(
-    join(diptychDir, 'detection-cache.json'),
-    JSON.stringify({
-      version: 1,
-      timestamp: Date.now(),
-      planners: [],
-      implementers: [],
-    }),
-    'utf-8',
-  );
+  writeEmptyDetectionCache(projectDir);
 }
+
+setupFetchMock();
 
 describe('composer input history restart flow', () => {
   it('persists workflow input on teardown and recalls it with Up after a fresh startup', async () => {
@@ -59,8 +53,13 @@ describe('composer input history restart flow', () => {
     const projectDir = mkdtempSync(join(tmpdir(), 'diptych-history-project-'));
     seedProject(projectDir);
     const originalHome = process.env['HOME'];
+    const originalPath = process.env['PATH'];
+    const emptyBinDir = join(tmpHome, 'bin');
+    mkdirSync(emptyBinDir);
     process.env['HOME'] = tmpHome;
+    process.env['PATH'] = emptyBinDir;
     vi.resetModules();
+    vi.mocked(globalThis.fetch).mockImplementation(async () => new Response('{}', { status: 200 }));
 
     try {
       let runtime = await loadRuntime();
@@ -76,12 +75,15 @@ describe('composer input history restart flow', () => {
         onSubmit: (text) => firstSubmissions.push(text),
         onRuntimeCommand: () => {},
       });
+      await flushEffects();
 
       firstUi.stdin.write('persisted workflow prompt');
+      await flushEffects();
       await vi.waitFor(() => {
         expect(firstUi.lastFrame()).toContain('persisted workflow prompt');
       }, COMPOSER_WAIT_MS);
       firstUi.stdin.write(ENTER);
+      await flushEffects();
       await vi.waitFor(() => {
         expect(firstSubmissions).toEqual(['persisted workflow prompt']);
       }, COMPOSER_WAIT_MS);
@@ -105,8 +107,10 @@ describe('composer input history restart flow', () => {
         onSubmit: () => {},
         onRuntimeCommand: () => {},
       });
+      await flushEffects();
 
       secondUi.stdin.write(UP);
+      await flushEffects();
       await vi.waitFor(() => {
         expect(secondUi.lastFrame()).toContain('persisted workflow prompt');
       }, COMPOSER_WAIT_MS);
@@ -116,6 +120,8 @@ describe('composer input history restart flow', () => {
     } finally {
       if (originalHome === undefined) delete process.env['HOME'];
       else process.env['HOME'] = originalHome;
+      if (originalPath === undefined) delete process.env['PATH'];
+      else process.env['PATH'] = originalPath;
       rmSync(tmpHome, { recursive: true, force: true });
       rmSync(projectDir, { recursive: true, force: true });
     }
@@ -139,14 +145,17 @@ describe('composer input history screens', () => {
         onRuntimeCommand: () => {},
       });
 
+      await flushEffects();
       ui.stdin.write(`${screen} prompt`);
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain(`${screen} prompt`);
       }, COMPOSER_WAIT_MS);
+      await flushEffects();
       ui.stdin.write(ENTER);
       await vi.waitFor(() => {
         expect(submissions).toEqual([`${screen} prompt`]);
       }, COMPOSER_WAIT_MS);
+      await flushEffects();
       ui.stdin.write(UP);
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain(`${screen} prompt`);
@@ -181,10 +190,12 @@ describe('composer input history screens', () => {
       onRuntimeCommand: (command) => commandCalls.push(command),
     });
 
+    await flushEffects();
     ui.stdin.write('/res');
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('Resume workflow');
     }, COMPOSER_WAIT_MS);
+    await flushEffects();
     ui.stdin.write(ENTER);
     // The accept must both dispatch and close the menu before Up is pressed —
     // while the menu is still open, Up moves its selection instead of history.
@@ -192,6 +203,7 @@ describe('composer input history screens', () => {
       expect(commandCalls).toEqual(['/resume']);
       expect(ui.lastFrame()).not.toContain('Resume workflow');
     }, COMPOSER_WAIT_MS);
+    await flushEffects();
     ui.stdin.write(UP);
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('/resume');

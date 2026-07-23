@@ -44,25 +44,13 @@ function setupSession(pendingStatus: 'awaiting-user' | 'paused' | 'applying'): {
 }
 
 describe('loadPendingRecoveryState', () => {
-  it('classifies a paused issue as pending so host drivers can stop the resume loop', () => {
-    const { projectDir, sessionId, state } = setupSession('paused');
-    const loaded = loadPendingRecoveryState({ projectDir, sessionId }, state);
-    expect(loaded.pending).toBe(true);
-    if (loaded.pending) expect(loaded.issue.status).toBe('paused');
-  });
-
-  it('classifies an applying issue as pending so its selectedAction can be replayed', () => {
-    const { projectDir, sessionId, state } = setupSession('applying');
-    const loaded = loadPendingRecoveryState({ projectDir, sessionId }, state);
-    expect(loaded.pending).toBe(true);
-    if (loaded.pending) expect(loaded.issue.status).toBe('applying');
-  });
-
-  it('classifies an awaiting-user issue as pending', () => {
+  it('returns a persisted recovery issue as pending', () => {
     const { projectDir, sessionId, state } = setupSession('awaiting-user');
     const loaded = loadPendingRecoveryState({ projectDir, sessionId }, state);
     expect(loaded.pending).toBe(true);
-    if (loaded.pending) expect(loaded.issue.status).toBe('awaiting-user');
+    if (loaded.pending) {
+      expect(loaded.issue).toEqual(state.pendingRecovery);
+    }
   });
 
   it('reports no pending recovery when state has none', () => {

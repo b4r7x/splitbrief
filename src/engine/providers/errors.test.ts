@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest';
-import { matches } from '../../utils/error.js';
 import { providerError } from './errors.js';
 
 describe('providerError factories', () => {
@@ -49,22 +48,5 @@ describe('providerError factories', () => {
     expect(err.kind).toBe('provider-http-failure');
     expect(err.message).toBe('HTTP 503');
     expect(err.data).toEqual({ status: 503, url: 'https://api.example/v1' });
-  });
-});
-
-describe('providerError kinds via matches()', () => {
-  test('matches() rejects non-AppError values', () => {
-    expect(matches('provider-http-failure')(new Error('plain'))).toBe(false);
-    expect(matches('provider-http-failure')(null)).toBe(false);
-    expect(matches('provider-http-failure')('string')).toBe(false);
-  });
-
-  test('matches() narrows http-failure data to { status, url }', () => {
-    const err: unknown = providerError.httpFailure(418, 'https://teapot');
-    if (matches('provider-http-failure')(err)) {
-      expect(err.data).toEqual({ status: 418, url: 'https://teapot' });
-    } else {
-      throw new Error('predicate should match');
-    }
   });
 });

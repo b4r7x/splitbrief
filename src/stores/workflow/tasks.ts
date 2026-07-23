@@ -33,7 +33,7 @@ function __testReset(next?: Partial<TasksState>): void {
 }
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
-// Production use is limited to workflow/actions.ts (the dispatcher).
+// Production use is limited to workflow/actions/ (the dispatcher).
 export const _tasksInternal = { set: store.set };
 
 export const tasksStore = {

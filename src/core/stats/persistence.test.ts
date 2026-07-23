@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { makeCostBreakdown as makeSharedCostBreakdown } from '#testing/helpers/factories/cost-breakdown.js';
 import { readStats, updateStats, rebuildStats } from './persistence.js';
 import type { CostBreakdown } from '../schemas/summary.js';
 
@@ -10,7 +11,7 @@ function makeTestDir(): string {
 }
 
 function makeCostBreakdown(overrides: Partial<CostBreakdown> = {}): CostBreakdown {
-  return {
+  return makeSharedCostBreakdown({
     hypotheticalCost: 0.95,
     actualPlannerCost: 0.05,
     actualImplementerCost: 0.07,
@@ -18,15 +19,13 @@ function makeCostBreakdown(overrides: Partial<CostBreakdown> = {}): CostBreakdow
     savingsAmount: 0.88,
     savingsPercentage: 93,
     localCompletionRate: 0.92,
-    hasPricedUsage: true,
-    hasUnpricedUsage: false,
     hasSavingsEstimate: true,
     isActualPlannerCostKnown: true,
     isActualImplementerCostKnown: true,
     isTotalActualCostKnown: true,
     isAllPlannerBaselineKnown: true,
     ...overrides,
-  };
+  });
 }
 
 describe('stats persistence', () => {
@@ -232,19 +231,6 @@ describe('stats persistence', () => {
     expect(stats.totalTasks).toBe(5);
   });
 
-  it('persisted file is valid JSON with version field', () => {
-    updateStats(testDir, {
-      costBreakdown: makeCostBreakdown(),
-      totalTasks: 1,
-      completedByLocal: 1,
-      escalatedToPlanner: 0,
-    });
-
-    const raw = readFileSync(join(testDir, '.diptych', 'stats.json'), 'utf-8');
-    const parsed = JSON.parse(raw);
-    expect(parsed.version).toBe(1);
-  });
-
   it('does not leave a temporary stats file after write', () => {
     updateStats(testDir, {
       costBreakdown: makeCostBreakdown(),
@@ -268,22 +254,5 @@ describe('stats persistence', () => {
 
     const files = readdirSync(join(testDir, '.diptych'));
     expect(files.some((file) => file.endsWith('.lock'))).toBe(false);
-  });
-
-  it('serializes read-modify-write so repeated updates never lose a session', () => {
-    const input = {
-      costBreakdown: makeCostBreakdown(),
-      totalTasks: 1,
-      completedByLocal: 1,
-      escalatedToPlanner: 0,
-    };
-
-    for (let i = 0; i < 25; i++) {
-      updateStats(testDir, input);
-    }
-
-    const stats = readStats(testDir);
-    expect(stats.totalSessions).toBe(25);
-    expect(stats.totalTasks).toBe(25);
   });
 });

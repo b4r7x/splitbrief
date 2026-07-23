@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { App } from '../../app/root.js';
 import { resolveProjectDir, setupWorkflow } from '../setup.js';
 import { initStores } from '../init-stores.js';
-import { renderApp } from '../render.js';
+import { renderApp } from '../render/app.js';
 import { cliError } from '../errors.js';
 import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';

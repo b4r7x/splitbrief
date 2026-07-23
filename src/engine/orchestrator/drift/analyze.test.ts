@@ -1,25 +1,15 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { analyzeBriefDrift } from './analyze.js';
-import { driftReportPath, readDriftReport, writeDriftReport } from './io.js';
-import { formatDriftReportForPrompt, publishDriftReport } from './format.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { createEvidenceLedger, withUpdatedTask } from '../../../core/evidence/ledger.js';
+import { createEvidenceLedger, withUpdatedTask } from '../../../core/evidence/ledger-state.js';
 import { recordRetryOrEscalationEvidence } from '../evidence/task.js';
-import type { Task } from '../../../core/schemas/task.js';
-import type { EventBus } from '../../events/types.js';
-
-type MakeTaskOverrides = Parameters<typeof makeTask>[0];
-
-function done(task: MakeTaskOverrides = {}): Task {
-  return makeTask({ ...(task ?? {}), status: 'done' });
-}
 
 describe('analyzeBriefDrift', () => {
   it('passes when only the exact task files changed', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts' }), done({ id: 'T002', file: 'src/b.ts' })];
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' }),
+      makeTask({ id: 'T002', file: 'src/b.ts', status: 'done' }),
+    ];
     const report = analyzeBriefDrift({
       tasks,
       changedFiles: ['src/a.ts', 'src/b.ts'],
@@ -31,7 +21,7 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('warns about an extra changed file when no out-of-bounds is declared', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts' })];
+    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
     const report = analyzeBriefDrift({
       tasks,
       changedFiles: ['src/a.ts', 'src/extra.ts'],
@@ -45,7 +35,12 @@ describe('analyzeBriefDrift', () => {
 
   it('errors on extra changed file when any task declares out-of-bounds', () => {
     const tasks = [
-      done({ id: 'T001', file: 'src/a.ts', scope: { outOfBounds: ['src/forbidden'] } }),
+      makeTask({
+        id: 'T001',
+        file: 'src/a.ts',
+        status: 'done',
+        scope: { outOfBounds: ['src/forbidden'] },
+      }),
     ];
     const report = analyzeBriefDrift({
       tasks,
@@ -60,7 +55,7 @@ describe('analyzeBriefDrift', () => {
   it('errors when failed task left a changed file', () => {
     const tasks = [
       makeTask({ id: 'T001', file: 'src/a.ts', status: 'failed' }),
-      done({ id: 'T002', file: 'src/b.ts' }),
+      makeTask({ id: 'T002', file: 'src/b.ts', status: 'done' }),
     ];
     const report = analyzeBriefDrift({
       tasks,
@@ -74,7 +69,14 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('errors when out-of-bounds pattern matches changed file', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts', scope: { outOfBounds: ['src/secrets'] } })];
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        file: 'src/a.ts',
+        status: 'done',
+        scope: { outOfBounds: ['src/secrets'] },
+      }),
+    ];
     const report = analyzeBriefDrift({
       tasks,
       changedFiles: ['src/a.ts', 'src/secrets/leak.ts'],
@@ -87,7 +89,12 @@ describe('analyzeBriefDrift', () => {
 
   it('errors when out-of-bounds quoted symbol appears in diff text', () => {
     const tasks = [
-      done({ id: 'T001', file: 'src/a.ts', scope: { outOfBounds: ['SECRET_TOKEN'] } }),
+      makeTask({
+        id: 'T001',
+        file: 'src/a.ts',
+        status: 'done',
+        scope: { outOfBounds: ['SECRET_TOKEN'] },
+      }),
     ];
     const report = analyzeBriefDrift({
       tasks,
@@ -99,7 +106,14 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('treats out-of-bounds patterns as literal substrings, not regex globs', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts', scope: { outOfBounds: ['src/*.ts'] } })];
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        file: 'src/a.ts',
+        status: 'done',
+        scope: { outOfBounds: ['src/*.ts'] },
+      }),
+    ];
     const report = analyzeBriefDrift({
       tasks,
       changedFiles: ['src/a.ts'],
@@ -110,7 +124,7 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('warns missing_expected_file when a completed task file is absent from the changed universe', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts' })];
+    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
     const report = analyzeBriefDrift({ tasks, changedFiles: [], diff: '' });
     const finding = report.findings.find((f) => f.code === 'missing_expected_file');
     expect(finding?.severity).toBe('warning');
@@ -119,7 +133,7 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('emits no missing_expected_file when the completed task file is in the changed universe', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts' })];
+    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
     const report = analyzeBriefDrift({
       tasks,
       changedFiles: ['src/a.ts'],
@@ -130,16 +144,19 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('warns when expected evidence missing in ledger', () => {
-    const task = done({ id: 'T001', file: 'src/a.ts', evidence: ['hello returns greeting'] });
+    const task = makeTask({
+      id: 'T001',
+      file: 'src/a.ts',
+      status: 'done',
+      evidence: ['hello returns greeting'],
+    });
     let ledger = createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] });
-    // Deliberately mark done WITHOUT validation to leave observedEvidence empty
     ledger = recordRetryOrEscalationEvidence({
       ledger,
       task,
       status: 'done',
       escalated: false,
     });
-    // Strip observedEvidence to simulate truly missing observations
     ledger = {
       ...ledger,
       tasks: ledger.tasks.map((t) => ({ ...t, observedEvidence: [] })),
@@ -156,7 +173,7 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('annotates a pre-run-dirty changed file as pre-existing instead of out-of-scope when the ledger does not attribute it to the run', () => {
-    const task = done({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
       'T001',
@@ -173,14 +190,13 @@ describe('analyzeBriefDrift', () => {
     expect(finding?.severity).toBe('info');
     expect(finding?.message).toContain('pre-existing');
     expect(report.passed).toBe(true);
-    // The pre-existing annotation must not penalise the drift score.
     expect(report.findings.some((f) => f.file === 'src/legacy.ts' && f.severity !== 'info')).toBe(
       false,
     );
   });
 
   it('annotates a pre-run-dirty file as pre-existing using the run-start status baseline when no ledger is present', () => {
-    const task = done({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const report = analyzeBriefDrift({
       tasks: [task],
       changedFiles: ['src/a.ts', 'src/legacy.ts'],
@@ -212,7 +228,7 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('still warns out-of-scope for a run-produced file not in the run-start status baseline', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts' })];
+    const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
     const report = analyzeBriefDrift({
       tasks,
       changedFiles: ['src/a.ts', 'src/extra.ts'],
@@ -226,7 +242,7 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('keeps a baseline file in scope when the ledger attributes it to the run', () => {
-    const task = done({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
       'T001',
@@ -245,7 +261,7 @@ describe('analyzeBriefDrift', () => {
   });
 
   it('still warns out-of-scope for a run-attributed file that no Task Brief targets', () => {
-    const task = done({ id: 'T001', file: 'src/a.ts' });
+    const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
       'T001',
@@ -279,13 +295,12 @@ describe('analyzeBriefDrift', () => {
 
   it('produces a deterministic score', () => {
     const tasks = [
-      done({ id: 'T001', file: 'src/a.ts' }),
+      makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' }),
       makeTask({ id: 'T002', file: 'src/b.ts', status: 'failed' }),
     ];
     const r1 = analyzeBriefDrift({ tasks, changedFiles: ['src/a.ts', 'src/b.ts'], diff: '' });
     const r2 = analyzeBriefDrift({ tasks, changedFiles: ['src/a.ts', 'src/b.ts'], diff: '' });
     expect(r1.score).toBe(r2.score);
-    // 1 error (failed_task_with_diff: -0.25) -> 0.75
     expect(r1.score).toBeCloseTo(0.75, 5);
     expect(r1.passed).toBe(false);
   });
@@ -305,111 +320,5 @@ describe('analyzeBriefDrift — briefHash', () => {
   it('sets briefHash: null when not supplied', () => {
     const report = analyzeBriefDrift({ tasks: [], changedFiles: [], diff: '' });
     expect(report.briefHash).toBeNull();
-  });
-});
-
-describe('readDriftReport — backward compat', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'drift-compat-'));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('does not throw on legacy JSON without briefHash and normalizes to null', () => {
-    const report = analyzeBriefDrift({ tasks: [], changedFiles: [], diff: '' });
-    const { briefHash: _bh, ...legacy } = report;
-    const sessionPath = join(dir, '.diptych', 'sessions', 's1');
-    mkdirSync(sessionPath, { recursive: true });
-    const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
-    writeFileSync(path, `${JSON.stringify(legacy)}\n`);
-    expect(() => readDriftReport({ projectDir: dir, sessionId: 's1' })).not.toThrow();
-    const result = readDriftReport({ projectDir: dir, sessionId: 's1' });
-    expect(result).not.toBeNull();
-    expect(result?.briefHash).toBeNull();
-  });
-});
-
-describe('writeDriftReport', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'drift-test-'));
-  });
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('persists the report at the session path with trailing newline', () => {
-    const report = analyzeBriefDrift({ tasks: [], changedFiles: [], diff: '' });
-    writeDriftReport({ projectDir: dir, sessionId: 's1' }, report);
-    const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
-    expect(existsSync(path)).toBe(true);
-    const raw = readFileSync(path, 'utf8');
-    expect(raw.endsWith('\n')).toBe(true);
-    expect(JSON.parse(raw).version).toBe(1);
-  });
-
-  it('returns null when the report file is missing', () => {
-    expect(readDriftReport({ projectDir: dir, sessionId: 'missing' })).toBeNull();
-  });
-
-  it('returns null when the report file cannot be parsed', () => {
-    const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
-    mkdirSync(join(dir, '.diptych', 'sessions', 's1'), { recursive: true });
-    writeFileSync(path, '{not valid json');
-    expect(readDriftReport({ projectDir: dir, sessionId: 's1' })).toBeNull();
-  });
-});
-
-describe('publishDriftReport', () => {
-  it('publishes a drift_report event with counts derived from findings', () => {
-    const events: Array<Parameters<EventBus['publish']>[0]> = [];
-    const bus: EventBus = {
-      publish(event) {
-        events.push(event);
-      },
-      subscribe() {
-        return () => {};
-      },
-    };
-    const report = analyzeBriefDrift({
-      tasks: [done({ id: 'T001', file: 'src/a.ts', scope: { outOfBounds: ['src/extra.ts'] } })],
-      changedFiles: ['src/a.ts', 'src/extra.ts'],
-      diff: '',
-    });
-
-    publishDriftReport(bus, 'final-review', report);
-
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      type: 'drift_report',
-      phase: 'final-review',
-      passed: false,
-      errorCount: 2,
-      warningCount: 0,
-    });
-  });
-});
-
-describe('formatDriftReportForPrompt', () => {
-  it('includes passed/score and findings list with severity prefix', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts' })];
-    const report = analyzeBriefDrift({
-      tasks,
-      changedFiles: ['src/a.ts', 'src/extra.ts'],
-      diff: '',
-    });
-    const out = formatDriftReportForPrompt(report);
-    expect(out).toContain('passed: true');
-    expect(out).toContain('score: 0.92');
-    expect(out).toContain('[warning] out_of_scope_file');
-    expect(out).toContain('src/extra.ts');
-  });
-
-  it('emits "findings: none" when report is clean', () => {
-    const tasks = [done({ id: 'T001', file: 'src/a.ts' })];
-    const report = analyzeBriefDrift({ tasks, changedFiles: ['src/a.ts'], diff: '' });
-    expect(formatDriftReportForPrompt(report)).toContain('findings: none');
   });
 });

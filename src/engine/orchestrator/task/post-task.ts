@@ -10,7 +10,7 @@ import {
   refreshChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { checkUserEditGate } from './user-edit-gate.js';
-import { checkBudgetAfterTask } from './budget-check.js';
+import { checkBudgetAfterTask } from '../budget/enforce.js';
 import type { AutoSnapshotFn } from './auto-snapshot.js';
 
 export async function absorbAcceptedFiles(opts: {

@@ -1,6 +1,5 @@
 import type { Task } from '../../core/schemas/task.js';
 import type { InvokeResult } from '../runners/types.js';
-import { error } from '../../utils/error.js';
 import { captureChangeDetectorBaseline, createChangeDetector } from '../change-detection.js';
 import { extractCode } from '../parsers/response-extractor.js';
 import { buildEscalationPrompt, buildHintPrompt } from '../spec/prompts/escalation.js';
@@ -8,6 +7,7 @@ import { buildProjectLanguageContext } from '../spec/prompts/language-context.js
 import type { EscalateOptions, EscalationResult, PlannerOutputCallbacks } from './types.js';
 import { toInvokeResult, toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import { requireCompletedCall } from './require-completed-call.js';
 
 type PlannerEscalationConfig = {
   invokeEscalate: (opts: {
@@ -44,18 +44,6 @@ function createEscalationCallContext(config: PlannerEscalationConfig): RunnerCal
     ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
     ...(config.model !== undefined && { model: config.model }),
   };
-}
-
-function requireCompletedCall(result: RunnerCallResult): RunnerCallResult {
-  if (result.status === 'completed') return result;
-  throw error('runner-call-failed', `Planner ${result.role} call ${result.status}`, {
-    callId: result.callId,
-    role: result.role,
-    backendKind: result.backendKind,
-    status: result.status,
-    partial: result.partial,
-    error: result.error,
-  });
 }
 
 export async function escalateHint(

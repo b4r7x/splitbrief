@@ -1,5 +1,6 @@
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from './types.js';
-import { sanitizeRowDisplayText, segmentedRow, wrappedRowTexts } from './row-format.js';
+import { segmentedRow } from './row-format/rows.js';
+import { sanitizeRowDisplayText, wrappedRowTexts } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
 
 export function taskStartedRowBlock(input: {

@@ -7,7 +7,7 @@ import type { WorkflowContext } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent } from '../../events/types.js';
 
-import { buildSummary, type SummaryBase } from '../summary.js';
+import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { publishCostPrediction, publishWarning } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { decideCostGate } from '../cost-gate.js';

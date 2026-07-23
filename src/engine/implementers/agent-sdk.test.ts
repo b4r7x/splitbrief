@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -12,7 +12,7 @@ import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
 
 /**
  * Agent SDK implementer — exercised against the real wrapper in
- * `src/engine/runners/agent-sdk-backend.ts`. The only sanctioned mock here is the optional
+ * `src/engine/runners/agent-sdk/backend.ts`. The only sanctioned mock here is the optional
  * peer dep `@anthropic-ai/claude-agent-sdk`, whose `query()` is stubbed to
  * yield a canned stream. Everything else (resolveAutoModel, known-models
  * defaults, change detection via git, apiKey env threading) runs for real.
@@ -68,6 +68,31 @@ afterEach(() => {
 });
 
 describe('createAgentSdkImplementer', () => {
+  it('passes implementer tools, acceptEdits permission mode to the SDK query', async () => {
+    setQueryResponse('done');
+    writeFileSync(join(projectDir, 'init.txt'), 'changed\n');
+
+    const cfg = makeAgentSdkConfig();
+    const implementer = createAgentSdkImplementer(cfg);
+
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          allowedTools: ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'],
+          permissionMode: 'acceptEdits',
+        }),
+      }),
+    );
+  });
+
   it('passes configured model through to the SDK query call', async () => {
     setQueryResponse('done');
     // Make sure change detection sees a modification
@@ -89,15 +114,34 @@ describe('createAgentSdkImplementer', () => {
     );
   });
 
-  it('forwards an abort controller to the SDK query call', async () => {
-    setQueryResponse('done');
-    writeFileSync(join(projectDir, 'init.txt'), 'changed\n');
+  it('aborts an in-flight SDK query and leaves the repository unchanged', async () => {
+    let sdkAbortController: AbortController | undefined;
+    queryMock.mockImplementationOnce(
+      (params: { options?: { abortController?: AbortController } }) => {
+        sdkAbortController = params.options?.abortController;
+        return {
+          [Symbol.asyncIterator](): AsyncIterator<unknown> {
+            return {
+              next: () =>
+                new Promise<IteratorResult<unknown>>((_, reject) => {
+                  sdkAbortController?.signal.addEventListener(
+                    'abort',
+                    () => {
+                      reject(sdkAbortController?.signal.reason ?? new Error('Aborted'));
+                    },
+                    { once: true },
+                  );
+                }),
+            };
+          },
+        };
+      },
+    );
 
     const cfg = makeAgentSdkConfig();
     const implementer = createAgentSdkImplementer(cfg);
     const controller = new AbortController();
-
-    await implementer.implement({
+    const pending = implementer.implement({
       task: makeTask(),
       projectDir,
       config: cfg,
@@ -106,11 +150,16 @@ describe('createAgentSdkImplementer', () => {
       signal: controller.signal,
     });
 
-    expect(queryMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        options: expect.objectContaining({ abortController: expect.any(AbortController) }),
-      }),
-    );
+    await vi.waitFor(() => {
+      expect(sdkAbortController).toBeDefined();
+    });
+    controller.abort(new Error('Aborted'));
+    const result = await pending;
+
+    expect(sdkAbortController?.signal.aborted).toBe(true);
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toMatch(/Aborted/i);
+    expect(existsSync(join(projectDir, 'src'))).toBe(false);
   });
 
   it('short-circuits without invoking the SDK when the signal is already aborted', async () => {
@@ -357,6 +406,7 @@ describe('createAgentSdkImplementer', () => {
   });
 
   it('threads a configured idleWarnMs override into the SDK backend', async () => {
+    vi.useFakeTimers();
     queryMock.mockImplementationOnce(async function* () {
       yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
       await new Promise((resolve) => setTimeout(resolve, 150));
@@ -380,7 +430,7 @@ describe('createAgentSdkImplementer', () => {
     };
     const implementer = createAgentSdkImplementer(cfg, { publisher });
 
-    await implementer.implement({
+    const pending = implementer.implement({
       task: makeTask(),
       projectDir,
       config: cfg,
@@ -388,7 +438,14 @@ describe('createAgentSdkImplementer', () => {
       onOutput: vi.fn(),
       phase: 'implementing',
     });
-
-    expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
+    await vi.advanceTimersByTimeAsync(31);
+    await vi.advanceTimersByTimeAsync(150);
+    vi.useRealTimers();
+    try {
+      await pending;
+      expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

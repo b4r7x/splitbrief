@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { registerResumeCommand, resumeCommand, type ResumeDeps } from './resume.js';
-import { resumeSavedSession } from './continue.js';
+import { resumeSavedSession } from './continue/resume.js';
 import { writeActive } from '../../core/sessions/lifecycle.js';
 import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';

@@ -69,13 +69,6 @@ describe('createCommandExistsAvailability', () => {
 });
 
 describe('createCommandAvailability', () => {
-  it('probe classifies missing commands as not installed', async () => {
-    const availability = createCommandAvailability('nonexistent-command-that-does-not-exist-xyz');
-
-    expect(await availability.isAvailable()).toBe(false);
-    expect(availability.unavailabilityReason()).toBe('not installed');
-  });
-
   itUnix('probe timeout and probe failure produce diagnostic reasons', async () => {
     const timeoutScript = join(dir, 'slow.sh');
     writeFileSync(timeoutScript, '#!/bin/bash\nsleep 5\n', 'utf8');
@@ -96,7 +89,7 @@ describe('createCommandAvailability', () => {
     const availability = createCommandAvailability('nonexistent-command-that-does-not-exist-xyz');
 
     expect(availability.unavailabilityReason()).toBeUndefined();
-    await availability.isAvailable();
+    expect(await availability.isAvailable()).toBe(false);
     expect(availability.unavailabilityReason()).toBe('not installed');
   });
 });

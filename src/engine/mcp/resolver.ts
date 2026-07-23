@@ -15,10 +15,11 @@ import {
 import { SUMMARY_FILE } from '../../core/paths.js';
 import { parsePersistedSession } from '../../core/sessions/summary-parser.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
-import { projectWorkflowStateForTranscriptPolicy } from '../../core/state/persistence.js';
+import { projectWorkflowStateForTranscriptPolicy } from '../../core/transcript-policy.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { readSessionPersistTranscript } from '../../core/sessions/io.js';
-import { parseTasks, splitTaskBlocks } from '../spec/parser.js';
+import { splitTaskBlocks } from '../spec/tasks/blocks.js';
+import { parseTasks } from '../spec/tasks/parse.js';
 import { parseSimpleYamlFrontmatter } from '../../utils/frontmatter.js';
 import { buildManifest, hasCanonicalManifestArtifacts } from './manifest.js';
 

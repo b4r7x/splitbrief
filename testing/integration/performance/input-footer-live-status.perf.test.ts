@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { Phase } from '../../../src/core/schemas/enums.js';
 import type { EngineEventOf } from '../../../src/engine/events/types.js';
 import { deriveLiveStatus } from '../../../src/features/workflow/display/live-activity.js';
-import { addEvent, resetWorkflow } from '../../../src/stores/workflow/actions.js';
+import { addEvent } from '../../../src/stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { lifecycleStore, type LifecycleState } from '../../../src/stores/workflow/lifecycle.js';
 
 const PHASE_SEQUENCE: readonly Phase[] = [

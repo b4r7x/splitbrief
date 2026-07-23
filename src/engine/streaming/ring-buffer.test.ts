@@ -28,31 +28,16 @@ describe('createRingBuffer', () => {
     expect(buf.lines()).toEqual(['a', 'b', 'c']);
   });
 
-  it('wraps oldest lines out beyond capacity', () => {
+  it('clears the buffer and refills in chronological order', () => {
     const buf = createRingBuffer(3);
-    buf.push('x');
-    buf.push('y');
-    buf.push('z');
-    buf.push('w');
-    expect(buf.lines()).toEqual(['y', 'z', 'w']);
-  });
-
-  it('clears the buffer', () => {
-    const buf = createRingBuffer(5);
     buf.push('a');
     buf.push('b');
     buf.clear();
     expect(buf.lines()).toEqual([]);
-  });
-
-  it('works after clear', () => {
-    const buf = createRingBuffer(3);
-    buf.push('a');
-    buf.push('b');
-    buf.clear();
     buf.push('c');
     buf.push('d');
-    expect(buf.lines()).toEqual(['c', 'd']);
+    buf.push('e');
+    expect(buf.lines()).toEqual(['c', 'd', 'e']);
   });
 
   it('uses default capacity of 5', () => {

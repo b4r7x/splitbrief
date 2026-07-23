@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Box } from 'ink';
 import { ConversationFlow } from './conversation-flow/flow.js';
 import { Sidebar } from './sidebar.js';
-import { BriefReviewView } from './brief-review-view.js';
+import { BriefReviewView } from './brief-review/view.js';
 import { ReviewView } from './review-view.js';
 import type { UseInputModeResult } from '../hooks/use-input-mode.js';
 import type { Phase } from '../../../core/schemas/enums.js';

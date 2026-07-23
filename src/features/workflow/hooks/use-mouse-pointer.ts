@@ -1,11 +1,11 @@
-import type { MouseEvent } from '../../../lib/terminal/filtered-stdin.js';
+import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { hoverStore } from '../../../stores/ui/hover.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
-import { getSections } from '../../../stores/workflow/actions.js';
+import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { PROMPT_ZONE_Z } from '../components/approval-prompt.js';
 import { RAIL_STAGES } from '../layout/chrome-rows.js';
 import { hitBriefTaskRow, hitRailStage, hitTranscriptRow } from '../layout/hit-test.js';
@@ -16,7 +16,7 @@ import {
   readRailSnapshot,
   type ConversationHoverSnapshot,
 } from '../layout/snapshot.js';
-import { buildConversationRowActions } from '../conversation-rows/build.js';
+import { buildConversationRowActions } from '../conversation-rows/row-actions.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 
 const HOVER_THROTTLE_MS = 16;

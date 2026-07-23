@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { tasksStore } from './tasks.js';
-import { addEvent, resetWorkflow } from './actions.js';
+import { addEvent } from './actions/event.js';
+import { resetWorkflow } from './actions/reset.js';
 import { taskId } from '../../core/schemas/task.js';
-import { makeTaskStart, makeTaskComplete, makeTaskSkipped } from '#testing/helpers/events.js';
+import { makeTaskStart, makeTaskComplete, makeTaskSkipped } from '#testing/helpers/events/task.js';
 
 describe('tasksStore — via addEvent', () => {
   beforeEach(() => resetWorkflow());

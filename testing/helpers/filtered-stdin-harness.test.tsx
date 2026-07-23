@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   getActiveFilteredStdin,
   setActiveFilteredStdin,
-  type FilteredStdin,
-} from '../../src/lib/terminal/filtered-stdin.js';
+} from '../../src/lib/terminal/filtered-stdin/active.js';
+import type { FilteredStdin } from '../../src/lib/terminal/filtered-stdin/types.js';
 import {
   renderThroughFilteredStdin,
   type FilteredStdinViewport,

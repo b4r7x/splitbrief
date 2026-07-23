@@ -1,9 +1,6 @@
 import { useEffect } from 'react';
-import {
-  getActiveFilteredStdin,
-  type FilteredStdin,
-  type MouseEvent,
-} from '../lib/terminal/filtered-stdin.js';
+import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin/active.js';
+import type { FilteredStdin, MouseEvent } from '../lib/terminal/filtered-stdin/types.js';
 import { hitTopmostZone } from '../lib/terminal/mouse-zones.js';
 import { ROW_ZONE_Z_OVERLAY } from '../components/pickers/row-zone.js';
 import { routerStore } from '../stores/navigation/router.js';

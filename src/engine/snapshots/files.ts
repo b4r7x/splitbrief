@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, type Dirent } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { checkIgnoredPaths } from '../../lib/git.js';
+import { checkIgnoredPaths } from '../../lib/git/files.js';
 import { INTERNAL_SKIP_DIRS } from '../../core/paths.js';
 
 export type CollectTrackedFilesOptions = {

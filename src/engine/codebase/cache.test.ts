@@ -132,22 +132,6 @@ describe('parseCache', () => {
     expect(warnings[0]).toContain('corrupt');
     expect(cache.metrics.misses).toBe(1);
     expect(cache.metrics.hits).toBe(1);
-  });
-
-  it('persists across reopen after self-healing a corrupt database', async () => {
-    const f = join(dir, 'a.ts');
-    writeFileSync(f, 'export function x() {}');
-    const dbPath = join(dir, 'cache.sqlite');
-    writeFileSync(dbPath, 'corrupt'.repeat(64));
-
-    const parseSpy = (p: string) => Promise.resolve(makeFileNode(p));
-
-    const healed = await createParseCache(dbPath);
-    try {
-      await healed.getOrParse(f, parseSpy);
-    } finally {
-      healed.close();
-    }
 
     const reopened = await createParseCache(dbPath);
     try {
@@ -156,6 +140,6 @@ describe('parseCache', () => {
       reopened.close();
     }
 
-    expect(reopened.metrics.hits).toBe(1); // healed db is a real, durable sqlite file
+    expect(reopened.metrics.hits).toBe(1);
   });
 });

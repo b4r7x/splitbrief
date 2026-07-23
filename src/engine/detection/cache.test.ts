@@ -43,49 +43,8 @@ describe('detection cache', () => {
     expect(result).toBeNull();
   });
 
-  it('saves and loads cache', async () => {
-    await saveDetectionCache(tempDir, planners, implementers);
-    const result = await loadDetectionCache(tempDir);
-    expect(result).toEqual({ planners, implementers });
-  });
-
-  it('returns null when cache is expired (TTL=0)', async () => {
-    await saveDetectionCache(tempDir, planners, implementers);
-    const result = await loadDetectionCache(tempDir, 0);
-    expect(result).toBeNull();
-  });
-
-  it('returns data when cache is within TTL', async () => {
-    await saveDetectionCache(tempDir, planners, implementers);
-    const result = await loadDetectionCache(tempDir, 60_000);
-    expect(result).not.toBeNull();
-  });
-
-  it('returns null for corrupted JSON', async () => {
-    const dir = join(tempDir, '.diptych');
-    await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, 'detection-cache.json'), 'not valid json', 'utf-8');
-    const result = await loadDetectionCache(tempDir);
-    expect(result).toBeNull();
-  });
-
-  it('roundtrips implementer error field', async () => {
-    const withError = [
-      { provider: 'ollama' as const, available: false, isLocal: true, error: 'connection refused' },
-    ];
-    await saveDetectionCache(tempDir, planners, withError);
-    const result = await loadDetectionCache(tempDir, 60_000);
-    expect(result?.implementers[0]).toMatchObject({ error: 'connection refused' });
-  });
-
-  it('roundtrips empty arrays', async () => {
-    await saveDetectionCache(tempDir, [], []);
-    const result = await loadDetectionCache(tempDir, 60_000);
-    expect(result).toEqual({ planners: [], implementers: [] });
-  });
-
-  it('roundtrips planner compatibility advisory', async () => {
-    const withCompatibility = [
+  it('roundtrips the complete detection payload', async () => {
+    const planners = [
       {
         tool: 'codex' as const,
         type: 'cli' as const,
@@ -98,19 +57,13 @@ describe('detection cache', () => {
         },
       },
     ];
-    await saveDetectionCache(tempDir, withCompatibility, implementers);
-    const result = await loadDetectionCache(tempDir, 60_000);
-    expect(result?.planners[0]).toMatchObject({
-      compatibility: {
-        kind: 'major-version-mismatch',
-        installedVersion: '9.0.0',
-        testedVersion: CLI_TOOLS.codex.testedVersion,
+    const implementers = [
+      {
+        provider: 'ollama' as const,
+        available: false,
+        isLocal: true,
+        error: 'connection refused',
       },
-    });
-  });
-
-  it('roundtrips extended detected model fields', async () => {
-    const withModelFields = [
       {
         provider: 'openrouter' as const,
         available: true,
@@ -134,9 +87,35 @@ describe('detection cache', () => {
         ],
       },
     ];
-    await saveDetectionCache(tempDir, planners, withModelFields);
+    await saveDetectionCache(tempDir, planners, implementers);
     const result = await loadDetectionCache(tempDir, 60_000);
-    expect(result?.implementers[0]?.models?.[0]).toEqual(withModelFields[0]!.models![0]);
+    expect(result).toEqual({ planners, implementers });
+  });
+
+  it('returns null when cache is expired (TTL=0)', async () => {
+    await saveDetectionCache(tempDir, planners, implementers);
+    const result = await loadDetectionCache(tempDir, 0);
+    expect(result).toBeNull();
+  });
+
+  it('returns data when cache is within TTL', async () => {
+    await saveDetectionCache(tempDir, planners, implementers);
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result).not.toBeNull();
+  });
+
+  it('returns null for corrupted JSON', async () => {
+    const dir = join(tempDir, '.diptych');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'detection-cache.json'), 'not valid json', 'utf-8');
+    const result = await loadDetectionCache(tempDir);
+    expect(result).toBeNull();
+  });
+
+  it('roundtrips empty arrays', async () => {
+    await saveDetectionCache(tempDir, [], []);
+    const result = await loadDetectionCache(tempDir, 60_000);
+    expect(result).toEqual({ planners: [], implementers: [] });
   });
 
   itUnix('returns null when .diptych is a symlink outside the project', async () => {

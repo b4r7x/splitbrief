@@ -11,7 +11,7 @@ import {
 import { parsePersistedSession } from '../../core/sessions/summary-parser.js';
 import { WorkflowStateSchema } from '../../core/schemas/workflow.js';
 import { hashTaskBrief } from '../brief-hash.js';
-import { getCurrentCommitSha } from '../../lib/git.js';
+import { getCurrentCommitSha } from '../../lib/git/refs.js';
 
 function sessionResourcePath(sessionId: string, file: string): string {
   return join(DIPTYCH_DIR, SESSIONS_DIR, sessionId, file);

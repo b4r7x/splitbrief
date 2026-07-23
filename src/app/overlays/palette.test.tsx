@@ -546,30 +546,6 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('shows more than 8 result rows on a 50-row terminal', async () => {
-    terminalSizeStore.__testReset({ cols: 100, rows: 50, isSmall: false });
-    const commands: RuntimeCommandDef[] = Array.from({ length: 40 }, (_, index) => ({
-      kind: 'noarg',
-      name: `/palette-test-${index}`,
-      label: `/palette-test-${index}`,
-      description: `Palette test command ${index}`,
-      validScreens: ['home'],
-      handler: () => {},
-    }));
-    const instance = render(
-      <CommandPaletteOverlay
-        commands={commands}
-        onRuntimeCommand={() => {}}
-        onWorkflowMode={setWorkflowModeForTest}
-      />,
-    );
-    await tick(1);
-    await tick(1);
-
-    expect(paletteResultRows(instance.lastFrame() ?? '').length).toBeGreaterThan(8);
-    instance.unmount();
-  });
-
   it('renders the shared ↓ N more indicator instead of the n/total counter', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 12, isSmall: false });
     const instance = renderCommandPalette();

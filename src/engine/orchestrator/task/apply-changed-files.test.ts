@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -8,7 +8,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createStagedProject } from '../approval/staged-project.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import { applyChangedFiles } from './apply-changed-files.js';
 
 let dirs: string[] = [];
@@ -39,8 +39,7 @@ describe('applyChangedFiles', () => {
     const state = makeImplState([task]);
 
     const staged = await createStagedProject(projectDir);
-    const cleanup = vi.fn(staged.cleanup);
-    const stagedWithSpy = { ...staged, cleanup };
+    const stagedProjectDir = staged.projectDir;
 
     mkdirSync(join(staged.projectDir, 'src'), { recursive: true });
     writeFileSync(join(staged.projectDir, 'src/hello.ts'), 'implementation');
@@ -51,7 +50,7 @@ describe('applyChangedFiles', () => {
       wctx,
       task,
       state,
-      staged: stagedWithSpy,
+      staged,
       usesStaging: true,
       preApplyApprovedFiles: ['src/hello.ts'],
       taskStartSnapshot: staged.snapshot,
@@ -60,7 +59,7 @@ describe('applyChangedFiles', () => {
     });
 
     expect(result.proceed).toBe(true);
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(existsSync(stagedProjectDir)).toBe(false);
   });
 
   it('returns blocked-by-approval and emits an error when the temp repo cannot produce a changed-file snapshot', async () => {
@@ -69,8 +68,7 @@ describe('applyChangedFiles', () => {
     const state = makeImplState([task]);
 
     const staged = await createStagedProject(projectDir);
-    const cleanup = vi.fn(staged.cleanup);
-    const stagedWithSpy = { ...staged, cleanup };
+    const stagedProjectDir = staged.projectDir;
 
     rmSync(join(projectDir, '.git'), { recursive: true, force: true });
 
@@ -82,7 +80,7 @@ describe('applyChangedFiles', () => {
       wctx,
       task,
       state,
-      staged: stagedWithSpy,
+      staged,
       usesStaging: true,
       preApplyApprovedFiles: [],
       taskStartSnapshot: emptySnapshot(),
@@ -91,7 +89,7 @@ describe('applyChangedFiles', () => {
     });
 
     expect(result.proceed).toBe(false);
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(existsSync(stagedProjectDir)).toBe(false);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'error',
@@ -106,8 +104,7 @@ describe('applyChangedFiles', () => {
     const state = makeImplState([task]);
 
     const staged = await createStagedProject(projectDir);
-    const cleanup = vi.fn(staged.cleanup);
-    const stagedWithSpy = { ...staged, cleanup };
+    const stagedProjectDir = staged.projectDir;
 
     mkdirSync(join(staged.projectDir, 'src'), { recursive: true });
     writeFileSync(join(staged.projectDir, 'src/hello.ts'), 'implementation');
@@ -120,7 +117,7 @@ describe('applyChangedFiles', () => {
       wctx,
       task,
       state,
-      staged: stagedWithSpy,
+      staged,
       usesStaging: true,
       preApplyApprovedFiles: ['src/hello.ts'],
       taskStartSnapshot: staged.snapshot,
@@ -129,6 +126,6 @@ describe('applyChangedFiles', () => {
     });
 
     expect(result.proceed).toBe(false);
-    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(existsSync(stagedProjectDir)).toBe(false);
   });
 });

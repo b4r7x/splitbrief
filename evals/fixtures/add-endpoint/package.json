@@ -3,8 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --experimental-strip-types --loader ./scripts/ts-js-loader.mjs --test test/*.test.mjs",
     "typecheck": "tsc --noEmit"
   }
 }

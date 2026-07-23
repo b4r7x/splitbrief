@@ -36,17 +36,6 @@ describe('killAllProcesses', () => {
       });
     });
 
-  it('kills detached process groups when registered with group metadata', async () => {
-    const proc = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
-    procs.push(proc);
-    registerProcess(proc, { group: true });
-
-    killAllProcesses();
-    await waitForClose(proc);
-
-    expect(proc.signalCode === 'SIGTERM' || proc.exitCode !== null).toBe(true);
-  });
-
   it('reaps every in-flight registered child in one sweep', async () => {
     const grouped = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' });
     const plain = spawn('sleep', ['60'], { stdio: 'ignore' });
@@ -219,5 +208,20 @@ describe('setProcessLedger', () => {
     }
 
     expect(warnings.join('')).toContain('ledger disk full');
+  });
+});
+
+describe('killProcess', () => {
+  it('kills a long-running process', async () => {
+    const proc = spawn('node', ['-e', 'setTimeout(() => {}, 60_000)'], { stdio: 'ignore' });
+    await new Promise<void>((resolve) => {
+      proc.on('spawn', resolve);
+    });
+    expect(proc.exitCode).toBe(null);
+    killProcess(proc);
+    await new Promise<void>((resolve) => {
+      proc.on('close', () => resolve());
+    });
+    expect(proc.killed).toBeTruthy();
   });
 });

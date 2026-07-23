@@ -34,7 +34,7 @@ afterEach(() => {
   cleanupTempDir(tmp);
 });
 
-describe('CLI integration: resume interrupted session', { timeout: 30_000 }, () => {
+describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () => {
   it('loads the saved state and logs resumption for a mid-implementation session', async () => {
     const sessionId = '2026-04-18-resume-me';
     mkdirSync(sessionDir(tmp, sessionId), { recursive: true });

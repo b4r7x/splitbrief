@@ -4,7 +4,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { startConflictingMerge } from '#testing/helpers/git.js';
 import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
 import { isCliError } from '../errors.js';
 import { registerDoctorCommand } from './doctor.js';
@@ -196,28 +195,6 @@ describe('doctor command', () => {
     expect(
       parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
     ).toContain('repo.not-git');
-  });
-
-  it('reports a repository with an in-progress merge as blocked', async () => {
-    startConflictingMerge(tmp);
-    writeConfig(tmp);
-    const writes = captureStdout();
-
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json']);
-    } catch (err) {
-      captured = err;
-    }
-
-    expect(isCliError(captured)).toBe(true);
-    const parsed = JSON.parse(writes.join('').trim()) as {
-      report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
-    };
-    expect(parsed.report?.status).toBe('blocked');
-    expect(
-      parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
-    ).toContain('repo.in-progress-git-op');
   });
 
   it('reports a zero-commit repository as blocked', async () => {

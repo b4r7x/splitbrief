@@ -15,8 +15,8 @@ import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { publishRecoveryPrompted } from '../events.js';
 import { applyRecoveryAction } from './actions.js';
 import type { ApplyRecoveryActionResult } from './actions.js';
-import { buildSummary } from '../summary.js';
-import { saveFinalSession } from '../session-lifecycle.js';
+import { buildSummary } from '../summary/build.js';
+import { saveFinalSession } from '../session-lifecycle/finalize.js';
 
 export type PendingRecoveryState =
   | { pending: true; state: WorkflowState; issue: NonNullable<WorkflowState['pendingRecovery']> }

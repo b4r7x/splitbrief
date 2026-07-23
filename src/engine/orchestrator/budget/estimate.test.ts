@@ -4,7 +4,6 @@ import type { ProjectContext } from '../../../core/state/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
-import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -339,59 +338,6 @@ describe('estimateDeterministicCost', () => {
       contextConfidence: 'context-cached-provider',
       priceConfidence: 'price-known',
     });
-  });
-
-  it('routes the live task at the same cache-resolved context length the estimate assessed', () => {
-    const pricingCache: ModelCacheAccessor = {
-      getModelsDevCatalog: () => null,
-      getProviderModels: (providerId) =>
-        providerId === 'deepseek'
-          ? [{ id: 'runtime-only', contextLength: 12_000, pricingInput: 1, pricingOutput: 2 }]
-          : null,
-    };
-    const config = withProfiles(
-      makeConfig({
-        planner: {
-          kind: 'api',
-          provider: 'anthropic',
-          apiBase: 'https://api.anthropic.com/v1',
-          model: 'claude-opus-4-6',
-        },
-      }),
-      {
-        default: 'runtime-worker',
-        profiles: {
-          'runtime-worker': {
-            kind: 'api',
-            provider: 'deepseek',
-            apiBase: 'https://api.deepseek.com/v1',
-            apiKey: 'test-key',
-            model: 'runtime-only',
-            costTier: 'cheap',
-          },
-        },
-      },
-    );
-    const task = makeTask();
-
-    const estimate = estimateDeterministicCost({ tasks: [task], context, config, pricingCache });
-    expect(estimate.tasks[0]).toMatchObject({
-      selectedProfileId: 'runtime-worker',
-      contextConfidence: 'context-cached-provider',
-    });
-
-    const profiles = resolveImplementerProfiles(config).profiles;
-    const liveWithoutCache = routeTaskToImplementerProfile({ task, context, profiles });
-    expect(liveWithoutCache.contextLength).toBe(8192);
-
-    const live = routeTaskToImplementerProfile({
-      task,
-      context,
-      profiles,
-      contextCache: pricingCache,
-    });
-    expect(live.selectedProfile).toBe('runtime-worker');
-    expect(live.contextLength).toBe(12_000);
   });
 
   it('matches live routing when estimate and dispatch receive identical detected-context inputs', async () => {

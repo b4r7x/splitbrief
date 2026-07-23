@@ -1,7 +1,7 @@
 import type { Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage } from '../schemas/workflow.js';
 import type { RecoveryAction } from '../schemas/enums.js';
-import type { RecoveryIssue } from '../schemas/recovery.js';
+import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 
 export type StateAction =
   | { type: 'START' }

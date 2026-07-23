@@ -2,25 +2,18 @@ import { describe, expect, it } from 'vitest';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import {
-  makeImplementerGenerate,
-  makePlannerHeartbeat,
-  makePlannerStatus,
-  makeTaskTokens,
-} from '#testing/helpers/events.js';
+import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
+import { makeTaskTokens } from '#testing/helpers/events/task.js';
+import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { resetEventBlockCache } from './block-cache.js';
-import {
-  buildConversationRowActions,
-  buildConversationRows,
-  buildConversationRowsProjection,
-  materializeConversationRowsWindow,
-} from './build.js';
+import { buildConversationRows, buildConversationRowsProjection } from './build.js';
+import { materializeConversationRowsWindow } from './materialize-window.js';
 import { wrappedTextBlock } from './row-block-compose.js';
-import { rowText } from './row-format.js';
+import { rowText } from './row-format/rows.js';
 import { wrapWidthFor } from './row-markers.js';
-import type { ConversationRowBlock } from './types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
@@ -31,62 +24,21 @@ function activityLine(label: Parameters<typeof displayActivityLabel>[0], value: 
 function activity(
   overrides: Partial<EngineEventOf<'runner_call_activity'>>,
 ): EngineEventOf<'runner_call_activity'> {
-  return {
-    type: 'runner_call_activity',
-    ts: overrides.ts ?? 0,
-    phase: overrides.phase ?? 'researching',
-    callId: overrides.callId ?? 'call-1',
-    role: overrides.role ?? 'planner',
-    backendKind: overrides.backendKind ?? 'cli',
-    runnerName: overrides.runnerName ?? 'codex',
-    sequence: overrides.sequence ?? 1,
-    activityId: overrides.activityId ?? 'activity-1',
-    stage: overrides.stage ?? 'updated',
-    kind: overrides.kind ?? 'unknown',
-    label: overrides.label ?? 'checking project',
-    redacted: overrides.redacted ?? false,
-    ...(overrides.target !== undefined && { target: overrides.target }),
-    ...(overrides.model !== undefined && { model: overrides.model }),
-    ...(overrides.taskId !== undefined && { taskId: overrides.taskId }),
-    ...(overrides.attempt !== undefined && { attempt: overrides.attempt }),
-    ...(overrides.textPartial !== undefined && { textPartial: overrides.textPartial }),
-    ...(overrides.diagnosticPartial !== undefined && {
-      diagnosticPartial: overrides.diagnosticPartial,
-    }),
-  };
+  return makeRunnerCallActivity({
+    ts: 0,
+    phase: 'researching',
+    role: 'planner',
+    runnerName: 'codex',
+    sequence: 1,
+    activityId: 'activity-1',
+    stage: 'updated',
+    kind: 'unknown',
+    label: 'checking project',
+    ...overrides,
+  });
 }
 
 describe('buildConversationRows', () => {
-  it('materializes only blocks that intersect the requested row window', () => {
-    const calls: string[] = [];
-    const block = (key: string, rowCount: number): ConversationRowBlock => ({
-      key,
-      rowCount,
-      renderableUnits: 1,
-      createRows: (windowStart, windowEnd) => {
-        calls.push(`${key}:${windowStart}-${windowEnd}`);
-        return Array.from({ length: windowEnd - windowStart }, (_, index) => ({
-          key: `${key}-${windowStart + index}`,
-          kind: 'message',
-          segments: [{ text: `${key}-${windowStart + index}` }],
-        }));
-      },
-    });
-
-    const rows = materializeConversationRowsWindow({
-      projection: {
-        blocks: [block('before', 2), block('visible', 3), block('after', 2)],
-        renderableCount: 3,
-        totalRows: 7,
-      },
-      windowStart: 2,
-      windowEnd: 4,
-    });
-
-    expect(calls).toEqual(['visible:0-2']);
-    expect(rows.map(rowText)).toEqual(['visible-0', 'visible-1']);
-  });
-
   it('strips the planner H1 that echoes the user prompt so the title renders once', () => {
     const sections: Section<EngineEvent>[] = [
       {
@@ -823,90 +775,5 @@ describe('buildConversationRowsProjection event block cache', () => {
       .join('\n');
 
     expect(incrementalText).toBe(freshText);
-  });
-});
-
-describe('buildConversationRowActions', () => {
-  it('maps the rendered +N more row to a toggle-activity-batch action', () => {
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [
-          activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' }),
-          activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
-          activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
-          activity({ sequence: 4, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
-        ],
-      },
-    ];
-    const inputs = {
-      sections,
-      expandedDiffs: new Set<string>(),
-      expandedActivityBatches: new Set<string>(),
-      cols: 88,
-      viewportHeight: 20,
-      streaming,
-    };
-
-    const { rows } = buildConversationRows(inputs);
-    const moreRow = rows.find((row) => row.kind === 'activity-more');
-    if (!moreRow) throw new Error('expected a +N more disclosure row');
-
-    const actions = buildConversationRowActions(inputs);
-    expect(actions.get(moreRow.key)).toEqual({
-      type: 'toggle-activity-batch',
-      key: activityBatchKey(0, 'call-1'),
-    });
-  });
-
-  it('maps the rendered diff rows to a toggle-diff action keyed by global render index', () => {
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [makeImplementerGenerate({ status: 'done', file: 'a.ts', diff: '+ x', ts: 5 })],
-      },
-    ];
-    const inputs = {
-      sections,
-      expandedDiffs: new Set<string>(),
-      expandedActivityBatches: new Set<string>(),
-      cols: 88,
-      viewportHeight: 20,
-      streaming,
-    };
-
-    const { rows } = buildConversationRows(inputs);
-    const actions = buildConversationRowActions(inputs);
-    const actionableRows = rows.filter((row) => actions.has(row.key));
-
-    expect(actionableRows.length).toBeGreaterThan(0);
-    for (const row of actionableRows) {
-      expect(actions.get(row.key)).toEqual({
-        type: 'toggle-diff',
-        key: 'implementer_generate_done:0',
-      });
-    }
-  });
-
-  it('does not map a non-expandable activity batch', () => {
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' })],
-      },
-    ];
-    const actions = buildConversationRowActions({
-      sections,
-      expandedDiffs: new Set<string>(),
-      expandedActivityBatches: new Set<string>(),
-      cols: 88,
-      viewportHeight: 20,
-      streaming,
-    });
-
-    expect(actions.size).toBe(0);
   });
 });

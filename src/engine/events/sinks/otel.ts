@@ -12,7 +12,7 @@ import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { protectConsumerPayload } from '../../../core/consumer-policy.js';
-import { projectEngineEventForTranscriptPolicy } from '../protection.js';
+import { projectEngineEventForTranscriptPolicy } from '../protection/protect.js';
 
 export interface OtelSinkOptions {
   provider: TracerProvider;

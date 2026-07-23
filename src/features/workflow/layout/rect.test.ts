@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getChromeHeight, getContentTopRow, TOP_FIXED_CHROME_ROWS } from './chrome-rows.js';
+import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
@@ -34,22 +34,13 @@ describe('workflow viewport layout', () => {
     });
     expect(sidebar).toBeGreaterThan(0);
     expect(content).toBeGreaterThan(0);
+    expect(WORKFLOW_SIDEBAR_GAP).toBe(2);
     expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols);
   });
 
-  it('reserves the two-column gap only while the sidebar is visible', () => {
-    const cols = 120;
-    expect(WORKFLOW_SIDEBAR_GAP).toBe(2);
-
-    const withSidebar = getWorkflowContentWidth({ cols, sidebarVisible: true, isSmall: false });
-    const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true, isSmall: false });
-    expect(withSidebar).toBe(cols - sidebar - WORKFLOW_SIDEBAR_GAP);
-
-    // No sidebar → no gap: the content pane spans the full terminal width.
-    expect(getWorkflowContentWidth({ cols, sidebarVisible: false, isSmall: false })).toBe(cols);
-  });
-
   it('subtracts chrome + input rows from viewport height and clamps at zero', () => {
+    expect(getWorkflowViewportHeight({ rows: 24, inputRows: 2 })).toBe(17);
+
     const tall = getWorkflowViewportHeight({ rows: 30, inputRows: 4 });
     expect(tall).toBeGreaterThan(0);
 
@@ -72,8 +63,7 @@ describe('workflow viewport layout', () => {
     // bottom adds the divider; the one-row byline hugs the terminal bottom, so the body is one row
     // shorter than legacy.
     const legacyBottomFixedWithoutDivider = 2;
-    const legacyViewport =
-      rows - TOP_FIXED_CHROME_ROWS - legacyBottomFixedWithoutDivider - inputRows;
+    const legacyViewport = rows - 2 - legacyBottomFixedWithoutDivider - inputRows;
     expect(viewport).toBe(legacyViewport - 1);
   });
 

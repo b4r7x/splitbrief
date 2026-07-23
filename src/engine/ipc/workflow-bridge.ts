@@ -1,6 +1,6 @@
 import type { Phase } from '../../core/schemas/enums.js';
 import type { EventBus } from '../events/types.js';
-import { eventPhase, isInfrastructurePhaseEvent } from '../events/schema.js';
+import { eventPhase, isInfrastructurePhaseEvent } from '../../core/event-phase.js';
 import type { ClearQueueHandler, QueueHandler, WorkflowSinks } from '../orchestrator/types.js';
 
 export type IpcWorkflowBridge = {

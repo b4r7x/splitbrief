@@ -19,21 +19,6 @@ describe('fitCompactActivityDisplayLine', () => {
     expect(getTerminalCellWidth(`| ${line.text}`)).toBeLessThanOrEqual(rowCells);
   });
 
-  it('fits a package command into one child activity row while preserving package.json', () => {
-    const rowCells = 50;
-    const line = fitCompactActivityDisplayLine({
-      label: 'run',
-      value: 'node scripts/inspect-package.js /Users/voitz/Projects/tiny-spec/package.json',
-      rowCells,
-      prefixCells: getTerminalCellWidth('| '),
-    });
-
-    expect(line.text.startsWith('run  node scripts/')).toBe(true);
-    expect(line.text.endsWith('package.json')).toBe(true);
-    expect(line.text).toContain('…');
-    expect(getTerminalCellWidth(`| ${line.text}`)).toBeLessThanOrEqual(rowCells);
-  });
-
   it('preserves the filename tail for file activity values', () => {
     const rowCells = 42;
     const line = fitCompactActivityDisplayLine({

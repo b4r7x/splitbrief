@@ -24,8 +24,8 @@ const EXPECTED_PHASE_LABELS: Record<Phase, string> = {
 };
 
 describe('formatStageLabel', () => {
-  it('title-cases kebab identifiers', () => {
-    expect(formatStageLabel('reviewing-spec')).toBe('Reviewing Spec');
+  it('title-cases arbitrary identifiers', () => {
+    expect(formatStageLabel('build-step')).toBe('Build Step');
     expect(formatStageLabel('build')).toBe('Build');
   });
 

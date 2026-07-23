@@ -66,10 +66,13 @@ Current harnesses:
 DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/conversation-flow-large-log.perf.test.ts
 DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/runner-large-output.perf.test.ts
 DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/events-store-cap.perf.test.ts
+DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/conversation-flow-hover.perf.test.tsx
 DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/event-sinks-throughput.perf.test.ts
 ```
 
 `conversation-flow-large-log.perf.test.ts` covers the Phase 5 row projection path: 10k event projection reuse, visible-window materialization, markdown suffix append reuse, and cache-cap behavior. Keep thresholds as regression guards for the reference machine; do not treat them as portable benchmarks.
+
+`conversation-flow-hover.perf.test.tsx` covers hover-only re-renders on a large real-store transcript: repeated `hoverStore` updates must stay bounded and must not change transcript text apart from the focus glyph. Run it only with `DIPTYCH_PERF=1` as above.
 
 `runner-large-output.perf.test.ts` covers large runner stdout without a trailing newline and multi-megabyte stderr flood behavior through the real subprocess collector. `events-store-cap.perf.test.ts` covers capped workflow event ingestion and retained merged-text size after multi-megabyte planner text input. `event-sinks-throughput.perf.test.ts` covers protected JSONL, stdout JSON, and session-tree sink throughput. There is no automated fullscreen-vs-inline replay perf harness yet; use the manual TUI smoke checklist below for fullscreen replay behavior until a stable local harness exists.
 
@@ -80,7 +83,7 @@ DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/int
 
 **Feature sub-components get a colocated test when they carry behaviour.** A sub-component that renders a visible affordance off branching state — an approval prompt, a cost drilldown, a brief review scorecard, a pipeline bar — is tested next to its `*.tsx` against `lastFrame()` and observable store state, the same way `src/features/workflow/components/` and `src/features/summary/components/` already are. Styling-only or pure-passthrough sub-components stay covered transitively through the page seam (`app/screens/<x>.tsx` / `app/overlays/<x>.tsx`); do not add a "does not crash" test for them. Shared primitives in `src/components/` (`MultilineInput` → `input/multiline-input.test.tsx`, `ScrollWindow` → `pickers/scroll-window.test.ts`, `SessionRow` → `session-row.test.tsx`) carry their own colocated tests — their cost amortises across consumers. A primitive whose behaviour lives in a backing hook is covered through that hook's test instead (`FilterableList` via `src/hooks/use-filterable-list.test.tsx`).
 
-**Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — budget/cost gating, escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — is unit-tested next to its source against its returned decision and the events it emits. This is why `escalation/step.test.ts`, `queue.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.test.ts`, `task/step.test.ts`, and `run/workflow.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a task pausing before overwriting a user edit, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
+**Decision-bearing orchestrator modules get a colocated test.** A module in `src/engine/orchestrator/` that makes a decision or owns observable control-flow behaviour — budget/cost gating, escalation tiers, queue drain order, signal-handler cleanup, planning-phase routing, recovery actions, the task loop and step — is unit-tested next to its source against its returned decision and the events it emits. This is why `escalation/step.test.ts`, `queue/submit.test.ts`, `signals.test.ts`, `planning/*.test.ts`, `recovery/*.test.ts`, `task/loop-*.test.ts`, `task/step.test.ts`, and `run/workflow.test.ts` (the same files the Recovery flow section below tells you to run) all exist. The `runWorkflow()` integration seam under `testing/integration/orchestrator/` covers the composition of these modules across a full multi-phase run, not the per-module decision. Reserve it for behaviour that only emerges from wiring several modules together (a phase progressing, a task pausing before overwriting a user edit, a workflow completing). Trivial glue with no branch of its own — a function that only forwards to an already-tested helper — stays covered transitively at that seam.
 
 **Zod schemas do not get shape tests.** TS strict + Zod `.parse()` is first-class correctness — no runtime tests for schema shape. One repo-wide `.strict()` rejection test lives in `src/core/schemas/runner-fields.test.ts`; do not duplicate per schema.
 
@@ -100,7 +103,11 @@ Cost-aware implementer routing, user-edit conflict handling, and the brief revie
 
 **User-edit conflicts.** Conflict tests should set up real task/file ownership data and assert the public classification or emitted event: conflict kind, affected task ids, `safeToContinue`, and available actions. Do not assert that a particular detector function was called. Orchestrator-level coverage belongs at the task loop or `runWorkflow()` seam when the behavior is "pause before overwriting the user" or "continue on unrelated external edits."
 
-**Brief review gate.** Keep parsing, routing metadata, and external-editor handoff tests focused on the public review contract. Component tests should render the simple brief review surface and assert visible markers the user depends on: selected worker, context fit or overflow, quality state, load errors, and conflict labels. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
+**Brief review gate.** Pure `parseReviewCommand` cases live in `src/features/workflow/review-commands.test.ts` (import `review-commands.js` directly, not the `review-parser` re-export). Handler routing, external-editor spawn, and terminal handover during review input belong in `testing/integration/ui/review-input.test.ts`. Component tests should render the simple brief review surface and assert visible markers the user depends on: selected worker, context fit or overflow, quality state, load errors, and conflict labels. Avoid micro-tests for keybinding passthrough unless the helper is exported as a pure public parser; prefer grouping key maps with `it.each` when adding more cases.
+
+**Brief field editor CAS.** Rendered ownership, save gate, stdin suppression, multi-field save, and submit-in-flight behavior belong in `testing/integration/ui/brief-field-editor-ownership.test.ts` (`.test.ts` with `createElement`, not a colocated `.tsx` owner). Pure `editorStore` transitions (scroll, layout reflow, token capture) stay in `src/stores/ui/editor.test.ts`. `readSessionFileConfined` cases at the editor read boundary live in `src/core/sessions/confinement.test.ts`. The `useFieldSessionOwned` hook contract stays in `src/features/editor/use-field-session-owned.test.tsx`.
+
+**Input history persistence.** Debounced `~/.diptych/history` writes, teardown, and transcript-off prompt redaction at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`. Cross-artifact transcript-off privacy (`runWorkflow()` with `persistTranscript: false` — session ids, lockfile, summaries, HTML export, `ps`, branch names) belongs in `testing/integration/orchestrator/transcript-off-session-artifacts.test.ts`.
 
 **Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
 
@@ -111,14 +118,16 @@ npm test -- src/core/schemas/recovery.test.ts
 npm test -- src/core/schemas/workflow.test.ts
 npm test -- src/core/schemas/enums.test.ts
 npm test -- src/core/state/machine.test.ts
-npm test -- src/core/state/persistence.test.ts
-npm test -- src/engine/orchestrator/recovery/recovery.test.ts
+npm test -- src/core/state/persistence.test.ts src/core/sessions/log-writer.test.ts src/core/transcript-policy.test.ts
+npm test -- src/engine/orchestrator/recovery/actions.test.ts src/engine/orchestrator/recovery/actions-persistence.test.ts src/engine/orchestrator/recovery/builders/task.test.ts src/engine/orchestrator/recovery/builders/workflow.test.ts
 npm test -- src/engine/orchestrator/budget/check.test.ts
+npm test -- src/engine/orchestrator/budget/knownness.test.ts
+npm test -- src/engine/orchestrator/budget/enforce.test.ts
 npm test -- src/engine/orchestrator/task/loop-happy-path.test.ts
 npm test -- src/engine/orchestrator/task/step.test.ts
 npm test -- src/engine/orchestrator/run/workflow.test.ts
-npm test -- src/engine/orchestrator/session-lifecycle.test.ts
-npm test -- src/cli/headless.test.ts
+npm test -- src/engine/orchestrator/session-lifecycle/finalize.test.ts src/engine/orchestrator/session-lifecycle/shutdown.test.ts
+npm test -- testing/integration/cli/headless-outcomes.test.ts
 npm test -- src/features/workflow/recovery-prompt.test.ts
 npm test -- src/features/workflow/user-edit-conflict-prompt.test.ts
 ```
@@ -138,8 +147,8 @@ Integration tests live under `testing/integration/<layer>/`. One file per user-o
 
 ```ts
 import { beforeEach, describe, it, expect } from 'vitest';
-import { resetAllStores } from '../../helpers/stores.js';
-import { withTempDir } from '../../helpers/temp-dir.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
 
 beforeEach(() => resetAllStores());
 ```
@@ -147,7 +156,7 @@ beforeEach(() => resetAllStores());
 **CLI flow — drive commander in-process** (`testing/helpers/commander.ts`):
 
 ```ts
-import { runCommand } from '../../helpers/commander.js';
+import { runCommand } from '#testing/helpers/commander.js';
 
 it('start writes state.json and exits 0', async () => {
   await withTempDir(async (dir) => {
@@ -159,22 +168,32 @@ it('start writes state.json and exits 0', async () => {
 });
 ```
 
-**Orchestrator flow — drive `runWorkflow()` with fakes** (`testing/helpers/orchestrator-factories.ts`):
+**Orchestrator flow — drive `runWorkflow()` with fakes** (`testing/helpers/faux/`):
 
 ```ts
-import { createFakePlanner, createFakeImplementer } from '../../helpers/orchestrator-factories.js';
+import { fauxPlanner } from '#testing/helpers/faux/planner.js';
+import { fauxImplementer } from '#testing/helpers/faux/implementer.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 
 it('quick mode completes one task via local implementer', async () => {
-  const planner = createFakePlanner({ script: [/* ... */] });
-  const implementer = createFakeImplementer({ script: [/* success */] });
+  const task = makeTask();
+  const { planner } = fauxPlanner({ plans: [{ tasks: [task] }] });
+  const { implementer } = fauxImplementer({ steps: [{ success: true, output: 'done' }] });
   const events: EngineEvent[] = [];
   await runWorkflow({
-    planner,
-    implementer,
-    _eventSink: (e) => events.push(e),   // subscribed to the internal EventBus
+    feature: 'add hello module',
+    projectDir,
+    config: makeConfig(),
     callbacks: { /* gating stubs: onApprovalNeeded, onQuestionAsked, ... */ },
+    sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+    // The fakes MUST go through `_planner` / `_implementer` (RunWorkflowOptions).
+    // Passing bare `planner` / `implementer` keys is silently ignored and spawns real subprocesses.
+    _planner: planner,
+    _implementer: implementer,
+    _eventSink: (e) => events.push(e),   // subscribed to the internal EventBus
   });
   expect(events.at(-1)).toMatchObject({ type: 'workflow_complete' });
 });
@@ -200,8 +219,8 @@ The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus an
 **UI flow — render a feature + drive engine events through stores** (`testing/helpers/ink.ts`):
 
 ```ts
-import { renderFeature, tick } from '../../helpers/ink.ts';
-import { addEvent } from '../../../src/stores/workflow/actions.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 
 it('workflow screen shows an escalation card when escalate event arrives', async () => {
@@ -216,18 +235,31 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 - Use `testing/helpers/stores.ts:resetAllStores()` in `beforeEach`. Stores are module-scoped singletons.
 - Use `testing/helpers/temp-dir.ts:withTempDir()` for filesystem work. Never mock `node:fs`.
 - Use real `git` via `testing/helpers/git.ts:createTestGitRepo()`. Never stub `simple-git`.
-- **Zero new fakes.** Use `createFakePlanner` / `createFakeImplementer` from `testing/helpers/orchestrator-factories.ts`. Extend them via their `script` parameter, not by copying their shape into a new file.
+- **Zero new fakes.** Use `fauxPlanner` / `fauxImplementer` from `testing/helpers/faux/`. Extend them via `plans`, `steps`, `escalations`, `quickPlans`, or `retries`, not by copying their shape into a new file.
 - **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:fs/promises` (write-failure / `mkdtemp` interception), `node:fs` (`statSync` ENOENT simulation), and `ink` + `fullscreen-ink` (CLI integration tests only).
-- **Import `testing/helpers/**` from `src/**` tests via the `#testing/*` subpath import** (`import { makeConfig } from '#testing/helpers/factories/config.js'`), never a long relative `../../../testing/helpers/...` path. The alias is defined once in `package.json` `imports` (`"#testing/*": "./testing/*"`).
+- **Import `testing/helpers/**` from any test — under `src/**`, `testing/**`, or `evals/**` — via the `#testing/*` subpath import** (`import { makeConfig } from '#testing/helpers/factories/config.js'`), never a relative `../../helpers/...` or `../../../testing/helpers/...` path. The alias is defined once in `package.json` `imports` (`"#testing/*": "./testing/*"`), and gate 20 (`scripts/testing-helper-imports.ts`) fails any test in those three roots whose relative import resolves into `testing/helpers/**`.
 - Exit codes via `isCliError`. `commander.exitOverride()` throws; `runCommand()` catches and returns the exit code.
 
 ## How to extend the fakes
 
-`createFakePlanner` and `createFakeImplementer` in `testing/helpers/orchestrator-factories.ts` accept a deterministic `script` — a sequence of return values driving the workflow. To cover a new scenario:
+`fauxPlanner` and `fauxImplementer` take declarative arrays that cycle on repeated calls. Read `testing/helpers/faux/planner.ts` and `testing/helpers/faux/implementer.ts` for the full option types.
 
-1. Open `testing/helpers/orchestrator-factories.ts`. Read the existing `script` shape.
-2. Add a new test file in `testing/integration/orchestrator/<scenario>.test.ts`. Build the `script` array that represents your scenario (success, fail-then-succeed, fail-3x-then-escalate, approval-pending, abort-midstream).
-3. **Do not** add a new fake class. Do not copy the fake shape into a local helper. If the existing script grammar cannot express your scenario, propose a grammar extension in a dedicated PR — new grammar gets one pull request, not N parallel implementations.
+**Planner (`fauxPlanner`):**
+
+- `plans` — each `plan()` call consumes the next entry (`tasks`, optional `spec` / `plan` / `usage`, or `throws`).
+- `quickPlans` — same shape for `quickPlan()`.
+- `escalations` — entries for `escalateHint()` and `escalateFull()` (`success`, `output`, `code`, `usage`, or `throws`).
+
+**Implementer (`fauxImplementer`):**
+
+- `steps` — each `implement()` call consumes the next entry (`success`, `output`, `error`, `usage`, `delayMs`, or `throws`).
+- `retries` — same shape for `retry()`.
+
+To cover a new scenario, add a test under `testing/integration/orchestrator/<scenario>.test.ts` and build the arrays for that path (success, fail-then-succeed, fail-3x-then-escalate, approval-pending, abort-midstream). Assert on returned `state` (`planCallCount`, `implementCallCount`, `receivedFeatures`, …), not `vi.fn` call counts.
+
+**Do not** add a new fake class or copy the faux shape into a local helper. If the existing option types cannot express your scenario, extend the faux grammar in `testing/helpers/faux/` in one PR rather than forking a parallel fake.
+
+**Legacy:** `makePlanner` and `makeImplementer` in `testing/helpers/orchestrator-factories.ts` are `vi.fn`-backed stubs for older tests and for `makeWctx` defaults. Prefer faux objects for new orchestrator coverage; use the legacy makers only when you need partial `vi.fn` overrides on the interface.
 
 Real adapter boundaries (`Planner`, `Implementer`, `ProviderClient`) are the only sanctioned injection points. Everything else is a real import.
 
@@ -236,7 +268,7 @@ Real adapter boundaries (`Planner`, `Implementer`, `ProviderClient`) are the onl
 CLI command handlers accept an optional `deps` parameter for dependency injection. This is the standard pattern for testing commands without `vi.mock`:
 
 ```ts
-// src/cli/commands/start.ts
+// src/cli/commands/start/types.ts
 export interface StartDeps {
   spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
   runHeadless: typeof runHeadless;
@@ -245,6 +277,7 @@ export interface StartDeps {
   renderApp: typeof renderApp;
 }
 
+// src/cli/commands/start/register.ts
 const defaultStartDeps: StartDeps = { spawnServer, runHeadless, runRpc, initStores, renderApp };
 
 export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void { ... }
@@ -258,19 +291,19 @@ program.exitOverride();
 registerStartCommand(program, fakeDeps); // fakeDeps: StartDeps with stubbed renderApp/runHeadless/…
 ```
 
-**Commands using this pattern:** `start.ts` (`StartDeps`) and `worktree.ts` (`WorktreeDeps`) expose `deps` on the `register*Command(program, deps = default)` signature itself. `attach.ts` (`AttachDeps`) and `last.ts` (`LastDeps`) keep `register*Command(program)` thin and inject `deps` one level down, on the internal helper (`attachCommand(…, deps = defaultDeps)`, `lastCommand(…, deps = defaultDeps)`).
+**Commands using this pattern:** `start/register.ts` (`StartDeps` in `start/types.ts`) and `worktree.ts` (`WorktreeDeps`) expose `deps` on the `register*Command(program, deps = default)` signature itself. `attach.ts` (`AttachDeps`) and `last.ts` (`LastDeps`) keep `register*Command(program)` thin and inject `deps` one level down, on the internal helper (`attachCommand(…, deps = defaultDeps)`, `lastCommand(…, deps = defaultDeps)`).
 
 **Rule:** `vi.mock` is now reserved for TRUE system boundaries only — `process.kill`, `execSync`, `node:net` sockets, and the sanctioned targets listed in [Test I/O and fixtures](#test-io-and-fixtures). All other test isolation uses the `Deps` interface pattern.
 
 ## Faux provider architecture
 
-The `orchestrator-factories.ts` fakes work but are `vi.fn` wrappers — assertions tend toward `toHaveBeenCalledWith` (implementation coupling). The faux architecture replaces them with **typed faux objects** that implement the real interface and track state declaratively.
+Orchestrator tests use **typed faux objects** that implement the real `Planner` / `Implementer` interfaces and track state declaratively. Legacy `makePlanner` / `makeImplementer` in `orchestrator-factories.ts` remain `vi.fn` stubs for older suites.
 
 ### Two levels
 
 | Level | Seam | When to use |
 |---|---|---|
-| **L1: Faux objects** | `Planner` / `Implementer` interface | 90% of orchestrator tests. Declarative scripts, no network, <50ms. Replaces `createFakePlanner`/`createFakeImplementer`. |
+| **L1: Faux objects** | `Planner` / `Implementer` interface | 90% of orchestrator tests. Declarative `plans` / `steps` arrays, no network, <50ms. |
 | **L2: Faux HTTP server** | Localhost SSE (OpenAI / Anthropic protocol) | Testing `api.ts` runner: rate limits, malformed SSE, token accounting, effort parameters. Real fetch hits localhost. |
 
 ### L1 design
@@ -297,18 +330,19 @@ Starts a local HTTP server that speaks OpenAI SSE (or Anthropic event format). R
 
 ### Migration path
 
-`testing/helpers/faux/` is implemented (L1: `planner.ts`, `implementer.ts`). New tests use faux objects; old tests using `orchestrator-factories.ts` continue to work and are gradually migrated. Once all consumers migrate, the old factories will be deprecated and removed.
+L1 faux (`planner.ts`, `implementer.ts`) is the default for new orchestrator tests. Suites that still import `makePlanner` / `makeImplementer` or `makeWctx` from `orchestrator-factories.ts` can stay on those helpers until rewritten; new coverage should not add `vi.fn` planner/implementer stubs.
 
 ### What stays unchanged
 
 - Cassette record/replay (`testing/helpers/cassette/`) for e2e tests — real protocol traffic.
 - Shell runners (`kind: 'shell'`) in integration tests — real subprocess spawn with scripted stdout.
 - `testing/helpers/factories/` (config, task, workflow-state) — pure constructors, no mock behavior.
-- `testing/helpers/events.ts` — event capture at the EventBus boundary.
+- `testing/helpers/events/planner.ts`, `testing/helpers/events/implementer.ts`, `testing/helpers/events/runner-call.ts`, and `testing/helpers/events/task.ts` contain typed event factories.
+- `makeBusRecorder` in `testing/helpers/orchestrator-factories.ts` captures EventBus events.
 
 ## Test shape
 
-**Pure function tests.** No mocks. Inputs → outputs. Cover edges: empty, null, boundary values, unicode, negative numbers, NaN/Infinity where relevant. Use `it.each(...)` when 5+ tests differ only by parameter. Models: `src/utils/diff.test.ts`, `src/core/state/machine.test.ts`, `src/engine/orchestrator/summary-build.test.ts` (pricing/cost cases now live in `src/engine/providers/cost.test.ts`).
+**Pure function tests.** No mocks. Inputs → outputs. Cover edges: empty, null, boundary values, unicode, negative numbers, NaN/Infinity where relevant. Use `it.each(...)` when 5+ tests differ only by parameter. Models: `src/utils/diff.test.ts`, `src/core/state/machine.test.ts`, `src/engine/orchestrator/summary/build.test.ts` and `src/engine/orchestrator/summary/costs.test.ts` (aggregate pricing cases also live in `src/engine/providers/cost/breakdown.test.ts` and `src/engine/providers/cost/task-usage.test.ts`).
 
 **Schema tests.** Only invariants and error paths. Do not write "parse a valid literal returns that literal" — `tsc` proves it. Zod `.strict()` only needs one repo-wide rejection test; don't duplicate per schema.
 
@@ -318,7 +352,7 @@ Starts a local HTTP server that speaks OpenAI SSE (or Anthropic event format). R
 
 **Component / feature tests.** Use `ink-testing-library`. Render with real stores (reset in `beforeEach`). Drive by setting store state or simulating input. Assert on `lastFrame()` text or observable store state. Never mock `ink`, `FilterableList`, or any internal component.
 
-**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.diptych/` contents (pattern: `src/cli/commands/status.test.ts`; config-migration logic itself is unit-tested in `src/core/config/load/migrate.test.ts`). Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
+**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.diptych/` contents (pattern: `src/cli/commands/status.test.ts`; config-migration logic itself is unit-tested in `src/core/config/load/migrate.test.ts`). Config load/write roundtrip (default shape, optional sections, snake_case migration) belongs in `src/core/config/load/io-roundtrip.test.ts`, not a CLI integration file. `init` without a TTY fails before any config write — `testing/integration/cli/init-non-tty.test.ts`. Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
 
 ## Forbidden patterns
 
@@ -445,7 +479,7 @@ When a testing rule appears in multiple docs, the canonical source is cited firs
 | `testing/integration/{cli,orchestrator,ui}/` structure | this doc §How to add an integration test | `STRUCTURE.md` §Test strategy |
 | `testing/e2e/` layer (scenarios + cassettes, isolated by `vitest.e2e.config.ts`) | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy |
 | Zero `vi.mock()` on internal modules | this doc §How to add an integration test and §Test I/O | — |
-| No new fakes — extend `createFakePlanner` / `createFakeImplementer` | this doc §How to extend the fakes | — |
+| No new fakes — extend `fauxPlanner` / `fauxImplementer` | this doc §How to extend the fakes | — |
 | Engine tested at `runWorkflow()` boundary | this doc | `STRUCTURE.md` §Test strategy |
 | Ink tested at the feature seam | this doc | `STRUCTURE.md` §Test strategy |
 | Fakes vs fixtures split | this doc §Where does this test go? | `STRUCTURE.md` §Test strategy |

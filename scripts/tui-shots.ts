@@ -1,26 +1,16 @@
-import { lstat } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import { z } from 'zod';
 import { getDiptychVersion } from '../src/core/paths-io.js';
-import { getCurrentCommitSha } from '../src/lib/git.js';
-import {
-  listVisualScenarios,
-  REQUIRED_VIEWPORTS,
-  VISUAL_CATALOG_VERSION,
-} from '../testing/visual/catalog.js';
-import {
-  formatViewport,
-  parseViewport,
-  type Viewport,
-} from '../testing/visual/contracts/geometry.js';
-import {
-  CaptureSelectionSchema,
-  type CaptureSelection,
-} from '../testing/visual/contracts/selection.js';
-import { DEFAULT_VISUAL_OUTPUT_ROOT } from '../testing/visual/artifacts/paths.js';
+import { getCurrentCommitSha } from '../src/lib/git/refs.js';
+import { listVisualScenarios, VISUAL_CATALOG_VERSION } from '../testing/visual/catalog.js';
+import { formatViewport } from '../testing/visual/contracts/geometry.js';
+import type { CaptureSelection } from '../testing/visual/contracts/selection.js';
+import { DEFAULT_VISUAL_OUTPUT_ROOT } from '../testing/visual/artifacts/layout.js';
 import { captureGallery } from '../testing/visual/gallery/capture.js';
+import { resolveOutputRoot } from './tui-shots/output-root.js';
+import { createCaptureRequest } from './tui-shots/selection.js';
 
 const CliOptionsSchema = z
   .object({
@@ -65,11 +55,6 @@ export interface TuiShotsDependencies {
   readonly gitRevision?: (() => Promise<string | null>) | undefined;
 }
 
-interface CaptureRequest {
-  readonly outputRoot: string;
-  readonly selection: CaptureSelection;
-}
-
 const processIo: TuiShotsIo = {
   stdout: (text) => process.stdout.write(text),
   stderr: (text) => process.stderr.write(text),
@@ -89,7 +74,9 @@ export async function runTuiShots(
     }
 
     const cwd = resolve(dependencies.cwd ?? process.cwd());
-    const request = await createCaptureRequest(options, cwd);
+    const request = await createCaptureRequest(options, (value) =>
+      resolveOutputRoot({ cwd, value }),
+    );
     const capture = dependencies.capture ?? captureWithGallery;
     const result = await capture({
       outputRoot: request.outputRoot,
@@ -148,140 +135,6 @@ function parseArguments(args: readonly string[], io: TuiShotsIo): CliOptions | n
   return CliOptionsSchema.parse(program.opts());
 }
 
-async function createCaptureRequest(options: CliOptions, cwd: string): Promise<CaptureRequest> {
-  const scenarios = selectScenarios(options.scenario);
-  const viewports = selectViewports(options.viewport);
-  validateSupportedViewports(scenarios, viewports);
-  validateElements(scenarios, options.element);
-  const outputRoot = await resolveOutputRoot({ cwd, value: options.output });
-
-  const entries = scenarios.flatMap((scenario) =>
-    scenario.checkpoints.flatMap((checkpoint) =>
-      viewports.map((viewport) => ({
-        provenance: {
-          scenarioId: scenario.id,
-          scenarioTitle: scenario.title,
-          fixtureVersion: scenario.fixtureVersion,
-          checkpointId: checkpoint.id,
-          viewport,
-        },
-        elementIds: scenario.elements
-          .filter((element) => options.element.length === 0 || options.element.includes(element.id))
-          .map((element) => element.id),
-      })),
-    ),
-  );
-  const selection = CaptureSelectionSchema.parse({ requests: entries, targets: entries });
-  return { outputRoot, selection };
-}
-
-function selectScenarios(requested: readonly string[]) {
-  const unique = new Set(requested);
-  const catalog = listVisualScenarios();
-  for (const id of unique) {
-    if (!catalog.some((scenario) => scenario.id === id)) {
-      throw new Error(`Unknown scenario "${id}". Run with --list to see available IDs.`);
-    }
-  }
-  return requested.length === 0 ? catalog : catalog.filter((scenario) => unique.has(scenario.id));
-}
-
-function selectViewports(requested: readonly string[]): readonly Viewport[] {
-  if (requested.length === 0) return REQUIRED_VIEWPORTS;
-  const parsed = new Map<string, Viewport>();
-  for (const value of requested) {
-    let viewport: Viewport;
-    try {
-      viewport = parseViewport(value);
-    } catch {
-      throw new Error(`Invalid viewport "${value}". Expected COLSxROWS, for example 80x24.`);
-    }
-    if (
-      !REQUIRED_VIEWPORTS.some(
-        (candidate) => formatViewport(candidate) === formatViewport(viewport),
-      )
-    ) {
-      throw new Error(
-        `Unsupported viewport "${value}". Available viewports: ${REQUIRED_VIEWPORTS.map(formatViewport).join(', ')}.`,
-      );
-    }
-    parsed.set(formatViewport(viewport), viewport);
-  }
-  return REQUIRED_VIEWPORTS.filter((viewport) => parsed.has(formatViewport(viewport)));
-}
-
-function validateSupportedViewports(
-  scenarios: ReturnType<typeof listVisualScenarios>,
-  viewports: readonly Viewport[],
-): void {
-  for (const scenario of scenarios) {
-    for (const viewport of viewports) {
-      const supported = scenario.viewports.some(
-        (candidate) => candidate.cols === viewport.cols && candidate.rows === viewport.rows,
-      );
-      if (!supported) {
-        throw new Error(
-          `Scenario ${scenario.id} does not support viewport ${formatViewport(viewport)}.`,
-        );
-      }
-    }
-  }
-}
-
-function validateElements(
-  scenarios: ReturnType<typeof listVisualScenarios>,
-  requested: readonly string[],
-): void {
-  for (const id of new Set(requested)) {
-    const missingFrom = scenarios.find(
-      (scenario) => !scenario.elements.some((element) => element.id === id),
-    );
-    if (missingFrom !== undefined) {
-      throw new Error(`Element "${id}" is not declared by scenario ${missingFrom.id}.`);
-    }
-  }
-}
-
-async function resolveOutputRoot(options: {
-  readonly cwd: string;
-  readonly value: string;
-}): Promise<string> {
-  if (options.value.trim().length === 0 || options.value.includes('\0')) {
-    throw new Error('Output root must be a non-empty path beneath .test-artifacts/ui.');
-  }
-  const allowedRoot = resolve(options.cwd, DEFAULT_VISUAL_OUTPUT_ROOT);
-  const outputRoot = resolve(options.cwd, options.value);
-  const fromAllowedRoot = relative(allowedRoot, outputRoot);
-  if (
-    fromAllowedRoot.startsWith(`..${sep}`) ||
-    fromAllowedRoot === '..' ||
-    isAbsolute(fromAllowedRoot)
-  ) {
-    throw new Error('Output root must remain beneath .test-artifacts/ui.');
-  }
-  await assertNoSymlinkComponents({ cwd: options.cwd, outputRoot });
-  return outputRoot;
-}
-
-async function assertNoSymlinkComponents(options: {
-  readonly cwd: string;
-  readonly outputRoot: string;
-}): Promise<void> {
-  const pathFromCwd = relative(options.cwd, options.outputRoot);
-  let current = options.cwd;
-  for (const segment of pathFromCwd.split(sep)) {
-    if (segment.length === 0) continue;
-    current = resolve(current, segment);
-    try {
-      const stats = await lstat(current);
-      if (stats.isSymbolicLink()) throw new Error('Output root cannot contain symbolic links.');
-    } catch (error) {
-      if (isMissingPathError(error)) return;
-      throw error;
-    }
-  }
-}
-
 function printCatalog(io: TuiShotsIo): void {
   io.stdout(`visual catalog v${VISUAL_CATALOG_VERSION}\n`);
   for (const scenario of listVisualScenarios()) {
@@ -337,10 +190,6 @@ async function readGitRevision(cwd: string): Promise<string | null> {
 function displayPath(cwd: string, path: string): string {
   const value = relative(cwd, path);
   return value.length === 0 ? '.' : value.split(sep).join('/');
-}
-
-function isMissingPathError(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && error.code === 'ENOENT';
 }
 
 function errorMessage(error: unknown): string {

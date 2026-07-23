@@ -1,23 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  INTERNAL_SKIP_DIRS,
-  isInternalGitStatusPath,
-  DIPTYCH_DIR,
-  SANDBOX_DIR,
-  TREES_DIR,
-} from './paths.js';
-
-describe('INTERNAL_SKIP_DIRS', () => {
-  it('is the single base set of never-touch directories', () => {
-    expect(INTERNAL_SKIP_DIRS).toEqual([
-      '.git',
-      DIPTYCH_DIR,
-      SANDBOX_DIR,
-      'node_modules',
-      TREES_DIR,
-    ]);
-  });
-});
+import { isInternalGitStatusPath } from './paths.js';
 
 describe('isInternalGitStatusPath', () => {
   it('matches the internal artifact directories at the top level', () => {

@@ -102,55 +102,69 @@ describe('runWorkflow — smoke', () => {
     // where runFinalReviewPhase invokes it). This is the observable early-return contract.
     const onComplete = callbacks.onComplete as ReturnType<typeof import('vitest').vi.fn>;
     expect(onComplete).not.toHaveBeenCalled();
-  });
-
-  it('short-circuits before emitting workflow-config when the planner is unavailable', async () => {
-    // The workflow-config / user-message events are part of the initialisation happy
-    // path. The observable contract on the unavailable-planner boundary is that NONE
-    // of those initialisation events fire — only the error event does.
-    const projectDir = setupProject();
-    const { callbacks } = makeCallbacks();
-    const events: EngineEvent[] = [];
-    const config = unavailablePlannerConfig();
-
-    await runWorkflow({
-      feature: 'observable-config',
-      projectDir,
-      config,
-      callbacks,
-      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      _eventSink: (e) => events.push(e),
-    });
 
     expect(events.find((e) => e.type === 'workflow_config')).toBeUndefined();
     expect(events.find((e) => e.type === 'user_message')).toBeUndefined();
-    expect(events.find((e) => e.type === 'error')).toBeDefined();
   });
 
   it('drains a stale pending boundary interrupt at run start', async () => {
-    // A dead-zone Esc-Esc in a previous run that ended into recovery without
-    // passing another continuation boundary leaves the pending flag set; a fresh
-    // run must drain it up front or its first call boundary parks on an
-    // interrupt prompt nobody asked for.
     const projectDir = setupProject();
-    const { callbacks } = makeCallbacks();
-    const consumeBoundaryInterrupt = vi.fn(() => true);
+    const events: EngineEvent[] = [];
+    let pendingBoundaryInterrupt = true;
+    const consumeBoundaryInterrupt = () => {
+      if (!pendingBoundaryInterrupt) return false;
+      pendingBoundaryInterrupt = false;
+      return true;
+    };
+    const onContinuationNeeded = vi.fn(async () => 'should not run');
+    const { callbacks } = makeCallbacks({ onContinuationNeeded });
+    const quickPlan = vi.fn().mockImplementation(async () => {
+      expect(pendingBoundaryInterrupt).toBe(false);
+      return {
+        spec: '',
+        plan: '',
+        tasks: [
+          makeTask({
+            id: 'T001',
+            scope: { inBounds: ['src/drain.ts'], outOfBounds: ['other files'] },
+            evidence: ['task_completed event shows the planned task ran'],
+            typeDefs: 'type DrainTask = { file: string }',
+          }),
+        ],
+        usage: { inputTokens: 50, outputTokens: 25 },
+      };
+    });
 
-    await runWorkflow({
+    const summary = await runWorkflow({
       feature: 'stale boundary interrupt',
       projectDir,
-      config: unavailablePlannerConfig(),
+      config: makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: {
+          autoApproveSpec: true,
+          autoApprovePlan: true,
+          commitStrategy: 'none',
+          mode: 'quick',
+          persistTranscript: false,
+        },
+      }),
       callbacks,
       sinks: {
         setAbortHandler: () => {},
         setQueueHandler: () => {},
         consumeBoundaryInterrupt,
       },
+      _eventSink: (e) => events.push(e),
+      _planner: makePlanner({ quickPlan }),
+      _implementer: makeImplementer(),
     });
 
-    // Drained exactly once, before any call boundary could observe the flag.
-    expect(consumeBoundaryInterrupt).toHaveBeenCalledTimes(1);
-  });
+    expect(events.find((e) => e.type === 'turn_interrupted')).toBeUndefined();
+    expect(onContinuationNeeded).not.toHaveBeenCalled();
+    expect(quickPlan).toHaveBeenCalled();
+    expect(pendingBoundaryInterrupt).toBe(false);
+    expect(summary.totalTasks).toBe(1);
+  }, 20_000);
 
   it('records the session status as failed (not interrupted) when planning fails', async () => {
     const projectDir = setupProject();

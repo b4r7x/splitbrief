@@ -12,7 +12,7 @@ import {
   sessionDir,
 } from '../../../../core/paths.js';
 import { nowIso } from '../../../../utils/format-time.js';
-import { readEvidenceLedger } from '../../../../core/evidence/ledger.js';
+import { readEvidenceLedger } from '../../../../core/evidence/ledger-storage.js';
 import { readDriftReport } from '../../drift/io.js';
 import { readDriftChainState } from '../../drift/chain-state.js';
 import {

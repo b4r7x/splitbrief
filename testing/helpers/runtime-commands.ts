@@ -1,4 +1,3 @@
-import { canReviseSpec, canRevisePlan, canRedoTask } from '../../src/core/phases.js';
 import { executeRuntimeCommand as runRuntimeCommand } from '../../src/core/runtime/commands/dispatch.js';
 import type {
   RuntimeCommandDef,
@@ -8,66 +7,6 @@ import type { Phase } from '../../src/core/schemas/enums.js';
 
 export const noop = () => {};
 export const noopTrue = () => true;
-
-export const PHASE_GUARDS = {
-  canReviseSpec: {
-    fn: canReviseSpec,
-    allowed: [
-      'reviewing-spec',
-      'clarifying',
-      'constitution-check',
-      'planning',
-      'reviewing-plan',
-      'reviewing-briefs',
-      'analyzing',
-      'implementing',
-      'validating-task',
-      'escalating',
-      'final-review',
-    ] as Phase[],
-    denied: ['idle', 'researching', 'specifying', 'complete'] as Phase[],
-  },
-  canRevisePlan: {
-    fn: canRevisePlan,
-    allowed: [
-      'reviewing-plan',
-      'reviewing-briefs',
-      'analyzing',
-      'implementing',
-      'validating-task',
-      'escalating',
-      'final-review',
-    ] as Phase[],
-    denied: [
-      'idle',
-      'researching',
-      'specifying',
-      'reviewing-spec',
-      'clarifying',
-      'constitution-check',
-      'planning',
-      'complete',
-    ] as Phase[],
-  },
-  canRedoTask: {
-    fn: canRedoTask,
-    allowed: ['implementing', 'validating-task', 'escalating'] as Phase[],
-    denied: [
-      'idle',
-      'researching',
-      'specifying',
-      'reviewing-spec',
-      'clarifying',
-      'constitution-check',
-      'planning',
-      'reviewing-plan',
-      'reviewing-briefs',
-      'analyzing',
-      'final-review',
-      'complete',
-    ] as Phase[],
-  },
-} as const;
 
 export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): RuntimeCommandContext {
   return {

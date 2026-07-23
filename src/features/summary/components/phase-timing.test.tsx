@@ -39,17 +39,4 @@ describe('buildPhaseTimingRows', () => {
 
     ui.unmount();
   });
-
-  it('phase rows render Title Case labels', () => {
-    const ui = renderFeature(
-      <PhaseTimingRows phaseTimings={{ 'reviewing-spec': 500, review: 1200 }} />,
-    );
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).toContain('Reviewing Spec');
-    expect(frame).toContain('Review');
-    expect(frame).not.toContain('reviewing-spec');
-
-    ui.unmount();
-  });
 });

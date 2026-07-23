@@ -1,7 +1,7 @@
 import type { RecoveryAction, RecoveryReason } from '../../core/schemas/enums.js';
 import { PROMPTABLE_RECOVERY_ACTIONS } from '../../core/schemas/enums.js';
-import type { RecoveryFact, RecoveryIssue } from '../../core/schemas/recovery.js';
-import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery.js';
+import type { RecoveryFact, RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery/facts.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { assertNever } from '../../utils/type-guards.js';
@@ -153,7 +153,7 @@ export function formatRecoveryActionLines(
   );
 }
 
-export function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
+function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
   const actions = getRecoveryPromptActions(issue);
   const context: RecoveryActionChoiceContext = { reason: issue.reason, facts: issue.facts };
   const recommended = resolveRecommendedAction(issue, actions);

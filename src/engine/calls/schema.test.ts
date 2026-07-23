@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RUNNER_KINDS } from '../../core/schemas/enums.js';
-import {
-  RUNNER_CALL_BACKEND_KINDS,
-  RUNNER_CALL_TEXT_CHANNELS,
-} from '../../core/runner-call-contract.js';
+import { RUNNER_CALL_TEXT_CHANNELS } from '../../core/runner-call-contract.js';
 import {
   RunnerCallEventSchema,
   RunnerCallResultSchema,
@@ -32,10 +28,6 @@ const terminalFields = {
 } as const;
 
 describe('RunnerCallEventSchema', () => {
-  it('derives runner-call backend kinds from the canonical runner kind tuple', () => {
-    expect(RUNNER_CALL_BACKEND_KINDS).toBe(RUNNER_KINDS);
-  });
-
   it('validates call text deltas from the canonical text channel tuple', () => {
     expect(
       RUNNER_CALL_TEXT_CHANNELS.map(
@@ -58,114 +50,6 @@ describe('RunnerCallEventSchema', () => {
         text: 'diagnostic text',
       }).success,
     ).toBe(false);
-  });
-
-  it('accepts the runner call event variants emitted by the call subsystem', () => {
-    const events = [
-      { type: 'call_started', ts: 1, ...context },
-      {
-        type: 'call_text_delta',
-        ts: 1,
-        ...context,
-        channel: 'assistant',
-        text: 'hello',
-      },
-      {
-        type: 'call_stderr_delta',
-        ts: 1,
-        ...context,
-        channel: 'stderr',
-        text: 'warning',
-      },
-      {
-        type: 'call_tool_use_delta',
-        ts: 1,
-        ...context,
-        channel: 'tool',
-        toolUseId: 'tool-1',
-        name: 'read_file',
-        inputDelta: '{"path"',
-      },
-      {
-        type: 'call_tool_use_done',
-        ts: 1,
-        ...context,
-        channel: 'tool',
-        toolUse: { id: 'tool-1', name: 'read_file', input: { path: 'README.md' } },
-      },
-      {
-        type: 'call_usage',
-        ts: 1,
-        ...context,
-        usage,
-        semantics: 'delta',
-      },
-      {
-        type: 'call_session_id',
-        ts: 1,
-        ...context,
-        nativeSessionId: 'session-1',
-      },
-      {
-        type: 'call_artifact',
-        ts: 1,
-        ...context,
-        artifact: {
-          id: 'artifact-1',
-          source: 'file',
-          name: 'plan.md',
-          path: '.diptych/sessions/one/plan.md',
-          mimeType: 'text/markdown',
-          text: null,
-        },
-      },
-      {
-        type: 'call_warning',
-        ts: 1,
-        ...context,
-        warning: {
-          code: 'slow_stream',
-          message: 'stream slowed',
-          parser: 'jsonl',
-          upstreamType: 'mystery',
-          channel: 'stdout',
-        },
-      },
-      {
-        type: 'call_error',
-        ts: 1,
-        ...context,
-        status: 'timeout',
-        error: { code: 'timeout', message: 'runner timed out' },
-        ...terminalFields,
-        partial: true,
-      },
-      {
-        type: 'call_completed',
-        ts: 1,
-        ...context,
-        status: 'completed',
-        error: null,
-        ...terminalFields,
-      },
-      {
-        type: 'call_unknown_upstream',
-        ts: 1,
-        ...context,
-        rawPreview: '{"type":"new_event"}',
-        backendMetadata: {
-          backendKind: 'cli',
-          channel: 'stdout',
-          source: 'codex',
-          parser: 'jsonl',
-          upstreamType: 'new_event',
-        },
-      },
-    ];
-
-    expect(events.map((event) => RunnerCallEventSchema.safeParse(event).success)).toEqual(
-      events.map(() => true),
-    );
   });
 
   it('normalizes warning metadata and stable fingerprints', () => {

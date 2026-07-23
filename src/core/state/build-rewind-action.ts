@@ -3,7 +3,7 @@ import type { WorkflowState } from '../schemas/workflow.js';
 import { taskId } from '../schemas/task.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../transcript-policy.js';
-import { appendProtectedEngineEvent } from './persistence.js';
+import { appendProtectedEngineEvent } from '../sessions/log-writer.js';
 import { RewindEventSchema, type RewindEvent } from './rewind-event.js';
 
 export type RewindTarget =

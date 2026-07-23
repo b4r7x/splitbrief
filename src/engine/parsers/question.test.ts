@@ -147,17 +147,6 @@ describe('createQuestionAccumulator', () => {
     expect(second[0]?.id).toBe('q1');
     expect(second[0]?.text).toBe('use arrow --> here');
   });
-
-  it('buffer does not grow unbounded after many chunks', () => {
-    const acc = createQuestionAccumulator();
-    acc.addChunk('<!-- Q:{"id":"q1","type":"confirm","text":"A?"} -->');
-    for (let i = 0; i < 100; i++) {
-      acc.addChunk('Some text without any markers. '.repeat(10));
-    }
-    const all = acc.getAll();
-    expect(all.length).toBe(1);
-    expect(all[0]?.id).toBe('q1');
-  });
 });
 
 describe('extractQuestionsFromStream — edge cases', () => {

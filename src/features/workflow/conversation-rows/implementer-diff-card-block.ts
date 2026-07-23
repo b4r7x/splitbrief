@@ -6,9 +6,9 @@ import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } fr
 import {
   cardRowsWindowSlice,
   countCardRows,
-  sanitizeRowDisplayText,
   type CardBodyLineInput,
-} from './row-format.js';
+} from './row-format/card-block.js';
+import { sanitizeRowDisplayText } from './row-format/text.js';
 
 const ELLIPSIS = '\u2026';
 const COLLAPSE_HINT = 'ctrl+d to collapse';

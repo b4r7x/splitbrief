@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { Box } from 'ink';
+import { Box, Text } from 'ink';
+import { render } from 'ink-testing-library';
 import { getTerminalCellWidth } from '../utils/display-text.js';
 import { renderMarkdownRows, type RenderMarkdownRowsOptions } from './markdown.js';
 import { getTheme } from './theme.js';
@@ -20,15 +21,19 @@ afterAll(() => {
   else process.env['FORCE_COLOR'] = originalForceColor;
 });
 
-const NAMED_COLOR_CODES: Record<string, number> = { cyan: 36, white: 37, gray: 90 };
-function sgrFor(color: string): string {
-  if (!color.startsWith('#')) {
-    const code = NAMED_COLOR_CODES[color];
-    if (code === undefined) throw new Error(`unmapped color ${color}`);
-    return `\x1b[${code}m`;
-  }
-  const [r, g, b] = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
-  return `\x1b[38;2;${r};${g};${b}m`;
+function colorOpen(color: string): string {
+  const ui = render(<Text color={color}>x</Text>);
+  const frame = ui.lastFrame() ?? '';
+  ui.unmount();
+  const prefix = frame.slice(0, frame.indexOf('x'));
+  if (!prefix) throw new Error(`no color prefix rendered for ${color}`);
+  return prefix;
+}
+
+function expectFrameUsesThemeColor(raw: string, color: string): void {
+  const prefix = colorOpen(color);
+  expect(prefix.length).toBeGreaterThan(0);
+  expect(raw).toContain(prefix);
 }
 
 async function renderMarkdown(
@@ -108,40 +113,11 @@ describe('Markdown', () => {
     ).toBeGreaterThan(rows.length);
   });
 
-  it('does not render terminal controls or OSC payloads from markdown text', async () => {
-    const rows = renderMarkdownRows({
+  it('does not render terminal controls, OSC payloads, or secret-looking markdown text', async () => {
+    const { stripped, unmount } = await renderMarkdown({
       source: [
         '# Safe\u001b[31m heading\u001b[0m',
         'visible \u001b]52;c;clipboard\u0007done\u0007 \u009b2Ktail',
-      ].join('\n'),
-      width: 48,
-      theme: getTheme(),
-    });
-    const ui = renderFeature(
-      <Box flexDirection="column">
-        {rows.map((row) => (
-          <Box key={row.key} flexDirection="column">
-            {row.node}
-          </Box>
-        ))}
-      </Box>,
-    );
-    await tick(20);
-
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Safe heading');
-    expect(frame).toContain('visible done tail');
-    expect(frame).not.toContain('clipboard');
-    expect(frame).not.toContain('\u001b');
-    expect(frame).not.toContain('\u009b');
-    expect(frame).not.toContain('\u0007');
-
-    ui.unmount();
-  });
-
-  it('redacts secret-looking markdown text while preserving document line breaks', async () => {
-    const rows = renderMarkdownRows({
-      source: [
         '# Token Review',
         'Use TOKEN=abcdefghijklmnopqrstuvwxyz1234567890abcdef',
         '```sh',
@@ -151,25 +127,19 @@ describe('Markdown', () => {
       width: 80,
       theme: getTheme(),
     });
-    const ui = renderFeature(
-      <Box flexDirection="column">
-        {rows.map((row) => (
-          <Box key={row.key} flexDirection="column">
-            {row.node}
-          </Box>
-        ))}
-      </Box>,
-    );
-    await tick(20);
 
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Token Review');
-    expect(frame).toContain('TOKEN=REDACTED');
-    expect(frame).toContain('Authorization: Bearer ***REDACTED***');
-    expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz1234567890abcdef');
-    expect(frame).not.toContain('abcdefghijklmnopqrstuvwxyz');
-
-    ui.unmount();
+    expect(stripped).toContain('Safe heading');
+    expect(stripped).toContain('visible done tail');
+    expect(stripped).not.toContain('clipboard');
+    expect(stripped).not.toContain('\u001b');
+    expect(stripped).not.toContain('\u009b');
+    expect(stripped).not.toContain('\u0007');
+    expect(stripped).toContain('Token Review');
+    expect(stripped).toContain('TOKEN=REDACTED');
+    expect(stripped).toContain('Authorization: Bearer ***REDACTED***');
+    expect(stripped).not.toContain('abcdefghijklmnopqrstuvwxyz1234567890abcdef');
+    expect(stripped).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    unmount();
   });
 });
 
@@ -196,7 +166,7 @@ describe('inline links (REQ-002, REQ-010)', () => {
     expect(stripped).toContain('Read the docs');
     expect(stripped).not.toContain('](');
     expect(stripped).not.toContain('https://example.com/docs');
-    expect(raw).toContain(sgrFor(theme.markdown.link));
+    expectFrameUsesThemeColor(raw, theme.markdown.link);
     expect(raw).toContain('\x1b[4m');
     unmount();
   });
@@ -225,7 +195,7 @@ describe('GFM pipe tables (REQ-003)', () => {
     expect(stripped).toContain('Alice');
     expect(stripped).toContain('Bob');
     expect(stripped).not.toContain('---');
-    expect(raw).toContain(sgrFor(theme.markdown.heading));
+    expectFrameUsesThemeColor(raw, theme.markdown.heading);
 
     const tableLines = stripped.split('\n').filter((line) => line.includes('│'));
     expect(tableLines.length).toBeGreaterThan(1);
@@ -298,7 +268,7 @@ describe('heading color theming (REQ-006)', () => {
     const theme = getTheme(preset);
     const { raw, unmount } = await renderMarkdown({ source, width: 40, theme });
 
-    expect(raw).toContain(sgrFor(theme.markdown.heading));
+    expectFrameUsesThemeColor(raw, theme.markdown.heading);
     unmount();
   });
 });
@@ -309,8 +279,8 @@ describe('fenced code highlighting (REQ-007)', () => {
     const source = ['```ts', "const x = 'y';", '```'].join('\n');
     const { raw, unmount } = await renderMarkdown({ source, width: 40, theme });
 
-    expect(raw).toContain(sgrFor(theme.syntax.keyword));
-    expect(raw).toContain(sgrFor(theme.syntax.string));
+    expectFrameUsesThemeColor(raw, theme.syntax.keyword);
+    expectFrameUsesThemeColor(raw, theme.syntax.string);
     unmount();
   });
 
@@ -320,7 +290,7 @@ describe('fenced code highlighting (REQ-007)', () => {
     const { raw, stripped, unmount } = await renderMarkdown({ source, width: 40, theme });
 
     for (const scopeColor of Object.values(theme.syntax)) {
-      expect(raw).not.toContain(sgrFor(scopeColor));
+      expect(raw).not.toContain(colorOpen(scopeColor));
     }
     expect(stripped).toContain("const x = 'y';");
     unmount();

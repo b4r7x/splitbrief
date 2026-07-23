@@ -12,7 +12,6 @@ import { cliError } from './errors.js';
 import { resolveRunConfig } from './build-overrides.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { flushOtel } from '../lib/otel.js';
-import type { CollectedReadiness } from '../core/readiness/collect.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../core/transcript-policy.js';
 
@@ -80,7 +79,6 @@ export interface RunHeadlessOptions {
   opts: WorkflowOpts;
   savedState?: WorkflowState | undefined;
   sessionId?: string | undefined;
-  readiness?: CollectedReadiness | undefined;
   _planner?: Planner | undefined;
   _implementer?: Implementer | undefined;
   plannerContext?: string | undefined;
@@ -93,7 +91,6 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     opts,
     savedState,
     sessionId,
-    readiness,
     _planner,
     _implementer,
     plannerContext,
@@ -102,7 +99,6 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   const config = resolveRunConfig({
     projectDir,
     opts,
-    readiness,
     autoApprove: opts.auto !== undefined ? opts.auto : true,
   });
   const runConfig = configForSessionTranscriptPolicy(

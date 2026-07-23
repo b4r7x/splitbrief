@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
@@ -41,7 +41,6 @@ describe('e2e: drift out-of-scope detection', () => {
     const parserPath = join(ctx.projectDir, 'src/config-parser.ts');
 
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
-    expect(readFileSync(parserPath, 'utf-8')).toContain('parseConfig');
     expect(evaluateTsArtifact(parserPath, "mod.parseConfig('name=diptych; enabled=true')")).toEqual(
       {
         name: 'diptych',

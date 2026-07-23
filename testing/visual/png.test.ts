@@ -4,14 +4,14 @@ import type { CellGrid } from './contracts/cells.js';
 import { viewport } from './contracts/geometry.js';
 import { createFrameIdentity, createVisualProvenance } from './visual-contract-fixtures.js';
 import { parseTerminalFrame } from './terminal/parse.js';
-import { serializeTerminalTruth } from './terminal/serialize.js';
+import { serializeTerminalTruth } from './terminal/serialize/truth.js';
 import { PNG_RENDERER_METADATA, renderCellGridPng } from './artifacts/png.js';
 import { renderCellGridSvg, SVG_CELL_HEIGHT_PX, SVG_CELL_WIDTH_PX } from './artifacts/svg.js';
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 describe('cell-grid PNG rendering', () => {
-  it('returns a PNG whose signature and dimensions derive from cell metrics', async () => {
+  it('returns valid PNG bytes, dimensions, and pinned renderer provenance', async () => {
     const grid = await createGrid();
     const result = await renderCellGridPng({ grid, svg: renderCellGridSvg(grid) });
     if (result.kind !== 'success') throw new Error('Expected sharp rasterization to succeed');
@@ -27,13 +27,6 @@ describe('cell-grid PNG rendering', () => {
       width: result.dimensions.widthPx,
       height: result.dimensions.heightPx,
     });
-  });
-
-  it('reports pinned renderer, font, and cell-metric metadata', async () => {
-    const grid = await createGrid();
-    const result = await renderCellGridPng({ grid, svg: renderCellGridSvg(grid) });
-    if (result.kind !== 'success') throw new Error('Expected sharp rasterization to succeed');
-
     expect(result.renderer).toEqual(PNG_RENDERER_METADATA);
     expect(result.renderer).toMatchObject({
       name: 'sharp',

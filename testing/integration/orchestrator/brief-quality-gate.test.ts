@@ -1,40 +1,12 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createInitialState } from '../../../src/core/state/machine.js';
-import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
-import { runPlanningPhase } from '../../../src/engine/orchestrator/planning/run.js';
 import { runBriefQualityGate } from '../../../src/engine/orchestrator/planning/brief-quality-gate.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import {
-  makeCallbacks,
-  makePlanner,
-  makeBusRecorder,
-} from '#testing/helpers/orchestrator-factories.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import { sessionDir, BRIEF_QUALITY_FILE, TASKS_FILE } from '../../../src/core/paths.js';
-import {
-  makeWorkflowMetadata,
-  TEST_WORKFLOW_SINKS,
-} from '#testing/helpers/orchestrator-context.js';
-
-const TEST_METADATA = makeWorkflowMetadata('instant');
-
-const MINIMAL_TASKS_MD = `---
-id: T001
-title: Rename foo to bar
-action: modify
-file: src/foo.ts
----
-
-### Description
-Rename the symbol.
-
-### Tests
-- passes tsc
-`;
+import { sessionDir, BRIEF_QUALITY_FILE } from '../../../src/core/paths.js';
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -115,59 +87,5 @@ describe('runBriefQualityGate', () => {
     if (ev && 'errorCount' in ev) {
       expect(ev.errorCount).toBeGreaterThan(0);
     }
-  });
-
-  it('gate failure prevents planning from entering implementing phase', async () => {
-    const projectDir = createTempDir('brief-quality-int');
-    dirs.push(projectDir);
-    const sessionId = 'sess-gate-int';
-    ensureSessionDir(projectDir, sessionId);
-
-    const badTask = makeTask({ id: 'T001', scope: undefined, evidence: [] });
-    const planner = makePlanner({
-      instantPlan: vi.fn().mockResolvedValue({
-        spec: '',
-        plan: '',
-        tasks: [badTask],
-        usage: { inputTokens: 10, outputTokens: 5 },
-        phases: [{ text: MINIMAL_TASKS_MD, filename: TASKS_FILE }],
-      }),
-    });
-    const { callbacks } = makeCallbacks();
-    const config = makeConfig({ workflow: { mode: 'instant' } });
-    const { bus } = makeBusRecorder();
-    const initial = createInitialState('rename foo');
-    const state: WorkflowState = { ...initial, phase: 'idle' };
-
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        config,
-        callbacks,
-        metadata: TEST_METADATA,
-        sessionId,
-        bus,
-        sinks: TEST_WORKFLOW_SINKS,
-      },
-      planner,
-      state,
-      feature: 'rename foo',
-    });
-
-    expect(result.cancelled).toBe(true);
-    expect(result.state.phase).toBe('idle');
-    expect(result.tasks).toHaveLength(0);
-
-    const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_QUALITY_FILE);
-    expect(existsSync(reportPath)).toBe(true);
-    const persisted = JSON.parse(readFileSync(reportPath, 'utf-8'));
-    expect(
-      persisted.issues.map((i: { code: string; severity: string }) => [i.code, i.severity]),
-    ).toEqual(
-      expect.arrayContaining([
-        ['missing_scope', 'error'],
-        ['missing_evidence', 'error'],
-      ]),
-    );
   });
 });

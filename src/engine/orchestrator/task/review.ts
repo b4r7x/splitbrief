@@ -6,7 +6,7 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import { EVIDENCE_FILE, sessionDir } from '../../../core/paths.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 
 import {
   TASK_REVIEW_COMMANDS,

@@ -12,12 +12,8 @@ import {
 } from '../contracts/selection.js';
 import { findVisualScenario, listVisualScenarios } from '../catalog.js';
 import { parseTerminalFrame } from '../terminal/parse.js';
-import {
-  writeArtifactBundle,
-  writeStagedArtifactFile,
-  type ArtifactFileWriter,
-  type WriteArtifactBundleOptions,
-} from '../artifacts/write.js';
+import { writeArtifactBundle, type WriteArtifactBundleOptions } from '../artifacts/write.js';
+import { writeStagedArtifactFile, type ArtifactFileWriter } from '../artifacts/staging.js';
 import type { PngRasterizer } from '../artifacts/png.js';
 import type { PublishedArtifactPublication } from '../artifacts/manifest.js';
 import { inCaptureOrder, withCaptureEnvironment } from './environment.js';

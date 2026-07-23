@@ -12,7 +12,7 @@ import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
-import { appendMessage } from '../../../core/state/persistence.js';
+import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { ensureSessionDir, ensureDiptychDir, type SpecMetadata } from '../../../core/paths-io.js';
 import { readPackageJson } from '../../../core/project-meta.js';
 import { createPlanner, createImplementer } from '../../runners/factory.js';
@@ -26,7 +26,7 @@ import { createHookSink } from '../../hooks/sink.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import { isHooksConfigTrusted, markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { error } from '../../../utils/error.js';
-import { createBranch } from '../../../lib/git.js';
+import { createBranch } from '../../../lib/git/refs.js';
 import { slugify } from '../../../utils/slugify.js';
 import { generateOpaqueSessionSlug } from '../../../core/sessions/lifecycle.js';
 import type {
@@ -35,7 +35,7 @@ import type {
   WorkflowContext,
   WorkflowSinks,
 } from '../types.js';
-import { buildSummary, type SummaryBase } from '../summary.js';
+import { buildSummary, type SummaryBase } from '../summary/build.js';
 import {
   createImplementerPublisher,
   publishError,
@@ -47,7 +47,7 @@ import {
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
-import { createValidator } from '../validation.js';
+import { createValidator } from '../validation/run.js';
 import { rejectUntrustedRunners } from '../../runners/trust.js';
 
 const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();

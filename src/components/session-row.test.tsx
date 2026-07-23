@@ -158,6 +158,8 @@ describe('SessionRow', () => {
 
     expect(selected).toContain('▌');
     expect(unselected).not.toContain('▌');
+    expect(selected).not.toContain(CURSOR_GLYPH);
+    expect(unselected).not.toContain(CURSOR_GLYPH);
     expect(selected.indexOf('alpha')).toBe(unselected.indexOf('alpha'));
   });
 
@@ -182,23 +184,6 @@ describe('SessionRow', () => {
   it('does not reserve a cursor cell when no cursor is requested', () => {
     const frame = frameOf(<SessionRow session={makeSession({ feature: 'alpha' })} />);
     expect(lineContaining(frame, 'alpha')).toMatch(/^○ alpha/);
-  });
-
-  it('uses the ▌ accent bar as the sole inline selection signal, never the ▸ cursor', () => {
-    const defaults = frameOf(<SessionRow session={makeSession()} />);
-    expect(defaults).not.toContain(CURSOR_GLYPH);
-
-    const active = frameOf(
-      <SessionRow session={makeSession()} cursor={{ kind: 'inline', isCursor: true }} />,
-    );
-    expect(active).not.toContain(CURSOR_GLYPH);
-    expect(active).toContain('▌');
-
-    const inactive = frameOf(
-      <SessionRow session={makeSession()} cursor={{ kind: 'inline', isCursor: false }} />,
-    );
-    expect(inactive).not.toContain(CURSOR_GLYPH);
-    expect(inactive).not.toContain('▌');
   });
 
   it('uses ascii status and selection markers when the glyph tier is ascii', () => {

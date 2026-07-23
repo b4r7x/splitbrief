@@ -1,4 +1,4 @@
-import { eventRowBlock } from '../../src/features/workflow/conversation-rows/event-rows.js';
+import { eventRowBlock } from '../../src/features/workflow/conversation-rows/event-rows/dispatch.js';
 import type { ConversationRow } from '../../src/features/workflow/conversation-rows/types.js';
 
 export function eventRows(options: Parameters<typeof eventRowBlock>[0]): ConversationRow[] {

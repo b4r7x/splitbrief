@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ParsedLine } from '../runners/types.js';
-import { TokenUsageLikeSchema, toTokenDelta } from './token-usage.js';
+import { BackendTokenUsageSchema, toTokenDelta } from '../calls/usage.js';
 import { isRecord, narrowRecord, optionalString } from '../../utils/type-guards.js';
 import {
   parsedMalformedRecordWarning,
@@ -24,7 +24,7 @@ const ItemCompletedEvent = z.object({
 
 const TurnCompletedEvent = z.object({
   type: z.literal('turn.completed'),
-  usage: TokenUsageLikeSchema,
+  usage: BackendTokenUsageSchema,
 });
 
 const ThreadStartedEvent = z.object({

@@ -20,7 +20,7 @@ const SkillFrontmatterSchema = z.object({
   description: z.string().default(''),
 });
 
-export function parseFrontmatter(raw: string): { name: string; description: string } | null {
+function parseFrontmatter(raw: string): { name: string; description: string } | null {
   const fm = parseSimpleYamlFrontmatter(raw);
   if (!fm) return null;
   const result = SkillFrontmatterSchema.safeParse(fm);

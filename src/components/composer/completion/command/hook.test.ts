@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { Box, Text } from 'ink';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Composer } from '../../composer.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderFeature, flushEffects, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { inputHistoryStore } from '../../../../stores/ui/input-history.js';
 import { useCommandCompletion } from './hook.js';
@@ -94,8 +94,8 @@ describe('useCommandCompletion submit routing', () => {
       },
       { timeout: 5000 },
     );
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
     await vi.waitFor(
       () => {
         expect(commandCalls).toEqual(['/nope']);
@@ -118,8 +118,8 @@ describe('useCommandCompletion submit routing', () => {
       },
       { timeout: 5000 },
     );
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
     await vi.waitFor(
       () => {
         expect(commandCalls).toEqual(['/copy path']);
@@ -142,8 +142,8 @@ describe('useCommandCompletion submit routing', () => {
       },
       { timeout: 5000 },
     );
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
     await vi.waitFor(
       () => {
         expect(commandCalls).toEqual(['/queue clear']);
@@ -164,8 +164,8 @@ describe('useCommandCompletion submit routing', () => {
       },
       { timeout: 5000 },
     );
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
     await vi.waitFor(
       () => {
         expect(commandCalls).toEqual(['/copy']);

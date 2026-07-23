@@ -49,16 +49,16 @@ const gates: Gate[] = [
   },
   {
     id: '6',
-    description: 'simple-git only in src/lib/git.ts',
+    description: 'simple-git only in src/lib/git/client.ts',
     command:
-      "{ rg \"from 'simple-git'\" src/ --glob '!**/*.test.ts' | rg -v '^src/lib/git.ts:' || true; } | wc -l",
+      "{ rg \"from 'simple-git'\" src/ --glob '!**/*.test.ts' | rg -v '^src/lib/git/client.ts:' || true; } | wc -l",
     expected: 0,
   },
   {
     id: '7',
-    description: 'No global env mutation in agent-sdk-backend',
+    description: 'No global env mutation in agent-sdk runner',
     command:
-      '{ rg "process\\.env(?:\\.[A-Z_]+|\\[[\'\\"\'][A-Z_]+[\'\\"]\\])\\s*=" src/engine/runners/agent-sdk-backend.ts || true; } | wc -l',
+      '{ rg "process\\.env(?:\\.[A-Z_]+|\\[[\'\\"\'][A-Z_]+[\'\\"]\\])\\s*=" src/engine/runners/agent-sdk --glob "!**/*.test.ts" || true; } | wc -l',
     expected: 0,
   },
   {
@@ -150,7 +150,7 @@ const gates: Gate[] = [
     id: '17c',
     description:
       'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract and sanctioned files)',
-    command: `{ rg -n -P "[)\\]A-Za-z0-9_>] as [A-Z][A-Za-z0-9_]*(?=[;),<\\].}>]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|engine/hooks/dispatch|utils/error)\\.ts:" || true; } | wc -l`,
+    command: `{ rg -n -P "[)\\]A-Za-z0-9_>] as [A-Z][A-Za-z0-9_]*(?=[;),<\\].}>]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {

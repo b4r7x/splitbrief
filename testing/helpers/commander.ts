@@ -1,12 +1,12 @@
 import { Command } from 'commander';
-import { registerStartCommand } from '../../src/cli/commands/start.js';
+import { registerStartCommand } from '../../src/cli/commands/start/register.js';
 import { registerSpecCommand } from '../../src/cli/commands/spec.js';
 import { registerInitCommand } from '../../src/cli/commands/init.js';
 import { registerStatusCommand } from '../../src/cli/commands/status.js';
 import { registerExplainCommand } from '../../src/cli/commands/explain.js';
 import { registerResumeCommand } from '../../src/cli/commands/resume.js';
 import { registerMigrateCommand } from '../../src/cli/commands/migrate.js';
-import { registerContinueCommand } from '../../src/cli/commands/continue.js';
+import { registerContinueCommand } from '../../src/cli/commands/continue/register.js';
 import { registerLastCommand } from '../../src/cli/commands/last.js';
 import { registerStatsCommand } from '../../src/cli/commands/stats.js';
 

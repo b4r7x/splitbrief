@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { renderHandoff } from './render.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { renderHandoff, renderHandoffWithCustom } from './render.js';
 import type { HandoffInput } from './types.js';
 import type { HandoffTarget } from '../../core/handoff/targets.js';
+import { HANDOFF_TARGETS } from '../../core/handoff/targets.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
 const t1 = makeTask({
@@ -192,16 +196,12 @@ describe('renderHandoff — copilot-issue', () => {
 });
 
 describe('renderHandoff — selectedTaskIds', () => {
-  it('filters to only requested task', () => {
+  it('filters task artifacts to the requested ids', () => {
     const pack = renderHandoff({ ...baseInput, target: 'spec-kit', selectedTaskIds: [t1.id] });
     const taskFiles = pack.files.filter((f) => f.path.startsWith('tasks/'));
     expect(taskFiles).toHaveLength(1);
     const [firstTaskFile] = taskFiles;
     expect(firstTaskFile?.path).toBe('tasks/T001.md');
-  });
-
-  it('other tasks do not appear in tasks/ when filtered', () => {
-    const pack = renderHandoff({ ...baseInput, target: 'spec-kit', selectedTaskIds: [t1.id] });
     const paths = pack.files.map((f) => f.path);
     expect(paths).not.toContain('tasks/T002.md');
     expect(paths).not.toContain('tasks/T003.md');
@@ -219,5 +219,96 @@ describe('renderHandoff — unsupported target', () => {
     expect(() => renderHandoff({ ...baseInput, target: 'foobar' as HandoffTarget })).toThrow(
       'unsupported target: foobar',
     );
+  });
+});
+
+const customRendererBaseInput: Omit<HandoffInput, 'target'> & { target: string } = {
+  target: 'spec-kit',
+  sessionId: 'sess-test',
+  feature: 'Test Feature',
+  mode: 'standard',
+  tasks: [t1],
+};
+
+let customRendererTmp: string;
+
+beforeEach(() => {
+  customRendererTmp = mkdtempSync(join(tmpdir(), 'render-handoff-custom-'));
+  writeFileSync(join(customRendererTmp, 'package.json'), JSON.stringify({ type: 'module' }));
+});
+
+afterEach(() => {
+  rmSync(customRendererTmp, { recursive: true, force: true });
+});
+
+describe('renderHandoffWithCustom', () => {
+  it.each(
+    HANDOFF_TARGETS,
+  )('renders built-in target %s without loading a custom file', async (target) => {
+    const pack = await renderHandoffWithCustom(
+      { ...customRendererBaseInput, target },
+      customRendererTmp,
+      { trustCustomRenderers: false },
+    );
+    expect(pack.files.length).toBeGreaterThan(0);
+  });
+
+  it('delegates to sync renderHandoff for built-in targets without loading a file', async () => {
+    const pack = await renderHandoffWithCustom(
+      { ...customRendererBaseInput, target: 'spec-kit' },
+      customRendererTmp,
+    );
+    expect(pack.files.length).toBeGreaterThan(0);
+    expect(pack.files.some((f) => f.path.startsWith('tasks/'))).toBe(true);
+  });
+
+  it('loads and calls a custom renderer for an unknown target when trusted', async () => {
+    const renderersDir = join(customRendererTmp, '.diptych', 'handoff-renderers');
+    mkdirSync(renderersDir, { recursive: true });
+    writeFileSync(
+      join(renderersDir, 'my-custom.js'),
+      `export default async function render(input) {
+        return { files: [{ path: 'custom.md', content: 'from custom renderer' }] };
+      }`,
+    );
+
+    const pack = await renderHandoffWithCustom(
+      { ...customRendererBaseInput, target: 'my-custom' },
+      customRendererTmp,
+      { trustCustomRenderers: true },
+    );
+    expect(pack.files).toHaveLength(1);
+    expect(pack.files[0]?.path).toBe('custom.md');
+    expect(pack.files[0]?.content).toBe('from custom renderer');
+  });
+
+  it('blocks custom renderer when not trusted', async () => {
+    const renderersDir = join(customRendererTmp, '.diptych', 'handoff-renderers');
+    mkdirSync(renderersDir, { recursive: true });
+    writeFileSync(
+      join(renderersDir, 'my-custom.js'),
+      `export default async function render(input) {
+        return { files: [{ path: 'custom.md', content: 'from custom renderer' }] };
+      }`,
+    );
+
+    await expect(
+      renderHandoffWithCustom(
+        { ...customRendererBaseInput, target: 'my-custom' },
+        customRendererTmp,
+      ),
+    ).rejects.toThrow(/blocked.*trust\.customRenderers/);
+  });
+
+  it('throws with "unknown target" message when no built-in or custom renderer found', async () => {
+    await expect(
+      renderHandoffWithCustom(
+        { ...customRendererBaseInput, target: 'no-such-renderer' },
+        customRendererTmp,
+        {
+          trustCustomRenderers: true,
+        },
+      ),
+    ).rejects.toThrow('unknown target: no-such-renderer. No built-in or custom renderer found.');
   });
 });

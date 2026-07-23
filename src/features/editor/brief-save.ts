@@ -3,7 +3,7 @@ import type { Task } from '../../core/schemas/task.js';
 import { topoSort } from '../../core/state/topo-sort.js';
 import { evaluateBriefQuality, firstBriefError } from '../../engine/spec/brief-quality.js';
 import { formatTasks } from '../../engine/spec/formatter.js';
-import { parseTasksStrict } from '../../engine/spec/parser.js';
+import { parseTasksStrict } from '../../engine/spec/tasks/parse.js';
 
 export function checkBriefSave(next: Task[]): { ok: true } | { ok: false; message: string } {
   if (next.length < 1) {

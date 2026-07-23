@@ -1,20 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { CostBreakdown, Summary } from '../../core/schemas/summary.js';
 import { taskId } from '../../core/schemas/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { createEvidenceLedger } from '../../core/evidence/ledger.js';
-import { writeEvidenceLedger } from '../../core/evidence/ledger.js';
-import { recordFinalReviewEvidence } from '../../engine/orchestrator/evidence/reporting.js';
-import { recordLocalTaskEvidence } from '../../engine/orchestrator/evidence/task.js';
 import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
@@ -66,6 +58,7 @@ describe('SummaryScreen', () => {
 
     expect(frame).toContain('standard');
     expect(frame).not.toContain('Mode');
+    expect(frame).not.toContain('full');
 
     ui.unmount();
   });
@@ -305,123 +298,6 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
-  it('loads the evidence ledger at the screen boundary and renders task evidence', async () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'summary-screen-evidence-'));
-    const sessionId = 'summary-evidence-session';
-    try {
-      const task = makeTask({
-        id: 'T001',
-        title: 'Evidence \u001b]52;c;clipboard-title\u0007detail',
-        file: 'src/evidence.ts',
-        tests: ['visible expected \u001b]52;c;clipboard-expected\u0007'],
-      });
-      let ledger = createEvidenceLedger({
-        sessionId,
-        feature: 'demo',
-        mode: 'standard',
-        tasks: [task],
-      });
-      ledger = recordLocalTaskEvidence({
-        ledger,
-        task,
-        status: 'done',
-        method: 'local',
-        validation: [{ passed: true, stage: 'test' }],
-      });
-      ledger = {
-        ...ledger,
-        tasks: ledger.tasks.map((entry) =>
-          entry.id === task.id
-            ? {
-                ...entry,
-                observedEvidence: [
-                  'observed visible \u001b]52;c;clipboard-observed\u0007',
-                  ...entry.observedEvidence,
-                ],
-              }
-            : entry,
-        ),
-      };
-      ledger = recordFinalReviewEvidence({
-        ledger,
-        status: 'written',
-        path: 'review\u001b]52;c;clipboard-path\u0007.md',
-      });
-      writeEvidenceLedger({ projectDir, sessionId }, ledger);
-
-      terminalSizeStore.__testReset({ cols: 160, rows: 80, isSmall: false });
-      configStore.__testReset({ projectDir });
-      showSummaryRoute({
-        sessionId,
-        summary: makeSummary({
-          evidenceSummary: {
-            path: 'evidence\u001b]52;c;clipboard-ledger\u0007.json',
-            totalTasks: 1,
-            tasksWithValidationEvidence: 1,
-            escalatedTasks: 0,
-            failedTasks: 0,
-          },
-        }),
-      });
-
-      const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-      await tick();
-      const frame = ui.lastFrame() ?? '';
-
-      expect(frame).toContain('evidence');
-      expect(frame).toContain('1/1 validated');
-      expect(frame).toContain('T001');
-      expect(frame).toContain('Evidence detail');
-      expect(frame).toContain(glyph('check'));
-      expect(frame).toContain(glyph('treeLast'));
-      expect(frame).toContain('visible expected');
-      expect(frame).toContain('observed visible');
-      expect(frame).toContain('review.md');
-      expect(frame).toContain('passed test');
-      expect(frame).toContain('final review: written');
-      expect(frame).not.toContain('clipboard-title');
-      expect(frame).not.toContain('clipboard-expected');
-      expect(frame).not.toContain('clipboard-observed');
-      expect(frame).not.toContain('clipboard-path');
-      expect(frame).not.toContain('clipboard-ledger');
-
-      ui.unmount();
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
-  it('renders the evidence rollup when the routed session id cannot read a ledger', async () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'summary-screen-invalid-ledger-'));
-    try {
-      terminalSizeStore.__testReset({ cols: 160, rows: 80, isSmall: false });
-      configStore.__testReset({ projectDir });
-      showSummaryRoute({
-        sessionId: '../outside',
-        summary: makeSummary({
-          evidenceSummary: {
-            path: 'evidence.json',
-            totalTasks: 1,
-            tasksWithValidationEvidence: 0,
-            escalatedTasks: 0,
-            failedTasks: 0,
-          },
-        }),
-      });
-
-      const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-      await tick();
-      const frame = ui.lastFrame() ?? '';
-
-      expect(frame).toContain('evidence');
-      expect(frame).toContain('0/1 validated');
-
-      ui.unmount();
-    } finally {
-      rmSync(projectDir, { recursive: true, force: true });
-    }
-  });
-
   it('keeps checkpoint and packet details readable on narrow terminals', () => {
     terminalSizeStore.__testReset({ cols: 48, rows: 60, isSmall: true });
     const longName = `post-task-${'very-long-name-'.repeat(8)}`;
@@ -543,17 +419,6 @@ describe('SummaryScreen', () => {
 
     expect(frame).toContain('Planner');
     expect(frame).toContain('Implementer');
-
-    ui.unmount();
-  });
-
-  it('does not render "full" mode label anywhere', () => {
-    showSummaryRoute({ summary: makeSummary({ mode: 'standard' }) });
-
-    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).not.toContain('full');
 
     ui.unmount();
   });

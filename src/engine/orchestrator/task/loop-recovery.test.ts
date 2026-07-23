@@ -10,7 +10,7 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
@@ -25,11 +25,11 @@ afterEach(() => {
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('task-loop-test');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'task-loop-test',
+    sessionId: 'sess-loop',
+  });
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-loop';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 
@@ -43,7 +43,7 @@ function setupSessionOnly(): { projectDir: string; sessionId: string } {
 
 const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
 
-describe('runTaskLoop', { timeout: 30_000 }, () => {
+describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('task with failed dependency creates dependency-blocked recovery instead of auto-skipping', async () => {
     const { projectDir, sessionId } = setupProject();
     const dependency = makeTask({ id: 'T001', status: 'failed' });

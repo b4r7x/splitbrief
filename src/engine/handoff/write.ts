@@ -28,9 +28,9 @@ import {
   isPathConfined,
   pathConfinementError,
 } from '../../lib/path-confinement.js';
-import { getCurrentCommitSha } from '../../lib/git.js';
+import { getCurrentCommitSha } from '../../lib/git/refs.js';
 import { error, matches } from '../../utils/error.js';
-import { resolveValidationDisplayCommand } from '../orchestrator/validation.js';
+import { resolveValidationDisplayCommand } from '../orchestrator/validation/commands.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 
 const isPathEscape = matches('path-confined-escape');

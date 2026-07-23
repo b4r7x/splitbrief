@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
-import { createValidator } from '../../../src/engine/orchestrator/validation.js';
-import { abortStore } from '../../../src/stores/workflow/abort.js';
+import { createValidator } from '../../../src/engine/orchestrator/validation/run.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -25,12 +24,11 @@ const dirs: string[] = [];
 
 beforeEach(() => resetAllStores());
 afterEach(() => {
-  abortStore.clear();
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
 describe('abort during implementer phase terminates the task loop cleanly', {
-  timeout: 30_000,
+  timeout: 90_000,
 }, () => {
   it('aborting mid-implement leaves the task un-advanced and emits no task-complete afterwards', async () => {
     const projectDir = createTempDir('orch-int-abort');
@@ -58,11 +56,9 @@ describe('abort during implementer phase terminates the task loop cleanly', {
     const { callbacks } = makeCallbacks();
     const { bus, events: busEvents } = makeBusRecorder();
 
-    // Trigger the engine's AbortSignal and the UI-level abortStore.arm() while
-    // the implementer is "running". Once aborted, the task loop bails out of the loop.
+    // Abort the engine signal while the implementer is "running".
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {
-        abortStore.arm('exit');
         controller.abort();
         return {
           success: true,

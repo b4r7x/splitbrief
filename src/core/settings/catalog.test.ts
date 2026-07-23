@@ -58,3 +58,13 @@ describe('SETTINGS_DEFS dead settings', () => {
     expect(SETTINGS_DEFS.some((def) => def.id === 'sessions.scope')).toBe(false);
   });
 });
+
+describe('SETTINGS_DEFS workflow compaction', () => {
+  it('includes compaction format in workflow settings', () => {
+    const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.compactionFormat');
+    expect(def).toMatchObject({
+      kind: 'enum',
+      options: ['auto', 'freeform', 'structured'],
+    });
+  });
+});

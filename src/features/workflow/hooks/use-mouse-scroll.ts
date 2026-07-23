@@ -1,4 +1,4 @@
-import type { MouseEvent } from '../../../lib/terminal/filtered-stdin.js';
+import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';

@@ -207,28 +207,6 @@ describe('agent implementer', () => {
     expect(readFileSync(outFile, 'utf-8')).toContain('trusted prompt content');
   });
 
-  it('retryTaskViaAgent works with error context', async () => {
-    const outFile = join(testDir, 'retry-out.txt');
-    const config = makeConfig({
-      command: 'bash',
-      args: ['-c', `echo "retry" > ${outFile}`],
-    });
-
-    const implementer = createAgentImplementer(config);
-    const result = await implementer.retry({
-      task: makeTask(),
-      projectDir: testDir,
-      config,
-      context: { ...context, dir: testDir },
-      error: 'tsc error: missing semicolon',
-      attempt: 1,
-      kind: 'local',
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(true);
-  });
-
   it('threads a sandbox env through to the spawned subprocess', async () => {
     const envOutFile = join(testDir, 'env-out.txt');
     const writtenFile = join(testDir, 'sandbox-written.txt');

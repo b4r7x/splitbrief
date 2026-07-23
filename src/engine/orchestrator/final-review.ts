@@ -6,13 +6,9 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE, TASKS_FILE, isInternalGitStatusPath } from '../../core/paths.js';
-import {
-  getCurrentDiff,
-  getCurrentChangedFiles,
-  getCommittedFilesSince,
-  getDiffSince,
-  getRunStartHead,
-} from '../../lib/git.js';
+import { getCurrentDiff, getDiffSince, getCommittedFilesSince } from '../../lib/git/diff.js';
+import { getCurrentChangedFiles } from '../../lib/git/files.js';
+import { getRunStartHead } from '../../lib/git/refs.js';
 import { userVisibleChangedFiles } from './changed-files-baseline.js';
 import { uniqueInOrder } from '../../utils/collections.js';
 import { labelError } from '../../utils/format-errors.js';
@@ -20,22 +16,23 @@ import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
-import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger.js';
+import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { analyzeBriefDrift } from './drift/analyze.js';
 import { writeDriftReport } from './drift/io.js';
 import { formatDriftReportForPrompt, publishDriftReport } from './drift/format.js';
 
 import type { Planner } from '../planners/types.js';
-import { buildSummary, type SummaryBase } from './summary.js';
+import { buildSummary, type SummaryBase } from './summary/build.js';
 import { publishError, publishPlannerStatus, publishWarningFromError } from './events.js';
 import { transitionAndSave } from './state-ops.js';
 import { runPlannerReview } from './planner-review.js';
 import { createSnapshot } from '../snapshots/create.js';
-import { recordRunSnapshot } from '../snapshots/run.js';
+import { recordRunSnapshot } from '../snapshots/run/ledger.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
-import { drainQueue, formatDrainedMessages } from './queue.js';
+import { drainQueue } from './queue/drain.js';
+import { formatDrainedMessages } from './queue/prompt.js';
 import { withContinuationLoop } from './continuation.js';
 import { composeSteeredPrompt } from '../implementers/types.js';
 import { RUN_COMMIT_MESSAGE_PREFIX } from './task/commit.js';

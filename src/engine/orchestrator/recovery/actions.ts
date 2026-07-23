@@ -1,11 +1,12 @@
 import type { RecoveryAction } from '../../../core/schemas/enums.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
-import { allowedActionsForReason, type RecoveryIssue } from '../../../core/schemas/recovery.js';
+import { allowedActionsForReason } from '../../../core/schemas/recovery/policy.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import {
   recoveryFactBoolean,
   recoveryFactNumber,
   recoveryFactString,
-} from '../../../core/schemas/recovery.js';
+} from '../../../core/schemas/recovery/facts.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -16,11 +17,8 @@ import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
-import {
-  getOrCreateLedger,
-  readEvidenceLedger,
-  writeEvidenceLedger,
-} from '../../../core/evidence/ledger.js';
+import { getOrCreateLedger } from '../../../core/evidence/ledger-state.js';
+import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordSkippedTaskEvidence } from '../evidence/task.js';
 import {
   publishRecoveryActionFailed,

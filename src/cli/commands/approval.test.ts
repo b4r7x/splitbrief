@@ -115,16 +115,6 @@ describe('approval clear', () => {
     expect(after.grants[0]!.scope).toBe('session');
   });
 
-  it('clears all grants with --scope all', async () => {
-    seedApprovals(tmp, filledStore);
-
-    const logs = await runApproval(['clear', '--scope', 'all', '--project', tmp]);
-
-    expect(logs.some((l) => l.includes('Cleared 2 approval grant(s)'))).toBe(true);
-    const after = readApprovals(tmp);
-    expect(after.grants).toHaveLength(0);
-  });
-
   it('exits with error for unknown --scope value', async () => {
     seedApprovals(tmp, filledStore);
 

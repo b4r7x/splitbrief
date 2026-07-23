@@ -66,9 +66,7 @@ describe('terminalSupportsHyperlinks', () => {
 });
 
 describe('osc8Hyperlink', () => {
-  it('wraps the label in an OSC 8 sequence when support is forced on', () => {
-    expect(terminalSupportsHyperlinks({ FORCE_HYPERLINK: '1' })).toBe(true);
-
+  it('wraps the label in an OSC 8 sequence', () => {
     const output = osc8Hyperlink({
       label: 'src/app.ts',
       href: 'file:///repo/src/app.ts',

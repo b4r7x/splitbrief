@@ -2,9 +2,6 @@ import { writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { extractMentionedFilenames } from './extract-mentioned-filenames.js';
-import { buildGraph } from './graph.js';
-import { pagerank } from './pagerank.js';
-import type { FileNode } from './types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 describe('extractMentionedFilenames', () => {
@@ -65,28 +62,5 @@ describe('extractMentionedFilenames', () => {
       join(projectDir, 'src', 'foo.ts'),
     ]);
     expect(result).toEqual([]);
-  });
-
-  it('mentioned on-disk file survives pagerank focus filter and gets boosted', () => {
-    const focusPath = join(projectDir, 'target.ts');
-    const otherPath = join(projectDir, 'other.ts');
-    writeFileSync(focusPath, 'export {}');
-
-    const node = (path: string, imports: string[]): FileNode => ({
-      path,
-      symbols: [],
-      imports,
-      sizeBytes: 10,
-      mtimeMs: 0,
-    });
-    const graph = buildGraph([node(focusPath, []), node(otherPath, ['./target'])]);
-    const discovered = [focusPath, otherPath];
-
-    const mentioned = extractMentionedFilenames('please change target.ts', projectDir, discovered);
-    const ranks = pagerank(graph, mentioned);
-
-    // With a live focus file the mentioned node must outrank the unfocused one.
-    expect(mentioned).toContain(focusPath);
-    expect(ranks.get(focusPath) ?? 0).toBeGreaterThan(ranks.get(otherPath) ?? 0);
   });
 });

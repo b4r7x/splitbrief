@@ -6,7 +6,13 @@ import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { formatCost } from '../../core/formatting.js';
-import { formatCostDisplay, formatSpentText, readCostText } from './cost-text.js';
+import {
+  asReactiveModelCache,
+  computeCostBreakdownStats,
+  formatCostDisplay,
+  formatSpentText,
+  readCostText,
+} from './cost-text.js';
 
 describe('formatCostDisplay', () => {
   it('hides zero-dollar savings estimates', () => {
@@ -79,5 +85,127 @@ describe('readCostText', () => {
     ]);
 
     expect(readCostText()).toBe(formatCost(3));
+  });
+});
+
+describe('computeCostBreakdownStats task reconstruction', () => {
+  const openAiFallback = {
+    id: 'fallback-model',
+    pricingInput: 2,
+    pricingOutput: 0,
+    pricingCacheRead: 0.2,
+  };
+  const anthropicTask = {
+    id: 'task-model',
+    pricingInput: 1,
+    pricingOutput: 0,
+    pricingCacheRead: 0.1,
+  };
+
+  it('prices task input with the task model instead of aggregate fallback pricing', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'openai',
+        model: 'fallback-model',
+        apiBase: 'https://api.openai.test/v1',
+      },
+    });
+    modelCacheStore.setProviderModels('openai', [openAiFallback]);
+    modelCacheStore.setProviderModels('anthropic', [anthropicTask]);
+    const modelCache = asReactiveModelCache(modelCacheStore.get());
+
+    const { costBreakdown } = computeCostBreakdownStats({
+      config,
+      pricingContext: null,
+      perTask: {
+        T001: {
+          title: 'Task',
+          totalTokens: 1_000_000,
+          attempts: [
+            {
+              method: 'local',
+              implementerTokens: 1_000_000,
+              escalationTokens: 0,
+              retryCount: 0,
+              tool: 'anthropic',
+              model: 'task-model',
+              implementerCacheReadTokens: 0,
+            },
+          ],
+        },
+      },
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 1_000_000,
+        implementerOutput: 0,
+        implementerCacheRead: 1_000_000,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      localCount: 1,
+      escalatedCount: 0,
+      totalTasks: 1,
+      modelCache,
+    });
+
+    expect(costBreakdown?.totalActualCost).toBeCloseTo(1.2);
+    expect(costBreakdown?.providerCosts?.anthropic?.cost).toBeCloseTo(1.0);
+    expect(costBreakdown?.providerCosts?.openai?.cost).toBeCloseTo(0.2);
+    expect(costBreakdown?.totalActualCost).not.toBeCloseTo(2.2);
+  });
+
+  it('prices cache-only task attempts with the task model cache rate', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'openai',
+        model: 'fallback-model',
+        apiBase: 'https://api.openai.test/v1',
+      },
+    });
+    modelCacheStore.setProviderModels('openai', [openAiFallback]);
+    modelCacheStore.setProviderModels('anthropic', [anthropicTask]);
+    const modelCache = asReactiveModelCache(modelCacheStore.get());
+
+    const { costBreakdown } = computeCostBreakdownStats({
+      config,
+      pricingContext: null,
+      perTask: {
+        T001: {
+          title: 'Cache only',
+          totalTokens: 1_000_000,
+          attempts: [
+            {
+              method: 'local',
+              implementerTokens: 0,
+              escalationTokens: 0,
+              retryCount: 0,
+              tool: 'anthropic',
+              model: 'task-model',
+              implementerCacheReadTokens: 1_000_000,
+            },
+          ],
+        },
+      },
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        implementerCacheRead: 1_000_000,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      localCount: 1,
+      escalatedCount: 0,
+      totalTasks: 1,
+      modelCache,
+    });
+
+    expect(costBreakdown?.providerCosts?.anthropic?.cost).toBeCloseTo(0.1);
+    expect(costBreakdown?.providerCosts?.openai?.cost ?? 0).toBe(0);
+    expect(costBreakdown?.totalActualCost).not.toBeCloseTo(0.2);
   });
 });

@@ -18,7 +18,6 @@ import {
   CALL_TREE_MAX_PUBLIC_PAYLOAD_BYTES,
   CALL_TREE_MAX_PUBLIC_STRING_BYTES,
   getConsumerPayloadPolicy,
-  measurePublicPayloadBytes,
   protectConsumerPayload,
   redactPublicPayload,
   type PublicPayload,
@@ -106,7 +105,7 @@ describe('consumer payload policies', () => {
     expect(result.oversized).toBe(false);
     expect(message.endsWith(CALL_CONSUMER_STRING_TRUNCATION_PLACEHOLDER)).toBe(true);
     expect(Buffer.byteLength(message, 'utf8')).toBeLessThanOrEqual(80);
-    expect(result.bytes).toBe(measurePublicPayloadBytes(result.payload));
+    expect(result.bytes).toBe(Buffer.byteLength(JSON.stringify(result.payload), 'utf8'));
     expect(result.bytes).toBeLessThanOrEqual(result.maxBytes);
   });
 
@@ -129,6 +128,22 @@ describe('consumer payload policies', () => {
     expect(first.oversized).toBe(true);
     expect(first.truncated).toBe(true);
     expect(first.bytes).toBeLessThanOrEqual(first.maxBytes);
+  });
+
+  it('omits payloads whose UTF-8 JSON byte size exceeds maxBytes even when code units fit', () => {
+    const emoji = '🙂';
+    const payload = { note: emoji.repeat(40) };
+    const jsonBytes = Buffer.byteLength(JSON.stringify(payload), 'utf8');
+    expect(payload.note.length).toBeLessThan(jsonBytes);
+
+    const result = protectConsumerPayload({
+      context: 'otel',
+      overrides: { maxBytes: jsonBytes - 1, maxStringBytes: 10_000 },
+      payload,
+    });
+
+    expect(result.payload).toBe(CALL_CONSUMER_OVERSIZED_PAYLOAD_PLACEHOLDER);
+    expect(result.oversized).toBe(true);
   });
 
   it('redacts before truncating so secrets cannot survive at the kept prefix', () => {

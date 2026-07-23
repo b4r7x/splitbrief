@@ -205,11 +205,24 @@ describe('createSnapshot — second call (delta snapshot)', () => {
 
     await writeFile(join(tmp, 'changed.ts'), 'modified content');
 
-    const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    const { bus, events } = makeMockBus();
+    const result = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'implementing',
+      bus,
+      eventPhase: 'implementing',
+    });
 
     expect(result.isFirstSnapshot).toBe(false);
     expect(result.manifest.fileEntries.some((e) => e.path === 'changed.ts')).toBe(true);
     expect(result.manifest.fileEntries.some((e) => e.path === 'unchanged.ts')).toBe(false);
+    expect(events).toHaveLength(1);
+    const evt = events[0];
+    expect(evt?.type).toBe('snapshot_created');
+    if (evt?.type === 'snapshot_created') {
+      expect(evt.fileCount).toBe(result.manifest.trackedFileCount);
+    }
   });
 
   it('includes ALL tracked paths in fileHashes regardless of change status', async () => {
@@ -223,26 +236,5 @@ describe('createSnapshot — second call (delta snapshot)', () => {
 
     expect(Object.keys(result.manifest.fileHashes)).toContain('a.ts');
     expect(Object.keys(result.manifest.fileHashes)).toContain('b.ts');
-  });
-
-  it('emits snapshot_created with correct fileCount', async () => {
-    await writeFile(join(tmp, 'x.ts'), 'x');
-    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-
-    await writeFile(join(tmp, 'x.ts'), 'xx');
-    const { bus, events } = makeMockBus();
-    const result = await createSnapshot({
-      projectDir: tmp,
-      sessionId: 'sess-01',
-      phase: 'implementing',
-      bus,
-      eventPhase: 'implementing',
-    });
-
-    expect(events).toHaveLength(1);
-    const evt = events[0];
-    if (evt?.type === 'snapshot_created') {
-      expect(evt.fileCount).toBe(result.manifest.trackedFileCount);
-    }
   });
 });

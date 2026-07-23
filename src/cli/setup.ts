@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig, configPath } from '../core/config/load/io.js';
-import { isGitRepo, getRepoToplevel } from '../lib/git.js';
+import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format-errors.js';

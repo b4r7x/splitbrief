@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
-import { adviseMode, formatAdvisoryText } from './mode-advisor.js';
+import { adviseMode, formatAdvisoryText, type AdvisorResult } from './mode-advisor.js';
 
 describe('adviseMode — risk classification', () => {
   it('typo in standard suggests instant (downgrade)', () => {
@@ -136,10 +136,16 @@ describe('adviseMode — confidence and factors', () => {
 
 describe('formatAdvisoryText', () => {
   it('returns empty string for kind=none', () => {
-    const result = adviseMode('refactor user page', 'standard');
-    if (result.kind === 'none') {
-      expect(formatAdvisoryText(result)).toBe('');
-    }
+    const result: AdvisorResult = {
+      kind: 'none',
+      risk: 'normal',
+      currentMode: 'standard',
+      suggestedMode: 'standard',
+      confidence: 0,
+      factors: [],
+      missing: [],
+    };
+    expect(formatAdvisoryText(result)).toBe('');
   });
 
   it('formats downgrade advisory concisely with "likely" phrasing', () => {

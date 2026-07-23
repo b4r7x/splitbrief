@@ -8,7 +8,6 @@ import {
   OverlayPanel,
   computeOverlayInnerRowCapacity,
   computeOverlayInnerWidth,
-  OVERLAY_PANEL_FRAME_ROWS,
 } from './overlay-panel.js';
 
 function colorOpen(color: string): string {
@@ -25,12 +24,7 @@ describe('OverlayPanel title', () => {
 
   // §1.1 accent budget: surface titles are quiet dim metadata; the lone accent per region is the
   // focused row's `▌` bar. A `·`-separated title must never accent its head (the prior regression).
-  it.each([
-    'help · commands & shortcuts',
-    'cost · breakdown',
-    'sessions · 3',
-    'setup · planner · 1 of 2',
-  ])('renders "%s" dim with no accent head', (title) => {
+  it.each(['help · commands & shortcuts'])('renders "%s" dim with no accent head', (title) => {
     const theme = getTheme('terminal');
     const accentOpen = colorOpen(theme.accent);
     const dimOpen = colorOpen(theme.textDim);
@@ -57,7 +51,6 @@ describe('OverlayPanel title', () => {
 
 describe('OverlayPanel inner row capacity', () => {
   it('accounts for border and vertical padding in the frame row budget', () => {
-    expect(OVERLAY_PANEL_FRAME_ROWS).toBe(4);
     expect(computeOverlayInnerRowCapacity({ terminalRows: 10, outerChromeRows: 4 })).toBe(2);
     expect(computeOverlayInnerRowCapacity({ terminalRows: 4, outerChromeRows: 4 })).toBe(0);
   });

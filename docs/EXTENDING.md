@@ -12,7 +12,7 @@ How to add things. Each section is a recipe: what you're adding, what files to t
 4. In `src/cli.ts`: import and call `register<Name>Command(program)`
 5. Document in `docs/CLI-REFERENCE.md`
 
-Existing example to follow: `src/cli/commands/start.ts`.
+Existing example to follow: `src/cli/commands/start/register.ts`.
 
 ---
 
@@ -38,9 +38,9 @@ Existing example to follow: `src/cli/commands/start.ts`.
    - The `EngineEvent` TS alias in `src/engine/events/types.ts` is `z.infer<typeof EngineEventSchema>`, so the new variant flows into every consumer automatically — no separate type edit
 2. Add a typed publish helper in `src/engine/orchestrator/events.ts`
    - Pattern: `export function publishMyEvent(bus: EventBus, phase: Phase, payload): void { bus.publish({ type: 'my_event', ts: Date.now(), phase, ...payload }); }`
-3. If the event should update UI state: handle it in `src/stores/workflow/actions.ts` inside `addEvent()`
+3. If the event should update UI state: handle it in `src/stores/workflow/actions/event.ts` inside `addEvent()`
    - The ordering invariant is: events store, then tasks store, then tokens store, then lifecycle store (all synchronous)
-4. If the event should appear in the workflow conversation: add a case in `src/features/workflow/conversation-rows/event-rows.ts`
+4. If the event should appear in the workflow conversation: add a case in `src/features/workflow/conversation-rows/event-rows/dispatch.ts`
 
 ---
 
@@ -73,7 +73,7 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 2. Create `src/engine/planners/<name>.ts` implementing the `Planner` interface from `src/engine/planners/types.ts`
    - Use `createPlannerBase()` from `src/engine/planners/base.ts` if it fits
 3. Create `src/engine/implementers/<name>.ts` implementing the `Implementer` interface from `src/engine/implementers/types.ts`
-   - Use `createImplementerBase()` from `src/engine/implementers/base.ts` if it fits
+   - Use `createImplementerBase()` from `src/engine/implementers/pipeline/run.ts` if it fits
 4. Add config schema variants:
    - `src/core/schemas/planner-config.ts` — planner-side config discriminated union
    - `src/core/schemas/implementer-config.ts` — implementer-side config discriminated union
@@ -138,10 +138,10 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ## 9. New workflow conversation event renderer
 
-1. Open `src/features/workflow/conversation-rows/event-rows.ts`
+1. Open `src/features/workflow/conversation-rows/event-rows/dispatch.ts`
 2. The row renderer is a switch on `event.type` and returns concrete one-terminal-row records.
 3. Add your event type to `eventRowBlock()` when it should appear in the scrollable conversation.
-4. Keep each returned `ConversationRow` height-safe. Use helpers from `conversation-rows/row-format.ts` for wrapping and cards.
+4. Keep each returned `ConversationRow` height-safe. Use helpers from `conversation-rows/row-format/` (`text.ts`, `rows.ts`, `label-card.ts`, `card-block.ts`) for wrapping and cards.
 5. Events that should remain silent in the conversation should return `[]`.
 
 The `assertNever(event)` default case ensures the compiler catches missing event types.
@@ -167,7 +167,7 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 1. Add the field to the appropriate schema in `src/core/schemas/config.ts` (or a sub-schema it imports)
 2. If the field needs a runtime accessor, create or extend a file under `src/core/config/accessors/` (existing: `runner-config.ts`, `implementer-profiles.ts`, `values.ts`)
 3. If the field affects readiness, add a check in the matching `src/core/readiness/checks/` file
-4. If the field needs a CLI flag, add it in `src/cli/options.ts` and map it in `applyCLIOverrides()` (`src/core/config/runtime/overrides.ts`)
+4. If the field needs a CLI flag, add it in `src/cli/options.ts` and map it in `applyCLIOverrides()` (`src/core/config/runtime/overrides/apply.ts`)
 5. Document in `docs/CONFIGURATION.md`
 
 ---

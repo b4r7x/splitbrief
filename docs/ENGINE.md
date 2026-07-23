@@ -11,7 +11,7 @@ Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It bu
 1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
 2. `runPlanningPhases()` (`run/phases.ts`) — delegates to mode-specific planning (instant, quick, standard, speckit). Each mode determines how many planner calls happen and which approval gates fire.
 3. `runTasksAndReview()` — predicts cost, gates on budget if needed, runs the task loop (implementer writes code, validation runs), then calls the planner for a final review.
-4. `saveFinalSession()` (`session-lifecycle.ts`) — persists the summary, updates stats, clears the active-session lock.
+4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — persists the summary, updates stats, clears the active-session lock.
 
 If any step throws, the catch block saves state to disk, kills all subprocesses, publishes an error event, and returns a partial summary. The workflow always produces a summary, even on failure.
 
@@ -32,10 +32,10 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 
 - **`planning/`** — Mode-specific planner flows. `instant.ts` does one call producing tasks directly; `quick.ts` does one call for briefs; `full.ts` does research/spec/plan/tasks; `speckit.ts` adds clarification and constitution phases. `regen.ts` and `rewind.ts` handle regeneration from feedback and rewinding to earlier phases.
 - **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` handles per-task git commits, `pre-task.ts` runs pre-task setup.
-- **`escalation/`** — Tiered escalation when the implementer fails. Local retries (`local-retries.ts`) come first, then `tier.ts` defines the tiers (`INTERMEDIATE_TIER` retries with a paid mid-tier API model from `escalation.intermediateProvider`, `HINT_TIER` has the planner write a hint that the implementer applies, `FULL_TIER` hands the task to the planner to write the code itself).
+- **`escalation/`** — Tiered escalation when the implementer fails. Local retries (`local-retries.ts`) come first, then `tier.ts` dispatches the tiers (`intermediate.ts` / `INTERMEDIATE_TIER` retries with a paid mid-tier API model from `escalation.intermediateProvider`, `hint.ts` / `HINT_TIER` has the planner write a hint that the implementer applies, `full.ts` / `FULL_TIER` hands the task to the planner to write the code itself).
 - **`recovery/`** — User-facing recovery flow after all escalation tiers fail. Presents the user with choices: retry same worker, route to a bigger worker, skip, pause, or abort.
 - **`approval/`** — Tiered approval system for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change) and gates those writes at auto/sticky/confirm tiers.
-- **`budget/`** — Cost prediction and budget enforcement. `cost-prediction.ts` estimates prompt-input cost before tasks start; `check.ts` monitors runtime spend, including unknown paid-pricing pauses, during execution.
+- **`budget/`** — Cost prediction and budget enforcement. `cost-prediction.ts` estimates prompt-input cost before tasks start; `check.ts` holds pure threshold math; `knownness.ts` resolves usage-price knownness for runtime spend; `enforce.ts` publishes budget events, drives recovery, and runs post-task enforcement via `checkBudgetAfterTask`.
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the planner.
 - **`user-edit/`** — Detects when the user edits files outside of diptych during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output.
@@ -100,7 +100,7 @@ The full union has many variants, but the pattern is consistent: every event is 
 
 ### Runner call pipeline
 
-Raw acquisition happens before the runner-call contract. The shared subprocess helpers in `src/lib/process/spawn.ts` drain child stdout/stderr while retaining bounded snapshots: stdout/result text defaults to 1 MiB with prefix+tail retention, stderr defaults to a 256 KiB tail, and stdout line buffers default to 1 MiB. Snapshots carry `bytesSeen`, `bytesStored`, `omittedBytes`, `truncated`, policy, and budget. Runner stderr streaming uses an 8 KiB line buffer; an oversized stderr line is skipped and becomes a bounded `stderr_line_overflow` warning. Process errors use only sanitized bounded snapshots.
+Raw acquisition happens before the runner-call contract. The shared subprocess helpers in `src/lib/process/spawn/` (`lifecycle.ts`, `run-command.ts`, `progress.ts`, `line-stream.ts`) drain child stdout/stderr while retaining bounded snapshots: stdout/result text defaults to 1 MiB with prefix+tail retention, stderr defaults to a 256 KiB tail, and stdout line buffers default to 1 MiB. Snapshots carry `bytesSeen`, `bytesStored`, `omittedBytes`, `truncated`, policy, and budget. Runner stderr streaming uses an 8 KiB line buffer; an oversized stderr line is skipped and becomes a bounded `stderr_line_overflow` warning. Process errors use only sanitized bounded snapshots.
 
 Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell commands, API streams, Claude Code, and Agent SDK adapters emit `RunnerCallEvent` values. `createRunnerCallRecorder()` validates every emitted value with `RunnerCallEventSchema`; invalid upstream data becomes a bounded `call_unknown_upstream` diagnostic with a safe preview instead of a malformed event. Final snapshots/results validate with `RunnerCallResultSchema`. Streaming parsers and provider adapters validate their own upstream message/block shapes before recording; unrecognized provider chunks also route through unknown-upstream diagnostics. The collector turns the ordered stream into a `RunnerCallResult` with:
 
@@ -124,7 +124,7 @@ Warnings are explicit, not a side effect of benign stderr. `call_stderr_delta` i
 
 Several sinks can subscribe to the bus. Two are unconditional (JSONL, tree recorder); the rest are gated by config or runtime mode. All are registered in `initializeWorkflow()` (`run/init.ts`):
 
-**TUI sink** (`src/features/workflow/tui-sink.ts`) — calls `addEvent()` from `src/stores/workflow/actions.ts`. This is the bridge between engine and UI. It lives in `src/features/`, not `src/engine/`, because the engine layer must not import from React or stores. The sink is passed in as `opts.tuiSink` — the engine never constructs it.
+**TUI sink** (`src/features/workflow/tui-sink.ts`) — calls `addEvent()` from `src/stores/workflow/actions/event.ts`. This is the bridge between engine and UI. It lives in `src/features/`, not `src/engine/`, because the engine layer must not import from React or stores. The sink is passed in as `opts.tuiSink` — the engine never constructs it.
 
 **JSONL sink** (`src/engine/events/sinks/jsonl.ts`) — appends protected events to `.diptych/sessions/<id>/session.jsonl`. When transcript persistence is disabled, transcript-like events are dropped or stripped before write. This is the audit log and the source for session replay.
 
@@ -188,7 +188,7 @@ All protected consumers share `src/core/consumer-policy.ts`: terminal controls a
 The full path from engine to pixel:
 
 1. Engine calls `bus.publish({ type: 'task_completed', ... })`
-2. TUI sink calls `addEvent(event)` from `src/stores/workflow/actions.ts`
+2. TUI sink calls `addEvent(event)` from `src/stores/workflow/actions/event.ts`
 3. `addEvent` dispatches to workflow sub-stores synchronously:
    - `eventsStore` — appends the TUI-safe event-log projection
    - `tasksStore` — updates task progress (status, counts)
@@ -209,9 +209,11 @@ The full path from engine to pixel:
 
 Two complementary paths:
 
-**`saveState()`** — writes `state.json` on every phase transition via `transitionAndSave()`. This is the resume source of truth. `diptych resume` reads this file to know what phase, which tasks, and what progress. It's overwritten, not appended.
+**`saveState()`** (`src/core/state/persistence.ts`) — writes `state.json` on every phase transition via `transitionAndSave()`. This is the resume source of truth. `diptych resume` reads this file to know what phase, which tasks, and what progress. It's overwritten, not appended.
 
-**`jsonlSink`** — appends protected events to `session.jsonl`. This is the audit log and transcript source when transcript persistence is enabled. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
+**`jsonlSink`** — appends protected events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source when transcript persistence is enabled. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
+
+Transcript-off projection for MCP and CLI status (`consoleWorkflowFeature`, `projectWorkflowStateForTranscriptPolicy`) lives in `src/core/transcript-policy.ts`. Session directory confinement for state and log writes is shared via `assertSessionDirConfined` in `src/core/sessions/confinement.ts`.
 
 The two serve different consumers: `state.json` is for the state machine (small, structured, overwritten), `session.jsonl` is for history (append-only, protected events, including streaming planner text only when transcript persistence is enabled).
 
@@ -237,7 +239,7 @@ Ctrl-C fires a SIGINT. The signal handler (registered in `withSignalHandlers`, `
 2. Saves `state.json` from whatever `trackedState` is at the moment of interruption.
 3. If an implementer task was in progress, discards the partial file change (git checkout for tracked files, delete for new files).
 
-The `withShutdownHandlers` wrapper in `session-lifecycle.ts` returns the cancellation state so the run loop knows to stop and return a partial summary. For UI-originated aborts, `runWorkflow()` publishes a `workflow_cancelled` event with the abort reason; the TUI sink then freezes active operations through the store projection.
+The `withShutdownHandlers` wrapper in `session-lifecycle/shutdown.ts` returns the cancellation state so the run loop knows to stop and return a partial summary. For UI-originated aborts, `runWorkflow()` publishes a `workflow_cancelled` event with the abort reason; the TUI sink then freezes active operations through the store projection.
 
 **Continuation loop.** When a planner call is interrupted (not the whole workflow, just the current call), `withContinuationLoop()` in `src/engine/orchestrator/continuation.ts` handles it. It aborts the in-flight call via a per-call `AbortController`, transitions the state to `awaitingContinue: true`, calls `onContinuationNeeded` to ask the user whether to continue, then rebuilds the prompt with the partial response and loops. The transcript buffer flushes with `interrupted: true` so the JSONL log marks the partial response.
 
@@ -247,7 +249,7 @@ This means a single Ctrl-C during a planner call doesn't kill the workflow — i
 
 ## Message queue
 
-`src/engine/orchestrator/queue.ts`. While the planner is running, the user can type messages. These are queued, not dropped.
+`src/engine/orchestrator/queue/submit.ts` (live-queue entry), with drain/clear/prompt in sibling `queue/` modules. While the planner is running, the user can type messages. These are queued, not dropped.
 
 `enqueueUserMessage()` adds a `QueuedMessage` to `state.messageQueue` (capped at 50 messages). Each message is persisted as a message record only when transcript persistence is enabled; a `message_queued` event is always published. The event carries a sanitized bounded preview for local UI/replay consumers, and protection strips that preview for transcript-off session logs and IPC consumers.
 
@@ -255,7 +257,7 @@ Queue submission is planner-only. The shared enqueue boundary rejects messages o
 
 At safe points — end of the current planner call — the orchestrator calls `drainQueue()`, which marks pending-undelivered messages as drained and publishes `queue_drained`. The drained messages get formatted into the next planner prompt as `[user also says during <phase>]` blocks.
 
-**Native injection.** For backends that support `injectUserTurn` (e.g., Claude Code's conversation API), messages bypass the queue entirely. `dispatchNativeInjection()` in `src/engine/orchestrator/native-injection.ts` calls `planner.injectUserTurn()` to push the message as a real user turn into the active conversation. If injection succeeds, the message is marked `deliveredViaNative` in state. If it fails, the message stays in the queue for the next drain — no message is ever lost.
+**Native injection.** For backends that support `injectUserTurn` (e.g., Claude Code's conversation API), messages bypass the queue entirely. `dispatchNativeInjection()` in `src/engine/orchestrator/queue/native-injection.ts` calls `planner.injectUserTurn()` to push the message as a real user turn into the active conversation. If injection succeeds, the message is marked `deliveredViaNative` in state. If it fails, the message stays in the queue for the next drain — no message is ever lost.
 
 ---
 

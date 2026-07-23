@@ -130,9 +130,18 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.metadata?.fileWriteApprovalEnabled).toBe(false);
   });
 
-  it('warns when timeout is at or below the effective idleKillMs', () => {
+  it.each([
+    ['below idle-kill threshold', 200_000, 300_000],
+    ['equal to idle-kill threshold', 300_000, 300_000],
+  ])('warns when timeout is at or below the effective idleKillMs (%s)', (_label, timeout, idleKillMs) => {
     const config = makeConfig({
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'auto', timeout: 100_000 },
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'auto',
+        timeout,
+        idleKillMs,
+      },
     });
 
     const check = buildRunnerChecks(config).find(
@@ -141,7 +150,7 @@ describe('buildRunnerChecks availability guidance', () => {
 
     expect(check).toMatchObject({
       severity: 'warning',
-      metadata: { timeout: 100_000, idleKillMs: 1_800_000 },
+      metadata: { timeout, idleKillMs },
     });
   });
 

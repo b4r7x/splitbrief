@@ -6,16 +6,17 @@ import type {
   InvokeOpts,
   RetryOptions,
 } from './types.js';
-import { createImplementerBase } from './base.js';
+import { createImplementerBase } from './pipeline/run.js';
 import { formatTaskPrompt, formatRetryPrompt } from '../spec/prompt-formatter.js';
 import { getProvider } from '../providers/registry.js';
-import { createClientFromProvider } from '../providers/client.js';
+import { createClientFromProvider } from '../providers/client/connection.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertImplementerKind } from '../config-assertions.js';
 import { providerError } from '../providers/errors.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
-import { toStreamClient, type StreamClient } from '../providers/openai-stream.js';
+import { toStreamClient } from '../providers/openai-stream/client.js';
+import type { StreamClient } from '../providers/openai-stream/request.js';
 import { clampToMaxOutput } from '../providers/capability-inference.js';
 import { DEFAULT_API_CONTEXT_LENGTH } from '../spec/token-budget.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';

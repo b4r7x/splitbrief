@@ -1,5 +1,3 @@
-import { glyph } from '../../lib/glyphs.js';
-
 export interface KeyLike {
   upArrow?: boolean | undefined;
   downArrow?: boolean | undefined;
@@ -29,7 +27,6 @@ export interface NormalizeKeyInput {
 export interface NormalizedKeySignature {
   input: string;
   key: string;
-  display: string;
   ctrl: boolean;
   shift: boolean;
   alt: boolean;
@@ -57,53 +54,12 @@ function keyName(input: string, key: KeyLike): string {
   return 'unknown';
 }
 
-function displayKey(name: string): string {
-  switch (name) {
-    case 'arrow-up':
-      return '↑';
-    case 'arrow-down':
-      return '↓';
-    case 'arrow-left':
-      return '←';
-    case 'arrow-right':
-      return glyph('connectorHandoff');
-    case 'page-up':
-      return 'PgUp';
-    case 'page-down':
-      return 'PgDn';
-    case 'home':
-      return 'Home';
-    case 'end':
-      return 'End';
-    case 'enter':
-      return 'Enter';
-    case 'escape':
-      return 'Escape';
-    case 'tab':
-      return 'Tab';
-    case 'backspace':
-      return 'Backspace';
-    case 'delete':
-      return 'Delete';
-    default:
-      return name.length === 1 ? name.toUpperCase() : name;
-  }
-}
-
 export function normalizeKeySignature({ input, key }: NormalizeKeyInput): NormalizedKeySignature {
   const normalizedKey = keyName(input, key);
-  const modifiers: string[] = [];
-  if (key.ctrl === true) modifiers.push('Ctrl');
-  if (key.meta === true) modifiers.push('Alt');
-  if (key.super === true) modifiers.push('Meta');
-  if (key.hyper === true) modifiers.push('Hyper');
-  if (key.shift === true) modifiers.push('Shift');
-  modifiers.push(displayKey(normalizedKey));
 
   return {
     input,
     key: normalizedKey,
-    display: modifiers.join('+'),
     ctrl: key.ctrl === true,
     shift: key.shift === true,
     alt: key.meta === true,

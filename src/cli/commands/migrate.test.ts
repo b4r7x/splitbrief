@@ -5,7 +5,7 @@ import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { taskId } from '../../core/schemas/task.js';
+import { makeLegacySessionSummaryWithoutContextDetected } from '#testing/helpers/factories/legacy-session-summary.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
 import { maybeMigrateAndReport, registerMigrateCommand } from './migrate.js';
 
@@ -30,64 +30,11 @@ async function runMigrate(args: string[]): Promise<void> {
 function writeLegacySummary(sessionId: string): string {
   const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
   const summaryPath = join(sessionDir, 'summary.json');
-  const session = makeSession({
-    id: sessionId,
-    status: 'complete',
-    summary: makeSummary({
-      costPrediction: {
-        estimatedTasks: 1,
-        lowCost: 0,
-        expectedCost: 0,
-        highCost: 0,
-        plannerTool: 'codex',
-        implementerTool: 'codex',
-        deterministic: {
-          taskCount: 1,
-          taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
-          contextConfidenceCounts: {
-            contextExplicit: 0,
-            contextDetected: 1,
-            contextKnownCatalog: 0,
-            contextCachedProvider: 0,
-            contextConservativeFallback: 0,
-            profileUnavailable: 0,
-          },
-          priceConfidenceCounts: { priceKnown: 0, priceUnknown: 1, profileUnavailable: 0 },
-          tasks: [
-            {
-              taskId: taskId('T001'),
-              title: 'legacy task',
-              estimatedPromptTokens: 10,
-              selectedProfileId: 'default',
-              contextFit: 'fits',
-              contextConfidence: 'context-detected',
-              priceConfidence: 'price-unknown',
-              estimatedImplementerCost: null,
-              hypotheticalPlannerCost: null,
-            },
-          ],
-          totals: {
-            knownActualEstimate: null,
-            hypotheticalAllPlanner: null,
-            estimatedSavings: null,
-            unknownCostReason: ['implementer-price-unknown'],
-          },
-        },
-      },
-    }),
-  });
-  const raw = JSON.parse(JSON.stringify(session)) as {
-    summary: {
-      costPrediction: {
-        deterministic: {
-          contextConfidenceCounts: { contextDetected?: number };
-        };
-      };
-    };
-  };
-  delete raw.summary.costPrediction.deterministic.contextConfidenceCounts.contextDetected;
   mkdirSync(sessionDir, { recursive: true });
-  writeFileSync(summaryPath, JSON.stringify(raw));
+  writeFileSync(
+    summaryPath,
+    JSON.stringify(makeLegacySessionSummaryWithoutContextDetected({ sessionId })),
+  );
   return summaryPath;
 }
 

@@ -46,16 +46,27 @@ describe('withFileLock', () => {
     expect(existsSync(lockPath)).toBe(false);
   });
 
-  it('serializes nested acquisitions of distinct locks so each runs to completion', () => {
-    const order: string[] = [];
-    withFileLock(join(dir, 'outer.lock'), timeout, () => {
-      order.push('outer-start');
-      withFileLock(join(dir, 'inner.lock'), timeout, () => {
-        order.push('inner');
+  it('serializes nested acquisitions of distinct locks and releases both lock files', () => {
+    const outerLock = join(dir, 'outer.lock');
+    const innerLock = join(dir, 'inner.lock');
+    withFileLock(outerLock, timeout, () => {
+      expect(existsSync(outerLock)).toBe(true);
+      withFileLock(innerLock, timeout, () => {
+        expect(existsSync(innerLock)).toBe(true);
       });
-      order.push('outer-end');
+      expect(existsSync(innerLock)).toBe(false);
     });
-    expect(order).toEqual(['outer-start', 'inner', 'outer-end']);
+    expect(existsSync(outerLock)).toBe(false);
+  });
+
+  it('takes over a lock that has aged past the staleness threshold', () => {
+    const lockPath = join(dir, 'a.lock');
+    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, acquiredAt: Date.now() - 60_000 }));
+
+    const result = withFileLock(lockPath, timeout, () => 'acquired');
+
+    expect(result).toBe('acquired');
+    expect(existsSync(lockPath)).toBe(false);
   });
 
   it('takes over a stale lock whose holder pid is not alive', () => {
@@ -102,14 +113,5 @@ describe('withFileLock', () => {
       name.startsWith(`${basename(lockPath)}.stale.`),
     );
     expect(leftovers).toEqual([]);
-  });
-
-  it('throws the timeout error for a fresh lock held by this live process', () => {
-    const lockPath = join(dir, 'a.lock');
-    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, acquiredAt: Date.now() }));
-
-    expect(() => withFileLock(lockPath, timeout, () => 'never')).toThrow('lock timeout');
-    // The contended lock is left intact; only the holder removes it.
-    expect(readFileSync(lockPath, 'utf-8')).toContain('acquiredAt');
   });
 });

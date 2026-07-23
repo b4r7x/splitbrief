@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -7,28 +7,24 @@ import {
   makeCallbacks,
   makePlanner,
   makeImplementer,
+  TEST_METADATA,
+  TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots.js';
-import { createValidator } from '../validation.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { createValidator } from '../validation/run.js';
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EscalationContext } from './types.js';
 
-const TEST_METADATA = {
-  plannerTool: 'claude-code',
-  implementerTool: 'ollama',
-  mode: 'standard',
-} as const;
+let dirs: string[] = [];
 
-const TEST_SINKS = {
-  setAbortHandler: () => {},
-  setQueueHandler: () => {},
-};
-
-const dirs: string[] = [];
+afterEach(() => {
+  for (const dir of dirs) cleanupTempDir(dir);
+  dirs = [];
+});
 
 function setupProject(): { projectDir: string; sessionId: string } {
   const projectDir = createTempDir('retry-evidence-test');

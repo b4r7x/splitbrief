@@ -8,7 +8,7 @@ import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import type { ConversationRow } from './types.js';
-import { row, wrapRows } from './row-format.js';
+import { row, wrapRows } from './row-format/rows.js';
 
 export function costPredictionRows(
   keyPrefix: string,

@@ -5,7 +5,7 @@ import { writeSpecFile } from '../../../core/paths-io.js';
 import { TASKS_FILE } from '../../../core/paths.js';
 import { readSessionFileConfined } from '../../../core/sessions/confinement.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { parseTasksStrict } from '../../spec/parser.js';
+import { parseTasksStrict } from '../../spec/tasks/parse.js';
 import { labelError } from '../../../utils/format-errors.js';
 import type { PlanResult } from '../../planners/types.js';
 

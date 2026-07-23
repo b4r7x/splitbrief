@@ -5,7 +5,7 @@ import YAML from 'yaml';
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
-import { applyCLIOverrides } from '../../../src/core/config/runtime/overrides.js';
+import { applyCLIOverrides } from '../../../src/core/config/runtime/overrides/apply.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';

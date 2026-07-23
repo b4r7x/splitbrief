@@ -30,7 +30,7 @@ import {
   listCheckpointSummaries,
   type CheckpointSummary,
 } from '../../../snapshots/checkpoint-summary.js';
-import { readRunSnapshotLedger } from '../../../snapshots/run.js';
+import { readRunSnapshotLedger } from '../../../snapshots/run/ledger.js';
 import { addMissing } from './missing-artifacts.js';
 import type { BriefQualityArtifact, PacketEvent } from './types.js';
 

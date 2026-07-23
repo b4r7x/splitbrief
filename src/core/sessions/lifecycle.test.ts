@@ -17,7 +17,7 @@ import { sessionDir } from '../paths.js';
 import { STATE_FILE } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createInitialState } from '../state/machine.js';
-import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
+import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { HEARTBEAT_STALENESS_MS } from './lockfile-status.js';
 
 let tmp: string;
@@ -41,38 +41,19 @@ function writeState(projectDir: string, sessionId: string, phase: string): void 
 function writeLockfile(
   projectDir: string,
   sessionId: string,
-  overrides: Record<string, unknown> = {},
+  overrides: Parameters<typeof makeSessionLockfile>[1] = {},
 ): void {
   const sDir = sessionDir(projectDir, sessionId);
   mkdirSync(sDir, { recursive: true });
-  writeFileSync(
-    join(sDir, LOCKFILE),
-    JSON.stringify({
-      version: 1,
-      pid: process.pid,
-      startTimeMs: currentProcessStartTimeMs(),
-      lastAliveMs: Date.now(),
-      sessionId,
-      mode: 'standard',
-      feature: 'feature',
-      ...overrides,
-    }),
-  );
+  writeFileSync(join(sDir, LOCKFILE), JSON.stringify(makeSessionLockfile(sessionId, overrides)));
 }
 
 describe('writeActive / readActive round-trip', () => {
-  it('writes and reads back the session id', () => {
+  it('writes and reads a newline-terminated active session ID', () => {
     const dir = makeTmp();
     mkdirSync(join(dir, '.diptych'), { recursive: true });
     writeActive({ projectDir: dir, sessionId: '2026-04-14-my-feature' });
     expect(readActive(dir)).toBe('2026-04-14-my-feature');
-  });
-
-  it('trims trailing newline', () => {
-    const dir = makeTmp();
-    mkdirSync(join(dir, '.diptych'), { recursive: true });
-    writeActive({ projectDir: dir, sessionId: '2026-04-14-feature' });
-    expect(readActive(dir)).toBe('2026-04-14-feature');
   });
 
   it('rejects invalid session ids', () => {
@@ -238,10 +219,46 @@ function mkSessionDir(projectDir: string, id: string): void {
 }
 
 describe('generateSessionId', () => {
-  it('formats date as YYYY-MM-DD with feature slug', () => {
+  it.each([
+    {
+      feature: 'Add email validator',
+      isoDate: '2026-04-14T10:00:00Z',
+      expectedId: '2026-04-14-add-email-validator',
+    },
+    {
+      feature: 'Dodaj walidację e-mail',
+      isoDate: '2026-04-14T00:00:00Z',
+      expectedId: '2026-04-14-dodaj-walidacj-e-mail',
+    },
+    {
+      feature: '機能を追加',
+      isoDate: '2026-04-14T00:00:00Z',
+      expectedId: '2026-04-14-unknown',
+    },
+    {
+      feature: 'Add--email  validator',
+      isoDate: '2026-04-14T00:00:00Z',
+      expectedId: '2026-04-14-add-email-validator',
+    },
+    {
+      feature: '---feature---',
+      isoDate: '2026-04-14T00:00:00Z',
+      expectedId: '2026-04-14-feature',
+    },
+    {
+      feature: 'Add email validator',
+      isoDate: '2026-04-15T02:00:00Z',
+      expectedId: '2026-04-15-add-email-validator',
+    },
+    {
+      feature: 'Add email validator',
+      isoDate: '2026-01-05T23:30:00Z',
+      expectedId: '2026-01-05-add-email-validator',
+    },
+  ])('builds $expectedId from feature and UTC date', ({ feature, isoDate, expectedId }) => {
     const dir = makeTmp();
-    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-14T10:00:00Z'));
-    expect(id).toBe('2026-04-14-add-email-validator');
+    const id = generateSessionId(dir, feature, new Date(isoDate));
+    expect(id).toBe(expectedId);
   });
 
   it('appends -2 on first collision', () => {
@@ -259,18 +276,6 @@ describe('generateSessionId', () => {
     expect(id).toBe('2026-04-14-add-email-validator-3');
   });
 
-  it('reduces non-alphanumeric characters to hyphens (Polish diacritics)', () => {
-    const dir = makeTmp();
-    const id = generateSessionId(dir, 'Dodaj walidację e-mail', new Date('2026-04-14T00:00:00Z'));
-    expect(id).toBe('2026-04-14-dodaj-walidacj-e-mail');
-  });
-
-  it('falls back to slug "unknown" for an all-non-Latin (CJK) feature', () => {
-    const dir = makeTmp();
-    const id = generateSessionId(dir, '機能を追加', new Date('2026-04-14T00:00:00Z'));
-    expect(id).toBe('2026-04-14-unknown');
-  });
-
   it('reduces emoji and special chars to hyphens', () => {
     const dir = makeTmp();
     const id = generateSessionId(dir, '🚀 Launch rocket! 🎉', new Date('2026-04-14T00:00:00Z'));
@@ -286,30 +291,6 @@ describe('generateSessionId', () => {
     const id = generateSessionId(dir, longFeature, new Date('2026-04-14T00:00:00Z'));
     const slug = id.slice('2026-04-14-'.length);
     expect(slug.length).toBeLessThanOrEqual(50);
-  });
-
-  it('collapses multiple non-alphanumeric chars into single hyphen', () => {
-    const dir = makeTmp();
-    const id = generateSessionId(dir, 'Add--email  validator', new Date('2026-04-14T00:00:00Z'));
-    expect(id).toBe('2026-04-14-add-email-validator');
-  });
-
-  it('strips leading and trailing hyphens from slug', () => {
-    const dir = makeTmp();
-    const id = generateSessionId(dir, '---feature---', new Date('2026-04-14T00:00:00Z'));
-    expect(id).toBe('2026-04-14-feature');
-  });
-
-  it('stamps the UTC calendar date even when the instant falls on a different local day', () => {
-    const dir = makeTmp();
-    const id = generateSessionId(dir, 'Add email validator', new Date('2026-04-15T02:00:00Z'));
-    expect(id).toBe('2026-04-15-add-email-validator');
-  });
-
-  it('stamps a single-digit month and day with zero padding', () => {
-    const dir = makeTmp();
-    const id = generateSessionId(dir, 'Add email validator', new Date('2026-01-05T23:30:00Z'));
-    expect(id).toBe('2026-01-05-add-email-validator');
   });
 
   it('generates an opaque id with no feature text when persistTranscript is false', () => {

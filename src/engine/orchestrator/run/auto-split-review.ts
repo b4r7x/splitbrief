@@ -15,7 +15,7 @@ import { createBusTextHandler, publishError, publishWarning } from '../events.js
 import { transitionAndSave } from '../state-ops.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { formatTasks } from '../../spec/formatter.js';
-import { parseTasksStrict } from '../../spec/parser.js';
+import { parseTasksStrict } from '../../spec/tasks/parse.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';

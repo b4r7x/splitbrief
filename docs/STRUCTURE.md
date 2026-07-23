@@ -64,13 +64,17 @@ src/cli/
 ├── init-stores.ts     # single-file bootstrap; 3 internal helpers; see BOOTSTRAP.md
 ├── options.ts         # commander option builder (addWorkflowOptions)
 ├── setup.ts           # bootstrap prep (resolveProjectDir, ensureGitAndConfig, setupWorkflow)
-├── render.ts          # Ink / fullscreen render setup
+├── render/            # Ink / fullscreen render setup (app.ts is the production entry)
+│   ├── app.ts
+│   ├── input-config.ts
+│   ├── process-lifecycle.ts
+│   └── terminal-handover.ts
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
 ├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
 ├── hook-trust-prompt.ts  # TTY trust prompt for hook config; refuses in non-TTY unless --allow-hooks
 ├── …                  # plus leaf modules (crash-diagnostic, render-table, parse-at-files, …) — `rg --files src/cli` for the full set
 ├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core). Listing is representative; `rg --files src/cli/commands` for the full set
-│   ├── start.ts
+│   ├── start/
 │   ├── resume.ts
 │   ├── spec.ts
 │   ├── init.ts
@@ -78,7 +82,11 @@ src/cli/
 │   ├── migrate.ts     # thin wrapper; business logic in core/migration/executor.ts
 │   └── …              # plus attach, continue, ps, doctor, mcp, and more — see the rg pointer above
 ├── rpc/               # attached-client RPC: reader/writer framing, gates, command dispatch, run loop
-│   ├── run.ts
+│   ├── run/
+│   │   ├── host.ts        # runRpc, transport lifetime, turn/restart loop
+│   │   ├── status.ts      # queue/gate/approval/status projection
+│   │   ├── brief-review.ts # Task Brief draft read/validate/quality/persist
+│   │   └── recovery.ts    # recovery command validation and prompt loop
 │   ├── dispatch.ts
 │   ├── gates.ts
 │   ├── reader.ts
@@ -120,7 +128,10 @@ src/engine/events/
 ├── types.ts           # EngineEvent alias (z.infer of EngineEventSchema) + EventSink + EventBus ports
 └── sinks/
     ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl
-    ├── tree-recorder.ts # maps EngineEvents to session tree entries; branches on recovery
+    ├── tree-recorder.ts # EventSink dispatcher; maps EngineEvents to session tree entries
+    ├── tree-recorder/
+    │   ├── persistence.ts       # tree init/resume, protected append/branch, disk commit
+    │   └── runner-invocation.ts # runner call payloads and warning aggregation for the tree
     ├── stdout-json.ts # NDJSON emitter for `diptych start --json`
     └── otel.ts        # optional OpenTelemetry span emitter
 ```
@@ -182,7 +193,7 @@ src/core/runtime/commands/
 └── types.ts           # RuntimeCommandDef, RuntimeCommandContext, CommandPaletteItem
 ```
 
-These are runtime commands, not a slash-only subsystem: the same registry backs composer `/` input, the command palette, and RPC command dispatch.
+These are runtime commands, not a slash-only subsystem: the same registry backs composer `/` input, the command palette, and RPC command dispatch. Colocated tests include `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (for example `registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`) covering the phase / screen / arg matrix.
 
 ### `src/core/sessions/` — session domain
 
@@ -244,16 +255,22 @@ features/workflow/
 │   ├── chrome.tsx            # workflow header/footer chrome
 │   └── conversation-flow/    # row-based conversation viewport
 ├── hooks/                    # feature-local hooks
-│   ├── use-workflow-screen.ts # the page's screen model (state/effects)
+│   ├── workflow-screen/      # screen model split by intent
+│   │   ├── use-model.ts      # public useWorkflowScreen + WorkflowScreenDeps
+│   │   ├── use-attachment.ts # IPC attach client
+│   │   ├── use-inline-edit.ts # inline field context + external-edit CAS
+│   │   ├── use-readiness.ts  # readiness collection + TUI persistence
+│   │   └── resume.ts         # cancelled-session resumability
 │   ├── use-runner.ts
 │   └── use-keys.ts
 ├── handlers.ts               # pure helper — engine↔UI bridge
 ├── keyboard.ts               # pure helper — keyboard action dispatchers
+├── input-footer-byline.ts    # pure byline layout — width budget, truncation, accessory ordering
 ├── display/                  # pure display formatters — activity labels, shell prettifier, tones
 └── layout/                   # geometry helpers — rects, chrome rows, snapshots
 ```
 
-The page `app/screens/workflow.tsx` holds the composition (layout math + `ScreenShell` JSX) and delegates state to `useWorkflowScreen()` in the feature.
+The page `app/screens/workflow.tsx` holds the composition (layout math + `ScreenShell` JSX) and delegates state to `useWorkflowScreen()` in `hooks/workflow-screen/use-model.ts`.
 
 **Overlay-style feature** (e.g. `features/settings/`; entry page `app/overlays/settings.tsx`):
 
@@ -446,7 +463,7 @@ The three `testing/integration/` subfolders align with the three stable seams: c
 - **Static is a tier.** TS strict + Zod schemas are first-class correctness — no runtime shape tests for Zod schemas, no `expectType<>` games.
 - **Do not test implementation.** No `vi.mock()` on `./` / `../` siblings, no spies on internal module functions, no `toHaveBeenCalledTimes` unless call-count IS the contract. See [TESTING.md](./TESTING.md).
 
-Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'evals/eval.test.ts']`. All trees are picked up by a single `npm test`.
+Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'testing/visual/**/*.test.{ts,tsx}', 'evals/eval.test.ts']`. All trees are picked up by a single `npm test`.
 
 ## Design decisions
 
@@ -535,9 +552,9 @@ src/core/keybindings/editor.ts        # resolveEditorKeyAction — the single-ow
 src/features/workflow/components/frame-panel.tsx  # shared single-line-border frame (border + ◇ dir/base title + top Divider); one shape for the raw editor overlay and ReviewView
 ```
 
-The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`, beside `divider.tsx` — so it can use the sibling `Divider` without a components→features boundary violation). The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/use-workflow-screen.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
+The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`, beside `divider.tsx` — so it can use the sibling `Divider` without a components→features boundary violation). The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
 
-Colocated tests sit next to each source file (`editor-state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `brief-field-model.test.ts`, `brief-save.test.ts`, `editor-line-segments.test.ts`, `editor-viewport.test.ts`, `external-edit-request.test.ts`, `frame-panel.test.tsx`, `src/stores/ui/editor.test.ts`). The keymap in `src/core/keybindings/editor.ts` is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-spec-plan-and-task-brief) is asserted against it by `src/core/keybindings/editor.test.ts` so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor) on both surfaces — raw pre-saves the buffer (CAS-guarded) then hands off; the field surface discards the in-progress edit and opens the whole `tasks.md`.
+Colocated tests sit next to each source file (`editor-state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `brief-field-model.test.ts`, `brief-save.test.ts`, `editor-line-segments.test.ts`, `editor-buffer-view.test.tsx`, `external-edit-request.test.ts`, `frame-panel.test.tsx`, `src/stores/ui/editor.test.ts`). The keymap in `src/core/keybindings/editor.ts` is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-spec-plan-and-task-brief) is asserted against it by `src/core/keybindings/editor.test.ts` so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor) on both surfaces — raw pre-saves the buffer (CAS-guarded) then hands off; the field surface discards the in-progress edit and opens the whole `tasks.md`.
 
 **Ratified kernel-contract amendments** (recorded as intentional): (1) `EditorState.affinity: 'upstream' | 'downstream'` — a 1-bit field so a caret on a soft-wrap seam resolves to the correct visual row (`'upstream'` is the default and reproduces prior behavior everywhere except exactly on a seam); (2) `EditorKeyAction` gains `{ kind: 'open-external' }` for the `Ctrl+O` escape hatch; (3) `followCaretScroll` (`src/core/editor/editor-state.ts:264`) reads `state.affinity` instead of the `upstream` default so a downstream seam's painted lower-row caret is not clipped at the viewport's bottom edge (model ≡ paint). The two delete-line reads (`editor-state.ts:137,143`) keep the `upstream` default.
 
@@ -573,10 +590,12 @@ orchestrator/
 │   ├── failure.ts    # internal — planner failure handling
 │   └── brief-quality-gate.ts # internal — brief severity gate
 ├── task/
-│   ├── step.ts              # entry — single-task execution (376 LOC)
+│   ├── step.ts              # entry — single-task execution
 │   ├── pre-task.ts          # internal — pre-hook dispatch, task-start event, snapshot
 │   ├── run-implementation.ts # internal — continuation loop, streaming, staging
 │   ├── apply-changed-files.ts # internal — post-impl approval, promotion, conflict detection
+│   ├── analyze-drift.ts     # internal — per-task drift chain analysis after task attempts
+│   ├── rollback.ts          # internal — restore task files after denied validation or exhausted retries
 │   └── resolve-deps.ts     # internal — dependency resolution
 ```
 

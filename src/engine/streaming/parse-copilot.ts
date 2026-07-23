@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ParsedLine } from '../runners/types.js';
-import { TokenUsageLikeSchema, toTokenDelta } from './token-usage.js';
+import { BackendTokenUsageSchema, toTokenDelta } from '../calls/usage.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 
 const TextBlock = z.object({
@@ -21,14 +21,14 @@ const AssistantMessageEvent = z.object({
   data: z.looseObject({
     text: z.string().optional(),
     content: z.union([z.string(), z.array(z.unknown())]).optional(),
-    usage: TokenUsageLikeSchema.optional(),
+    usage: BackendTokenUsageSchema.optional(),
   }),
 });
 
 const AssistantUsageEvent = z.object({
   type: z.literal('assistant.usage'),
   data: z.looseObject({
-    usage: TokenUsageLikeSchema.optional(),
+    usage: BackendTokenUsageSchema.optional(),
   }),
 });
 

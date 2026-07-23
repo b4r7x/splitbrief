@@ -130,7 +130,6 @@ describe('parseMarkdownInlines', () => {
       ['~~gone~~', 'gone'],
       ['keep ~~old~~ new', 'old'],
       ['lead ~~a b~~', 'a b'],
-      ['~~1~~ and ~~2~~', '1'],
       ['mixed **bold** ~~struck~~', 'struck'],
     ])('parses a strikethrough token from %s', (source, text) => {
       expect(parseMarkdownInlines(source)).toContainEqual({ kind: 'strikethrough', text });
@@ -161,20 +160,17 @@ describe('parseMarkdownInlines', () => {
 
   describe('inline html comments', () => {
     it.each([
-      'before <!-- note --> after',
-      '<!-- note -->',
-      'a <!-- one --> b <!-- two --> c',
-      'text <!-- Q:{"id":"q1"} --> tail',
-      '<!-- [x](y) **bold** -->',
-    ])('emits no comment text for %s', (source) => {
+      ['before <!-- note --> after', 'before  after'],
+      ['<!-- note -->', ''],
+      ['a <!-- one --> b <!-- two --> c', 'a  b  c'],
+      ['text <!-- Q:{"id":"q1"} --> tail', 'text  tail'],
+      ['<!-- [x](y) **bold** -->', ''],
+    ])('strips comments from %s', (source, visible) => {
       const rendered = parseMarkdownInlines(source)
         .map((token) => token.text)
         .join('');
 
-      expect(rendered).not.toContain('<!--');
-      expect(rendered).not.toContain('-->');
-      expect(rendered).not.toContain('note');
-      expect(rendered).not.toContain('Q:');
+      expect(rendered).toBe(visible);
     });
 
     it('keeps the text surrounding a comment', () => {

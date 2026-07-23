@@ -5,7 +5,10 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { PromptBody } from './components/prompt-body.js';
 import { QuestionPrompt } from './components/question-prompt.js';
 import { countPromptBodyRows, promptBodyRows } from './prompt-body-rows.js';
-import { getQuestionPromptRows, QUESTION_PROMPT_HORIZONTAL_CHROME } from './prompt-rows.js';
+import {
+  getQuestionPromptRows,
+  QUESTION_PROMPT_HORIZONTAL_CHROME,
+} from './prompt-rows/question.js';
 import { passHeadlinePrefix } from './recovery-prompt.js';
 
 const PANEL_WIDTH = 80;
@@ -28,6 +31,12 @@ describe('promptBodyRows', () => {
     process.env.TERM = 'xterm-256color';
     process.env.LANG = 'en_US.UTF-8';
     Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  });
+
+  it('counts a one-line prompt body plus chrome for question panel height', () => {
+    expect(
+      getQuestionPromptRows('Task interrupted. Enter instructions to continue:', PANEL_WIDTH),
+    ).toBe(3);
   });
 
   it('keeps count and rendered rows aligned for a long unbroken facts item', () => {

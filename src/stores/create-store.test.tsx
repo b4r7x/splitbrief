@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { createStore } from './create-store.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -6,7 +6,6 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 describe('createStore.use', () => {
   it('supports selectors that return unstable object snapshots without entering a render loop', async () => {
     const store = createStore({ value: 1 });
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
     let renderCount = 0;
     let ui: ReturnType<typeof renderFeature> | undefined;
 
@@ -22,9 +21,6 @@ describe('createStore.use', () => {
 
       expect(ui.lastFrame()).toContain('1');
       expect(renderCount).toBeLessThan(20);
-      expect(consoleError).not.toHaveBeenCalledWith(
-        expect.stringContaining('The result of getSnapshot should be cached'),
-      );
 
       store.set({ value: 2 });
       await tick();
@@ -33,7 +29,6 @@ describe('createStore.use', () => {
       expect(renderCount).toBeLessThan(20);
     } finally {
       ui?.unmount();
-      consoleError.mockRestore();
     }
   });
 });

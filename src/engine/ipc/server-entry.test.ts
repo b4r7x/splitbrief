@@ -1,11 +1,16 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { formatConfigLoaderDiagnostic } from '../../core/config/load/io.js';
+import type { ConfigLoaderDiagnostic } from '../../core/config/load/io.js';
 import { sessionDir } from '../../core/paths.js';
-import { emitConfigWarnings, getArgv } from './server-entry.js';
-import { writeIpcServerArgsFile, type IpcServerArgs } from './server-args.js';
+import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { readLockfile } from './lockfile.js';
+import type { IpcServerArgs } from './server-args.js';
+import { emitConfigWarnings, getArgv, writeStartupLockfile } from './server-entry.js';
+import { writeIpcServerArgsFile } from './server-args.js';
 
 describe('getArgv', () => {
   let tmp: string;
@@ -78,13 +83,31 @@ describe('emitConfigWarnings', () => {
 
   it('writes each effective-config warning to stderr so the detached server log surfaces it', () => {
     emitConfigWarnings([
-      'config.version 2 is deprecated; diptych migrated it in memory.',
-      'budget override exceeds the configured ceiling.',
+      {
+        source: 'loader',
+        diagnostic: { kind: 'config-migration', code: 'deprecated-v2' },
+      },
+      { source: 'validation', message: 'budget override exceeds the configured ceiling.' },
     ]);
 
     const written = stderrChunks.join('');
     expect(written).toContain('⚠ config.version 2 is deprecated; diptych migrated it in memory.');
     expect(written).toContain('⚠ budget override exceeds the configured ceiling.');
+  });
+
+  it('prints matching loader and validation warnings once', () => {
+    const diagnostic = {
+      kind: 'config-migration',
+      code: 'deprecated-v2',
+    } satisfies ConfigLoaderDiagnostic;
+    const message = formatConfigLoaderDiagnostic(diagnostic);
+
+    emitConfigWarnings([
+      { source: 'loader', diagnostic },
+      { source: 'validation', message },
+    ]);
+
+    expect(stderrChunks.filter((chunk) => chunk.includes(message))).toHaveLength(1);
   });
 
   it('writes nothing when there are no warnings', () => {
@@ -150,5 +173,51 @@ describe('detached host OTel bootstrap', () => {
 
   it('registers a recording provider when main() boots with a forwarded exporter', () => {
     expect(runDetachedHostOtelProbe('console')).toBe('recording');
+  });
+});
+
+describe('writeStartupLockfile ps-facing redaction', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = mkdtempSync(join(tmpdir(), 'server-entry-lockfile-'));
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  function makeArgv(overrides: Partial<IpcServerArgs>): IpcServerArgs {
+    return {
+      sessionId: basename(testDir),
+      projectDir: testDir,
+      feature: 'add secret oauth login',
+      mode: 'standard',
+      configPath: join(testDir, 'config.yaml'),
+      overrides: {},
+      ...overrides,
+    };
+  }
+
+  it('redacts the lockfile feature `diptych ps` prints under persistTranscript:false', async () => {
+    await writeStartupLockfile(testDir, makeArgv({ persistTranscript: false }));
+
+    const lock = await readLockfile(testDir);
+    expect(lock?.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(lock?.feature).not.toBe('add secret oauth login');
+  });
+
+  it('keeps the raw lockfile feature under persistTranscript:true', async () => {
+    await writeStartupLockfile(testDir, makeArgv({ persistTranscript: true }));
+
+    const lock = await readLockfile(testDir);
+    expect(lock?.feature).toBe('add secret oauth login');
+  });
+
+  it('keeps the raw lockfile feature when persistTranscript is unset', async () => {
+    await writeStartupLockfile(testDir, makeArgv({}));
+
+    const lock = await readLockfile(testDir);
+    expect(lock?.feature).toBe('add secret oauth login');
   });
 });

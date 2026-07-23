@@ -619,11 +619,9 @@ describe('readResource - edge cases', () => {
     const id = 'sess-j';
 
     const resolver = createResolver({ projectDir, sessionIds: [id], diptychVersion: '1.0.0' });
+    const uri = `mcp://diptych/sessions/${id}/spec.md`;
 
-    await expect(
-      async () => await resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`),
-    ).not.toThrow();
-    expect(await resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`)).toBeNull();
+    await expect(resolver.readResource(uri)).resolves.toBeNull();
   });
 
   it('returns null for a session not in sessionIds', async () => {

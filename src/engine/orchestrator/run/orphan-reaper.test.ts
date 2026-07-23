@@ -3,24 +3,21 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { sessionDir, LOCKFILE } from '../../../core/paths.js';
-import { currentProcessStartTimeMs } from '../../../lib/process/start-time.js';
+import {
+  currentProcessStartTimeMs,
+  readProcessStartTimeMs,
+} from '../../../lib/process/start-time.js';
 import { recordRunnerPid, readRunnerPids } from '../../../core/sessions/runner-pids.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 
-// Deterministic per-pid start times: mapped pids read the mocked value, all
-// other pids (e.g. lockfile pids, process.pid) keep the real implementation.
-const mockedStartTimes = vi.hoisted(() => new Map<number, number | null>());
+const mockedStartTimes = new Map<number, number | null>();
 
-vi.mock('../../../lib/process/start-time.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../lib/process/start-time.js')>();
+function reaperDeps() {
   return {
-    ...actual,
     readProcessStartTimeMs: (pid: number): number | null =>
-      mockedStartTimes.has(pid)
-        ? (mockedStartTimes.get(pid) ?? null)
-        : actual.readProcessStartTimeMs(pid),
+      mockedStartTimes.has(pid) ? (mockedStartTimes.get(pid) ?? null) : readProcessStartTimeMs(pid),
   };
-});
+}
 
 let tmp: string;
 
@@ -82,7 +79,7 @@ describe('reapOrphanRunners', () => {
     recordRunnerPid({ projectDir: tmp, sessionId: 'dead-session' }, 50001, 111_000);
     mockedStartTimes.set(50001, 111_000);
 
-    const reaping = reapOrphanRunners(tmp);
+    const reaping = reapOrphanRunners(tmp, reaperDeps());
     await vi.advanceTimersByTimeAsync(2000);
     await reaping;
 
@@ -100,7 +97,7 @@ describe('reapOrphanRunners', () => {
     recordRunnerPid({ projectDir: tmp, sessionId: 'dead-session' }, 50081, 111_000);
     mockedStartTimes.set(50081, 111_000);
 
-    const reaping = reapOrphanRunners(tmp);
+    const reaping = reapOrphanRunners(tmp, reaperDeps());
     // A session resumed concurrently records a fresh runner pid while this reap
     // is mid-grace (SIGTERM already sent, awaiting the SIGKILL window) — it must
     // survive the ledger release below, not be wiped along with the reaped pid.
@@ -136,7 +133,7 @@ describe('reapOrphanRunners', () => {
       currentStart - 1_000_000,
     );
 
-    await reapOrphanRunners(tmp);
+    await reapOrphanRunners(tmp, reaperDeps());
 
     // Signal 0 liveness probes (from the session status check) are expected;
     // only destructive signals to the protected pids are disallowed.
@@ -164,7 +161,7 @@ describe('reapOrphanRunners', () => {
     });
     recordRunnerPid({ projectDir: tmp, sessionId: 'stale-session' }, 60011, 3000);
 
-    await reapOrphanRunners(tmp);
+    await reapOrphanRunners(tmp, reaperDeps());
 
     const destructiveCalls = calls.filter(
       (call) => call.signal === 'SIGTERM' || call.signal === 'SIGKILL',
@@ -191,7 +188,7 @@ describe('reapOrphanRunners', () => {
     recordRunnerPid({ projectDir: tmp, sessionId: 'exited-session' }, 50051, 111_000);
     mockedStartTimes.set(50051, 111_000);
 
-    const reaping = reapOrphanRunners(tmp);
+    const reaping = reapOrphanRunners(tmp, reaperDeps());
     await vi.advanceTimersByTimeAsync(2000);
     await reaping;
 
@@ -213,7 +210,7 @@ describe('reapOrphanRunners', () => {
     recordRunnerPid({ projectDir: tmp, sessionId: 'dead-b' }, 50012, 222_000);
     mockedStartTimes.set(50012, 222_000);
 
-    const reaping = reapOrphanRunners(tmp);
+    const reaping = reapOrphanRunners(tmp, reaperDeps());
     // A single grace window covers both sessions — sequential reaping would
     // need 2 × SIGKILL_GRACE_MS before settling.
     await vi.advanceTimersByTimeAsync(2000);
@@ -238,7 +235,7 @@ describe('reapOrphanRunners', () => {
     // process.kill(-1, …) broadcasts to every process the user can signal.
     mockedStartTimes.set(1, 111_000);
 
-    await reapOrphanRunners(tmp);
+    await reapOrphanRunners(tmp, reaperDeps());
 
     const destructiveCalls = calls.filter(
       (call) => call.signal === 'SIGTERM' || call.signal === 'SIGKILL',
@@ -260,7 +257,7 @@ describe('reapOrphanRunners', () => {
     recordRunnerPid({ projectDir: tmp, sessionId: 'dead-session' }, 50031, 111_000);
     mockedStartTimes.set(50031, 111_000);
 
-    const reaping = reapOrphanRunners(tmp);
+    const reaping = reapOrphanRunners(tmp, reaperDeps());
     await vi.advanceTimersByTimeAsync(2000);
     await expect(reaping).resolves.toBeUndefined();
 
@@ -279,7 +276,7 @@ describe('reapOrphanRunners', () => {
     recordRunnerPid({ projectDir: tmp, sessionId: 'dead-session' }, 50061, 111_000);
     mockedStartTimes.set(50061, null);
 
-    await reapOrphanRunners(tmp);
+    await reapOrphanRunners(tmp, reaperDeps());
 
     const destructiveCalls = calls.filter(
       (call) => call.signal === 'SIGTERM' || call.signal === 'SIGKILL',
@@ -297,7 +294,7 @@ describe('reapOrphanRunners', () => {
     recordRunnerPid({ projectDir: tmp, sessionId: 'dead-session' }, 50041, 111_000);
     mockedStartTimes.set(50041, 111_000);
 
-    const reaping = reapOrphanRunners(tmp);
+    const reaping = reapOrphanRunners(tmp, reaperDeps());
     // SIGTERM is sent synchronously before the grace sleep; simulate the pid
     // being recycled by an unrelated process during the window.
     mockedStartTimes.set(50041, 999_000_000);

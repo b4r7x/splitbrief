@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { getQuestionPromptRows } from '../prompt-rows.js';
+import { getQuestionPromptRows } from '../prompt-rows/question.js';
 import { QuestionPrompt } from './question-prompt.js';
 
 const RAW_TOKEN = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
@@ -28,13 +28,5 @@ describe('QuestionPrompt', () => {
     expect(frame).not.toContain('\u001b');
 
     ui.unmount();
-  });
-
-  it('sizes the panel to the prompt body plus its border', () => {
-    const rows = getQuestionPromptRows('Task interrupted. Enter instructions to continue:', 80);
-    expect(rows).toBe(3);
-
-    const multiline = getQuestionPromptRows(MULTILINE_HINT, 80);
-    expect(multiline).toBeGreaterThan(3);
   });
 });

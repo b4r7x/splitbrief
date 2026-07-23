@@ -76,7 +76,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 - Survives without the rest of the codebase (the wrapper is reusable)
 
 **What lives here:**
-- `lib/git.ts` — `simple-git` wrapper (commit, diff, status)
+- `lib/git/` — `simple-git` boundary in `client.ts` (commit, diff, status helpers in sibling modules)
 - `lib/fs.ts` — security-aware filesystem helpers (`ensureSecureDir`, `writeSecureFile`)
 - `lib/warn.ts` — `stderr` formatter
 - `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`)
@@ -86,22 +86,22 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 
 **Why `lib/` is not `utils/`:** these modules depend on Node APIs, external packages, or protocol specifics. They are reusable, but not as drop-in primitives. `utils/` is for things you could copy-paste into any TypeScript project; `lib/` is for things that only make sense in a Node + terminal context.
 
-**Why `lib/` is not `core/`:** these modules don't know anything about diptych. A workflow runner, a `.diptych/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git.ts` changes; `core/` doesn't.
+**Why `lib/` is not `core/`:** these modules don't know anything about diptych. A workflow runner, a `.diptych/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git/client.ts` changes; `core/` doesn't.
 
-**Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`). One-file subsystems stay flat (`lib/git.ts`, not `lib/git/git.ts`).
+**Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`). Git helpers live under `lib/git/` (`client.ts` owns the `simple-git` boundary).
 
 **Single-source rules for wrapped subsystems:**
-- **No `simple-git` imports outside `src/lib/git.ts`** (and its colocated test file). Every git operation — `commit`, `stash`, `checkout`, `clean`, `tag`, `reset`, `add` — routes through a named export in `lib/git.ts`. Engine, core, and features import named helpers only.
-- `lib/git.ts` contains no orchestrator convention knowledge. Staging is explicit: `commitChanges(dir, msg)` commits the current index; callers call `stageAll(dir)` first when they mean "stage everything then commit". Convenience coupling ("commit auto-stages") belongs in the caller, not the wrapper.
-- **`ensureGitignore` lives in `lib/fs.ts`, not `lib/git.ts`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter.
+- **No `simple-git` imports outside `src/lib/git/client.ts`** (and colocated test files). Every git operation routes through named exports under `lib/git/`. Engine, core, and features import named helpers only.
+- `lib/git/client.ts` contains no orchestrator convention knowledge. Staging is explicit: `commitChanges(dir, msg)` commits the current index; callers call `stageAll(dir)` first when they mean "stage everything then commit". Convenience coupling ("commit auto-stages") belongs in the caller, not the wrapper.
+- **`ensureGitignore` lives in `lib/fs.ts`, not `lib/git/`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter.
 
 **Good / bad examples:**
 
 ```ts
-// GOOD — lib/git.ts: pure simple-git wrapper
+// GOOD — lib/git/client.ts: pure simple-git boundary
 export async function commitChanges(dir: string, message: string) { ... }
 
-// BAD — lib/git.ts knowing a workflow naming convention
+// BAD — lib/git/client.ts knowing a workflow naming convention
 export async function commitTaskResult(taskId: TaskId) { ... }
 //     ^ TaskId is a core/ concept; this belongs in engine/
 ```
@@ -115,8 +115,8 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 **Acceptance criteria:**
 - Knows diptych concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
 - No React, no Ink, no DOM — pure TypeScript
-- No workflow orchestration — `core/` does not run planners, implementers, retries, or commits (that's `engine/`). The one sanctioned subprocess in `core/` is the read-only readiness baseline probe (`core/readiness/checks/validation.ts` runs the configured typecheck/lint/test commands via `lib/process/spawn.ts` to detect a pre-broken tree before any task starts); it spawns nothing else
-- Domain persistence is allowed: `core/` writes its own state to disk (sessions, stats, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `ensureSecureDir`, confined writes) for whole-file payloads, but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/tree/io.ts`, `evidence/ledger.ts`, `sessions/compaction.ts`, `migration/executor.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
+- No workflow orchestration — `core/` does not run planners, implementers, retries, or commits (that's `engine/`). The one sanctioned subprocess in `core/` is the read-only readiness baseline probe (`core/readiness/checks/validation.ts` runs the configured typecheck/lint/test commands via `lib/process/spawn/run-command.ts` to detect a pre-broken tree before any task starts); it spawns nothing else
+- Domain persistence is allowed: `core/` writes its own state to disk (sessions, stats, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `readJsonSafe`, `ensureSecureDir`, confined writes) and `lib/file-lock.ts` for whole-file payloads (e.g. `evidence/ledger-storage.ts`), but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/tree/io.ts`, `sessions/compaction.ts`, `migration/executor.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
 - Typed data structures, pure transformations, and schema validation live here
 
 **What lives here:**
@@ -163,7 +163,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `engine/availability.ts` — command availability probing
 - `engine/error-hints.ts` — engine-scoped error diagnosis (provider hints, etc.)
 - `engine/events/` — event bus subsystem: `schema.ts` (`EngineEventSchema` type-dispatched schema + `parseEngineEvent`), `types.ts` (the `EngineEvent` alias inferred from that schema, plus the `EventBus`/`EventSink` ports), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
-  - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions.addEvent` (workflow sub-stores consume `EngineEvent` directly)
+  - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions/event.addEvent` (workflow sub-stores consume `EngineEvent` directly)
   - `sinks/jsonl.ts` — appends every event to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`
   - `sinks/tree-recorder.ts` — always-on sink appending `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`
   - `sinks/stdout-json.ts` — public NDJSON emitter for `diptych start --json` / headless mode (`event` envelope plus bounded/redacted payload policy)

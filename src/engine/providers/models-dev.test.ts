@@ -138,18 +138,28 @@ const FIXTURE: ModelsDevCatalog = {
 };
 
 describe('getModelsForProvider', () => {
-  it('maps Models.dev models to DetectedModel[]', () => {
+  it('maps Models.dev models to DetectedModel[] with paid and sparse pricing fields', () => {
     const models = getModelsForProvider(FIXTURE, 'anthropic');
     expect(models).toHaveLength(2);
-    expect(models.at(0)?.id).toBe('claude-sonnet-4-6');
-    expect(models.at(1)?.id).toBe('claude-haiku-3');
-  });
-
-  it('keeps models.dev pricing in per-1M-token units', () => {
-    const models = getModelsForProvider(FIXTURE, 'anthropic');
     const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
-    expect(sonnet?.pricingInput).toBe(3);
-    expect(sonnet?.pricingOutput).toBe(15);
+    const haiku = models.find((m) => m.id === 'claude-haiku-3');
+    expect(sonnet).toMatchObject({
+      id: 'claude-sonnet-4-6',
+      pricingInput: 3,
+      pricingOutput: 15,
+      pricingCacheRead: 0.3,
+      pricingCacheWrite: 3.75,
+      contextLength: 200000,
+      maxOutputTokens: 8192,
+      supportsTemperature: true,
+      supportsReasoning: true,
+      supportsImages: true,
+      isFree: false,
+    });
+    expect(haiku).toMatchObject({
+      id: 'claude-haiku-3',
+      isFree: false,
+    });
   });
 
   it('preserves models.dev context pricing tiers', () => {
@@ -214,75 +224,20 @@ describe('getModelsForProvider', () => {
     expect(models.at(0)?.pricingTiers).toBeUndefined();
   });
 
-  it('carries models.dev cache_read/cache_write through to detected pricing fields', () => {
-    const models = getModelsForProvider(FIXTURE, 'anthropic');
-    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
-    expect(sonnet?.pricingCacheRead).toBe(0.3);
-    expect(sonnet?.pricingCacheWrite).toBe(3.75);
-  });
-
-  it('leaves cache pricing undefined when models.dev omits it', () => {
-    const models = getModelsForProvider(FIXTURE, 'anthropic');
-    const haiku = models.find((m) => m.id === 'claude-haiku-3');
-    expect(haiku?.pricingCacheRead).toBeUndefined();
-    expect(haiku?.pricingCacheWrite).toBeUndefined();
-  });
-
-  it('extracts contextLength from limit.context', () => {
-    const models = getModelsForProvider(FIXTURE, 'anthropic');
-    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
-    expect(sonnet?.contextLength).toBe(200000);
-  });
-
-  it('surfaces maxOutputTokens from limit.output', () => {
-    const models = getModelsForProvider(FIXTURE, 'anthropic');
-    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
-    expect(sonnet?.maxOutputTokens).toBe(8192);
+  it.each([
+    { providerId: 'together', modelId: 'meta-llama/Llama-3-70b' },
+    { providerId: 'lm-studio', modelId: 'qwen2.5-7b' },
+    { providerId: 'copilot', modelId: 'claude-opus-4.6' },
+    { providerId: 'kilo-code', modelId: 'kimi-k2.5' },
+  ] as const)('maps models.dev catalog aliases to $providerId', ({ providerId, modelId }) => {
+    const models = getModelsForProvider(FIXTURE, providerId);
+    expect(models).toHaveLength(1);
+    expect(models.at(0)?.id).toBe(modelId);
   });
 
   it('leaves maxOutputTokens undefined when limit.output is absent', () => {
     const models = getModelsForProvider(FIXTURE, 'together');
     expect(models.at(0)?.maxOutputTokens).toBeUndefined();
-  });
-
-  it('carries models.dev capability flags into the detected model', () => {
-    const models = getModelsForProvider(FIXTURE, 'anthropic');
-    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
-    expect(sonnet?.supportsTemperature).toBe(true);
-    expect(sonnet?.supportsReasoning).toBe(true);
-    expect(sonnet?.supportsImages).toBe(true);
-  });
-
-  it('leaves capability flags undefined when models.dev omits them', () => {
-    const models = getModelsForProvider(FIXTURE, 'anthropic');
-    const haiku = models.find((m) => m.id === 'claude-haiku-3');
-    expect(haiku?.supportsTemperature).toBeUndefined();
-    expect(haiku?.supportsReasoning).toBeUndefined();
-    expect(haiku?.supportsImages).toBeUndefined();
-  });
-
-  it('maps togetherai provider ID to together', () => {
-    const models = getModelsForProvider(FIXTURE, 'together');
-    expect(models).toHaveLength(1);
-    expect(models.at(0)?.id).toBe('meta-llama/Llama-3-70b');
-  });
-
-  it('maps lmstudio provider ID to lm-studio', () => {
-    const models = getModelsForProvider(FIXTURE, 'lm-studio');
-    expect(models).toHaveLength(1);
-    expect(models.at(0)?.id).toBe('qwen2.5-7b');
-  });
-
-  it('maps github-copilot provider ID to copilot', () => {
-    const models = getModelsForProvider(FIXTURE, 'copilot');
-    expect(models).toHaveLength(1);
-    expect(models.at(0)?.id).toBe('claude-opus-4.6');
-  });
-
-  it('maps kilo provider ID to kilo-code', () => {
-    const models = getModelsForProvider(FIXTURE, 'kilo-code');
-    expect(models).toHaveLength(1);
-    expect(models.at(0)?.id).toBe('kimi-k2.5');
   });
 
   it('merges opencode and opencode-go provider IDs for opencode', () => {
@@ -293,15 +248,9 @@ describe('getModelsForProvider', () => {
     );
   });
 
-  it('isFree is true when both costs are 0', () => {
+  it('marks zero-cost local models as free', () => {
     const models = getModelsForProvider(FIXTURE, 'lm-studio');
-    expect(models.at(0)?.isFree).toBe(true);
-  });
-
-  it('isFree is false for paid models', () => {
-    const models = getModelsForProvider(FIXTURE, 'anthropic');
-    const sonnet = models.find((m) => m.id === 'claude-sonnet-4-6');
-    expect(sonnet?.isFree).toBe(false);
+    expect(models.at(0)).toMatchObject({ id: 'qwen2.5-7b', isFree: true });
   });
 
   it('returns empty array for unknown provider', () => {

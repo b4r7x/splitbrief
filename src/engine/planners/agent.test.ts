@@ -75,24 +75,6 @@ describe('createAgentPlanner', () => {
     expect(result.code).toBe(null);
   });
 
-  it('supports escalateHint — failure when agent writes no files', async () => {
-    const config = makeConfig({
-      planner: { kind: 'agent', command: 'echo', args: ['test output'] },
-    });
-    const planner = createAgentPlanner(config);
-    const task = makeTask();
-    const callbacks = { onOutput: vi.fn() };
-
-    const result = await planner.escalateHint({
-      task,
-      error: 'error message',
-      projectDir,
-      callbacks,
-    });
-    expect(result.success).toBe(false);
-    expect(result.code).toBe(null);
-  });
-
   it('supports escalateFull — success when agent writes files', async () => {
     const outFile = join(projectDir, 'full-out.ts');
     const config = makeConfig({

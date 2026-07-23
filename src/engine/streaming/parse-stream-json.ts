@@ -7,7 +7,7 @@ import type {
   ToolUseInfo,
 } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { toTokenDelta } from './token-usage.js';
+import { toTokenDelta } from '../calls/usage.js';
 import { isRecord, optionalString } from '../../utils/type-guards.js';
 import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './parser-warnings.js';
 

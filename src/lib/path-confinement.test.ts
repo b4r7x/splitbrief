@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect } from 'vitest';
-import { linkSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -136,9 +136,9 @@ describe('nearestExistingAncestor', () => {
     const root = createTempDir('near-root');
     tmpDirs.push(root);
     mkdirSync(join(root, 'present'), { recursive: true });
-    expect(nearestExistingAncestor(join(root, 'present'))).toBe(
-      join(nearestExistingAncestor(root), 'present'),
-    );
+    const alias = join(root, 'present-link');
+    symlinkSync(join(root, 'present'), alias);
+    expect(nearestExistingAncestor(alias)).toBe(realpathSync(join(root, 'present')));
   });
 
   itUnix('walks up to the nearest existing ancestor for a missing leaf', () => {

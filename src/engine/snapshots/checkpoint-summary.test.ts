@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SnapshotManifest, SnapshotPhase } from '../../core/schemas/snapshot.js';
-import { acceptRunSnapshot, recordRunSnapshot } from './run.js';
+import { acceptRunSnapshot } from './run/lifecycle.js';
+import { recordRunSnapshot } from './run/ledger.js';
 import { writeManifest } from './manifest.js';
-import { CHECKPOINT_RESTORE_SAFETY, listCheckpointSummaries } from './checkpoint-summary.js';
+import { listCheckpointSummaries } from './checkpoint-summary.js';
 
 let tmp: string;
 
@@ -249,29 +250,5 @@ describe('listCheckpointSummaries', () => {
 
     expect(summaries[0]?.diffCommand).toBe('diptych snapshot diff snap-command-id');
     expect(summaries[0]?.restoreCommand).toBe('diptych snapshot restore snap-command-id');
-  });
-
-  it('exposes structured restore safety metadata at the run level', () => {
-    expect(CHECKPOINT_RESTORE_SAFETY).toMatchObject({
-      hashGuarded: true,
-      conflictsSkippedByDefault: true,
-      forceOverwritesConflicts: true,
-      partialRestoreExpected: true,
-      excludedPaths: ['.git/', '.diptych/', '.diptych-sandbox/', 'node_modules/', '.trees/'],
-    });
-    expect(CHECKPOINT_RESTORE_SAFETY.text.hashGuarded).toContain('hash-guarded');
-    expect(CHECKPOINT_RESTORE_SAFETY.text.conflictsSkippedByDefault).toContain(
-      'skipped by default',
-    );
-    expect(CHECKPOINT_RESTORE_SAFETY.text.forceOverwritesConflicts).toContain(
-      '--force is destructive',
-    );
-    expect(CHECKPOINT_RESTORE_SAFETY.text.forceOverwritesConflicts).toContain(
-      'overwrites conflicts',
-    );
-    expect(CHECKPOINT_RESTORE_SAFETY.text.partialRestoreExpected).toContain(
-      'Partial restore is expected',
-    );
-    expect(CHECKPOINT_RESTORE_SAFETY.text.excludedPaths).toContain('.diptych/');
   });
 });

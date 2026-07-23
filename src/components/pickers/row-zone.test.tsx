@@ -1,11 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
-import {
-  _resetMouseZones,
-  hitTopmostZone,
-  registerMouseZone,
-} from '../../lib/terminal/mouse-zones.js';
+import { _resetMouseZones, hitTopmostZone } from '../../lib/terminal/mouse-zones.js';
 import { ListViewport } from './list-viewport.js';
 import { RowZone } from './row-zone.js';
 import { rowZoneRect } from './row-zone.js';
@@ -31,31 +27,6 @@ describe('rowZoneRect', () => {
       left: 5,
       right: 24,
     });
-  });
-});
-
-describe('row zone calibration (idx = sgrY - listTop)', () => {
-  it('maps consecutive rows to consecutive indices with no phantom past the last row', () => {
-    const listTop = 7;
-    const hits: number[] = [];
-    for (let windowIndex = 0; windowIndex < 4; windowIndex++) {
-      const index = windowIndex;
-      registerMouseZone({
-        id: `row:${index}`,
-        ...rowZoneRect({ top: listTop + windowIndex, left: 3, width: 10, height: 1 }),
-        z: 100,
-        onClick: () => hits.push(index),
-      });
-    }
-
-    for (let windowIndex = 0; windowIndex < 4; windowIndex++) {
-      hitTopmostZone(5, listTop + windowIndex)?.onClick?.();
-      expect(hits.at(-1)).toBe(windowIndex);
-    }
-
-    expect(hitTopmostZone(5, listTop - 1)).toBeUndefined();
-    expect(hitTopmostZone(5, listTop + 4)).toBeUndefined();
-    expect(hitTopmostZone(2, listTop)).toBeUndefined();
   });
 });
 

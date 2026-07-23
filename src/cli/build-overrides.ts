@@ -1,44 +1,41 @@
 import type { WorkflowOpts } from '../core/types/config-options.js';
-import type { CLIOverrides } from '../core/config/runtime/overrides.js';
 import type { Config } from '../core/schemas/config.js';
-import type { CollectedReadiness } from '../core/readiness/collect.js';
 import { loadConfig } from '../core/config/load/io.js';
-import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides.js';
-import { resolveEffectiveConfig } from '../core/config/runtime/effective-config.js';
-import { warnStderr } from '../lib/warn.js';
-
-export function buildCLIOverrides(opts: WorkflowOpts): CLIOverrides {
-  return workflowOptsToCLIOverrides(opts);
-}
+import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/from-options.js';
+import {
+  emitEffectiveConfigWarnings,
+  resolveEffectiveConfig,
+} from '../core/config/runtime/effective-config.js';
+import type { EffectiveConfigWarning } from '../core/config/runtime/effective-config.js';
 
 export function printConfigWarnings(warnings: readonly string[]): void {
-  for (const w of warnings) warnStderr(`⚠ ${w}`);
+  emitEffectiveConfigWarnings(
+    warnings.map((message): EffectiveConfigWarning => ({ source: 'validation', message })),
+  );
 }
 
 export function resolveRunConfigWithBase(args: {
   projectDir: string;
   opts: WorkflowOpts;
-  readiness?: CollectedReadiness | undefined;
   autoApprove?: boolean | undefined;
 }): { config: Config; persistedConfig: Config } {
   const loadedResult = loadConfig(args.projectDir);
-  const { config: loaded, warnings } = loadedResult;
-  const overrides = buildCLIOverrides(args.opts);
+  const { config: loaded, loaderDiagnostics } = loadedResult;
+  const overrides = workflowOptsToCLIOverrides(args.opts);
   const effectiveOverrides =
     args.autoApprove !== undefined ? { ...overrides, autoApprove: args.autoApprove } : overrides;
-  const { config, warnings: effectiveWarnings } = resolveEffectiveConfig({
+  const { config, warnings } = resolveEffectiveConfig({
     base: loaded,
     overrides: effectiveOverrides,
-    baseWarnings: warnings,
+    loaderDiagnostics,
   });
-  printConfigWarnings(effectiveWarnings);
+  emitEffectiveConfigWarnings(warnings);
   return { config, persistedConfig: loaded };
 }
 
 export function resolveRunConfig(args: {
   projectDir: string;
   opts: WorkflowOpts;
-  readiness?: CollectedReadiness | undefined;
   autoApprove?: boolean | undefined;
 }): Config {
   const { config } = resolveRunConfigWithBase(args);

@@ -40,7 +40,7 @@
     "test:e2e": "vitest run --config testing/e2e/vitest.e2e.config.ts",
     "test:e2e:record": "DIPTYCH_E2E_RECORD=1 vitest run --config testing/e2e/vitest.e2e.config.ts",
     "tui-shots": "tsx scripts/tui-shots.ts",
-    "tui-shots:pty": "tsx testing/visual/pty/smoke.ts",
+    "tui-shots:pty": "tsx testing/visual/pty/smoke/cli.ts",
     "eval": "tsx evals/cli.ts",
     "eval:record": "tsx evals/cli.ts --record",
     "eval:replay": "tsx evals/cli.ts --replay",

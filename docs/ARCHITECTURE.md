@@ -74,7 +74,7 @@ src/
 ├── cli/                      Non-React CLI logic
 │   ├── commands/             commander handlers (init, start, resume, spec, status)
 │   ├── init-stores.ts        Eager store bootstrap before React renders
-│   └── render.ts             Ink / fullscreen-ink render setup
+│   └── render/               Ink / fullscreen-ink render setup (`app.ts` entry)
 │
 ├── core/                     Shared domain (no React, no engine-ness)
 │   ├── config/               YAML load + validation + migration (v1 → v2 → v3)
@@ -142,13 +142,13 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 ## Data flow, one task
 
 1. **User** runs `diptych start "add JWT auth"`.
-2. `cli/commands/start.ts` boots stores, initialises router with the feature, renders `<App/>`.
+2. `cli/commands/start/register.ts` boots stores, initialises router with the feature, renders `<App/>`.
 3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
 4. `useWorkflowRunner()` is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/workflow.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the sinks described in [Event bus + sinks](#5-event-bus--sinks). The bus is threaded through `WorkflowContext.bus`.
 5. `runWorkflow` creates planner + implementer via factories, compiles Task Briefs, produces supporting spec/plan artifacts when the selected mode includes them, then runs the task loop and final review.
 6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
    - `tuiSink` (`src/features/workflow/tui-sink.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
-   - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`.
+   - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent` in `src/core/sessions/log-writer.ts`.
    - `treeRecorderSink` (`src/engine/events/sinks/tree-recorder.ts`) — appends `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`.
    - `stdoutJsonSink` (`src/engine/events/sinks/stdout-json.ts`) — opt-in under `--json` / `diptych start --json`; writes NDJSON events on stdout for headless integration (see `src/cli/headless.ts`).
    - `otelSink` (`src/engine/events/sinks/otel.ts`) — opt-in via `config.otel.enabled`; maps `EngineEvent` to OpenTelemetry spans. See [`OTEL.md`](./OTEL.md) §Design decisions.
@@ -187,7 +187,7 @@ Factory dispatch is async and lazy: backend modules are loaded with memoized dyn
 | `agent` | `planners/agent.ts` | `implementers/agent.ts` |
 | `agent-sdk` | `planners/agent-sdk.ts` | `implementers/agent-sdk.ts` |
 
-The shared pipeline for each role lives in `base.ts` (`createPlannerBase`, `createImplementerBase`). Each concrete backend provides `invoke*` functions; the base wraps them with token accounting, artifact resolution, retry, and callback dispatch.
+The shared pipeline for each role lives in planner `base.ts` (`createPlannerBase`) and implementer `pipeline/run.ts` (`createImplementerBase`). Each concrete backend provides `invoke*` functions; the base wraps them with token accounting, artifact resolution, retry, and callback dispatch.
 
 **What the engine code knows:** only the `Planner` / `Implementer` interfaces. It never branches on backend type.
 
@@ -252,7 +252,7 @@ type PlannerCapabilities = {
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `agent-sdk` | ✓ | ✗ | ✓ | ✓ | ✓ | ✓ |
 
-Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/runners/agent-sdk-backend.ts`. All other backends fall back to transcript rebuild on resume (`src/engine/orchestrator/transcript-rebuild.ts`).
+Claude Code resumes via `claude --session-id <id>`. Codex resumes via `codex exec resume --json <id> <prompt>` (captured from the `thread.started` JSONL event). Agent SDK resumes via the `options.resume` argument to `query()`; see `src/engine/runners/agent-sdk/backend.ts`. All other backends fall back to transcript rebuild on resume (`src/engine/orchestrator/transcript/rebuild.ts`).
 
 `shell` and `agent` defaults are all-false but can be narrowed or partially declared per project. The schema rejects `supportsSessionResume`, `supportsEffort`, and `supportsImages` when set to `true` because command-based adapters have no session-handle, effort, or image-attachment channel.
 
@@ -272,7 +272,7 @@ planner:
 
 When a capability is missing, the orchestrator falls back:
 
-- **No session resume?** → Rebuild context from `session.jsonl` messages on resume. See `src/engine/orchestrator/transcript-rebuild.ts` — for api-kind backends the messages are injected as a `messages[]` array; for CLI backends without native resume, as a `<!-- prior conversation -->` prompt prefix.
+- **No session resume?** → Rebuild context from `session.jsonl` messages on resume. See `src/engine/orchestrator/transcript/rebuild.ts` — for api-kind backends the messages are injected as a `messages[]` array; for CLI backends without native resume, as a `<!-- prior conversation -->` prompt prefix.
 - **No `injectUserTurn`?** → Queue user messages, drain at next phase boundary (backends that implement `injectUserTurn` get them dispatched immediately as native user turns).
 - **No conversational planning?** → User answers only at approval gates; no inline Q&A.
 - **No hint escalation?** → Skip the hint tier: after local retries and the optional tier 0 intermediate model, go straight to full escalation on failure.
@@ -306,7 +306,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
 | New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
-| New event type | `src/engine/events/schema.ts` (add a Zod member to the type-dispatched `EngineEventSchema` contract; the `EngineEvent` alias in `types.ts` infers it) + row renderer in `src/features/workflow/conversation-rows/event-rows.ts` |
+| New event type | `src/engine/events/schema.ts` (add a Zod member to the type-dispatched `EngineEventSchema` contract; the `EngineEvent` alias in `types.ts` infers it) + row renderer in `src/features/workflow/conversation-rows/event-rows/dispatch.ts` |
 | New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
 | New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
 | New feature overlay | FLAT page in `src/app/overlays/<name>.tsx` (feature internals in `src/features/<feature>/`) + register via `overlayStore` |
@@ -354,7 +354,7 @@ The bus replaces an earlier design that split events across two independent shap
 - **Two sources of truth.** Adding an event meant touching `TuiEvent`, `OrchestratorEventPayloadMap`, and an emit helper that called both. Drift was silent — a typo meant the JSONL log and the UI disagreed on what happened.
 - **Closed for extension.** OTel spans, `--json` stdout, session replay, and future MCP/remote subscribers all needed the same stream. With direct `callbacks.onEvent` + `appendEvent` call sites, there was nowhere to attach them.
 
-The bus is synchronous by design so fan-out order matches the pre-bus `addEvent` → `appendEvent` back-to-back sequence that `workflow/actions.ts` and `core/state/persistence.ts` rely on. Event `type` values use snake_case to match the on-disk JSONL convention (what users grep against); the old kebab-case `TuiEvent` names were dropped.
+The bus is synchronous by design so fan-out order matches the pre-bus `addEvent` → `appendEvent` back-to-back sequence that `workflow/actions/event.ts` and `src/core/sessions/log-writer.ts` rely on. Event `type` values use snake_case to match the on-disk JSONL convention (what users grep against); the old kebab-case `TuiEvent` names were dropped.
 
 **Rejected alternatives:**
 
@@ -373,7 +373,7 @@ diptych start --json "add endpoint" | jq -c 'select(.type == "task_completed")'
 
 ### RPC mode (--rpc)
 
-`diptych start --rpc` also skips Ink, but it does not attach `stdoutJsonSink`. Instead `src/cli/rpc/run.ts` owns an `EventBus`, subscribes a response writer, and emits workflow events as wrapped responses: `{ "type": "event", "data": <EngineEvent> }`. Stdin is parsed as NDJSON commands by `src/cli/rpc/reader.ts`; stdout responses are `ack`, `error`, `status`, or `event`.
+`diptych start --rpc` also skips Ink, but it does not attach `stdoutJsonSink`. Instead `src/cli/rpc/run/host.ts` owns an `EventBus`, subscribes a response writer, and emits workflow events as wrapped responses: `{ "type": "event", "data": <EngineEvent> }`. Status projection, Task Brief review draft handling, and recovery prompting live in `src/cli/rpc/run/status.ts`, `brief-review.ts`, and `recovery.ts` respectively. Stdin is parsed as NDJSON commands by `src/cli/rpc/reader.ts`; stdout responses are `ack`, `error`, `status`, or `event`.
 
 RPC keeps engine gates bidirectional. Approval, question, continuation, cost, tiered approval, user-edit conflict, task-review, and recovery prompts publish status/event responses and wait until the client sends `approve`, `reject`, `regenerate`, prompt-scoped `brief_review`, `message`, or `recovery`. The `message` command feeds either the active prompt or the workflow message queue. The `status` command reads the current persisted `WorkflowState`; `abort` trips the workflow abort signal.
 
@@ -429,8 +429,8 @@ The repository layers many supporting subsystems on top of that core loop:
 - **Handoff packs** (`src/engine/handoff/`) — render the compiled brief into formats other agents consume (`spec-kit`, `agents-md`, `claude-code`, `copilot-issue`) plus user-supplied custom renderers under `.diptych/handoff-renderers/`.
 - **MCP server** (`src/engine/mcp/`) — exposes session artifacts (sessions index, manifest, spec, plan, tasks, evidence, drift report, state, and summary) as read-only MCP resources for external clients, plus constrained evidence-ledger tools. It is not an execution path.
 - **IPC server** (`src/engine/ipc/`) — UNIX-domain socket per session so a `diptych attach` TUI client can re-bind to a long-running background workflow; `diptych ps` lists status.
-- **Worktree management** (`src/engine/worktree.ts`) — `diptych worktree list / switch / path / remove` for isolated parallel sessions under `.trees/<name>/`.
-- **Tiered approval** (`src/engine/orchestrator/approval/tiered-approval.ts`) — declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and go through `auto` / `sticky` / `confirm` tiers, with sticky grants persisted at `.diptych/approvals.json` and managed via `diptych approval list / clear`. `network` is accepted only for config compatibility; it is not shell/network sandboxing.
+- **Worktree management** (`src/engine/worktree/`) — `diptych worktree list / switch / path / remove` for isolated parallel sessions under `.trees/<name>/`.
+- **Tiered approval** (`src/engine/orchestrator/approval/tiered-approval.ts` dispatches `gateAction`; `types.ts`, `sticky.ts`, `confirm.ts`, `events.ts`) — declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and go through `auto` / `sticky` / `confirm` tiers, with sticky grants persisted at `.diptych/approvals.json` and managed via `diptych approval list / clear`. `network` is accepted only for config compatibility; it is not shell/network sandboxing.
 - **Repo-map context** (`src/engine/codebase/`) — token-budgeted PageRank-based codebase summary fed to every planner call.
 - **Hooks** (`src/engine/hooks/`) — `pre_*` (sync) and `post_*` / `on_*` (fire-and-forget) commands declared in config and dispatched on matching events.
 
@@ -465,7 +465,7 @@ src/
 │   ├── hook-trust-prompt.ts       Interactive hook-trust gating
 │   ├── init-stores.ts             Eager store bootstrap before render
 │   ├── options.ts                 Shared commander option parsers
-│   ├── render.ts                  Ink / fullscreen-ink mount
+│   ├── render/                    Ink / fullscreen-ink mount (`app.ts` entry)
 │   └── setup.ts                   resolveProjectDir + setup helpers
 │
 ├── core/                          Diptych-domain (no React, no engine)
@@ -535,8 +535,8 @@ src/
 │   │   ├── sinks/                 jsonl, otel, stdout-json, tui
 │   │   └── types.ts               EngineEvent alias (z.infer),
 │   │                              EventSink, EventBus
-│   ├── worktree.ts                listWorktrees, removeWorktree,
-│   │                              createWorktree
+│   ├── worktree/                  create, status, remove, detect,
+│   │                              path, cleanliness, errors
 │   ├── handoff/
 │   │   ├── load-renderer.ts       Dynamic import of custom .ts/.js
 │   │   │                          renderers from .diptych/handoff-renderers/
@@ -570,7 +570,8 @@ src/
 │   ├── orchestrator/
 │   │   ├── approval/              approval loop, action classifier, staged
 │   │   │                          project, file snapshots, tiered approval
-│   │   │                          gates
+│   │   │                          (`tiered-approval`, `types`, `sticky`,
+│   │   │                          `confirm`, `events`) gates
 │   │   ├── budget/                budget gates, prediction, estimates
 │   │   ├── clarifications.ts      Q&A loop helpers
 │   │   ├── continuation.ts        withContinuationLoop (pause/resume gate)
@@ -581,29 +582,27 @@ src/
 │   │   ├── evidence/              ledger, persistence, reporting,
 │   │   │                          task/approval evidence, review packets
 │   │   ├── final-review.ts        Final-review phase
-│   │   ├── native-injection.ts    Mid-stream message injection for planners
-│   │   │                          with injectUserTurn()
+│   │   ├── queue/                 Message queue (submit, drain, clear, prompt, native-injection)
 │   │   ├── planner-review.ts      Spec/plan review prompts
 │   │   ├── planning/              instant, quick, full, speckit,
 │   │   │                          mode-advisor, rewind, run, shared
 │   │   │                          (runBriefQualityGate,
 │   │   │                          runBriefsApprovalLoop)
-│   │   ├── queue.ts               Message queue (enqueue, drain, clear)
 │   │   ├── resume-context.ts      ResumeContextHolder
 │   │   ├── run/                   init, phases, workflow (top-level runWorkflow)
-│   │   ├── session-lifecycle.ts   shutdownWorkflow + summary IO
+│   │   ├── session-lifecycle/     finalize + shutdown + queue install
 │   │   ├── signals.ts             SIGINT/SIGTERM handler wiring
 │   │   ├── state-ops.ts           transitionAndSave, addUsageAndSave,
 │   │   │                          refreshAndPersistCode
-│   │   ├── summary.ts             buildSummary
+│   │   ├── summary/               buildSummary (build.ts), artifact rollups, task metrics
 │   │   ├── task/                  loop, step, retry, commit, routing,
 │   │   │                          review, budget-check, pre-task helpers
 │   │   ├── tokens.ts              Token-usage accumulation
-│   │   ├── transcript-rebuild.ts  Fallback resume context for backends
+│   │   ├── transcript/            Fallback resume context + compaction
 │   │   │                          without native session resume
 │   │   ├── types.ts               WorkflowContext, OrchestratorCallbacks,
 │   │   │                          WorkflowSinks
-│   │   └── validation.ts          Validator pipeline (typecheck / lint / test)
+│   │   └── validation/            Validator pipeline (typecheck / lint / test)
 │   ├── parsers/                   code-detection, code-patterns,
 │   │                              question, response-extractor,
 │   │                              scope-extractor
@@ -624,9 +623,9 @@ src/
 │   │                              together, types
 │   ├── runners/                   command-based, errors, factory
 │   │                              (createPlanner, createImplementer), types,
-│   │                              agent-sdk-backend (Anthropic Agent SDK
-│   │                              wrapper), claude-invoke (Claude-Code CLI
-│   │                              subprocess driver), cli-tools (CLI-tool
+│   │                              agent-sdk/ (Anthropic Agent SDK
+│   │                              wrapper), claude/ (Claude-Code CLI
+│   │                              subprocess: invoke, stream), cli-tools (CLI-tool
 │   │                              spawn helpers), sandbox-env (HOME/XDG/cache
 │   │                              env redirect; not shell/network sandbox), trust (runner trust
 │   │                              prompts)
@@ -655,8 +654,7 @@ src/
 │   │   └── token-budget.ts        Per-mode planner token budgets
 │   └── streaming/                 output-parsers (stream-json, jsonl,
 │                                  text, opencode), spawn-collect,
-│                                  stream-errors, token-usage,
-│                                  transcript-buffer
+│                                  stream-errors, transcript-buffer
 │
 ├── stores/                        useSyncExternalStore module-state
 │   ├── create-store.ts            ~45-LOC factory
@@ -708,9 +706,10 @@ src/
 │       ├── hooks/                 use-advisory, use-brief-review-keys,
 │       │                          use-cost-stats, use-input-mode,
 │       │                          use-ipc-client, use-keys, use-mouse-pointer,
-│       │                          use-mouse-scroll, use-readiness-fetch,
-│       │                          use-review-content, use-runner,
-│       │                          use-workflow-screen
+│       │                          use-mouse-scroll, use-review-content,
+│       │                          use-runner, workflow-screen/{use-model,
+│       │                          use-attachment, use-inline-edit,
+│       │                          use-readiness, resume}
 │       ├── keyboard.ts            Workflow keymap
 │       ├── layout/                layout math (brief-review, chrome-rows,
 │       │                          cost-chrome, diff-height, rect, hit-test,
@@ -751,7 +750,8 @@ src/
 ├── lib/                           Third-party adapters
 │   ├── file-listing.ts            listProjectFiles, MAX_PROJECT_FILES
 │   ├── fs.ts                      ensureSecureDir, SECURE_FILE_MODE (0o600)
-│   ├── git.ts                     simple-git helpers
+│   ├── git/                       simple-git boundary in client.ts;
+│   │                              diff, files, refs, repository, staging
 │   ├── otel.ts                    OpenTelemetry bootstrap + flushOtel exit drain
 │   ├── path-confinement.ts        isPathConfined, assertPathConfined
 │   ├── process/                   errors, line-buffer, registry, spawn
@@ -873,7 +873,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 ### Exhaustive switch in conversation row rendering
 
-`src/features/workflow/conversation-rows/event-rows.ts` is the canonical scrollable conversation dispatcher and uses `assertNever(event)` in its `default` arm.
+`src/features/workflow/conversation-rows/event-rows/dispatch.ts` is the canonical scrollable conversation dispatcher and uses `assertNever(event)` in its `default` arm. Row-less event membership lives in `event-rows/visibility.ts`; planner markdown routing in `event-rows/planner-text.ts`; implementer/validate/escalate execution rows in `event-rows/execution.ts`.
 
 `eventRowBlock(event, ...)` returns a lazy row block or `null` for silent events. Role and status are represented by row tones and explicit text, not by persistent left gutters.
 
@@ -904,7 +904,7 @@ All per-session state lives under `.diptych/sessions/<session-id>/`. Path consta
         ├── server.log              IPC server log (when running detached)
         ├── ipc.sock                UNIX socket for `diptych attach`
         ├── lockfile.json           IPC server lockfile (pid + heartbeat)
-        ├── tasks.md                Task-Brief transport (parsed by spec/parser.ts)
+        ├── tasks.md                Task-Brief transport (parsed by spec/tasks/parse.ts)
         ├── spec.md                 Standard / speckit only
         ├── plan.md                 Standard / speckit only
         ├── research.md             Standard / speckit when produced
@@ -940,7 +940,7 @@ Also relative to project root, **outside** `.diptych/`:
 - `./.trees/<slug>/` — git worktrees managed by `diptych worktree`.
 - `./.claude/skills/`, `~/.claude/skills/`, `./.diptych/skills/`, `~/.diptych/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` — skill sources, read-only to diptych.
 
-Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript-rebuild.ts`).
+Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
 
 **Concurrency:** at most one foreground active session per project directory; the presence of `.diptych/active` is the foreground lock. Background sessions register in `lockfile.json` so `diptych ps` and `diptych attach` can find them; `attach` then connects via `ipc.sock`.
 
@@ -1098,18 +1098,27 @@ export function emptyActiveChain(): ActiveDriftChain
 export function resetDriftChainState(projectDir, sessionId): void
 ```
 
-### `core/evidence/ledger.ts`
+### `core/evidence/ledger-state.ts`
 
 ```ts
 export function createEvidenceLedger(input: CreateEvidenceLedgerInput): EvidenceLedger
 //  input.briefHash propagates onto the ledger AND every task entry.
+export function getOrCreateLedger(
+  input: CreateEvidenceLedgerInput,
+  existing: EvidenceLedger | null,
+): EvidenceLedger
+```
+
+### `core/evidence/ledger-storage.ts`
+
+```ts
 export function evidenceLedgerPath(ref: SessionRef): string
 export function writeEvidenceLedger(ref, ledger): void
 export function mutateEvidenceLedger(ref, mutate): EvidenceLedger
 export function readEvidenceLedger(ref): EvidenceLedger | null
 ```
 
-The evidence ledger data model, locking, path resolution, and read/write/mutate APIs are owned by `src/core/evidence/ledger.ts`.
+`src/core/evidence/ledger-state.ts` owns ledger construction and state updates. `src/core/evidence/ledger-storage.ts` owns path resolution, locking, and read/write/mutate APIs.
 
 ### `engine/orchestrator/evidence/`
 
@@ -1268,11 +1277,11 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 Quickest path for a fresh agent:
 
 1. `src/cli.ts` — see what commands exist.
-2. `src/cli/commands/start.ts` — see the bootstrap flow.
+2. `src/cli/commands/start/register.ts` — see the bootstrap flow.
 3. `src/engine/orchestrator/run/workflow.ts` → `run/init.ts` → `run/phases.ts` — see the top-level loop.
 4. `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts` — see how each mode differs.
-5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` — see the per-task loop with auto-snapshot, drift chain, evidence, and budget integration.
+5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` (entry) with internal helpers such as `analyze-drift.ts` and `rollback.ts` — see the per-task loop with auto-snapshot, drift chain, evidence, and budget integration.
 6. `src/engine/events/schema.ts` — see the full event vocabulary (`EngineEventSchema`).
 7. `src/core/paths.ts` — see every path the system writes.
 
-For UI specifically: `src/app/root.tsx` → `src/app/router.tsx` → `src/app/screens/workflow.tsx` → `src/features/workflow/components/conversation-flow/flow.tsx` → `src/features/workflow/conversation-rows/event-rows.ts`.
+For UI specifically: `src/app/root.tsx` → `src/app/router.tsx` → `src/app/screens/workflow.tsx` → `src/features/workflow/components/conversation-flow/flow.tsx` → `src/features/workflow/conversation-rows/event-rows/dispatch.ts`.

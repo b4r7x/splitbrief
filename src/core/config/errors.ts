@@ -1,4 +1,4 @@
-import { error, matches } from '../../utils/error.js';
+import { error } from '../../utils/error.js';
 
 type Role = 'planner' | 'implementer';
 
@@ -108,20 +108,4 @@ export const configError = {
       `Default implementer profile "${defaultName}" is not defined.`,
       { defaultName },
     ),
-
-  isInvalidYaml: matches('config-invalid-yaml'),
-  isUnreadable: matches('config-unreadable'),
-  isValidationFailed: matches('config-validation-failed'),
-  isLoadNotCalled: matches('config-load-not-called'),
-  isSaveFailed: matches('config-save-failed'),
-  isNotAnObject: matches('config-not-an-object'),
-  isUnsupportedVersion: matches('config-unsupported-version'),
-  isRunnerKindIndeterminate: matches('config-runner-kind-indeterminate'),
-  isRunnerMissingField: matches('config-runner-missing-field'),
-  isRunnerMissingModel: matches('config-runner-missing-model'),
-  isUnknownCliTool: matches('config-unknown-cli-tool'),
-  isUnknownProvider: matches('config-unknown-provider'),
-  isInvalidOverride: matches('config-invalid-override'),
-  isKindMismatch: matches('config-kind-mismatch'),
-  isProfileNotFound: matches('config-profile-not-found'),
 } as const;

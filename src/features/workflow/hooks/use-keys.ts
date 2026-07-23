@@ -1,7 +1,7 @@
 import { useInput, type Key } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { getSections } from '../../../stores/workflow/actions.js';
+import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';

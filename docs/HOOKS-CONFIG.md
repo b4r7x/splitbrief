@@ -395,7 +395,7 @@ For a custom hook, write a script that returns exit 0 on success or non-zero on 
 Module: `src/engine/hooks/`
 
 - `types.ts` — `HookOutcome` (allow/deny/warn/crash), `HookContext`
-- `dispatch.ts` — `runHook(entry, event, ctx)` — spawns subprocess via `lib/process/spawn.ts`
+- `dispatch.ts` — `runHook(entry, event, ctx)` — spawns subprocess via `lib/process/spawn/progress.ts`
 - `substitute.ts` — `${event.field}` regex substitution (no eval)
 - `sink.ts` — `EventBus` sink for post_*/on_* events (fire-and-forget)
 - `run-pre.ts` — sequential pre_* runner; deny short-circuits

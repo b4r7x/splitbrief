@@ -1,4 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
@@ -24,17 +26,6 @@ const DENY_PRE_TASK_HOOKS: HooksConfig = {
     },
   ],
 };
-const ALLOW_POST_TASK_HOOKS: HooksConfig = {
-  post_task: [
-    {
-      kind: 'command',
-      command: 'echo',
-      args: ['hook-fired'],
-      timeout_ms: 5000,
-      on_failure: 'warn',
-    },
-  ],
-};
 
 const dirs: string[] = [];
 
@@ -43,7 +34,25 @@ afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
 });
 
-describe('hooks integration flow', { timeout: 30_000 }, () => {
+function postTaskMarkerHooks(projectDir: string): HooksConfig {
+  const marker = join(projectDir, 'post-task-hook.txt');
+  return {
+    post_task: [
+      {
+        kind: 'command',
+        command: 'node',
+        args: [
+          '-e',
+          `const input=require('node:fs').readFileSync(0,'utf8');const {event}=JSON.parse(input);require('node:fs').writeFileSync(${JSON.stringify(marker)}, event.taskId);`,
+        ],
+        timeout_ms: 5000,
+        on_failure: 'warn',
+      },
+    ],
+  };
+}
+
+describe('hooks integration flow', { timeout: 90_000 }, () => {
   it('pre_task hook deny causes task_skipped and no task_completed', async () => {
     const projectDir = createTempDir('orch-int-hooks-pre-task');
     dirs.push(projectDir);
@@ -95,12 +104,12 @@ describe('hooks integration flow', { timeout: 30_000 }, () => {
     }
   });
 
-  it('post_task hook fires after task_completed', async () => {
+  it('post_task hook writes the substituted task id to a project marker', async () => {
     const projectDir = createTempDir('orch-int-hooks-post-task');
     dirs.push(projectDir);
     createTestGitRepo(projectDir);
+    const marker = join(projectDir, 'post-task-hook.txt');
 
-    const recorded: EngineEvent[] = [];
     const { callbacks } = makeCallbacks();
 
     const config = makeConfig({
@@ -119,7 +128,7 @@ describe('hooks integration flow', { timeout: 30_000 }, () => {
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: { mode: 'quick', commitStrategy: 'none', persistTranscript: false, maxRetries: 1 },
-      hooks: ALLOW_POST_TASK_HOOKS,
+      hooks: postTaskMarkerHooks(projectDir),
     });
 
     await runWorkflow({
@@ -130,16 +139,14 @@ describe('hooks integration flow', { timeout: 30_000 }, () => {
       sinks: TEST_WORKFLOW_SINKS,
       allowHooks: true,
       allowRepoRunners: true,
-      _eventSink: (e) => recorded.push(e),
     });
 
-    const types = recorded.map((e) => e.type);
-
-    expect(types).toContain('task_completed');
-    expect(types).toContain('workflow_complete');
-
-    const completedIdx = types.indexOf('task_completed');
-    const completeIdx = types.indexOf('workflow_complete');
-    expect(completedIdx).toBeLessThan(completeIdx);
-  }, 20_000);
+    await vi.waitFor(
+      async () => {
+        const payload = await readFile(marker, 'utf8');
+        expect(payload).toBe('T001');
+      },
+      { timeout: 5_000, interval: 20 },
+    );
+  }, 90_000);
 });

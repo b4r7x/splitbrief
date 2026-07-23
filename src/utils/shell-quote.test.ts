@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatShellArgv, shellCommandFromText, shellQuoteArg } from './shell-quote.js';
+import { shellCommandFromText, shellQuoteArg } from './shell-quote.js';
 
 describe('shellQuoteArg', () => {
   it.each([
@@ -10,14 +10,6 @@ describe('shellQuoteArg', () => {
     ['', "''"],
   ])('quotes %j as %j', (input, expected) => {
     expect(shellQuoteArg(input)).toBe(expected);
-  });
-});
-
-describe('formatShellArgv', () => {
-  it('joins argv tokens with shell-safe quoting', () => {
-    expect(formatShellArgv(['diptych', 'attach', 'sess-1', '--project', '/tmp/my project'])).toBe(
-      "diptych attach sess-1 --project '/tmp/my project'",
-    );
   });
 });
 

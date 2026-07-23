@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatWithBudget } from './budget.js';
-import { estimateTokens } from '../../core/tokens/estimate.js';
+import { formatFileNode } from './format.js';
 import { makeFileNode, makeSymbol } from '#testing/helpers/factories/file-node.js';
 
 function fn(path: string, symCount: number) {
@@ -9,14 +9,6 @@ function fn(path: string, symCount: number) {
     sizeBytes: 100,
   });
 }
-
-describe('estimateTokens', () => {
-  it('rounds up — 1 token per 4 chars', () => {
-    expect(estimateTokens('')).toBe(0);
-    expect(estimateTokens('1234')).toBe(1);
-    expect(estimateTokens('12345')).toBe(2);
-  });
-});
 
 describe('formatWithBudget', () => {
   it('emits highest-ranked files first', () => {
@@ -30,7 +22,7 @@ describe('formatWithBudget', () => {
     expect(out.indexOf('src/b.ts')).toBeLessThan(out.indexOf('src/a.ts'));
   });
 
-  it('drops lowest-ranked files when budget tight (never partial files)', () => {
+  it('always includes the highest-ranked file as a whole block before dropping lower ranks', () => {
     const big = fn('src/big.ts', 50); // many symbols → many chars
     const small = fn('src/small.ts', 1);
     const ranks = new Map<string, number>([
@@ -38,7 +30,7 @@ describe('formatWithBudget', () => {
       ['src/small.ts', 0.1],
     ]);
     const out = formatWithBudget([big, small], ranks, 100); // tiny budget — only big fits
-    expect(out).toContain('src/big.ts');
+    expect(out).toBe(formatFileNode(big));
     expect(out).not.toContain('src/small.ts');
   });
 

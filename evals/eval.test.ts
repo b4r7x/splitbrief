@@ -2,9 +2,6 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createCassetteRecorder } from '#testing/helpers/cassette/recorder.js';
-import { createCassetteReplayer, loadCassette } from '#testing/helpers/cassette/replayer.js';
-import type { Cassette } from '#testing/helpers/cassette/types.js';
 import { collectRunMetrics, compareScenario, type EvalReport, type RunMetrics } from './metrics.js';
 import { generateReport } from './report.js';
 import { buildEvalConfig, copyScenarioFixture } from './runner.js';
@@ -47,65 +44,6 @@ describe('eval harness', () => {
       expect(json.aggregate.totalSavingsUSD).toBe(0.06);
       expect(markdown).toContain('Fake scenario');
       expect(markdown).toContain('$0.0600');
-    });
-  });
-
-  it('records fetch responses while redacting API key headers', async () => {
-    const originalFetch = globalThis.fetch;
-    const fakeFetch: typeof globalThis.fetch = async () =>
-      new Response('{"ok":true}', {
-        status: 201,
-        headers: { 'content-type': 'application/json' },
-      });
-    globalThis.fetch = fakeFetch;
-
-    try {
-      await withTempDir(async (dir) => {
-        const cassettePath = join(dir, 'test-record.json');
-        const recorder = createCassetteRecorder(cassettePath, 'test-record');
-        recorder.install();
-        const response = await fetch('https://example.test/messages', {
-          method: 'POST',
-          headers: {
-            authorization: 'Bearer secret',
-            'x-api-key': 'secret-key',
-            'content-type': 'application/json',
-          },
-          body: '{"message":"hello"}',
-        });
-        await response.text();
-        recorder.uninstall();
-        const entry = firstEntry(recorder.entries);
-
-        expect(entry.response.status).toBe(201);
-        expect(entry.request.headers['authorization']).toBe('***');
-        expect(entry.request.headers['x-api-key']).toBe('***');
-        expect(entry.request.headers['content-type']).toBe('application/json');
-      });
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
-  it('replays recorded responses and reports cassette exhaustion clearly', async () => {
-    await withTempDir(async (dir) => {
-      const cassettePath = join(dir, 'fake-baseline.json');
-      writeFileSync(cassettePath, JSON.stringify(makeCassette(), null, 2));
-
-      const cassette = loadCassette(cassettePath);
-      const replayer = createCassetteReplayer(cassette);
-      try {
-        replayer.install();
-        const response = await fetch('https://example.test/messages', { method: 'POST' });
-
-        expect(response.status).toBe(202);
-        expect(await response.text()).toBe('{"message":"replayed"}');
-        await expect(fetch('https://example.test/messages', { method: 'POST' })).rejects.toThrow(
-          'exhausted',
-        );
-      } finally {
-        replayer.uninstall();
-      }
     });
   });
 
@@ -220,42 +158,6 @@ function makeReport(): EvalReport {
       scenariosWhereRoutedMatchedBaseline: 1,
     },
   };
-}
-
-function makeCassette(): Cassette {
-  return {
-    version: 1,
-    name: 'fake-baseline',
-    recordedAt: '2026-04-30T12:00:00.000Z',
-    meta: { scenarioId: 'fake', mode: 'baseline' },
-    entries: [
-      {
-        index: 0,
-        recordedAt: '2026-04-30T12:00:01.000Z',
-        request: {
-          method: 'POST',
-          url: 'https://example.test/messages',
-          headers: {},
-          body: null,
-        },
-        response: {
-          status: 202,
-          headers: { 'content-type': 'application/json' },
-          body: '{"message":"replayed"}',
-        },
-        provider: 'unknown',
-        durationMs: 10,
-      },
-    ],
-  };
-}
-
-function firstEntry<T>(entries: T[]): T {
-  const entry = entries[0];
-  if (entry === undefined) {
-    throw new Error('expected at least one entry');
-  }
-  return entry;
 }
 
 async function withTempDir(fn: (dir: string) => void | Promise<void>): Promise<void> {

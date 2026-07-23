@@ -12,7 +12,8 @@ import {
 import { createTempDir } from './temp-dir.js';
 import { ensureSessionDir } from '../../src/core/paths-io.js';
 import { runPlanningPhase } from '../../src/engine/orchestrator/planning/run.js';
-import { createEvidenceLedger, writeEvidenceLedger } from '../../src/core/evidence/ledger.js';
+import { createEvidenceLedger } from '../../src/core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../src/core/evidence/ledger-storage.js';
 import { recordRejectionEvidence } from '../../src/engine/orchestrator/evidence/approval.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../src/engine/orchestrator/types.js';
 import type { ApprovalReviewResult } from '../../src/core/approval/types.js';

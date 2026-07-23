@@ -106,36 +106,6 @@ describe('ReviewView', () => {
     });
   });
 
-  it('renders review markdown headings, lists, fences, and frontmatter', async () => {
-    const file = join(tmp, 'spec.md');
-    writeFileSync(
-      file,
-      [
-        '---',
-        'risk: HIGH',
-        '---',
-        '# Review Heading',
-        '- keep `inline` code visible',
-        '```md',
-        '# not a heading',
-        '- not a list',
-        '```',
-      ].join('\n'),
-    );
-    reviewStore.setReviewFile(file);
-
-    ui = renderFeature(<ReviewView height={18} width={48} />);
-
-    await vi.waitFor(() => {
-      const frame = stripAnsiStyles(ui?.lastFrame() ?? '');
-      expect(frame).toContain('risk: HIGH');
-      expect(frame).toContain('Review Heading');
-      expect(frame).toContain('• keep inline code visible');
-      expect(frame).toContain('# not a heading');
-      expect(frame).toContain('- not a list');
-    });
-  });
-
   it('spans the full content width as a bordered card', async () => {
     openReviewFile(
       'wide.md',

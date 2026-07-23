@@ -1,9 +1,10 @@
 import { afterEach, describe, it, expect } from 'vitest';
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   assertSessionConfinement,
+  readSessionFileConfined,
   resolveSessionFilePath,
   SESSION_FILE_PATH_MAX_BYTES,
 } from './confinement.js';
@@ -68,12 +69,13 @@ describe('assertSessionConfinement', () => {
     const filePath = join(sessionDir, 'lockfile.json');
     symlinkSync(join(outside, 'secret.json'), filePath);
 
-    expect(() => assertSessionConfinement(filePath, sessionDir)).toThrow();
+    let err: unknown;
     try {
       assertSessionConfinement(filePath, sessionDir);
-    } catch (err) {
-      expect((err as { kind?: string }).kind).toBe('session-io-read');
+    } catch (caught) {
+      err = caught;
     }
+    expect(err).toMatchObject({ kind: 'session-io-read' });
   });
 
   itUnix('rejects a file whose real path escapes the session root', () => {
@@ -84,12 +86,13 @@ describe('assertSessionConfinement', () => {
     symlinkSync(outside, join(sessionDir, 'linkdir'));
     const filePath = join(sessionDir, 'linkdir', 'evil.json');
 
-    expect(() => assertSessionConfinement(filePath, sessionDir)).toThrow();
+    let err: unknown;
     try {
       assertSessionConfinement(filePath, sessionDir);
-    } catch (err) {
-      expect((err as { kind?: string }).kind).toMatch(/^session-io-/);
+    } catch (caught) {
+      err = caught;
     }
+    expect(err).toMatchObject({ kind: 'session-io-read' });
   });
 
   itUnix('rejects a path through a symlinked directory inside the session root', () => {
@@ -122,5 +125,36 @@ describe('assertSessionConfinement', () => {
     const filePath = join(sessionDir, 'lockfile.json');
 
     expect(() => assertSessionConfinement(filePath, sessionDir)).toThrow();
+  });
+});
+
+describe('readSessionFileConfined at the editor boundary', () => {
+  it('reads a plain in-session file', async () => {
+    const root = createTempDir('session-read-plain');
+    tmpDirs.push(root);
+    writeFileSync(join(root, 'tasks.md'), 'ok');
+    await expect(readSessionFileConfined(root, join(root, 'tasks.md'))).resolves.toBe('ok');
+  });
+
+  itUnix('rejects a symlinked target', async () => {
+    const root = createTempDir('session-read-symlink');
+    tmpDirs.push(root);
+    writeFileSync(join(root, 'target.md'), 'secret');
+    symlinkSync(join(root, 'target.md'), join(root, 'link.md'));
+    await expect(readSessionFileConfined(root, join(root, 'link.md'))).rejects.toThrow(/symlink/i);
+  });
+
+  itUnix('rejects a hardlinked target', async () => {
+    const root = createTempDir('session-read-hardlink');
+    tmpDirs.push(root);
+    writeFileSync(join(root, 'target.md'), 'secret');
+    linkSync(join(root, 'target.md'), join(root, 'hard.md'));
+    await expect(readSessionFileConfined(root, join(root, 'hard.md'))).rejects.toThrow(/hardlink/i);
+  });
+
+  it('rejects a path that escapes the session root', async () => {
+    const root = createTempDir('session-read-escape');
+    tmpDirs.push(root);
+    await expect(readSessionFileConfined(root, '../escape.md')).rejects.toThrow(/escape/i);
   });
 });

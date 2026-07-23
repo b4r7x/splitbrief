@@ -1,6 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { ConversationRowBlock, ConversationRowTone } from './types.js';
-import { row } from './row-format.js';
+import { row } from './row-format/rows.js';
 import { compositeBlock, rowsBlock } from './row-block-compose.js';
 import { markdownConversationRowsProjection } from './markdown-rows.js';
 

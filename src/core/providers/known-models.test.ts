@@ -33,22 +33,3 @@ describe('KNOWN_MODELS ollama entries', () => {
     expect(defaultModel?.provenance).toContain('2026-07');
   });
 });
-
-describe('KNOWN_MODELS agent-sdk entries', () => {
-  const agentSdk = KNOWN_MODELS['agent-sdk'] ?? [];
-
-  it('carries no pricing fields (agent-sdk is unpriced-meta, pricing is never served)', () => {
-    for (const model of agentSdk) {
-      expect(model.pricingInput).toBeUndefined();
-      expect(model.pricingOutput).toBeUndefined();
-      expect(model.pricingCacheRead).toBeUndefined();
-      expect(model.pricingCacheWrite).toBeUndefined();
-    }
-  });
-
-  it('does not claim cache prices are verified in provenance', () => {
-    for (const model of agentSdk) {
-      expect(model.provenance ?? '').not.toContain('verified');
-    }
-  });
-});

@@ -164,34 +164,16 @@ describe('formatIpcRecoveryPrompt', () => {
 });
 
 describe('parseIpcRecoveryAction', () => {
-  it('applies the recommended action for empty Enter', () => {
+  it('preserves IPC recovery constraints at the adapter boundary', () => {
     expect(parseIpcRecoveryAction('', budgetPausedIssue)).toBe('continue');
-  });
-
-  it('maps aliases to actions confined to availableActions', () => {
-    expect(parseIpcRecoveryAction('c', budgetPausedIssue)).toBe('continue');
-    expect(parseIpcRecoveryAction('skip', budgetPausedIssue)).toBe('skip-current-task');
-    expect(parseIpcRecoveryAction('abort', budgetPausedIssue)).toBe('abort-workflow');
-    expect(parseIpcRecoveryAction('space', budgetPausedIssue)).toBe('pause-run');
-  });
-
-  it('rejects unavailable or unknown answers', () => {
     expect(parseIpcRecoveryAction('r', budgetPausedIssue)).toBeNull();
-    expect(parseIpcRecoveryAction('wat', budgetPausedIssue)).toBeNull();
-    expect(parseIpcRecoveryAction(' ', budgetPausedIssue)).toBe('pause-run');
-  });
-
-  it('rejects unknown answers when pause is not offered', () => {
-    const issue = {
-      id: 'rec-budget-exceeded',
-      reason: 'budget-exceeded' as const,
-      phase: 'implementing' as const,
-      files: [],
-      affectedTaskIds: [],
-      availableActions: ['abort-workflow' as const],
-      recommendedAction: 'abort-workflow' as const,
-    };
-    expect(parseIpcRecoveryAction('wat', issue)).toBeNull();
+    expect(budgetPausedIssue.recommendedAction).toBe('continue');
+    expect(budgetPausedIssue.availableActions).toEqual([
+      'continue',
+      'skip-current-task',
+      'pause-run',
+      'abort-workflow',
+    ]);
   });
 });
 

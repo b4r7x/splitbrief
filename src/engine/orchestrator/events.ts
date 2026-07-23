@@ -9,7 +9,7 @@ import type {
   TaskContextFit,
   Phase,
 } from '../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../core/schemas/recovery.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type {
   EngineEvent,
   EngineEventOf,
@@ -19,7 +19,7 @@ import type {
   ValidationStages,
   ValidationStageSkips,
 } from '../events/types.js';
-import type { ValidationResult } from './validation-result.js';
+import type { ValidationResult } from './validation/result.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { CostPrediction } from '../../core/schemas/summary.js';
 import type { ImplementerPublisher } from '../implementers/types.js';

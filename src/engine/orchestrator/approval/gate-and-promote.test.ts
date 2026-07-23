@@ -9,7 +9,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createStagedProject } from './staged-project.js';
 import { gateAndPromoteChangedFiles } from './gate-and-promote.js';
-import { getChangedFilesSnapshot } from './file-snapshots.js';
+import { getChangedFilesSnapshot } from './file-snapshots/capture.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 

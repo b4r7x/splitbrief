@@ -3,7 +3,7 @@ import YAML, { parseDocument } from 'yaml';
 import { ConfigSchema, type Config } from '../../schemas/config.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../../providers/catalog.js';
-import { validateConfig } from './validate.js';
+import { validateConfig } from './validation/config.js';
 import { fromYaml, toYaml } from './transform.js';
 import { DIPTYCH_DIR, TREES_DIR, CONFIG_FILE, getDiptychPath } from '../../paths.js';
 import { migrateConfig } from './migrate.js';
@@ -125,26 +125,82 @@ function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, un
 export interface LoadConfigResult {
   config: Config;
   warnings: string[];
+  loaderDiagnostics: ConfigLoaderDiagnostic[];
   rawYaml: string;
 }
 
+export type ConfigLoaderDiagnostic =
+  | { kind: 'config-file-permissions'; path: string }
+  | { kind: 'config-migration'; code: 'deprecated-v2' | 'missing-version' };
+
+export function formatConfigLoaderDiagnostic(diagnostic: ConfigLoaderDiagnostic): string {
+  switch (diagnostic.kind) {
+    case 'config-file-permissions':
+      return `Config file ${diagnostic.path} has overly permissive permissions. Consider running: chmod 600 ${diagnostic.path}`;
+    case 'config-migration':
+      if (diagnostic.code === 'deprecated-v2') {
+        return 'config.version 2 is deprecated; diptych migrated it in memory. Run `diptych init --reconfigure` to write a current config.';
+      }
+      return 'config.version is missing; diptych assumed version 1 and migrated it in memory, which drops fields added after v1. Run `diptych init --reconfigure` to write a current config.';
+  }
+}
+
+function migrationDiagnosticsFromVersion(version: number | undefined): ConfigLoaderDiagnostic[] {
+  if (version === 2) {
+    return [{ kind: 'config-migration', code: 'deprecated-v2' }];
+  }
+  if (version === undefined) {
+    return [{ kind: 'config-migration', code: 'missing-version' }];
+  }
+  return [];
+}
+
+export function dedupeConfigWarnings(warnings: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const warning of warnings) {
+    if (seen.has(warning)) continue;
+    seen.add(warning);
+    unique.push(warning);
+  }
+  return unique;
+}
+
+function combineLoadWarnings(
+  loaderDiagnostics: readonly ConfigLoaderDiagnostic[],
+  validationWarnings: readonly string[],
+): string[] {
+  return dedupeConfigWarnings([
+    ...loaderDiagnostics.map(formatConfigLoaderDiagnostic),
+    ...validationWarnings,
+  ]);
+}
+
 const CONFIG_RELATIVE_PATH = join(DIPTYCH_DIR, CONFIG_FILE);
+
+export function ensureConfigGitignore(projectDir: string): void {
+  ensureGitignore(projectDir, `${DIPTYCH_DIR}/`);
+  ensureGitignore(projectDir, `${TREES_DIR}/`);
+}
 
 export function loadConfig(projectDir: string): LoadConfigResult {
   const filePath = configPath(projectDir);
 
   if (!confinedExists(projectDir, CONFIG_RELATIVE_PATH)) {
-    return { config: createDefaultConfig(), warnings: [], rawYaml: '' };
+    return {
+      config: createDefaultConfig(),
+      warnings: [],
+      loaderDiagnostics: [],
+      rawYaml: '',
+    };
   }
 
   const yamlText = confinedReadFile(projectDir, CONFIG_RELATIVE_PATH);
   if (yamlText === null) throw configError.unreadable(filePath);
 
-  const warnings: string[] = [];
+  const loaderDiagnostics: ConfigLoaderDiagnostic[] = [];
   if (process.platform !== 'win32' && !checkConfigPermissions(filePath)) {
-    warnings.push(
-      `Config file ${filePath} has overly permissive permissions. Consider running: chmod 600 ${filePath}`,
-    );
+    loaderDiagnostics.push({ kind: 'config-file-permissions', path: filePath });
   }
 
   let parsed: unknown;
@@ -161,8 +217,12 @@ export function loadConfig(projectDir: string): LoadConfigResult {
   }
 
   const camelCased = fromYaml(parsed);
+  const camelRecord = narrowRecord(camelCased);
+  const rawVersion =
+    typeof camelRecord?.['version'] === 'number' ? camelRecord['version'] : undefined;
+  loaderDiagnostics.push(...migrationDiagnosticsFromVersion(rawVersion));
 
-  const migrated = narrowRecord(migrateConfig(camelCased, warnings)) ?? {};
+  const migrated = narrowRecord(migrateConfig(camelCased)) ?? {};
 
   const merged = mergeWithDefaults(migrated);
 
@@ -175,20 +235,18 @@ export function loadConfig(projectDir: string): LoadConfigResult {
     throw configError.validationFailed(filePath, lines);
   }
 
-  warnings.push(...validationWarnings);
-
   if (!data) {
     throw configError.validationFailed(filePath, [
       'Unexpected validation state: no data after successful validation',
     ]);
   }
-  return { config: data, warnings, rawYaml: yamlText };
+  const warnings = combineLoadWarnings(loaderDiagnostics, validationWarnings);
+  return { config: data, warnings, loaderDiagnostics, rawYaml: yamlText };
 }
 
 export function writeConfig(projectDir: string, config: Config): string {
   const text = YAML.stringify(toYaml(config));
-  ensureGitignore(projectDir, `${DIPTYCH_DIR}/`);
-  ensureGitignore(projectDir, `${TREES_DIR}/`);
+  ensureConfigGitignore(projectDir);
   confinedEnsureDir(projectDir, DIPTYCH_DIR);
   confinedWriteFile(projectDir, CONFIG_RELATIVE_PATH, text);
   return text;
@@ -225,6 +283,7 @@ export function writeConfigDocument(
     }
   }
   const text = doc.toString();
+  ensureConfigGitignore(projectDir);
   confinedEnsureDir(projectDir, DIPTYCH_DIR);
   confinedWriteFile(projectDir, CONFIG_RELATIVE_PATH, text);
   return text;

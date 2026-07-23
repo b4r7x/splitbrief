@@ -2,7 +2,7 @@ import { basename, join, relative, resolve } from 'node:path';
 import { confinedExists, confinedReadFile } from '../../lib/confined-fs.js';
 import { isPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
 import { createBoundedOutput } from '../../lib/process/bounded-output.js';
-import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn.js';
+import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { matches } from '../../utils/error.js';
 
 const isPathEscape = matches('path-confined-escape');

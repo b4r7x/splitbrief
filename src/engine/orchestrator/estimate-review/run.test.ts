@@ -4,11 +4,13 @@ import type { CostPrediction } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import { buildPlannerEstimateReviewPrompt } from '../../spec/prompts/estimate-review.js';
 import { buildPlannerEstimateReviewPacket } from './run.js';
-import { parsePlannerEstimateReview } from './parser.js';
 
 type DeterministicEstimate = NonNullable<CostPrediction['deterministic']>;
 
-const estimate: DeterministicEstimate = {
+const SENTINEL_DESCRIPTION = 'SENTINEL_ESTIMATE_REVIEW_DESCRIPTION';
+const SENTINEL_CURRENT_CODE = 'SENTINEL_ESTIMATE_REVIEW_CURRENT_CODE';
+
+const estimateBase: DeterministicEstimate = {
   taskCount: 3,
   taskFitCounts: { fits: 1, tight: 1, overflow: 1, unknown: 0 },
   contextConfidenceCounts: {
@@ -67,9 +69,24 @@ const estimate: DeterministicEstimate = {
   ],
 };
 
+function estimateWithRuntimeTaskFields(): DeterministicEstimate {
+  const [first, ...rest] = estimateBase.tasks;
+  if (!first) {
+    throw new Error('expected tasks');
+  }
+  return {
+    ...estimateBase,
+    tasks: [
+      { ...first, description: SENTINEL_DESCRIPTION, currentCode: SENTINEL_CURRENT_CODE },
+      ...rest,
+    ] as DeterministicEstimate['tasks'],
+  };
+}
+
 describe('planner estimate review packet', () => {
   it('is compact and task-focused for the planner prompt', () => {
     const hugeTaskBody = 'full source body '.repeat(500);
+    const estimate = estimateWithRuntimeTaskFields();
     const config = {
       ...makeConfig(),
       implementerProfiles: {
@@ -116,108 +133,9 @@ describe('planner estimate review packet', () => {
     expect(prompt).toContain('"selectedProfileId": "cheap-worker"');
     expect(prompt).toContain('do not reassign models');
     expect(prompt).not.toContain(hugeTaskBody);
-    expect(prompt).not.toContain('currentCode');
-    expect(prompt).not.toContain('description');
-  });
-});
-
-describe('parsePlannerEstimateReview', () => {
-  it.each([
-    'ok',
-    'split-suggested',
-    'risk',
-    'needs-user-decision',
-  ] as const)('parses %s classifications', (classification) => {
-    const parsed = parsePlannerEstimateReview(
-      JSON.stringify({
-        classification,
-        affectedTaskIds: ['T002'],
-        reason: 'Task is near the selected context window.',
-        recommendedUserDecision: 'Split T002 before spending on implementation.',
-      }),
-    );
-
-    expect(parsed).toEqual({
-      classification,
-      affectedTaskIds: ['T002'],
-      reason: 'Task is near the selected context window.',
-      recommendedUserDecision: 'Split T002 before spending on implementation.',
-    });
-  });
-
-  it('returns null for an unknown classification', () => {
-    expect(
-      parsePlannerEstimateReview('{"classification":"reroute","affectedTaskIds":[]}'),
-    ).toBeNull();
-  });
-
-  it('allows ok with an empty affected task list when reason and decision are present', () => {
-    const parsed = parsePlannerEstimateReview(
-      JSON.stringify({
-        classification: 'ok',
-        affectedTaskIds: [],
-        reason: 'The deterministic estimate is enough for the current task set.',
-        recommendedUserDecision: 'Continue with the deterministic estimate.',
-      }),
-    );
-
-    expect(parsed).toEqual({
-      classification: 'ok',
-      affectedTaskIds: [],
-      reason: 'The deterministic estimate is enough for the current task set.',
-      recommendedUserDecision: 'Continue with the deterministic estimate.',
-    });
-  });
-
-  it.each([
-    {
-      label: 'missing reason',
-      body: {
-        classification: 'risk',
-        affectedTaskIds: ['T002'],
-        recommendedUserDecision: 'Split T002.',
-      },
-    },
-    {
-      label: 'blank reason',
-      body: {
-        classification: 'risk',
-        affectedTaskIds: ['T002'],
-        reason: ' ',
-        recommendedUserDecision: 'Split T002.',
-      },
-    },
-    {
-      label: 'missing recommendation',
-      body: { classification: 'risk', affectedTaskIds: ['T002'], reason: 'Task is risky.' },
-    },
-    {
-      label: 'blank recommendation',
-      body: {
-        classification: 'risk',
-        affectedTaskIds: ['T002'],
-        reason: 'Task is risky.',
-        recommendedUserDecision: ' ',
-      },
-    },
-  ])('returns null for $label', ({ body }) => {
-    expect(parsePlannerEstimateReview(JSON.stringify(body))).toBeNull();
-  });
-
-  it.each([
-    'split-suggested',
-    'risk',
-    'needs-user-decision',
-  ] as const)('returns null when %s has no affected task ids', (classification) => {
-    expect(
-      parsePlannerEstimateReview(
-        JSON.stringify({
-          classification,
-          affectedTaskIds: [],
-          reason: 'The planner found a task-level issue.',
-          recommendedUserDecision: 'Review the affected task before spending.',
-        }),
-      ),
-    ).toBeNull();
+    expect(JSON.stringify(packet.tasks)).not.toContain(SENTINEL_DESCRIPTION);
+    expect(JSON.stringify(packet.tasks)).not.toContain(SENTINEL_CURRENT_CODE);
+    expect(prompt).not.toContain(SENTINEL_DESCRIPTION);
+    expect(prompt).not.toContain(SENTINEL_CURRENT_CODE);
   });
 });

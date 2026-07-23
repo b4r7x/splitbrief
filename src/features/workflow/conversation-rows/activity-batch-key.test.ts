@@ -2,39 +2,31 @@ import { describe, expect, it } from 'vitest';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import {
-  makePlannerHeartbeat,
-  makePlannerStatus,
-  makeTaskTokens,
-} from '#testing/helpers/events.js';
+import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
+import { makeTaskTokens } from '#testing/helpers/events/task.js';
 import { activityBatchKey, findLatestExpandableActivityBatchKey } from './activity-batch-key.js';
-import { buildConversationRowActions, buildConversationRows } from './build.js';
-import { rowText } from './row-format.js';
+import { buildConversationRows } from './build.js';
+import { buildConversationRowActions } from './row-actions.js';
+import { rowText } from './row-format/rows.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
 function activity(
   overrides: Partial<EngineEventOf<'runner_call_activity'>>,
 ): EngineEventOf<'runner_call_activity'> {
-  return {
-    type: 'runner_call_activity',
-    ts: overrides.ts ?? 0,
-    phase: overrides.phase ?? 'researching',
-    callId: overrides.callId ?? 'call-1',
-    role: overrides.role ?? 'planner',
-    backendKind: overrides.backendKind ?? 'cli',
-    runnerName: overrides.runnerName ?? 'codex',
-    sequence: overrides.sequence ?? 1,
-    activityId: overrides.activityId ?? 'activity-1',
-    stage: overrides.stage ?? 'updated',
-    kind: overrides.kind ?? 'read',
-    label: overrides.label ?? 'reading file.ts',
-    redacted: overrides.redacted ?? false,
-    ...(overrides.target !== undefined && { target: overrides.target }),
-    ...(overrides.diagnosticPartial !== undefined && {
-      diagnosticPartial: overrides.diagnosticPartial,
-    }),
-  };
+  return makeRunnerCallActivity({
+    ts: 0,
+    phase: 'researching',
+    role: 'planner',
+    runnerName: 'codex',
+    sequence: 1,
+    activityId: 'activity-1',
+    stage: 'updated',
+    kind: 'read',
+    label: 'reading file.ts',
+    ...overrides,
+  });
 }
 
 describe('activityBatchKey', () => {
@@ -132,42 +124,6 @@ describe('findLatestExpandableActivityBatchKey', () => {
     ];
 
     expect(findLatestExpandableActivityBatchKey(sections)).toBeNull();
-  });
-
-  it('targets a batch only when normalized visible activity has hidden rows', () => {
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [
-          activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading a.ts' }),
-          activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading b.ts' }),
-          activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
-          activity({ sequence: 4, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
-        ],
-      },
-    ];
-
-    expect(findLatestExpandableActivityBatchKey(sections)).toBe(activityBatchKey(0, 'call-1'));
-  });
-
-  it('latest expandable key survives interleaved row-less events', () => {
-    const sections: Section<EngineEvent>[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [
-          activity({ callId: 'call-1', sequence: 1, activityId: 'a', label: 'reading a.ts' }),
-          makePlannerHeartbeat({ ts: 1 }),
-          activity({ callId: 'call-1', sequence: 2, activityId: 'b', label: 'reading b.ts' }),
-          makePlannerStatus({ ts: 2, phase: 'researching' }),
-          activity({ callId: 'call-1', sequence: 3, activityId: 'c', label: 'reading c.ts' }),
-          activity({ callId: 'call-1', sequence: 4, activityId: 'd', label: 'reading d.ts' }),
-        ],
-      },
-    ];
-
-    expect(findLatestExpandableActivityBatchKey(sections)).toBe(activityBatchKey(0, 'call-1'));
   });
 
   it('counts distinct warning diagnostics the same way the activity renderer does', () => {

@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Text } from 'ink';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
@@ -8,6 +8,16 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { FilterableList } from './filterable-list.js';
 
 const ENTER = '\r';
+const VIEWPORT = { cols: 80, rows: 24 };
+
+async function clickListRow(rowKey: string): Promise<void> {
+  await flushEffects();
+  await vi.waitFor(() => {
+    expect(collectClickableZones(VIEWPORT).has(`list-row:${rowKey}`)).toBe(true);
+  });
+  collectClickableZones(VIEWPORT).get(`list-row:${rowKey}`)?.();
+  await flushEffects();
+}
 
 beforeEach(() => {
   resetAllStores();
@@ -30,19 +40,21 @@ describe('FilterableList row activation', () => {
         renderItem={(item) => <Text>{item}</Text>}
       />,
     );
-    await tick(20);
 
-    const zones = collectClickableZones({ cols: 80, rows: 24 });
-    zones.get('list-row:bravo')?.();
-    await tick(20);
+    await clickListRow('bravo');
 
-    expect(activated).toEqual(['bravo']);
+    await vi.waitFor(() => {
+      expect(activated).toEqual(['bravo']);
+    });
     expect(confirmed).toEqual([]);
 
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
-    expect(confirmed).toEqual(['alpha']);
+    await vi.waitFor(() => {
+      expect(confirmed).toEqual(['alpha']);
+    });
     expect(activated).toEqual(['bravo']);
 
     ui.unmount();
@@ -60,13 +72,12 @@ describe('FilterableList row activation', () => {
         renderItem={(item) => <Text>{item}</Text>}
       />,
     );
-    await tick(20);
 
-    const zones = collectClickableZones({ cols: 80, rows: 24 });
-    zones.get('list-row:bravo')?.();
-    await tick(20);
+    await clickListRow('bravo');
 
-    expect(confirmed).toEqual(['bravo']);
+    await vi.waitFor(() => {
+      expect(confirmed).toEqual(['bravo']);
+    });
 
     ui.unmount();
   });

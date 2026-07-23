@@ -1,92 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { getLogo, getLogoTier, getLogoHeight, FULL_LOGO, COMPACT_LOGO } from './logo.js';
+import { getLogo, getLogoTier, getLogoHeight } from './logo.js';
 
 describe('getLogoTier', () => {
-  it('returns full when rows >= 24 and cols >= 44', () => {
-    expect(getLogoTier(24, 44)).toBe('full');
-  });
-
-  it('returns compact when rows just under the full threshold', () => {
-    expect(getLogoTier(23, 120)).toBe('compact');
-  });
-
-  it('returns compact when cols just under the full threshold', () => {
-    expect(getLogoTier(24, 43)).toBe('compact');
-  });
-
-  it('returns compact at a very small terminal', () => {
-    expect(getLogoTier(10, 30)).toBe('compact');
-  });
-
-  it('returns full comfortably above the (24,44) corner', () => {
-    expect(getLogoTier(40, 120)).toBe('full');
-  });
-
-  it('returns compact when cols alone are sub-44 on a tall terminal', () => {
-    expect(getLogoTier(60, 43)).toBe('compact');
+  it.each([
+    { rows: 24, cols: 44, tier: 'full' as const },
+    { rows: 23, cols: 120, tier: 'compact' as const },
+    { rows: 24, cols: 43, tier: 'compact' as const },
+    { rows: 10, cols: 30, tier: 'compact' as const },
+    { rows: 40, cols: 120, tier: 'full' as const },
+    { rows: 60, cols: 43, tier: 'compact' as const },
+  ])('returns $tier when rows=$rows and cols=$cols', ({ rows, cols, tier }) => {
+    expect(getLogoTier(rows, cols)).toBe(tier);
   });
 });
 
 describe('getLogo', () => {
-  it('renders multi-line ASCII art for the full tier', () => {
-    const logo = getLogo('full');
-    expect(logo).toContain('__| (_)');
-    expect(logo.split('\n').length).toBeGreaterThan(1);
-  });
+  it.each([
+    { tier: 'full' as const, marker: '__| (_)' },
+    { tier: 'compact' as const, marker: '__|_||_|' },
+  ])('tier $tier is multiline art with clean line endings', ({ tier, marker }) => {
+    const logo = getLogo(tier);
+    const lines = logo.split('\n');
 
-  it('renders multi-line ASCII art for the compact tier', () => {
-    const logo = getLogo('compact');
-    expect(logo).toContain('__|_||_|');
-    expect(logo.split('\n').length).toBeGreaterThan(1);
-  });
-
-  it('renders the compact tier as art, not the bare word or a divider', () => {
-    const logo = getLogo('compact');
+    expect(logo).toContain(marker);
+    expect(lines.length).toBeGreaterThan(1);
+    expect(lines.every((line) => line === line.replace(/\s+$/, ''))).toBe(true);
+    expect(lines.at(-1)).not.toBe('');
+    expect(getLogoHeight(tier)).toBe(lines.length);
     expect(logo).not.toBe('diptych');
     expect(logo.includes('──')).toBe(false);
   });
 
-  it('renders the full tier as real art, not the bare word or a divider', () => {
-    const logo = getLogo('full');
-    expect(logo).not.toBe('diptych');
-    expect(logo.includes('──')).toBe(false);
-    expect(logo.split('\n').length).toBeGreaterThan(1);
-  });
-
-  it('trims trailing whitespace on every line and has no trailing blank line for both tiers', () => {
-    for (const tier of ['full', 'compact'] as const) {
-      const lines = getLogo(tier).split('\n');
-      expect(lines.every((l) => l === l.replace(/\s+$/, ''))).toBe(true);
-      expect(lines.at(-1)).not.toBe('');
-    }
-  });
-});
-
-describe('FULL_LOGO and COMPACT_LOGO constants', () => {
-  it('match what getLogo returns for each tier', () => {
-    expect(FULL_LOGO).toBe(getLogo('full'));
-    expect(COMPACT_LOGO).toBe(getLogo('compact'));
-  });
-
-  it('are distinct between tiers and getLogo is an idempotent lookup', () => {
+  it('keeps tiers distinct with compact shorter than full', () => {
     expect(getLogo('full')).not.toBe(getLogo('compact'));
-    expect(getLogo('full')).toBe(getLogo('full'));
-    expect(getLogo('compact')).toBe(getLogo('compact'));
-    expect(getLogo('full')).not.toBe('');
-    expect(getLogo('compact')).not.toBe('');
-  });
-});
-
-describe('getLogoHeight', () => {
-  it('keeps the compact logo shorter than the full logo', () => {
     expect(getLogoHeight('compact')).toBeLessThan(getLogoHeight('full'));
-  });
-
-  it('keeps the full logo at least 5 lines tall', () => {
-    expect(getLogoHeight('full')).toBeGreaterThanOrEqual(5);
-  });
-
-  it('keeps the compact logo genuinely multi-line (height floor >= 2)', () => {
-    expect(getLogoHeight('compact')).toBeGreaterThanOrEqual(2);
   });
 });

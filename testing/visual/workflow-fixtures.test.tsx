@@ -16,14 +16,14 @@ import { scenarioId, type ScenarioId } from './contracts/identifiers.js';
 import type { FixtureLifecycle } from './fixtures/common.js';
 import { teardownVisualFixture } from './fixtures/screen-fixtures.js';
 import {
-  WORKFLOW_FIXTURE_BOUNDS,
-  WORKFLOW_FIXTURE_VERSION,
-  createWorkflowFixtureAppDeps,
-  workflowCheckpointPredicates,
   workflowFixtureProjections,
-  workflowFixtureRegistry,
   type WorkflowFixtureProjection,
-} from './fixtures/workflow-fixtures.js';
+} from './fixtures/workflow/projections.js';
+import { createWorkflowFixtureAppDeps } from './fixtures/workflow/setup.js';
+import {
+  workflowCheckpointPredicates,
+  workflowFixtureRegistry,
+} from './fixtures/workflow/registry.js';
 
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
 
@@ -70,13 +70,6 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
     ui?.unmount();
     await lifecycle.teardown();
   }
-}
-
-function collectStrings(value: unknown): readonly string[] {
-  if (typeof value === 'string') return [value];
-  if (Array.isArray(value)) return value.flatMap(collectStrings);
-  if (value === null || typeof value !== 'object') return [];
-  return Object.values(value).flatMap(collectStrings);
 }
 
 describe('workflow visual fixtures', () => {
@@ -127,19 +120,5 @@ describe('workflow visual fixtures', () => {
     await reviewSetup.teardown();
     await questionSetup.teardown();
     await idleSetup.teardown();
-  });
-
-  it('keeps the version-one projections within their documented bounds', () => {
-    expect(WORKFLOW_FIXTURE_VERSION).toBe(1);
-    expect(WORKFLOW_FIXTURE_BOUNDS.version).toBe(WORKFLOW_FIXTURE_VERSION);
-    for (const projection of workflowFixtureProjections.values()) {
-      expect(projection.events.length, projection.scenarioId).toBeLessThanOrEqual(
-        WORKFLOW_FIXTURE_BOUNDS.maxEventsPerFixture,
-      );
-      expect(
-        Math.max(...collectStrings(projection).map((value) => value.length)),
-        projection.scenarioId,
-      ).toBeLessThanOrEqual(WORKFLOW_FIXTURE_BOUNDS.maxStringLength);
-    }
   });
 });

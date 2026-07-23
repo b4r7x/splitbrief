@@ -2,7 +2,7 @@ import type { Phase } from '../../core/schemas/enums.js';
 import {
   markCancellationRequested,
   markInterruptRequested,
-} from '../../stores/workflow/actions.js';
+} from '../../stores/workflow/actions/interrupt.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import type { RewindTarget } from '../../core/state/build-rewind-action.js';

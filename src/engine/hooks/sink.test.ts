@@ -148,7 +148,7 @@ describe('createHookSink', () => {
     expect(warnings[1]).toContain('hook-b');
   });
 
-  it('publishes a warning when a hook crashes, but does not gate the flow', async () => {
+  it('publishes a warning when a post hook throws, without gating the flow', async () => {
     const { bus, warnings } = makeBus();
     const hooks = trust({ post_task: [throwingModuleHook({ name: 'crash-hook' })] });
     const sink = createHookSink(hooks, ctx(), bus);
@@ -257,18 +257,6 @@ describe('createHookSink', () => {
     await waitForNoActivity(all);
     expect(warnings).toHaveLength(0);
     expect(all).toHaveLength(0);
-  });
-
-  it('catches unexpected thrown errors and publishes warning', async () => {
-    const { bus, warnings } = makeBus();
-    const hooks = trust({
-      post_task: [throwingModuleHook({ name: 'unexpected-throw' })],
-    });
-    const sink = createHookSink(hooks, ctx(), bus);
-    sink(taskCompletedEvent);
-    await waitForWarnings(warnings, 1);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('segfault');
   });
 
   it('refuses a trusted post hook script after its bytes change', async () => {

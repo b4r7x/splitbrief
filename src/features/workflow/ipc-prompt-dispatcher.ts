@@ -1,6 +1,6 @@
 import type { IpcPromptRequest, IpcPromptResponse } from '../../engine/ipc/protocol.js';
 import type { RecoveryAction } from '../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../core/schemas/recovery.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { resolveSessionFilePath } from '../../core/sessions/confinement.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { openCostApprovalPrompt } from '../../stores/cost-approval/prompt.js';

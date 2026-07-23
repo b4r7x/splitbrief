@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
@@ -10,11 +10,14 @@ import type { EngineEvent } from '../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 import {
   transitionAndSave,
   raisePendingRecovery,
   refreshAndPersistCode,
   rebaseOnPersistedWorkflowState,
+  addUsageAndSave,
 } from './state-ops.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -24,6 +27,23 @@ function setupProject(): { projectDir: string; sessionId: string } {
   const sessionId = 'sess-state-ops';
   ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
+}
+
+function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
+  return {
+    stateVersion: 1,
+    phase: 'implementing',
+    feature: 'test',
+    currentTaskIndex: 0,
+    attempt: 0,
+    tasks: [],
+    plannerSessionId: null,
+    startedAt: new Date().toISOString(),
+    tokenUsage: makeUsage(),
+    awaitingContinue: false,
+    messageQueue: [],
+    ...overrides,
+  };
 }
 
 function makeQueuedMessage(): QueuedMessage {
@@ -36,6 +56,52 @@ function makeQueuedMessage(): QueuedMessage {
     nativeDeliveryState: 'pending',
   };
 }
+
+describe('addUsageAndSave', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('accumulates token usage into the new state and emits a cost-update event', () => {
+    const { projectDir, sessionId } = setupProject();
+    try {
+      const state = makeState({ tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }) });
+      const { bus, events } = makeBusRecorder();
+
+      const result = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', {
+        inputTokens: 200,
+        outputTokens: 100,
+      });
+
+      expect(result.tokenUsage.plannerInput).toBe(300);
+      expect(result.tokenUsage.plannerOutput).toBe(150);
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({ type: 'cost_update' });
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('returns the same state instance and emits nothing when usage is null', () => {
+    const { projectDir, sessionId } = setupProject();
+    try {
+      const state = makeState();
+      const { bus, events } = makeBusRecorder();
+
+      const result = addUsageAndSave({ projectDir, sessionId, bus }, state, 'implementer', null);
+
+      expect(result).toBe(state);
+      expect(events).toHaveLength(0);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+});
 
 describe('rebaseOnPersistedWorkflowState', () => {
   it('prefers persisted rewindPending and phase over stale in-memory state', () => {

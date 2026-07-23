@@ -37,7 +37,7 @@ Commands that stay available either affect local UI only (`/scroll`, `/copy`, `/
 |---|---|---|
 | Composer text (normal mode) | `user_input` | `useIpcClient.sendUserInput` → `workflow-bridge.onUserInput` |
 | `/queue clear` | `queue_clear` | `useIpcClient.clearQueue` → `workflow-bridge.onQueueClear` (routed in `src/app/screens/workflow.tsx` before dispatch) |
-| Approval / question prompts | `prompt_response` | `useIpcClient` prompt handler → `workflow-loop.makeCallbacks` |
+| Approval / question prompts | `prompt_response` | `useIpcClient` prompt handler → `workflow-loop/prompts.ts` (`makeCallbacks`) |
 
 Commands outside that allow-list are unavailable while attached. In particular, config-mutating commands such as `/settings`, `/mode`, `/effort`, `/planner`, and `/implementer` are hidden so the attached client cannot claim a detached server setting changed when only local config would have changed.
 
@@ -130,7 +130,7 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 - **Args**: none.
 - **Example**: `/accept-run`
 - **Behavior**: On success the feedback line includes the accepted snapshot ID. If there is no active session, the command reports `"No active session for /accept-run"`.
-- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`; snapshot behavior in `src/engine/snapshots/run.ts`.
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`; snapshot behavior in `src/engine/snapshots/run/lifecycle.ts`.
 - **See also**: `/reject-run confirm`, `diptych snapshot create`.
 
 ### `/reject-run confirm`
@@ -140,7 +140,7 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 - **Args**: required literal `confirm`. Calling `/reject-run` without it prints `"Usage: /reject-run confirm"`.
 - **Example**: `/reject-run confirm`
 - **Behavior**: Restored and deleted counts are reported on success. Conflicts or missing snapshot files surface as feedback errors and are never overwritten. If the latest run snapshot was accepted, rejection is refused.
-- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`; hash-guarded rollback in `src/engine/snapshots/run.ts`.
+- **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`; hash-guarded rollback in `src/engine/snapshots/run/rollback.ts`.
 - **See also**: `/accept-run`, `diptych snapshot restore`.
 
 ---
@@ -605,4 +605,4 @@ Alphabetical, for fast lookup:
 - [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, awaiting-continue, etc.).
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
 - [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
-- [`src/core/runtime/commands/`](../src/core/runtime/commands/) — `dispatch.test.ts`, `lookup.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, `registry-workflow.test.ts` cover the phase / screen / arg matrix.
+- [`src/core/runtime/commands/`](../src/core/runtime/commands/) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.

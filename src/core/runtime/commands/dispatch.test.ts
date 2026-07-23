@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { RuntimeCommandDef } from './types.js';
-import { PHASES } from '../../schemas/enums.js';
-import { PHASE_GUARDS, noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
+import { noop, executeRuntimeCommand } from '#testing/helpers/runtime-commands.js';
 
 describe('executeRuntimeCommand', () => {
   it('runs the command when it is valid on the current screen', () => {
@@ -208,41 +207,5 @@ describe('executeRuntimeCommand', () => {
     ];
     await executeRuntimeCommand(cmds, '/async', 'home', noop);
     expect(called).toBe(true);
-  });
-});
-
-describe('canReviseSpec', () => {
-  it.each(PHASE_GUARDS.canReviseSpec.allowed)('returns true for %s', (phase) => {
-    expect(PHASE_GUARDS.canReviseSpec.fn(phase)).toBe(true);
-  });
-
-  it.each(PHASE_GUARDS.canReviseSpec.denied)('returns false for %s', (phase) => {
-    expect(PHASE_GUARDS.canReviseSpec.fn(phase)).toBe(false);
-  });
-});
-
-describe('canRevisePlan', () => {
-  it.each(PHASE_GUARDS.canRevisePlan.allowed)('returns true for %s', (phase) => {
-    expect(PHASE_GUARDS.canRevisePlan.fn(phase)).toBe(true);
-  });
-
-  it.each(PHASE_GUARDS.canRevisePlan.denied)('returns false for %s', (phase) => {
-    expect(PHASE_GUARDS.canRevisePlan.fn(phase)).toBe(false);
-  });
-});
-
-describe('canRedoTask', () => {
-  it.each(PHASE_GUARDS.canRedoTask.allowed)('returns true for %s', (phase) => {
-    expect(PHASE_GUARDS.canRedoTask.fn(phase)).toBe(true);
-  });
-
-  it.each(PHASE_GUARDS.canRedoTask.denied)('returns false for %s', (phase) => {
-    expect(PHASE_GUARDS.canRedoTask.fn(phase)).toBe(false);
-  });
-});
-
-describe('phase guard coverage', () => {
-  it.each(Object.entries(PHASE_GUARDS))('%s covers all phases', (_name, guard) => {
-    expect([...guard.allowed, ...guard.denied].sort()).toEqual([...PHASES].sort());
   });
 });

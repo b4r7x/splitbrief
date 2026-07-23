@@ -9,7 +9,7 @@ import {
 import { viewport, type Viewport } from './contracts/geometry.js';
 import { CATALOG_SCHEMA_VERSION } from './contracts/schema-versions.js';
 
-const CHECKPOINT_TIMEOUT_MS = 5_000;
+const CHECKPOINT_TIMEOUT_MS = 10_000;
 
 export const VISUAL_CATALOG_VERSION = CATALOG_SCHEMA_VERSION;
 export const VISUAL_FIXTURE_VERSION = 1;

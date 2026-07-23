@@ -18,9 +18,14 @@ describe('readiness status', () => {
 
   it('selects the highest-priority next action from checks', () => {
     const checks: ReadinessCheck[] = [
-      { id: 'context', severity: 'warning', summary: 'small context', nextAction: 'raise-context' },
-      { id: 'config', severity: 'blocker', summary: 'bad config', nextAction: 'fix-config' },
       { id: 'budget', severity: 'warning', summary: 'no budget', nextAction: 'set-budget' },
+      {
+        id: 'repo',
+        severity: 'blocker',
+        summary: 'dirty merge state',
+        nextAction: 'clean-or-isolate-repo',
+      },
+      { id: 'config', severity: 'blocker', summary: 'bad config', nextAction: 'fix-config' },
     ];
 
     expect(selectNextAction(checks, 'blocked')).toMatchObject({

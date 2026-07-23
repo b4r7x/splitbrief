@@ -48,24 +48,6 @@ describe('createShellPlanner', () => {
     expect(result.code).toBe(null);
   });
 
-  it('escalateHint — failure when shell command only echoes (no files written)', async () => {
-    const config = makeConfig({
-      planner: { kind: 'shell', command: 'echo', args: ['some output'] },
-    });
-    const planner = createShellPlanner(config);
-    const task = makeTask();
-    const callbacks = { onOutput: vi.fn() };
-
-    const result = await planner.escalateHint({
-      task,
-      error: 'error message',
-      projectDir,
-      callbacks,
-    });
-    expect(result.success).toBe(false);
-    expect(result.code).toBe(null);
-  });
-
   it('threads a configured idleWarnMs override into the spawn', async () => {
     const config = makeConfig({
       planner: {

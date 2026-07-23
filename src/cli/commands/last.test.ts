@@ -72,18 +72,6 @@ describe('lastCommand', () => {
       name: 'no sessions directory exists',
       arrange: (_projectDir: string) => {},
     },
-    {
-      name: 'sessions directory is empty',
-      arrange: (projectDir: string) => {
-        mkdirSync(join(projectDir, '.diptych', 'sessions'), { recursive: true });
-      },
-    },
-    {
-      name: 'a session directory has neither lockfile nor state',
-      arrange: (projectDir: string) => {
-        mkdirSync(join(projectDir, '.diptych', 'sessions', 'orphan-session'), { recursive: true });
-      },
-    },
   ])('throws when $name', async ({ arrange }) => {
     const projectDir = makeTmpProject();
     arrange(projectDir);

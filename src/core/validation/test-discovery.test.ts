@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { findAffectedTestFile, isTestPatternSafe } from './test-discovery.js';
 
 describe('findAffectedTestFile', () => {
@@ -41,6 +42,41 @@ describe('findAffectedTestFile', () => {
     writeFileSync(join(tmpDir, 'src', 'handler.test.ts'), '');
     expect(findAffectedTestFile('src/handler.ts', tmpDir, '../secret.test.ts')).toBeNull();
     expect(findAffectedTestFile('src/handler.ts', tmpDir, '../../outside.test.ts')).toBeNull();
+  });
+
+  it('maps src/foo.ts to tests/foo.test.ts when test file exists', () => {
+    const tempDir = createTempDir('validator-test');
+    try {
+      mkdirSync(join(tempDir, 'tests'), { recursive: true });
+      writeFileSync(join(tempDir, 'tests', 'foo.test.ts'), '');
+      expect(findAffectedTestFile('src/foo.ts', tempDir)).toBe(
+        join(tempDir, 'tests', 'foo.test.ts'),
+      );
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  });
+
+  it('maps src/utils/bar.ts to tests/utils/bar.test.ts when test file exists', () => {
+    const tempDir = createTempDir('validator-test');
+    try {
+      mkdirSync(join(tempDir, 'tests', 'utils'), { recursive: true });
+      writeFileSync(join(tempDir, 'tests', 'utils', 'bar.test.ts'), '');
+      expect(findAffectedTestFile('src/utils/bar.ts', tempDir)).toBe(
+        join(tempDir, 'tests', 'utils', 'bar.test.ts'),
+      );
+    } finally {
+      cleanupTempDir(tempDir);
+    }
+  });
+
+  it('returns null when no matching test file found', () => {
+    const tempDir = createTempDir('validator-test');
+    try {
+      expect(findAffectedTestFile('src/missing.ts', tempDir)).toBe(null);
+    } finally {
+      cleanupTempDir(tempDir);
+    }
   });
 });
 

@@ -39,13 +39,6 @@ describe('runner pid ledger', () => {
     expect(readRunnerPids(ref)).toEqual([]);
   });
 
-  it('returns an empty array when no ledger file exists', () => {
-    tmp = createTempDir('runner-pids-test');
-    const ref = { projectDir: tmp, sessionId: '2024-01-01-empty' };
-
-    expect(readRunnerPids(ref)).toEqual([]);
-  });
-
   it('releaseRunnerPids spares a pid recorded after the snapshot was taken', () => {
     tmp = createTempDir('runner-pids-test');
     const ref = { projectDir: tmp, sessionId: '2024-01-01-concurrent' };

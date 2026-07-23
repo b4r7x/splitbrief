@@ -72,20 +72,6 @@ describe('createLineBuffer', () => {
     expect(lines).toEqual(['ok']);
   });
 
-  it('reports overflow once per oversized line rather than per chunk', () => {
-    const overflows: number[] = [];
-    const buffer = createLineBuffer(() => {}, {
-      maxLineBytes: 4,
-      onOverflow: (overflow) => overflows.push(overflow.lineBytes),
-    });
-
-    buffer.push('aaaaa');
-    buffer.push('bbbbb');
-    buffer.push('ccccc\n');
-
-    expect(overflows).toHaveLength(1);
-  });
-
   it('discards an oversized trailing partial line after safe complete lines', () => {
     const lines: string[] = [];
     const overflows: number[] = [];

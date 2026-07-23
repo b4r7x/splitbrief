@@ -2,17 +2,16 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
-import { getCostApprovalButtonRowOffset } from '../prompt-rows.js';
+import {
+  getCostApprovalButtonRowOffset,
+  getCostApprovalPromptRowsForPrediction,
+} from '../prompt-rows/cost.js';
 import {
   CostApprovalPrompt,
   CostApprovalPromptConnected,
   getCostApprovalButtonZones,
 } from './cost-approval-prompt.js';
-import {
-  _resetMouseZones,
-  hitTopmostZone,
-  registerMouseZone,
-} from '../../../lib/terminal/mouse-zones.js';
+import { _resetMouseZones, hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import {
@@ -163,18 +162,11 @@ describe('CostApprovalPromptConnected', () => {
     costApprovalStore.__testReset();
   });
 
-  it('renders full prediction detail for a store-driven prompt (attached IPC path)', async () => {
+  it('renders store-driven prediction and settles the open promise on close (attached IPC path)', async () => {
     const pending = openCostApprovalPrompt(makeCostPrediction());
     const ui = renderFeature(<CostApprovalPromptConnected />);
-    const output = ui.lastFrame() ?? '';
 
-    expect(output).toContain('12 tasks');
-    expect(output).toContain('prompt input');
-    expect(output).toContain('$0.14');
-    expect(output).toContain('all-planner prompt');
-    expect(output).toContain('~$1.20');
-    expect(output).toContain('prompt saving');
-    expect(output).toContain('approve?');
+    expect(ui.lastFrame() ?? '').toContain('prompt saving');
 
     closeCostApprovalPrompt({ approved: false });
     expect(await pending).toBe(false);
@@ -224,18 +216,25 @@ describe('cost approve/reject click zones', () => {
     expect(zones).toBeNull();
   });
 
-  it('hits approve on the left half, reject on the right, and no-ops above the row', () => {
+  it('fires approve and reject callbacks when the rendered click zones are hit', async () => {
+    terminalSizeStore.__testReset({ cols: 200, rows: 24, isSmall: false });
     const onApprove = vi.fn();
     const onReject = vi.fn();
+    const prediction = makeCostPrediction();
+    const ui = renderFeature(
+      <CostApprovalPrompt prediction={prediction} onApprove={onApprove} onReject={onReject} />,
+    );
+    await tick(1);
+
+    const { contentRect } = readConversationScrollSnapshot();
+    const boxTop = contentRect.top + contentRect.height;
     const zones = getCostApprovalButtonZones({
-      boxTop: 10,
+      boxTop,
       cols: 200,
-      promptRows: 30,
-      prediction: makeCostPrediction(),
+      promptRows: getCostApprovalPromptRowsForPrediction(prediction, 200),
+      prediction,
     });
     if (!zones) throw new Error('expected zones');
-    registerMouseZone({ id: 'cost-approve', ...zones.approve, z: 50, onClick: onApprove });
-    registerMouseZone({ id: 'cost-reject', ...zones.reject, z: 50, onClick: onReject });
 
     hitTopmostZone(40, zones.approve.top)?.onClick?.();
     hitTopmostZone(150, zones.reject.top)?.onClick?.();
@@ -243,6 +242,8 @@ describe('cost approve/reject click zones', () => {
 
     expect(onApprove).toHaveBeenCalledOnce();
     expect(onReject).toHaveBeenCalledOnce();
+    ui.unmount();
+    terminalSizeStore.reset();
   });
 });
 

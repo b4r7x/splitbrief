@@ -4,9 +4,8 @@ import type { Cell } from './contracts/cells.js';
 import { viewport } from './contracts/geometry.js';
 import { checkpointId, scenarioId } from './contracts/identifiers.js';
 import { ArtifactProvenanceSchema } from './contracts/selection.js';
-import { TERMINAL_CONTROL_DISPOSITIONS } from './terminal/controls.js';
 import { parseTerminalFrame } from './terminal/parse.js';
-import { serializeTxt } from './terminal/serialize.js';
+import { serializeTxt } from './terminal/serialize/text.js';
 
 const ESC = '\u001b';
 
@@ -109,18 +108,6 @@ describe('terminal cell parsing', () => {
     expect(txt).not.toContain(ESC);
     expect(txt).not.toContain('\u009b');
     expect(txt).not.toContain('\u009d');
-    expect(TERMINAL_CONTROL_DISPOSITIONS.map(({ control }) => control)).toEqual([
-      'csi',
-      'osc',
-      'osc-8',
-      'cursor',
-      'alternate-buffer',
-      'kitty-graphics',
-      'kitty-keyboard',
-      'mouse',
-      'bracketed-paste',
-      'dcs-apc-pm-sos',
-    ]);
   });
 });
 

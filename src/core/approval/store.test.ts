@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { mkdtempSync, statSync, readdirSync } from 'node:fs';
+import { mkdtempSync, statSync, readdirSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { writeFileSync, mkdirSync } from 'node:fs';
 import {
   readApprovalsStore,
   writeApprovalsStore,
@@ -10,7 +10,41 @@ import {
   mutateApprovalsStore,
 } from './store.js';
 import type { ApprovalsStore, ApprovalGrant } from '../schemas/approval-store.js';
-import { DIPTYCH_DIR } from '../paths.js';
+import { DIPTYCH_DIR, approvalsFile } from '../paths.js';
+import { lockSibling } from '../../lib/file-lock.js';
+
+const REPO_ROOT = join(import.meta.dirname, '../../..');
+const TSX = join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
+const ACTOR_A = join(REPO_ROOT, 'testing/fixtures/approval-store-contention/actor-a.mjs');
+const ACTOR_B = join(REPO_ROOT, 'testing/fixtures/approval-store-contention/actor-b.mjs');
+
+function waitForPath(path: string, timeoutMs: number): void {
+  const deadline = Date.now() + timeoutMs;
+  while (!existsSync(path)) {
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${path}`);
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+}
+
+function spawnActor(script: string, projectDir: string, syncDir: string) {
+  return spawn(TSX, [script, projectDir, syncDir], {
+    cwd: REPO_ROOT,
+    stdio: 'ignore',
+  });
+}
+
+function waitForExit(child: ReturnType<typeof spawn>, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('child timed out')), timeoutMs);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve();
+      else reject(new Error(`child exited with ${code}`));
+    });
+  });
+}
 
 let tmpDir: string;
 
@@ -103,18 +137,30 @@ describe('mutateApprovalsStore', () => {
     expect(files.some((file) => file.endsWith('.lock'))).toBe(false);
   });
 
-  it('serializes read-modify-write so interleaved appends never lose a grant', () => {
-    for (let i = 0; i < 25; i++) {
-      mutateApprovalsStore(tmpDir, (store) => ({
-        version: 1,
-        grants: [...store.grants, makeGrant({ pattern: `cmd-${i}` })],
-      }));
-    }
+  it('serializes read-modify-write so interleaved appends never lose a grant', async () => {
+    const syncDir = join(tmpDir, 'sync');
+    mkdirSync(syncDir, { recursive: true });
+    mkdirSync(join(tmpDir, DIPTYCH_DIR), { recursive: true });
 
-    const patterns = readApprovalsStore(tmpDir).grants.map((g) => g.pattern);
-    expect(patterns).toHaveLength(25);
-    expect(new Set(patterns).size).toBe(25);
-  });
+    const lockPath = lockSibling(approvalsFile(tmpDir));
+    const childA = spawnActor(ACTOR_A, tmpDir, syncDir);
+    waitForPath(join(syncDir, 'a-entered'), 5000);
+    waitForPath(lockPath, 5000);
+
+    const childB = spawnActor(ACTOR_B, tmpDir, syncDir);
+    waitForPath(join(syncDir, 'b-starting'), 5000);
+    writeFileSync(join(syncDir, 'release-a'), '');
+
+    await Promise.all([waitForExit(childA, 5000), waitForExit(childB, 5000)]);
+
+    const patterns = readApprovalsStore(tmpDir)
+      .grants.map((g) => g.pattern)
+      .sort();
+    expect(patterns).toEqual(['a', 'b']);
+    expect(readdirSync(join(tmpDir, DIPTYCH_DIR)).some((file) => file.endsWith('.lock'))).toBe(
+      false,
+    );
+  }, 30_000);
 });
 
 describe('clearGrantsByScope', () => {

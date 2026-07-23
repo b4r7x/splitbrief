@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { ImplementerBaseConfig } from '../../../src/engine/implementers/base.js';
+import type { ImplementerBaseConfig } from '../../../src/engine/implementers/pipeline/run.js';
 import { makeRunnerCallResult } from './runner-call.js';
 
 export function makeBaseConfig(overrides?: Partial<ImplementerBaseConfig>): ImplementerBaseConfig {

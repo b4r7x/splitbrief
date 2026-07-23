@@ -8,11 +8,11 @@ import { assertNever } from '../../../utils/type-guards.js';
 // The header row (which now carries the phase rail inline) + the divider (1). The divider alone
 // separates the chrome from the body — no gap row below it — and the live status rides inline, so
 // no chrome row is reserved for it either.
-export const TOP_FIXED_CHROME_ROWS = 2;
+const TOP_FIXED_CHROME_ROWS = 2;
 // Footer divider (1) + feedback row (1) + composer + the one-row input footer byline, which hugs
 // the terminal's last line.
-export const BOTTOM_FOOTER_DIVIDER_ROWS = 1;
-export const BOTTOM_FIXED_CHROME_ROWS = 2 + BOTTOM_FOOTER_DIVIDER_ROWS;
+const BOTTOM_FOOTER_DIVIDER_ROWS = 1;
+const BOTTOM_FIXED_CHROME_ROWS = 2 + BOTTOM_FOOTER_DIVIDER_ROWS;
 
 export function getChromeContentWidth(cols: number): number {
   return Math.max(1, cols);
@@ -200,7 +200,7 @@ export function chooseFormBVariant(
 
 // The thinnest five-stage line — short labels, fixed marker slots, semantic connectors. Below this
 // the rail drops to Form C, so the threshold is computed from the same primitives the rail renders.
-export function getRailFormBMinWidth(phase: Phase, tier: GlyphTier = resolveGlyphTier()): number {
+function getRailFormBMinWidth(phase: Phase, tier: GlyphTier = resolveGlyphTier()): number {
   return measureFormB(getRailStages(phase), true, tier);
 }
 

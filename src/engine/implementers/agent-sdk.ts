@@ -1,14 +1,13 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
-import { createImplementerBase } from './base.js';
-import {
-  createAgentSdkBackend,
-  isAgentSdkAvailable,
-  IMPLEMENTER_ALLOWED_TOOLS,
-} from '../runners/agent-sdk-backend.js';
+import { createImplementerBase } from './pipeline/run.js';
+import { createAgentSdkBackend } from '../runners/agent-sdk/backend.js';
+import { isAgentSdkAvailable } from '../runners/agent-sdk/availability.js';
+
+const IMPLEMENTER_ALLOWED_TOOLS = ['Read', 'Write', 'Edit', 'Bash', 'Glob', 'Grep'] as const;
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
-import { resolveApiKeyOverride } from '../providers/client.js';
+import { resolveApiKeyOverride } from '../providers/client/api-key.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 
 export function createAgentSdkImplementer(
@@ -28,6 +27,8 @@ export function createAgentSdkImplementer(
     resolveAutoModel(config.implementer.model, 'agent-sdk') ?? DEFAULT_AGENT_SDK_MODEL;
   const backend = createAgentSdkBackend({
     allowedTools: [...IMPLEMENTER_ALLOWED_TOOLS],
+    permissionMode: 'acceptEdits',
+    role: 'implementer',
     detectChanges: true,
     apiKey,
     idleWarnMs,

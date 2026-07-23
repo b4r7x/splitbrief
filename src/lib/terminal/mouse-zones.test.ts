@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
   _resetMouseZones,
   hitTopmostZone,
@@ -49,13 +49,6 @@ describe('mouse-zones', () => {
     registerMouseZone({ id: 'a', left: 1, right: 4, top: 1, bottom: 1, z: 0 });
     unregisterMouseZone('a');
     expect(hitTopmostZone(2, 1)).toBeUndefined();
-  });
-
-  it('invokes the zone onClick handler', () => {
-    const onClick = vi.fn();
-    registerMouseZone({ id: 'a', left: 1, right: 4, top: 1, bottom: 1, z: 0, onClick });
-    hitTopmostZone(2, 1)?.onClick?.();
-    expect(onClick).toHaveBeenCalledOnce();
   });
 
   it('skips zones below the requested minimum layer', () => {

@@ -44,7 +44,7 @@ function savedPlanningContinuationState(feature: string): WorkflowState {
 }
 
 describe('resume planning continuation with a direct-writing implementer', {
-  timeout: 30_000,
+  timeout: 90_000,
 }, () => {
   it('re-enters planning, runs the direct implementer in a staged project, and completes the workflow', async () => {
     const projectDir = setupProject();

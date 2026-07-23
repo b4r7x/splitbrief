@@ -19,7 +19,7 @@ import { WorkflowFooter, WorkflowHeader } from '../../features/workflow/componen
 import {
   useWorkflowScreen,
   type WorkflowScreenDeps,
-} from '../../features/workflow/hooks/use-workflow-screen.js';
+} from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
@@ -32,7 +32,7 @@ import {
   getWorkflowViewportHeight,
 } from '../../features/workflow/layout/rect.js';
 import { selectRailForm } from '../../features/workflow/layout/chrome-rows.js';
-import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows.js';
+import { getWorkflowPromptRows } from '../../features/workflow/prompt-rows/workflow.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];

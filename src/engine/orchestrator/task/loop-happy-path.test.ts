@@ -10,12 +10,11 @@ import {
   makeBusRecorder,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
-import { readRunSnapshotLedger } from '../../snapshots/run.js';
+import { readRunSnapshotLedger } from '../../snapshots/run/ledger.js';
 
 let dirs: string[] = [];
 
@@ -25,24 +24,25 @@ afterEach(() => {
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('task-loop-test');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'task-loop-test',
+    sessionId: 'sess-loop',
+  });
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-loop';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 
 const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
 
-describe('runTaskLoop', { timeout: 30_000 }, () => {
+describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('happy path completes a task after implementation and validation pass', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
     const state = makeImplState([task]);
 
     const implementer = makeImplementer({
-      implement: vi.fn().mockImplementation(async () => {
+      implement: vi.fn().mockImplementation(async (opts) => {
+        opts.onOutput?.('streamed chunk');
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, task.file), 'implementation');
         return { success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } };

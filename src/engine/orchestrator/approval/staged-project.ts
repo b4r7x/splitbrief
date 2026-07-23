@@ -6,9 +6,9 @@ import type { Config } from '../../../core/schemas/config.js';
 import { INTERNAL_SKIP_DIRS } from '../../../core/paths.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { createSandboxEnv, runnerAuthEnvKeys } from '../../runners/sandbox-env.js';
-import { captureProjectFileHashes, getChangedFilesSnapshot } from './file-snapshots.js';
-import type { ChangedFilesSnapshot, FileContentSnapshot } from './file-snapshots.js';
-import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots.js';
+import { captureProjectFileHashes, getChangedFilesSnapshot } from './file-snapshots/capture.js';
+import type { ChangedFilesSnapshot, FileContentSnapshot } from './file-snapshots/types.js';
+import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots/contents.js';
 
 export type StagedProject = {
   projectDir: string;

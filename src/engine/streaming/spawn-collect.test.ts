@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn.js';
+import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
 import { spawnAndCollect } from './spawn-collect.js';
 import { parseJsonlLine } from './parse-jsonl.js';

@@ -177,27 +177,26 @@ describe('createParsedLineRecorder', () => {
     const { events, parsed } = createHarness();
 
     parsed.apply({
-      toolUseStart: [{ id: 'tool-1', name: 'Read', input: { file_path: 'src/main.ts' } }],
-      toolUseDelta: [{ id: 'tool-1', inputDelta: '{"file_path":"src/main.ts"}' }],
+      toolUseStart: [{ id: 'tool-1', name: 'Read', input: { file_path: 'src/start.ts' } }],
+      toolUseDelta: [{ id: 'tool-1', inputDelta: '{"file_path":"src/delta.ts"}' }],
       warning: [{ code: 'retry', message: 'retrying' }],
     });
 
-    expect(events).toContainEqual(
+    const toolDeltas = events.filter((event) => event.type === 'call_tool_use_delta');
+    expect(toolDeltas).toEqual([
       expect.objectContaining({
         type: 'call_tool_use_delta',
         toolUseId: 'tool-1',
         name: 'Read',
-        inputDelta: '{"file_path":"src/main.ts"}',
+        inputDelta: '{"file_path":"src/start.ts"}',
       }),
-    );
-    expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_tool_use_delta',
         toolUseId: 'tool-1',
         name: 'Read',
-        inputDelta: '{"file_path":"src/main.ts"}',
+        inputDelta: '{"file_path":"src/delta.ts"}',
       }),
-    );
+    ]);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'call_warning',

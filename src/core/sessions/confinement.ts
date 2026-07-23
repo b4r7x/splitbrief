@@ -1,8 +1,13 @@
 import { constants, realpathSync, lstatSync } from 'node:fs';
 import { open } from 'node:fs/promises';
-import { resolve, dirname, sep, isAbsolute, relative } from 'node:path';
-import { isInsideRoot } from '../../lib/path-confinement.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { join, resolve, dirname, sep, isAbsolute, relative } from 'node:path';
+import {
+  assertPathConfined,
+  isInsideRoot,
+  nearestExistingAncestor,
+  pathConfinementError,
+} from '../../lib/path-confinement.js';
+import { DIPTYCH_DIR, SESSIONS_DIR, validateSessionId } from '../paths.js';
 import { error, matches } from '../../utils/error.js';
 
 export const SESSION_FILE_PATH_MAX_BYTES = 4096;
@@ -130,6 +135,21 @@ export function resolveSessionFilePath(filePath: string, sessionDir: string): st
   const resolved = isAbsolute(filePath) ? filePath : resolve(sessionDir, filePath);
   assertSessionConfinement(resolved, sessionDir);
   return resolved;
+}
+
+function assertInsideRoot(projectDir: string, fullPath: string): void {
+  const realRoot = nearestExistingAncestor(projectDir);
+  const realTarget = nearestExistingAncestor(fullPath);
+  if (!isInsideRoot(realRoot, realTarget)) {
+    throw pathConfinementError.escapesRoot(relative(projectDir, fullPath));
+  }
+}
+
+export function assertSessionDirConfined(projectDir: string, sessionId: string): void {
+  validateSessionId(sessionId);
+  const sessionRel = join(DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  assertPathConfined(sessionRel, projectDir);
+  assertInsideRoot(projectDir, resolve(projectDir, sessionRel));
 }
 
 export async function readSessionFileConfined(

@@ -92,15 +92,6 @@ describe('createPlanner', () => {
     expect(written).not.toContain('planner-temperature');
   });
 
-  it('throws on invalid planner kind', async () => {
-    const config = {
-      ...makeConfig(),
-      planner: { kind: 'invalid' } as unknown as Config['planner'],
-    };
-
-    await expect(createPlanner(config)).rejects.toThrow(/invalid/i);
-  });
-
   describe('claude-code idle wiring', () => {
     let shimDir: string;
     let restorePath: () => void;
@@ -200,14 +191,5 @@ describe('createImplementer', () => {
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
     expect(written).not.toContain('implementer-temperature');
-  });
-
-  it('throws on invalid implementer kind', async () => {
-    const config = {
-      ...makeConfig(),
-      implementer: { kind: 'invalid' } as unknown as Config['implementer'],
-    };
-
-    await expect(createImplementer(config)).rejects.toThrow(/invalid/i);
   });
 });

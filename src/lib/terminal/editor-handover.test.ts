@@ -199,7 +199,7 @@ describe('terminal handover for $EDITOR', () => {
   });
 
   it('skips alt-buffer and mouse sequences when no handover is active but still pauses stdin', () => {
-    const { stdin } = makeFakeStdin();
+    const { stdin, calls } = makeFakeStdin();
     setActiveTerminalHandover(undefined);
     const written = captureStdout();
 
@@ -209,14 +209,32 @@ describe('terminal handover for $EDITOR', () => {
     expect(written).not.toContain(terminalSequences.exitAltBuffer);
     expect(written).not.toContain(terminalSequences.enterAltBuffer);
     expect(written).not.toContain(terminalSequences.disableMouseTracking);
+    expect(calls).toEqual(['pause', 'resume']);
   });
 
   it('falls back to process.stdin pause/resume when no handover is configured', () => {
     const written = captureStdout();
+    const pause = process.stdin.pause;
+    const resume = process.stdin.resume;
+    const calls: string[] = [];
+    process.stdin.pause = (() => {
+      calls.push('pause');
+      return process.stdin;
+    }) as typeof process.stdin.pause;
+    process.stdin.resume = (() => {
+      calls.push('resume');
+      return process.stdin;
+    }) as typeof process.stdin.resume;
 
-    suspendTerminalForEditor();
-    resumeTerminalAfterEditor();
+    try {
+      suspendTerminalForEditor();
+      resumeTerminalAfterEditor();
 
-    expect(written).toHaveLength(0);
+      expect(written).toHaveLength(0);
+      expect(calls).toEqual(['pause', 'resume']);
+    } finally {
+      process.stdin.pause = pause;
+      process.stdin.resume = resume;
+    }
   });
 });

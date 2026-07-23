@@ -10,7 +10,7 @@ import { overlayStore } from '../stores/ui/overlay.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { useStores } from '../stores/use-stores.js';
 import { interruptTurn, requestCancel } from '../features/workflow/handlers.js';
-import type { WorkflowScreenDeps } from '../features/workflow/hooks/use-workflow-screen.js';
+import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 
 export interface AppProps {
   readonly workflowDeps?: WorkflowScreenDeps | undefined;

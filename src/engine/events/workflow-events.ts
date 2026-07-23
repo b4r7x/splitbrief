@@ -1,5 +1,5 @@
 import type { TaskId } from '../../core/schemas/task.js';
-import type { TaskReviewRecovery } from '../../core/schemas/recovery.js';
+import type { TaskReviewRecovery } from '../../core/schemas/recovery/schemas.js';
 import type {
   TaskStatus,
   UserEditConflictKind,

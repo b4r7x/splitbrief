@@ -462,7 +462,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Edits to `drift.ts` do not change behavior
 
-**Likely cause:** Drift logic exists at two layers. Per-task chain analysis runs from `src/engine/orchestrator/task/step.ts` through `src/engine/orchestrator/drift/chain.ts` and persists to `drift-chains.json`. The final deterministic drift report runs from `src/engine/orchestrator/final-review.ts` through `src/engine/orchestrator/drift/analyze.ts`, persists to `drift-report.json`, and is summarized in `summary.json`.
+**Likely cause:** Drift logic exists at two layers. Per-task chain analysis runs from `src/engine/orchestrator/task/analyze-drift.ts` (via `step.ts`) through `src/engine/orchestrator/drift/chain.ts` and persists to `drift-chains.json`. The final deterministic drift report runs from `src/engine/orchestrator/final-review.ts` through `src/engine/orchestrator/drift/analyze.ts`, persists to `drift-report.json`, and is summarized in `summary.json`.
 
 **Fix:**
 1. For repeated off-scope edits across tasks, inspect `drift-chains.json` and `src/engine/orchestrator/drift/chain.ts`.

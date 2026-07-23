@@ -27,15 +27,6 @@ describe('listProjectFiles', () => {
     expect(files).toContain('src/utils.ts');
   });
 
-  it('resolves to a promise without blocking the caller', () => {
-    writeFileSync(join(tmpDir, 'src', 'app.ts'), '');
-
-    const pending = listProjectFiles(tmpDir);
-
-    expect(pending).toBeInstanceOf(Promise);
-    return expect(pending).resolves.toContain('src/app.ts');
-  });
-
   it('excludes sensitive files from the filesystem fallback', async () => {
     mkdirSync(join(tmpDir, 'config'), { recursive: true });
     writeFileSync(join(tmpDir, '.env'), 'SECRET=x');

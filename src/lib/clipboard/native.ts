@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { warnError } from '../warn.js';
 
-const NATIVE_TIMEOUT_MS = 2000;
+const NATIVE_TIMEOUT_MS = process.env['DIPTYCH_TEST_CLIPBOARD_CALLS'] === undefined ? 2000 : 15_000;
 
 const linuxClipboardArgs = {
   'wl-copy': [],

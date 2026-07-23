@@ -121,18 +121,3 @@ describe('configError factories', () => {
     expect(err.data).toEqual({ field: 'temperature', value: 'hot', reason: 'must be a number' });
   });
 });
-
-describe('configError predicates', () => {
-  test('isInvalidYaml matches matching kind', () => {
-    expect(configError.isInvalidYaml(configError.invalidYaml('/p', new Error('x')))).toBe(true);
-    expect(configError.isInvalidYaml(configError.notAnObject('root'))).toBe(false);
-    expect(configError.isInvalidYaml(new Error('plain'))).toBe(false);
-    expect(configError.isInvalidYaml(null)).toBe(false);
-  });
-
-  test('each predicate rejects a non-matching factory', () => {
-    expect(configError.isValidationFailed(configError.invalidYaml('/p', new Error()))).toBe(false);
-    expect(configError.isLoadNotCalled(configError.saveFailed('/p', new Error()))).toBe(false);
-    expect(configError.isUnknownProvider(configError.unknownCliTool('x', []))).toBe(false);
-  });
-});

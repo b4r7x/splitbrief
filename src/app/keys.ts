@@ -7,7 +7,7 @@ import { abortStore } from '../stores/workflow/abort.js';
 import { approvalPromptStore, closeApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import { costApprovalStore, closeCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
 import { completionStore } from '../stores/ui/completion.js';
-import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin.js';
+import { getActiveFilteredStdin } from '../lib/terminal/filtered-stdin/active.js';
 import {
   scheduleEscapeAction,
   cancelEscapeAction,

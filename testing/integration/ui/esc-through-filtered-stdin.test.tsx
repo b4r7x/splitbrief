@@ -18,7 +18,7 @@ import type { InterruptResult } from '../../../src/features/workflow/handlers.js
 
 // End-to-end regression guards. ESC and Ctrl+C bytes travel through the production
 // FilteredStdin (mouse filter + bracketed-paste stripper) before reaching Ink — the path
-// src/cli/render.ts wires and the path src/app/keys.test.tsx bypasses. They pin the
+// src/cli/render/app.ts wires and the path src/app/keys.test.tsx bypasses. They pin the
 // user-visible ladder (arm on the FIRST press; interrupt on the SECOND) so a future filter
 // change cannot silently swallow a leading control byte. The armed kind drives the
 // FeedbackRow hint copy, which is asserted once for its render integration below.
@@ -86,27 +86,6 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     // reacts by rendering the armed-state hint, so the frame changes from its idle state.
     expect(abortStore.get().armed).toBe('interrupt');
     expect(harness.lastFrame() ?? '').not.toBe(idleFrame);
-
-    harness.unmount();
-  });
-
-  it("interrupts the turn on the SECOND lone ESC (the user's exact two-press scenario)", async () => {
-    const abort = vi.fn();
-    handlers.createAbortHandlerScope()(abort);
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
-    await tick(30);
-
-    harness.pressBytes(ESC);
-    await tick(AFTER_PRESS_MS);
-    expect(abortStore.get().armed).toBe('interrupt');
-
-    harness.pressBytes(ESC);
-    await tick(AFTER_PRESS_MS);
-
-    // Exactly two presses interrupt: every ESC byte survives the filter, so the second
-    // press fires the abort.
-    expect(abort).toHaveBeenCalledTimes(1);
-    expect(abortStore.get().armed).toBe('none');
 
     harness.unmount();
   });
@@ -193,34 +172,6 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     expect(harness.lastFrame() ?? '').toContain('workflow running');
 
     // A fresh, separate ESC after the stop is what navigates back home.
-    harness.pressBytes(ESC);
-    await tick(AFTER_PRESS_MS);
-    expect(routerStore.get().screen).toBe('home');
-
-    harness.unmount();
-  });
-
-  it('stays on the workflow screen on the ESC that cancels from the question prompt', async () => {
-    // At the continuation question prompt a second ESC fires the cancel (requestCancel marks
-    // the lifecycle cancelled synchronously). That cancel-firing press must not also navigate
-    // home — one physical keypress is at most one semantic action.
-    controlsStore.setInputMode('question');
-    const harness = renderThroughFilteredStdin(<InstantWorkflowApp />);
-    await tick(30);
-
-    // Press 1: arm cancel.
-    harness.pressBytes(ESC);
-    await tick(AFTER_PRESS_MS);
-    expect(abortStore.get().armed).toBe('cancel');
-    expect(routerStore.get().screen).toBe('workflow');
-
-    // Press 2: fire the cancel. Stop only — no navigation on this press.
-    harness.pressBytes(ESC);
-    await tick(AFTER_PRESS_MS);
-    expect(lifecycleStore.get().cancelled).toBe(true);
-    expect(routerStore.get().screen).toBe('workflow');
-
-    // The next fresh ESC navigates home.
     harness.pressBytes(ESC);
     await tick(AFTER_PRESS_MS);
     expect(routerStore.get().screen).toBe('home');

@@ -53,20 +53,17 @@ function makeExportData(overrides: Partial<ExportData> = {}): ExportData {
 }
 
 describe('renderSessionHtml', () => {
-  it('produces HTML with DOCTYPE', () => {
+  it('renders the nominal complete report', () => {
     const html = renderSessionHtml(makeExportData());
     expect(html).toMatch(/^<!DOCTYPE html>/);
-  });
-
-  it('includes feature name in title', () => {
-    const html = renderSessionHtml(makeExportData());
     expect(html).toContain('<title>diptych — add user auth</title>');
-  });
-
-  it('includes hero savings when cost data exists', () => {
-    const html = renderSessionHtml(makeExportData());
     expect(html).toContain('86%');
     expect(html).toContain('$0.17');
+    expect(html).not.toContain('Evidence');
+    expect(html).toContain('<style>');
+    expect(html).not.toContain('<link');
+    expect(html).toContain('researching');
+    expect(html).toContain('implementing');
   });
 
   it('omits hero savings when no cost breakdown', () => {
@@ -127,11 +124,6 @@ describe('renderSessionHtml', () => {
     expect(html).toContain('<code>/tmp/session/evidence.json</code>');
   });
 
-  it('omits evidence section when no evidence data', () => {
-    const html = renderSessionHtml(makeExportData());
-    expect(html).not.toContain('Evidence');
-  });
-
   it('escapes HTML in feature name', () => {
     const html = renderSessionHtml(
       makeExportData({ feature: 'fix <script>alert("xss")</script>' }),
@@ -147,17 +139,5 @@ describe('renderSessionHtml', () => {
     expect(html).not.toContain('sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa');
     expect(html).toContain('<title>diptych — use sk-ant-***REDACTED*** for auth</title>');
     expect(html).toContain('<h1>use sk-ant-***REDACTED*** for auth</h1>');
-  });
-
-  it('includes inline CSS', () => {
-    const html = renderSessionHtml(makeExportData());
-    expect(html).toContain('<style>');
-    expect(html).not.toContain('<link');
-  });
-
-  it('includes phase timing bars', () => {
-    const html = renderSessionHtml(makeExportData());
-    expect(html).toContain('researching');
-    expect(html).toContain('implementing');
   });
 });

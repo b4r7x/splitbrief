@@ -33,7 +33,7 @@ describe('resolveTheme', () => {
 
   it('keeps the mono hex preset when the terminal advertises truecolor', () => {
     const resolved = resolveTheme('mono', { COLORTERM: 'truecolor' });
-    expect(resolved).toBe(getTheme('mono'));
+    expect(resolved).toEqual(getTheme('mono'));
     expect(resolved.accent).toBe('#7aa2f7');
   });
 

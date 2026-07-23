@@ -50,8 +50,6 @@ describe('production App gallery mount', () => {
       });
 
       expect(frame).toContain(checkpoint.marker);
-      expect(handle.frameHistory().length).toBeGreaterThan(0);
-      expect(handle.stdin.write).toBeTypeOf('function');
       expect(grid.rect).toEqual({
         x: 0,
         y: 0,

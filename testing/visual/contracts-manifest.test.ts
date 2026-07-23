@@ -6,7 +6,6 @@ import {
   CleanupFailureTargetSchema,
   type Failure,
   FailureSchema,
-  FailureStageSchema,
   type SelectionFailureTarget,
   SelectionFailureTargetSchema,
 } from './contracts/failures.js';
@@ -148,12 +147,6 @@ describe('visual manifest contracts', () => {
       expect(RendererMetadataSchema.safeParse({ ...renderer, [field]: '   ' }).success).toBe(false);
     }
     expect(RendererMetadataSchema.safeParse({ ...renderer, version: '' }).success).toBe(false);
-    expect(DeterminismEnvelopeSchema.safeParse(makeManifest().determinism).success).toBe(true);
-    expect(ControlPolicyMetadataSchema.safeParse(makeManifest().controlPolicy).success).toBe(true);
-    expect(HyperlinkPolicyMetadataSchema.safeParse(makeManifest().hyperlinkPolicy).success).toBe(
-      true,
-    );
-    expect(MAX_MANIFEST_DERIVED_PIXEL_AREA).toBeGreaterThan(0);
   });
 
   it('serializes a self-contained manifest with complete artifact accounting', () => {
@@ -192,6 +185,51 @@ describe('visual manifest contracts', () => {
         ),
       }).success,
     ).toBe(false);
+  });
+
+  it('accepts derived output immediately below the aggregate pixel cap and rejects above it', () => {
+    const manifest = makeManifest({ includeDerived: true });
+    const belowRenderer = RendererMetadataSchema.parse({
+      name: 'sharp',
+      version: '1.0.0',
+      fontFamily: 'monospace',
+      cellWidthPx: 161,
+      cellHeightPx: 161,
+    });
+    const aboveRenderer = RendererMetadataSchema.parse({
+      name: 'sharp',
+      version: '1.0.0',
+      fontFamily: 'monospace',
+      cellWidthPx: 162,
+      cellHeightPx: 162,
+    });
+    const derivedArea = (renderer: RendererMetadata) =>
+      manifest.artifacts.reduce(
+        (sum, artifact) =>
+          sum +
+          artifact.dimensions.cols *
+            renderer.cellWidthPx *
+            artifact.dimensions.rows *
+            renderer.cellHeightPx *
+            (Number(artifact.files.svg !== null) + Number(artifact.files.png !== null)),
+        0,
+      );
+
+    const belowTotal = derivedArea(belowRenderer);
+    const aboveTotal = derivedArea(aboveRenderer);
+    expect(belowTotal).toBeLessThanOrEqual(MAX_MANIFEST_DERIVED_PIXEL_AREA);
+    expect(aboveTotal).toBeGreaterThan(MAX_MANIFEST_DERIVED_PIXEL_AREA);
+
+    expect(ManifestSchema.safeParse({ ...manifest, renderer: belowRenderer }).success).toBe(true);
+    const aboveResult = ManifestSchema.safeParse({ ...manifest, renderer: aboveRenderer });
+    expect(aboveResult.success).toBe(false);
+    if (!aboveResult.success) {
+      expect(
+        aboveResult.error.issues.some((issue) =>
+          issue.message.includes(`${MAX_MANIFEST_DERIVED_PIXEL_AREA} aggregate pixels`),
+        ),
+      ).toBe(true);
+    }
   });
 
   it('rejects missing, duplicate, contradictory, and unrelated manifest outcomes', () => {
@@ -275,11 +313,28 @@ describe('visual manifest contracts', () => {
       artifact: identity,
     });
 
-    expect(FailureStageSchema.safeParse('cleanup').success).toBe(true);
-    expect(selectionTarget).toEqual({ kind: 'capture', provenance });
-    expect(cleanupTarget).toEqual({ kind: 'artifact', artifact: identity });
+    expect(selectionTarget.kind).toBe('capture');
+    expect(cleanupTarget.kind).toBe('artifact');
     expect(
       CleanupFailureTargetSchema.safeParse({ kind: 'path', path: '/tmp/private' }).success,
+    ).toBe(false);
+  });
+
+  it('rejects a crop whose parent frame has different provenance', () => {
+    const manifest = makeManifest();
+    const crop = manifest.artifacts.find((artifact) => artifact.identity.kind === 'crop');
+    if (crop === undefined) throw new Error('Manifest fixture is missing its crop');
+    const alternateProvenance = {
+      ...crop.identity.provenance,
+      scenarioTitle: 'Different source frame',
+    };
+    const mismatchedFrame = createFrameArtifact({
+      provenance: alternateProvenance,
+      includeDerived: true,
+    });
+
+    expect(
+      ManifestSchema.safeParse({ ...manifest, artifacts: [mismatchedFrame, crop] }).success,
     ).toBe(false);
   });
 });

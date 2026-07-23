@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_PROCESS_LINE_MAX_BYTES,
   DEFAULT_PROCESS_STDERR_MAX_BYTES,
-} from '../../lib/process/spawn.js';
+} from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { invokeCommandBasedRunner } from './command-based.js';
 
@@ -101,11 +101,11 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stdout.trim()).toBe('x-x');
   });
 
-  it('uses stdin when supportPromptPlaceholder is false', async () => {
+  it('uses stdin when supportPromptPlaceholder is enabled but args have no marker', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'cat',
       args: [],
-      supportPromptPlaceholder: false,
+      supportPromptPlaceholder: true,
       prompt: 'stdin content',
       projectDir: process.cwd(),
     });
@@ -224,16 +224,6 @@ describe('invokeCommandBasedRunner', () => {
       type: 'call_error',
       error: { code: 'runner_idle_timeout' },
     });
-  });
-
-  it('returns stdout and stderr', async () => {
-    const result = await invokeCommandBasedRunner({
-      command: 'echo',
-      args: ['output'],
-      prompt: '',
-      projectDir: process.cwd(),
-    });
-    expect(result.stdout).toContain('output');
   });
 
   it('parses stream-json through the format pipeline on the timeout branch', async () => {

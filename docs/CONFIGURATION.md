@@ -15,7 +15,7 @@ This document is a field-by-field reference. For end-user mode semantics see [WO
 - The file is created on first `diptych init` (or implicitly on first `diptych start`). Missing file → diptych runs with `createDefaultConfig()` (`src/core/config/load/io.ts`).
 - **Schema version:** `version: 3` (current). `version: 2` and older supported config shapes are upgraded in memory through `migrateV1ToV2 → migrateV2ToV3` at load time. `diptych migrate` is for legacy session layout migration, not config rewriting.
 - **Key style:** the loader transforms `snake_case` YAML into `camelCase` before validation (`src/core/config/load/transform.ts`), so both styles work. This document uses `camelCase`.
-- **Permissions:** the loader warns on stderr if the file is mode `>0600` on POSIX systems. `init` writes it `0600` via `writeSecureFile`.
+- **Permissions:** Configuration files with group- or other-writable bits (mode & 0o022) trigger a security warning. On POSIX, the loader emits this via `warnStderr` when `checkConfigPermissions` fails (`src/lib/fs.ts`). `init` writes the file at `0600` via `writeSecureFile`.
 - **`.gitignore`:** `init` appends `.diptych/` to your `.gitignore` so secrets and per-machine state stay out of source control.
 
 Top-level shape:
@@ -211,7 +211,7 @@ In-process call into the Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`).
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `apiKey` | string | no | Per-call key. Falls back to `ANTHROPIC_API_KEY`. Never mutates global env (`src/engine/runners/agent-sdk-backend.ts`). |
+| `apiKey` | string | no | Per-call key. Falls back to `ANTHROPIC_API_KEY`. Never mutates global env (`src/engine/runners/agent-sdk/backend.ts`). |
 | `model` | string | planner: no; implementer: yes | Planner defaults to `claude-sonnet-4-6` when omitted. Implementer config must include a model; `auto` resolves to the same default. |
 
 ```yaml
@@ -405,7 +405,7 @@ Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `li
 - Disable `lint` if your linter is enforced only at PR time (CI) and you want faster local iteration.
 - Leave `typecheck: true` for typed languages — it's the cheapest signal that the implementer wrote compilable code.
 
-**See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/validation.ts`.
+**See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/validation/run.ts`.
 
 ---
 
@@ -939,7 +939,7 @@ autoSplitOverflow: true
 
 ## 15. Environment variables
 
-Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/lib/otel.ts`, `src/engine/runners/agent-sdk-backend.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client.ts`, `src/features/workflow/review-parser.ts`.
+Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/lib/otel.ts`, `src/engine/runners/agent-sdk/backend.ts`, `src/engine/providers/registry.ts`, `src/engine/providers/client/metadata.ts`, `src/features/workflow/review-parser.ts`.
 
 ### Provider authentication
 
@@ -959,7 +959,7 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 
 | Variable | Purpose |
 |---|---|
-| `DIPTYCH_CONTEXT_LENGTH` | Override diptych's detected implementer context length (`src/engine/providers/registry.ts`). This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
+| `DIPTYCH_CONTEXT_LENGTH` | Override diptych's detected implementer context length (`src/engine/providers/capabilities.ts`). This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
 | `DIPTYCH_QUIET` | Suppress legacy-mode deprecation notice (set to `1`) (`src/cli/init-stores.ts`). |
 
 ### Observability
@@ -975,7 +975,7 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 | Variable | Purpose |
 |---|---|
 | `CI` | If truthy, suppress fullscreen/alternate-screen rendering. Use `--json` or `--rpc` when stdout must be machine-readable. |
-| `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn.ts`). |
+| `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn/progress.ts`). |
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
 | `FORCE_HYPERLINK` | `1` (or any non-empty value other than `0`/`false`) forces OSC 8 hyperlink emission for markdown links; `0`/`false` forces plain styled labels; otherwise diptych sniffs `TERM_PROGRAM`/`VTE_VERSION`/`KITTY_WINDOW_ID`/`WT_SESSION`/`TERM` (Apple Terminal is excluded from auto-detection). The only configuration-surface change of the file-link feature — no YAML key (`src/lib/terminal/hyperlinks.ts`). |
 | `DIPTYCH_REDUCE_MOTION` / `REDUCE_MOTION` | Set to `1` to pin TUI spinner frames and slow status ticks to 1s (`src/features/workflow/display/reduce-motion.ts`). |
@@ -1038,7 +1038,7 @@ Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
 
 - Errors → `ConfigError` (`src/core/config/errors.ts`) → top-level catch in `src/cli/setup.ts` → exit code 1.
 - Non-fatal warnings on stderr (`warnStderr` in `src/lib/warn.ts`):
-  - Config file with permissions looser than `0600` on POSIX.
+  - Config file permission warning on POSIX (`config-file-permissions`; see §1 **Permissions**).
   - `apiKey` detected inline in config (recommends env var).
   - Anthropic key not starting with `sk-ant-`, etc.
   - `version: 2` accepted but deprecated → upgrade prompt.

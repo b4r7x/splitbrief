@@ -1,5 +1,5 @@
 import type { Phase } from '../../../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../../../core/schemas/recovery.js';
+import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { UserEditConflict } from '../../../events/workflow-events.js';
 import { uniqueSortedIds } from '../../../../utils/collections.js';

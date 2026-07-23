@@ -38,8 +38,7 @@ describe('visual capture environment', () => {
 
   it.each([
     ['success', () => Promise.resolve('ok')],
-    ['timeout', () => Promise.reject(new Error('bounded timeout'))],
-    ['fixture error', () => Promise.reject(new Error('fixture failed'))],
+    ['generic rejection', () => Promise.reject(new Error('capture failed'))],
   ])('restores globals and environment after %s', async (_name, operation) => {
     const environment = environmentSnapshot();
     const dateNow = Date.now;

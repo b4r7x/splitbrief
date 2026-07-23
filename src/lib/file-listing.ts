@@ -1,6 +1,6 @@
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { listTrackedAndUntrackedFiles } from './git.js';
+import { listTrackedAndUntrackedFiles } from './git/files.js';
 
 export const MAX_PROJECT_FILES = 10_000;
 

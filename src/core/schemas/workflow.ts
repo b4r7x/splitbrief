@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { PhaseSchema, WorkflowModeSchema, ApproveLevelSchema } from './enums.js';
 import { TaskSchema } from './task.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
-import { RecoveryIssueSchema } from './recovery.js';
+import { RecoveryIssueSchema } from './recovery/schemas.js';
 import { topoSort } from '../state/topo-sort.js';
 
 export const DiscoveredValidationSchema = z.object({

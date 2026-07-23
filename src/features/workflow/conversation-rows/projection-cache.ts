@@ -1,7 +1,8 @@
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { buildConversationRowsProjection, materializeConversationRowsWindow } from './build.js';
+import { buildConversationRowsProjection } from './build.js';
+import { materializeConversationRowsWindow } from './materialize-window.js';
 import type {
   ConversationRow,
   ConversationRowInputs,
@@ -87,7 +88,7 @@ export function getConversationRowsWindowProjection(
 // A hit requires all six inputs to be reference/primitive-equal. This is sound because upstream
 // state never mutates in place: mergeEvent re-allocates the changed event and the events array
 // (src/stores/workflow/events.ts), computeSections is identity-cached on that array
-// (src/stores/workflow/actions.ts), and the streaming/scroll stores replace their state objects
+// (src/stores/workflow/actions/sections.ts), and the streaming/scroll stores replace their state objects
 // on every change.
 function isProjectionCacheHit(entry: ProjectionCacheEntry, input: ConversationRowInputs): boolean {
   return (

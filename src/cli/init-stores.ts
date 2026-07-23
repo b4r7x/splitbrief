@@ -6,7 +6,7 @@ import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { warnError, warnStderr } from '../lib/warn.js';
-import { detectCapabilities } from '../engine/providers/registry.js';
+import { detectCapabilities } from '../engine/providers/capabilities.js';
 import { detectAll } from '../engine/detection/detect.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
 import { loadDetectionIntoStores } from '../stores/discovery/detection-adapter.js';
@@ -18,7 +18,7 @@ import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
 import { ensureHooksTrusted } from './hook-trust-prompt.js';
 import { resolveHooksConfig } from '../engine/hooks/discover.js';
-import { buildCLIOverrides } from './build-overrides.js';
+import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/from-options.js';
 
 let historyPersistenceTeardown: (() => void) | null = null;
 
@@ -49,7 +49,7 @@ function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
   if (rawMode === 'full' && process.env.DIPTYCH_QUIET !== '1') {
     warnStderr('--mode full is deprecated; use --mode speckit');
   }
-  const overrides = buildCLIOverrides(opts);
+  const overrides = workflowOptsToCLIOverrides(opts);
   configStore.load(projectDir, overrides);
   const storeConfig = configStore.get().config;
   if (!storeConfig) throw cliError('configStore.load did not populate config');

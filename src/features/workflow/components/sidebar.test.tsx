@@ -207,22 +207,6 @@ describe('Sidebar — completed count', () => {
     ui.unmount();
   });
 
-  it('sidebar role and waiting labels are Title Case', async () => {
-    tasksStore.__testReset({ tasks: [] });
-    lifecycleStore.__testReset({ phase: 'researching', startedAt: Date.now() - 1_000 });
-
-    const ui = renderFeature(<Sidebar width={60} />);
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain('Planner is working');
-    expect(frame).toContain('Planner Claude Code');
-    expect(frame).toContain('Implementer');
-    expect(frame).not.toContain('planner is working');
-
-    ui.unmount();
-  });
-
   it('keeps footer cost and status visible when the task list is long', async () => {
     const tasks = Array.from({ length: 40 }, (_value, index) =>
       task(String(index + 1), index % 2 === 0 ? 'done' : 'pending'),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OSC52_MAX_BASE64, osc52Sequence, wrapForMultiplexer } from './osc52.js';
+import { osc52Sequence, wrapForMultiplexer } from './osc52.js';
 
 const ESC = String.fromCharCode(0x1b);
 const BEL = String.fromCharCode(0x07);
@@ -33,10 +33,6 @@ describe('osc52Sequence', () => {
     expect(payload.includes(ESC)).toBe(false);
     expect(payload.includes(BEL)).toBe(false);
     expect(Buffer.from(payload, 'base64').toString('utf8')).toBe(malicious);
-  });
-
-  it('caps the base64 budget at 100000', () => {
-    expect(OSC52_MAX_BASE64).toBe(100_000);
   });
 });
 

@@ -4,11 +4,8 @@ import type { EventBus } from '../events/types.js';
 import type { Planner } from '../planners/types.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { publishWarning, publishWarningFromError } from './events.js';
-import {
-  buildResumeContext,
-  compactResumeTranscript,
-  keepRecentCountForThreshold,
-} from './transcript-rebuild.js';
+import { buildResumeContext } from './transcript/rebuild.js';
+import { compactResumeTranscript, keepRecentCountForThreshold } from './transcript/compaction.js';
 import { addUsageAndSave } from './state-ops.js';
 import { resolveCompactionFormat } from '../../core/schemas/compaction.js';
 import { publishRunnerCallEvent } from './events.js';

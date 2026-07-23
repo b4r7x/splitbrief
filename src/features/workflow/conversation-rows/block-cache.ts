@@ -32,7 +32,7 @@ export function getCachedEventRowBlock(
   key: EventBlockCacheKey,
 ): ConversationRowBlock | null | undefined {
   // implementer_generate_running blocks read per-pass streaming context that no key field
-  // captures (ctx.streaming, event-rows.ts:466-467), so they are never cached; task_started
+  // captures (ctx.streaming, event-rows/execution.ts:15-18), so they are never cached; task_started
   // keeps its bypass per spec decision D-13.
   if (event.type === 'task_started' || event.type === 'implementer_generate_running') {
     return undefined;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
-import { addEvent, resetWorkflow } from '../../../src/stores/workflow/actions.js';
+import { addEvent } from '../../../src/stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import {
   eventsStore,
   MAX_EVENTS,

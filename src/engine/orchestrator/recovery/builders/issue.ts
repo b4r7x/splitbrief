@@ -1,5 +1,5 @@
 import type { Phase, RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
-import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery.js';
+import type { RecoveryFact, RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
 

@@ -1,4 +1,4 @@
-import { cardRowsWindowSlice, countCardRows } from './row-format.js';
+import { cardRowsWindowSlice, countCardRows } from './row-format/card-block.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
 
 export type CalloutSeverity = 'error' | 'warning' | 'info';

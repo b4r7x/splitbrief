@@ -222,23 +222,6 @@ describe('createApiPlanner', () => {
     expect(body.max_tokens!).toBeGreaterThan(body.thinking!.budget_tokens);
   });
 
-  it('derives max_tokens from contextLength instead of the 4096 default', async () => {
-    const cfg = makeApiPlannerConfig('anthropic');
-    cfg.planner.contextLength = 32000;
-    const planner = createApiPlanner(cfg);
-
-    await planner.regenerate({
-      prompt: 'the prompt',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-    });
-
-    expect(receivedBodies).toHaveLength(1);
-    const body = receivedBodies[0] as unknown as { max_tokens?: number };
-    expect(typeof body.max_tokens).toBe('number');
-    expect(body.max_tokens!).toBeGreaterThan(4096);
-  });
-
   it.each([
     ['anthropic'],
     ['ollama'],

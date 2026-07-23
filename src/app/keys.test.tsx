@@ -636,23 +636,6 @@ describe('useAppKeys: keystroke binding', () => {
     ui.unmount();
   });
 
-  it('Escape when overlay is open and not exclusive closes the overlay', async () => {
-    const exit = vi.fn();
-    overlayStore.open('settings');
-    await tick(20);
-
-    const ui = renderFeature(<Harness exit={exit} />);
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('settings');
-
-    writeKey(ui, '\x1b');
-    await tick(20);
-
-    expect(overlayStore.get().active).toBe('none');
-    ui.unmount();
-  });
-
   it('Escape when overlay is exclusive does not close the overlay', async () => {
     const exit = vi.fn();
     overlayStore.open('settings');

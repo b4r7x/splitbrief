@@ -77,12 +77,14 @@ describe('attachmentsStore', () => {
     attachmentsStore.add(makeAttachment('a'));
 
     const peeked = attachmentsStore.peek();
-    peeked[0] = makeAttachment('mutated');
-    expect(attachmentsStore.peek().map((a) => a.id)).toEqual(['a']);
+    peeked[0]!.path = '/tmp/mutated.png';
+    expect(attachmentsStore.peek()[0]?.path).toBe('/tmp/a.png');
 
+    const internalBefore = attachmentsStore.get().pending[0];
     const drained = attachmentsStore.drain();
-    drained[0] = makeAttachment('mutated-again');
-    expect(attachmentsStore.peek()).toEqual([]);
+    expect(drained[0]).not.toBe(internalBefore);
+    drained[0]!.path = '/tmp/mutated-again.png';
+    expect(internalBefore?.path).toBe('/tmp/a.png');
   });
 
   it('drain on empty store does not error', () => {

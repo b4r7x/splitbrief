@@ -1,5 +1,5 @@
 import type { EventSink } from '../types.js';
-import { protectEngineEventForConsumer } from '../protection.js';
+import { protectEngineEventForConsumer } from '../protection/protect.js';
 import { writeHeadlessJsonRecord } from '../public-json.js';
 
 export function createStdoutJsonSink(opts: { persistTranscript?: boolean } = {}): EventSink {

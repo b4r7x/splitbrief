@@ -18,7 +18,7 @@ import { error } from '../../utils/error.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { replaySession } from './replay-session.js';
 import { writeServerMessage } from './write-message.js';
-import { protectEngineEventForConsumer } from '../events/protection.js';
+import { protectEngineEventForConsumer } from '../events/protection/protect.js';
 
 export type IpcServerOptions = {
   sessionId: string;

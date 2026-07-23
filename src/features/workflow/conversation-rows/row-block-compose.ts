@@ -4,14 +4,13 @@ import type {
   ConversationRowKind,
   ConversationRowTone,
 } from './types.js';
+import { cardRowsWindow } from './row-format/label-card.js';
+import { row, type RowInput } from './row-format/rows.js';
 import {
-  cardRowsWindow,
   countWrappedRowTexts,
-  row,
   sanitizeRowDisplayText,
   wrappedRowTexts,
-  type RowInput,
-} from './row-format.js';
+} from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
 
 export function rowsBlock(

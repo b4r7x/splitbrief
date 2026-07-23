@@ -4,7 +4,7 @@ import {
   COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT,
   runnerActivityDisplayKey,
 } from './activity-batch-model.js';
-import { isTranscriptRowlessEvent } from './event-rows.js';
+import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 
 type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
 

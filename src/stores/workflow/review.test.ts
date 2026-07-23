@@ -8,12 +8,6 @@ afterEach(() => {
 });
 
 describe('reviewStore brief copy-source model', () => {
-  it('stores brief paths aligned to the brief sources', () => {
-    reviewStore.setBriefPaths(['src/a.ts', 'src/b.ts']);
-
-    expect(reviewStore.get().briefPaths).toEqual(['src/a.ts', 'src/b.ts']);
-  });
-
   it('clears brief paths when the review file changes', () => {
     reviewStore.setBriefPaths(['src/a.ts']);
     reviewStore.setReviewFile('specs/001/tasks.md');

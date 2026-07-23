@@ -9,7 +9,7 @@ import { cleanupTempDir } from './temp-dir.js';
 import { defaultContext, makeConfig } from './factories/config.js';
 import { makeWorkflowMetadata, TEST_WORKFLOW_SINKS } from './orchestrator-context.js';
 import type { WorkflowContext } from '../../src/engine/orchestrator/types.js';
-import { createValidator } from '../../src/engine/orchestrator/validation.js';
+import { createValidator } from '../../src/engine/orchestrator/validation/run.js';
 
 const taskProjectDirs: string[] = [];
 

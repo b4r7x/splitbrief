@@ -13,7 +13,7 @@ import { markHooksConfigTrusted, isHooksConfigTrusted } from '../../../core/hook
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { SummaryBase } from '../summary.js';
+import type { SummaryBase } from '../summary/build.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 
 const HOOK: HooksConfig = {

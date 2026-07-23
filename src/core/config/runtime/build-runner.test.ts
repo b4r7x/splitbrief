@@ -53,6 +53,33 @@ describe('buildRunnerConfig', () => {
         model: 'claude-sonnet-4-6',
       });
       expect(result.kind).toBe('agent');
+      if (result.kind === 'agent') {
+        expect(result.command).toBe('custom-agent');
+      }
+    });
+
+    it('builds implementer shell with the supplied command', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'shell',
+        command: 'new-impl-cmd',
+        model: 'llama3',
+      });
+      expect(result.kind).toBe('shell');
+      if (result.kind === 'shell') {
+        expect(result.command).toBe('new-impl-cmd');
+      }
+    });
+
+    it('builds implementer agent with the supplied command', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'agent',
+        command: 'new-agent-impl',
+        model: 'llama3',
+      });
+      expect(result.kind).toBe('agent');
+      if (result.kind === 'agent') {
+        expect(result.command).toBe('new-agent-impl');
+      }
     });
   });
 
@@ -276,31 +303,18 @@ describe('buildRunnerConfig', () => {
 });
 
 describe('inferKindFromTool', () => {
-  it('returns cli for known CLI tools', () => {
-    expect(inferKindFromTool('claude-code')).toBe('cli');
-    expect(inferKindFromTool('codex')).toBe('cli');
-    expect(inferKindFromTool('aider')).toBe('cli');
-  });
-
-  it('returns shell for shell meta-id', () => {
-    expect(inferKindFromTool('shell')).toBe('shell');
-  });
-
-  it('returns agent for agent meta-id', () => {
-    expect(inferKindFromTool('agent')).toBe('agent');
-  });
-
-  it('returns agent-sdk for agent-sdk', () => {
-    expect(inferKindFromTool('agent-sdk')).toBe('agent-sdk');
-  });
-
-  it('returns api for known API providers', () => {
-    expect(inferKindFromTool('anthropic')).toBe('api');
-    expect(inferKindFromTool('ollama')).toBe('api');
-    expect(inferKindFromTool('openrouter')).toBe('api');
-  });
-
-  it('returns api for unknown providers (custom endpoints)', () => {
-    expect(inferKindFromTool('my-custom-provider')).toBe('api');
+  it.each([
+    ['known CLI tool claude-code', 'claude-code', 'cli'],
+    ['known CLI tool codex', 'codex', 'cli'],
+    ['known CLI tool aider', 'aider', 'cli'],
+    ['shell meta-runner', 'shell', 'shell'],
+    ['agent meta-runner', 'agent', 'agent'],
+    ['agent-sdk meta-runner', 'agent-sdk', 'agent-sdk'],
+    ['known API provider anthropic', 'anthropic', 'api'],
+    ['known API provider ollama', 'ollama', 'api'],
+    ['known API provider openrouter', 'openrouter', 'api'],
+    ['custom API provider', 'my-custom-provider', 'api'],
+  ] as const)('%s', (_label, tool, kind) => {
+    expect(inferKindFromTool(tool)).toBe(kind);
   });
 });

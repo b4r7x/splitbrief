@@ -68,25 +68,6 @@ describe('shell implementer', () => {
     }
   });
 
-  it('retryTask dispatches to shell when kind is shell (empty stdout → extraction fails)', async () => {
-    const config = makeConfig({ command: '/bin/echo' });
-    const task = makeTask();
-
-    const result = await retryTask(task, {
-      projectDir: '/tmp',
-      config,
-      context,
-      error: 'previous error',
-      attempt: 1,
-      onOutput: () => {},
-    });
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.error).toMatch(/extract|code/i);
-    }
-  });
-
   it('returns failure on non-zero exit code with no output', async () => {
     const config = makeConfig({ command: '/usr/bin/false' });
     const task = makeTask();

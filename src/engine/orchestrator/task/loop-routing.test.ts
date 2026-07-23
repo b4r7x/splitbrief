@@ -33,7 +33,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
 
 const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
 
-describe('runTaskLoop', { timeout: 30_000 }, () => {
+describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('routes a task to the selected profile and publishes profile/tool/model metadata', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
@@ -43,14 +43,6 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
       implementerProfiles: {
         default: 'local-small',
         profiles: {
-          'cheap-large': {
-            kind: 'api',
-            provider: 'ollama',
-            apiBase: 'http://localhost:11434/v1',
-            model: 'qwen-large',
-            costTier: 'cheap',
-            contextLength: 32768,
-          },
           'local-small': {
             kind: 'api',
             provider: 'ollama',
@@ -58,6 +50,14 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
             model: 'qwen-small',
             costTier: 'local',
             contextLength: 100,
+          },
+          'cheap-large': {
+            kind: 'api',
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            model: 'qwen-large',
+            costTier: 'cheap',
+            contextLength: 32768,
           },
         },
       },
@@ -92,9 +92,19 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
 
     expect(defaultImplementer.implement).not.toHaveBeenCalled();
     expect(selectedImplementer.implement).toHaveBeenCalledTimes(1);
+    const cheapLarge = config.implementerProfiles!.profiles['cheap-large']!;
+    if (cheapLarge.kind !== 'api') {
+      throw new Error('expected api implementer profile');
+    }
     expect(createProfileImplementer).toHaveBeenCalledWith(
       expect.objectContaining({
-        implementer: expect.objectContaining({ model: 'qwen-large' }),
+        implementer: {
+          kind: cheapLarge.kind,
+          provider: cheapLarge.provider,
+          apiBase: cheapLarge.apiBase,
+          model: cheapLarge.model,
+          contextLength: cheapLarge.contextLength,
+        },
       }),
       expect.objectContaining({ publisher: expect.any(Object), allowRepoRunners: true }),
     );

@@ -12,134 +12,19 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { focusHasResolvableCopy } from '../copy/resolve.js';
-import { getActiveRailStage, getChromeContentWidth } from '../layout/chrome-rows.js';
+import { getActiveRailStage } from '../layout/chrome-rows.js';
 import { deriveLiveStatus, formatStageElapsed } from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
 import { useSpinnerFrame } from '../hooks/use-spinner-frame.js';
-import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
-} from '../../../utils/display-text.js';
+import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
-
-export interface InputFooterBylineInput {
-  cols: number;
-  lead: string;
-  queuedText: string | null;
-  etaText: string | null;
-  gitLabel: string;
-  advisoryText: string | null;
-  copyHint?: string | null;
-  worktreeLabel?: string | null;
-}
+import { buildInputFooterByline } from '../input-footer-byline.js';
 
 function joinBylineParts(parts: readonly (string | null | undefined)[]): string {
   return parts
     .filter((part): part is string => part !== null && part !== undefined && part.length > 0)
     .join(SOFT_SEP);
-}
-
-function bylineCells(text: string): number {
-  return getTerminalCellWidth(text);
-}
-
-export interface InputFooterByline {
-  lead: string;
-  queued: string;
-  rest: string;
-}
-
-export function buildInputFooterByline(input: InputFooterBylineInput): InputFooterByline {
-  const width = getChromeContentWidth(input.cols);
-  const queuedPart = input.queuedText && input.queuedText.length > 0 ? input.queuedText : null;
-
-  // Widest first; advisory, then eta, then git degrade first. Each candidate records whether
-  // the queued segment survived at that width so the caller can color it independently.
-  const candidates: Array<{ queued: boolean; tail: (string | null)[] }> = [
-    { queued: true, tail: [input.etaText, input.gitLabel, input.advisoryText] },
-    { queued: true, tail: [input.etaText, input.gitLabel] },
-    { queued: true, tail: [input.gitLabel] },
-    { queued: true, tail: [] },
-    { queued: false, tail: [] },
-  ];
-
-  let leadOut = input.lead;
-  let queuedIncluded = false;
-  let tail: (string | null)[] = [];
-  let line = '';
-  let matched = false;
-
-  for (const candidate of candidates) {
-    const candidateStr = joinBylineParts([
-      input.lead,
-      candidate.queued ? queuedPart : null,
-      ...candidate.tail,
-    ]);
-    if (bylineCells(candidateStr) <= width) {
-      line = candidateStr;
-      queuedIncluded = candidate.queued;
-      tail = candidate.tail;
-      matched = true;
-      break;
-    }
-  }
-
-  if (!matched) {
-    leadOut = truncateTerminalDisplayText(input.lead, width);
-    line = leadOut;
-  }
-
-  const queuedOut =
-    queuedIncluded && queuedPart !== null
-      ? leadOut.length > 0
-        ? `${SOFT_SEP}${queuedPart}`
-        : queuedPart
-      : '';
-  const restCore = joinBylineParts(tail);
-  let restOut =
-    restCore.length > 0
-      ? leadOut.length > 0 || queuedOut.length > 0
-        ? `${SOFT_SEP}${restCore}`
-        : restCore
-      : '';
-
-  // The copy hint is metadata: it is the first accessory to go under width pressure, degrading
-  // `y copy`, then bare `y`, then gone, and only appended when the richest core still leaves room.
-  const copyFull = input.copyHint && input.copyHint.length > 0 ? input.copyHint : null;
-  if (copyFull) {
-    const copyBare = copyFull.split(' ')[0] ?? copyFull;
-    const copyVariants = copyBare === copyFull ? [copyFull] : [copyFull, copyBare];
-    for (const variant of copyVariants) {
-      const combined = joinBylineParts([line, variant]);
-      if (bylineCells(combined) <= width) {
-        restOut += combined.slice(line.length);
-        line = combined;
-        break;
-      }
-    }
-  }
-
-  // The worktree name is trailing identity, appended last so it yields to every hint above and
-  // truncates to whatever room is left rather than pushing the core out.
-  const worktree =
-    input.worktreeLabel && input.worktreeLabel.length > 0 ? input.worktreeLabel : null;
-  if (worktree) {
-    const labeled = `${glyph('cursor')} ${worktree}`;
-    const remaining = width - bylineCells(line) - bylineCells(SOFT_SEP);
-    if (remaining > 0) {
-      const fitted =
-        bylineCells(labeled) <= remaining
-          ? labeled
-          : truncateTerminalDisplayText(labeled, remaining);
-      const combined = joinBylineParts([line, fitted]);
-      restOut += combined.slice(line.length);
-      line = combined;
-    }
-  }
-
-  return { lead: leadOut, queued: queuedOut, rest: restOut };
 }
 
 export function InputFooter({

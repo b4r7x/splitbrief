@@ -18,7 +18,7 @@ import { useReviewContent } from '../hooks/use-review-content.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { configStore } from '../../../stores/project/config.js';
 import { useStores } from '../../../stores/use-stores.js';
-import { workflowMarkdownRenderSegments } from '../conversation-rows/markdown-rows.js';
+import { workflowMarkdownRenderSegments } from '../conversation-rows/markdown-rows/review-segments.js';
 
 interface ReviewViewProps {
   height?: number;

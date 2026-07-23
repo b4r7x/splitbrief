@@ -7,11 +7,12 @@ function fn(path: string, imports: string[]) {
 }
 
 describe('buildGraph', () => {
-  it('resolves relative .js imports to .ts source files', () => {
+  it('builds forward out-edges and inverse in-edges for resolved imports', () => {
     const a = fn('src/a.ts', ['./b.js']);
     const b = fn('src/b.ts', []);
     const g = buildGraph([a, b]);
     expect(g.outEdges.get('src/a.ts')?.has('src/b.ts')).toBe(true);
+    expect(g.inEdges.get('src/b.ts')?.has('src/a.ts')).toBe(true);
   });
 
   it('resolves .tsx imports', () => {
@@ -39,13 +40,6 @@ describe('buildGraph', () => {
     const a = fn('src/a.ts', ['react']);
     const g = buildGraph([a]);
     expect(g.outEdges.get('src/a.ts')?.size ?? 0).toBe(0);
-  });
-
-  it('builds inverse in-edges for ranking', () => {
-    const a = fn('src/a.ts', ['./b.js']);
-    const b = fn('src/b.ts', []);
-    const g = buildGraph([a, b]);
-    expect(g.inEdges.get('src/b.ts')?.has('src/a.ts')).toBe(true);
   });
 
   it('returns the full node list', () => {

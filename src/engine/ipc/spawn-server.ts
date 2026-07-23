@@ -9,7 +9,7 @@ import { checkServerStatus } from './lockfile.js';
 import { assertSessionConfinement } from '../../core/sessions/confinement.js';
 import { writeIpcServerArgsFile, type IpcServerArgs } from './server-args.js';
 import { readOtelExporterFromArgv } from '../../lib/otel.js';
-import type { CLIOverrides } from '../../core/config/runtime/overrides.js';
+import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 export type SpawnServerOptions = {

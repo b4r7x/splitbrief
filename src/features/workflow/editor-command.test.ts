@@ -106,19 +106,12 @@ describe('resolveEditorArgv', () => {
     }
   });
 
-  it('honors explicit VISUAL and non-terminal EDITOR over implicit PATH GUI discovery', () => {
+  it('honors non-terminal EDITOR over implicit PATH GUI discovery', () => {
     const dir = mkdtempSync(join(tmpdir(), 'editor-command-test-'));
     try {
       const fakeCode = join(dir, 'code');
       writeFileSync(fakeCode, '#!/bin/sh\n');
       chmodSync(fakeCode, 0o755);
-
-      expect(
-        resolveEditorArgv({
-          env: { VISUAL: 'nvim', EDITOR: 'code --wait', PATH: dir },
-          platform: 'linux',
-        }),
-      ).toEqual({ command: 'nvim', args: [] });
 
       expect(
         resolveEditorArgv({

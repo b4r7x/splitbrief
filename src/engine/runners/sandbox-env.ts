@@ -5,7 +5,7 @@ import { PROVIDER_CATALOG } from '../../core/providers/catalog.js';
 import { isProviderId } from '../../core/schemas/enums.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
-import { apiKeyEnvReference } from '../providers/client.js';
+import { apiKeyEnvReference } from '../providers/client/api-key.js';
 
 type RunnerLike = PlannerConfig | ImplementerConfig;
 

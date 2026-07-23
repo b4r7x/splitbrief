@@ -61,8 +61,7 @@ describe('handleSessionSelect (Enter routing)', () => {
       status: 'interrupted',
       summary: null,
     });
-    const savedState = createInitialState('saved add auth');
-    expect(savedState.phase).toBe('idle');
+    const savedState = { ...createInitialState('saved add auth'), phase: 'idle' as const };
     saveState({ projectDir: tmp, sessionId: session.id }, savedState);
 
     handleSessionSelect(session, tmp);

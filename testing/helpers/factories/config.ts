@@ -103,6 +103,20 @@ export function makeNoValidationConfig(overrides?: Parameters<typeof makeConfig>
   });
 }
 
+export function makeApprovalConfig(
+  approval: Partial<NonNullable<Config['approval']>> = {},
+): Config {
+  return makeConfig({
+    approval: {
+      enabled: approval.enabled ?? true,
+      feedRejectionsToPlanner: approval.feedRejectionsToPlanner ?? true,
+      ...(approval.headless !== undefined && { headless: approval.headless }),
+      ...(approval.tiers !== undefined && { tiers: approval.tiers }),
+      ...(approval.allowedPaths !== undefined && { allowedPaths: approval.allowedPaths }),
+    },
+  });
+}
+
 export const defaultContext: ProjectContext = {
   name: 'test-project',
   dir: join(tmpdir(), `diptych-test-${process.pid}`),

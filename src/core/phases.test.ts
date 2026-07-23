@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { phaseCostRole, phaseRole, isResumable } from './phases.js';
+import {
+  phaseCostRole,
+  phaseRole,
+  isResumable,
+  canReviseSpec,
+  canRevisePlan,
+  canRedoTask,
+} from './phases.js';
+import { PHASES, type Phase } from './schemas/enums.js';
 import { createInitialState } from './state/machine.js';
 import { attributePhaseTokenDelta } from './state/token-attribution.js';
 import type { TokenUsage } from './schemas/tokens.js';
@@ -72,14 +80,6 @@ describe('isResumable', () => {
 
     expect(isResumable(state)).toBe(false);
   });
-
-  it('returns false for idle phase without awaitingContinue', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'idle',
-    };
-    expect(isResumable(state)).toBe(false);
-  });
 });
 
 describe('phase roles', () => {
@@ -111,6 +111,107 @@ describe('phase roles', () => {
       output: 0,
       cacheRead: 0,
       cacheCreate: 0,
+    });
+  });
+});
+
+const CAN_REVISE_SPEC: { allowed: Phase[]; denied: Phase[] } = {
+  allowed: [
+    'reviewing-spec',
+    'clarifying',
+    'constitution-check',
+    'planning',
+    'reviewing-plan',
+    'reviewing-briefs',
+    'analyzing',
+    'implementing',
+    'validating-task',
+    'escalating',
+    'final-review',
+  ],
+  denied: ['idle', 'researching', 'specifying', 'complete'],
+};
+
+const CAN_REVISE_PLAN: { allowed: Phase[]; denied: Phase[] } = {
+  allowed: [
+    'reviewing-plan',
+    'reviewing-briefs',
+    'analyzing',
+    'implementing',
+    'validating-task',
+    'escalating',
+    'final-review',
+  ],
+  denied: [
+    'idle',
+    'researching',
+    'specifying',
+    'reviewing-spec',
+    'clarifying',
+    'constitution-check',
+    'planning',
+    'complete',
+  ],
+};
+
+const CAN_REDO_TASK: { allowed: Phase[]; denied: Phase[] } = {
+  allowed: ['implementing', 'validating-task', 'escalating'],
+  denied: [
+    'idle',
+    'researching',
+    'specifying',
+    'reviewing-spec',
+    'clarifying',
+    'constitution-check',
+    'planning',
+    'reviewing-plan',
+    'reviewing-briefs',
+    'analyzing',
+    'final-review',
+    'complete',
+  ],
+};
+
+describe('phase guard coverage', () => {
+  describe('canReviseSpec', () => {
+    it.each(CAN_REVISE_SPEC.allowed)('returns true for %s', (phase) => {
+      expect(canReviseSpec(phase)).toBe(true);
+    });
+    it.each(CAN_REVISE_SPEC.denied)('returns false for %s', (phase) => {
+      expect(canReviseSpec(phase)).toBe(false);
+    });
+    it('covers all phases', () => {
+      expect([...CAN_REVISE_SPEC.allowed, ...CAN_REVISE_SPEC.denied].sort()).toEqual(
+        [...PHASES].sort(),
+      );
+    });
+  });
+
+  describe('canRevisePlan', () => {
+    it.each(CAN_REVISE_PLAN.allowed)('returns true for %s', (phase) => {
+      expect(canRevisePlan(phase)).toBe(true);
+    });
+    it.each(CAN_REVISE_PLAN.denied)('returns false for %s', (phase) => {
+      expect(canRevisePlan(phase)).toBe(false);
+    });
+    it('covers all phases', () => {
+      expect([...CAN_REVISE_PLAN.allowed, ...CAN_REVISE_PLAN.denied].sort()).toEqual(
+        [...PHASES].sort(),
+      );
+    });
+  });
+
+  describe('canRedoTask', () => {
+    it.each(CAN_REDO_TASK.allowed)('returns true for %s', (phase) => {
+      expect(canRedoTask(phase)).toBe(true);
+    });
+    it.each(CAN_REDO_TASK.denied)('returns false for %s', (phase) => {
+      expect(canRedoTask(phase)).toBe(false);
+    });
+    it('covers all phases', () => {
+      expect([...CAN_REDO_TASK.allowed, ...CAN_REDO_TASK.denied].sort()).toEqual(
+        [...PHASES].sort(),
+      );
     });
   });
 });

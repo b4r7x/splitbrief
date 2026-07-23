@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
+import { createStreamingFeed } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { taskId } from '../../../core/schemas/task.js';
 
@@ -186,11 +186,5 @@ describe('streaming feed without isApiRunner gate', () => {
 
     feed.stop();
     expect(sink.stop).toHaveBeenCalledTimes(1);
-  });
-
-  it('works with noop sink without errors', () => {
-    const feed = createStreamingFeed(taskId('T004'), noopStreamingSink);
-    feed.onText('some text\n');
-    feed.stop();
   });
 });
