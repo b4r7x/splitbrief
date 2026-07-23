@@ -6,7 +6,8 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { getProvider } from '../providers/registry.js';
-import { createClientFromProvider, createProviderAvailability } from '../providers/client.js';
+import { createProviderAvailability } from '../providers/client/availability.js';
+import { createClientFromProvider } from '../providers/client/connection.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { providerError } from '../providers/errors.js';
@@ -18,7 +19,8 @@ import {
   clampToMaxOutput,
 } from '../providers/capability-inference.js';
 import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
-import { toStreamClient, type StreamClient } from '../providers/openai-stream.js';
+import { toStreamClient } from '../providers/openai-stream/client.js';
+import type { StreamClient } from '../providers/openai-stream/request.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 
 const DEFAULT_CONTEXT_LENGTH = 8192;

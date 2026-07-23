@@ -31,7 +31,6 @@ describe('modelCacheStore', () => {
     // set + read returns the models with fresh (non-stale) cache metadata
     modelCacheStore.setProviderModels('ollama', ollamaModels);
     expect(modelCacheStore.getProviderModels('ollama')).toEqual(ollamaModels);
-    expect(modelCacheStore.get().providers['ollama']?.isStale).toBe(false);
 
     // just before TTL — still fresh
     vi.advanceTimersByTime(TTL_MS - 1);

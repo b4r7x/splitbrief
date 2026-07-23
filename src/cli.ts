@@ -3,7 +3,7 @@
 import { bootstrapOtel, flushOtel } from './lib/otel.js';
 import { Command } from 'commander';
 import ansis from 'ansis';
-import { registerStartCommand } from './cli/commands/start.js';
+import { registerStartCommand } from './cli/commands/start/register.js';
 import { registerDoctorCommand } from './cli/commands/doctor.js';
 import { registerSpecCommand } from './cli/commands/spec.js';
 import { registerInitCommand } from './cli/commands/init.js';
@@ -21,7 +21,7 @@ import { registerWorktreeCommand } from './cli/commands/worktree.js';
 import { registerAttachCommand } from './cli/commands/attach.js';
 import { registerDetachCommand } from './cli/commands/detach.js';
 import { registerPsCommand } from './cli/commands/ps.js';
-import { registerContinueCommand } from './cli/commands/continue.js';
+import { registerContinueCommand } from './cli/commands/continue/register.js';
 import { registerLastCommand } from './cli/commands/last.js';
 import { isCliError } from './cli/errors.js';
 import { HELP_EXAMPLES } from './cli/help-examples.js';

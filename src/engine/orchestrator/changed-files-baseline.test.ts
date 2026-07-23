@@ -9,7 +9,7 @@ import {
   userVisibleChangedFiles,
   withActiveTaskSnapshot,
 } from './changed-files-baseline.js';
-import { commitChanges, stageAll } from '../../lib/git.js';
+import { commitChanges, stageAll } from '../../lib/git/staging.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 

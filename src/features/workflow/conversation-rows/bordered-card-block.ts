@@ -1,5 +1,6 @@
 import type { ConversationRowBlock, ConversationRowTone } from './types.js';
-import { cardRowsWindowSlice, countCardRows, sanitizeRowDisplayText } from './row-format.js';
+import { cardRowsWindowSlice, countCardRows } from './row-format/card-block.js';
+import { sanitizeRowDisplayText } from './row-format/text.js';
 
 export function borderedCardRowsBlock(input: {
   keyPrefix: string;

@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { delimiter, isAbsolute, join, resolve } from 'node:path';
-import { runCommand } from '../lib/process/spawn.js';
+import { runCommand } from '../lib/process/spawn/run-command.js';
 import { isENOENT, processError } from '../lib/process/errors.js';
 
 export const DEFAULT_AVAILABILITY = {

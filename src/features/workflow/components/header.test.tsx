@@ -3,7 +3,7 @@ import { render } from 'ink-testing-library';
 import { tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import { addEvent } from '../../../stores/workflow/actions.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -110,6 +110,26 @@ describe('Header — layout', () => {
 });
 
 describe('Header — runner summary', () => {
+  const ESC = String.fromCharCode(27);
+  const hostileSequence = `${ESC}[2J`;
+
+  it('sanitizes hostile model ids in the visible runner label', async () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/p',
+      config: makeConfig({ implementer: { model: `qwen${hostileSequence}-coder` } }),
+    });
+
+    const instance = render(<Header startedAt={STARTED_AT} />);
+    await tick();
+    const rawFrame = instance.lastFrame() ?? '';
+    const frame = stripAnsiStyles(rawFrame);
+
+    expect(frame).toContain('Qwen Coder');
+    expect(rawFrame).not.toContain(hostileSequence);
+    instance.unmount();
+  });
+
   it('labels both roles and names both models when the terminal is wide', async () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });

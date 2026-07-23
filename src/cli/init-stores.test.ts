@@ -11,8 +11,10 @@ import { skillsStore } from '../stores/project/skills.js';
 import { DIPTYCH_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
 import { createDefaultConfig } from '../core/config/load/io.js';
-import { detectCapabilities } from '../engine/providers/registry.js';
+import { detectCapabilities } from '../engine/providers/capabilities.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import { writeEmptyDetectionCache } from '#testing/helpers/write-empty-detection-cache.js';
 
 // Bootstrap runs real disk reads + provider-detection probes. HTTP probes return
 // empty responses so this file never contacts a live provider.
@@ -32,30 +34,10 @@ function requireConfig() {
 // unique temp projectDir, so without this every initStores() call would re-run
 // the full detection sweep (subprocess spawns + provider HTTP), which starves
 // this file under full-suite parallelism and trips the test timeout.
-function seedDetectionCache(projectDir: string): void {
-  const cache = {
-    version: 1,
-    timestamp: Date.now(),
-    planners: [],
-    implementers: [],
-  };
-  writeFileSync(
-    join(projectDir, DIPTYCH_DIR, 'detection-cache.json'),
-    JSON.stringify(cache),
-    'utf-8',
-  );
-}
-
 function makeProjectDir(): string {
   tmp = createTempDir('init-stores-test');
-  mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
-  seedDetectionCache(tmp);
+  writeEmptyDetectionCache(tmp);
   return tmp;
-}
-
-function writeConfigYaml(projectDir: string, obj: Record<string, unknown>): void {
-  const file = join(projectDir, DIPTYCH_DIR, 'config.yaml');
-  writeFileSync(file, YAML.stringify(obj), 'utf-8');
 }
 
 beforeEach(() => {
@@ -190,7 +172,7 @@ describe('initStores', () => {
     expect(sessionsStore.get().sessions).toEqual([]);
   }, 30_000);
 
-  it('skillsStore is populated (possibly empty) after bootstrap completes', async () => {
+  it('discovers a project-local Claude skill into skillsStore.available', async () => {
     const dir = makeProjectDir();
     writeConfigYaml(
       dir,
@@ -200,13 +182,23 @@ describe('initStores', () => {
         implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
       }),
     );
+    const skillDir = join(dir, '.claude', 'skills', 'bootstrap-proof');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, 'SKILL.md'),
+      `---
+id: bootstrap-proof
+name: bootstrap-proof
+description: proves initStores discovers project skills
+---
+Skill body for bootstrap proof.
+`,
+      'utf-8',
+    );
 
     await initStores(dir);
 
-    // Contract: skillsStore.available is an array after initStores resolves.
-    // Content depends on developer's `~/.claude/skills` + project `.claude/skills`;
-    // the contract is that it was discovered, not that it is non-empty.
-    expect(Array.isArray(skillsStore.get().available)).toBe(true);
+    expect(skillsStore.get().available.some((skill) => skill.id === 'bootstrap-proof')).toBe(true);
   }, 30_000);
 
   it('overrides implementer model from opts.implementerModel', async () => {
@@ -223,24 +215,6 @@ describe('initStores', () => {
     await initStores(dir, { implementerModel: 'claude-opus-4-5' });
 
     expect(requireConfig().implementer.model).toBe('claude-opus-4-5');
-  }, 30_000);
-
-  it('resolves before returning (all awaited side-effects settle)', async () => {
-    const dir = makeProjectDir();
-    writeConfigYaml(
-      dir,
-      toYaml({
-        ...createDefaultConfig(),
-        planner: { kind: 'cli', tool: 'claude-code' },
-        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
-      }),
-    );
-
-    await initStores(dir);
-
-    expect(configStore.get().config).not.toBeNull();
-    expect(sessionsStore.get().sessions).toBeDefined();
-    expect(skillsStore.get().available).toBeDefined();
   }, 30_000);
 
   it('repeated bootstrap does not accumulate resize listeners', async () => {

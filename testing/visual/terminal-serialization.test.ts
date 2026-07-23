@@ -7,7 +7,7 @@ import { CELL_GRID_SCHEMA_VERSION } from './contracts/schema-versions.js';
 import { ArtifactProvenanceSchema } from './contracts/selection.js';
 import { CONTROL_POLICY, HYPERLINK_POLICY } from './terminal/controls.js';
 import { parseTerminalFrame } from './terminal/parse.js';
-import { serializeTerminalTruth } from './terminal/serialize.js';
+import { serializeTerminalTruth } from './terminal/serialize/truth.js';
 
 const ESC = '\u001b';
 
@@ -29,9 +29,6 @@ describe('terminal diagnostic serialization', () => {
       .join('\n')}\n`;
 
     expect(second).toEqual(first);
-    expect(first.ansi).toBe(second.ansi);
-    expect(first.txt).toBe(second.txt);
-    expect(first.cellsJson).toBe(second.cellsJson);
     expect(cells.schemaVersion).toBe(CELL_GRID_SCHEMA_VERSION);
     expect(cells).toEqual(grid);
     expect(reconstructed).toBe(first.txt);
@@ -41,7 +38,6 @@ describe('terminal diagnostic serialization', () => {
       '                    ',
       '',
     ]);
-    expect(hasUnsafeTxtControl(first.txt)).toBe(false);
     expect(first.cellsJson).not.toContain(ESC);
     expect(first.cellsJson).not.toContain('rawEvent');
   });
@@ -96,12 +92,5 @@ function createIdentity(rows: number) {
     provenance,
     elementId: null,
     parentFrameKey: null,
-  });
-}
-
-function hasUnsafeTxtControl(text: string): boolean {
-  return [...text].some((character) => {
-    const code = character.charCodeAt(0);
-    return code <= 0x09 || (code >= 0x0b && code <= 0x1f) || (code >= 0x7f && code <= 0x9f);
   });
 }

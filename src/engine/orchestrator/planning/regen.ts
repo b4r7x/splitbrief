@@ -7,8 +7,200 @@ import type { EventBus } from '../../events/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { Planner } from '../../planners/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import { regenerateFromFeedback } from '../continuation.js';
-import { commitQueueMessagesDrained, readQueueForPrompt } from '../queue.js';
+import { join } from 'node:path';
+import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
+import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { parseTasksStrict } from '../../spec/tasks/parse.js';
+import { buildPlanPrompt } from '../../spec/prompts/plan.js';
+import { buildTasksPrompt } from '../../spec/prompts/tasks.js';
+import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
+import { buildProjectContextMarkdown } from '../../planners/context.js';
+import { publishPlannerStatus, publishWarning } from '../events.js';
+import { runPlannerReview } from '../planner-review.js';
+import { commitQueueMessagesDrained, readQueueForPrompt } from '../queue/drain.js';
+import { formatDrainedMessages } from '../queue/prompt.js';
+import { readPersistedTasks } from './io.js';
+import { composeSteeredPrompt } from '../../implementers/types.js';
+import { withContinuationLoop } from '../continuation.js';
+
+type RegenerateFromFeedbackCtx = {
+  projectDir: string;
+  sessionId: string;
+  planner: Planner;
+  callbacks: OrchestratorCallbacks;
+  bus: EventBus;
+  state: WorkflowState;
+  metadata: SpecMetadata;
+  signal?: AbortSignal | undefined;
+  skillsContext?: string | undefined;
+  planOverride?: string | undefined;
+  queuedMessages?: readonly QueuedMessage[] | undefined;
+  commitQueue?: boolean | undefined;
+  statusPhase?: Phase | undefined;
+  statusSummary?: string | undefined;
+  sinks?: WorkflowSinks | undefined;
+};
+
+type PlanRegenResult = {
+  kind: 'plan';
+  state: WorkflowState;
+  plan: string;
+  queuedMessages: readonly QueuedMessage[];
+};
+type TasksRegenResult = {
+  kind: 'tasks';
+  state: WorkflowState;
+  tasks: Task[];
+  queuedMessages: readonly QueuedMessage[];
+};
+
+async function regenerateFromFeedback(
+  kind: 'plan',
+  ctx: RegenerateFromFeedbackCtx,
+): Promise<PlanRegenResult>;
+async function regenerateFromFeedback(
+  kind: 'tasks',
+  ctx: RegenerateFromFeedbackCtx,
+): Promise<TasksRegenResult>;
+async function regenerateFromFeedback(
+  kind: 'plan' | 'tasks',
+  ctx: RegenerateFromFeedbackCtx,
+): Promise<PlanRegenResult | TasksRegenResult> {
+  const { projectDir, sessionId, bus, skillsContext, planOverride } = ctx;
+  let { state } = ctx;
+
+  const queued =
+    ctx.queuedMessages === undefined
+      ? readQueueForPrompt({ projectDir, sessionId, state })
+      : { state, messages: [...ctx.queuedMessages] };
+  state = queued.state;
+  const prefix = queued.messages.length > 0 ? formatDrainedMessages(queued.messages) : '';
+
+  const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
+  const languageContext = buildProjectLanguageContext(
+    projectDir,
+    state.discoveredValidation?.language,
+  );
+
+  if (kind === 'plan') {
+    const projectContext = await buildProjectContextMarkdown(projectDir);
+    const basePrompt = buildPlanPrompt(
+      { content: spec, hasClarifications: spec.includes('## Clarifications') },
+      projectContext,
+      skillsContext,
+      languageContext,
+    );
+    const result = await runRegenerationReview({
+      kind,
+      ctx,
+      state,
+      prompt: prefix ? prefix + basePrompt : basePrompt,
+      writeTo: PLAN_FILE,
+    });
+    state = maybeCommitQueue(ctx, result.state, queued.messages);
+    return { kind: 'plan', state, plan: result.text, queuedMessages: queued.messages };
+  }
+
+  const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
+  const persisted = await readPersistedTasks(
+    join(sessionDir(projectDir, sessionId), TASKS_FILE),
+    (message) => publishWarning({ bus, phase: state.phase, message }),
+  );
+  const currentTasks = persisted.ok ? persisted.tasks : state.tasks;
+  const basePrompt = buildTasksPrompt(spec, plan, languageContext, currentTasks);
+  const result = await runRegenerationReview({
+    kind,
+    ctx,
+    state,
+    prompt: prefix ? prefix + basePrompt : basePrompt,
+    writeTo: TASKS_FILE,
+  });
+  const tasks = parseTasksStrict(result.text, (message) =>
+    publishWarning({ bus, phase: state.phase, message }),
+  );
+  state = maybeCommitQueue(ctx, result.state, queued.messages);
+  return {
+    kind: 'tasks',
+    state,
+    tasks,
+    queuedMessages: queued.messages,
+  };
+}
+
+function maybeCommitQueue(
+  ctx: RegenerateFromFeedbackCtx,
+  state: WorkflowState,
+  messages: readonly QueuedMessage[],
+): WorkflowState {
+  if (ctx.commitQueue === false || messages.length === 0) return state;
+  return commitQueueMessagesDrained({
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    state,
+    messages,
+    bus: ctx.bus,
+  }).state;
+}
+
+async function runRegenerationReview(opts: {
+  kind: 'plan' | 'tasks';
+  ctx: RegenerateFromFeedbackCtx;
+  state: WorkflowState;
+  prompt: string;
+  writeTo: typeof PLAN_FILE | typeof TASKS_FILE;
+}): Promise<{ state: WorkflowState; text: string }> {
+  const statusPhase = opts.ctx.statusPhase ?? 'planning';
+  const summary =
+    opts.ctx.statusSummary ??
+    (opts.kind === 'plan' ? 'regenerating plan from feedback' : 'regenerating Task Briefs');
+  const sinks: WorkflowSinks = opts.ctx.sinks ?? {
+    setAbortHandler: () => {},
+    setQueueHandler: () => {},
+  };
+  let state = opts.state;
+
+  publishPlannerStatus(opts.ctx.bus, { ...state, phase: statusPhase }, 'running');
+  opts.ctx.bus.publish({
+    type: 'planner_heartbeat',
+    ts: Date.now(),
+    phase: statusPhase,
+    elapsedMs: 0,
+    accumulatedTokens: 0,
+    phaseHint: summary,
+  });
+
+  try {
+    const loop = await withContinuationLoop<{ state: WorkflowState; text: string }>({
+      ctx: {
+        projectDir: opts.ctx.projectDir,
+        sessionId: opts.ctx.sessionId,
+        callbacks: opts.ctx.callbacks,
+        bus: opts.ctx.bus,
+        signal: opts.ctx.signal,
+        sinks,
+      },
+      state,
+      onStateChange: (s) => {
+        state = s;
+      },
+      body: ({ signal, continuationPrompt, steer }) =>
+        runPlannerReview({
+          planner: opts.ctx.planner,
+          prompt: composeSteeredPrompt(continuationPrompt ?? opts.prompt, steer),
+          projectDir: opts.ctx.projectDir,
+          sessionId: opts.ctx.sessionId,
+          bus: opts.ctx.bus,
+          state,
+          metadata: opts.ctx.metadata,
+          writeTo: opts.writeTo,
+          signal,
+        }),
+    });
+    return loop.value;
+  } finally {
+    publishPlannerStatus(opts.ctx.bus, { ...state, phase: statusPhase }, 'done');
+  }
+}
 
 type RegenerateBaseOptions = {
   projectDir: string;

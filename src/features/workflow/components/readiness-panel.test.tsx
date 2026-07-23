@@ -155,40 +155,25 @@ describe('ReadinessPanel', () => {
     ui.unmount();
   });
 
-  it('exits on q and Escape when no overlay is open', async () => {
-    const onDismiss = vi.fn();
-    const ui = renderFeature(<ReadinessPanel report={blockedReport()} onDismiss={onDismiss} />);
-    await tick();
-
-    ui.stdin.write('q');
-    await tick();
-    expect(onDismiss).toHaveBeenCalledOnce();
-
-    ui.stdin.write('\x1b');
-    await tick();
-    expect(onDismiss).toHaveBeenCalledTimes(2);
-    ui.unmount();
-  });
-
-  it('ignores q and Escape while an overlay is open, honours them after it closes', async () => {
+  it('ignores q and Escape while an overlay is open, then dismisses twice after it closes', async () => {
     overlayStore.open('settings');
     const onDismiss = vi.fn();
     const ui = renderFeature(<ReadinessPanel report={blockedReport()} onDismiss={onDismiss} />);
     await tick();
 
-    // The panel sits behind the overlay; keys aimed at the overlay must not quit the app.
     ui.stdin.write('q');
     await tick();
     ui.stdin.write('\x1b');
     await tick();
     expect(onDismiss).not.toHaveBeenCalled();
 
-    // Closing the overlay hands input back to the panel and the same key is honoured.
     overlayStore.close();
     await tick();
     ui.stdin.write('q');
     await tick();
-    expect(onDismiss).toHaveBeenCalledOnce();
+    ui.stdin.write('\x1b');
+    await tick();
+    expect(onDismiss).toHaveBeenCalledTimes(2);
     ui.unmount();
   });
 });

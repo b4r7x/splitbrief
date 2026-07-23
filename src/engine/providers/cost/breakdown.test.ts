@@ -1,0 +1,639 @@
+import { describe, expect, it } from 'vitest';
+import { calculateCostBreakdown } from './breakdown.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { taskId } from '../../../core/schemas/task.js';
+
+describe('calculateCostBreakdown', () => {
+  it('all local (0 escalations) yields 100% localCompletionRate and positive savings', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 1_000_000,
+      implementerOutput: 500_000,
+    });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 5,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+    });
+    expect(result.localCompletionRate).toBe(1);
+    expect(result.savingsPercentage).toBeGreaterThan(0);
+  });
+
+  it('all escalated yields 0% localCompletionRate', () => {
+    const usage = makeUsage({
+      plannerInput: 500_000,
+      plannerOutput: 200_000,
+      escalationInput: 1_000_000,
+      escalationOutput: 500_000,
+    });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 3,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
+    expect(result.localCompletionRate).toBe(0);
+  });
+
+  it('mixed (5 local, 2 escalated out of 7) yields ~71.4% localCompletionRate', () => {
+    const usage = makeUsage({
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+      escalationInput: 100_000,
+      escalationOutput: 50_000,
+    });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 7,
+      escalatedCount: 2,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
+    expect(Math.abs(result.localCompletionRate - 0.7142857142857143)).toBeLessThan(0.001);
+  });
+
+  it('zero tasks yields 0% localCompletionRate without division by zero', () => {
+    const usage = makeUsage();
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 0,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
+    expect(result.localCompletionRate).toBe(0);
+    expect(result.savingsAmount).toBe(0);
+    expect(Number.isFinite(result.savingsPercentage)).toBe(true);
+  });
+
+  it('planner spend does not reduce implementer savings', () => {
+    const usage = makeUsage({
+      plannerInput: 10_000_000,
+      plannerOutput: 5_000_000,
+      implementerInput: 100,
+      implementerOutput: 50,
+    });
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+    });
+    expect(result.savingsAmount).toBeCloseTo(0.001022, 10);
+    expect(result.savingsPercentage).toBeGreaterThan(0);
+  });
+
+  it('treats CLI + local workflows as unpriced', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 5,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(result.totalActualCost).toBe(0);
+    expect(result.providerCosts).toBeUndefined();
+    expect(result.hasPricedUsage).toBe(false);
+    expect(result.hasSavingsEstimate).toBe(false);
+    expect(result.hasUnpricedUsage).toBe(true);
+  });
+
+  it('includes only API-priced providers in providerCosts', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 1_000_000,
+      implementerOutput: 500_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 5,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+    });
+
+    expect(result.providerCosts).toEqual({
+      deepseek: {
+        inputTokens: 1_000_000,
+        outputTokens: 500_000,
+        cost: result.actualImplementerCost,
+      },
+    });
+    expect(result.actualPlannerCost).toBe(0);
+    expect(result.actualImplementerCost).toBeGreaterThan(0);
+    expect(result.hasPricedUsage).toBe(true);
+    expect(result.hasSavingsEstimate).toBe(false);
+  });
+
+  it('computes savings only when the all-planner baseline is priced', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 1,
+      plannerTool: 'anthropic',
+      implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'deepseek-chat',
+    });
+
+    expect(result.actualPlannerCost).toBeGreaterThan(0);
+    expect(result.actualImplementerCost).toBeGreaterThan(0);
+    expect(result.hasSavingsEstimate).toBe(true);
+
+    expect(result.savingsAmount).toBeCloseTo(result.hypotheticalCost - result.totalActualCost, 10);
+    expect(result.savingsAmount).toBeGreaterThan(0);
+
+    expect(result.savingsPercentage).toBeCloseTo(
+      (result.savingsAmount / result.hypotheticalCost) * 100,
+      10,
+    );
+
+    expect(result.providerCosts).toEqual({
+      anthropic: {
+        inputTokens: 100_000,
+        outputTokens: 50_000,
+        cost: result.actualPlannerCost,
+      },
+      deepseek: {
+        inputTokens: 500_000,
+        outputTokens: 200_000,
+        cost: result.actualImplementerCost,
+      },
+    });
+  });
+
+  it('preserves negative savings when routed execution is more expensive than all-planner', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'deepseek',
+      plannerModel: 'deepseek-chat',
+      implementerTool: 'anthropic',
+      implementerModel: 'claude-sonnet-4-6',
+    });
+
+    expect(result.hasSavingsEstimate).toBe(true);
+    expect(result.savingsAmount).toBeCloseTo(result.hypotheticalCost - result.totalActualCost, 10);
+    expect(result.savingsAmount).toBeLessThan(0);
+    expect(result.savingsPercentage).toBeLessThan(0);
+  });
+
+  it('all-planner baseline includes planner spend without changing savings amount', () => {
+    const sharedImplementer = { implementerInput: 500_000, implementerOutput: 200_000 };
+
+    const low = calculateCostBreakdown({
+      tokenUsage: makeUsage({ plannerInput: 10_000, plannerOutput: 5_000, ...sharedImplementer }),
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'deepseek-chat',
+    });
+
+    const high = calculateCostBreakdown({
+      tokenUsage: makeUsage({
+        plannerInput: 1_000_000,
+        plannerOutput: 500_000,
+        ...sharedImplementer,
+      }),
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'deepseek-chat',
+    });
+
+    expect(high.hypotheticalCost).toBeGreaterThan(low.hypotheticalCost);
+    expect(low.savingsAmount).toBeCloseTo(high.savingsAmount, 10);
+    expect(low.hypotheticalCost).toBeCloseTo(
+      low.actualPlannerCost + low.savingsAmount + low.actualImplementerCost,
+      10,
+    );
+  });
+
+  it('treats agent-sdk planner as unpriced-meta with no savings estimate', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 0,
+      plannerTool: 'agent-sdk',
+      implementerTool: 'ollama',
+    });
+
+    expect(result.hasSavingsEstimate).toBe(false);
+    expect(result.savingsAmount).toBe(0);
+    expect(result.hypotheticalCost).toBe(0);
+    expect(result.totalActualCost).toBe(0);
+  });
+
+  it('merges priced planner and implementer usage when they share a provider', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 200_000,
+      implementerOutput: 100_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'deepseek',
+      implementerTool: 'deepseek',
+      plannerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-chat',
+    });
+
+    expect(result.providerCosts).toEqual({
+      deepseek: {
+        inputTokens: 300_000,
+        outputTokens: 150_000,
+        cost: result.totalActualCost,
+      },
+    });
+  });
+
+  it('uses per-task implementer metadata for mixed local and paid profile costs', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'local task',
+          method: 'local',
+          implementerTokens: 1_000_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'ollama',
+          model: 'qwen-local',
+        },
+        {
+          taskId: taskId('T002'),
+          taskTitle: 'paid task',
+          method: 'local',
+          implementerTokens: 1_000_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'deepseek',
+          model: 'deepseek-chat',
+        },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBeCloseTo(0.21, 10);
+    const deepseek = result.providerCosts?.['deepseek'];
+    if (!deepseek) throw new Error('expected deepseek provider costs');
+    expect(deepseek.inputTokens).toBeCloseTo(500_000, 10);
+    expect(deepseek.outputTokens).toBeCloseTo(500_000, 10);
+    expect(deepseek.cost).toBeCloseTo(0.21, 10);
+    expect(result.hasPricedUsage).toBe(true);
+    expect(result.hasUnpricedUsage).toBe(true);
+  });
+
+  it('does not price unknown per-task implementer usage with the fallback implementer model', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'unknown task',
+          method: 'local',
+          implementerTokens: 2_000_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'custom-agent',
+          model: 'private-model',
+        },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBe(0);
+    expect(result.providerCosts).toBeUndefined();
+    expect(result.hasPricedUsage).toBe(false);
+    expect(result.hasUnpricedUsage).toBe(true);
+  });
+
+  it('resolves task-level auto models against the recorded task tool', () => {
+    const usage = makeUsage({
+      implementerInput: 500_000,
+      implementerOutput: 500_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen-local',
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'paid auto task',
+          method: 'local',
+          implementerTokens: 1_000_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'deepseek',
+          model: 'auto',
+        },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBeCloseTo(0.21, 10);
+    expect(result.providerCosts?.['deepseek']?.cost).toBeCloseTo(0.21, 10);
+  });
+
+  it('prices empty taskBreakdowns as residual at the primary implementer identity', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+      taskBreakdowns: [],
+    });
+
+    expect(result.actualImplementerCost).toBeCloseTo(0.42, 10);
+    const deepseek = result.providerCosts?.['deepseek'];
+    if (!deepseek) throw new Error('expected deepseek provider costs');
+    expect(deepseek.inputTokens).toBeCloseTo(1_000_000, 10);
+    expect(deepseek.outputTokens).toBeCloseTo(1_000_000, 10);
+    expect(deepseek.cost).toBeCloseTo(0.42, 10);
+    expect(result.hasPricedUsage).toBe(true);
+    expect(result.isActualImplementerCostKnown).toBe(true);
+  });
+
+  it('books the residual leg at the primary identity when breakdowns cover only part of the spend', () => {
+    const usage = makeUsage({
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-chat',
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'escalated task',
+          method: 'escalated-full',
+          implementerTokens: 500_000,
+          escalationTokens: 0,
+          retryCount: 0,
+          tool: 'anthropic',
+          model: 'claude-sonnet-4-6',
+        },
+      ],
+    });
+
+    const anthropic = result.providerCosts?.['anthropic'];
+    if (!anthropic) throw new Error('expected anthropic provider costs');
+    expect(anthropic.inputTokens).toBeCloseTo(250_000, 10);
+    expect(anthropic.outputTokens).toBeCloseTo(250_000, 10);
+    expect(anthropic.cost).toBeCloseTo(4.5, 10);
+
+    const deepseek = result.providerCosts?.['deepseek'];
+    if (!deepseek) throw new Error('expected deepseek residual provider costs');
+    expect(deepseek.inputTokens).toBeCloseTo(750_000, 10);
+    expect(deepseek.outputTokens).toBeCloseTo(750_000, 10);
+    expect(deepseek.cost).toBeCloseTo(0.315, 10);
+
+    expect(result.actualImplementerCost).toBeCloseTo(4.815, 10);
+  });
+
+  it('includes cache-only task-aware implementer usage', () => {
+    const usage = makeUsage({
+      implementerCacheRead: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+      taskBreakdowns: [
+        {
+          taskId: taskId('T001'),
+          taskTitle: 'cache-only paid task',
+          method: 'local',
+          implementerTokens: 0,
+          escalationTokens: 0,
+          implementerCacheReadTokens: 1_000_000,
+          implementerCacheCreateTokens: 0,
+          retryCount: 0,
+          tool: 'anthropic',
+          model: 'claude-sonnet-4-6',
+        },
+      ],
+    });
+
+    expect(result.actualImplementerCost).toBeCloseTo(0.3, 10);
+    expect(result.isActualImplementerCostKnown).toBe(true);
+    expect(result.hasPricedUsage).toBe(true);
+    expect(result.hasUnpricedUsage).toBe(false);
+    expect(result.providerCosts).toEqual({
+      anthropic: {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 1_000_000,
+        cost: result.actualImplementerCost,
+      },
+    });
+  });
+
+  it('does not mark planner-only runs unpriced because the unused implementer is local', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 0,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+    });
+
+    expect(result.actualPlannerCost).toBeGreaterThan(0);
+    expect(result.actualImplementerCost).toBe(0);
+    expect(result.hasPricedUsage).toBe(true);
+    expect(result.hasUnpricedUsage).toBe(false);
+    expect(result.isTotalActualCostKnown).toBe(true);
+  });
+});
+
+describe('cache pricing', () => {
+  it('calculateCostBreakdown with cacheRead tokens + priced provider returns correct cacheReadSavings', () => {
+    // Sonnet 4.6: input=$3/MTok, cacheRead=$0.30/MTok => savings=$2.70/MTok of cache reads
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+      plannerCacheRead: 1_000_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'deepseek-chat',
+    });
+
+    // 1_000_000 cache read tokens at (3.00 - 0.30) = $2.70/MTok = $2.70 savings
+    expect(result.cacheReadSavings).toBeCloseTo(2.7, 10);
+    expect(result.cacheReadTokens).toBe(1_000_000);
+  });
+
+  it('calculateCostBreakdown with cacheRead tokens + unpriced provider returns no cacheReadSavings', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+      plannerCacheRead: 1_000_000,
+    });
+
+    // claude-code is unpriced-cli — no cacheReadPer1M
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    });
+
+    expect(result.cacheReadSavings).toBeUndefined();
+    expect(result.cacheReadTokens).toBe(1_000_000);
+  });
+
+  it('calculateCostBreakdown without cacheRead tokens returns no cacheReadSavings (backward compat)', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 3,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      implementerTool: 'deepseek',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'deepseek-chat',
+    });
+
+    expect(result.cacheReadSavings).toBeUndefined();
+    expect(result.cacheReadTokens).toBeUndefined();
+    expect(result.cacheWriteTokens).toBeUndefined();
+  });
+
+  it('calculateCostBreakdown accumulates cache savings across both planner and implementer', () => {
+    // Both planner and implementer are anthropic/sonnet
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 200_000,
+      implementerOutput: 80_000,
+      plannerCacheRead: 500_000,
+      implementerCacheRead: 500_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      implementerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerModel: 'claude-sonnet-4-6',
+    });
+
+    // (500k + 500k) @ $2.70/MTok = $2.70 total
+    expect(result.cacheReadSavings).toBeCloseTo(2.7, 10);
+    expect(result.cacheReadTokens).toBe(1_000_000);
+  });
+});

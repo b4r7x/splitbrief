@@ -1,43 +1,27 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { wireAppMouse } from '../../../app/mouse.js';
-import type { FilteredStdin, MouseEvent } from '../../../lib/terminal/filtered-stdin.js';
+import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
+import { handleWorkflowMouseWheel } from './use-mouse-scroll.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
-import { resetWorkflow } from '../../../stores/workflow/actions.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 
-function createMockFilteredStdin() {
-  let listener: ((event: MouseEvent) => void) | undefined;
+function wheelEvent(type: 'wheel-up' | 'wheel-down', x = 1, y = 1): MouseEvent {
   return {
-    filtered: {
-      stdin: process.stdin as unknown as NodeJS.ReadStream,
-      onMouse: (next: (event: MouseEvent) => void) => {
-        listener = next;
-        return () => {
-          listener = undefined;
-        };
-      },
-      activate: () => {},
-      isPasteActive: () => false,
-      disable: () => {},
-    } satisfies FilteredStdin,
-    emit: (type: 'wheel-up' | 'wheel-down', x = 1, y = 1) =>
-      listener?.({
-        type,
-        x,
-        y,
-        button: type === 'wheel-up' ? 64 : 65,
-        shift: false,
-        meta: false,
-        ctrl: false,
-      }),
+    type,
+    x,
+    y,
+    button: type === 'wheel-up' ? 64 : 65,
+    shift: false,
+    meta: false,
+    ctrl: false,
   };
 }
 
-describe('wireAppMouse workflow wheel handling', () => {
+describe('handleWorkflowMouseWheel', () => {
   beforeEach(() => {
     routerStore.reset();
     reviewStore.reset();
@@ -51,11 +35,8 @@ describe('wireAppMouse workflow wheel handling', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
     reviewStore.setReviewFile('spec.md', 100);
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit('wheel-down', 2, 7);
+    handleWorkflowMouseWheel(wheelEvent('wheel-down', 2, 7));
     expect(reviewStore.get().scrollOffset).toBe(1);
-    dispose();
   });
 
   it('scrolls the conversation even when touchpad wheel coordinates are outside the content rectangle', () => {
@@ -69,11 +50,8 @@ describe('wireAppMouse workflow wheel handling', () => {
       })),
     });
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit('wheel-up', 2, 1);
+    handleWorkflowMouseWheel(wheelEvent('wheel-up', 2, 1));
     expect(conversationScrollStore.get().scrollOffset).toBe(1);
-    dispose();
   });
 
   it('scrolls the conversation back toward the bottom on wheel-down', () => {
@@ -92,10 +70,7 @@ describe('wireAppMouse workflow wheel handling', () => {
       heightAtScroll: 20,
     });
 
-    const mock = createMockFilteredStdin();
-    const dispose = wireAppMouse(mock.filtered);
-    mock.emit('wheel-down', 2, 7);
+    handleWorkflowMouseWheel(wheelEvent('wheel-down', 2, 7));
     expect(conversationScrollStore.get().scrollOffset).toBe(0);
-    dispose();
   });
 });

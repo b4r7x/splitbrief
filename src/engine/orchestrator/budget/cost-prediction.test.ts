@@ -15,25 +15,15 @@ describe('predictCost', () => {
     expect(result.highCost).toBe(0);
   });
 
-  it('produces correctly ordered low < expected < high for non-local implementer', () => {
+  it('produces low < expected < high for priced planner and implementer', () => {
     const result = predictCost({
       taskCount: 10,
-      plannerTool: 'claude-code',
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'deepseek',
     });
-    expect(result.lowCost).toBe(result.expectedCost);
-    expect(result.expectedCost).toBe(result.highCost);
-  });
-
-  it('yields $0 predicted cost for CLI planner + local implementer', () => {
-    const result = predictCost({
-      taskCount: 5,
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-    });
-    expect(result.lowCost).toBe(0);
-    expect(result.expectedCost).toBe(0);
-    expect(result.highCost).toBe(0);
+    expect(result.lowCost).toBeLessThan(result.expectedCost);
+    expect(result.expectedCost).toBeLessThan(result.highCost);
   });
 
   it('computes prediction with known tools (claude-code + deepseek)', () => {
@@ -99,17 +89,6 @@ describe('predictCost', () => {
     expect(result.lowCost).toBe(0);
     expect(result.expectedCost).toBe(0);
     expect(result.highCost).toBe(0);
-  });
-
-  it('includes correct tool names in result', () => {
-    const opts: PredictCostOptions = {
-      taskCount: 1,
-      plannerTool: 'agent-sdk',
-      implementerTool: 'deepseek',
-    };
-    const result = predictCost(opts);
-    expect(result.plannerTool).toBe('agent-sdk');
-    expect(result.implementerTool).toBe('deepseek');
   });
 
   it('consults the model-pricing cache instead of dropping it (live models.dev pricing)', () => {

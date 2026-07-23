@@ -21,7 +21,7 @@ import { regenerateTasks } from './regen.js';
 import { buildTargetedRejectionComment } from './regen-targeted.js';
 import { readPersistedTasks, readTasksForApproval } from './io.js';
 import type { BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
-import { commitQueueMessagesDrained, readQueueForPrompt } from '../queue.js';
+import { commitQueueMessagesDrained, readQueueForPrompt } from '../queue/drain.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
 
 function publishBriefQualityFailure(bus: EventBus, phase: Phase, report: BriefQualityReport): void {

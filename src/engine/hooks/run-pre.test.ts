@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
@@ -80,8 +80,18 @@ function denyViaStdout(message?: string): HookCommandEntry {
   });
 }
 
-function nonZeroExitHook(): HookCommandEntry {
-  return makeCommandHookEntry({ command: 'false', on_failure: 'block' });
+function appendMarkerHook(marker: string, letter: string, deny = false): HookCommandEntry {
+  const stdout = deny
+    ? 'process.stdout.write(JSON.stringify({decision:"deny",message:"blocked after marker"}));'
+    : 'process.stdout.write(JSON.stringify({decision:"allow"}));';
+  return makeCommandHookEntry({
+    command: 'node',
+    args: [
+      '-e',
+      `require('node:fs').appendFileSync(${JSON.stringify(marker)}, ${JSON.stringify(letter)}); ${stdout}`,
+    ],
+    on_failure: 'block',
+  });
 }
 
 describe('runPreHooks', () => {
@@ -160,18 +170,23 @@ describe('runPreHooks', () => {
   });
 
   it('short-circuits after first deny+block — skips remaining hooks', async () => {
+    const marker = join(projectDir, 'hook-seq.txt');
     const hooks = trust({
-      pre_task: [denyViaStdout('first denied'), nonZeroExitHook()],
+      pre_task: [appendMarkerHook(marker, 'A', true), appendMarkerHook(marker, 'B')],
     });
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx());
     expect(result.allow).toBe(false);
-    expect(result.reason).toBe('first denied');
+    expect(readFileSync(marker, 'utf8')).toBe('A');
   });
 
   it('runs multiple hooks sequentially and allows if all pass', async () => {
-    const hooks = trust({ pre_task: [makeAllowHook(), makeAllowHook()] });
+    const marker = join(projectDir, 'hook-seq.txt');
+    const hooks = trust({
+      pre_task: [appendMarkerHook(marker, 'A'), appendMarkerHook(marker, 'B')],
+    });
     const result = await runPreHooks(hooks, 'pre_task', preTaskEvent, ctx());
     expect(result.allow).toBe(true);
+    expect(readFileSync(marker, 'utf8')).toBe('AB');
   });
 
   it('refuses a trusted command hook script after its bytes change', async () => {
@@ -208,5 +223,33 @@ describe('runPreHooks', () => {
     expect(result.allow).toBe(true);
     expect(result.warnings).toBeDefined();
     expect(result.warnings?.some((w) => w.includes('could not scan'))).toBe(true);
+  });
+
+  it('does not run user hooks after builtin block-secrets denies a commit', async () => {
+    const marker = join(projectDir, 'user-hook-ran');
+    const secretFile = join(projectDir, 'leak.ts');
+    writeFileSync(secretFile, 'const key = "AKIAIOSFODNN7EXAMPLE";\n');
+    const hooks = trust({
+      builtin: { 'block-secrets': true },
+      pre_commit: [
+        makeCommandHookEntry({
+          command: 'node',
+          args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')`],
+        }),
+      ],
+    });
+    const commitEvent: EngineEvent = {
+      type: 'git_commit',
+      ts: 1,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      message: 'feat: add infra',
+      file: 'leak.ts',
+    };
+
+    const result = await runPreHooks(hooks, 'pre_commit', commitEvent, ctx());
+
+    expect(result.allow).toBe(false);
+    expect(existsSync(marker)).toBe(false);
   });
 });

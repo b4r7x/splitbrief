@@ -5,24 +5,20 @@ import {
   markLifecycleInterrupted,
   updateStall,
 } from './lifecycle.js';
+import { addEvent } from './actions/event.js';
+import { markInterruptParked, markInterruptRequested } from './actions/interrupt.js';
+import { markInterruptResumed } from './actions/resume.js';
+import { resetWorkflow } from './actions/reset.js';
+import { makePlannerStatus, makePlannerText } from '#testing/helpers/events/planner.js';
 import {
-  addEvent,
-  markInterruptParked,
-  markInterruptRequested,
-  markInterruptResumed,
-  resetWorkflow,
-} from './actions.js';
-import {
-  makePlannerStatus,
-  makePlannerText,
   makeRunnerCallActivity,
   makeRunnerCallCompleted,
   makeRunnerCallError,
   makeRunnerCallStalled,
   makeRunnerCallStallCleared,
   makeRunnerCallStarted,
-  makeTaskStart,
-} from '#testing/helpers/events.js';
+} from '#testing/helpers/events/runner-call.js';
+import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
 
 describe('lifecycleStore', () => {

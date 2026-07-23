@@ -2,11 +2,8 @@ import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { publishWarningFromError } from '../events.js';
-import {
-  createEvidenceLedger,
-  mutateEvidenceLedger,
-  readEvidenceLedger,
-} from '../../../core/evidence/ledger.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import {
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
@@ -14,7 +11,7 @@ import {
 } from './task.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
 import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
-import type { ValidationResult } from '../validation-result.js';
+import type { ValidationResult } from '../validation/result.js';
 import type {
   ActionClass,
   TaskCompletionMethod,
@@ -22,7 +19,7 @@ import type {
   WorkflowMode,
 } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../brief-hash.js';
-import type { GateDecision } from '../approval/tiered-approval.js';
+import type { GateDecision } from '../approval/types.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 

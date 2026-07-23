@@ -19,7 +19,7 @@ import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { retryAndRecord } from './retry.js';
 
 // Escalation tiers run a full recursive createStagedProject copy; under parallel

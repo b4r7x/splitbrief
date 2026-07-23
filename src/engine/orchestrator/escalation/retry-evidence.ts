@@ -1,9 +1,9 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { getOrCreateLedger } from '../evidence/persistence.js';
-import { writeEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from '../evidence/approval.js';
-import type { GateDecision } from '../approval/tiered-approval.js';
+import type { GateDecision } from '../approval/types.js';
 import type { EscalationContext } from './types.js';
 
 export function persistRetryApprovalEvidence(

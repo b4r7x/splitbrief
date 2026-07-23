@@ -15,7 +15,8 @@ import { TASKS_FILE, SPEC_FILE, sessionDir } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import type { PlanOptions } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { makePassingTask } from '#testing/helpers/planning-phase.js';
+import { makePassingTask, makeBriefQualityFailureTask } from '#testing/helpers/planning-phase.js';
+import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 
 const TEST_METADATA = {
   plannerTool: 'claude-code',
@@ -248,5 +249,41 @@ describe('runQuickPlanning', () => {
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
     expect(result.cancelled).toBe(false);
     expect(result.state.phase).toBe('implementing');
+  });
+
+  it('blocks invalid briefs before implementing in quick mode', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [makeBriefQualityFailureTask()],
+        usage: { inputTokens: 50, outputTokens: 25 },
+        phases: [{ text: '# tasks', filename: TASKS_FILE }],
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({
+      workflow: { mode: 'quick', autoApproveSpec: true, autoApprovePlan: true },
+    });
+    const initial = createInitialState('feature');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expectBriefQualityBlocked(result, projectDir, sessionId, events);
   });
 });

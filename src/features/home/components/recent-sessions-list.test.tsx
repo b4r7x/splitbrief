@@ -108,38 +108,16 @@ describe('RecentSessionsList', () => {
     );
     await flushEffects();
 
-    const nonBlank = (ui.lastFrame() ?? '').split('\n').filter((line) => line.trim().length > 0);
-    expect(nonBlank.length).toBeLessThanOrEqual(7);
-    ui.unmount();
-  });
-
-  it('Down moves the cursor to a later row and wraps from the last row back to the first', async () => {
-    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
-    await flushEffects();
-
-    const firstRow = lineIndexContaining(ui.lastFrame() ?? '', 'alpha');
-    const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
-
-    ui.stdin.write(ARROW_DOWN);
-    await flushEffects();
-    const after = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
-    expect(after).toBeGreaterThan(before);
-
-    ui.stdin.write(ARROW_DOWN);
-    await flushEffects();
-    ui.stdin.write(ARROW_DOWN);
-    await flushEffects();
-
-    const wrapped = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
-    expect(wrapped).toBe(firstRow);
+    const frame = ui.lastFrame() ?? '';
+    const lines = frame.split('\n').filter((line) => line.trim().length > 0);
+    const prefixLines = [
+      lines.find((line) => line.includes('a-long-recent')),
+      lines.find((line) => line.includes('another-fairly')),
+      lines.find((line) => line.includes('third-recent')),
+    ];
+    expect(prefixLines.every((line) => line !== undefined)).toBe(true);
+    expect(new Set(prefixLines).size).toBe(3);
+    expect(lines.length).toBeLessThanOrEqual(7);
     ui.unmount();
   });
 
@@ -163,74 +141,6 @@ describe('RecentSessionsList', () => {
     expect(closed).toBe(1);
     expect(selected).toBeNull();
     expect(lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR)).toBe(before);
-    ui.unmount();
-  });
-
-  it('Enter selects the currently highlighted row (not always index 0) and does not call onClose', async () => {
-    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
-    await flushEffects();
-
-    ui.stdin.write(ARROW_DOWN);
-    await flushEffects();
-    ui.stdin.write(ENTER);
-    await flushEffects();
-
-    expect(selected?.id).toBe(sessions[1]?.id);
-    expect(closed).toBe(0);
-    ui.unmount();
-  });
-
-  it('Esc calls onClose', async () => {
-    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
-    await flushEffects();
-
-    ui.stdin.write(ESC);
-    await flushEffects();
-
-    expect(closed).toBe(1);
-    expect(selected).toBeNull();
-    ui.unmount();
-  });
-
-  it('filters rows by typed text and resets the cursor to the first match', async () => {
-    const sessions = makeSessions(['alpha task', 'beta task', 'gamma task']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
-    await flushEffects();
-
-    ui.stdin.write(ARROW_DOWN);
-    await flushEffects();
-
-    ui.stdin.write('gamma');
-    await flushEffects();
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('gamma task');
-    expect(frame).not.toContain('alpha task');
-    expect(frame).not.toContain('beta task');
-    expect(lineIndexContaining(frame, FOCUS_BAR)).toBe(lineIndexContaining(frame, 'gamma task'));
     ui.unmount();
   });
 

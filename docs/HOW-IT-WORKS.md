@@ -6,7 +6,7 @@ This is the data flow from CLI entry to workflow completion. You've read the [me
 
 ## CLI entry
 
-The user types `diptych start "add email validation"`. Execution begins in `src/cli.ts`, which creates a Commander program and registers subcommands. `start` is registered by `registerStartCommand()` in `src/cli/commands/start.ts` and is the default command — bare `diptych "feature"` hits the same path.
+The user types `diptych start "add email validation"`. Execution begins in `src/cli.ts`, which creates a Commander program and registers subcommands. `start` is registered by `registerStartCommand()` in `src/cli/commands/start/register.ts` and is the default command — bare `diptych "feature"` hits the same path.
 
 The handler validates flag combinations first — `--json` and `--rpc` are mutually exclusive, `--detach` requires a feature argument. If the user provided `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) reads them, inlines text files into `<user-context>`, and queues image files in the attachments store. Then the handler branches into one of four paths:
 
@@ -26,7 +26,7 @@ graph TD
 
 **`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
 
-**`--rpc`** runs via `runRpc()` (`src/cli/rpc/run.ts`). Bidirectional NDJSON — the caller sends gate responses, diptych sends events back. Gates are interactive.
+**`--rpc`** runs via `runRpc()` (`src/cli/rpc/run/host.ts`). Bidirectional NDJSON — the caller sends gate responses, diptych sends events back. Gates are interactive.
 
 **Interactive** (the default) is the path most users take. It calls `setupWorkflow()` (`src/cli/setup.ts`) to resolve the project directory, check for a git repo, and create a default config if none exists. If no config exists and no CLI overrides were provided, it returns `needsSetup: true` and the router opens the setup screen instead of the workflow.
 
@@ -44,13 +44,13 @@ After setup, the handler calls `initStores()` and then `renderApp()`.
 
 **`ensureHooksTrusted()`** (`src/cli/hook-trust-prompt.ts`) checks whether the project's configured hooks have been approved. If not, it prompts the user before continuing. This runs after config is loaded (hooks come from config) but before discovery (discovery shouldn't run under untrusted hooks).
 
-**`loadDiscovery()`** runs last because it's async and independent of config/session state. It does three things in parallel: discovers planner skills via `discoverSkills()` (`src/engine/skill-discovery.ts`), detects provider capabilities via `detectCapabilities()` (`src/engine/providers/registry.ts`), and detects available CLI tools and models via `loadDetectionIntoStores()`. Skill sources depend on the planner: `.claude/skills/`, `.diptych/skills/`, global tool skill dirs, `AGENTS.md`, or `CONVENTIONS.md`.
+**`loadDiscovery()`** runs last because it's async and independent of config/session state. It does three things in parallel: discovers planner skills via `discoverSkills()` (`src/engine/skill-discovery.ts`), detects provider capabilities via `detectCapabilities()` (`src/engine/providers/capabilities.ts`), and detects available CLI tools and models via `loadDetectionIntoStores()`. Skill sources depend on the planner: `.claude/skills/`, `.diptych/skills/`, global tool skill dirs, `AGENTS.md`, or `CONVENTIONS.md`.
 
 ---
 
 ## TUI rendering
 
-`renderApp()` in `src/cli/render.ts` mounts the Ink app. It tries fullscreen mode via `withFullScreen()` from `fullscreen-ink` — if that fails (unsupported terminal, broken escape codes), it falls back to inline rendering. Mouse input is wired through a filtered stdin that strips mouse escape sequences before they reach Ink's input handler.
+`renderApp()` in `src/cli/render/app.ts` mounts the Ink app. It tries fullscreen mode via `withFullScreen()` from `fullscreen-ink` — if that fails (unsupported terminal, broken escape codes), it falls back to inline rendering. Mouse input is wired through a filtered stdin that strips mouse escape sequences before they reach Ink's input handler.
 
 **`src/app/root.tsx`** is the root component. It reads `routerStore` for the current screen and `overlayStore` for any active overlay, wires runtime commands via `useRuntimeCommands()` (`src/app/command-context.ts`), binds app-wide keys via `useAppKeys()` (`src/app/keys.ts`), and renders `<AppProvider>` (`app/provider.tsx`, today only `<ThemeProvider>`) wrapping `<Router/>` (`app/router.tsx`), which composes the page files and returns `<Layout screen={…} overlay={…}/>`.
 
@@ -134,7 +134,7 @@ The loop iterates tasks in order (tasks are already topologically sorted by `dep
 3. Runs pre-task hooks if configured
 4. Calls `runImplementation()` — the implementer receives the task brief and produces code
 5. Applies changed files — for `api` and `shell` backends, code is extracted from the response; for `cli`, `agent`, and `agent-sdk` backends, changes are detected via git diff
-6. Runs validation: typecheck, then lint, then test (`src/engine/orchestrator/validation.ts`). The pipeline stops on the first failure.
+6. Runs validation: typecheck, then lint, then test (`src/engine/orchestrator/validation/run.ts`). The pipeline stops on the first failure.
 7. On pass: commits (if per-task commit strategy is configured), transitions to `VALIDATION_PASS`, records evidence, runs drift chain analysis
 8. On fail: retries with the error message (up to the configured retry count), then escalates through tiers if retries are exhausted
 
@@ -164,7 +164,7 @@ graph LR
     Lifecycle --> React
 ```
 
-**`addEvent()`** in `src/stores/workflow/actions.ts` is the bridge between engine events and React state. It updates four stores in a fixed order: events, tasks, tokens, lifecycle. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all four stores updated.
+**`addEvent()`** in `src/stores/workflow/actions/event.ts` is the bridge between engine events and React state. It updates four stores in a fixed order: events, tasks, tokens, lifecycle. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all four stores updated.
 
 One optimization: `cost_update` events take a fast path that only touches the tokens store, skipping the events/tasks/lifecycle writes.
 
@@ -180,15 +180,15 @@ Every workflow run produces files on disk under `.diptych/sessions/<id>/`:
 
 **`state.json`** — the source of truth for resume. Overwritten on every phase transition via `transitionAndSave()` (`src/engine/orchestrator/state-ops.ts`), which calls `saveState()` (`src/core/state/persistence.ts`). Contains the current phase, task list with statuses, token usage, message queue, and any pending recovery state.
 
-**`session.jsonl`** — the full event log, append-only. The JSONL sink writes every `EngineEvent` as it's published. This is the audit trail and the source for context rebuild when resuming with a stateless backend.
+**`session.jsonl`** — the full event log, append-only. The JSONL sink writes every `EngineEvent` as it's published (`src/core/sessions/log-writer.ts`). This is the audit trail and the source for context rebuild when resuming with a stateless backend.
 
 **`research.md`, `spec.md`, `plan.md`, `tasks.md`** — planning artifacts, written once at the end of each planning phase when the selected mode produces them. The user reviews applicable artifacts during approval gates.
 
-**`summary.json`** — final cost, timing, task outcomes. Written once at workflow end by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle.ts`), which also updates cumulative stats and clears the `.diptych/active` lock file.
+**`summary.json`** — final cost, timing, task outcomes. Written once at workflow end by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also updates cumulative stats and clears the `.diptych/active` lock file.
 
 **`snapshots/`** — content-addressed working-tree snapshots for undo, created at configurable points (pre-task, post-task, pre-final-review).
 
-**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.diptych/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `diptych continue <session-id>` when the saved state is resumable.
+**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.diptych/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `diptych continue <session-id>` when the saved state is resumable.
 
 ---
 
@@ -230,7 +230,7 @@ The orchestrator then publishes `workflow_resumed` and picks up from the saved p
 
 **`diptych spec <feature>`** (`src/cli/commands/spec.ts`) -- runs planning phases only (research, spec, plan, tasks) and exits without implementation. Produces the same planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) as a full run.
 
-**`diptych continue [alias]`** (`src/cli/commands/continue.ts`) -- continues a session by numeric alias from `diptych ps`, by session ID, or by active/single-running discovery. It attaches when the target is running and resumes saved state otherwise.
+**`diptych continue [alias]`** (registered in `src/cli/commands/continue/register.ts`) -- continues a session by numeric alias from `diptych ps`, by session ID, or by active/single-running discovery. It attaches when the target is running and resumes saved state otherwise.
 
 ---
 

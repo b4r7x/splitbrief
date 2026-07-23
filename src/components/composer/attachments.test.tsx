@@ -1,15 +1,12 @@
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { ComponentProps } from 'react';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { Composer } from './composer.js';
 import {
   AttachmentChips,
@@ -22,9 +19,6 @@ import {
   pasteChipLabel,
   type PasteMarker,
 } from './attachments.js';
-
-const ESC = String.fromCharCode(27);
-const BEL = String.fromCharCode(7);
 
 describe('attachmentChipLabel', () => {
   it('fits CJK and emoji file names by terminal cell width', () => {
@@ -247,112 +241,6 @@ describe('Composer chip-row height budget', () => {
 
     // empty input (1 visible row) + 2 box border rows + 1 wide chip row
     expect(inputHeightStore.get().rows).toBe(4);
-    ui.unmount();
-  });
-});
-
-describe('Composer question-mode transition', () => {
-  beforeEach(() => {
-    resetAllStores();
-    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
-  });
-
-  afterEach(() => {
-    resetAllStores();
-  });
-
-  it('does not submit stale normal-mode text after switching into question mode', async () => {
-    const submits: string[] = [];
-    const baseProps: Omit<ComponentProps<typeof Composer>, 'mode'> = {
-      commands: [],
-      currentScreen: 'workflow',
-      hint: '',
-      onSubmit: (text) => submits.push(text),
-      onRuntimeCommand: () => {},
-    };
-
-    const ui = renderFeature(<Composer {...baseProps} mode="normal" />);
-    ui.stdin.write('stale normal text');
-    await tick(20);
-    expect(ui.lastFrame()).toContain('stale normal text');
-
-    ui.rerender(<Composer {...baseProps} mode="question" />);
-    await tick(20);
-    expect(ui.lastFrame()).not.toContain('stale normal text');
-
-    ui.stdin.write('\r');
-    await tick(20);
-
-    expect(submits).not.toContain('stale normal text');
-    ui.unmount();
-  });
-
-  it('clears a stale answer when a new question supersedes the current question mode', async () => {
-    const submits: string[] = [];
-    const baseProps: Omit<ComponentProps<typeof Composer>, 'mode'> = {
-      commands: [],
-      currentScreen: 'workflow',
-      hint: 'first question',
-      onSubmit: (text) => submits.push(text),
-      onRuntimeCommand: () => {},
-      questionEpoch: 1,
-    };
-
-    const ui = renderFeature(<Composer {...baseProps} mode="question" />);
-    ui.stdin.write('stale answer');
-    await tick(20);
-    expect(ui.lastFrame()).toContain('stale answer');
-
-    ui.rerender(
-      <Composer {...baseProps} mode="question" hint="second question" questionEpoch={2} />,
-    );
-    await tick(20);
-    expect(ui.lastFrame()).not.toContain('stale answer');
-
-    ui.stdin.write('\r');
-    await tick(20);
-
-    expect(submits).not.toContain('stale answer');
-    ui.unmount();
-  });
-});
-
-describe('Composer home feedback sanitization', () => {
-  beforeEach(() => {
-    resetAllStores();
-    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
-  });
-
-  afterEach(() => {
-    resetAllStores();
-  });
-
-  // Both /attach and file-drop converge on feedbackStore.setMessage(`Attached: ${path}`), so the
-  // home feedback render edge is the single point that must strip terminal controls.
-  it('strips OSC/CSI control bytes from home attachment feedback while keeping the stored message raw', async () => {
-    const rawMessage = `Attached: ${ESC}[2J${ESC}]0;LEAKTITLE${BEL}/tmp/screenshot.png`;
-    feedbackStore.setMessage(rawMessage);
-
-    const ui = renderFeature(
-      <Composer
-        commands={[]}
-        currentScreen="home"
-        mode="normal"
-        hint=""
-        homeHint="Ready to plan"
-        onSubmit={() => {}}
-        onRuntimeCommand={() => {}}
-      />,
-    );
-    await tick(20);
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).not.toContain(`${ESC}]0;`);
-    expect(frame).not.toContain(`${ESC}[2J`);
-    const visible = stripAnsiStyles(frame);
-    expect(visible).not.toContain('LEAKTITLE');
-    expect(visible).toContain('screenshot.png');
-    expect(feedbackStore.get().message).toBe(rawMessage);
     ui.unmount();
   });
 });

@@ -3,10 +3,8 @@ import { flushEffects } from '../../helpers/ink.js';
 import type { CheckpointDefinition, ScenarioDefinition } from '../contracts/catalog.js';
 import { formatViewport, type Viewport } from '../contracts/geometry.js';
 import type { CheckpointPredicate } from '../fixtures/common.js';
-import {
-  workflowCheckpointPredicates,
-  workflowFixtureProjections,
-} from '../fixtures/workflow-fixtures.js';
+import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
+import { workflowCheckpointPredicates } from '../fixtures/workflow/registry.js';
 
 export interface WaitForCheckpointOptions {
   readonly scenario: ScenarioDefinition;

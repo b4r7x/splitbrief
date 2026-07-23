@@ -1,8 +1,12 @@
 import type { Phase } from '../../src/core/schemas/enums.js';
 import { projectRunnerCallEvent } from '../../src/engine/calls/event-projection.js';
 import type { RunnerCallEvent } from '../../src/engine/calls/types.js';
-import { addEvent, resetWorkflow } from '../../src/stores/workflow/actions.js';
-import { operationsStore, type OperationsState } from '../../src/stores/workflow/operations.js';
+import { addEvent } from '../../src/stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../src/stores/workflow/actions/reset.js';
+import {
+  operationsStore,
+  type OperationsState,
+} from '../../src/stores/workflow/operations/state.js';
 
 export type RunnerCallErrorEvent = Extract<RunnerCallEvent, { type: 'call_error' }>;
 export type RunnerCallTerminalEvent = Extract<

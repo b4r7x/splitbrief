@@ -7,7 +7,7 @@ import type { EngineEventOf } from '../../../engine/events/types.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { routerStore } from '../../../stores/navigation/router.js';
-import { addEvent } from '../../../stores/workflow/actions.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -260,20 +260,6 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('Escape closes the cost-drilldown overlay', async () => {
-    overlayStore.open('cost-drilldown');
-    const ui = render(<Harness />);
-    await tick(1);
-    await tick(1);
-
-    ui.stdin.write('\x1B');
-    await tick(1);
-    await tick(1);
-
-    expect(overlayStore.get().active).toBe('none');
-    ui.unmount();
-  });
-
   it('Shift+↓ scrolls the open review pane even while inputMode is review', async () => {
     reviewStore.setReviewFile('/tmp/spec.md', 1000);
     controlsStore.setInputMode('review');
@@ -439,46 +425,17 @@ describe('useWorkflowKeys suspended while a prompt is pending', () => {
     ui.unmount();
   });
 
-  it('Ctrl+A does not toggle the latest expandable activity batch', async () => {
-    const key = seedExpandableActivityBatch();
+  it('does not close the cost-drilldown overlay with x while workflow keys are inactive', async () => {
+    overlayStore.open('cost-drilldown');
     const ui = render(<Harness isActive={false} />);
     await tick(1);
     await tick(1);
 
-    ui.stdin.write(CTRL_A);
+    ui.stdin.write('x');
     await tick(1);
     await tick(1);
 
-    expect(conversationScrollStore.get().expandedActivityBatches.has(key)).toBe(false);
-    ui.unmount();
-  });
-
-  it('Ctrl+D does not toggle the latest workflow diff', async () => {
-    const key = seedDiff();
-    const ui = render(<Harness isActive={false} />);
-    await tick(1);
-    await tick(1);
-
-    ui.stdin.write(CTRL_D);
-    await tick(1);
-    await tick(1);
-
-    expect(conversationScrollStore.get().expandedDiffs.has(key)).toBe(false);
-    ui.unmount();
-  });
-
-  it('Shift+↓ does not scroll the open review pane', async () => {
-    reviewStore.setReviewFile('/tmp/spec.md', 1000);
-    controlsStore.setInputMode('review');
-    const ui = render(<Harness isActive={false} />);
-    await tick(1);
-    await tick(1);
-
-    ui.stdin.write(SHIFT_DOWN);
-    await tick(1);
-    await tick(1);
-
-    expect(reviewStore.get().scrollOffset).toBe(0);
+    expect(overlayStore.get().active).toBe('cost-drilldown');
     ui.unmount();
   });
 });

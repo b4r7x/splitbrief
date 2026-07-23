@@ -2,7 +2,7 @@ import { Box } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';
 import { useTheme } from '../../../components/theme.js';
 import { PromptBody } from './prompt-body.js';
-import { QUESTION_PROMPT_HORIZONTAL_CHROME } from '../prompt-rows.js';
+import { QUESTION_PROMPT_HORIZONTAL_CHROME } from '../prompt-rows/question.js';
 
 export function QuestionPrompt({
   hint,

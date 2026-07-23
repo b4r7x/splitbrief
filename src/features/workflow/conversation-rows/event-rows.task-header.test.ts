@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { makePlannerText, makeTaskStart } from '#testing/helpers/events.js';
+import { makePlannerText } from '#testing/helpers/events/planner.js';
+import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { rowText } from './row-format.js';
+import { rowText } from './row-format/rows.js';
 import type { ConversationRow } from './types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
@@ -123,22 +124,6 @@ describe('eventRows task header and planner phase header', () => {
     for (const rowValue of rows) {
       expect(rowValue.kind).toBe('task-header');
     }
-  });
-
-  it('prepends Research header for researching-phase markdown planner text', () => {
-    const event = makeMarkdownPlannerText({ phase: 'researching' });
-    const rows = eventRows({
-      event,
-      globalIndex: 0,
-      expanded: false,
-      ctx: { width: 80, viewportRows: 20, streaming },
-    });
-
-    const first = rows[0];
-    expect(first?.kind).toBe('message');
-    expect(rowText(first ?? { key: 'missing', kind: 'message', segments: [] })).toBe('Research');
-    expect(rowText(first ?? { key: 'missing', kind: 'message', segments: [] })).not.toBe('BRIEF');
-    expect(first?.segments).toContainEqual({ text: 'Research', tone: 'planner', bold: true });
   });
 
   it('prepends a planner phase header (Plan, planner tone, bold) for planning markdown', () => {

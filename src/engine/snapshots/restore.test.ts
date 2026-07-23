@@ -46,6 +46,8 @@ describe('restoreSnapshot — from baseline', () => {
     expect(result.conflictedPaths).toHaveLength(0);
     expect(result.forcedPaths).toHaveLength(0);
     expect(result.missingSnapshotFiles).toHaveLength(0);
+    expect(result.extraneousPaths).toHaveLength(0);
+    expect(result.deletedPaths).toHaveLength(0);
     expect(result.restoredPaths.sort()).toEqual(expect.arrayContaining(['a.ts', 'b.ts']));
   });
 });
@@ -219,7 +221,10 @@ describe('restoreSnapshot — missing baseline', () => {
 
     await expect(
       restoreSnapshot({ projectDir: tmp, sessionId: 'sess-01', idOrName: 'fake-snap' }),
-    ).rejects.toThrow('Baseline snapshot missing for session sess-01. Cannot restore.');
+    ).rejects.toMatchObject({
+      kind: 'snapshot-baseline-missing',
+      data: { sessionId: 'sess-01' },
+    });
   });
 });
 
@@ -240,7 +245,10 @@ describe('restoreSnapshot — lock release on error', () => {
 
     await expect(
       restoreSnapshot({ projectDir: tmp, sessionId: 'sess-01', idOrName: 'snap-x' }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({
+      kind: 'snapshot-baseline-missing',
+      data: { sessionId: 'sess-01' },
+    });
 
     // Lock should be released — can acquire again
     const { acquireSnapshotLock } = await import('./lock.js');
@@ -277,9 +285,10 @@ describe('resolveSnapshot', () => {
   it('throws on zero name matches', async () => {
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    await expect(resolveSnapshot(tmp, 'sess-01', 'nonexistent')).rejects.toThrow(
-      'No snapshot found with id or name: nonexistent',
-    );
+    await expect(resolveSnapshot(tmp, 'sess-01', 'nonexistent')).rejects.toMatchObject({
+      kind: 'snapshot-not-found',
+      data: { idOrName: 'nonexistent' },
+    });
   });
 
   it('throws on ambiguous name matches (two snapshots, same name)', async () => {
@@ -287,14 +296,27 @@ describe('resolveSnapshot', () => {
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     await writeFile(join(tmp, 'x.ts'), 'v2');
-    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'dup' });
+    const firstDup = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'dup',
+    });
 
     await writeFile(join(tmp, 'x.ts'), 'v3');
-    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual', name: 'dup' });
+    const secondDup = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+      name: 'dup',
+    });
 
-    await expect(resolveSnapshot(tmp, 'sess-01', 'dup')).rejects.toThrow(
-      "Ambiguous snapshot name 'dup'",
-    );
+    const expectedIds = [firstDup.manifest.id, secondDup.manifest.id].sort().join(', ');
+
+    await expect(resolveSnapshot(tmp, 'sess-01', 'dup')).rejects.toMatchObject({
+      kind: 'snapshot-name-ambiguous',
+      data: { idOrName: 'dup', ids: expectedIds },
+    });
   });
 });
 
@@ -455,24 +477,6 @@ describe('restoreSnapshot — extraneous files created after snapshot', () => {
     expect(result.extraneousPaths).toContain('created-later.ts');
     expect(result.deletedPaths).toContain('created-later.ts');
     await expect(readFile(join(tmp, 'created-later.ts'), 'utf-8')).rejects.toThrow();
-  });
-
-  it('reports no extraneous paths when every tracked file is present in the snapshot', async () => {
-    await writeFile(join(tmp, 'only.ts'), 'only');
-    const baseline = await createSnapshot({
-      projectDir: tmp,
-      sessionId: 'sess-01',
-      phase: 'manual',
-    });
-
-    const result = await restoreSnapshot({
-      projectDir: tmp,
-      sessionId: 'sess-01',
-      idOrName: baseline.manifest.id,
-    });
-
-    expect(result.extraneousPaths).toHaveLength(0);
-    expect(result.deletedPaths).toHaveLength(0);
   });
 });
 

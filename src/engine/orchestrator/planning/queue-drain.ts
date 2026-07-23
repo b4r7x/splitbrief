@@ -1,6 +1,7 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
-import { drainQueue, formatDrainedMessages } from '../queue.js';
+import { drainQueue } from '../queue/drain.js';
+import { formatDrainedMessages } from '../queue/prompt.js';
 
 export function drainAndFormat(
   projectDir: string,

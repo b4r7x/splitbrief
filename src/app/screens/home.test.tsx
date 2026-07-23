@@ -116,6 +116,7 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('__|_||_|');
+    expect(frame.includes('── diptych ──')).toBe(false);
     expect(frame).toContain('standard');
     expect(frame).toContain('No recent sessions');
     ui.unmount();
@@ -232,18 +233,6 @@ describe('HomeScreen', () => {
       .split('\n')
       .filter((line) => frame.includes(line.trim()));
     expect(renderedLogoLines.length).toBeGreaterThanOrEqual(5);
-    ui.unmount();
-  });
-
-  it('renders ASCII art on medium terminals', async () => {
-    terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
-
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
-    await flushEffects();
-
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('__|_||_|');
-    expect(frame.includes('── diptych ──')).toBe(false);
     ui.unmount();
   });
 

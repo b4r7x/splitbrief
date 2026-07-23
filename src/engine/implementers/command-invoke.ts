@@ -3,7 +3,7 @@ import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import type { ChangeDetector } from '../change-detection.js';
-import { createImplementerBase } from './base.js';
+import { createImplementerBase } from './pipeline/run.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { invokeCommandBasedRunner } from '../runners/command-based.js';
 

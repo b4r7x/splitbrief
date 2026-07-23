@@ -15,7 +15,7 @@ import {
   createWorkflowBaseFixture,
   teardownVisualFixture,
 } from './fixtures/screen-fixtures.js';
-import { createWorkflowFixtureAppDeps } from './fixtures/workflow-fixtures.js';
+import { createWorkflowFixtureAppDeps } from './fixtures/workflow/setup.js';
 
 interface FixtureCase {
   readonly scenarioId: string;

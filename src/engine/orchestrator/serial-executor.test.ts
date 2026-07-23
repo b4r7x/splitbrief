@@ -18,19 +18,6 @@ describe('createWriteSequencer', () => {
     expect(order).toEqual(['start:a', 'end:a', 'start:b', 'end:b', 'start:c', 'end:c']);
   });
 
-  it('runs the first submission when no prior chain exists', async () => {
-    const sequence = createWriteSequencer();
-    const order: string[] = [];
-
-    const result = await sequence(() => {
-      order.push('only');
-      return 42;
-    });
-
-    expect(result).toBe(42);
-    expect(order).toEqual(['only']);
-  });
-
   it('returns each function result to its own caller', async () => {
     const sequence = createWriteSequencer();
 

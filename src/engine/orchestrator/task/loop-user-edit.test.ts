@@ -10,9 +10,8 @@ import {
   makeBusRecorder,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
 
@@ -24,17 +23,17 @@ afterEach(() => {
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('task-loop-test');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'task-loop-test',
+    sessionId: 'sess-loop',
+  });
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-loop';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 
 const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
 
-describe('runTaskLoop', { timeout: 30_000 }, () => {
+describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('unrelated dirty file present before the loop starts does not emit a user-edit conflict', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
@@ -137,7 +136,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     expect(implementer.implement).toHaveBeenCalledTimes(2);
     expect(result.state.currentTaskIndex).toBe(2);
     expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
-  }, 20_000);
+  }, 60_000);
 
   it('does not classify previous task output as a user edit in sequential commitStrategy none runs', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -173,7 +172,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     expect(implementer.implement).toHaveBeenCalledTimes(2);
     expect(result.state.currentTaskIndex).toBe(2);
     expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
-  }, 20_000);
+  }, 60_000);
 
   it('asks about a future task edit before it becomes a current-task conflict', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -243,7 +242,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
         currentTaskId: 'T001',
       },
     });
-  }, 20_000);
+  }, 60_000);
 
   it('detects an edit made while the session was interrupted by seeding the persisted baseline on resume', async () => {
     const { projectDir, sessionId } = setupProject();

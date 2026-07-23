@@ -12,7 +12,7 @@ Every run writes its full `EngineEvent` stream to:
 .diptych/sessions/<session-id>/session.jsonl
 ```
 
-One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` through the protected session-log appender in `src/core/state/persistence.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
+One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` through the protected session-log appender in `src/core/sessions/log-writer.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
 
 Inspect with `jq`:
 
@@ -81,7 +81,7 @@ There is no `debug` package / namespace logger in diptych today. The diagnostic 
 |---|---|---|
 | `OTEL_TRACES_EXPORTER=console` | Bootstrap built-in OTel console exporter | `src/lib/otel.ts` |
 | `DIPTYCH_OTEL_EXPORTER=console` | Alias for the above | `src/lib/otel.ts` |
-| `DIPTYCH_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/registry.ts` |
+| `DIPTYCH_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
 
 For finer-grained traces, use the event log or OTel spans. API-key-bearing env vars (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc.) are listed in [CONFIGURATION.md](./CONFIGURATION.md) — missing keys surface as loud config-validation warnings.

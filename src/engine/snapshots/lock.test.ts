@@ -43,9 +43,9 @@ describe('acquireSnapshotLock', () => {
   it('throws when lock already held', async () => {
     const release = await acquireSnapshotLock(tmp, 'sess-01');
     try {
-      await expect(acquireSnapshotLock(tmp, 'sess-01')).rejects.toThrow(
-        'Another snapshot operation is in progress for this session',
-      );
+      await expect(acquireSnapshotLock(tmp, 'sess-01')).rejects.toMatchObject({
+        kind: 'snapshot-lock-busy',
+      });
     } finally {
       await release();
     }

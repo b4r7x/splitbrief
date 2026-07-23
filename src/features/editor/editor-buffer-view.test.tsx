@@ -48,6 +48,11 @@ describe('EditorBufferView', () => {
     // The caret renders as an inverse-styled cell (REQ-034): the seam space carries a background
     // style, so the raw (styled) frame differs from the stripped frame on the first row.
     expect(frame.split('\n')[0]).not.toBe('ABCDEFGH ');
+    // Absolute cursor positioning (CUP/HVP/DECSLRM) must not appear in captured terminal output;
+    // SGR styling for the inverse caret is allowed.
+    const esc = String.fromCharCode(0x1b);
+    expect(frame).not.toMatch(new RegExp(`${esc}\\[[0-9]*;?[0-9]*[Hf]`));
+    expect(frame).not.toMatch(new RegExp(`${esc}\\[[0-9]+;[0-9]+s`));
   });
 
   it('wheel-scrolls the viewport away from the caret to reveal top-of-document rows (REQ-030)', async () => {

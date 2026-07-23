@@ -34,6 +34,10 @@ describe('createIpcConnection', () => {
   it('reassembles a server event frame whose multibyte payload is split across data chunks', async () => {
     const events: EngineEvent[] = [];
     const message = '日本語のメッセージ';
+    let resolveExpectedWarning: () => void;
+    const expectedWarning = new Promise<void>((resolve) => {
+      resolveExpectedWarning = resolve;
+    });
 
     const serverGotAuth = new Promise<void>((resolveAuth) => {
       void startServer((socket) => {
@@ -55,7 +59,15 @@ describe('createIpcConnection', () => {
           authToken: 'token',
           callbacks: {
             setState: () => undefined,
-            onEvent: (event) => events.push(event),
+            onEvent: (event) => {
+              events.push(event);
+              if (
+                event.type === 'warning' &&
+                (event as Extract<EngineEvent, { type: 'warning' }>).message === message
+              ) {
+                resolveExpectedWarning();
+              }
+            },
             hasPromptHandler: () => false,
             handlePromptRequest: () => Promise.reject(new Error('no prompt handler')),
             ownsSocket: () => true,
@@ -70,7 +82,7 @@ describe('createIpcConnection', () => {
     });
 
     await serverGotAuth;
-    await new Promise((r) => setTimeout(r, 100));
+    await expectedWarning;
 
     const warning = events.find((e) => e.type === 'warning');
     expect(warning).toBeDefined();

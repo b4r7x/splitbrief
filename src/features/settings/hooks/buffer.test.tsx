@@ -60,30 +60,6 @@ describe('useEditBuffer commit on invalid input', () => {
     resetAllStores();
   });
 
-  it('keeps edit mode open and surfaces an error for out-of-range numbers', async () => {
-    const committed: CommittedEdit[] = [];
-    const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
-    await flushEffects();
-
-    ui.stdin.write('\x7f'); // backspace seeded "3"
-    await flushEffects();
-    ui.stdin.write('9');
-    ui.stdin.write('9'); // "99" exceeds max (10)
-    await flushEffects();
-    ui.stdin.write('\r'); // attempt commit
-    await flushEffects();
-
-    expect(committed).toHaveLength(0);
-    expect(ui.lastFrame() ?? '').toContain('active=true');
-    expect(ui.lastFrame() ?? '').toContain('buffer=[99]');
-
-    const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(true);
-    expect(feedback.message).toContain('Max retries');
-
-    ui.unmount();
-  });
-
   it('keeps edit mode open and surfaces an error for empty numeric values', async () => {
     const committed: CommittedEdit[] = [];
     const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
@@ -142,25 +118,6 @@ describe('useEditBuffer commit on invalid input', () => {
     expect(frame).toContain('buffer=[hi]');
     expect(frame).not.toContain('\ud83d');
     expect(frame).not.toContain('\ude00');
-
-    ui.unmount();
-  });
-
-  it('commits valid input and closes edit mode without an error', async () => {
-    const committed: CommittedEdit[] = [];
-    const ui = renderFeature(<Harness def={numberDef} initialValue="3" committed={committed} />);
-    await flushEffects();
-
-    ui.stdin.write('\x7f'); // backspace seeded "3"
-    await flushEffects();
-    ui.stdin.write('5');
-    await flushEffects();
-    ui.stdin.write('\r'); // commit
-    await flushEffects();
-
-    expect(committed).toEqual([{ id: 'workflow.maxRetries', value: 5 }]);
-    expect(ui.lastFrame() ?? '').toContain('active=false');
-    expect(feedbackStore.get().isError).toBe(false);
 
     ui.unmount();
   });

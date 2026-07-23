@@ -17,7 +17,6 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { ANALYZE_FILE, sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
-import { extractJsonBlock } from '../../../utils/extract-json-block.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
 import type { OrchestratorCallbacks } from '../types.js';
@@ -167,37 +166,13 @@ async function runSpeckit(opts: RunOpts = {}) {
   return { result, projectDir, sessionId, events, planner };
 }
 
-describe('extractJsonBlock', () => {
-  it('extracts a fenced ```json block', () => {
-    const out = extractJsonBlock('preamble\n```json\n{"a":1}\n```\nafter');
-    expect(out).toEqual({ a: 1 });
-  });
-
-  it('extracts the first balanced { ... } when no fence is present', () => {
-    const out = extractJsonBlock('text {"a":2,"b":[1,2]} trailing');
-    expect(out).toEqual({ a: 2, b: [1, 2] });
-  });
-
-  it('returns {} on malformed JSON', () => {
-    expect(extractJsonBlock('not json at all')).toEqual({});
-  });
-
-  it('handles strings with embedded braces correctly', () => {
-    const out = extractJsonBlock('{"msg":"a } b"}');
-    expect(out).toEqual({ msg: 'a } b' });
-  });
-});
-
 describe('runSpeckitPlanning', () => {
-  it('runs through clarify → constitution-check → planning → analyze and ends in implementing', async () => {
-    const { result } = await runSpeckit();
+  it('completes the successful Speckit flow end to end', async () => {
+    const { result, projectDir, sessionId, events } = await runSpeckit();
     expect(result.cancelled).toBe(false);
     expect(result.state.phase).toBe('implementing');
     expect(result.tasks).toHaveLength(1);
-  });
 
-  it('writes clarifications.md, constitution-check.json, and analyze.json artifacts', async () => {
-    const { projectDir, sessionId } = await runSpeckit();
     const dir = sessionDir(projectDir, sessionId);
     expect(existsSync(join(dir, 'clarifications.md'))).toBe(true);
     expect(existsSync(join(dir, 'constitution-check.json'))).toBe(true);
@@ -206,6 +181,22 @@ describe('runSpeckitPlanning', () => {
     expect(cc.passed).toBe(true);
     const an = JSON.parse(readFileSync(join(dir, 'analyze.json'), 'utf8'));
     expect(an.specTaskCoverage).toBe(1);
+
+    const statusEvents = events.filter((e) => e.type === 'planner_status');
+    const phasesInOrder = statusEvents.map((e) => e.phase);
+    const clarifying = phasesInOrder.indexOf('clarifying');
+    const constitutionCheck = phasesInOrder.indexOf('constitution-check');
+    const planning = phasesInOrder.indexOf('planning');
+    const analyzing = phasesInOrder.indexOf('analyzing');
+    expect(clarifying).toBeGreaterThanOrEqual(0);
+    expect(constitutionCheck).toBeGreaterThan(clarifying);
+    expect(planning).toBeGreaterThan(constitutionCheck);
+    expect(analyzing).toBeGreaterThan(planning);
+
+    const specifyingRunning = events.find(
+      (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'specifying',
+    );
+    expect(specifyingRunning).toBeDefined();
   });
 
   it('aborts the workflow on a hard constitution violation', async () => {
@@ -254,28 +245,6 @@ describe('runSpeckitPlanning', () => {
       withReviewUsage.result.state.tokenUsage.plannerOutput -
         withoutReviewUsage.result.state.tokenUsage.plannerOutput,
     ).toBe(3);
-  });
-
-  it('passes through phases in the documented order', async () => {
-    const { events } = await runSpeckit();
-    const statusEvents = events.filter((e) => e.type === 'planner_status');
-    const phasesInOrder = statusEvents.map((e) => e.phase);
-    const clarifying = phasesInOrder.indexOf('clarifying');
-    const constitutionCheck = phasesInOrder.indexOf('constitution-check');
-    const planning = phasesInOrder.indexOf('planning');
-    const analyzing = phasesInOrder.indexOf('analyzing');
-    expect(clarifying).toBeGreaterThanOrEqual(0);
-    expect(constitutionCheck).toBeGreaterThan(clarifying);
-    expect(planning).toBeGreaterThan(constitutionCheck);
-    expect(analyzing).toBeGreaterThan(planning);
-  });
-
-  it('publishes a running planner_status at the specifying phase so its OTel span opens', async () => {
-    const { events } = await runSpeckit();
-    const specifyingRunning = events.find(
-      (e) => e.type === 'planner_status' && e.status === 'running' && e.phase === 'specifying',
-    );
-    expect(specifyingRunning).toBeDefined();
   });
 
   it('enters reviewing-briefs for invalid briefs; user rejection cancels the workflow', async () => {

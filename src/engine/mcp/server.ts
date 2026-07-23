@@ -32,7 +32,7 @@ const LOCAL_ORIGIN_PREFIXES = [
   'https://127.0.0.1',
 ];
 
-export function normalizeHeader(value: string | string[] | undefined): string | undefined {
+function normalizeHeader(value: string | string[] | undefined): string | undefined {
   if (value === undefined) return undefined;
   if (Array.isArray(value)) return value[0];
   return value;

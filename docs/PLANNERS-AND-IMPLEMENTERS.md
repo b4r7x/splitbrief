@@ -119,7 +119,7 @@ Defined in `src/core/schemas/task.ts`. The schema is the persisted transport for
 | Escalation | `escalation` | `### Escalation` |
 | Evidence | `evidence` | `### Evidence` |
 
-The planner outputs briefs as markdown in `tasks.md`. The parser (`src/engine/spec/parser.ts`) splits blocks by `---` separators, extracts YAML frontmatter per block, reads `###`-headed sections, and toposorts the result by `dependsOn`.
+The planner outputs briefs as markdown in `tasks.md`. The parser (`src/engine/spec/tasks/parse.ts`, with `blocks.ts` and `sections.ts`) splits blocks by `---` separators, extracts YAML frontmatter per block, reads `###`-headed sections, and toposorts the result by `dependsOn`.
 
 Here is what a single brief looks like in `tasks.md`:
 
@@ -216,7 +216,7 @@ type ImplementerCapabilities = {
 
 ## Implementer base pipeline
 
-`src/engine/implementers/base.ts` -- `createImplementerBase(config)`.
+`src/engine/implementers/pipeline/run.ts` -- `createImplementerBase(config)`.
 
 Wraps a backend-specific `invoke()` with:
 
@@ -247,7 +247,7 @@ type TokenDelta = {
 }
 ```
 
-Deltas are normalized in `src/engine/calls/usage.ts`. The temporary `src/engine/streaming/token-usage.ts` wrapper exists for compatibility, but new backend code should use the call usage helpers so delta, cumulative, and final samples are handled consistently. Accumulated usage is published through `cost_update` events.
+Deltas are normalized in `src/engine/calls/usage.ts`, which handles delta, cumulative, and final samples consistently. Accumulated usage is published through `cost_update` events.
 
 Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected.
 

@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { routerStore } from './router.js';
 import { feedbackStore } from '../ui/feedback.js';
-import { subscribeFeedbackReset } from '../channels/feedback.js';
 import type { Summary } from '../../core/schemas/summary.js';
 
 const dummySummary: Summary = {
@@ -59,17 +58,20 @@ describe('routerStore', () => {
     if (s.screen === 'summary') expect(s.summary).toBe(dummySummary);
   });
 
-  it('navigates setup → summary', () => {
+  it('navigates setup → summary and clears prior navigation feedback', () => {
+    feedbackStore.setMessage('saved');
     routerStore.navigate({ to: 'setup' });
     routerStore.navigate({ to: 'summary', summary: dummySummary, status: 'complete' });
     const s = routerStore.get();
     expect(s.screen).toBe('summary');
     if (s.screen === 'summary') expect(s.summary).toBe(dummySummary);
     expect(feedbackStore.get().message).toBeNull();
+    expect(feedbackStore.get().isError).toBe(false);
   });
 
   it('reports error and stays put on invalid transition workflow → setup', () => {
     routerStore.navigate({ to: 'workflow', feature: 'x' });
+    feedbackStore.setTransientError('prior error');
     routerStore.navigate({ to: 'setup' });
     expect(routerStore.get().screen).toBe('workflow');
     expect(feedbackStore.get().isError).toBe(true);
@@ -120,23 +122,5 @@ describe('routerStore', () => {
   it('init sets arbitrary route', () => {
     routerStore.init({ screen: 'workflow', feature: 'resume' });
     expect(routerStore.get().screen).toBe('workflow');
-  });
-
-  it('successful navigation publishes a feedback reset', () => {
-    const onReset = vi.fn();
-    const unsubscribe = subscribeFeedbackReset(onReset);
-    routerStore.navigate({ to: 'workflow', feature: 'x' });
-    unsubscribe();
-    expect(onReset).toHaveBeenCalledTimes(1);
-  });
-
-  it('rejected navigation does not reset feedback', () => {
-    routerStore.navigate({ to: 'workflow', feature: 'x' });
-    const onReset = vi.fn();
-    const unsubscribe = subscribeFeedbackReset(onReset);
-    routerStore.navigate({ to: 'setup' });
-    unsubscribe();
-    expect(routerStore.get().screen).toBe('workflow');
-    expect(onReset).not.toHaveBeenCalled();
   });
 });

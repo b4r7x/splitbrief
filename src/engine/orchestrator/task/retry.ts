@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
-import type { ValidationResult } from '../validation-result.js';
+import type { ValidationResult } from '../validation/result.js';
 import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
@@ -19,8 +19,8 @@ import { retryProfileOverrideForTask } from './routing.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 
 function routeBiggerProfileFromDecision(decision: RoutingDecision | undefined): string | undefined {
   if (!decision?.selectedProfile) return undefined;

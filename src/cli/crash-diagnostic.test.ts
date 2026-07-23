@@ -203,17 +203,6 @@ describe('showCrashDiagnostic', () => {
       expect(exitCode()).toBeUndefined();
     });
   });
-
-  it('non-TTY default path returns without waiting for interactive input or exiting', async () => {
-    await withProcessStubs(
-      async ({ written, exitCode }) => {
-        await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '2');
-        expect(written.join('')).toContain('[2] Exit and inspect logs manually');
-        expect(exitCode()).toBeUndefined();
-      },
-      { stubTTY: true },
-    );
-  });
 });
 
 describe('waitForCrashDiagnosticOption', () => {

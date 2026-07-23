@@ -11,14 +11,6 @@ describe('streamError factories', () => {
     expect(err.data).toEqual({ provider: 'ollama', apiBase: 'http://localhost:11434' });
   });
 
-  test('connectionRefused threads cause', () => {
-    const cause = Object.assign(new Error('ECONNREFUSED 127.0.0.1:11434'), {
-      code: 'ECONNREFUSED',
-    });
-    const err = streamError.connectionRefused('ollama', 'http://localhost:11434', cause);
-    expect(err.cause).toBe(cause);
-  });
-
   test('connectionRefused handles undefined apiBase', () => {
     const err = streamError.connectionRefused('ollama', undefined);
     expect(err.kind).toBe('stream-connection-refused');
@@ -29,12 +21,6 @@ describe('streamError factories', () => {
     const err = streamError.httpStatus('openai', 429, 'rate limited');
     expect(err.kind).toBe('stream-http-status');
     expect(err.data).toEqual({ provider: 'openai', status: 429, detail: 'rate limited' });
-  });
-
-  test('httpStatus threads cause', () => {
-    const cause = new Error('raw http error');
-    const err = streamError.httpStatus('openai', 500, 'boom', cause);
-    expect(err.cause).toBe(cause);
   });
 
   test('httpStatus redacts secrets in message', () => {

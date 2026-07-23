@@ -47,16 +47,7 @@ function renderedText(value: string, tabSize = 4): string {
 }
 
 describe('buildSegments control-byte sanitization', () => {
-  it('strips multi-character BEL and C0 bytes while preserving line breaks', () => {
-    expect(renderedText('a\x07b\nc\x01d')).toBe('ab\ncd');
-  });
-
-  it('strips CSI/OSC escape sequences from the rendered text', () => {
-    expect(renderedText('\x1b[31mred\x1b[0m')).toBe('red');
-    expect(renderedText('before\x1b]0;title\x07after')).toBe('beforeafter');
-  });
-
-  it('expands and preserves tabs as spaces rather than dropping them', () => {
-    expect(renderedText('a\tb', 2)).toBe('a  b');
+  it('strips multi-character BEL and C0 bytes while preserving line breaks, expands tabs, and strips CSI sequences', () => {
+    expect(renderedText('a\t\x1b[31mb\nc', 2)).toBe('a  b\nc');
   });
 });

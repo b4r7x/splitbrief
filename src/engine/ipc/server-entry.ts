@@ -9,7 +9,11 @@ import { startHeartbeat } from './heartbeat.js';
 import { startIpcServer } from './server.js';
 import { createEventBus } from '../events/bus.js';
 import { createIpcWorkflowBridge } from './workflow-bridge.js';
-import { resolveEffectiveConfig } from '../../core/config/runtime/effective-config.js';
+import {
+  emitEffectiveConfigWarnings,
+  resolveEffectiveConfig,
+} from '../../core/config/runtime/effective-config.js';
+import type { EffectiveConfigWarning } from '../../core/config/runtime/effective-config.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { readIpcServerArgsFileConfined, type IpcServerArgs } from './server-args.js';
 import {
@@ -19,19 +23,18 @@ import {
 } from '../../core/sessions/lifecycle.js';
 import { clearStaleSession } from '../../core/sessions/guards.js';
 import { loadState } from '../../core/state/persistence.js';
-import { shouldPreserveActiveState } from '../orchestrator/session-lifecycle.js';
+import { shouldPreserveActiveState } from '../orchestrator/session-lifecycle/finalize.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
-import { warnStderr } from '../../lib/warn.js';
 import { bootstrapOtel, flushOtel } from '../../lib/otel.js';
-import { runWorkflowLoop } from './workflow-loop.js';
+import { runWorkflowLoop } from './workflow-loop/run.js';
 
 function exitInvalidArgs(message: string): never {
   process.stderr.write(`server-entry: ${message}\n`);
   process.exit(1);
 }
 
-export function emitConfigWarnings(warnings: readonly string[]): void {
-  for (const w of warnings) warnStderr(`⚠ ${w}`);
+export function emitConfigWarnings(warnings: readonly EffectiveConfigWarning[]): void {
+  emitEffectiveConfigWarnings(warnings);
 }
 
 function readConfinedArgsFileOrExit(argsFile: string): IpcServerArgs {
@@ -83,11 +86,11 @@ export async function main(argv: IpcServerArgs, dir: string) {
 
   const ipcBus = createEventBus();
   const ipcBridge = createIpcWorkflowBridge(ipcBus);
-  const { config: rawConfig, warnings: baseWarnings } = loadConfig(argv.projectDir);
+  const { config: rawConfig, loaderDiagnostics } = loadConfig(argv.projectDir);
   const { config, warnings } = resolveEffectiveConfig({
     base: rawConfig,
     overrides: argv.overrides,
-    baseWarnings,
+    loaderDiagnostics,
   });
   emitConfigWarnings(warnings);
   const ipcServer = await startIpcServer({

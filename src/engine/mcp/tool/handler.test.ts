@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { DIPTYCH_DIR, EVIDENCE_FILE, SESSIONS_DIR } from '../../../core/paths.js';
 import { EvidenceLedgerSchema } from '../../../core/schemas/evidence.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { createEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createToolHandler } from './handler.js';
 import type { ToolCallResult } from '../types.js';
 

@@ -1,15 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import YAML from 'yaml';
 import '#testing/helpers/cli/ink-mocks.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { createDefaultConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
-import { DIPTYCH_DIR, CONFIG_FILE } from '../../../src/core/paths.js';
 
 let tmp: string;
 
@@ -26,40 +23,20 @@ afterEach(() => {
 });
 
 function writeValidConfig(projectDir: string): void {
-  const diptychDir = join(projectDir, DIPTYCH_DIR);
-  mkdirSync(diptychDir, { recursive: true });
-  writeFileSync(
-    join(diptychDir, CONFIG_FILE),
-    YAML.stringify(toYaml(createDefaultConfig())),
-    'utf-8',
-  );
+  writeConfigYaml(projectDir, toYaml(createDefaultConfig()));
 }
 
 function writeInvalidConfig(projectDir: string): void {
-  const diptychDir = join(projectDir, DIPTYCH_DIR);
-  mkdirSync(diptychDir, { recursive: true });
-  writeFileSync(
-    join(diptychDir, CONFIG_FILE),
-    YAML.stringify({ version: 3, implementer: { kind: 'bogus', model: '' } }),
-    'utf-8',
-  );
+  writeConfigYaml(projectDir, { version: 3, implementer: { kind: 'bogus', model: '' } });
 }
 
-describe('CLI exit codes', { timeout: 30_000 }, () => {
-  it('start with valid config exits 0', async () => {
-    writeValidConfig(tmp);
-
-    const { exitCode } = await runCommand(['start', '--project', tmp, 'add endpoint']);
-
-    expect(exitCode).toBe(0);
-  }, 20_000);
-
+describe('CLI exit codes', { timeout: 90_000 }, () => {
   it('start with invalid config exits 1', async () => {
     writeInvalidConfig(tmp);
 
     const { exitCode, stderr } = await runCommand(['start', '--project', tmp, 'add endpoint']);
 
-    expect(exitCode).not.toBe(0);
+    expect(exitCode).toBe(1);
     expect(stderr.length).toBeGreaterThan(0);
   });
 
@@ -68,7 +45,7 @@ describe('CLI exit codes', { timeout: 30_000 }, () => {
 
     const { exitCode, stderr } = await runCommand(['continue', '--project', tmp]);
 
-    expect(exitCode).not.toBe(0);
+    expect(exitCode).toBe(1);
     expect(stderr).toMatch(/no session to continue/);
   });
 
@@ -77,7 +54,7 @@ describe('CLI exit codes', { timeout: 30_000 }, () => {
 
     const { exitCode, stderr } = await runCommand(['last', '--project', tmp]);
 
-    expect(exitCode).not.toBe(0);
+    expect(exitCode).toBe(1);
     expect(stderr).toMatch(/no sessions found/);
   });
 

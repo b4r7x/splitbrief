@@ -89,6 +89,7 @@ describe('selectRoutingProfile context cache', () => {
     if (!result.ok) return;
     expect(result.routingDecision.selectedProfile).toBe('cache-worker');
     expect(result.routingDecision.contextLength).toBe(64_000);
+    expect(result.selectedProfile).toEqual(profile);
   });
 
   it('falls back to the conservative context length when no model cache is provided', async () => {
@@ -131,7 +132,7 @@ describe('selectRoutingProfile context cache', () => {
 
     expect(withoutDetected.ok).toBe(true);
     if (!withoutDetected.ok) return;
-    expect(withoutDetected.routingDecision.selectedProfile).toBe('standard-worker');
+    expect(withoutDetected.routingDecision.selectedProfile).toBe(profiles[1]!.name);
     expect(withoutDetected.routingDecision.rejected[0]).toMatchObject({
       profile: 'cheap-detected-worker',
       fit: 'overflow',

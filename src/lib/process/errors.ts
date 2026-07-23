@@ -1,6 +1,10 @@
 import { error, matches } from '../../utils/error.js';
 import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
 
+export const spawnError = {
+  streamsUnavailable: () => error('process-streams-unavailable', 'Process streams not available'),
+} as const;
+
 export function isNodeError(err: unknown): err is NodeJS.ErrnoException {
   return err instanceof Error && 'code' in err;
 }

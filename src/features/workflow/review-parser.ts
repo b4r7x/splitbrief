@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { markInterruptResumed } from '../../stores/workflow/actions.js';
+import { markInterruptResumed } from '../../stores/workflow/actions/resume.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';

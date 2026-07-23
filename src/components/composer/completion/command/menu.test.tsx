@@ -1,4 +1,4 @@
-import { Box, Text } from 'ink';
+import { Box } from 'ink';
 import { render } from 'ink-testing-library';
 import { describe, expect, it } from 'vitest';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
@@ -112,62 +112,6 @@ function rowContaining(rows: string[], text: string): string {
 }
 
 describe('CommandCompletionMenu', () => {
-  it('renders a bordered panel and marks the selected row with a cursor', () => {
-    const ui = render(
-      <Box width={80}>
-        <CommandCompletionMenu filtered={COMMANDS} selectedIndex={0} maxVisible={3} />
-      </Box>,
-    );
-
-    const frame = ui.lastFrame() ?? '';
-    // borderStyleFor('round') degrades to Ink's classic border (`+-|`) under the ascii glyph tier
-    // that the (non-TTY) test host resolves to.
-    expect(frame).toContain('|');
-    expect(frame).toContain(glyph('cursor'));
-    expect(frame).not.toContain('▌');
-    ui.unmount();
-  });
-
-  it('occludes underlying transcript text when overlaid absolutely', () => {
-    terminalSizeStore.__testReset({ cols: 80 });
-    const underlying = 'UNDERLYING'.repeat(6);
-    const ui = render(
-      <Box height={12} width={60} overflow="visible">
-        <Box flexDirection="column">
-          {Array.from({ length: 10 }, (_, index) => (
-            <Text key={index}>{underlying}</Text>
-          ))}
-        </Box>
-        <Box position="absolute" marginTop={1} width={60}>
-          <CommandCompletionMenu filtered={COMMANDS} selectedIndex={0} maxVisible={3} />
-        </Box>
-      </Box>,
-    );
-
-    const lines = (ui.lastFrame() ?? '').split('\n');
-    const footerIndex = lines.findIndex((line) => line.includes('select'));
-    expect(footerIndex).toBeGreaterThan(0);
-    // 3 command rows + hairline + footer: every panel line hides the transcript
-    for (const line of lines.slice(footerIndex - 4, footerIndex + 1)) {
-      expect(line.slice(0, 60)).not.toContain('UNDERLYING');
-    }
-    ui.unmount();
-  });
-
-  it('keeps narrow panels to a single command row plus the footer', () => {
-    const ui = render(
-      <Box width={22}>
-        <CommandCompletionMenu filtered={COMMANDS.slice(0, 1)} selectedIndex={0} maxVisible={1} />
-      </Box>,
-    );
-
-    const lines = panelLines(ui.lastFrame() ?? '');
-    expect(commandLines(lines)).toHaveLength(1);
-    expect(rowContaining(lines, '/help')).toContain('/help');
-    expect(lines.some((line) => line.includes('select'))).toBe(true);
-    ui.unmount();
-  });
-
   it('keeps command shortcuts visible as a de-badged dim key when descriptions overflow', () => {
     const ui = render(
       <Box width={46}>

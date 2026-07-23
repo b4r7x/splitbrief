@@ -1,15 +1,13 @@
-import {
-  getCommittedFilesSince,
-  getCurrentChangedFiles,
-  getCurrentCommitSha,
-  hasCommits,
-} from '../../lib/git.js';
+import { getCommittedFilesSince } from '../../lib/git/diff.js';
+import { getCurrentChangedFiles } from '../../lib/git/files.js';
+import { getCurrentCommitSha } from '../../lib/git/refs.js';
+import { hasCommits } from '../../lib/git/repository.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
 import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { assertPathConfined } from '../../lib/path-confinement.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { matchesActionPattern } from './approval/action-classifier.js';
-import type { ChangedFilesSnapshot } from './approval/file-snapshots.js';
+import type { ChangedFilesSnapshot } from './approval/file-snapshots/types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { PersistedChangedFilesBaseline } from '../../core/schemas/workflow.js';
 

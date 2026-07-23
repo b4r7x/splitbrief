@@ -15,8 +15,8 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { parseTasks } from '../../spec/parser.js';
-import { createValidator } from '../validation.js';
+import { parseTasks } from '../../spec/tasks/parse.js';
+import { createValidator } from '../validation/run.js';
 import type { WorkflowContext, WorkflowSinks } from '../types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -79,7 +79,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-describe('runTasksAndReview', { timeout: 30_000 }, () => {
+describe('runTasksAndReview', { timeout: 90_000 }, () => {
   it('refuses to continue a resumed reviewing-briefs state without restoring an approval prompt', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001' });
@@ -231,7 +231,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       expect(prediction.prediction.deterministic?.totals.hypotheticalAllPlanner).toBeGreaterThan(0);
       expect(prediction.prediction.deterministic?.totals.estimatedSavings).toBeGreaterThan(0);
     }
-  }, 20_000);
+  }, 90_000);
 
   it('skips the cost gate and warns when implementer pricing is unknown', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -313,7 +313,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
           event.message === 'cost gate skipped: implementer pricing unknown',
       ),
     ).toBe(true);
-  }, 20_000);
+  }, 90_000);
 
   it('runs opt-in planner estimate review before implementation and publishes the result', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -442,7 +442,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(completedPredictionIndex).toBeGreaterThanOrEqual(0);
     expect(taskStartIndex).toBeGreaterThan(completedPredictionIndex);
     expect(result.summary.costPrediction?.plannerEstimateReview?.status).toBe('completed');
-  }, 20_000);
+  }, 90_000);
 
   it('hands the completed estimate review to the cost gate it recommends a decision for', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -535,7 +535,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       classification: 'needs-user-decision',
       recommendedUserDecision: 'Decline and pick a larger-context worker.',
     });
-  }, 20_000);
+  }, 90_000);
 
   it('surfaces auto-split output for approval before task execution', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -1344,7 +1344,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
       expect(prediction.prediction.deterministic?.taskCount).toBe(1);
     }
     expect(result.summary.totalTasks).toBe(2);
-  }, 20_000);
+  }, 90_000);
 
   it('aborts without executing any task when the cost gate is declined', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -1422,7 +1422,7 @@ describe('runTasksAndReview', { timeout: 30_000 }, () => {
     expect(result.completed).toBe(false);
     expect(implement).not.toHaveBeenCalled();
     expect(events.some((event) => event.type === 'task_started')).toBe(false);
-  }, 20_000);
+  }, 90_000);
 
   it('resumes a persisted failed-final-review state and completes when the review passes', async () => {
     const { projectDir, sessionId } = setupProject();

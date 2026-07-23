@@ -1,24 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
 import {
   TASK_REVIEW_COMMANDS,
   type TaskReviewRequest,
 } from '../../engine/events/workflow-events.js';
 import { taskId } from '../../core/schemas/task.js';
 import { glyph } from '../../lib/glyphs.js';
-import type { PromptRow } from './recovery-prompt.js';
-import {
-  buildTaskReviewPromptRows,
-  formatTaskReviewPrompt,
-  parseTaskReviewAnswer,
-} from './task-review-prompt.js';
+import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { PromptBody } from './components/prompt-body.js';
+import { formatTaskReviewPrompt, parseTaskReviewAnswer } from './task-review-prompt.js';
 
-function factItems(rows: PromptRow[]): string[] {
-  const row = rows.find((r): r is Extract<PromptRow, { kind: 'facts' }> => r.kind === 'facts');
-  return row?.items ?? [];
-}
-
-function actionRows(rows: PromptRow[]): Extract<PromptRow, { kind: 'action' }>[] {
-  return rows.filter((r): r is Extract<PromptRow, { kind: 'action' }> => r.kind === 'action');
+async function renderPromptBody(prompt: string): Promise<string> {
+  const ui = renderFeature(createElement(PromptBody, { prompt, height: 40, width: 120 }));
+  await tick(20);
+  const text = stripAnsiStyles(ui.lastFrame() ?? '');
+  ui.unmount();
+  return text;
 }
 
 const request: TaskReviewRequest = {
@@ -73,44 +71,36 @@ const request: TaskReviewRequest = {
 };
 
 describe('task review prompt', () => {
-  it('builds task metadata, evidence, cost, routing, and commands', () => {
-    const rows = buildTaskReviewPromptRows(request);
+  it('builds task metadata, evidence, cost, routing, and commands', async () => {
+    const visible = await renderPromptBody(formatTaskReviewPrompt(request));
 
-    expect(rows[0]).toEqual({
-      kind: 'headline',
-      tone: 'pass',
-      text: 'T001 ready for review · Add auth',
-    });
-    const facts = factItems(rows);
-    expect(facts).toContain('status done');
-    expect(facts).toContain('files src/auth.ts');
-    expect(facts).toContain('checks validation passed');
-    expect(facts).toContain('evidence path /tmp/project/.diptych/sessions/s1/evidence.json');
-    expect(facts.some((f) => f.includes('15 implementer, 0 escalation'))).toBe(true);
-    expect(facts.some((f) => f.startsWith('route fits 120/1000 tokens'))).toBe(true);
-
-    const commands = actionRows(rows).map((r) => r.text);
-    expect(commands).toContain('[c]  continue');
-    expect(commands).toContain('[r]  redo task');
-    expect(commands).toContain('[p]  revise-plan <notes>');
-    expect(commands).toContain('[a]  abort');
-    expect(rows.some((r) => r.kind === 'note' && r.text.includes('notes <text>'))).toBe(true);
-    expect(actionRows(rows).find((r) => r.recommended)?.text).toBe('[c]  continue');
+    expect(visible).toContain('T001 ready for review · Add auth');
+    expect(visible).toContain('status done');
+    expect(visible).toContain('files src/auth.ts');
+    expect(visible).toContain('checks validation passed');
+    expect(visible).toContain('evidence path /tmp/project/.diptych/sessions/s1/evidence.js');
+    expect(visible).toMatch(/15 implementer, 0 escalation/);
+    expect(visible).toMatch(/route fits 120\/1000 tokens/);
+    expect(visible).toContain('[c]  continue');
+    expect(visible).toContain('[r]  redo task');
+    expect(visible).toContain('[p]  revise-plan <notes>');
+    expect(visible).toContain('[a]  abort');
+    expect(visible).toContain('notes <text>');
+    expect(visible).toContain(`${glyph('liveBar')} [c]  continue`);
   });
 
-  it('flags a failed review headline with the task title detail', () => {
-    const rows = buildTaskReviewPromptRows({
-      ...request,
-      validation: { ...request.validation, passed: false, summary: 'tests failed' },
-    });
+  it('flags a failed review headline with the task title detail', async () => {
+    const visible = await renderPromptBody(
+      formatTaskReviewPrompt({
+        ...request,
+        validation: { ...request.validation, passed: false, summary: 'tests failed' },
+      }),
+    );
 
-    expect(rows[0]).toEqual({
-      kind: 'headline',
-      tone: 'failed',
-      text: 'T001',
-      detail: 'Add auth',
-    });
-    expect(factItems(rows)).toContain('checks tests failed');
+    expect(visible).toContain('T001');
+    expect(visible).toContain('failed');
+    expect(visible).toContain('review · Add auth');
+    expect(visible).toContain('checks tests failed');
   });
 
   it('serializes the passing review rows into a flat prompt with the ✓ and accent markers', () => {
@@ -131,7 +121,6 @@ describe('task review prompt', () => {
   });
 
   it('parses review commands into public task review decisions', () => {
-    expect(parseTaskReviewAnswer('')).toEqual({ action: 'continue' });
     expect(parseTaskReviewAnswer('redo')).toEqual({ action: 'redo-task' });
     expect(parseTaskReviewAnswer('revise-plan split this task')).toEqual({
       action: 'revise-plan',
@@ -171,9 +160,9 @@ describe('task review prompt', () => {
     expect(parseTaskReviewAnswer('   ')).toEqual({ action: 'continue' });
   });
 
-  it('does not expose notes as a blank shortcut action key', () => {
-    const rows = buildTaskReviewPromptRows(request);
-    expect(actionRows(rows).some((r) => r.text.includes('[ ]'))).toBe(false);
-    expect(rows.some((r) => r.kind === 'note' && r.text.includes('notes <text>'))).toBe(true);
+  it('does not expose notes as a blank shortcut action key', async () => {
+    const visible = await renderPromptBody(formatTaskReviewPrompt(request));
+    expect(visible).not.toContain('[ ]');
+    expect(visible).toContain('notes <text>');
   });
 });

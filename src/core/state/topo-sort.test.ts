@@ -51,7 +51,10 @@ describe('topoSort', () => {
       topoSort([a, b]);
       throw new Error('expected throw');
     } catch (err) {
-      expect(err).toMatchObject({ kind: 'topo-circular-dependency' });
+      expect(err).toMatchObject({
+        kind: 'topo-circular-dependency',
+        data: { cycle: ['T001', 'T002', 'T001'] },
+      });
     }
   });
 });

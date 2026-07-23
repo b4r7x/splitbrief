@@ -1,6 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -18,10 +16,6 @@ import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
 import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
-import {
-  capturePlanningMutationBaseline,
-  findUnexpectedPlanningMutations,
-} from './mutation-guard.js';
 import type { PlannerCallbacksContext } from '../types.js';
 
 let dirs: string[] = [];
@@ -157,47 +151,34 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
   });
 });
 
-describe('planning mutation guard', () => {
-  it('flags project mutations outside the active session directory', async () => {
-    const projectDir = createTempDir('cli-planning-mutation-guard');
-    dirs.push(projectDir);
-    createTestGitRepo(projectDir);
-    const sessionId = 'sess-shared-test';
-    ensureSessionDir(projectDir, sessionId);
-
-    const baseline = await capturePlanningMutationBaseline(projectDir);
-    mkdirSync(join(projectDir, 'src'), { recursive: true });
-    writeFileSync(join(projectDir, 'src', 'leak.ts'), 'export const leak = true;\n');
-
-    const unexpected = await findUnexpectedPlanningMutations({
-      projectDir,
-      sessionId,
-      baseline,
-    });
-    expect(unexpected).toContain('src/leak.ts');
-  });
-});
-
 describe('runPlannerCallInContinuationLoop — signal propagation', () => {
-  it('passes call-level abort signal to planner callbacks', async () => {
+  it('aborts the in-flight planner call when the turn is aborted', async () => {
     const { projectDir, sessionId } = setupSession();
-    let capturedCallbacks: PlannerCallbacks | undefined;
-    const planner = makePlanner({
-      quickPlan: vi
-        .fn()
-        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
-          capturedCallbacks = callbacks;
-          return {
-            spec: '',
-            plan: '',
-            tasks: [makeTask()],
-            usage: null,
-          };
-        }),
+    const sinks = createTestSinks();
+    let capturedSignal: AbortSignal | undefined;
+    let resolveActive: () => void = () => {};
+    const active = new Promise<void>((resolve) => {
+      resolveActive = resolve;
     });
-    const wctx = makeWctx(projectDir, sessionId);
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockImplementation(({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        capturedSignal = callbacks.signal;
+        resolveActive();
+        return new Promise((_resolve, reject) => {
+          const signal = callbacks.signal;
+          if (!signal) {
+            reject(new Error('expected planner abort signal'));
+            return;
+          }
+          signal.addEventListener('abort', () => {
+            reject(new DOMException('The user aborted a request.', 'AbortError'));
+          });
+        });
+      }),
+    });
+    const wctx = makeWctx(projectDir, sessionId, { sinks });
 
-    await runPlannerCallInContinuationLoop({
+    const run = runPlannerCallInContinuationLoop({
       wctx,
       state: planningState(),
       planner,
@@ -205,9 +186,10 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
       mode: 'quick',
     });
 
-    expect(capturedCallbacks).toBeDefined();
-    expect(capturedCallbacks!.signal).toBeDefined();
-    expect(capturedCallbacks!.signal).toBeInstanceOf(AbortSignal);
+    await active;
+    expect(sinks.abortTurn()).toBe(true);
+    expect(capturedSignal?.aborted).toBe(true);
+    await expect(run).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
 
@@ -246,13 +228,9 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
   });
 
   it.each([
-    { mode: 'quick' as const, conversational: false },
-    { mode: 'speckit' as const, conversational: false },
-    { mode: 'speckit' as const, conversational: true },
-  ])('collects questions for mode $mode with conversational=$conversational', async ({
-    mode,
-    conversational,
-  }) => {
+    { mode: 'quick' as const },
+    { mode: 'speckit' as const },
+  ])('collects questions for mode $mode via planner callback', async ({ mode }) => {
     const { projectDir, sessionId } = setupSession();
     const question: ClarificationQuestion = {
       id: 'q1',
@@ -260,23 +238,15 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
       text: 'Pick',
       options: ['a', 'b'],
     };
-    const callFn = vi
+    const emitQuestions = vi
       .fn()
       .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
         callbacks.onQuestion?.([question]);
         return { spec: '', plan: '', tasks: [makeTask()], usage: null };
       });
     const planner = makePlanner({
-      plan: callFn,
-      quickPlan: callFn,
-      capabilities: {
-        supportsConversationalPlanning: conversational,
-        supportsHintEscalation: true,
-        supportsSessionResume: false,
-        supportsEffort: false,
-        supportsImages: false,
-        supportsSelfSummarisation: false,
-      },
+      plan: emitQuestions,
+      quickPlan: emitQuestions,
     });
     const wctx = makeWctx(projectDir, sessionId);
     const collectedQuestions: ClarificationQuestion[] = [];

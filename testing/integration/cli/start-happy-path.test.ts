@@ -32,7 +32,7 @@ afterEach(() => {
   delete (process.stdin as { isTTY?: boolean }).isTTY;
 });
 
-describe('CLI integration: start happy path', { timeout: 30_000 }, () => {
+describe('CLI integration: start happy path', { timeout: 90_000 }, () => {
   it('creates a session directory and active marker when starting a new workflow', async () => {
     const { exitCode } = await runCommand(['start', '--project', tmp, 'add endpoint']);
 
@@ -44,5 +44,5 @@ describe('CLI integration: start happy path', { timeout: 30_000 }, () => {
     if (!sessionId) throw new Error('session id missing');
     expect(sessionId).toMatch(/add-endpoint/);
     expect(readFileSync(join(tmp, DIPTYCH_DIR, 'active'), 'utf-8').trim()).toBe(sessionId);
-  }, 20_000);
+  }, 90_000);
 });

@@ -1,14 +1,15 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, detachHead, startConflictingMerge } from '#testing/helpers/git.js';
-import { LOCKFILE, sessionDir, STATE_FILE } from '../paths.js';
+import { LOCKFILE, sessionDir, STATE_FILE, DIPTYCH_DIR, CONFIG_FILE } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
 import { writeActive } from '../sessions/lifecycle.js';
-import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
+import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { collectReadiness } from './collect.js';
 import { flattenReadinessChecks } from './status.js';
 
@@ -22,23 +23,11 @@ function writeSessionState(projectDir: string, sessionId: string, phase: string)
 function writeSessionLockfile(
   projectDir: string,
   sessionId: string,
-  overrides: Record<string, unknown> = {},
+  overrides: Parameters<typeof makeSessionLockfile>[1] = {},
 ): void {
   const sDir = sessionDir(projectDir, sessionId);
   mkdirSync(sDir, { recursive: true });
-  writeFileSync(
-    join(sDir, LOCKFILE),
-    JSON.stringify({
-      version: 1,
-      pid: process.pid,
-      startTimeMs: currentProcessStartTimeMs(),
-      lastAliveMs: Date.now(),
-      sessionId,
-      mode: 'standard',
-      feature: 'feature',
-      ...overrides,
-    }),
-  );
+  writeFileSync(join(sDir, LOCKFILE), JSON.stringify(makeSessionLockfile(sessionId, overrides)));
 }
 
 describe('collectReadiness validation probe wiring', () => {
@@ -164,5 +153,79 @@ describe('collectReadiness git posture', () => {
     );
     expect(activeSession?.id).toBe('repo.active-session-stale');
     expect(activeSession?.metadata).toMatchObject({ sessionId, live: false });
+  });
+});
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
+
+describe('collectReadiness config loader warnings', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('collect-config-warnings');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  function writeMinimalV3Config(projectDir: string): string {
+    const filePath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
+    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    writeFileSync(
+      filePath,
+      [
+        'version: 3',
+        'planner:',
+        '  kind: cli',
+        '  tool: claude-code',
+        'implementer:',
+        '  kind: api',
+        '  provider: ollama',
+        '  api_base: http://localhost:11434/v1',
+        '  model: qwen2.5-coder:7b',
+      ].join('\n'),
+    );
+    return filePath;
+  }
+
+  itUnix('surfaces a 0666 permission warning exactly once', async () => {
+    const configPath = writeMinimalV3Config(tempDir);
+    chmodSync(configPath, 0o666);
+
+    const { report } = await collectReadiness({ projectDir: tempDir });
+    const configWarnings = flattenReadinessChecks(report.sections).filter(
+      (check) => check.id === 'config.warning',
+    );
+
+    expect(configWarnings).toHaveLength(1);
+    expect(configWarnings[0]?.summary).toContain('overly permissive');
+  });
+
+  it('surfaces a v2 migration warning exactly once', async () => {
+    writeConfigYaml(tempDir, {
+      version: 2,
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen2.5-coder:7b',
+      },
+      workflow: {
+        autoApproveSpec: false,
+        autoApprovePlan: false,
+        maxRetries: 3,
+        commitStrategy: 'none',
+      },
+    });
+
+    const { report } = await collectReadiness({ projectDir: tempDir });
+    const configWarnings = flattenReadinessChecks(report.sections).filter(
+      (check) => check.id === 'config.warning',
+    );
+
+    expect(configWarnings).toHaveLength(1);
+    expect(configWarnings[0]?.summary).toContain('config.version 2 is deprecated');
   });
 });

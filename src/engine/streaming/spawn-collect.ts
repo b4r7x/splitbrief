@@ -9,7 +9,7 @@ import {
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type { ParsedLine } from '../runners/types.js';
 import { processError } from '../../lib/process/errors.js';
-import { spawnWithStdin } from '../../lib/process/spawn.js';
+import { spawnWithStdin } from '../../lib/process/spawn/line-stream.js';
 import {
   finishRunnerCallOutputLimit,
   runnerCallLimitWarning,

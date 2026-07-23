@@ -2,7 +2,7 @@ import { createBusTextHandler, publishRunnerCallEvent, publishWarning } from '..
 import { transitionAndSave } from '../state-ops.js';
 import { createSessionExpiredHandler } from '../resume-context.js';
 import { withContinuationLoop } from '../continuation.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRejectionContext } from '../evidence/reporting.js';
 import { startPlannerHeartbeat } from './heartbeat.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';

@@ -14,14 +14,14 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { registerMouseZone } from '../../../lib/terminal/mouse-zones.js';
 import { readConversationScrollSnapshot } from '../layout/snapshot.js';
+import { getApprovalPromptRows } from '../prompt-rows/approval.js';
 import {
   COST_HINTS,
   costGateComparisonRows,
   costGateHeaderLine,
-  getApprovalPromptRows,
   getCostApprovalButtonRowOffset,
   getCostApprovalPromptRowsForPrediction,
-} from '../prompt-rows.js';
+} from '../prompt-rows/cost.js';
 import { PROMPT_ZONE_Z } from './approval-prompt.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
 

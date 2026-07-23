@@ -736,7 +736,7 @@ Last updated: 2026-05-13T08:00:00.000Z
 
 ### Behavior notes
 
-- `.diptych/stats.json` is updated atomically by `saveFinalSession()` for any saved summary with eligible cost data.
+- `.diptych/stats.json` is updated atomically by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`) for any saved summary with eligible cost data.
 - When no stats file exists, prints a message indicating no sessions have completed yet.
 - The all-planner baseline uses the same pricing model as the per-run hero savings stat on the summary screen. Deterministic pre-run estimates are prompt-input scoped; runtime stats use recorded usage.
 

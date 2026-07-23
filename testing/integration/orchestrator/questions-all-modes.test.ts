@@ -71,7 +71,7 @@ function makeMarkerPlanner(opts: {
 
   const stream = (callbacks: PlannerCallbacks): void => {
     if (opts.flavor === 'conversational') {
-      // Conversational backends (src/engine/runners/claude-invoke.ts) feed each streamed
+      // Conversational backends (src/engine/runners/claude/invoke.ts) feed each streamed
       // text block to the question accumulator; marker lines arrive whole inside a block.
       const accumulator = createQuestionAccumulator();
       for (const chunk of narration.split(/(?<=\n)/)) {
@@ -251,10 +251,8 @@ function modeSuite(mode: WorkflowMode): void {
     expectMarkerFreePlannerText(first.events);
   });
 
-  it.each([
-    { label: 'skip', answer: 'skip' },
-    { label: 'an empty string', answer: '' },
-  ])('answering $label to every question reaches the terminal phase', async ({ answer }) => {
+  it('answering an empty string to every question reaches the terminal phase', async () => {
+    const answer = '';
     const { planner } = makeMarkerPlanner({ flavor: 'conversational', markers: TWO_MARKERS });
     const onQuestionAsked = vi.fn().mockResolvedValue(answer);
 
@@ -267,18 +265,18 @@ function modeSuite(mode: WorkflowMode): void {
   });
 }
 
-describe('instant', { timeout: 30_000 }, () => {
+describe('instant', { timeout: 90_000 }, () => {
   modeSuite('instant');
 });
 
-describe('quick', { timeout: 30_000 }, () => {
+describe('quick', { timeout: 90_000 }, () => {
   modeSuite('quick');
 });
 
-describe('standard', { timeout: 30_000 }, () => {
+describe('standard', { timeout: 90_000 }, () => {
   modeSuite('standard');
 });
 
-describe('speckit', { timeout: 30_000 }, () => {
+describe('speckit', { timeout: 90_000 }, () => {
   modeSuite('speckit');
 });

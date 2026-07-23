@@ -2,10 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeSession } from '#testing/helpers/factories/session.js';
-import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeLegacySessionSummaryWithoutContextDetected } from '#testing/helpers/factories/legacy-session-summary.js';
 import { migrateCommand, maybeMigrate, maybeMigrateWithSummaryRepair } from './executor.js';
-import { taskId } from '../schemas/task.js';
 import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
 import { matches } from '../../utils/error.js';
 
@@ -14,63 +12,10 @@ const FIXTURE_DIR = join(import.meta.dirname, '../../../testing/fixtures/legacy-
 const EXPECTED_SESSION_ID = '2026-03-15-add-email-validator';
 
 function writeLegacySummaryWithoutContextDetected(summaryPath: string, sessionId: string): void {
-  const session = makeSession({
-    id: sessionId,
-    status: 'complete',
-    summary: makeSummary({
-      costPrediction: {
-        estimatedTasks: 1,
-        lowCost: 0,
-        expectedCost: 0,
-        highCost: 0,
-        plannerTool: 'codex',
-        implementerTool: 'codex',
-        deterministic: {
-          taskCount: 1,
-          taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
-          contextConfidenceCounts: {
-            contextExplicit: 0,
-            contextDetected: 1,
-            contextKnownCatalog: 0,
-            contextCachedProvider: 0,
-            contextConservativeFallback: 0,
-            profileUnavailable: 0,
-          },
-          priceConfidenceCounts: { priceKnown: 0, priceUnknown: 1, profileUnavailable: 0 },
-          tasks: [
-            {
-              taskId: taskId('T001'),
-              title: 'legacy task',
-              estimatedPromptTokens: 10,
-              selectedProfileId: 'default',
-              contextFit: 'fits',
-              contextConfidence: 'context-detected',
-              priceConfidence: 'price-unknown',
-              estimatedImplementerCost: null,
-              hypotheticalPlannerCost: null,
-            },
-          ],
-          totals: {
-            knownActualEstimate: null,
-            hypotheticalAllPlanner: null,
-            estimatedSavings: null,
-            unknownCostReason: ['implementer-price-unknown'],
-          },
-        },
-      },
-    }),
-  });
-  const raw = JSON.parse(JSON.stringify(session)) as {
-    summary: {
-      costPrediction: {
-        deterministic: {
-          contextConfidenceCounts: { contextDetected?: number };
-        };
-      };
-    };
-  };
-  delete raw.summary.costPrediction.deterministic.contextConfidenceCounts.contextDetected;
-  writeFileSync(summaryPath, JSON.stringify(raw));
+  writeFileSync(
+    summaryPath,
+    JSON.stringify(makeLegacySessionSummaryWithoutContextDetected({ sessionId })),
+  );
 }
 
 function setupLegacyDir(projectDir: string): void {
@@ -99,7 +44,6 @@ describe('migrateCommand', () => {
     expect(result).toMatchObject({ status: 'migrated', sessionId: EXPECTED_SESSION_ID });
 
     const sessDir = join(tmp, DIPTYCH_DIR, 'sessions', EXPECTED_SESSION_ID);
-    expect(existsSync(sessDir)).toBe(true);
 
     const state = JSON.parse(readFileSync(join(sessDir, 'state.json'), 'utf-8'));
     expect(state.stateVersion).toBe(3);

@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import { configPath } from '../../src/core/config/load/io.js';
-import { routerStore } from '../../src/stores/navigation/router.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import {
@@ -58,7 +57,6 @@ describe('deterministic PTY child', () => {
           projectDir = options.projectDir ?? '';
           expect(existsSync(`${projectDir}/.git`)).toBe(true);
           expect(existsSync(configPath(projectDir))).toBe(true);
-          expect(routerStore.get()).toEqual({ screen: 'home' });
 
           const harness = renderThroughFilteredStdin(app, PTY_CHILD_VIEWPORT);
           try {

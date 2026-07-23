@@ -6,8 +6,8 @@ import type { StreamingOutputState } from '../../../stores/workflow/streaming-ou
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { calloutRowsBlock } from './callout-block.js';
-import { eventRowBlock } from './event-rows.js';
-import { rowText } from './row-format.js';
+import { eventRowBlock } from './event-rows/dispatch.js';
+import { rowText } from './row-format/rows.js';
 import type { ConversationRow } from './types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
@@ -151,6 +151,7 @@ describe('eventRows colored left-rule callouts', () => {
     expect(hasLeftRule(rows)).toBe(false);
     expect(text).not.toContain(RULE);
     expect(text).toContain('T001 Validate no-op workflow: dependency failed');
+    expect(text).not.toContain('TT001');
     expect(rows[0]?.kind).toBe('card');
   });
 
@@ -261,5 +262,103 @@ describe('eventRows colored left-rule callouts', () => {
     expect(bodyRow.markerTone).toBe('error');
     expect(rowText(bodyRow)).toContain('error line 1');
     expect(rowText(bodyRow)).not.toContain('error line 2');
+  });
+
+  it('renders workflow activity rows as bounded compact rows', () => {
+    const streamingCtx = {
+      taskId: taskId('T001'),
+      lines: ['streamed output'],
+      active: true,
+    };
+    const cases = [
+      {
+        label: 'Planning plain text',
+        event: {
+          type: 'planner_text',
+          ts: 0,
+          phase: 'planning',
+          role: 'planner',
+          text: 'Planning plain text',
+        } satisfies EngineEvent,
+      },
+      {
+        label: 'Validate no-op workflow',
+        event: {
+          type: 'task_started',
+          ts: 0,
+          phase: 'implementing',
+          taskId: taskId('T001'),
+          title: 'Validate no-op workflow',
+          index: 0,
+          total: 1,
+          file: 'README.md',
+          action: 'modify',
+          tool: 'codex',
+          implementerProfile: 'default',
+        } satisfies EngineEvent,
+      },
+      {
+        label: 'generating README.md',
+        event: {
+          type: 'implementer_generate_running',
+          ts: 0,
+          phase: 'implementing',
+          taskId: taskId('T001'),
+          file: 'README.md',
+        } satisfies EngineEvent,
+      },
+      {
+        label: 'README.md',
+        event: {
+          type: 'implementer_generate_done',
+          ts: 0,
+          phase: 'implementing',
+          taskId: taskId('T001'),
+          file: 'README.md',
+          diff: '+ added line\n- removed line',
+          linesAdded: 1,
+          linesRemoved: 1,
+          duration: 1234,
+        } satisfies EngineEvent,
+      },
+      {
+        label: 'typecheck failed',
+        event: {
+          type: 'validate',
+          ts: 0,
+          phase: 'validating-task',
+          taskId: taskId('T001'),
+          status: 'done',
+          passed: false,
+          stages: { typecheck: false, lint: false, test: false },
+          error: 'typecheck failed',
+        } satisfies EngineEvent,
+      },
+      {
+        label: 'retry with narrower scope',
+        event: {
+          type: 'escalate',
+          ts: 0,
+          phase: 'escalating',
+          taskId: taskId('T001'),
+          tier: 1,
+          hint: 'retry with narrower scope',
+        } satisfies EngineEvent,
+      },
+    ] as const;
+
+    for (const { label, event } of cases) {
+      const rows = eventRows({
+        event,
+        globalIndex: 0,
+        expanded: true,
+        ctx: { width: 80, viewportRows: 20, streaming: streamingCtx },
+      });
+
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.map(rowText).join('\n')).toContain(label);
+      expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
+      expect(rows.every((rowValue) => rowValue.kind.length > 0)).toBe(true);
+    }
   });
 });

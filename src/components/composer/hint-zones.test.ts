@@ -97,7 +97,6 @@ describe('composer in-box hint hotspots', () => {
     });
 
     expect(narrow.map((rect) => rect.id)).toEqual(['cost']);
-    expect(narrow.some((rect) => rect.id === 'cost')).toBe(true);
 
     const veryNarrow = composerHintZoneRects({
       boxLeft: 1,

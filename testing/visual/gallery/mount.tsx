@@ -12,11 +12,9 @@ import { ViewportSchema, type Viewport } from '../contracts/geometry.js';
 import type { CheckpointPredicate, FixtureFactory, FixtureLifecycle } from '../fixtures/common.js';
 import { overlayFixtureRegistry } from '../fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry } from '../fixtures/screen-fixtures.js';
-import {
-  createWorkflowFixtureAppDeps,
-  workflowFixtureProjections,
-  workflowFixtureRegistry,
-} from '../fixtures/workflow-fixtures.js';
+import { createWorkflowFixtureAppDeps } from '../fixtures/workflow/setup.js';
+import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
+import { workflowFixtureRegistry } from '../fixtures/workflow/registry.js';
 import { flushEffects, renderFeature, type RenderFeatureResult } from '../../helpers/ink.js';
 import { enterCaptureEnvironment } from './environment.js';
 import { waitForCheckpoint } from './checkpoints.js';

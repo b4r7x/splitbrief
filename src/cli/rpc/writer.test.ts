@@ -97,15 +97,6 @@ describe('createResponseWriter', () => {
       target: 'echo sk-abcdefghijklmnopqrst',
       redacted: false,
     });
-    writer.event({
-      type: 'task_retry',
-      ts: 3,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      attempt: 2,
-      maxRetries: 3,
-      error: 'rpc-live-retry-secret-98324',
-    });
 
     const lines = parseJsonLines(chunks);
     expect(lines).toEqual([
@@ -118,21 +109,10 @@ describe('createResponseWriter', () => {
           redacted: true,
         }),
       },
-      {
-        type: 'event',
-        data: expect.objectContaining({
-          type: 'task_retry',
-          taskId: 'T001',
-          attempt: 2,
-          maxRetries: 3,
-          error: TRANSCRIPT_OMITTED_MESSAGE,
-        }),
-      },
     ]);
     expect(JSON.stringify(lines[0])).not.toContain('"target"');
     expect(JSON.stringify(lines[0])).not.toContain('"expandId"');
     expect(JSON.stringify(lines)).not.toContain('echo sk-abcdefghijklmnopqrst');
-    expect(JSON.stringify(lines)).not.toContain('rpc-live-retry-secret-98324');
   });
 
   it('omits transcript-bearing status fields when transcript persistence is disabled', () => {

@@ -33,19 +33,38 @@ describe('buildRepoMap', () => {
   });
 
   it('respects tokenBudget by dropping lowest-ranked files when tight', async () => {
+    const generous = await buildRepoMap(projectDir, { tokenBudget: 5000 });
     const tight = await buildRepoMap(projectDir, { tokenBudget: 30 });
-    expect(tight.length).toBeGreaterThan(0);
-    expect(tight.length).toBeLessThan(2000);
+    const fileHeaderCount = (out: string) => (out.match(/^[\w.-]+\.ts:/gm) ?? []).length;
+    expect(fileHeaderCount(tight)).toBeGreaterThan(0);
+    expect(fileHeaderCount(tight)).toBeLessThan(fileHeaderCount(generous));
+    expect(tight).toContain('d.ts:');
+  });
+
+  it('featureText mentioning a file moves that file earlier in the map', async () => {
+    const baseline = await buildRepoMap(projectDir, { tokenBudget: 5000 });
+    const withFeature = await buildRepoMap(projectDir, {
+      tokenBudget: 5000,
+      featureText: 'please change a.ts',
+    });
+    const headerOrder = (out: string) =>
+      (out.match(/^[\w.-]+\.ts:/gm) ?? []).map((line) => line.replace(':', ''));
+    const baselinePos = headerOrder(baseline).indexOf('a.ts');
+    const featurePos = headerOrder(withFeature).indexOf('a.ts');
+    expect(baselinePos).toBe(3);
+    expect(featurePos).toBeLessThan(baselinePos);
   });
 
   it('focusFiles bias the ranking', async () => {
-    const noFocus = await buildRepoMap(projectDir, { tokenBudget: 5000 });
-    const focused = await buildRepoMap(projectDir, { tokenBudget: 5000, focusFiles: ['d.ts'] });
-    const noFocusIdx = noFocus.indexOf('d.ts');
-    const focusedIdx = focused.indexOf('d.ts');
-    expect(focusedIdx).toBeGreaterThanOrEqual(0);
-    expect(noFocusIdx).toBeGreaterThanOrEqual(0);
-    expect(focusedIdx).toBeLessThanOrEqual(noFocusIdx);
+    const baseline = await buildRepoMap(projectDir, { tokenBudget: 5000 });
+    const focused = await buildRepoMap(projectDir, { tokenBudget: 5000, focusFiles: ['a.ts'] });
+    const headerOrder = (out: string) =>
+      (out.match(/^[\w.-]+\.ts:/gm) ?? []).map((line) => line.replace(':', ''));
+    const baselinePos = headerOrder(baseline).indexOf('a.ts');
+    const focusedPos = headerOrder(focused).indexOf('a.ts');
+    expect(baselinePos).toBe(3);
+    expect(focusedPos).toBe(1);
+    expect(focusedPos).toBeLessThan(baselinePos);
   });
 
   it('uses custom cacheDir for the SQLite cache', async () => {

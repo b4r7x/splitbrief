@@ -1,5 +1,5 @@
 import type { SessionLogEventEntry } from '../../core/schemas/session-log.js';
-import { toEngineEventEntry } from '../../core/state/persistence.js';
+import { toEngineEventEntry } from '../../core/sessions/log-writer.js';
 import type { EngineEvent } from '../events/types.js';
 import { projectRunnerCallEvent } from './event-projection.js';
 import type { RunnerCallEvent } from './types.js';

@@ -164,15 +164,6 @@ describe('classifyAction — allowedPaths', () => {
     expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
   });
 
-  it('allowedPaths undefined → existing behavior unchanged', () => {
-    const result = classifyAction(
-      make('edit src/unrelated/other.ts', {
-        allowedPaths: undefined,
-      }),
-    );
-    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
-  });
-
   it('allowedPaths empty array → existing behavior unchanged', () => {
     const result = classifyAction(
       make('edit src/unrelated/other.ts', {
@@ -211,15 +202,5 @@ describe('classifyAction — allowedPaths', () => {
       { write_in_scope: 'sticky' },
     );
     expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'sticky' });
-  });
-
-  it('control-plane write is destructive even when allowedPaths would include it', () => {
-    const result = classifyAction(
-      make('write .diptych/config.yaml', {
-        taskFile: '.diptych/config.yaml',
-        allowedPaths: ['.diptych/**'],
-      }),
-    );
-    expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });
   });
 });

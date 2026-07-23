@@ -12,8 +12,8 @@ import { createBoundedOutput } from '../../lib/process/bounded-output.js';
 import {
   DEFAULT_PROCESS_LINE_MAX_BYTES,
   DEFAULT_PROCESS_STDERR_MAX_BYTES,
-  spawnWithShellFallback,
-} from '../../lib/process/spawn.js';
+} from '../../lib/process/spawn/lifecycle.js';
+import { spawnWithShellFallback } from '../../lib/process/spawn/progress.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { processError } from '../../lib/process/errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';

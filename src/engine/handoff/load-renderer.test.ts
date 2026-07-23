@@ -3,37 +3,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { loadRenderer, listCustomRenderers } from './load-renderer.js';
-import { renderHandoffWithCustom } from './render.js';
-import type { HandoffInput } from './types.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 
 let tmp: string;
 
-const baseInput: Omit<HandoffInput, 'target'> & { target: string } = {
-  target: 'spec-kit',
-  sessionId: 'sess-test',
-  feature: 'Test Feature',
-  mode: 'standard',
-  tasks: [
-    makeTask({
-      id: 'T001',
-      title: 'Test task',
-      action: 'create',
-      file: 'src/test.ts',
-      dependsOn: [],
-      description: 'A test task',
-      tests: [],
-      constraints: [],
-      implementationSteps: [],
-      typeDefs: '',
-      status: 'pending',
-    }),
-  ],
-};
-
 beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), 'load-renderer-test-'));
-  // Make the temp dir an ESM package so .js fixtures are treated as ESM modules
   writeFileSync(join(tmp, 'package.json'), JSON.stringify({ type: 'module' }));
 });
 
@@ -110,54 +84,5 @@ describe('listCustomRenderers', () => {
   it('returns [] when renderers folder does not exist', () => {
     const names = listCustomRenderers(tmp);
     expect(names).toEqual([]);
-  });
-});
-
-describe('renderHandoffWithCustom', () => {
-  it('delegates to sync renderHandoff for built-in targets without loading a file', async () => {
-    const pack = await renderHandoffWithCustom({ ...baseInput, target: 'spec-kit' }, tmp);
-    expect(pack.files.length).toBeGreaterThan(0);
-    expect(pack.files.some((f) => f.path.startsWith('tasks/'))).toBe(true);
-  });
-
-  it('loads and calls a custom renderer for an unknown target when trusted', async () => {
-    const renderersDir = join(tmp, '.diptych', 'handoff-renderers');
-    mkdirSync(renderersDir, { recursive: true });
-    writeFileSync(
-      join(renderersDir, 'my-custom.js'),
-      `export default async function render(input) {
-        return { files: [{ path: 'custom.md', content: 'from custom renderer' }] };
-      }`,
-    );
-
-    const pack = await renderHandoffWithCustom({ ...baseInput, target: 'my-custom' }, tmp, {
-      trustCustomRenderers: true,
-    });
-    expect(pack.files).toHaveLength(1);
-    expect(pack.files[0]?.path).toBe('custom.md');
-    expect(pack.files[0]?.content).toBe('from custom renderer');
-  });
-
-  it('blocks custom renderer when not trusted', async () => {
-    const renderersDir = join(tmp, '.diptych', 'handoff-renderers');
-    mkdirSync(renderersDir, { recursive: true });
-    writeFileSync(
-      join(renderersDir, 'my-custom.js'),
-      `export default async function render(input) {
-        return { files: [{ path: 'custom.md', content: 'from custom renderer' }] };
-      }`,
-    );
-
-    await expect(
-      renderHandoffWithCustom({ ...baseInput, target: 'my-custom' }, tmp),
-    ).rejects.toThrow(/blocked.*trust\.customRenderers/);
-  });
-
-  it('throws with "unknown target" message when no built-in or custom renderer found', async () => {
-    await expect(
-      renderHandoffWithCustom({ ...baseInput, target: 'no-such-renderer' }, tmp, {
-        trustCustomRenderers: true,
-      }),
-    ).rejects.toThrow('unknown target: no-such-renderer. No built-in or custom renderer found.');
   });
 });

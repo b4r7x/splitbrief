@@ -1,24 +1,7 @@
-import { PhaseSchema, type Phase } from '../../core/schemas/enums.js';
+import { eventPhase, isInfrastructurePhaseEvent } from '../../core/event-phase.js';
+import type { Phase } from '../../core/schemas/enums.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { createStore, storeBase } from '../create-store.js';
-
-function phaseFromEvent(event: EngineEvent): Phase | undefined {
-  const result = PhaseSchema.safeParse(event.phase);
-  return result.success ? result.data : undefined;
-}
-
-const INFRASTRUCTURE_PHASE_EVENT_TYPES = new Set<EngineEvent['type']>([
-  'ipc_client_attached',
-  'ipc_client_detached',
-  'ipc_reconnect_attempt',
-  'ipc_reconnect_failed',
-  'replay_started',
-  'replay_complete',
-]);
-
-function isInfrastructurePhaseEvent(event: EngineEvent): boolean {
-  return INFRASTRUCTURE_PHASE_EVENT_TYPES.has(event.type);
-}
 
 const STALL_CLEARING_EVENT_TYPES = new Set<EngineEvent['type']>([
   'runner_call_stall_cleared',
@@ -139,7 +122,7 @@ function __testReset(next?: LifecycleResetState): void {
 }
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
-// Production use is limited to workflow/actions.ts (the dispatcher).
+// Production use is limited to workflow/actions/ (the dispatcher).
 export const _lifecycleInternal = { set: store.set };
 
 export const lifecycleStore = {
@@ -149,7 +132,7 @@ export const lifecycleStore = {
 
 export function updatePhase(state: LifecycleState, event: EngineEvent): LifecycleState {
   if (isInfrastructurePhaseEvent(event)) return state;
-  const phase = phaseFromEvent(event);
+  const phase = eventPhase(event);
 
   if (event.type === 'workflow_started') {
     return runningLifecycleState({

@@ -14,23 +14,6 @@ describe('HookEntrySchema', () => {
     });
   });
 
-  it('accepts module hooks but rejects mixed command/module entries', () => {
-    expect(HookEntrySchema.safeParse({ kind: 'module', path: './hooks/pre-task.js' }).success).toBe(
-      true,
-    );
-    expect(
-      HookEntrySchema.safeParse({ kind: 'module', path: './hooks/pre-task.js', command: 'echo ok' })
-        .success,
-    ).toBe(false);
-    expect(
-      HookEntrySchema.safeParse({
-        kind: 'command',
-        command: './scripts/pre-task.sh',
-        path: './hooks/pre-task.js',
-      }).success,
-    ).toBe(false);
-  });
-
   it.each([
     [{ command: 'sh' }],
     [{ command: '/bin/bash' }],

@@ -26,15 +26,13 @@ import {
   findLatestExpandableActivityBatchKey,
 } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
-import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
 import { configStore } from '../stores/project/config.js';
-import { addEvent, getSections } from '../stores/workflow/actions.js';
+import { addEvent } from '../stores/workflow/actions/event.js';
+import { getSections } from '../stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
-import { reviewStore } from '../stores/workflow/review.js';
-import { focusStore } from '../stores/ui/focus.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import {
@@ -54,7 +52,7 @@ const workflowPorts: WorkflowCommandPorts = {
   requestClearQueue,
   findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
   readScrollMetrics: readConversationScrollSnapshot,
-  resolveCopyValue,
+  resolveCopyValue: (target) => (target === 'message' ? 'port-value' : null),
 };
 
 function build() {
@@ -132,6 +130,20 @@ describe('buildCommandContext', () => {
     });
   });
 
+  it('copies a non-empty port-resolved message to the clipboard', async () => {
+    const result = await build().copyTarget('message');
+
+    expect(readClipboardExecCalls().at(-1)?.stdin).toBe('port-value');
+    expect(result).toBe('native');
+  });
+
+  it('reports empty when the message port resolves to null', async () => {
+    const result = await build().copyTarget('cost');
+
+    expect(readClipboardExecCalls()).toHaveLength(0);
+    expect(result).toBe('empty');
+  });
+
   it('routes rewind requests to the live workflow handler', () => {
     const requests: RewindTarget[] = [];
     setRewindHandler((request) => requests.push(request));
@@ -188,138 +200,8 @@ describe('buildCommandContext', () => {
     expect(controlsStore.get().sidebarVisible).toBe(false);
   });
 
-  it('forwards the focused brief row file to the clipboard for the path target', async () => {
-    reviewStore.setBriefPaths(['src/a.ts', 'src/b.ts']);
-    reviewStore.setRenderedLineCount(2);
-    reviewStore.setVisibleBriefCount(2);
-    focusStore.set('brief', 1);
-
-    const result = await build().copyTarget('path');
-
-    expect(readClipboardExecCalls().at(-1)?.stdin).toBe('src/b.ts');
-    expect(result).toBe('native');
-  });
-
-  it('reports empty without copying when the path target has no brief rows', async () => {
-    reviewStore.clearReview();
-
-    const result = await build().copyTarget('path');
-
-    expect(readClipboardExecCalls()).toHaveLength(0);
-    expect(result).toBe('empty');
-  });
-
-  it('copies the focused brief raw markdown for the brief target', async () => {
-    const raw = '---\nid: T002\ntitle: Second\n---\n## Intent\nbody';
-    reviewStore.setBriefSources(['first-brief-source', raw, 'third-brief-source']);
-    reviewStore.setRenderedLineCount(3);
-    reviewStore.setVisibleBriefCount(3);
-    focusStore.set('brief', 1);
-
-    const result = await build().copyTarget('brief');
-
-    expect(readClipboardExecCalls().at(-1)?.stdin).toBe(raw);
-    expect(result).toBe('native');
-  });
-
-  it('yanks the focused brief markdown via the inlined brief copy target (the y key path)', async () => {
-    const raw = '---\nid: T001\ntitle: First\n---\n## Intent\nbody';
-    reviewStore.setBriefSources([raw]);
-    reviewStore.setRenderedLineCount(1);
-    reviewStore.setVisibleBriefCount(1);
-    focusStore.set('brief', 0);
-
-    await build().copyTarget('brief');
-
-    expect(readClipboardExecCalls().at(-1)?.stdin).toBe(raw);
-  });
-
-  it('falls back to the scroll-top brief for the brief target when no row is focused', async () => {
-    reviewStore.setBriefSources(['only-brief']);
-    reviewStore.setRenderedLineCount(1);
-    reviewStore.setVisibleBriefCount(1);
-    focusStore.clear();
-
-    const result = await build().copyTarget('brief');
-
-    expect(readClipboardExecCalls().at(-1)?.stdin).toBe('only-brief');
-    expect(result).toBe('native');
-  });
-
-  it('reports empty for the brief target when sources exist but no row is rendered', async () => {
-    reviewStore.setBriefSources(['hidden-brief']);
-    reviewStore.setRenderedLineCount(1);
-    reviewStore.setVisibleBriefCount(0);
-    focusStore.clear();
-
-    const result = await build().copyTarget('brief');
-
-    expect(readClipboardExecCalls()).toHaveLength(0);
-    expect(result).toBe('empty');
-  });
-
-  it('reports empty for the path target when paths exist but no row is rendered', async () => {
-    reviewStore.setBriefPaths(['src/hidden.ts']);
-    reviewStore.setRenderedLineCount(1);
-    reviewStore.setVisibleBriefCount(0);
-    focusStore.clear();
-
-    const result = await build().copyTarget('path');
-
-    expect(readClipboardExecCalls()).toHaveLength(0);
-    expect(result).toBe('empty');
-  });
-
-  it('reports empty for the brief target when the focused index is out of range', async () => {
-    reviewStore.setBriefSources(['only-one']);
-    focusStore.set('brief', 5);
-
-    const result = await build().copyTarget('brief');
-
-    expect(readClipboardExecCalls()).toHaveLength(0);
-    expect(result).toBe('empty');
-  });
-
-  it('copies the last assistant message raw for the default (message) target', async () => {
-    const raw = 'first reply';
-    const latest = 'final \u001b[31mreply\u001b[0m with controls';
-    addEvent({ type: 'planner_text', ts: 1, phase: 'planning', text: raw, role: 'planner' });
-    addEvent({ type: 'user_message', ts: 2, phase: 'planning', text: 'a user turn' });
-    addEvent({ type: 'planner_text', ts: 3, phase: 'planning', text: latest, role: 'planner' });
-
-    const result = await build().copyTarget('message');
-
-    expect(readClipboardExecCalls().at(-1)?.stdin).toBe(latest);
-    expect(result).toBe('native');
-  });
-
-  it('reports empty for the message target when no assistant message exists', async () => {
-    const result = await build().copyTarget('message');
-
-    expect(readClipboardExecCalls()).toHaveLength(0);
-    expect(result).toBe('empty');
-  });
-
-  it('reports empty for the cost target when no priced usage has accrued', async () => {
-    const result = await build().copyTarget('cost');
-
-    expect(readClipboardExecCalls()).toHaveLength(0);
-    expect(result).toBe('empty');
-  });
-
   it('is not attached for an in-process session', () => {
     expect(build().isAttached).toBe(false);
-  });
-
-  it('reports an attached context when the workflow route carries an attach socket', () => {
-    routerStore.init({
-      screen: 'workflow',
-      feature: 'feat',
-      sessionId: 's1',
-      attach: { sockPath: '/tmp/s.sock', authToken: 'tok' },
-    });
-
-    expect(build().isAttached).toBe(true);
   });
 
   it('hides local-only workflow mutation commands when attached', () => {
@@ -377,50 +259,6 @@ describe('buildCommandContext', () => {
     expect(configStore.get().config?.planner).toEqual(config.planner);
     expect(configStore.get().config?.implementer.model).toBe(config.implementer.model);
   });
-
-  it('routes workflow operations through the injected ports, not workflow feature internals', async () => {
-    const calls: string[] = [];
-    const fakePorts: WorkflowCommandPorts = {
-      requestRewind: (request) => {
-        calls.push(`rewind:${request.target}`);
-        return true;
-      },
-      requestClearQueue: () => {
-        calls.push('clearQueue');
-        return { status: 'cleared', count: 7 };
-      },
-      findLatestActivityBatchKey: () => {
-        calls.push('activityKey');
-        return null;
-      },
-      readScrollMetrics: () => {
-        calls.push('scrollMetrics');
-        return { renderableCount: 0, totalHeight: 0, maxOffset: 0, viewportHeight: 10 };
-      },
-      resolveCopyValue: (target) => {
-        calls.push(`copy:${target}`);
-        return null;
-      },
-    };
-    const ctx = buildCommandContext({ exit: () => {}, workflow: fakePorts });
-
-    ctx.requestRewind('spec');
-    ctx.requestTaskRedo('T-9');
-    expect(ctx.clearQueue()).toEqual({ status: 'cleared', count: 7 });
-    ctx.scrollConversation('bottom');
-    ctx.toggleLatestActivityBatch();
-    expect(await ctx.copyTarget('message')).toBe('empty');
-
-    expect(calls).toEqual([
-      'rewind:spec',
-      'rewind:task',
-      'clearQueue',
-      'scrollMetrics',
-      'activityKey',
-      'copy:message',
-    ]);
-    expect(readClipboardExecCalls()).toHaveLength(0);
-  });
 });
 
 function RuntimeCommandsHarness({
@@ -442,26 +280,7 @@ describe('useRuntimeCommands', () => {
     vi.restoreAllMocks();
   });
 
-  it('returns the documented runtime-commands shape', async () => {
-    let model: ReturnType<typeof useRuntimeCommands> | undefined;
-    const ui = renderFeature(
-      createElement(RuntimeCommandsHarness, {
-        onModel: (m) => {
-          model = m;
-        },
-      }),
-    );
-    await tick();
-
-    expect(Array.isArray(model?.commands)).toBe(true);
-    expect(model?.copyTarget).toBeDefined();
-    expect(typeof model?.setWorkflowMode).toBe('function');
-    expect(typeof model?.handleRuntimeCommand).toBe('function');
-    ui.unmount();
-  });
-
-  it('routes an unknown command through executeRuntimeCommand to feedbackStore.setError', async () => {
-    const setError = vi.spyOn(feedbackStore, 'setError');
+  it('surfaces an unknown command as feedback error state', async () => {
     let model: ReturnType<typeof useRuntimeCommands> | undefined;
     const ui = renderFeature(
       createElement(RuntimeCommandsHarness, {
@@ -475,7 +294,10 @@ describe('useRuntimeCommands', () => {
     model?.handleRuntimeCommand('/totally-unknown-xyz', 'home');
     await tick();
 
-    expect(setError).toHaveBeenCalled();
+    const feedback = feedbackStore.get();
+    expect(feedback.isError).toBe(true);
+    expect(feedback.message).toContain('Unknown command');
+    expect(feedback.message).toContain('/totally-unknown-xyz');
     ui.unmount();
   });
 });

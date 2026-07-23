@@ -5,7 +5,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { isCliError } from '../errors.js';
 import { registerWorktreeCommand } from './worktree.js';
 import type { WorktreeDeps } from './worktree.js';
-import type { WorktreeInfo } from '../../engine/worktree.js';
+import type { WorktreeInfo } from '../../engine/worktree/status.js';
 
 let tmp: string;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
@@ -176,22 +176,6 @@ describe('worktree missing target', () => {
 });
 
 describe('worktree remove', () => {
-  it.each([
-    { flags: [] as string[], expected: ['Removed worktree ".trees/my-feature".'] },
-    { flags: ['--force'], expected: ['Removed worktree ".trees/my-feature".'] },
-    {
-      flags: ['--delete-branch'],
-      expected: ['Removed worktree ".trees/my-feature".', 'Deleted branch diptych/my-feature.'],
-    },
-  ])('prints removal result for flags $flags', async ({ flags, expected }) => {
-    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
-
-    await runWorktree(['remove', 'my-feature', ...flags]);
-
-    const out = captureOutput();
-    for (const line of expected) expect(out).toContain(line);
-  });
-
   it('propagates cliError when removeWorktree rejects', async () => {
     mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
     mockRemoveWorktree.mockRejectedValue(

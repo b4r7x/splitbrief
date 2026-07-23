@@ -4,12 +4,10 @@ import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import { gateChangedFiles, type GateChangedFilesDecision } from './gate-files.js';
-import {
-  captureCurrentFileContents,
-  getChangedFilesSinceSnapshot,
-  restoreDirtyFilesFromSnapshot,
-  type ChangedFilesSnapshot,
-} from './file-snapshots.js';
+import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
+import { captureCurrentFileContents } from './file-snapshots/contents.js';
+import { restoreDirtyFilesFromSnapshot } from './file-snapshots/restore.js';
+import type { ChangedFilesSnapshot } from './file-snapshots/types.js';
 import { promoteStagedChanges, type StagedProject } from './staged-project.js';
 
 export type GateAndPromoteOutcome =

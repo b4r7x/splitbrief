@@ -42,14 +42,11 @@ import {
   type ResumeContextHolder,
   type WorkflowContext,
 } from '../types.js';
-import { buildSummary, type SummaryBase } from '../summary.js';
+import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { publishError, publishRunnerCallEvent, publishWarningFromError } from '../events.js';
-import {
-  saveFinalSession,
-  shouldPreserveActiveState,
-  withShutdownHandlers,
-  installQueueHandler,
-} from '../session-lifecycle.js';
+import { saveFinalSession, shouldPreserveActiveState } from '../session-lifecycle/finalize.js';
+import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
+import { installQueueHandler } from '../session-lifecycle/install-queue.js';
 
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
 import { reapOrphanRunners } from './orphan-reaper.js';

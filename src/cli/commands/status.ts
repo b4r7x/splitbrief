@@ -17,7 +17,7 @@ import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { formatModelName } from '../../core/model-display.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { loadConfig } from '../../core/config/load/io.js';
-import { consoleWorkflowFeature } from '../../core/state/persistence.js';
+import { consoleWorkflowFeature } from '../../core/transcript-policy.js';
 
 function printCostHistory(projectDir: string): void {
   try {

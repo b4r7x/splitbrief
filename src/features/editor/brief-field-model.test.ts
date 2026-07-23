@@ -45,16 +45,24 @@ function richTask(): Task {
   });
 }
 
+const REPLACEMENT = 'replacement line one\nreplacement line two';
+
 describe('writeField', () => {
-  it.each(ALL_FIELDS)('returns a NEW Task with id/dependsOn/action/status intact (%s)', (field) => {
+  it.each(
+    ALL_FIELDS.map((field) => ({
+      field,
+      expected: REPLACEMENT,
+    })),
+  )('returns a NEW Task with id/dependsOn/action/status intact (%s)', ({ field, expected }) => {
     const task = richTask();
-    const next = writeField(task, field, 'replacement line one\nreplacement line two');
+    const next = writeField(task, field, REPLACEMENT);
 
     expect(next).not.toBe(task);
     expect(next.id).toBe(task.id);
     expect(next.dependsOn).toEqual(task.dependsOn);
     expect(next.action).toBe(task.action);
     expect(next.status).toBe(task.status);
+    expect(readField(next, field)).toBe(expected);
   });
 
   it('never mutates the input task', () => {

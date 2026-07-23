@@ -1,39 +1,24 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import { formatValidationError } from '../validation.js';
+import { formatValidationError } from '../validation/format-error.js';
 
 import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import {
-  publishError,
-  publishWarning,
-  publishWarningFromError,
-  publishDriftChainDetected,
-  publishTaskSkipped,
-} from '../events.js';
+import { publishError, publishWarning, publishTaskSkipped } from '../events.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { refreshAndPersistCode, addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
-import { gateAction, type GateDecision } from '../approval/tiered-approval.js';
-import {
-  getChangedFilesSinceSnapshot,
-  restoreDirtyFilesFromSnapshot,
-  type ChangedFilesSnapshot,
-} from '../approval/file-snapshots.js';
+import { gateAction } from '../approval/tiered-approval.js';
+import type { GateDecision } from '../approval/types.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import { detectValidationFailureUserEdit } from '../user-edit/detection.js';
 import type { EngineEvent } from '../../events/types.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../types.js';
-import {
-  readDriftChainState,
-  writeDriftChainState,
-  initialDriftChainState,
-} from '../drift/chain-state.js';
-import { computePerTaskOutOfBounds, analyzeDriftChain } from '../drift/chain.js';
-import { isExtractedCodeApprovalRaceError } from '../../implementers/base.js';
+import { isExtractedCodeApprovalRaceError } from '../../implementers/pipeline/extracted-code.js';
 import { handleApprovalTimeUserEditConflict } from '../escalation/approval-conflict.js';
 import {
   persistTaskEvidence,
@@ -45,93 +30,8 @@ import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { runImplementation } from './run-implementation.js';
 import { applyChangedFiles } from './apply-changed-files.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
-
-async function runChainAnalysisSafe(opts: {
-  wctx: WorkflowContext;
-  task: Task;
-  state: WorkflowState;
-  taskStartSnapshot: ChangedFilesSnapshot;
-}): Promise<void> {
-  const { projectDir, sessionId, bus } = opts.wctx;
-  try {
-    const taskChangedFiles = await getChangedFilesSinceSnapshot(projectDir, opts.taskStartSnapshot);
-    const dependsOnFiles = resolveDependsOnFiles(opts.state.tasks, opts.task);
-    const outOfBoundsFiles = computePerTaskOutOfBounds(opts.task, taskChangedFiles, dependsOnFiles);
-
-    const existing =
-      readDriftChainState({ projectDir, sessionId }) ?? initialDriftChainState(sessionId);
-
-    const threshold = opts.wctx.config.workflow.driftChainThreshold ?? 0.6;
-    const update = analyzeDriftChain(existing, opts.task.id, outOfBoundsFiles, threshold);
-
-    writeDriftChainState({ projectDir, sessionId }, update.state);
-
-    if (update.emitted) {
-      publishDriftChainDetected({ bus, phase: opts.state.phase }, update.emitted, threshold);
-    }
-  } catch (err) {
-    publishWarningFromError(
-      { bus: opts.wctx.bus, phase: opts.state.phase },
-      'drift chain analysis failed',
-      err,
-    );
-  }
-}
-
-async function restoreExhaustedTaskFiles(opts: {
-  wctx: WorkflowContext;
-  phase: WorkflowState['phase'];
-  taskChangedFiles: string[];
-  taskStartSnapshot: ChangedFilesSnapshot;
-}): Promise<void> {
-  return restoreTaskFilesFromSnapshot({
-    ...opts,
-    restoredMessage: (restoredFiles) =>
-      `Restored ${restoredFiles.length} failing task change(s) to the pre-task state after recovery: ${restoredFiles.join(', ')}`,
-    failureMessage: 'Failed to restore failing task changes from the pre-task snapshot',
-  });
-}
-
-async function restoreDeniedPreValidationFiles(opts: {
-  wctx: WorkflowContext;
-  phase: WorkflowState['phase'];
-  taskChangedFiles: string[];
-  taskStartSnapshot: ChangedFilesSnapshot;
-}): Promise<void> {
-  return restoreTaskFilesFromSnapshot({
-    ...opts,
-    restoredMessage: (restoredFiles) =>
-      `Restored ${restoredFiles.length} unvalidated task change(s) after pre_validation denied: ${restoredFiles.join(', ')}`,
-    failureMessage: 'Failed to restore denied pre_validation task changes',
-  });
-}
-
-async function restoreTaskFilesFromSnapshot(opts: {
-  wctx: WorkflowContext;
-  phase: WorkflowState['phase'];
-  taskChangedFiles: string[];
-  taskStartSnapshot: ChangedFilesSnapshot;
-  restoredMessage: (restoredFiles: string[]) => string;
-  failureMessage: string;
-}): Promise<void> {
-  if (opts.taskChangedFiles.length === 0) return;
-  try {
-    const { restoredFiles } = await restoreDirtyFilesFromSnapshot(
-      opts.wctx.projectDir,
-      opts.taskStartSnapshot,
-      opts.taskChangedFiles,
-    );
-    if (restoredFiles.length > 0) {
-      publishWarning({
-        bus: opts.wctx.bus,
-        phase: opts.phase,
-        message: opts.restoredMessage(restoredFiles),
-      });
-    }
-  } catch (err) {
-    publishWarningFromError({ bus: opts.wctx.bus, phase: opts.phase }, opts.failureMessage, err);
-  }
-}
+import { runChainAnalysisSafe } from './analyze-drift.js';
+import { restoreDeniedPreValidationFiles, restoreExhaustedTaskFiles } from './rollback.js';
 
 function recordApprovalDenial(opts: {
   wctx: WorkflowContext;

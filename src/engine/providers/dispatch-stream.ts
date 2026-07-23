@@ -3,7 +3,8 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { streamAnthropicCompletion } from './anthropic/stream.js';
 import { providerError } from './errors.js';
-import { streamCompletion, type StreamClient } from './openai-stream.js';
+import { streamCompletion } from './openai-stream/completion.js';
+import type { StreamClient } from './openai-stream/request.js';
 import type { StreamMessage } from './types.js';
 
 export type { StreamMessage } from './types.js';

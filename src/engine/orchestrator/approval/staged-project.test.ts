@@ -2,7 +2,8 @@ import { afterEach, describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SANDBOX_DIR } from '../../../core/paths.js';
-import { captureCurrentFileContents, getChangedFilesSinceSnapshot } from './file-snapshots.js';
+import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
+import { captureCurrentFileContents } from './file-snapshots/contents.js';
 import { createStagedProject, promoteStagedChanges } from './staged-project.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -131,21 +132,23 @@ describe('createStagedProject', () => {
 
   itUnix('does not copy symlinked entries into the staged project', async () => {
     const dir = createTempDir('staged-symlink-test');
-    const outsideDir = createTempDir('staged-symlink-outside');
     try {
       createTestGitRepo(dir);
+      writeFileSync(join(dir, '.gitignore'), 'src/linked.ts\n');
       mkdirSync(join(dir, 'src'), { recursive: true });
-      writeFileSync(join(outsideDir, 'outside.ts'), 'outside\n');
-      symlinkSync(join(outsideDir, 'outside.ts'), join(dir, 'src', 'linked.ts'));
+      writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
+      symlinkSync(join(dir, 'src', 'app.ts'), join(dir, 'src', 'linked.ts'));
 
       const staged = await createStagedProject(dir);
       try {
         expect(existsSync(join(staged.projectDir, 'src', 'linked.ts'))).toBe(false);
+        expect(readFileSync(join(staged.projectDir, 'src', 'app.ts'), 'utf-8')).toBe(
+          'export const app = true;\n',
+        );
       } finally {
         staged.cleanup();
       }
     } finally {
-      cleanupTempDir(outsideDir);
       cleanupTempDir(dir);
     }
   });

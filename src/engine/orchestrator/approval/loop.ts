@@ -7,9 +7,10 @@ import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import type { Planner } from '../../planners/types.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
-import { appendMessage } from '../../../core/state/persistence.js';
+import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { commitQueueMessagesDrained, formatDrainedMessages, readQueueForPrompt } from '../queue.js';
+import { commitQueueMessagesDrained, readQueueForPrompt } from '../queue/drain.js';
+import { formatDrainedMessages } from '../queue/prompt.js';
 import type { WorkflowSinks } from '../types.js';
 import type { EngineEventOf } from '../../events/types.js';
 

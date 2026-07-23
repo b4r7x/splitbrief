@@ -546,7 +546,7 @@ diptych start --detach --mode speckit "long planner run"
 
 Prints the session ID and exits. The server logs to `.diptych/sessions/<id>/server.log`. On spawn, writes `.diptych/sessions/<id>/lockfile.json` (heartbeat-tracked, see SCD-03).
 
-**Constraints.** `--detach` requires a feature argument (cannot be omitted). It cannot be combined with `--json` or `--rpc` (`start.ts` throws before worktree creation).
+**Constraints.** `--detach` requires a feature argument (cannot be omitted). It cannot be combined with `--json` or `--rpc` (`start/register.ts` throws before worktree creation).
 
 ### `diptych attach [session-id]`
 
@@ -863,7 +863,7 @@ diptych doctor [--json]
 diptych resume
 ```
 
-For backends without native session resume, the planner context is rebuilt from `session.jsonl` (`transcript-rebuild.ts`).
+For backends without native session resume, the planner context is rebuilt from `session.jsonl` (`transcript/rebuild.ts`).
 
 ### `diptych migrate`
 

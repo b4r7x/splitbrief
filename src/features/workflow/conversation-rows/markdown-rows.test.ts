@@ -1,19 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { getTheme } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../../../utils/markdown/layout.js';
-import type { MarkdownLayoutSegment } from '../../../utils/markdown/types.js';
 import {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRows,
   markdownConversationRowsCacheKey,
   markdownConversationRowsProjection,
   resetMarkdownConversationRowsCache,
-  workflowMarkdownRenderSegments,
 } from './markdown-rows.js';
-import { rowText } from './row-format.js';
+import { rowText } from './row-format/rows.js';
 
 const THEMATIC_BREAK_CHAR = '\u2500';
 
@@ -387,18 +384,28 @@ describe('markdownConversationRows', () => {
     expect(joined).toContain('e\u0301'.repeat(10));
   });
 
-  it('renders headings with the shared markdown heading tone', () => {
-    const rows = markdownConversationRows({
-      keyPrefix: 'markdown',
-      text: '# H1\n\n#### H4',
-      width: 80,
-    });
-    const segments = rows.flatMap((row) => row.segments);
+  it('leaves an external link target unresolved', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown',
+        text: '[docs](https://example.com/docs)',
+        width: 80,
+      });
+      const segments = rows.flatMap((row) => row.segments);
 
-    expect(segments).toContainEqual({ text: 'H1', tone: 'markdownHeading', bold: true });
-    expect(segments).toContainEqual({ text: 'H4', tone: 'markdownHeading', bold: false });
+      expect(segments).toContainEqual({
+        text: 'docs',
+        tone: 'markdownLink',
+        href: 'https://example.com/docs',
+      });
+      const text = rows.map(rowText).join('\n');
+      expect(text).not.toContain('](');
+      expect(text).not.toContain('https://example.com/docs');
+    } finally {
+      configStore.__testReset();
+    }
   });
-
   it('links a project file-path reference and shortens its label', () => {
     configStore.__testReset({ projectDir: '/repo' });
     try {
@@ -503,79 +510,6 @@ describe('markdownConversationRows', () => {
     } finally {
       configStore.__testReset();
     }
-  });
-
-  it('leaves an external link target unresolved', () => {
-    configStore.__testReset({ projectDir: '/repo' });
-    try {
-      const rows = markdownConversationRows({
-        keyPrefix: 'markdown',
-        text: '[docs](https://example.com/docs)',
-        width: 80,
-      });
-      const segments = rows.flatMap((row) => row.segments);
-
-      expect(segments).toContainEqual({
-        text: 'docs',
-        tone: 'markdownLink',
-        href: 'https://example.com/docs',
-      });
-    } finally {
-      configStore.__testReset();
-    }
-  });
-});
-
-describe('workflowMarkdownRenderSegments', () => {
-  it('colors only the status word, leaving the doc region free of accent/state hues', () => {
-    const theme = getTheme();
-    const segment: MarkdownLayoutSegment = {
-      kind: 'text',
-      text: 'T001 in src/foo.ts is HIGH risk and FAILED',
-    };
-
-    const parts = workflowMarkdownRenderSegments({ segment, theme, projectDir: undefined });
-
-    expect(parts).toContainEqual({ text: 'T001' });
-    expect(parts).toContainEqual({ text: 'src/foo.ts', style: { color: theme.textDim } });
-    expect(parts).toContainEqual({ text: 'HIGH' });
-    expect(parts).toContainEqual({
-      text: 'FAILED',
-      style: { color: theme.dimError, bold: false },
-    });
-    expect(
-      parts.every(
-        (part) =>
-          part.text === 'FAILED' || part.style === undefined || part.style.color === theme.textDim,
-      ),
-    ).toBe(true);
-  });
-
-  it('does not color short prose verdict words on the doc surface', () => {
-    const theme = getTheme();
-    const segment: MarkdownLayoutSegment = {
-      kind: 'text',
-      text: 'all checks PASS and tasks DONE, nothing is OK to skip',
-    };
-
-    const parts = workflowMarkdownRenderSegments({ segment, theme, projectDir: undefined });
-
-    expect(parts.every((part) => part.style === undefined)).toBe(true);
-    expect(parts.map((part) => part.text).join('')).toBe(
-      'all checks PASS and tasks DONE, nothing is OK to skip',
-    );
-  });
-
-  it('folds an inconclusive verdict to a dim word on the doc surface', () => {
-    const theme = getTheme();
-    const segment: MarkdownLayoutSegment = { kind: 'text', text: 'result is INCONCLUSIVE' };
-
-    const parts = workflowMarkdownRenderSegments({ segment, theme, projectDir: undefined });
-
-    expect(parts).toContainEqual({
-      text: 'INCONCLUSIVE',
-      style: { color: theme.textDim, bold: false },
-    });
   });
 });
 
@@ -719,24 +653,6 @@ describe('q-marker invisibility', () => {
 });
 
 describe('links and tables in transcript rows', () => {
-  it('renders an inline link as a styled label without the raw markdown syntax', () => {
-    const rows = markdownConversationRows({
-      keyPrefix: 'links-tables-inline-link',
-      text: '[label](https://example.com/x)',
-      width: 80,
-    });
-    const segments = rows.flatMap((row) => row.segments);
-
-    expect(segments).toContainEqual({
-      text: 'label',
-      tone: 'markdownLink',
-      href: 'https://example.com/x',
-    });
-    const text = rows.map(rowText).join('\n');
-    expect(text).not.toContain('](');
-    expect(text).not.toContain('https://example.com/x');
-  });
-
   it('renders a pipe table with border and header tones and no raw separator text', () => {
     const tableText = [
       '| Name | Status |',

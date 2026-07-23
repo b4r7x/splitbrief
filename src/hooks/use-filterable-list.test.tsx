@@ -180,6 +180,33 @@ describe('useFilterableList', () => {
     ui.unmount();
   });
 
+  it('appendToFilter from customKeys appends space while typing', async () => {
+    function Harness() {
+      const list = useFilterableList({
+        items: ['alpha'],
+        filterFn: (item, query) => item.includes(query),
+        onSelect: () => {},
+        pageSize: 3,
+        customKeys: (input, key, { appendToFilter }) => {
+          if (input === ' ' && !key.ctrl) {
+            appendToFilter(' ');
+            return true;
+          }
+          return false;
+        },
+      });
+      return <Text>{`filter:[${list.filter}]`}</Text>;
+    }
+    const ui = renderFeature(<Harness />);
+    await tick(20);
+    ui.stdin.write('a');
+    await tick(20);
+    ui.stdin.write(' ');
+    await tick(20);
+    expect(ui.lastFrame()).toContain('filter:[a ]');
+    ui.unmount();
+  });
+
   it('deletes a full emoji with one backspace', async () => {
     const ui = renderFeature(<Harness items={['alpha']} />);
     await tick(20);

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { resolveDefaultApiBase } from '../../../core/providers/catalog.js';
-import { createMetadataProvider } from '../client.js';
+import { createMetadataProvider } from '../client/metadata.js';
 import { ANTHROPIC_API_VERSION, v1ModelsUrl } from '../constants.js';
 import type { ProviderDefWithMetadata, ProviderOverrides } from '../types.js';
 import type { DetectedModel } from '../../../core/discovery/detection.js';

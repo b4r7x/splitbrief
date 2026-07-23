@@ -1,24 +1,56 @@
 import type { Config } from '../../schemas/config.js';
-import { validateConfig, type ConfigError } from '../load/validate.js';
+import { validateConfig } from '../load/validation/config.js';
+import type { ConfigError } from '../load/validation/types.js';
+import { dedupeConfigWarnings, formatConfigLoaderDiagnostic } from '../load/io.js';
+import type { ConfigLoaderDiagnostic } from '../load/io.js';
 import { configError } from '../errors.js';
-import { applyCLIOverrides, type CLIOverrides } from './overrides.js';
+import { warnStderr } from '../../../lib/warn.js';
+import { applyCLIOverrides } from './overrides/apply.js';
+import type { CLIOverrides } from './overrides/schema.js';
+
+export type EffectiveConfigWarning =
+  | { source: 'loader'; diagnostic: ConfigLoaderDiagnostic }
+  | { source: 'validation'; message: string };
 
 export interface EffectiveConfigResult {
   config: Config;
-  warnings: string[];
+  warnings: EffectiveConfigWarning[];
 }
 
 function formatValidationErrors(errors: ConfigError[]): string[] {
   return errors.map((error) => `${error.path}: ${error.message}`);
 }
 
+export function formatEffectiveConfigWarning(warning: EffectiveConfigWarning): string {
+  switch (warning.source) {
+    case 'loader':
+      return formatConfigLoaderDiagnostic(warning.diagnostic);
+    case 'validation':
+      return warning.message;
+    default: {
+      const _exhaustive: never = warning;
+      return _exhaustive;
+    }
+  }
+}
+
+export function formatEffectiveConfigWarnings(
+  warnings: readonly EffectiveConfigWarning[],
+): string[] {
+  return dedupeConfigWarnings(warnings.map(formatEffectiveConfigWarning));
+}
+
+export function emitEffectiveConfigWarnings(warnings: readonly EffectiveConfigWarning[]): void {
+  for (const message of formatEffectiveConfigWarnings(warnings)) warnStderr(`⚠ ${message}`);
+}
+
 export function resolveEffectiveConfig(opts: {
   base: Config;
   overrides?: CLIOverrides | undefined;
-  baseWarnings?: string[] | undefined;
+  loaderDiagnostics?: ConfigLoaderDiagnostic[] | undefined;
 }): EffectiveConfigResult {
   const config = applyCLIOverrides(opts.base, opts.overrides ?? {});
-  const { errors, warnings, data } = validateConfig(config);
+  const { errors, warnings: validationWarnings, data } = validateConfig(config);
 
   if (errors.length > 0) {
     throw configError.validationFailed('effective config', formatValidationErrors(errors));
@@ -31,6 +63,13 @@ export function resolveEffectiveConfig(opts: {
 
   return {
     config: data,
-    warnings,
+    warnings: [
+      ...(opts.loaderDiagnostics ?? []).map(
+        (diagnostic): EffectiveConfigWarning => ({ source: 'loader', diagnostic }),
+      ),
+      ...validationWarnings.map(
+        (message): EffectiveConfigWarning => ({ source: 'validation', message }),
+      ),
+    ],
   };
 }

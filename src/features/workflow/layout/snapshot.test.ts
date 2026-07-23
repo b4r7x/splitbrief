@@ -12,18 +12,19 @@ import { conversationScrollStore } from '../../../stores/workflow/conversation-s
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
-import { resetWorkflow } from '../../../stores/workflow/actions.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
-import { getApprovalPromptRows, getQuestionPromptRows } from '../prompt-rows.js';
+import { getApprovalPromptRows } from '../prompt-rows/approval.js';
+import { getQuestionPromptRows } from '../prompt-rows/question.js';
 import { getWorkflowContentWidth, getWorkflowViewportHeight } from './rect.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { makeTaskStart } from '#testing/helpers/events.js';
+import { makeTaskStart } from '#testing/helpers/events/task.js';
 
 beforeEach(() => {
   terminalSizeStore.reset();

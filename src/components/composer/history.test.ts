@@ -15,88 +15,49 @@ describe('stepInputHistory', () => {
     expect(result.nextState).toEqual(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
   });
 
-  it('recalls the most recent entry and stores the draft on first ArrowUp', () => {
-    const result = stepInputHistory({
-      entries: ['third', 'second'],
-      state: INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
-      direction: 'up',
-      currentValue: 'draft',
-    });
+  it('round-trips every Up/Down transition, capturing and restoring the draft', () => {
+    const entries = ['third', 'second', 'first'];
+    let state = INITIAL_INPUT_HISTORY_NAVIGATION_STATE;
+    let value = 'draft';
 
-    expect(result.changed).toBe(true);
-    expect(result.nextValue).toBe('third');
-    expect(result.nextState).toEqual({ historyIndex: 0, draftValue: 'draft' });
-  });
+    const up1 = stepInputHistory({ entries, state, direction: 'up', currentValue: value });
+    expect(up1.changed).toBe(true);
+    expect(up1.nextValue).toBe('third');
+    expect(up1.nextState).toEqual({ historyIndex: 0, draftValue: 'draft' });
+    state = up1.nextState;
+    value = up1.nextValue;
 
-  it('walks toward older entries with repeated ArrowUp', () => {
-    const result = stepInputHistory({
-      entries: ['third', 'second', 'first'],
-      state: { historyIndex: 0, draftValue: 'draft' },
-      direction: 'up',
-      currentValue: 'third',
-    });
+    const up2 = stepInputHistory({ entries, state, direction: 'up', currentValue: value });
+    expect(up2.changed).toBe(true);
+    expect(up2.nextValue).toBe('second');
+    expect(up2.nextState).toEqual({ historyIndex: 1, draftValue: 'draft' });
+    state = up2.nextState;
+    value = up2.nextValue;
 
-    expect(result.changed).toBe(true);
-    expect(result.nextValue).toBe('second');
-    expect(result.nextState).toEqual({ historyIndex: 1, draftValue: 'draft' });
-  });
+    const up3 = stepInputHistory({ entries, state, direction: 'up', currentValue: value });
+    expect(up3.changed).toBe(true);
+    expect(up3.nextValue).toBe('first');
+    expect(up3.nextState).toEqual({ historyIndex: 2, draftValue: 'draft' });
+    state = up3.nextState;
+    value = up3.nextValue;
 
-  it('restores the draft when ArrowDown leaves history mode', () => {
-    const result = stepInputHistory({
-      entries: ['third', 'second'],
-      state: { historyIndex: 0, draftValue: 'draft' },
-      direction: 'down',
-      currentValue: 'third',
-    });
+    const down1 = stepInputHistory({ entries, state, direction: 'down', currentValue: value });
+    expect(down1.changed).toBe(true);
+    expect(down1.nextValue).toBe('second');
+    expect(down1.nextState).toEqual({ historyIndex: 1, draftValue: 'draft' });
+    state = down1.nextState;
+    value = down1.nextValue;
 
-    expect(result.changed).toBe(true);
-    expect(result.nextValue).toBe('draft');
-    expect(result.nextState).toEqual(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
-  });
+    const down2 = stepInputHistory({ entries, state, direction: 'down', currentValue: value });
+    expect(down2.changed).toBe(true);
+    expect(down2.nextValue).toBe('third');
+    expect(down2.nextState).toEqual({ historyIndex: 0, draftValue: 'draft' });
+    state = down2.nextState;
+    value = down2.nextValue;
 
-  it('walks toward newer entries with ArrowDown before restoring the draft', () => {
-    const result = stepInputHistory({
-      entries: ['third', 'second', 'first'],
-      state: { historyIndex: 2, draftValue: 'draft' },
-      direction: 'down',
-      currentValue: 'first',
-    });
-
-    expect(result.changed).toBe(true);
-    expect(result.nextValue).toBe('second');
-    expect(result.nextState).toEqual({ historyIndex: 1, draftValue: 'draft' });
-  });
-
-  it('history position is preserved across recalls', () => {
-    const entries = ['/sidebar', 'older-a', 'older-b'];
-
-    const first = stepInputHistory({
-      entries,
-      state: INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
-      direction: 'up',
-      currentValue: '',
-    });
-    expect(first.nextValue).toBe('/sidebar');
-    expect(first.nextState.historyIndex).toBe(0);
-
-    const second = stepInputHistory({
-      entries,
-      state: first.nextState,
-      direction: 'up',
-      currentValue: first.nextValue,
-    });
-    expect(second.changed).toBe(true);
-    expect(second.nextValue).toBe('older-a');
-    expect(second.nextState.historyIndex).toBe(1);
-
-    const third = stepInputHistory({
-      entries,
-      state: second.nextState,
-      direction: 'up',
-      currentValue: second.nextValue,
-    });
-    expect(third.changed).toBe(true);
-    expect(third.nextValue).toBe('older-b');
-    expect(third.nextState.historyIndex).toBe(2);
+    const down3 = stepInputHistory({ entries, state, direction: 'down', currentValue: value });
+    expect(down3.changed).toBe(true);
+    expect(down3.nextValue).toBe('draft');
+    expect(down3.nextState).toEqual(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
   });
 });

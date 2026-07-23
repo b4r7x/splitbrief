@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { CliToolId } from '../../../src/core/schemas/enums.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -28,11 +29,8 @@ describe('real CLI smoke: planner to implementer', () => {
         writeFileSync(
           join(projectDir, 'validate.mjs'),
           [
-            "import { existsSync, readFileSync } from 'node:fs';",
-            "const path = 'src/real-cli-smoke.ts';",
-            'if (!existsSync(path)) process.exit(1);',
-            "const content = readFileSync(path, 'utf-8');",
-            "if (!content.includes('real-cli-smoke')) process.exit(1);",
+            "const { realCliSmoke } = await import('./src/real-cli-smoke.ts');",
+            "if (realCliSmoke !== 'real-cli-smoke') process.exit(1);",
           ].join('\n') + '\n',
           'utf-8',
         );
@@ -80,9 +78,8 @@ describe('real CLI smoke: planner to implementer', () => {
 
         expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
         expect(summary.failed).toBe(0);
-        expect(readFileSync(join(projectDir, 'src/real-cli-smoke.ts'), 'utf-8')).toContain(
-          'real-cli-smoke',
-        );
+        const smokePath = join(projectDir, 'src/real-cli-smoke.ts');
+        expect(evaluateTsArtifact(smokePath, 'mod.realCliSmoke')).toBe('real-cli-smoke');
         expect(existsSync(join(projectDir, '.diptych'))).toBe(true);
       } finally {
         cleanupTempDir(projectDir);

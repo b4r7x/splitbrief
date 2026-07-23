@@ -263,14 +263,23 @@ export async function readFileOrEmpty(filePath: string): Promise<string> {
   }
 }
 
-export function ensureGitignore(projectDir: string, entry: string): void {
+function getWritableGitignorePath(projectDir: string): string {
   const gitignorePath = join(projectDir, '.gitignore');
+  rejectSymlinkTarget(gitignorePath);
+  assertWritablePathConfined('.gitignore', projectDir);
+  return gitignorePath;
+}
+
+export function ensureGitignore(projectDir: string, entry: string): void {
+  const gitignorePath = getWritableGitignorePath(projectDir);
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, 'utf-8');
     if (content.split('\n').some((line) => line.trim() === entry)) return;
+    getWritableGitignorePath(projectDir);
     const prefix = content.endsWith('\n') ? '' : '\n';
     appendFileSync(gitignorePath, `${prefix}${entry}\n`);
   } else {
+    getWritableGitignorePath(projectDir);
     writeFileSync(gitignorePath, `${entry}\n`);
   }
 }

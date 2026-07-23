@@ -1,5 +1,5 @@
 import { taskId } from '../../../src/core/schemas/task.js';
-import type { RecoveryIssue } from '../../../src/core/schemas/recovery.js';
+import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
 
 export function makeRecoveryIssue(overrides: Partial<RecoveryIssue> = {}): RecoveryIssue {
   return {

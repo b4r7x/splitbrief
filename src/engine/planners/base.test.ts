@@ -3,20 +3,10 @@ import { createPlannerBase } from './base.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import {
-  makeCallbacks,
-  makeBusRecorder,
-  TEST_METADATA,
-} from '#testing/helpers/orchestrator-factories.js';
-import { setupProject, REAL_TASKS_MD } from '#testing/helpers/planning-phase.js';
-import { runPlanningPhase } from '../orchestrator/planning/run.js';
-import { createInitialState } from '../../core/state/machine.js';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
-import type { Attachment } from '../../core/schemas/attachment.js';
 import type { PlannerCapabilities } from './types.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 
@@ -148,26 +138,6 @@ A test task.
     expect(result.phases).toHaveLength(1);
     expect(result.phases![0]!.text).toContain('id: T001');
     expect(result.phases![0]!.rawOutput).toBe('raw quick output');
-  });
-
-  it('instantPlan emits the instant-planning phase', async () => {
-    const onPhase = () => {};
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-    });
-    const instantPlan = planner.instantPlan;
-    if (!instantPlan) throw new Error('Expected instantPlan to be implemented');
-
-    const result = await instantPlan({
-      feature: 'feature',
-      projectDir,
-      callbacks: { onOutput: () => {}, onPhase },
-    });
-
-    expect(result.tasks).toBeDefined();
   });
 
   it('standard planning uses research-discovered language for later prompts', async () => {
@@ -568,124 +538,5 @@ describe('createPlannerBase — priorMessages injection (FR-007)', () => {
 
     expect(captured[0]).not.toContain('<!-- prior conversation -->');
     expect(seenPriorMessages).toEqual([{ role: 'user', content: 'raw turn' }]);
-  });
-});
-
-describe('createPlannerBase — attachments capability gate (F-123 seam)', () => {
-  let dirs: string[] = [];
-  afterEach(() => {
-    for (const d of dirs) cleanupTempDir(d);
-    dirs = [];
-  });
-
-  const attachment: Attachment = {
-    id: 'att-1',
-    kind: 'image',
-    path: '/tmp/screenshot.png',
-    mimeType: 'image/png',
-    sizeBytes: 1024,
-  };
-
-  async function runInstantWithAttachment(supportsImages: boolean) {
-    const { projectDir, sessionId } = setupProject(dirs);
-    let seenImages: Attachment[] | undefined;
-    const planner = createPlannerBase({
-      invokePlan: async ({ images }) => {
-        seenImages = images;
-        return completedRunnerCall('raw stdout noise');
-      },
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: { ...defaultCapabilities, supportsImages },
-      readPhaseOutput: () => REAL_TASKS_MD,
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    const initial = createInitialState('add a login form from this mockup');
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        config: makeConfig({ workflow: { mode: 'instant' } }),
-        callbacks,
-        metadata: TEST_METADATA,
-        sessionId,
-        bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-        drainPendingAttachments: () => [attachment],
-      },
-      planner,
-      state: { ...initial, phase: 'idle' },
-      feature: 'add a login form from this mockup',
-    });
-    return { result, events, getSeenImages: () => seenImages };
-  }
-
-  it('supportsImages false → emits planner_attachments_dropped and strips before the backend call', async () => {
-    const { result, events, getSeenImages } = await runInstantWithAttachment(false);
-
-    expect(result.cancelled).toBe(false);
-    const dropped = events.find((e) => e.type === 'planner_attachments_dropped');
-    expect(dropped).toBeDefined();
-    expect(dropped && 'count' in dropped ? dropped.count : 0).toBe(1);
-    expect(dropped && 'reason' in dropped ? dropped.reason : null).toBe('unsupported-backend');
-    expect(getSeenImages()).toBeUndefined();
-  });
-
-  it('supportsImages true → forwards attachments verbatim to the backend, no drop event', async () => {
-    const { result, events, getSeenImages } = await runInstantWithAttachment(true);
-
-    expect(result.cancelled).toBe(false);
-    expect(events.find((e) => e.type === 'planner_attachments_dropped')).toBeUndefined();
-    expect(getSeenImages()).toEqual([attachment]);
-  });
-});
-
-describe('createPlannerBase — unknown Task Brief section warning (F-429 / N399)', () => {
-  let dirs: string[] = [];
-  afterEach(() => {
-    for (const d of dirs) cleanupTempDir(d);
-    dirs = [];
-  });
-
-  const tasksWithUnknownSection = `${REAL_TASKS_MD}
-### Future Considerations
-
-- this heading is outside the canonical grammar and will be dropped
-`;
-
-  it('emits a warning event when planner-generated briefs contain an unknown ### section', async () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const planner = createPlannerBase({
-      invokePlan: async () => completedRunnerCall('raw stdout noise'),
-      invokeEscalate: async () => completedRunnerCall(''),
-      isAvailable: async () => true,
-      capabilities: defaultCapabilities,
-      readPhaseOutput: () => tasksWithUnknownSection,
-    });
-    const { callbacks } = makeCallbacks();
-    const { bus, events } = makeBusRecorder();
-    const initial = createInitialState('add auth');
-
-    const result = await runPlanningPhase({
-      wctx: {
-        projectDir,
-        config: makeConfig({ workflow: { mode: 'instant' } }),
-        callbacks,
-        metadata: TEST_METADATA,
-        sessionId,
-        bus,
-        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-        drainPendingAttachments: () => [],
-      },
-      planner,
-      state: { ...initial, phase: 'idle' },
-      feature: 'add auth',
-    });
-
-    expect(result.cancelled).toBe(false);
-    const warning = events.find(
-      (e) => e.type === 'warning' && e.message.includes('Future Considerations'),
-    );
-    expect(warning).toBeDefined();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { migrateConfig, migrateV2ToV3, deriveApproveLevel } from './migrate.js';
+import { migrateConfig, migrateV2ToV3 } from './migrate.js';
 import type {
   CliPlannerConfig,
   ApiPlannerConfig,
@@ -117,16 +117,6 @@ describe('migrateConfig', () => {
       expect(planner.effort).toBeUndefined();
       expect(planner.capabilities).toBeUndefined();
       expect(implementer.effort).toBeUndefined();
-      expect(warnings.some((w) => /config\.version is missing/.test(w))).toBe(true);
-    });
-
-    it('warns when version is missing instead of silently routing through v1', () => {
-      const noVersion = {
-        planner: { kind: 'claude-code' },
-        implementer: { kind: 'api', tool: 'ollama', model: 'qwen' },
-      };
-      const warnings: string[] = [];
-      migrateConfig(noVersion, warnings);
       expect(warnings.some((w) => /config\.version is missing/.test(w))).toBe(true);
     });
 
@@ -415,24 +405,5 @@ describe('migrateV2ToV3', () => {
   it('does not invent a workflow block when none was present', () => {
     const v3 = migrateV2ToV3({ version: 2 });
     expect(v3.workflow).toBeUndefined();
-  });
-});
-
-describe('deriveApproveLevel', () => {
-  it('returns "default" when no flags are set', () => {
-    expect(deriveApproveLevel({})).toBe('default');
-    expect(deriveApproveLevel({ autoApproveSpec: false, autoApprovePlan: false })).toBe('default');
-  });
-
-  it('returns "none" when both flags are true', () => {
-    expect(deriveApproveLevel({ autoApproveSpec: true, autoApprovePlan: true })).toBe('none');
-  });
-
-  it('returns "plan" when only the spec flag is true', () => {
-    expect(deriveApproveLevel({ autoApproveSpec: true })).toBe('plan');
-  });
-
-  it('returns "spec" when only the plan flag is true', () => {
-    expect(deriveApproveLevel({ autoApprovePlan: true })).toBe('spec');
   });
 });

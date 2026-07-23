@@ -1,5 +1,5 @@
 import { saveState } from '../../../core/state/persistence.js';
-import { formatValidationError } from '../validation.js';
+import { formatValidationError } from '../validation/format-error.js';
 import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';

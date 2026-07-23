@@ -72,7 +72,7 @@ describe('ListViewport', () => {
     await tick(20);
 
     const lines = (ui.lastFrame() ?? '').split('\n').filter((line) => line.trim().length > 0);
-    expect(lines.length).toBeLessThanOrEqual(5);
+    expect(lines.map((line) => line.trim())).toEqual(['project', 'p1', 'p2', 'p3', '↓ more']);
 
     ui.unmount();
     resetAllStores();

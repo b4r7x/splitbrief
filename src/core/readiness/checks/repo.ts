@@ -1,5 +1,5 @@
 import { pluralize } from '../../../utils/pluralize.js';
-import type { InProgressGitOp } from '../../../lib/git.js';
+import type { InProgressGitOp } from '../../../lib/git/repository.js';
 import type { CommitStrategy } from '../../schemas/enums.js';
 import type { ReadinessCheck } from '../types.js';
 

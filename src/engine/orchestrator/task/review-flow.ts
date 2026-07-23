@@ -7,7 +7,7 @@ import { publishTaskReviewNeeded } from '../events.js';
 import { buildTaskReviewRequest, shouldReviewTask } from './review.js';
 import type { TaskReviewRequest } from '../../events/workflow-events.js';
 import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
-import { enqueueUserMessage } from '../queue.js';
+import { enqueueUserMessage } from '../queue/submit.js';
 import { transition } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
 

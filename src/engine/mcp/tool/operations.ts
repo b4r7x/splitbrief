@@ -4,11 +4,8 @@ import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/sche
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { sessionDir, sessionsRoot } from '../../../core/paths.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
-import {
-  mutateEvidenceLedger,
-  readEvidenceLedger,
-  withUpdatedTask,
-} from '../../../core/evidence/ledger.js';
+import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { withUpdatedTask } from '../../../core/evidence/ledger-state.js';
 import { uniquePush } from '../../../utils/collections.js';
 import {
   MarkTaskDoneInputSchema,

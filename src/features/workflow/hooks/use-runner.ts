@@ -6,7 +6,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
-import { resetWorkflow } from '../../../stores/workflow/actions.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { resetMarkdownConversationRowsCache } from '../conversation-rows/markdown-rows.js';
 import { resetConversationRowsProjectionCache } from '../conversation-rows/projection-cache.js';
@@ -50,7 +50,7 @@ import type { UseInputModeResult } from './use-input-mode.js';
 import { buildRewindAction } from '../../../core/state/build-rewind-action.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
 import { createRecoveryDriver } from '../recovery-driver.js';
-import { enqueueUserMessage } from '../../../engine/orchestrator/queue.js';
+import { enqueueUserMessage } from '../../../engine/orchestrator/queue/submit.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { createJsonlSink } from '../../../engine/events/sinks/jsonl.js';
 
@@ -81,6 +81,17 @@ export interface WorkflowCompletion {
   status: Session['status'];
 }
 
+interface InlineResume {
+  feature: string;
+  state: WorkflowState;
+}
+
+interface PendingRewind {
+  feature: string;
+  event: EngineEvent;
+  feedback: string | undefined;
+}
+
 interface UseWorkflowRunnerResult {
   startedAt: string;
   sessionId?: string | undefined;
@@ -102,14 +113,14 @@ export function useWorkflowRunner({
   runWorkflow: runWorkflowFn = runWorkflow,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
-  const pendingRewindEventRef = useRef<EngineEvent | null>(null);
-  const pendingRewindFeedbackRef = useRef<string | undefined>(undefined);
+  const pendingRewindRef = useRef<PendingRewind | null>(null);
   const sessionIdRef = useRef<string | undefined>(initialSessionId);
+  const runFeatureRef = useRef(feature);
   const [startedAt] = useState(() => nowIso());
   const [runId, setRunId] = useState(0);
-  const [inlineResume, setInlineResume] = useState<WorkflowState | undefined>(undefined);
+  const [inlineResume, setInlineResume] = useState<InlineResume | undefined>(undefined);
 
-  const resumeState = inlineResume ?? initialResumeState;
+  const resumeState = inlineResume?.feature === feature ? inlineResume.state : initialResumeState;
 
   const buildCallbacks = buildPromptCallbacks();
   const recoveryDriverFactory = createRecoveryDriver();
@@ -125,8 +136,10 @@ export function useWorkflowRunner({
       consumeBoundaryInterrupt,
     };
     let stateForRun = resumeState;
-    const rewindFeedbackForRun = pendingRewindFeedbackRef.current;
-    pendingRewindFeedbackRef.current = undefined;
+    const pendingRewind = pendingRewindRef.current;
+    const rewindFeedbackForRun =
+      pendingRewind?.feature === feature ? pendingRewind.feedback : undefined;
+    pendingRewindRef.current = null;
     if (initialSessionId) sessionIdRef.current = initialSessionId;
     const pendingRecoverySessionId = stateForRun?.pendingRecovery
       ? (readActive(projectDir) ?? undefined)
@@ -149,11 +162,10 @@ export function useWorkflowRunner({
     resetMarkdownConversationRowsCache();
     resetConversationRowsProjectionCache();
     resetEventBlockCache();
-    if (pendingRewindEventRef.current) {
-      addTuiEvent(pendingRewindEventRef.current, {
+    if (pendingRewind?.feature === feature) {
+      addTuiEvent(pendingRewind.event, {
         persistTranscript: activeConfig().workflow.persistTranscript,
       });
-      pendingRewindEventRef.current = null;
     }
     conversationScrollStore.reset();
     setCancelHandler(() => {
@@ -178,13 +190,16 @@ export function useWorkflowRunner({
         next = transition(next, { type: 'RESOLVE_PENDING_RECOVERY' });
       }
       saveState(ref, next);
-      pendingRewindFeedbackRef.current =
-        action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN'
-          ? action.comment
-          : undefined;
-      pendingRewindEventRef.current = event;
+      pendingRewindRef.current = {
+        feature,
+        event,
+        feedback:
+          action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN'
+            ? action.comment
+            : undefined,
+      };
       controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-      setInlineResume(next);
+      setInlineResume({ feature, state: next });
       setRunId((id) => id + 1);
     });
 
@@ -198,7 +213,7 @@ export function useWorkflowRunner({
           config: effectiveConfig,
           inputMode,
           abortedRef,
-          setInlineResume,
+          setInlineResume: (state) => setInlineResume({ feature, state }),
         });
         if (stateForRun?.pendingRecovery) {
           const recovery = await promptPendingRecovery({
@@ -286,7 +301,7 @@ export function useWorkflowRunner({
         activeSessionId = savedSessionId;
         sessionIdRef.current = savedSessionId;
         stateForRun = saved;
-        setInlineResume(saved);
+        setInlineResume({ feature, state: saved });
         recoveryPromptAlreadyPublished = true;
       }
     } catch (err) {
@@ -306,6 +321,14 @@ export function useWorkflowRunner({
 
   useEffect(() => {
     if (!enabled) return undefined;
+
+    if (runFeatureRef.current !== feature) {
+      runFeatureRef.current = feature;
+      setInlineResume((resume) => (resume?.feature === feature ? resume : undefined));
+      if (initialSessionId === undefined) {
+        sessionIdRef.current = undefined;
+      }
+    }
 
     abortedRef.current = false;
     const controller = new AbortController();
@@ -365,11 +388,11 @@ export function useWorkflowRunner({
       next = queued.state;
       if (queued.result.status === 'rejected') {
         feedbackStore.setError(queued.result.message);
-        setInlineResume(next);
+        setInlineResume({ feature, state: next });
         return;
       }
     }
-    setInlineResume(next);
+    setInlineResume({ feature, state: next });
     setRunId((id) => id + 1);
   };
 

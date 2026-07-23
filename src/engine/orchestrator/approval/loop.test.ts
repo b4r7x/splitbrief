@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
 import { PLAN_FILE, SPEC_FILE } from '../../../core/paths.js';
 import { runApprovalLoop } from './loop.js';
-import { enqueueUserMessage } from '../queue.js';
+import { enqueueUserMessage } from '../queue/submit.js';
 import type { WorkflowSinks } from '../types.js';
 
 let dirs: string[] = [];
@@ -41,27 +41,6 @@ function prepareState(): WorkflowState {
 }
 
 describe('runApprovalLoop', () => {
-  it('returns not-rejected when user approves', async () => {
-    const { projectDir, sessionId, specPath } = setupProject();
-    const { callbacks } = makeCallbacks({
-      onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
-    });
-    const { bus } = makeBusRecorder();
-    const result = await runApprovalLoop({
-      type: 'spec',
-      filePath: specPath,
-      planner: makePlanner(),
-      projectDir,
-      sessionId,
-      callbacks,
-      bus,
-      state: prepareState(),
-      persistTranscript: false,
-    });
-    expect(result.rejected).toBe(false);
-    expect(result.regenerated).toBe(false);
-  });
-
   it('rejects when user declines without comment — state transitions and spec_rejected event fires', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
     const { callbacks } = makeCallbacks({
@@ -309,6 +288,7 @@ describe('runApprovalLoop', () => {
       persistTranscript: false,
     });
 
+    expect(result.rejected).toBe(false);
     expect(result.regenerated).toBe(false);
     expect(events.some((e) => e.type === 'spec_regenerated')).toBe(false);
   });
@@ -376,31 +356,39 @@ describe('runApprovalLoop', () => {
 
   it('wires live regeneration to the workflow abort handler', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
-    let abortTurn: (() => void) | null = null;
+    const controller = new AbortController();
     const sinks = {
-      setAbortHandler: (handler) => {
-        abortTurn = handler;
-      },
+      setAbortHandler: () => {},
       setQueueHandler: () => {},
     } satisfies WorkflowSinks;
     const { callbacks } = makeCallbacks({
       onApprovalNeeded: vi
         .fn()
-        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'revise' })
-        .mockResolvedValueOnce({ approved: true }),
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'revise' }),
     });
     const { bus } = makeBusRecorder();
+    let regenLive = false;
     const planner = makePlanner({
       regenerate: async (opts) => {
-        const handler = abortTurn;
-        if (!handler) throw new Error('expected abort handler');
-        handler();
+        regenLive = true;
+        await new Promise<void>((resolve) => {
+          const signal = opts.callbacks.signal;
+          if (!signal) {
+            resolve();
+            return;
+          }
+          if (signal.aborted) {
+            resolve();
+            return;
+          }
+          signal.addEventListener('abort', () => resolve(), { once: true });
+        });
         expect(opts.callbacks.signal?.aborted).toBe(true);
-        return { text: 'regenerated', usage: null };
+        throw new DOMException('The operation was aborted', 'AbortError');
       },
     });
 
-    const result = await runApprovalLoop({
+    const loopPromise = runApprovalLoop({
       type: 'spec',
       filePath: specPath,
       planner,
@@ -410,10 +398,23 @@ describe('runApprovalLoop', () => {
       bus,
       state: prepareState(),
       persistTranscript: false,
+      signal: controller.signal,
       sinks,
     });
 
+    await vi.waitFor(() => {
+      expect(regenLive).toBe(true);
+    });
+    controller.abort();
+    const result = await loopPromise;
+
+    expect(result.aborted).toBe(true);
     expect(result.rejected).toBe(false);
-    expect(abortTurn).toBeNull();
+    const onDisk = readFileSync(
+      join(projectDir, '.diptych', 'sessions', sessionId, SPEC_FILE),
+      'utf8',
+    );
+    expect(onDisk).not.toContain('should-not-be-accepted');
+    expect(onDisk).toContain('First draft.');
   });
 });

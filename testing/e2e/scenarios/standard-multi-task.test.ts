@@ -26,7 +26,6 @@ describe('e2e: standard mode multi-task', () => {
     expect(taskStartedEvents.length).toBeGreaterThanOrEqual(2);
     expect(taskCompletedEvents.length).toBeGreaterThanOrEqual(2);
     const profilePath = join(ctx.projectDir, 'src/profile.ts');
-    expect(readFileSync(profilePath, 'utf-8')).toContain('Ada Lovelace');
     expect(evaluateTsArtifact(profilePath, 'mod.getUserProfile()')).toEqual({
       id: 'user-1',
       name: 'Ada Lovelace',

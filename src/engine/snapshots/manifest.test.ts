@@ -44,9 +44,9 @@ describe('writeManifest / readManifest', () => {
   });
 
   it('throws for missing file', async () => {
-    await expect(readManifest(tmp, 'sess-01', 'does-not-exist')).rejects.toThrow(
-      'Snapshot manifest not found',
-    );
+    await expect(readManifest(tmp, 'sess-01', 'does-not-exist')).rejects.toMatchObject({
+      kind: 'snapshot-manifest-not-found',
+    });
   });
 
   it('throws for invalid JSON (Zod parse failure)', async () => {

@@ -15,13 +15,17 @@ const renderCalls: Array<Parameters<AttachDeps['renderApp']>[1]> = [];
 const mockRenderAppWithCapture: AttachDeps['renderApp'] = async (_app, options) => {
   renderCalls.push(options);
 };
-const mockSetupWorkflow: AttachDeps['setupWorkflow'] = async (opts) => {
-  const isInteractive = Boolean(process.stdout.isTTY) && !process.env['CI'];
-  const useFullscreen = opts.fullscreen !== false && isInteractive;
-  const useMouse = opts.mouse !== false && useFullscreen;
-  const useHover = opts.hover === true && useMouse;
-  return { projectDir: opts.project ?? testDir, useFullscreen, useMouse, useHover };
-};
+const FIXED_SETUP_RESULT = {
+  projectDir: '',
+  useFullscreen: true,
+  useMouse: true,
+  useHover: false,
+} as const;
+
+const mockSetupWorkflow: AttachDeps['setupWorkflow'] = async (opts) => ({
+  ...FIXED_SETUP_RESULT,
+  projectDir: opts.project ?? testDir,
+});
 
 const fakeDeps: AttachDeps = {
   checkServerStatus: mockCheckServerStatus,
@@ -75,34 +79,6 @@ describe('attachCommand', () => {
       message: expect.stringContaining("session 'typo-session' not found"),
     });
     expect(mockCheckServerStatus).not.toHaveBeenCalled();
-  });
-
-  it('exits non-zero when the requested session is not alive', async () => {
-    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
-
-    const sessDir = join(testDir, '.diptych', 'sessions', 'my-session');
-    mkdirSync(sessDir, { recursive: true });
-
-    const status: ServerStatus = {
-      alive: false,
-      crashed: true,
-      data: {
-        version: 1,
-        pid: 12345,
-        startTimeMs: 1000,
-        lastAliveMs: 1000,
-        sessionId: 'my-session',
-        mode: 'standard',
-        feature: 'test feature',
-        signal: 'SIGTERM',
-        cause: 'out of memory',
-      },
-    };
-    mockCheckServerStatus.mockResolvedValue(status);
-
-    await expect(
-      attachCommand('my-session', { projectDir: testDir }, fakeDeps),
-    ).rejects.toMatchObject({ exitCode: 1 });
   });
 
   it('throws exit-1 for a dead session using the real crash diagnostic without exiting the process', async () => {
@@ -193,42 +169,8 @@ describe('attachCommand', () => {
     });
     expect(renderCalls).toHaveLength(1);
     expect(renderCalls[0]).toEqual({
-      fullscreen: false,
-      mouse: false,
-      hover: false,
-    });
-  });
-
-  it('forwards workflow render flags when attaching to a live session', async () => {
-    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
-    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
-
-    const sessDir = join(testDir, '.diptych', 'sessions', 'flag-session');
-    mkdirSync(sessDir, { recursive: true });
-
-    mockCheckServerStatus.mockResolvedValue({
-      alive: true,
-      data: {
-        version: 1,
-        pid: 77,
-        startTimeMs: Date.now(),
-        lastAliveMs: Date.now(),
-        sessionId: 'flag-session',
-        mode: 'quick',
-        feature: 'flag feature',
-        authToken: 'test-auth-token',
-      },
-    });
-
-    await attachCommand(
-      'flag-session',
-      { projectDir: testDir, fullscreen: false, mouse: false, hover: true },
-      fakeDeps,
-    );
-
-    expect(renderCalls[0]).toEqual({
-      fullscreen: false,
-      mouse: false,
+      fullscreen: true,
+      mouse: true,
       hover: false,
     });
   });

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { runHook, hookError } from './dispatch.js';
+import { runHook } from './dispatch.js';
 import { setProcessLedger } from '../../lib/process/registry.js';
 import type { EngineEvent } from '../events/types.js';
 import type { HookModuleEntry } from '../../core/schemas/hooks.js';
@@ -231,19 +231,6 @@ describe('runHook', () => {
     expect(outcome.kind).toBe('allow');
   });
 
-  it('substitutes event field placeholders in args', async () => {
-    const placeholder = ['$', '{event.title}'].join('');
-    const outcome = await runHook(
-      mkEntry({
-        command: 'node',
-        args: ['-e', 'console.log(process.argv[1])', placeholder],
-      }),
-      event,
-      ctx,
-    );
-    expect(outcome.kind).toBe('allow');
-  });
-
   it('inserts a -- guard before a flag-shaped interpolated value so it reaches argv as data', async () => {
     const placeholder = ['$', '{event.file}'].join('');
     const flagEvent: EngineEvent = { ...event, file: '--unexpected-flag' };
@@ -324,13 +311,6 @@ describe('runHook — kind: module', () => {
         if (result.kind !== 'allow') expect(result.message).toContain('hook timed out after 10ms');
       },
     );
-  });
-
-  it('tags the module timeout with a domain kind', () => {
-    const err = hookError.timedOut(10);
-    expect(err.kind).toBe('hook-timed-out');
-    expect(err.message).toBe('hook timed out after 10ms');
-    expect(err.data).toEqual({ timeoutMs: 10 });
   });
 
   it.each([

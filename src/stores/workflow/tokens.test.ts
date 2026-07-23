@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { tokensStore } from './tokens.js';
-import { addEvent, markCancellationRequested, resetWorkflow } from './actions.js';
-import { makeTaskComplete, makeCostUpdate, makeTaskSkipped } from '#testing/helpers/events.js';
+import { addEvent } from './actions/event.js';
+import { markCancellationRequested } from './actions/interrupt.js';
+import { resetWorkflow } from './actions/reset.js';
+import { makeTaskComplete, makeCostUpdate, makeTaskSkipped } from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';

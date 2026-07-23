@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { getTheme } from '../../../components/theme.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
+import { colorForTone } from '../display/tone-color.js';
 import {
+  activityBatchTone,
   buildActivityBatchViewModel,
   COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT,
+  toneToConversationTone,
 } from './activity-batch-model.js';
 
 function activity(
@@ -146,5 +150,51 @@ describe('buildActivityBatchViewModel', () => {
     expect(expanded.visibleItems).toHaveLength(50);
     expect(collapsed.headerCount).toBe(50);
     expect(expanded.headerCount).toBe(50);
+  });
+});
+
+describe('activity batch tone resolution', () => {
+  const theme = getTheme();
+  const roles = [
+    'planner',
+    'implementer',
+    'review',
+    'summary',
+    'compaction',
+    'escalation',
+  ] as const satisfies readonly NonNullable<EngineEventOf<'runner_call_activity'>['role']>[];
+
+  it('resolves work roles to their own hue and ancillary roles to dim', () => {
+    const expected: Record<(typeof roles)[number], string> = {
+      planner: theme.planner,
+      implementer: theme.implementer,
+      review: theme.validator,
+      summary: theme.textDim,
+      compaction: theme.textDim,
+      escalation: theme.textDim,
+    };
+    for (const role of roles) {
+      const tone = activityBatchTone([activity({ role })]);
+      expect(colorForTone(tone, theme)).toBe(expected[role]);
+    }
+  });
+
+  it('resolves a role-less batch to the neutral dim tone', () => {
+    const tone = activityBatchTone([]);
+    expect(tone).toBe('textDim');
+    expect(colorForTone(tone, theme)).toBe(theme.textDim);
+  });
+
+  it('maps each ledger tone onto its own rendered hue without flattening severity', () => {
+    expect(toneToConversationTone('success')).toBe('success');
+    expect(toneToConversationTone('error')).toBe('error');
+    expect(toneToConversationTone('warning')).toBe('warning');
+    expect(toneToConversationTone('info')).toBe('info');
+    expect(toneToConversationTone('textDim')).toBe('textDim');
+
+    expect(colorForTone(toneToConversationTone('success'), theme)).toBe(theme.success);
+    expect(colorForTone(toneToConversationTone('error'), theme)).toBe(theme.error);
+    expect(colorForTone(toneToConversationTone('warning'), theme)).toBe(theme.warning);
+    expect(colorForTone(toneToConversationTone('info'), theme)).toBe(theme.info);
   });
 });

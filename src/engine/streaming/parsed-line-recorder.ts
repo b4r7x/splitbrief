@@ -7,7 +7,7 @@ import {
   type RunnerCallDeltaLimitResult,
 } from '../calls/output-limit.js';
 import { reconcileFinalText } from './final-text.js';
-import { accumulateUsage } from './token-usage.js';
+import { accumulateTokenUsage } from '../calls/usage.js';
 
 export interface ParsedLineRecorder {
   readonly text: string;
@@ -117,7 +117,7 @@ export function createParsedLineRecorder(opts: {
         const semantics =
           parsed.usageSemantics ??
           (parsed.isResult || parsed.channel === 'result' ? 'final' : 'delta');
-        usage = accumulateUsage(usage, parsed.usage, semantics);
+        usage = accumulateTokenUsage(usage, parsed.usage, semantics);
         opts.recorder.usage({ usage: parsed.usage, semantics });
       }
 

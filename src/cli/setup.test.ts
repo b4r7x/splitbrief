@@ -121,6 +121,76 @@ describe('setupWorkflow', () => {
   });
 });
 
+describe('setupWorkflow render input flags', () => {
+  const originalStdoutIsTty = process.stdout.isTTY;
+  const originalCi = process.env['CI'];
+
+  afterEach(() => {
+    Object.defineProperty(process.stdout, 'isTTY', {
+      value: originalStdoutIsTty,
+      configurable: true,
+    });
+    if (originalCi === undefined) delete process.env['CI'];
+    else process.env['CI'] = originalCi;
+  });
+
+  it.each([
+    {
+      label: 'TTY defaults',
+      tty: true,
+      ci: false,
+      opts: {} as const,
+      expected: { useFullscreen: true, useMouse: true, useHover: false },
+    },
+    {
+      label: 'TTY hover true',
+      tty: true,
+      ci: false,
+      opts: { hover: true } as const,
+      expected: { useFullscreen: true, useMouse: true, useHover: true },
+    },
+    {
+      label: 'TTY fullscreen false with hover true',
+      tty: true,
+      ci: false,
+      opts: { fullscreen: false, hover: true } as const,
+      expected: { useFullscreen: false, useMouse: false, useHover: false },
+    },
+    {
+      label: 'TTY mouse false with hover true',
+      tty: true,
+      ci: false,
+      opts: { mouse: false, hover: true } as const,
+      expected: { useFullscreen: true, useMouse: false, useHover: false },
+    },
+    {
+      label: 'non-TTY',
+      tty: false,
+      ci: false,
+      opts: {} as const,
+      expected: { useFullscreen: false, useMouse: false, useHover: false },
+    },
+    {
+      label: 'TTY with CI=1',
+      tty: true,
+      ci: true,
+      opts: {} as const,
+      expected: { useFullscreen: false, useMouse: false, useHover: false },
+    },
+  ])('$label → fullscreen/mouse/hover', async ({ tty, ci, opts, expected }) => {
+    Object.defineProperty(process.stdout, 'isTTY', { value: tty, configurable: true });
+    if (ci) process.env['CI'] = '1';
+    else delete process.env['CI'];
+    createTestGitRepo(tmp);
+
+    const result = await setupWorkflow({ project: tmp, planner: 'claude-code', ...opts });
+
+    expect(result.useFullscreen).toBe(expected.useFullscreen);
+    expect(result.useMouse).toBe(expected.useMouse);
+    expect(result.useHover).toBe(expected.useHover);
+  });
+});
+
 describe('canonicalizeProjectDir', () => {
   it('does NOT warn when --project points at the repo root through a symlinked path component', async () => {
     const real = realpathSync(tmp);

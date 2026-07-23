@@ -14,9 +14,11 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
+import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner } from './use-runner.js';
-import { addEvent, resetWorkflow } from '../../../stores/workflow/actions.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -140,27 +142,6 @@ describe('useWorkflowRunner', () => {
     const runner = captureRunner.current;
     if (!runner) throw new Error('expected captureRunner.current to be populated');
     expect(runner.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    inst.unmount();
-  });
-
-  it('applies resume-state phase to the lifecycle store so the UI reflects the resumed phase', async () => {
-    const resume: WorkflowState = {
-      ...createInitialState('add auth'),
-      phase: 'planning',
-    };
-
-    const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        initialResumeState={resume}
-      />,
-    );
-
-    await vi.waitFor(() => {
-      expect(lifecycleStore.get().phase).toBe('planning');
-    });
     inst.unmount();
   });
 
@@ -369,6 +350,14 @@ describe('useWorkflowRunner', () => {
 
   it('requestCancel aborts the engine signal with the canonical user_cancelled reason', async () => {
     const sessionId = '2026-06-18-cancel-reason';
+    const { promise: runFinished, resolve: finishRun } = Promise.withResolvers<void>();
+    const runWorkflowWithCompletion: RunWorkflowFn = async (options) => {
+      try {
+        return await runWorkflow(options);
+      } finally {
+        finishRun();
+      }
+    };
     const inst = render(
       <Harness
         feature="cancel reason"
@@ -377,6 +366,7 @@ describe('useWorkflowRunner', () => {
         sessionId={sessionId}
         planner={{ kind: 'shell', command: 'sleep', args: ['10'] }}
         workflow={{ mode: 'quick', persistTranscript: false }}
+        runWorkflow={runWorkflowWithCompletion}
       />,
     );
     const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
@@ -392,6 +382,7 @@ describe('useWorkflowRunner', () => {
       expect(log).toContain('"reason":"user_cancelled"');
     });
 
+    await runFinished;
     inst.unmount();
   });
 

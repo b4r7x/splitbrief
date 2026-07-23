@@ -125,7 +125,11 @@ function clearActive(runDir: string): void {
 
 function runVitestCoverage(runDir: string, args: readonly string[]): number {
   const vitestBin = process.platform === 'win32' ? 'vitest.cmd' : 'vitest';
-  const result = spawnSync(vitestBin, ['run', '--coverage', '--maxWorkers=2', ...args], {
+  const maxWorkers = process.env.DIPTYCH_COVERAGE_MAX_WORKERS ?? '2';
+  const retry = process.env.DIPTYCH_COVERAGE_RETRY ?? '0';
+  const vitestArgs = ['run', '--coverage', `--maxWorkers=${maxWorkers}`, ...args];
+  if (retry !== '0') vitestArgs.splice(2, 0, `--retry=${retry}`);
+  const result = spawnSync(vitestBin, vitestArgs, {
     env: { ...process.env, DIPTYCH_COVERAGE_DIR: runDir },
     stdio: 'inherit',
   });

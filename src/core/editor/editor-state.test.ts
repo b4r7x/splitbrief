@@ -3,6 +3,7 @@ import { visualPositionOf, wrapVisualLines } from './grapheme-motions.js';
 import {
   applyEditorEvent,
   clampScrollTop,
+  clampScrollToDocument,
   createEditorState,
   type EditorLayout,
   type EditorState,
@@ -87,6 +88,11 @@ describe('scroll follows the caret so stored scrollTop matches the rendered view
     expect(clampScrollTop(4, 3, 4)).toBe(4);
     expect(clampScrollTop(2, 0, 5)).toBe(0);
   });
+
+  it('clampScrollToDocument pins scrollTop when the whole document fits in the viewport', () => {
+    expect(clampScrollToDocument(4, 5, 3)).toBe(0);
+    expect(clampScrollToDocument(2, 5, 0)).toBe(0);
+  });
 });
 
 describe('edits replace the active selection range exactly', () => {
@@ -141,8 +147,12 @@ describe('a non-selection char delete removes exactly one whole grapheme cluster
 
 describe('insert normalizes to NFC and keeps the caret after the text', () => {
   it('collapses a base+combining sequence into one NFC code unit', () => {
-    const s = applyEditorEvent(createEditorState('field', ''), { kind: 'insert', text: 'é' }, L);
-    expect(s.value).toBe('é'.normalize('NFC'));
+    const s = applyEditorEvent(
+      createEditorState('field', ''),
+      { kind: 'insert', text: 'e\u0301' },
+      L,
+    );
+    expect(s.value).toBe('\u00e9');
     expect(s.value.length).toBe(1);
     expect(s.cursor).toBe(1);
   });
@@ -228,25 +238,6 @@ describe('a cursor resting on a soft-wrap boundary acts on the upper visual row 
 });
 
 describe('caret affinity keeps the painted (row,col) consistent with the model at a soft-wrap seam', () => {
-  it('DOWN onto a seam sets downstream affinity and paints column 0 of the lower row (REQ-103/105)', () => {
-    // 'abcdefghij' at columns=5 wraps into rows [0,5]/[5,10]; index 5 is the seam.
-    let s = at('abcdefghij', 0);
-    s = applyEditorEvent(s, { kind: 'motion', motion: 'down', select: false }, L);
-    expect(s.cursor).toBe(5);
-    expect(s.affinity).toBe('downstream');
-    expect(painted(s)).toEqual({ row: 1, col: 0 });
-  });
-
-  it('UP onto a seam sets upstream affinity and paints the upper row end, not the lower row start (REQ-106)', () => {
-    // 'abcd中efg' at columns=5 wraps into row0 'abcd' (width 4) and row1 '中efg' (width 5); index 4
-    // is the seam. UP from the end must paint (0,4) — the upper row's display-width — not (1,0).
-    let s = at('abcd中efg', 8);
-    s = applyEditorEvent(s, { kind: 'motion', motion: 'up', select: false }, L);
-    expect(s.cursor).toBe(4);
-    expect(s.affinity).toBe('upstream');
-    expect(painted(s)).toEqual({ row: 0, col: 4 });
-  });
-
   it('DOWN on the last visual row is a stable rest with no seam-guard advance or out-of-range access (REQ-107)', () => {
     let s = at('abcdefghijklmno', 12); // last row [10,15], painted (2,2)
     expect(painted(s)).toEqual({ row: 2, col: 2 });
@@ -329,47 +320,50 @@ describe('vertical-nav affinity follows the landed row, not the motion direction
 });
 
 describe('undo and redo', () => {
-  it('coalesces consecutive inserts into a single undo unit', () => {
+  it('coalesces consecutive inserts, restores with redo, and clears redo after a new edit', () => {
     let s = createEditorState('field', '');
     s = applyEditorEvent(s, { kind: 'insert', text: 'a' }, L);
     s = applyEditorEvent(s, { kind: 'insert', text: 'b' }, L);
     expect(s.value).toBe('ab');
-    expect(s.undo.length).toBe(1);
-    const undone = applyEditorEvent(s, { kind: 'undo' }, L);
-    expect(undone.value).toBe('');
-    expect(undone.redo.length).toBe(1);
+
+    s = applyEditorEvent(s, { kind: 'undo' }, L);
+    expect(s.value).toBe('');
+
+    s = applyEditorEvent(s, { kind: 'redo' }, L);
+    expect(s.value).toBe('ab');
+
+    s = applyEditorEvent(s, { kind: 'undo' }, L);
+    s = applyEditorEvent(s, { kind: 'insert', text: 'z' }, L);
+    expect(s.value).toBe('z');
+    s = applyEditorEvent(s, { kind: 'redo' }, L);
+    expect(s.value).toBe('z');
   });
 
-  it('redo reapplies the last undone snapshot', () => {
-    let s = createEditorState('field', '');
-    s = applyEditorEvent(s, { kind: 'insert', text: 'a' }, L);
-    const undone = applyEditorEvent(s, { kind: 'undo' }, L);
-    const redone = applyEditorEvent(undone, { kind: 'redo' }, L);
-    expect(redone.value).toBe('a');
-  });
-
-  it('a new edit clears the redo stack', () => {
-    let s = createEditorState('field', '');
-    s = applyEditorEvent(s, { kind: 'insert', text: 'a' }, L);
-    const undone = applyEditorEvent(s, { kind: 'undo' }, L);
-    const edited = applyEditorEvent(undone, { kind: 'insert', text: 'z' }, L);
-    expect(edited.redo.length).toBe(0);
-  });
-
-  it('newline, delete, and paste start a fresh undo boundary', () => {
+  it('steps undo through newline and delete boundaries by value', () => {
     let s = createEditorState('field', '');
     s = applyEditorEvent(s, { kind: 'insert', text: 'a' }, L);
     s = applyEditorEvent(s, { kind: 'insert', text: '\n' }, L);
-    expect(s.undo.length).toBe(2);
+    s = applyEditorEvent(s, { kind: 'undo' }, L);
+    expect(s.value).toBe('a');
+    s = applyEditorEvent(s, { kind: 'undo' }, L);
+    expect(s.value).toBe('');
+
+    s = createEditorState('field', '');
+    s = applyEditorEvent(s, { kind: 'insert', text: 'ab' }, L);
+    s = applyEditorEvent(s, { kind: 'delete', dir: 'backward', unit: 'char' }, L);
+    expect(s.value).toBe('a');
+    s = applyEditorEvent(s, { kind: 'undo' }, L);
+    expect(s.value).toBe('ab');
+    s = applyEditorEvent(s, { kind: 'undo' }, L);
+    expect(s.value).toBe('');
   });
 
   it('a paste is one undo unit that fully reverts', () => {
     let s = createEditorState('field', '');
     s = applyEditorEvent(s, { kind: 'insert', text: 'hello pasted body', paste: true }, L);
-    expect(s.undo.length).toBe(1);
-    expect(s.lastEditClass).toBe('paste');
-    const undone = applyEditorEvent(s, { kind: 'undo' }, L);
-    expect(undone.value).toBe('');
+    expect(s.value).toBe('hello pasted body');
+    s = applyEditorEvent(s, { kind: 'undo' }, L);
+    expect(s.value).toBe('');
   });
 
   it('caps the undo ring at UNDO_RING_CAP, dropping the oldest snapshot while still restoring', () => {

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
-import { createMetadataProvider } from './client.js';
+import { createMetadataProvider } from './client/metadata.js';
 
 const GroqModelSchema = z.object({
   id: z.string(),

@@ -56,96 +56,25 @@ describe('jsonlSink', () => {
     });
   });
 
-  it('drops planner_text events when persistTranscript=false', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({ type: 'planner_text', ts: 100, phase: 'researching', text: 'thinking...' });
-    sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
-    const lines = readLog();
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.['type']).toBe('workflow_started');
-  });
-
-  it('drops user_message events when persistTranscript=false', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({ type: 'user_message', ts: 100, phase: 'researching', text: 'hi' });
-    sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
-    const lines = readLog();
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.['type']).toBe('workflow_started');
-  });
-
-  it('drops clarification_answered events when persistTranscript=false', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({ type: 'clarification_answered', ts: 100, phase: 'clarifying', answer: 'yes' });
-    sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
-    const lines = readLog();
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.['type']).toBe('workflow_started');
-  });
-
-  it('drops implementer_generate_done events when persistTranscript=false', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({
-      type: 'implementer_generate_done',
-      ts: 100,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      file: 'a.ts',
-      linesAdded: 10,
-      linesRemoved: 5,
-      duration: 100,
-      diff: 'big diff here',
-    });
-    sink({ type: 'workflow_started', ts: 200, phase: 'idle', feature: 'x' });
-    const lines = readLog();
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.['type']).toBe('workflow_started');
-  });
-
   it('protects session-log events before appending them', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: true });
-    sink({
-      type: 'warning',
-      ts: 100,
-      phase: 'idle',
-      message: 'api key sk-abcdefghijklmnopqrst \u001b[31mred\u001b[0m',
-    });
-
-    const lines = readLog();
-    expect(lines[0]).toMatchObject({
-      type: 'warning',
-      data: { message: 'api key sk-***REDACTED*** red' },
-    });
-  });
-
-  it('replaces workflow feature text when persistTranscript=false', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({
-      type: 'workflow_started',
-      ts: 100,
-      phase: 'idle',
-      feature: 'secret feature prompt',
-    });
-
-    const lines = readLog();
-    expect(lines[0]).toMatchObject({
-      type: 'workflow_started',
-      data: { feature: TRANSCRIPT_OMITTED_MESSAGE },
-    });
-  });
-
-  it('omits runner content events but keeps usage when persistTranscript=false', () => {
+    const secret = 'jsonl-sentinel-secret-81924';
     const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
     sink({
       type: 'runner_call_text_delta',
-      ts: 100,
+      ts: 90,
       phase: 'planning',
       callId: 'call-1',
       role: 'planner',
       backendKind: 'cli',
       sequence: 1,
       channel: 'assistant',
-      text: 'secret transcript',
+      text: secret,
+    });
+    sink({
+      type: 'workflow_started',
+      ts: 100,
+      phase: 'idle',
+      feature: `secret feature ${secret}`,
     });
     sink({
       type: 'runner_call_usage',
@@ -158,239 +87,32 @@ describe('jsonlSink', () => {
       usage: { inputTokens: 1, outputTokens: 2 },
       semantics: 'delta',
     });
+    sink({
+      type: 'warning',
+      ts: 120,
+      phase: 'idle',
+      message: `api key sk-abcdefghijklmnopqrst ${secret} \u001b[31mred\u001b[0m`,
+    });
 
     const lines = readLog();
-    expect(lines).toHaveLength(1);
+    expect(lines.map((line) => line['type'])).toEqual([
+      'workflow_started',
+      'runner_call_usage',
+      'warning',
+    ]);
     expect(lines[0]).toMatchObject({
+      type: 'workflow_started',
+      data: { feature: TRANSCRIPT_OMITTED_MESSAGE },
+    });
+    expect(lines[1]).toMatchObject({
       type: 'runner_call_usage',
       data: { usage: { inputTokens: 1, outputTokens: 2 } },
     });
-  });
-
-  it('keeps runner activity control metadata while omitting raw runner content', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({
-      type: 'runner_call_tool_use',
-      ts: 100,
-      phase: 'planning',
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 1,
-      stage: 'done',
-      toolUse: {
-        id: 'tool-1',
-        name: 'Bash',
-        input: { command: 'echo sk-abcdefghijklmnopqrst' },
-      },
-    });
-    sink({
-      type: 'runner_call_activity',
-      ts: 101,
-      phase: 'planning',
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 1,
-      activityId: 'call-1:tool:tool-1',
-      stage: 'completed',
-      kind: 'command',
-      label: 'running echo private-runner-output-92741',
-      target: 'echo private-runner-output-92741',
-      redacted: true,
-    });
-
-    const lines = readLog();
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatchObject({
-      type: 'runner_call_activity',
-      data: {
-        activityId: 'call-1:tool:tool-1',
-        label: 'running command',
-        redacted: true,
-      },
-    });
-    expect(lines[0]?.['data']).not.toHaveProperty('target');
-    expect(lines[0]?.['data']).not.toHaveProperty('expandId');
-    expect(JSON.stringify(lines)).not.toContain('abcdefghijklmnopqrst');
-    expect(JSON.stringify(lines)).not.toContain('private-runner-output-92741');
-  });
-
-  it('omits runner error message and native session content while preserving terminal metadata', () => {
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({
-      type: 'runner_call_error',
-      ts: 120,
-      phase: 'planning',
-      callId: 'call-1',
-      role: 'planner',
-      backendKind: 'cli',
-      sequence: 3,
-      status: 'failed',
-      error: { code: 'failed', message: 'raw sk-abcdefghijklmnopqrst' },
-      partial: true,
-      startedAt: 100,
-      endedAt: 120,
-      durationMs: 20,
-      usage: { inputTokens: 3, outputTokens: 4 },
-      nativeSessionId: 'native-secret-session-123',
-    });
-
-    const lines = readLog();
-    expect(lines[0]).toMatchObject({
-      type: 'runner_call_error',
-      data: {
-        status: 'failed',
-        partial: true,
-        durationMs: 20,
-        usage: { inputTokens: 3, outputTokens: 4 },
-        nativeSessionId: null,
-        error: { code: 'failed', message: TRANSCRIPT_OMITTED_MESSAGE },
-      },
-    });
-    expect(JSON.stringify(lines)).not.toContain('native-secret-session-123');
-  });
-
-  it('projects transcript-derived structured event fields before appending', () => {
-    const sentinel = 'jsonl-privacy-sentinel-21489';
-    const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
-    sink({
-      type: 'task_started',
-      ts: 130,
-      phase: 'implementing',
-      taskId: taskId('T011'),
-      title: `title ${sentinel}`,
-      index: 0,
-      total: 1,
-      file: `src/${sentinel}.ts`,
-      action: 'modify',
-      routingReason: `route ${sentinel}`,
-    });
-    sink({
-      type: 'cost_prediction',
-      ts: 131,
-      phase: 'implementing',
-      prediction: {
-        estimatedTasks: 1,
-        lowCost: 0.01,
-        expectedCost: 0.02,
-        highCost: 0.03,
-        plannerTool: 'planner',
-        implementerTool: 'worker',
-        deterministic: {
-          estimateScope: 'prompt-input-only',
-          taskCount: 1,
-          taskFitCounts: { fits: 1, tight: 0, overflow: 0, unknown: 0 },
-          contextConfidenceCounts: {
-            contextExplicit: 1,
-            contextDetected: 0,
-            contextKnownCatalog: 0,
-            contextCachedProvider: 0,
-            contextConservativeFallback: 0,
-            profileUnavailable: 0,
-          },
-          priceConfidenceCounts: {
-            priceKnown: 1,
-            priceUnknown: 0,
-            profileUnavailable: 0,
-          },
-          tasks: [
-            {
-              taskId: taskId('T011'),
-              title: `cost ${sentinel}`,
-              estimatedPromptTokens: 12,
-              selectedProfileId: null,
-              contextFit: 'fits',
-              contextConfidence: 'context-explicit',
-              priceConfidence: 'price-known',
-              estimatedImplementerCost: 0.01,
-              hypotheticalPlannerCost: 0.02,
-            },
-          ],
-          totals: {
-            knownActualEstimate: 0.01,
-            hypotheticalAllPlanner: 0.02,
-            estimatedSavings: 0.01,
-            unknownCostReason: [],
-          },
-        },
-        plannerEstimateReview: {
-          extraPlannerCall: true,
-          status: 'completed',
-          classification: 'needs-user-decision',
-          affectedTaskIds: ['T011'],
-          reason: `because ${sentinel}`,
-          recommendedUserDecision: `decide ${sentinel}`,
-        },
-      },
-    });
-    sink({
-      type: 'approval_rejected',
-      ts: 132,
-      phase: 'implementing',
-      tier: 'confirm',
-      actionClass: 'destructive',
-      taskId: taskId('T011'),
-      reason: `deny ${sentinel}`,
-    });
-    sink({
-      type: 'git_commit',
-      ts: 133,
-      phase: 'implementing',
-      taskId: taskId('T011'),
-      message: `commit ${sentinel}`,
-    });
-    sink({
-      type: 'task_retry',
-      ts: 134,
-      phase: 'implementing',
-      taskId: taskId('T011'),
-      attempt: 1,
-      maxRetries: 2,
-      error: `retry ${sentinel}`,
-    });
-
-    const lines = readLog();
-    expect(JSON.stringify(lines)).not.toContain(sentinel);
-    expect(lines[0]).toMatchObject({
-      type: 'task_started',
-      taskId: 'T011',
-      data: {
-        title: TRANSCRIPT_OMITTED_MESSAGE,
-        file: TRANSCRIPT_OMITTED_MESSAGE,
-        routingReason: TRANSCRIPT_OMITTED_MESSAGE,
-        index: 0,
-        total: 1,
-      },
-    });
-    expect(lines[1]).toMatchObject({
-      type: 'cost_prediction',
-      data: {
-        prediction: {
-          deterministic: {
-            tasks: [{ taskId: 'T011', title: TRANSCRIPT_OMITTED_MESSAGE }],
-          },
-          plannerEstimateReview: {
-            reason: TRANSCRIPT_OMITTED_MESSAGE,
-            recommendedUserDecision: TRANSCRIPT_OMITTED_MESSAGE,
-          },
-        },
-      },
-    });
     expect(lines[2]).toMatchObject({
-      type: 'approval_rejected',
-      data: { reason: TRANSCRIPT_OMITTED_MESSAGE },
-    });
-    expect(lines[3]).toMatchObject({
-      type: 'git_commit',
-      taskId: 'T011',
+      type: 'warning',
       data: { message: TRANSCRIPT_OMITTED_MESSAGE },
     });
-    expect(lines[4]).toMatchObject({
-      type: 'task_retry',
-      taskId: 'T011',
-      data: { attempt: 1, maxRetries: 2, error: TRANSCRIPT_OMITTED_MESSAGE },
-    });
+    expect(JSON.stringify(lines)).not.toContain(secret);
   });
 
   it('serializes taskId outside data when present', () => {

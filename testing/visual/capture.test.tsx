@@ -12,7 +12,8 @@ import {
   CaptureSelectionSchema,
   type CaptureSelection,
 } from './contracts/selection.js';
-import { createPublicationLayout, createRunKey } from './artifacts/paths.js';
+import { createPublicationLayout } from './artifacts/publication.js';
+import { createRunKey } from './artifacts/layout.js';
 import { captureGallery } from './gallery/capture.js';
 import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount.js';
 import { parseTerminalFrame } from './terminal/parse.js';

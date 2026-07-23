@@ -18,20 +18,6 @@ describe('createIpcWorkflowBridge', () => {
 
     bridge.onUserInput('  refine the plan  ');
 
-    expect(calls[0]).toEqual(['refine the plan', 'planning']);
-    bridge.close();
-  });
-
-  it('updates the forwarded phase as workflow events arrive', () => {
-    const bus = createEventBus();
-    const bridge = createIpcWorkflowBridge(bus);
-    const calls: Array<[string, Phase]> = [];
-    const queue = (text: string, phase: Phase) => {
-      calls.push([text, phase]);
-      return { status: 'accepted' as const, messageId: 'msg-1' };
-    };
-
-    bridge.sinks.setQueueHandler(queue);
     bus.publish({
       type: 'warning',
       ts: Date.now(),
@@ -41,7 +27,8 @@ describe('createIpcWorkflowBridge', () => {
 
     bridge.onUserInput('follow-up');
 
-    expect(calls[0]).toEqual(['follow-up', 'implementing']);
+    expect(calls[0]).toEqual(['refine the plan', 'planning']);
+    expect(calls[1]).toEqual(['follow-up', 'implementing']);
     bridge.close();
   });
 
@@ -99,65 +86,27 @@ describe('createIpcWorkflowBridge', () => {
     bridge.close();
   });
 
-  it('exposes an AbortSignal that is not aborted initially', () => {
+  it('abort signal lifecycle: initial state, handler invocation, and handler clearing', () => {
     const bus = createEventBus();
     const bridge = createIpcWorkflowBridge(bus);
 
     expect(bridge.signal.aborted).toBe(false);
-    bridge.close();
-  });
 
-  it('abort() sets the signal to aborted', () => {
-    const bus = createEventBus();
-    const bridge = createIpcWorkflowBridge(bus);
-
-    bridge.abort();
-
-    expect(bridge.signal.aborted).toBe(true);
-    bridge.close();
-  });
-
-  it('abort() invokes the registered abort handler', () => {
-    const bus = createEventBus();
-    const bridge = createIpcWorkflowBridge(bus);
-    let handlerCalled = false;
-    bridge.sinks.setAbortHandler(() => {
-      handlerCalled = true;
-    });
-
-    bridge.abort();
-
-    expect(handlerCalled).toBe(true);
-    bridge.close();
-  });
-
-  it('abort() clears the handler after calling it once', () => {
-    const bus = createEventBus();
-    const bridge = createIpcWorkflowBridge(bus);
     let callCount = 0;
     bridge.sinks.setAbortHandler(() => {
       callCount++;
     });
 
     bridge.abort();
-    bridge.abort();
-
+    expect(bridge.signal.aborted).toBe(true);
     expect(callCount).toBe(1);
-    bridge.close();
-  });
-
-  it('stores abort handler registered via setAbortHandler', () => {
-    const bus = createEventBus();
-    const bridge = createIpcWorkflowBridge(bus);
-    let handlerCalled = false;
-    bridge.sinks.setAbortHandler(() => {
-      handlerCalled = true;
-    });
-    bridge.sinks.setAbortHandler(null);
 
     bridge.abort();
+    expect(callCount).toBe(1);
 
-    expect(handlerCalled).toBe(false);
+    bridge.sinks.setAbortHandler(null);
+    bridge.abort();
+    expect(callCount).toBe(1);
     bridge.close();
   });
 });

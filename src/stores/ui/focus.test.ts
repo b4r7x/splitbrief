@@ -6,11 +6,8 @@ describe('focusStore', () => {
     focusStore.reset();
   });
 
-  it('starts with no focus', () => {
-    expect(focusStore.get()).toBeNull();
-  });
-
   it('sets and clears a focused region/index', () => {
+    expect(focusStore.get()).toBeNull();
     focusStore.set('brief', 2);
     expect(focusStore.get()).toEqual({ region: 'brief', index: 2 });
 

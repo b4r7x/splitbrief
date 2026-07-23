@@ -7,11 +7,19 @@ import {
   type RunnerPidEntry,
 } from '../../../core/sessions/runner-pids.js';
 import { isNodeError } from '../../../lib/process/errors.js';
-import { readProcessStartTimeMs } from '../../../lib/process/start-time.js';
+import { readProcessStartTimeMs as defaultReadProcessStartTimeMs } from '../../../lib/process/start-time.js';
 import { warnError } from '../../../lib/warn.js';
 
 const SIGKILL_GRACE_MS = 2000;
 const START_TIME_TOLERANCE_MS = 2000;
+
+export type OrphanReaperDeps = {
+  readProcessStartTimeMs: (pid: number) => number | null;
+};
+
+const defaultDeps: OrphanReaperDeps = {
+  readProcessStartTimeMs: defaultReadProcessStartTimeMs,
+};
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -26,9 +34,6 @@ function canSignalProcess(pid: number): boolean {
   }
 }
 
-// Probes the whole process group rather than just the recorded leader pid: the
-// leader can exit during the SIGTERM grace while a runner-spawned child
-// (trapping SIGTERM) survives, and that survivor still belongs to the group.
 function canSignalGroup(pid: number): boolean {
   return canSignalProcess(-pid);
 }
@@ -47,41 +52,23 @@ function sendGroupSignal(pid: number, signal: NodeJS.Signals): void {
   }
 }
 
-// A recorded start time that no longer matches the live process — or that
-// cannot be read at all (e.g. a locale-dependent `ps lstart` parse failure) —
-// is zero identity proof that the pid still belongs to the process diptych
-// recorded, so it must not be killed.
-function pidWasRecycled(pid: number, recordedStartTimeMs: number): boolean {
-  const actualStartTimeMs = readProcessStartTimeMs(pid);
+function pidWasRecycled(pid: number, recordedStartTimeMs: number, deps: OrphanReaperDeps): boolean {
+  const actualStartTimeMs = deps.readProcessStartTimeMs(pid);
   if (actualStartTimeMs === null) return true;
   return Math.abs(actualStartTimeMs - recordedStartTimeMs) > START_TIME_TOLERANCE_MS;
 }
 
-async function reapOrphanPid(entry: RunnerPidEntry): Promise<void> {
-  // pid 1 would turn sendGroupSignal into process.kill(-1, …) — the broadcast
-  // group that signals every process the user can signal — and an entry with no
-  // recorded start time has no identity proof against pid recycling. Neither
-  // may ever be killed from persisted state.
+async function reapOrphanPid(entry: RunnerPidEntry, deps: OrphanReaperDeps): Promise<void> {
   if (entry.pid <= 1 || entry.startTimeMs === null) return;
-  if (pidWasRecycled(entry.pid, entry.startTimeMs)) return;
-  // Nothing alive to signal — skip the SIGTERM grace sleep entirely (the
-  // common post-reboot case, where the ledger pid is already dead).
+  if (pidWasRecycled(entry.pid, entry.startTimeMs, deps)) return;
   if (!canSignalGroup(entry.pid)) return;
   sendGroupSignal(entry.pid, 'SIGTERM');
   await sleep(SIGKILL_GRACE_MS);
-  // Re-check identity after the grace: the group leader can die during the
-  // sleep and its pid be recycled by an unrelated process before the SIGKILL.
-  if (canSignalGroup(entry.pid) && !pidWasRecycled(entry.pid, entry.startTimeMs)) {
+  if (canSignalGroup(entry.pid) && !pidWasRecycled(entry.pid, entry.startTimeMs, deps)) {
     sendGroupSignal(entry.pid, 'SIGKILL');
   }
 }
 
-// Only two lockfile kinds prove the owning diptych is gone: 'dead' (process no
-// longer exists) and 'exited' (the session recorded a clean exit, so surviving
-// ledger pids are genuine orphans). 'stale' is a LIVE process whose heartbeat is
-// merely old — a TUI suspended with Ctrl+Z or wedged >8s — and its runners must
-// not be killed. 'missing'/'invalid' cannot prove the owner is gone either: a
-// live run continues after a failed lockfile write.
 function sessionOwnerGone(sessionDirPath: string, sessionId: string): boolean {
   const status = checkSessionLockStatus({
     sessionDir: sessionDirPath,
@@ -90,9 +77,11 @@ function sessionOwnerGone(sessionDirPath: string, sessionId: string): boolean {
   return status.kind === 'dead' || status.kind === 'exited';
 }
 
-// Best-effort: a session whose ledger or lockfile cannot be read must not block
-// workflow startup or the reaping of the remaining sessions.
-async function reapSessionOrphans(projectDir: string, sessionId: string): Promise<void> {
+async function reapSessionOrphans(
+  projectDir: string,
+  sessionId: string,
+  deps: OrphanReaperDeps,
+): Promise<void> {
   const ref = { projectDir, sessionId };
   try {
     const pids = readRunnerPids(ref);
@@ -100,17 +89,17 @@ async function reapSessionOrphans(projectDir: string, sessionId: string): Promis
 
     if (!sessionOwnerGone(sessionDir(projectDir, sessionId), sessionId)) return;
 
-    await Promise.all(pids.map(reapOrphanPid));
-    // Release only the pids reaped from this snapshot, not the whole ledger: a
-    // session resumed concurrently during the SIGKILL grace above may have
-    // recorded a fresh pid that must survive.
+    await Promise.all(pids.map((entry) => reapOrphanPid(entry, deps)));
     releaseRunnerPids(ref, pids);
   } catch (err) {
     warnError(`orphan reaper: skipping session ${sessionId}`, err);
   }
 }
 
-export async function reapOrphanRunners(projectDir: string): Promise<void> {
+export async function reapOrphanRunners(
+  projectDir: string,
+  deps: OrphanReaperDeps = defaultDeps,
+): Promise<void> {
   const root = sessionsRoot(projectDir);
   if (!existsSync(root)) return;
 
@@ -124,7 +113,5 @@ export async function reapOrphanRunners(projectDir: string): Promise<void> {
     return;
   }
 
-  // Sessions reap concurrently so N dead sessions share one SIGKILL grace
-  // window instead of stacking N sleeps ahead of workflow startup.
-  await Promise.all(sessionIds.map((sessionId) => reapSessionOrphans(projectDir, sessionId)));
+  await Promise.all(sessionIds.map((sessionId) => reapSessionOrphans(projectDir, sessionId, deps)));
 }

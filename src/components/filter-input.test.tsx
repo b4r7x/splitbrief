@@ -17,30 +17,14 @@ describe('FilterInput', () => {
     forceUnicodeGlyphs();
   });
 
-  it('renders the accent prompt glyph', () => {
-    const frame = frameOf(<FilterInput filter="" placeholder="filter sessions" />);
-    expect(frame).toContain(glyph('prompt'));
-  });
-
-  it('renders the sentence-case default placeholder', () => {
-    const frame = frameOf(<FilterInput filter="" />);
-    expect(frame).toContain('Type to filter…');
-  });
-
-  it('shows the dim placeholder while the filter is empty', () => {
-    const frame = frameOf(<FilterInput filter="" placeholder="filter sessions" />);
-    expect(frame).toContain('filter sessions');
-  });
-
-  it('shows the typed value and drops the placeholder once the filter is non-empty', () => {
-    const frame = frameOf(<FilterInput filter="auth flow" placeholder="filter sessions" />);
-    expect(frame).toContain('auth flow');
-    expect(frame).not.toContain('filter sessions');
-  });
-
-  it('renders one consistent single-line style across empty and typed states', () => {
+  it('renders a single-line prompt with placeholder or typed value', () => {
     const empty = frameOf(<FilterInput filter="" placeholder="filter sessions" />);
-    const typed = frameOf(<FilterInput filter="auth" placeholder="filter sessions" />);
+    const typed = frameOf(<FilterInput filter="auth flow" placeholder="filter sessions" />);
+
+    expect(empty).toContain(glyph('prompt'));
+    expect(empty).toContain('filter sessions');
+    expect(typed).toContain('auth flow');
+    expect(typed).not.toContain('filter sessions');
 
     for (const frame of [empty, typed]) {
       expect(frame.split('\n').filter((line) => line.trim().length > 0)).toHaveLength(1);

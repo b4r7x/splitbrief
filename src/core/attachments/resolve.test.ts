@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { attachmentShortName, resolveAttachment } from './resolve.js';
 
@@ -45,10 +45,10 @@ describe('resolveAttachment', () => {
   });
 
   it('rejects relative path that escapes safe roots', () => {
-    // External dir under tmpdir, which is not ~ or projectDir
-    const p = join(externalDir, 'evil.png');
-    writeFileSync(p, '');
-    const result = resolveAttachment({ input: p, projectDir });
+    const evilPath = join(externalDir, 'evil.png');
+    writeFileSync(evilPath, '');
+    const relativeEvil = relative(projectDir, evilPath);
+    const result = resolveAttachment({ input: relativeEvil, projectDir });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('outside-safe-roots');
   });

@@ -48,8 +48,10 @@ describe('createSessionResumeState', () => {
   });
 
   it('handleResumeError does nothing when there is no captured session', () => {
-    const state = createSessionResumeState();
+    const onExpired = vi.fn();
+    const state = createSessionResumeState({ onExpired });
     expect(state.handleResumeError(new Error('session not found'))).toBe(false);
+    expect(onExpired).not.toHaveBeenCalled();
   });
 
   it('handleResumeError ignores non-session errors and preserves the captured id', () => {
@@ -68,13 +70,5 @@ describe('createSessionResumeState', () => {
     expect(state.handleResumeError(new Error('session_not_found'))).toBe(true);
     expect(state.getResumeId()).toBeNull();
     expect(onExpired).toHaveBeenCalledWith('abc-123');
-  });
-
-  it('does not notify onExpired when there is no captured session', () => {
-    const onExpired = vi.fn();
-    const state = createSessionResumeState({ onExpired });
-
-    state.handleResumeError(new Error('session not found'));
-    expect(onExpired).not.toHaveBeenCalled();
   });
 });

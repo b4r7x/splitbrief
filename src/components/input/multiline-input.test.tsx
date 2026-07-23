@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Box, Text } from 'ink';
 import type { Key } from 'ink';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { MultilineInput } from './multiline-input.js';
 
 const CTRL_R = '\x12';
@@ -63,19 +63,19 @@ describe('MultilineInput modifier chords', () => {
   it('swallows unhandled Ctrl+R without inserting text', async () => {
     const ui = renderFeature(<Harness />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('r');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:r');
 
     ui.stdin.write(CTRL_U);
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:');
     expect(ui.lastFrame() ?? '').not.toContain('value:r');
 
     ui.stdin.write(CTRL_R);
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:');
     expect(ui.lastFrame() ?? '').not.toContain('value:r');
   });
@@ -83,14 +83,14 @@ describe('MultilineInput modifier chords', () => {
   it('leaves the draft unchanged for a bare C0 control byte (Ctrl+/ on legacy terminals)', async () => {
     const ui = renderFeature(<Harness />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('ab');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:ab');
 
     ui.stdin.write(CTRL_SLASH_LEGACY);
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('value:ab');
@@ -100,14 +100,14 @@ describe('MultilineInput modifier chords', () => {
   it('swallows unhandled Alt/Meta printable chords without inserting text', async () => {
     const ui = renderFeature(<Harness />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('ab');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:ab');
 
     ui.stdin.write(ALT_A);
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame() ?? '').toContain('value:ab');
     expect(ui.lastFrame() ?? '').not.toContain('value:aba');
@@ -116,16 +116,16 @@ describe('MultilineInput modifier chords', () => {
   it('ignores Home and End so they pass through to the conversation scroll handler', async () => {
     const ui = renderFeature(<Harness />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('ab');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:ab');
 
     ui.stdin.write('\x1B[H');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\x1B[F');
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame() ?? '').toContain('value:ab');
   });
@@ -135,10 +135,10 @@ describe('MultilineInput file drop', () => {
   it('accepts quoted image paths that contain spaces', async () => {
     let dropped: string | undefined;
     const ui = renderFeature(<Harness onFileDrop={(path) => (dropped = path)} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('"/tmp/my photo.png"');
-    await tick(20);
+    await flushEffects();
 
     expect(dropped).toBe('/tmp/my photo.png');
     expect(ui.lastFrame() ?? '').toContain('value:');
@@ -160,16 +160,16 @@ describe('MultilineInput keyBinding precedence (composer bindings)', () => {
       <Harness keyBindings={COMPOSER_KEY_BINDINGS} onSubmit={(v) => submits.push(v)} />,
     );
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('ab');
-    await tick(20);
+    await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:ab');
 
     ui.stdin.write(SHIFT_ENTER);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('cd');
-    await tick(20);
+    await flushEffects();
 
     expect(ui.lastFrame() ?? '').toContain('value:ab');
     expect(ui.lastFrame() ?? '').toContain('cd');
@@ -182,13 +182,13 @@ describe('MultilineInput keyBinding precedence (composer bindings)', () => {
       <Harness keyBindings={COMPOSER_KEY_BINDINGS} onSubmit={(v) => submits.push(v)} />,
     );
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('ab');
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
 
     expect(submits).toEqual(['ab']);
     expect(ui.lastFrame() ?? '').toContain('value:ab');
@@ -222,10 +222,10 @@ describe('MultilineInput control-byte sanitization', () => {
     let stored = '';
     const ui = renderFeature(<SanitizeHarness onChange={(v) => (stored = v)} />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('a\x07b');
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(stored).toBe('a\x07b');
@@ -237,10 +237,10 @@ describe('MultilineInput control-byte sanitization', () => {
     let stored = '';
     const ui = renderFeature(<SanitizeHarness onChange={(v) => (stored = v)} />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('a\x01b');
-    await tick(20);
+    await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
     expect(stored).toBe('a\x01b');
@@ -276,7 +276,7 @@ describe('MultilineInput astral-plane editing', () => {
   it('backspace deletes a whole emoji instead of a lone surrogate', async () => {
     const ui = renderFeature(<CursorHarness />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(`a${EMOJI}`);
     await vi.waitFor(
@@ -286,6 +286,7 @@ describe('MultilineInput astral-plane editing', () => {
       { timeout: 5000 },
     );
 
+    await flushEffects();
     ui.stdin.write(BACKSPACE);
     await vi.waitFor(
       () => {
@@ -299,14 +300,14 @@ describe('MultilineInput astral-plane editing', () => {
   it('left then right arrow steps over the full emoji code point', async () => {
     const ui = renderFeature(<CursorHarness />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(EMOJI);
-    await tick(20);
+    await flushEffects();
 
     // Left moves to before the emoji; typing inserts ahead of it.
     ui.stdin.write(LEFT);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('x');
     await vi.waitFor(
       () => {
@@ -316,8 +317,9 @@ describe('MultilineInput astral-plane editing', () => {
     );
 
     // Right steps over the whole emoji; typing lands after it.
+    await flushEffects();
     ui.stdin.write(RIGHT);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('y');
     await vi.waitFor(
       () => {
@@ -330,7 +332,7 @@ describe('MultilineInput astral-plane editing', () => {
   it('delete removes the next whole emoji instead of backspacing', async () => {
     const ui = renderFeature(<CursorHarness />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(`a${EMOJI}b`);
     await vi.waitFor(
@@ -340,10 +342,11 @@ describe('MultilineInput astral-plane editing', () => {
       { timeout: 5000 },
     );
 
+    await flushEffects();
     ui.stdin.write(LEFT);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(LEFT);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(DELETE);
     await vi.waitFor(
       () => {
@@ -356,7 +359,7 @@ describe('MultilineInput astral-plane editing', () => {
   it('keeps Ctrl+B, Ctrl+F, and Ctrl+E as composer text editing chords', async () => {
     const ui = renderFeature(<CursorHarness />);
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('ab');
     await vi.waitFor(
@@ -366,8 +369,9 @@ describe('MultilineInput astral-plane editing', () => {
       { timeout: 5000 },
     );
 
+    await flushEffects();
     ui.stdin.write(CTRL_B);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('X');
     await vi.waitFor(
       () => {
@@ -376,8 +380,9 @@ describe('MultilineInput astral-plane editing', () => {
       { timeout: 5000 },
     );
 
+    await flushEffects();
     ui.stdin.write(CTRL_F);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('Y');
     await vi.waitFor(
       () => {
@@ -386,12 +391,13 @@ describe('MultilineInput astral-plane editing', () => {
       { timeout: 5000 },
     );
 
+    await flushEffects();
     ui.stdin.write(CTRL_B);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(CTRL_B);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(CTRL_E);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('!');
     await vi.waitFor(
       () => {
@@ -410,7 +416,7 @@ describe('MultilineInput astral-plane editing', () => {
       />,
     );
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('ab');
     await vi.waitFor(
@@ -420,8 +426,9 @@ describe('MultilineInput astral-plane editing', () => {
       { timeout: 5000 },
     );
 
+    await flushEffects();
     ui.stdin.write(CTRL_E);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('!');
     await vi.waitFor(
       () => {

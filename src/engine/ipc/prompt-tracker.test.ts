@@ -5,7 +5,6 @@ import { taskId } from '../../core/schemas/task.js';
 import { createEventBus } from '../events/bus.js';
 import { createPromptTracker, ipcPromptError } from './prompt-tracker.js';
 import type { ServerMessage } from './protocol.js';
-import { ipcServerError } from './server.js';
 
 describe('ipcPromptError', () => {
   it('tags the close-cancellation with a domain kind', () => {
@@ -13,15 +12,6 @@ describe('ipcPromptError', () => {
     expect(err.kind).toBe('ipc-prompt-cancelled-closing');
     expect(err.message).toBe('IPC prompt cancelled while closing server: approval_needed');
     expect(err.data).toEqual({ promptKind: 'approval_needed' });
-  });
-});
-
-describe('ipcServerError', () => {
-  it('tags the bind failure with a domain kind', () => {
-    const err = ipcServerError.bindFailed('EADDRINUSE');
-    expect(err.kind).toBe('ipc-server-bind-failed');
-    expect(err.message).toBe('IPC server failed to bind: EADDRINUSE');
-    expect(err.data).toEqual({ reason: 'EADDRINUSE' });
   });
 });
 

@@ -1,276 +1,41 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { SOFT_SEP } from '../../../components/separators.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import type { AdvisorResult } from '../../../engine/orchestrator/planning/mode-advisor.js';
-import { _eventsInternal, eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
-import { _lifecycleInternal, lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { markInterruptParked } from '../../../stores/workflow/actions.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { markInterruptParked } from '../../../stores/workflow/actions/interrupt.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { getChromeContentWidth } from '../layout/chrome-rows.js';
-import { buildInputFooterByline, InputFooter } from './input-footer.js';
+import { InputFooter } from './input-footer.js';
+
+import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
 
 function publishAdvisory(advisory: AdvisorResult): void {
   if (advisory.kind === 'none') return;
-  _eventsInternal.set((prev) => ({
-    events: [
-      ...prev.events,
-      {
-        type: 'mode_advice',
-        ts: Date.now(),
-        phase: 'planning',
-        kind: advisory.kind,
-        risk: advisory.risk,
-        currentMode: advisory.currentMode,
-        suggestedMode: advisory.suggestedMode,
-        confidence: advisory.confidence,
-        factors: advisory.factors,
-        missing: advisory.missing,
-      },
-    ],
-  }));
+  addEvent({
+    type: 'mode_advice',
+    ts: Date.now(),
+    phase: 'planning',
+    kind: advisory.kind,
+    risk: advisory.risk,
+    currentMode: advisory.currentMode,
+    suggestedMode: advisory.suggestedMode,
+    confidence: advisory.confidence,
+    factors: advisory.factors,
+    missing: advisory.missing,
+  });
 }
-
-function fullByline(byline: { lead: string; queued: string; rest: string }): string {
-  return `${byline.lead}${byline.queued}${byline.rest}`;
-}
-
-describe('buildInputFooterByline', () => {
-  const marker = glyph('stageDone');
-  const stageLead = `${marker} build 3/7`;
-
-  it('renders one dim middot byline with the lead, eta and git', () => {
-    const byline = buildInputFooterByline({
-      cols: 120,
-      lead: stageLead,
-      queuedText: null,
-      etaText: '~2m left',
-      gitLabel: 'git:branch+squash',
-      advisoryText: 'use --quick for trivial edits',
-    });
-
-    expect(fullByline(byline)).toBe(
-      `${marker} build 3/7 · ~2m left · git:branch+squash · use --quick for trivial edits`,
-    );
-  });
-
-  it('uses a width-1 live marker so the truncation budget stays reliable', () => {
-    expect(getTerminalCellWidth(marker)).toBe(1);
-  });
-
-  it('passes a live status lead through at the head of the byline', () => {
-    const byline = buildInputFooterByline({
-      cols: 120,
-      lead: '⠋ Researching… 2:24',
-      queuedText: null,
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-    });
-
-    expect(fullByline(byline)).toBe('⠋ Researching… 2:24 · git:none');
-  });
-
-  it('never includes the resting Ctrl+C control cluster', () => {
-    const byline = buildInputFooterByline({
-      cols: 120,
-      lead: stageLead,
-      queuedText: null,
-      etaText: '~2m left',
-      gitLabel: 'git:squash',
-      advisoryText: null,
-    });
-
-    expect(fullByline(byline)).not.toContain('Ctrl+C');
-  });
-
-  it('drops advisory, then eta, then git as width tightens, then truncates the lead', () => {
-    const base = {
-      lead: stageLead,
-      queuedText: null,
-      etaText: '~2m left',
-      gitLabel: 'git:squash',
-      advisoryText: 'use --quick for trivial edits',
-    } as const;
-    // content width is the full cols; size cols so exactly the target variant fits.
-    const colsFor = (target: string) => getTerminalCellWidth(target);
-
-    const noAdvisory = `${stageLead} · ~2m left · git:squash`;
-    const noEta = `${stageLead} · git:squash`;
-    const noGit = stageLead;
-
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(noAdvisory) }))).toBe(
-      noAdvisory,
-    );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(noEta) }))).toBe(noEta);
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(noGit) }))).toBe(noGit);
-
-    const crampedWidth = colsFor(stageLead) - 2;
-    const cramped = fullByline(buildInputFooterByline({ ...base, cols: crampedWidth }));
-    expect(getTerminalCellWidth(cramped)).toBeLessThanOrEqual(crampedWidth);
-  });
-
-  it('includes the y copy token only when a focus exists, reserved at the tail', () => {
-    const base = {
-      cols: 120,
-      lead: stageLead,
-      queuedText: null,
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-    } as const;
-
-    expect(fullByline(buildInputFooterByline(base))).not.toContain('y copy');
-    expect(fullByline(buildInputFooterByline({ ...base, copyHint: 'y copy' }))).toBe(
-      `${marker} build 3/7 · git:none · y copy`,
-    );
-  });
-
-  it('drops the copy hint first as width tightens: y copy → bare y → gone', () => {
-    const base = {
-      lead: stageLead,
-      queuedText: null,
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-      copyHint: 'y copy',
-    } as const;
-    // content width is the full cols (getChromeContentWidth); size cols so each variant just fits.
-    const colsFor = (width: number) => width;
-
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(31) }))).toBe(
-      `${marker} build 3/7 · git:none · y copy`,
-    );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(28) }))).toBe(
-      `${marker} build 3/7 · git:none · y`,
-    );
-    expect(fullByline(buildInputFooterByline({ ...base, cols: colsFor(24) }))).toBe(
-      `${marker} build 3/7 · git:none`,
-    );
-  });
-
-  it('appends the worktree name at the tail with a subtle cursor marker', () => {
-    const byline = buildInputFooterByline({
-      cols: 120,
-      lead: stageLead,
-      queuedText: null,
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-      worktreeLabel: 'my-feature',
-    });
-
-    expect(fullByline(byline)).toBe(
-      `${marker} build 3/7 · git:none · ${glyph('cursor')} my-feature`,
-    );
-  });
-
-  it('omits the worktree marker when no worktree name is set', () => {
-    const byline = buildInputFooterByline({
-      cols: 120,
-      lead: stageLead,
-      queuedText: null,
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-    });
-
-    expect(fullByline(byline)).not.toContain(glyph('cursor'));
-  });
-
-  it('drops the worktree name rather than crowding the core when width is tight', () => {
-    const base = {
-      lead: stageLead,
-      queuedText: null,
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-      worktreeLabel: 'my-feature',
-    } as const;
-    const core = `${marker} build 3/7 · git:none`;
-    // Exactly enough for the core leaves no room for the ` · ▸ …` tail, so the worktree drops.
-    const cols = getTerminalCellWidth(core);
-
-    expect(fullByline(buildInputFooterByline({ ...base, cols }))).toBe(core);
-  });
-
-  it('truncates the worktree name to the room that remains', () => {
-    const core = `${marker} build 3/7 · git:none`;
-    const worktreeLabel = 'a-very-long-worktree-branch-name';
-    // Leave 12 content cells past the core+separator: enough for a truncated tail, not the whole name.
-    const width = getTerminalCellWidth(core) + getTerminalCellWidth(' · ') + 12;
-    const byline = fullByline(
-      buildInputFooterByline({
-        cols: width,
-        lead: stageLead,
-        queuedText: null,
-        etaText: null,
-        gitLabel: 'git:none',
-        advisoryText: null,
-        worktreeLabel,
-      }),
-    );
-
-    expect(byline.startsWith(`${core} · ${glyph('cursor')}`)).toBe(true);
-    expect(byline).not.toContain(worktreeLabel);
-    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeContentWidth(width));
-  });
-
-  it('stays within the chrome content width', () => {
-    const cols = 64;
-    const byline = fullByline(
-      buildInputFooterByline({
-        cols,
-        lead: stageLead,
-        queuedText: null,
-        etaText: '~2m left',
-        gitLabel: 'git:branch+squash',
-        advisoryText: 'use --quick for trivial edits',
-      }),
-    );
-
-    expect(getTerminalCellWidth(byline)).toBeLessThanOrEqual(getChromeContentWidth(cols));
-  });
-
-  it('renders the queued segment as its own tone-carrying part, separate from the lead', () => {
-    const byline = buildInputFooterByline({
-      cols: 120,
-      lead: stageLead,
-      queuedText: '2 queued',
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-    });
-
-    expect(byline.queued).toBe(`${SOFT_SEP}2 queued`);
-    expect(fullByline(byline)).toBe(`${stageLead} · 2 queued · git:none`);
-  });
-
-  it('the queued segment carries no leading separator when the lead is empty', () => {
-    const byline = buildInputFooterByline({
-      cols: 120,
-      lead: '',
-      queuedText: '2 queued',
-      etaText: null,
-      gitLabel: 'git:none',
-      advisoryText: null,
-    });
-
-    expect(byline.queued).toBe('2 queued');
-    expect(fullByline(byline)).toBe('2 queued · git:none');
-  });
-});
 
 describe('InputFooter', () => {
   beforeEach(() => {
@@ -536,10 +301,12 @@ describe('InputFooter', () => {
       phase: 'implementing',
       startedAt: Date.now() - 120_000,
     });
-    _lifecycleInternal.set((state) => ({
-      ...state,
-      stall: { since: Date.now() - 5_000, silentMs: 60_000 },
-    }));
+    addEvent(
+      makeRunnerCallStalled({
+        ts: Date.now() - 5_000,
+        silentMs: 60_000,
+      }),
+    );
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');

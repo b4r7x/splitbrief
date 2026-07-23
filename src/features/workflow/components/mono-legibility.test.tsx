@@ -10,7 +10,7 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { railConnectorString } from '../layout/chrome-rows.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
-import { rowText } from '../conversation-rows/row-format.js';
+import { rowText } from '../conversation-rows/row-format/rows.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';

@@ -4,7 +4,6 @@ import {
   ApproveLevelSchema,
   CurrentCodeContextModeSchema,
   FileActionSchema,
-  type Phase,
   PhaseSchema,
   RecoveryActionSchema,
   RecoveryReasonSchema,
@@ -17,7 +16,7 @@ import {
 } from '../../core/schemas/enums.js';
 import { ApprovalTierSchema } from '../../core/schemas/config.js';
 import { TaskIdSchema } from '../../core/schemas/task.js';
-import { TaskReviewRecoverySchema } from '../../core/schemas/recovery.js';
+import { TaskReviewRecoverySchema } from '../../core/schemas/recovery/schemas.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/tokens.js';
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
@@ -638,22 +637,4 @@ function normalizeLegacyEngineEvent(value: unknown): unknown {
 export function parseEngineEvent(value: unknown): EngineEventFromSchema | null {
   const result = EngineEventSchema.safeParse(value);
   return result.success ? result.data : null;
-}
-
-export function eventPhase(event: EngineEventFromSchema): Phase | undefined {
-  const result = PhaseSchema.safeParse(event.phase);
-  return result.success ? result.data : undefined;
-}
-
-const INFRASTRUCTURE_PHASE_EVENT_TYPES = new Set<EngineEventFromSchema['type']>([
-  'ipc_client_attached',
-  'ipc_client_detached',
-  'ipc_reconnect_attempt',
-  'ipc_reconnect_failed',
-  'replay_started',
-  'replay_complete',
-]);
-
-export function isInfrastructurePhaseEvent(event: EngineEventFromSchema): boolean {
-  return INFRASTRUCTURE_PHASE_EVENT_TYPES.has(event.type);
 }

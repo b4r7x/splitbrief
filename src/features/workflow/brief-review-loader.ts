@@ -1,10 +1,11 @@
 import { join } from 'node:path';
+import { error } from '../../utils/error.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../core/plan-review/types.js';
 import { BRIEF_QUALITY_FILE } from '../../core/paths.js';
 import { readSessionFileConfined } from '../../core/sessions/confinement.js';
 import { isBriefQualityReport, type BriefQualityReport } from '../../engine/spec/brief-quality.js';
-import { parseTaskSourceBlocks, parseTasksStrict } from '../../engine/spec/parser.js';
+import { parseTaskSourceBlocks, parseTasksStrict } from '../../engine/spec/tasks/parse.js';
 import { refreshPlanReviewMetadata } from './plan-review-metadata.js';
 
 interface LoadBriefReviewDataOptions {
@@ -23,7 +24,7 @@ interface LoadBriefReviewDataResult {
 function parseQualityReport(text: string | null): BriefQualityReport | null {
   if (!text) return null;
   try {
-    const parsedQuality = JSON.parse(text) as unknown;
+    const parsedQuality: unknown = JSON.parse(text);
     return isBriefQualityReport(parsedQuality) ? parsedQuality : null;
   } catch {
     return null;
@@ -61,7 +62,11 @@ export async function loadBriefReviewData(
     readSessionFileConfined(opts.sessionDirPath, join(opts.sessionDirPath, BRIEF_QUALITY_FILE)),
   ]);
   if (opts.signal?.aborted) return aborted;
-  if (tasksText === null) throw new Error(`Task Brief file is missing: ${opts.filePath}`);
+  if (tasksText === null) {
+    throw error('brief-file-missing', `Task Brief file is missing: ${opts.filePath}`, {
+      filePath: opts.filePath,
+    });
+  }
 
   const tasks = parseTasksStrict(tasksText);
   const quality = parseQualityReport(qualityText);

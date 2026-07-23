@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
-import { runCommand } from '../../../lib/process/spawn.js';
+import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { isENOENT, processError } from '../../../lib/process/errors.js';
 import { detectProjectLanguage } from '../../project-meta.js';
 import type { Config } from '../../schemas/config.js';

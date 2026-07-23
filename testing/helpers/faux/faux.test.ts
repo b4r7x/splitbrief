@@ -44,8 +44,13 @@ describe('fauxImplementer', () => {
     };
     const r1 = await implementer.implement(opts);
     const r2 = await implementer.implement(opts);
+    const r3 = await implementer.implement(opts);
     expect(r1.success).toBe(true);
+    expect(r1.output).toBe('done');
     expect(r2.success).toBe(false);
-    expect(state.implementCallCount).toBe(2);
+    expect(r2.error).toBe('fail');
+    expect(r3.success).toBe(true);
+    expect(r3.output).toBe('done');
+    expect(state.implementCallCount).toBe(3);
   });
 });

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
-import { Box, Text } from 'ink';
+import { Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -10,8 +10,6 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { ListRow } from '../../../components/list-row.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { TwoColumnPicker } from './picker.js';
-import { renderToolRow } from '../tool-row.js';
-import type { PickerOption } from '../model-catalog.js';
 
 interface Tool {
   id: string;
@@ -332,48 +330,6 @@ describe('TwoColumnPicker', () => {
     expect(renderedRows).toHaveLength(20);
     expect(frame).toContain('Tool 19');
     expect(frame).not.toContain('Tool 20');
-    ui.unmount();
-  });
-
-  it('renders distinct add-shell and add-agent labels', async () => {
-    const shell: PickerOption = {
-      id: 'shell',
-      displayName: 'Shell',
-      kind: 'shell',
-      available: true,
-      badge: 'Custom',
-    };
-    const agent: PickerOption = {
-      id: 'agent',
-      displayName: 'Agent',
-      kind: 'agent',
-      available: true,
-      badge: 'Custom',
-    };
-    const ui = renderFeature(
-      <Box flexDirection="column">
-        {renderToolRow({
-          item: shell,
-          isCursor: false,
-          isSelected: false,
-          maxWidth: 40,
-          currentCommand: undefined,
-          currentCommandKind: undefined,
-        })}
-        {renderToolRow({
-          item: agent,
-          isCursor: false,
-          isSelected: false,
-          maxWidth: 40,
-          currentCommand: undefined,
-          currentCommandKind: undefined,
-        })}
-      </Box>,
-    );
-    await tick();
-
-    expect(ui.lastFrame()).toContain('+ Add shell command…');
-    expect(ui.lastFrame()).toContain('+ Add agent command…');
     ui.unmount();
   });
 

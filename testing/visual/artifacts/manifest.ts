@@ -15,15 +15,14 @@ import {
 } from '../contracts/schema-versions.js';
 import { CaptureSelectionSchema, type CaptureSelection } from '../contracts/selection.js';
 import { CONTROL_POLICY, HYPERLINK_POLICY } from '../terminal/controls.js';
+import { MANIFEST_RELATIVE_PATH, createRunKey } from './layout.js';
 import {
-  MANIFEST_RELATIVE_PATH,
-  createPublicationLayout,
-  createRunKey,
   preparePublicationLayout,
   publishPublicationLayout,
-  resolveWritableContainedArtifactPath,
+  createPublicationLayout,
   type PublicationLayout,
-} from './paths.js';
+} from './publication.js';
+import { resolveWritableContainedArtifactPath } from './confinement.js';
 
 const MANIFEST_TEMP_RELATIVE_PATH = 'manifest.json.tmp';
 

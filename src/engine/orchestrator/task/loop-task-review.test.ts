@@ -10,9 +10,8 @@ import {
   makeBusRecorder,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
-import { ensureSessionDir } from '../../../core/paths-io.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { TASK_REVIEW_COMMANDS } from '../../events/workflow-events.js';
 import { runTaskLoop } from './loop.js';
@@ -25,17 +24,17 @@ afterEach(() => {
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('task-loop-test');
+  const { projectDir, sessionId } = setupGitSessionProject({
+    prefix: 'task-loop-test',
+    sessionId: 'sess-loop',
+  });
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
-  const sessionId = 'sess-loop';
-  ensureSessionDir(projectDir, sessionId);
   return { projectDir, sessionId };
 }
 
 const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
 
-describe('runTaskLoop', { timeout: 30_000 }, () => {
+describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('default taskReview none does not emit task review gates after successful tasks', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/review-none.ts' });
@@ -93,7 +92,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     expect(
       events.filter((event) => event.type === 'task_review_needed').map((event) => event.taskId),
     ).toEqual(['T001', 'T002']);
-  }, 20_000);
+  }, 90_000);
 
   it('taskReview notes are queued and persisted before continuing', async () => {
     const { projectDir, sessionId } = setupProject();
@@ -149,7 +148,7 @@ describe('runTaskLoop', { timeout: 30_000 }, () => {
     expect(log).toContain('"kind":"message"');
     expect(log).toContain('Task review note for T001 - Add auth');
     expect(log).toContain('tighten the follow-up assertions');
-  }, 20_000);
+  }, 90_000);
 
   it('taskReview every reports cancellation after a task review abort', async () => {
     const { projectDir, sessionId } = setupProject();

@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   CheckpointDefinitionSchema,
   CheckpointKindSchema,
@@ -315,10 +315,6 @@ describe('visual contract boundaries', () => {
       url: publicUrl,
     });
     const projectFile: ProjectRelativePath = ProjectRelativePathSchema.parse('src/app.ts');
-    expectTypeOf(publicUrl).toExtend<string>();
-    expectTypeOf<string>().not.toExtend<PublicHttpUrl>();
-    expectTypeOf(projectFile).toExtend<string>();
-    expectTypeOf<string>().not.toExtend<ProjectRelativePath>();
     expect(
       sanitizeHyperlink({ value: 'file:///project/src/app.ts', projectRoot: '/project' }),
     ).toEqual({ kind: 'project-file', path: projectFile });

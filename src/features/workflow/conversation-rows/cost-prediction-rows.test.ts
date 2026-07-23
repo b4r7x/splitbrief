@@ -3,7 +3,7 @@ import type { CostPrediction, PlannerEstimateReview } from '../../../core/schema
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { costPredictionRows } from './cost-prediction-rows.js';
-import { rowText } from './row-format.js';
+import { rowText } from './row-format/rows.js';
 
 function makeEvent(
   review: PlannerEstimateReview | undefined,

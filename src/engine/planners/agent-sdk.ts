@@ -4,15 +4,14 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
-import {
-  createAgentSdkBackend,
-  isAgentSdkAvailable,
-  PLANNER_ALLOWED_TOOLS,
-  PLANNER_PERMISSION_MODE,
-} from '../runners/agent-sdk-backend.js';
+import { createAgentSdkBackend } from '../runners/agent-sdk/backend.js';
+import { isAgentSdkAvailable } from '../runners/agent-sdk/availability.js';
+
+const PLANNER_ALLOWED_TOOLS = ['Read', 'Glob', 'Grep'] as const;
+const PLANNER_PERMISSION_MODE = 'plan' as const;
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { DEFAULT_AGENT_SDK_MODEL } from '../../core/providers/known-models.js';
-import { resolveApiKeyOverride } from '../providers/client.js';
+import { resolveApiKeyOverride } from '../providers/client/api-key.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import { toTokenDelta } from '../calls/projection.js';
@@ -32,6 +31,7 @@ export function createAgentSdkPlanner(opts: {
   const backend = createAgentSdkBackend({
     allowedTools: [...PLANNER_ALLOWED_TOOLS],
     permissionMode: PLANNER_PERMISSION_MODE,
+    role: 'planner',
     apiKey,
     initialSessionId: initialSessionId ?? null,
     idleWarnMs,

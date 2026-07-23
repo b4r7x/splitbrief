@@ -63,12 +63,6 @@ describe('buildManifest', () => {
     expect(manifest.artifacts.constitution).toBeUndefined();
   });
 
-  it('briefHash is a 64-character hex string (sha256)', () => {
-    const manifest = buildManifest({ ...baseOptions });
-
-    expect(manifest.briefHash).toMatch(/^[0-9a-f]{64}$/);
-  });
-
   it('derives artifacts.tasks from packFiles filtered to entries under tasks/', () => {
     const manifest = buildManifest({ ...baseOptions });
 

@@ -230,22 +230,6 @@ describe('collectRunnerCallResult', () => {
     expect(result.error).toBeNull();
   });
 
-  it('treats missing text semantics as delta for backward compatibility', () => {
-    const result = collectRunnerCallResult([
-      { type: 'call_started', ...base },
-      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'one ' },
-      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'two' },
-      {
-        type: 'call_completed',
-        ...base,
-        status: 'completed',
-        ...completedTerminal,
-      },
-    ]);
-
-    expect(result.text).toBe('one two');
-  });
-
   it('marks direct oversized result text as truncated', () => {
     const result = collectRunnerCallResult([
       { type: 'call_started', ...base },

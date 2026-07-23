@@ -24,7 +24,7 @@ Hooks support two kinds: `command` (spawns a subprocess, receives the event as J
 
 `src/engine/snapshots/`
 
-Content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/`. The snapshot store handles creation (`src/engine/snapshots/create.ts`), manifest management (`src/engine/snapshots/manifest.ts`), and file collection (`src/engine/snapshots/files.ts`). Restore logic lives in `src/engine/snapshots/restore.ts`. Run-level accept/reject logic lives in `src/engine/snapshots/run.ts`.
+Content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/`. The snapshot store handles creation (`src/engine/snapshots/create.ts`), manifest management (`src/engine/snapshots/manifest.ts`), and file collection (`src/engine/snapshots/files.ts`). Restore logic lives in `src/engine/snapshots/restore.ts`. Run-level accept/reject logic lives in `src/engine/snapshots/run/` (`lifecycle.ts`, `ledger.ts`, `rollback.ts`).
 
 The first snapshot creates the **baseline snapshot** -- the "before" state. It stores every tracked file (excluding `.git`, `.diptych`, `node_modules`, `.trees`). Subsequent snapshots store only files whose hash differs from the baseline, with the manifest recording every file's hash. File blobs are stored under hex-encoded path names within each snapshot directory.
 
@@ -85,7 +85,7 @@ The server optionally exposes MCP tools when a tool handler is provided (`src/en
 
 ## 7. Git worktrees
 
-`src/engine/worktree.ts` + `src/cli/commands/worktree.ts`
+`src/engine/worktree/{create,status,remove,detect,path,cleanliness,errors}.ts` + `src/cli/commands/worktree.ts`
 
 `diptych worktree list | switch | remove` manages isolated working directories under `.trees/<name>/`. `diptych start --worktree "feature"` creates a worktree on branch `diptych/<name>` and runs the session inside it. Each worktree gets its own `.diptych/` directory and therefore its own session lock, enabling parallel workflows on the same repo.
 
@@ -129,7 +129,7 @@ The `/refresh` slash command invalidates the cache and re-runs detection. Detect
 
 ## 11. Session compaction
 
-`src/core/sessions/compaction.ts`, `src/engine/orchestrator/transcript-rebuild.ts`, `src/engine/orchestrator/resume-context.ts`
+`src/core/sessions/compaction.ts`, `src/engine/orchestrator/transcript/rebuild.ts`, `src/engine/orchestrator/transcript/compaction.ts`, `src/engine/orchestrator/resume-context.ts`
 
 Compaction summarizes older turns in `session.jsonl` without deleting them. A summary entry is appended to the log; original messages remain intact. On resume, `readCompactedMessages()` returns the latest summary entry plus only the messages after its `summarizedUpTo` timestamp -- the planner rebuilds context from that smaller window instead of replaying the full log.
 
@@ -141,7 +141,7 @@ Compaction summarizes older turns in `session.jsonl` without deleting them. A su
 
 ## 12. Evidence ledger
 
-`src/core/evidence/ledger.ts`, `src/engine/orchestrator/evidence/{approval,persistence,reporting,retry-counts,task}.ts`, `src/core/schemas/evidence.ts`
+`src/core/evidence/{ledger-state,ledger-storage}.ts`, `src/engine/orchestrator/evidence/{approval,persistence,reporting,retry-counts,task}.ts`, `src/core/schemas/evidence.ts`
 
 The evidence ledger records what happened during implementation -- approval decisions, validation outcomes, task completions, skip reasons, escalation results, and rejection reasons. One ledger per session, persisted as `evidence.json` inside the session directory (`.diptych/sessions/<id>/evidence.json`).
 

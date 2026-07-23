@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
@@ -39,7 +38,6 @@ describe('e2e: cost routing cheapest capable', () => {
     expect(taskStarted).toBeDefined();
     expect(taskStarted?.implementerProfile).toBe('cheap-local');
     const utilityPath = join(ctx.projectDir, 'src/utility.ts');
-    expect(readFileSync(utilityPath, 'utf-8')).toContain('toTitleCase');
     expect(evaluateTsArtifact(utilityPath, "mod.toTitleCase('hello WORLD')")).toBe('Hello World');
 
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);

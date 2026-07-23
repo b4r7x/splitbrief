@@ -7,11 +7,9 @@ import type {
   ReviewPacketFinalReviewStatus,
 } from '../../../../core/schemas/review-packet.js';
 import { REVIEW_FILE, STATE_FILE, sessionDir } from '../../../../core/paths.js';
-import {
-  getCommittedFilesSince,
-  getCurrentChangedFiles,
-  getRunStartHead,
-} from '../../../../lib/git.js';
+import { getCommittedFilesSince } from '../../../../lib/git/diff.js';
+import { getCurrentChangedFiles } from '../../../../lib/git/files.js';
+import { getRunStartHead } from '../../../../lib/git/refs.js';
 import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';

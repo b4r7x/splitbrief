@@ -9,6 +9,12 @@ export interface PageNavigationContext<T> {
 
 export type PageSize<T> = number | ((ctx: PageNavigationContext<T>) => number);
 
+export interface FilterableListKeyContext<T> {
+  filtered: T[];
+  selectedIndex: number;
+  appendToFilter: (text: string) => void;
+}
+
 interface UseFilterableListOptions<T> {
   items: T[];
   filterFn: (item: T, query: string) => boolean;
@@ -18,11 +24,7 @@ interface UseFilterableListOptions<T> {
   shouldAppendChar?: ((input: string) => boolean) | undefined;
   initialIndex?: number | undefined;
   pageSize: PageSize<T>;
-  customKeys?: (
-    input: string,
-    key: Key,
-    ctx: { filtered: T[]; selectedIndex: number },
-  ) => boolean | undefined;
+  customKeys?: (input: string, key: Key, ctx: FilterableListKeyContext<T>) => boolean | undefined;
 }
 
 interface UseFilterableListResult<T> {
@@ -75,6 +77,16 @@ export function useFilterableList<T>({
     nextSelectionId: 1,
   });
   const commitSelection = useEffectEvent((item: T) => onSelect(item));
+  const appendToFilter = useEffectEvent((text: string) => {
+    setState((prev) => ({ ...prev, filter: prev.filter + text, selectedIndex: 0 }));
+  });
+  const runCustomKeys = useEffectEvent(
+    (input: string, key: Key, ctx: Omit<FilterableListKeyContext<T>, 'appendToFilter'>) =>
+      customKeys?.(input, key, { ...ctx, appendToFilter }),
+  );
+  const canAppendChar = useEffectEvent(
+    (input: string) => !shouldAppendChar || shouldAppendChar(input),
+  );
 
   const filtered = getFilteredItems(items, filterFn, state.filter);
 
@@ -94,7 +106,7 @@ export function useFilterableList<T>({
   useInput(
     (input, key) => {
       if (
-        customKeys?.(input, key, {
+        runCustomKeys(input, key, {
           filtered,
           selectedIndex: effectiveIndex,
         })
@@ -187,8 +199,8 @@ export function useFilterableList<T>({
         return;
       }
       if (input && !key.ctrl && !key.meta) {
-        if (shouldAppendChar && !shouldAppendChar(input)) return;
-        setState((prev) => ({ ...prev, filter: prev.filter + input, selectedIndex: 0 }));
+        if (!canAppendChar(input)) return;
+        appendToFilter(input);
       }
     },
     { isActive },

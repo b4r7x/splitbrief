@@ -20,6 +20,7 @@ declare module '@anthropic-ai/claude-agent-sdk' {
       permissionMode: string;
       model: string;
       cwd: string;
+      includePartialMessages?: boolean | undefined;
       resume?: string | undefined;
       env?: Record<string, string | undefined>;
       effort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined;

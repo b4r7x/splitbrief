@@ -6,7 +6,7 @@ import type {
   MarkdownLayoutChunk,
   MarkdownRowsCacheEntry,
 } from './types.js';
-import { workflowMarkdownConversationSegments } from './workflow-markers.js';
+import { workflowMarkdownConversationSegments } from './conversation-segments.js';
 
 export function createMarkdownRowsCacheEntryFromChunks(input: {
   sourceText: string;

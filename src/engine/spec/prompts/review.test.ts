@@ -11,6 +11,9 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).not.toContain('Deterministic Drift Report');
     expect(result).toContain('## Task Briefs');
     expect(result).toContain(TASK_BRIEFS);
+    expect(result).toContain(
+      'Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
+    );
   });
 
   it('includes a drift section heading and content when driftReport is provided', () => {
@@ -23,12 +26,5 @@ describe('buildFinalReviewPrompt', () => {
     });
     expect(result).toContain('## Deterministic Drift Report');
     expect(result).toContain(driftSection);
-  });
-
-  it('intro text instructs treating error-level drift findings as review blockers', () => {
-    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
-    expect(result).toContain(
-      'Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
-    );
   });
 });

@@ -11,7 +11,8 @@ import { elementId } from './contracts/identifiers.js';
 import { DeterminismEnvelopeSchema } from './contracts/manifest-fields.js';
 import { parseManifest } from './contracts/manifest.js';
 import { ArtifactProvenanceSchema, CaptureSelectionSchema } from './contracts/selection.js';
-import { createPublicationLayout, createRunKey } from './artifacts/paths.js';
+import { createPublicationLayout } from './artifacts/publication.js';
+import { createRunKey } from './artifacts/layout.js';
 import { writeArtifactBundle } from './artifacts/write.js';
 import { parseTerminalFrame } from './terminal/parse.js';
 

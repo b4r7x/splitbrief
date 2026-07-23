@@ -16,10 +16,3 @@ export function expectApi<T extends RunnerConfig>(config: T): Extract<T, { kind:
   }
   return config as Extract<T, { kind: 'api' }>;
 }
-
-export function expectShell<T extends RunnerConfig>(config: T): Extract<T, { kind: 'shell' }> {
-  if (config.kind !== 'shell') {
-    throw new Error(`Expected shell-kind config, got kind='${config.kind}'`);
-  }
-  return config as Extract<T, { kind: 'shell' }>;
-}

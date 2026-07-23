@@ -3,9 +3,9 @@ import {
   toEngineEventEntry,
   type SessionLogAppendFailure,
   type SessionLogAppender,
-} from '../../../core/state/persistence.js';
+} from '../../../core/sessions/log-writer.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { protectEngineEventForConsumer } from '../protection.js';
+import { protectEngineEventForConsumer } from '../protection/protect.js';
 import type { EngineEvent, EventSink } from '../types.js';
 
 type JsonlSinkOptions = SessionRef & {

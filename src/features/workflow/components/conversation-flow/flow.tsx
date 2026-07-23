@@ -8,11 +8,11 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../../stores/workflow/tasks.js';
-import { useSections } from '../../../../stores/workflow/actions.js';
+import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../../conversation-rows/viewport.js';
-import { row } from '../../conversation-rows/row-format.js';
+import { row } from '../../conversation-rows/row-format/rows.js';
 import { SOFT_SEP } from '../../../../components/separators.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';

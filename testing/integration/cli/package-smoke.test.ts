@@ -109,6 +109,28 @@ describe('package smoke test', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Usage:');
     expect(result.stdout).toContain('diptych');
+
+    const exampleLines = result.stdout
+      .split('\n')
+      .filter((line) => line.trim().startsWith('$ diptych'));
+    expect(exampleLines.length).toBeGreaterThanOrEqual(10);
+    for (const snippet of [
+      '$ diptych "',
+      '$ diptych start "',
+      '@design.md',
+      '@screenshot.png',
+      '--mode instant',
+      '--mode quick',
+      '--mode speckit',
+      '--worktree',
+      '--detach',
+      '--json',
+      'diptych status',
+      'diptych resume',
+      'diptych doctor',
+    ]) {
+      expect(result.stdout).toContain(snippet);
+    }
   }, 60_000);
 
   it('--version prints the package.json version', () => {

@@ -69,33 +69,20 @@ describe('writeDriftChainState', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('creates file with trailing newline and parseable JSON', () => {
-    const state = initialDriftChainState('s1');
-    writeDriftChainState({ projectDir: dir, sessionId: 's1' }, state);
-    const path = driftChainsPath({ projectDir: dir, sessionId: 's1' });
+  it('writes a newline-terminated state and reads it back', () => {
+    const state = initialDriftChainState('s2');
+    writeDriftChainState({ projectDir: dir, sessionId: 's2' }, state);
+    const path = driftChainsPath({ projectDir: dir, sessionId: 's2' });
     expect(existsSync(path)).toBe(true);
     const raw = readFileSync(path, 'utf8');
     expect(raw.endsWith('\n')).toBe(true);
     expect(JSON.parse(raw).version).toBe(1);
-  });
 
-  it('round-trips a written state via readDriftChainState', () => {
-    const state = initialDriftChainState('s2');
-    writeDriftChainState({ projectDir: dir, sessionId: 's2' }, state);
     const result = readDriftChainState({ projectDir: dir, sessionId: 's2' });
     expect(result).not.toBeNull();
     expect(result?.version).toBe(1);
     expect(result?.sessionId).toBe('s2');
     expect(result?.activeChain).toEqual(emptyActiveChain());
     expect(result?.emittedChains).toEqual([]);
-  });
-});
-
-describe('emptyActiveChain', () => {
-  it('returns object with zero entries, empty uniqueFiles, score 0', () => {
-    const chain = emptyActiveChain();
-    expect(chain.entries).toEqual([]);
-    expect(chain.uniqueFiles).toEqual([]);
-    expect(chain.score).toBe(0);
   });
 });

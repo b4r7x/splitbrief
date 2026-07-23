@@ -129,6 +129,12 @@ describe('visualPositionOf honors affinity at soft-wrap seams', () => {
   });
 });
 
+describe('caretVisualPosition', () => {
+  it('returns the origin for an empty buffer', () => {
+    expect(visualPositionOf(wrapVisualLines('', 40), 0)).toEqual({ row: 0, col: 0 });
+  });
+});
+
 describe('word boundaries stop at whitespace, not at newlines', () => {
   const value = 'foo bar\nbaz';
 

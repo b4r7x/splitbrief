@@ -59,8 +59,8 @@ src/stores/
 │   ├── tasks.ts              # Task map + counters
 │   ├── tokens.ts             # Local / escalated token counts
 │   ├── lifecycle.ts          # Phase, cancelled, queue depth
-│   ├── operations.ts         # Active / last runner operation for compact status
-│   ├── actions.ts            # Namespace module — composite writes across sub-stores
+│   ├── operations/           # Active / last runner operation (state.ts, reducer.ts, …)
+│   ├── actions/              # Composite writes across sub-stores (event, interrupt, resume, reset, sections)
 │   ├── abort.ts              # Armed abort intent (ArmedKind) + auto-clear timer
 │   ├── attachments.ts        # Pending prompt attachments
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
@@ -202,7 +202,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, totalTasks, taskCompletionTimes, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
 | `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason }` | internal writes via `actions.addEvent` / local cancel intent |
-| `operationsStore` | `workflow/operations.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
+| `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
 | `abortStore` | `workflow/abort.ts` | `{ armed: ArmedKind }` | `arm(kind)` (2s auto-clear), `clear()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
 | `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount }` | `setReviewFile()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()` |
@@ -219,7 +219,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 
 ### Workflow actions module
 
-`workflow/actions.ts` is not a store — it's a namespace module holding composite operations that orchestrate writes across workflow sub-stores. The TUI sink calls it for engine events, and UI command handlers call it for local intent such as cancellation. Direct `.set()` on sub-stores is reserved for test helpers.
+`workflow/actions/` is not a store — it holds composite operations that orchestrate writes across workflow sub-stores (`event.ts`, `interrupt.ts`, `resume.ts`, `reset.ts`, `sections.ts`). The TUI sink calls it for engine events, and UI command handlers call it for local intent such as cancellation. Direct `.set()` on sub-stores is reserved for test helpers.
 
 | Export | Purpose |
 |---|---|
@@ -228,11 +228,11 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `resetWorkflow(resume?)` | Calls `abortStore.clear()` first, then resets workflow sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate; applies resume state if provided. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 
-**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`, and `operations.ts` exports `updateOperations`. They are pure functions and can be tested directly.
+**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`, and `operations/reducer.ts` exports `updateOperations`. They are pure functions and can be tested directly.
 
 `lifecycle.ts` owns queue count state. `message_queued` increments `queueDepth`; `message_injected_native`, `queue_drained`, and `queue_cleared` decrement it. `resetWorkflow(resume)` reconstructs depth from undrained, non-native queue entries so resumed sessions show the same pending queue count near the composer.
 
-`operations.ts` owns compact runner lifecycle for operation-state consumers: active/last call identity, terminal status, frozen timing, warning count/detail, usage, partial output, runner, and model. It does not decide what activity text belongs in chrome. Conversation rows render safe `runner_call_activity` events from the retained event log as batched per-call activity blocks; assistant/result text, prompts, task bodies, full descriptions, and raw tool payloads remain transcript-bearing and must not update status chrome.
+`operations/state.ts` and `operations/reducer.ts` own compact runner lifecycle for operation-state consumers: active/last call identity, terminal status, frozen timing, warning count/detail, usage, partial output, runner, and model. It does not decide what activity text belongs in chrome. Conversation rows render safe `runner_call_activity` events from the retained event log as batched per-call activity blocks; assistant/result text, prompts, task bodies, full descriptions, and raw tool payloads remain transcript-bearing and must not update status chrome.
 
 ## Design Decisions
 
@@ -261,7 +261,7 @@ Store selectors make them unnecessary. Components subscribe to specific slices a
 
 ### Cross-module writes within a store group
 
-Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`, `operations`) are written exclusively by `workflow/actions.ts`. Each sub-store exports a package-private mutator (`_eventsInternal`, `_tasksInternal`, etc.) that only `actions.ts` imports. Consumers must go through `addEvent`, `markCancellationRequested`, or `resetWorkflow`. The raw `set` is not part of the facade — tests bypass actions via `__testReset`.
+Workflow sub-stores (`events`, `tasks`, `tokens`, `lifecycle`, `operations`) are written exclusively by `workflow/actions/`. Each sub-store exports a package-private mutator (`_eventsInternal`, `_tasksInternal`, etc.) that only the action modules import. Consumers must go through `addEvent`, `markCancellationRequested`, or `resetWorkflow`. The raw `set` is not part of the facade — tests bypass actions via `__testReset`.
 
 ### Test escape hatches
 
@@ -270,9 +270,9 @@ A small number of stores ship two test-only exports so tests can arrange specifi
 | Symbol | Shape | Who may import |
 |---|---|---|
 | `__testReset(next?)` on a store facade | Replaces current state with `{ ...initial, ...next }` | `*.test.ts` / `*.test.tsx` files only |
-| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_operationsInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions.ts` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
+| `_<name>Internal = { set }` (e.g. `_lifecycleInternal`, `_operationsInternal`, `_eventsInternal`, `_tasksInternal`, `_tokensInternal`) | Exposes the raw store setter | `src/stores/workflow/actions/` for the production write path; tests that need to reach a state the public actions cannot produce (e.g. `src/app/keys.test.tsx` forcing a mid-workflow phase) |
 
-**Rule.** Production code outside `workflow/actions.ts` MUST NOT import either symbol. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests are the only other sanctioned caller.
+**Rule.** Production code outside `workflow/actions/` MUST NOT import either symbol. Reviewers reject PRs that add new call sites in `src/` outside that one module. Tests are the only other sanctioned caller.
 
 **Why they exist.** `lifecycleStore` (and the other workflow sub-stores) expose no public setter — `addEvent` is the engine-event ingress, and `markCancellationRequested` is the local-intent ingress. A test that needs to assert behaviour while the store is already at `phase: 'implementing'` cannot replay a full event stream to get there, so `__testReset` arranges the state directly. Similarly, `_lifecycleInternal.set` lets the dispatcher write one slice without exposing generic mutation publicly.
 

@@ -1,7 +1,7 @@
 import type { Phase } from '../../../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../../../core/schemas/recovery.js';
+import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
-import type { ValidationResult } from '../../validation-result.js';
+import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';

@@ -6,8 +6,8 @@ import type { PlannerDetection, ProviderDetection } from '../../core/discovery/d
 import { modelCacheStore } from './model-cache.js';
 import { detectionStore } from '../project/detection.js';
 import { loadDetectionIntoStores, refreshDetectionStores } from './detection-adapter.js';
+import type { DetectionDeps, DetectionServiceResult } from '../../engine/detection/service.js';
 import { createDetectionService } from '../../engine/detection/service.js';
-import type { DetectionDeps } from '../../engine/detection/service.js';
 
 const makePlanner = (overrides?: Partial<PlannerDetection>): PlannerDetection => ({
   tool: 'claude-code',
@@ -23,33 +23,8 @@ const makeImplementer = (overrides?: Partial<ProviderDetection>): ProviderDetect
   ...overrides,
 });
 
-/**
- * Build deps where detectAll stamps the call generation (1, 2, 3, …) into the
- * planner's `version` field. Tests observe the generation that lands in
- * detectionStore instead of asserting on call counts.
- */
-function makeCountingDeps(overrides: Partial<DetectionDeps> = {}): DetectionDeps {
-  let calls = 0;
-  const detectAll = async () => {
-    calls++;
-    return {
-      planners: [makePlanner({ version: `gen-${calls}` })],
-      implementers: [makeImplementer()],
-    };
-  };
-  return {
-    detectAll,
-    fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
-    discoverAllCliTools: vi.fn().mockResolvedValue({}),
-    ...overrides,
-  };
-}
-
 describe('loadDetectionIntoStores', () => {
-  let service: ReturnType<typeof createDetectionService>;
-
   beforeEach(() => {
-    service = createDetectionService();
     detectionStore.reset();
     modelCacheStore.reset();
   });
@@ -68,6 +43,17 @@ describe('loadDetectionIntoStores', () => {
       fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
       discoverAllCliTools: vi.fn().mockResolvedValue({}),
     };
+    const fixedResult: DetectionServiceResult = {
+      detection: { planners, implementers },
+      catalog: null,
+      cliModels: {},
+    };
+    const loadDetection = vi.fn().mockResolvedValue(fixedResult);
+    const service = {
+      loadDetection,
+      refreshDetection: vi.fn(),
+      invalidateDetection: vi.fn(),
+    };
 
     await loadDetectionIntoStores(service, deps, detectionStore, undefined);
 
@@ -76,99 +62,50 @@ describe('loadDetectionIntoStores', () => {
     expect(state.implementers).toEqual(implementers);
   });
 
-  describe('cache integration', () => {
-    let tempDir: string;
-
-    beforeEach(async () => {
-      tempDir = await mkdtemp(join(tmpdir(), 'diptych-detection-adapter-test-'));
-      service = createDetectionService();
-      detectionStore.reset();
-    });
-
-    afterEach(async () => {
-      await service.getPendingSave();
-      await rm(tempDir, { recursive: true, force: true });
-    });
-
-    it('uses cache on second call when projectDir is supplied', async () => {
-      const deps = makeCountingDeps();
-
-      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
-      // First call ran real detection — planner version stamped gen-1.
-      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
-
-      await service.getPendingSave();
-      // Reset the store so we can observe what the second call writes.
-      detectionStore.reset();
-
-      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
-      // Second call hit the cache — the cached payload (gen-1) is restored,
-      // proving detectAll was NOT re-invoked (otherwise we would see gen-2).
-      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
-    });
-
-    it('hydrates models.dev and CLI discovery on cache hit', async () => {
-      const catalog = {
-        anthropic: {
-          id: 'anthropic',
-          models: {
-            'claude-sonnet-4-6': {
-              id: 'claude-sonnet-4-6',
-              cost: { input: 3, output: 15 },
-              limit: { context: 1_000_000 },
-            },
+  it('forwards projectDir and applies the service result to stores', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'diptych-detection-adapter-forward-'));
+    const catalog = {
+      anthropic: {
+        id: 'anthropic',
+        models: {
+          'claude-sonnet-4-6': {
+            id: 'claude-sonnet-4-6',
+            cost: { input: 3, output: 15 },
+            limit: { context: 1_000_000 },
           },
         },
-      };
+      },
+    };
+    const planners = [makePlanner({ tool: 'claude-code', version: 'service-fixed' })];
+    const implementers = [makeImplementer({ provider: 'ollama' })];
+    const fixedResult: DetectionServiceResult = {
+      detection: { planners, implementers },
+      catalog,
+      cliModels: { opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] },
+    };
+    const deps: DetectionDeps = {
+      detectAll: vi.fn(),
+      fetchModelsDevCatalog: vi.fn(),
+      discoverAllCliTools: vi.fn(),
+    };
+    const loadDetection = vi.fn().mockResolvedValue(fixedResult);
+    const service = {
+      loadDetection,
+      refreshDetection: vi.fn(),
+      invalidateDetection: vi.fn(),
+    };
 
-      const deps: DetectionDeps = {
-        ...makeCountingDeps(),
-        fetchModelsDevCatalog: vi.fn().mockResolvedValue(catalog),
-        discoverAllCliTools: vi
-          .fn()
-          .mockResolvedValue({ opencode: [{ id: 'anthropic/claude-sonnet-4.6' }] }),
-      };
+    await loadDetectionIntoStores(service, deps, detectionStore, projectDir);
 
-      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
-      await service.getPendingSave();
+    expect(loadDetection).toHaveBeenCalledWith(deps, projectDir);
+    expect(detectionStore.get().planners).toEqual(planners);
+    expect(detectionStore.get().implementers).toEqual(implementers);
+    expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
+    expect(modelCacheStore.getProviderModels('opencode')).toEqual([
+      { id: 'anthropic/claude-sonnet-4.6' },
+    ]);
 
-      detectionStore.reset();
-      modelCacheStore.reset();
-
-      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
-
-      // Cached planner gen-1 is restored (not re-detected into gen-2).
-      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
-      expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
-      expect(modelCacheStore.getProviderModels('opencode')).toEqual([
-        { id: 'anthropic/claude-sonnet-4.6' },
-      ]);
-    });
-
-    it('always runs detection when projectDir is undefined (no cache scope)', async () => {
-      const deps = makeCountingDeps();
-
-      await loadDetectionIntoStores(service, deps, detectionStore, undefined);
-      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
-
-      await loadDetectionIntoStores(service, deps, detectionStore, undefined);
-      // No projectDir → no cache path → every call re-detects.
-      expect(detectionStore.get().planners[0]?.version).toBe('gen-2');
-    });
-
-    it('invalidate() forces re-detection on next load', async () => {
-      const deps = makeCountingDeps();
-
-      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
-      expect(detectionStore.get().planners[0]?.version).toBe('gen-1');
-
-      await service.getPendingSave();
-      await service.invalidateDetection(tempDir);
-
-      await loadDetectionIntoStores(service, deps, detectionStore, tempDir);
-      // After invalidation the second load re-ran detection → gen-2 lands.
-      expect(detectionStore.get().planners[0]?.version).toBe('gen-2');
-    });
+    await rm(projectDir, { recursive: true, force: true });
   });
 });
 

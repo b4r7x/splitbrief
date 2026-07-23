@@ -7,7 +7,6 @@ import { render } from 'ink-testing-library';
 import { useState, useEffect } from 'react';
 import { Text } from 'ink';
 import { tick } from '#testing/helpers/ink.js';
-import { allowedSettlingBriefReviewCommandsForPrompt } from '../../../core/schemas/brief-review-command.js';
 import { useIpcClient, type IpcClientStatus } from './use-ipc-client.js';
 import { MAX_ATTEMPTS } from '../../../engine/ipc/client.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -71,6 +70,7 @@ interface CapturedState {
   events: EngineEvent[];
   sendUserInput: (text: string) => void;
   detach: () => void;
+  clearQueue: () => void;
 }
 
 function Harness({
@@ -139,15 +139,18 @@ describe('useIpcClient', () => {
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    await tick(100);
-
-    expect(capture.current?.status).toBe('connected');
-    expect(capture.current?.sessionId).toBe('test-session-id');
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('connected');
+        expect(capture.current?.sessionId).toBe('test-session-id');
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });
 
-  it('forwards server events to onEvent callback', async () => {
+  it('round-trips a prompt_request through onPromptRequest as prompt_response', async () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
@@ -215,24 +218,15 @@ describe('useIpcClient', () => {
     await tick(20);
   });
 
-  it('writes approval edit action prompt_response from prompt handler', async () => {
+  it('writes queue_clear when clearQueue is called on a connected socket', async () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
     const sockPath = join(dir, 'test.sock');
 
     const received: string[] = [];
-    let connectedSocket: Socket | null = null;
-    const server = createServer();
+    const server = await makeServer(sockPath);
     servers.push(server);
     server.on('connection', (socket: Socket) => {
-      connectedSocket = socket;
-      send(socket, {
-        kind: 'session_meta',
-        sessionId: 'sess',
-        startedAt: 1,
-        mode: 'standard',
-        feature: 'f',
-      });
       let buf = '';
       socket.on('data', (chunk: Buffer) => {
         buf += chunk.toString('utf8');
@@ -243,41 +237,18 @@ describe('useIpcClient', () => {
         }
       });
     });
-    await new Promise<void>((resolve) => server.listen(sockPath, resolve));
 
     const capture: { current: CapturedState | null } = { current: null };
-    const ui = render(
-      <Harness
-        sockPath={sockPath}
-        capture={capture}
-        onPromptRequest={async () => ({ kind: 'approval_needed', approved: false, action: 'edit' })}
-      />,
-    );
+    const ui = render(<Harness sockPath={sockPath} capture={capture} />);
     await tick(100);
 
-    if (connectedSocket) {
-      const msg: ServerMessage = {
-        kind: 'prompt_request',
-        request: {
-          requestId: 'prompt-1',
-          kind: 'approval_needed',
-          approvalType: 'briefs',
-          filePath: '/tmp/tasks.md',
-          allowedCommands: [...allowedSettlingBriefReviewCommandsForPrompt('briefs')],
-        },
-      };
-      send(connectedSocket, msg);
-    }
+    capture.current?.clearQueue();
     await tick(50);
 
-    const response = received
-      .map((line) => JSON.parse(line) as { kind: string; requestId?: string; response?: unknown })
-      .find((msg) => msg.kind === 'prompt_response');
-    expect(response).toMatchObject({
-      kind: 'prompt_response',
-      requestId: 'prompt-1',
-      response: { kind: 'approval_needed', approved: false, action: 'edit' },
-    });
+    const parsed = received.map((line) => JSON.parse(line) as { kind: string });
+    const clears = parsed.filter((msg) => msg.kind === 'queue_clear');
+    expect(clears).toHaveLength(1);
+    expect(clears[0]).toEqual({ kind: 'queue_clear' });
 
     ui.unmount();
     await tick(20);
@@ -408,18 +379,25 @@ describe('useIpcClient', () => {
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    await tick(100);
-
-    expect(capture.current?.status).toBe('connected');
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('connected');
+      },
+      { timeout: 5000 },
+    );
 
     // Destroy the server-side socket to trigger unexpected close
     for (const s of connectedSockets) s.destroy();
-    await tick(50);
 
-    expect(capture.current?.status).toBe('reconnecting');
-    const attemptEvents =
-      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
-    expect(attemptEvents.length).toBeGreaterThan(0);
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('reconnecting');
+        const attemptEvents =
+          capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
+        expect(attemptEvents.length).toBeGreaterThan(0);
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });
@@ -453,17 +431,25 @@ describe('useIpcClient', () => {
     await tick(50);
 
     ui.rerender(<Harness sockPath={newSockPath} capture={capture} />);
-    await tick(100);
-
-    expect(capture.current?.status).toBe('connected');
-    expect(capture.current?.sessionId).toBe('new-session-id');
-    expect(newConnections).toBe(1);
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('connected');
+        expect(capture.current?.sessionId).toBe('new-session-id');
+        expect(newConnections).toBe(1);
+      },
+      { timeout: 5000 },
+    );
 
     await waitMs(150);
 
-    expect(capture.current?.status).toBe('connected');
-    expect(capture.current?.sessionId).toBe('new-session-id');
-    expect(newConnections).toBe(1);
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('connected');
+        expect(capture.current?.sessionId).toBe('new-session-id');
+        expect(newConnections).toBe(1);
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });
@@ -479,12 +465,15 @@ describe('useIpcClient', () => {
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} backoffMs={() => 1} />);
 
-    await waitMs(100);
-
-    expect(capture.current?.status).toBe('failed');
-    const failedEvents =
-      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
-    expect(failedEvents.length).toBeGreaterThan(0);
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('failed');
+        const failedEvents =
+          capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
+        expect(failedEvents.length).toBeGreaterThan(0);
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });
@@ -514,15 +503,18 @@ describe('useIpcClient', () => {
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} backoffMs={() => 1} />);
 
-    await waitMs(150);
-
-    // Without resetAttempts() being gated on replay_complete, each fresh session_meta
-    // would reset the counter and this would reconnect forever.
-    expect(capture.current?.status).toBe('failed');
-    const failedEvents =
-      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
-    expect(failedEvents.length).toBeGreaterThan(0);
-    expect(connections).toBeLessThanOrEqual(MAX_ATTEMPTS + 1);
+    await vi.waitFor(
+      () => {
+        // Without resetAttempts() being gated on replay_complete, each fresh session_meta
+        // would reset the counter and this would reconnect forever.
+        expect(capture.current?.status).toBe('failed');
+        const failedEvents =
+          capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
+        expect(failedEvents.length).toBeGreaterThan(0);
+        expect(connections).toBeLessThanOrEqual(MAX_ATTEMPTS + 1);
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });
@@ -565,12 +557,15 @@ describe('useIpcClient', () => {
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} backoffMs={() => 1} />);
 
-    await waitMs(150);
-
-    expect(capture.current?.status).toBe('connected');
-    const failedEvents =
-      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
-    expect(failedEvents.length).toBe(0);
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('connected');
+        const failedEvents =
+          capture.current?.events.filter((e) => e.type === 'ipc_reconnect_failed') ?? [];
+        expect(failedEvents.length).toBe(0);
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });
@@ -599,12 +594,14 @@ describe('useIpcClient', () => {
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    await tick(150);
-
-    const warnings = capture.current?.events.filter((e) => e.type === 'warning') ?? [];
-    expect(warnings.length).toBeGreaterThan(0);
-    // Status should remain connected (not crashed)
-    expect(capture.current?.status).toBe('connected');
+    await vi.waitFor(
+      () => {
+        const warnings = capture.current?.events.filter((e) => e.type === 'warning') ?? [];
+        expect(warnings.length).toBeGreaterThan(0);
+        expect(capture.current?.status).toBe('connected');
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });
@@ -628,10 +625,13 @@ describe('useIpcClient', () => {
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} />);
-    await tick(100);
-
-    expect(capture.current?.status).toBe('failed');
-    expect(capture.current?.events.some((e) => e.type === 'warning')).toBe(true);
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('failed');
+        expect(capture.current?.events.some((e) => e.type === 'warning')).toBe(true);
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });
@@ -681,9 +681,12 @@ describe('useIpcClient', () => {
 
     const capture: { current: CapturedState | null } = { current: null };
     const ui = render(<Harness sockPath={sockPath} capture={capture} backoffMs={() => 1} />);
-    await tick(100);
-
-    expect(capture.current?.status).toBe('connected');
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('connected');
+      },
+      { timeout: 5000 },
+    );
 
     // Server steals the session: terminal error frame, then destroy the victim socket.
     for (const s of connectedSockets) {
@@ -694,12 +697,16 @@ describe('useIpcClient', () => {
       });
       s.destroy();
     }
-    await tick(200);
 
-    expect(capture.current?.status).toBe('failed');
-    const reconnectAttempts =
-      capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
-    expect(reconnectAttempts.length).toBe(0);
+    await vi.waitFor(
+      () => {
+        expect(capture.current?.status).toBe('failed');
+        const reconnectAttempts =
+          capture.current?.events.filter((e) => e.type === 'ipc_reconnect_attempt') ?? [];
+        expect(reconnectAttempts.length).toBe(0);
+      },
+      { timeout: 5000 },
+    );
     ui.unmount();
     await tick(20);
   });

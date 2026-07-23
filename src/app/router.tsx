@@ -12,11 +12,11 @@ import { EditorOverlay } from './overlays/editor.js';
 import { SettingsOverlay } from './overlays/settings.js';
 import { ToolModelPicker } from './overlays/runners.js';
 import { ModeSelector } from '../features/settings/mode-selector.js';
-import { CostDrilldownOverlay } from '../features/workflow/components/cost/drilldown-overlay.js';
+import { CostDrilldownOverlay } from '../features/workflow/cost-drilldown/overlay.js';
 import { focusHasResolvableCopy } from '../features/workflow/copy/resolve.js';
 import type { RuntimeCommandDef, CopyResult, CopyTarget } from '../core/runtime/commands/types.js';
 import type { OverlayType, Screen } from '../core/navigation/types.js';
-import type { WorkflowScreenDeps } from '../features/workflow/hooks/use-workflow-screen.js';
+import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 import { assertNever } from '../utils/type-guards.js';
 
 interface RouterProps {

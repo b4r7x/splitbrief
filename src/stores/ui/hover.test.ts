@@ -6,10 +6,6 @@ describe('hoverStore', () => {
     hoverStore.reset();
   });
 
-  it('starts null', () => {
-    expect(hoverStore.get()).toBeNull();
-  });
-
   it('sets a surface and index', () => {
     hoverStore.set('brief', 2);
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: 2 });
@@ -23,6 +19,7 @@ describe('hoverStore', () => {
   });
 
   it('clears to null', () => {
+    expect(hoverStore.get()).toBeNull();
     hoverStore.set('brief', 0);
     hoverStore.clear();
     expect(hoverStore.get()).toBeNull();

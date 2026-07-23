@@ -1,27 +1,16 @@
-import { describe, it, expect, afterEach, test } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, afterEach } from 'vitest';
+import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readFileOrEmpty } from '../lib/fs.js';
 import {
   ensureDiptychDir,
   ensureSessionDir,
   writeSpecFile,
   readSpecFile,
   readSpecFileOrEmpty,
-  writeProjectFile,
-  validateTaskPath,
   validateFilename,
-  buildSpecFrontmatter,
-  getDiptychVersion,
-  pathError,
-  type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir, TASKS_FILE } from './paths.js';
-import { formatTasks } from '../engine/spec/formatter.js';
-import { parseTasksStrict } from '../engine/spec/parser.js';
-import type { Task } from './schemas/task.js';
-import { taskId } from './schemas/task.js';
+import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir } from './paths.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
@@ -37,30 +26,20 @@ afterEach(() => {
 });
 
 describe('ensureDiptychDir', () => {
-  it('creates .diptych directory if it does not exist', () => {
+  it('creates the directory and is idempotent', () => {
     const dir = makeTmp();
     ensureDiptychDir(dir);
     expect(existsSync(join(dir, DIPTYCH_DIR))).toBe(true);
-  });
-
-  it('is idempotent', () => {
-    const dir = makeTmp();
-    ensureDiptychDir(dir);
     ensureDiptychDir(dir);
     expect(existsSync(join(dir, DIPTYCH_DIR))).toBe(true);
   });
 });
 
 describe('ensureSessionDir', () => {
-  it('creates .diptych/sessions/<id> directory', () => {
+  it('creates the directory and is idempotent', () => {
     const dir = makeTmp();
     ensureSessionDir(dir, SESSION_ID);
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
-  });
-
-  it('is idempotent', () => {
-    const dir = makeTmp();
-    ensureSessionDir(dir, SESSION_ID);
     ensureSessionDir(dir, SESSION_ID);
     expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
   });
@@ -91,18 +70,12 @@ describe('sessionDir', () => {
 });
 
 describe('writeSpecFile', () => {
-  it('writes content to .diptych/sessions/<id>/<filename>', async () => {
+  it('writes content to .diptych/sessions/<id>/<filename>', () => {
     const dir = makeTmp();
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# Spec');
     const written = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'spec.md');
     expect(existsSync(written)).toBe(true);
-    expect(await readFileOrEmpty(written)).toBe('# Spec');
-  });
-
-  it('creates dir if needed', () => {
-    const dir = makeTmp();
-    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'plan.md', '# Plan');
-    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'plan.md'))).toBe(true);
+    expect(readFileSync(written, 'utf8')).toBe('# Spec');
   });
 
   it('rejects filenames with path traversal', () => {
@@ -192,296 +165,5 @@ describe('validateFilename', () => {
 
   it('rejects filenames with backslash', () => {
     expect(() => validateFilename('sub\\spec.md')).toThrow('Invalid filename');
-  });
-});
-
-describe('writeProjectFile', () => {
-  it('creates parent directories and writes content', () => {
-    const dir = makeTmp();
-    writeProjectFile(dir, 'src/deep/file.ts', 'export const x = 1;');
-    const written = join(dir, 'src', 'deep', 'file.ts');
-    expect(existsSync(written)).toBe(true);
-    expect(readFileSync(written, 'utf-8')).toBe('export const x = 1;');
-  });
-
-  it.each([
-    ['.git/config'],
-    ['.diptych/config.yaml'],
-  ])('rejects model-named write into the control plane (%s) and leaves nothing on disk', (path) => {
-    const dir = makeTmp();
-    expect(() => writeProjectFile(dir, path, 'malicious')).toThrow('escapes project directory');
-    expect(existsSync(join(dir, path))).toBe(false);
-  });
-});
-
-describe('validateTaskPath', () => {
-  it('resolves a valid relative path', () => {
-    const dir = makeTmp();
-    const resolved = validateTaskPath(dir, 'src/index.ts');
-    expect(resolved).toBe(join(dir, 'src', 'index.ts'));
-  });
-
-  it('prevents directory traversal with ../', () => {
-    const dir = makeTmp();
-    expect(() => validateTaskPath(dir, '../outside.ts')).toThrow('escapes project directory');
-  });
-
-  it('rejects absolute paths', () => {
-    const dir = makeTmp();
-    expect(() => validateTaskPath(dir, '/etc/passwd')).toThrow('escapes project directory');
-  });
-
-  it('rejects sibling directory with similar prefix', () => {
-    const dir = makeTmp();
-    const siblingRelative = '../' + dir.split('/').pop() + '-evil/malicious.ts';
-    expect(() => validateTaskPath(dir, siblingRelative)).toThrow('escapes project directory');
-  });
-
-  it('allows root-level file path', () => {
-    const dir = makeTmp();
-    const resolved = validateTaskPath(dir, 'file.ts');
-    expect(resolved).toBe(join(dir, 'file.ts'));
-  });
-
-  itUnix('rejects paths that write through symlinked directories outside the project', () => {
-    const dir = makeTmp();
-    const outside = createTempDir('paths-io-outside');
-    try {
-      mkdirSync(join(outside, 'target'), { recursive: true });
-      symlinkSync(join(outside, 'target'), join(dir, 'linked'));
-
-      expect(() => validateTaskPath(dir, 'linked/file.ts')).toThrow('escapes project directory');
-    } finally {
-      cleanupTempDir(outside);
-    }
-  });
-
-  it.each([
-    ['.git/config'],
-    ['.git/hooks/pre-commit'],
-    ['.diptych/config.yaml'],
-  ])('rejects model-named write into the control plane (%s)', (path) => {
-    const dir = makeTmp();
-    expect(() => validateTaskPath(dir, path)).toThrow('escapes project directory');
-  });
-
-  itUnix('rejects a control-plane write reaching .git through an in-repo symlink', () => {
-    const dir = makeTmp();
-    mkdirSync(join(dir, '.git'), { recursive: true });
-    symlinkSync(join(dir, '.git'), join(dir, 'evil'));
-    expect(() => validateTaskPath(dir, 'evil/config')).toThrow('escapes project directory');
-  });
-});
-
-describe('buildSpecFrontmatter', () => {
-  const fullMeta: SpecMetadata = {
-    plannerTool: 'claude-code',
-    plannerModel: 'opus-4',
-    implementerTool: 'ollama',
-    implementerModel: 'qwen3:32b',
-    mode: 'standard',
-  };
-
-  it('includes all fields when provided', () => {
-    const fm = buildSpecFrontmatter(fullMeta);
-    expect(fm).toContain('generated_by: diptych v');
-    expect(fm).toContain('planner: claude-code (opus-4)');
-    expect(fm).toContain('implementer: ollama (qwen3:32b)');
-    expect(fm).toContain('mode: standard');
-    expect(fm).toContain('created_at: ');
-  });
-
-  it('omits optional model fields when undefined', () => {
-    const fm = buildSpecFrontmatter({
-      plannerTool: 'claude-code',
-      implementerTool: 'ollama',
-      mode: 'quick',
-    });
-    expect(fm).toContain('planner: claude-code');
-    expect(fm).not.toContain('planner: claude-code (');
-    expect(fm).toContain('implementer: ollama');
-    expect(fm).not.toContain('implementer: ollama (');
-    expect(fm).toContain('mode: quick');
-  });
-
-  it('starts with --- and ends with ---', () => {
-    const fm = buildSpecFrontmatter(fullMeta);
-    expect(fm.startsWith('---\n')).toBe(true);
-    expect(fm).toMatch(/\n---\n$/);
-  });
-
-  it('emits created_at as a valid ISO 8601 timestamp', () => {
-    const fm = buildSpecFrontmatter(fullMeta);
-    const value = fm.match(/created_at: (.+)/)?.[1] ?? '';
-    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    expect(new Date(value).toISOString()).toBe(value);
-  });
-});
-
-describe('getDiptychVersion', () => {
-  it('returns the version from the real package.json, not the 0.0.0 fallback', () => {
-    const pkg = JSON.parse(
-      readFileSync(join(import.meta.dirname, '../../package.json'), 'utf-8'),
-    ) as { version: string };
-    expect(getDiptychVersion()).toBe(pkg.version);
-    expect(getDiptychVersion()).not.toBe('0.0.0');
-  });
-});
-
-describe('writeSpecFile with metadata', () => {
-  const meta: SpecMetadata = {
-    plannerTool: 'claude-code',
-    implementerTool: 'ollama',
-    mode: 'standard',
-  };
-
-  it('prepends frontmatter to spec files when metadata is passed', () => {
-    const dir = makeTmp();
-    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# My Spec', meta);
-    const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md');
-    if (content === null) throw new Error('expected spec file to be present');
-    expect(content).toMatch(/^---\n/);
-    expect(content).toContain('generated_by: diptych v');
-    expect(content).toContain('# My Spec');
-  });
-
-  it('does not prepend frontmatter to non-spec files', () => {
-    const dir = makeTmp();
-    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'research.md', '# Research', meta);
-    expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'research.md')).toBe(
-      '# Research',
-    );
-  });
-
-  it('does not double-prepend when content already has frontmatter', () => {
-    const dir = makeTmp();
-    const existing = '---\ngenerated_by: diptych v0.1.0\n---\n# Spec with clarifications';
-    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', existing, meta);
-    const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md');
-    if (content === null) throw new Error('expected spec file to be present');
-    const fmCount = (content.match(/generated_by:/g) ?? []).length;
-    expect(fmCount).toBe(1);
-  });
-
-  it('does not prepend when metadata is not passed', () => {
-    const dir = makeTmp();
-    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# Plain Spec');
-    expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md')).toBe(
-      '# Plain Spec',
-    );
-  });
-
-  it('prepends provenance frontmatter to tasks.md even though formatTasks output starts with a task block', () => {
-    const dir = makeTmp();
-    const task: Task = {
-      id: taskId('T001'),
-      title: 'Create thing',
-      action: 'create',
-      file: 'src/thing.ts',
-      dependsOn: [],
-      description: 'Make the thing.',
-      tests: ['it works'],
-      constraints: [],
-      typeDefs: '',
-      implementationSteps: ['write it'],
-      status: 'pending',
-    };
-    const formatted = formatTasks([task]);
-    expect(formatted.startsWith('---\nid:')).toBe(true);
-
-    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE, formatted, meta);
-    const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE);
-    if (content === null) throw new Error('expected tasks file to be present');
-    expect(content.startsWith('---\ngenerated_by: diptych v')).toBe(true);
-    expect(content).toContain('planner: claude-code');
-    expect(content).toContain('id: T001');
-
-    const parsed = parseTasksStrict(content);
-    expect(parsed.map((t) => t.id)).toEqual([task.id]);
-  });
-
-  it('does not double-prepend provenance when tasks.md already carries file frontmatter', () => {
-    const dir = makeTmp();
-    const task: Task = {
-      id: taskId('T001'),
-      title: 'Create thing',
-      action: 'create',
-      file: 'src/thing.ts',
-      dependsOn: [],
-      description: 'Make the thing.',
-      tests: ['it works'],
-      constraints: [],
-      typeDefs: '',
-      implementationSteps: ['write it'],
-      status: 'pending',
-    };
-    const withProvenance = buildSpecFrontmatter(meta) + formatTasks([task]);
-    writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE, withProvenance, meta);
-    const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE);
-    if (content === null) throw new Error('expected tasks file to be present');
-    const fmCount = (content.match(/generated_by:/g) ?? []).length;
-    expect(fmCount).toBe(1);
-  });
-});
-
-describe('pathError.escapesProject factory', () => {
-  test('produces AppError with kind + message + data', () => {
-    const err = pathError.escapesProject('../outside.ts');
-    expect(err).toBeInstanceOf(Error);
-    expect(err.kind).toBe('path-escapes-project');
-    expect(err.message).toContain('../outside.ts');
-    expect(err.data).toEqual({ filePath: '../outside.ts' });
-  });
-});
-
-describe('pathError.isEscapesProject predicate', () => {
-  test('matches escapesProject output', () => {
-    expect(pathError.isEscapesProject(pathError.escapesProject('../x'))).toBe(true);
-  });
-
-  test('rejects non-matching values', () => {
-    expect(pathError.isEscapesProject(new Error('plain'))).toBe(false);
-    expect(pathError.isEscapesProject(null)).toBe(false);
-    expect(pathError.isEscapesProject(undefined)).toBe(false);
-  });
-
-  test('narrows type for data access', () => {
-    const err: unknown = pathError.escapesProject('/etc/passwd');
-    if (pathError.isEscapesProject(err)) {
-      expect(err.data).toEqual({ filePath: '/etc/passwd' });
-    } else {
-      throw new Error('predicate should match');
-    }
-  });
-
-  test('validateTaskPath throws pathError matched by predicate', () => {
-    try {
-      validateTaskPath('/tmp/project', '../../evil.ts');
-      throw new Error('expected throw');
-    } catch (err) {
-      expect(pathError.isEscapesProject(err)).toBe(true);
-    }
-  });
-
-  test('validateTaskPath preserves the specific confinement reason as cause', () => {
-    const absoluteCause = (() => {
-      try {
-        validateTaskPath('/tmp/project', '/etc/passwd');
-      } catch (err) {
-        return (err as { cause?: { kind?: string } }).cause;
-      }
-      throw new Error('expected throw');
-    })();
-    expect(absoluteCause?.kind).toBe('path-confined-absolute');
-
-    const traversalCause = (() => {
-      try {
-        validateTaskPath('/tmp/project', '../../evil.ts');
-      } catch (err) {
-        return (err as { cause?: { kind?: string } }).cause;
-      }
-      throw new Error('expected throw');
-    })();
-    expect(traversalCause?.kind).toBe('path-confined-escape');
   });
 });

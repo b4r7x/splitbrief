@@ -3,15 +3,15 @@ import { TASKS_FILE } from '../../core/paths.js';
 import type { PlannerCallbacks, PlanResult, PriorMessage } from './types.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
-import { error } from '../../utils/error.js';
 import {
   buildProjectLanguageContext,
   type LanguageContext,
 } from '../spec/prompts/language-context.js';
-import { parseTasksStrict } from '../spec/parser.js';
+import { parseTasksStrict } from '../spec/tasks/parse.js';
 import { buildProjectContextMarkdown } from './context.js';
 import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import { requireCompletedCall } from './require-completed-call.js';
 
 type SinglePhaseConfig = {
   invokePlan: (opts: {
@@ -55,18 +55,6 @@ function createSinglePhaseCallContext(config: SinglePhaseConfig): RunnerCallCont
     ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
     ...(config.model !== undefined && { model: config.model }),
   };
-}
-
-function requireCompletedCall(result: RunnerCallResult): RunnerCallResult {
-  if (result.status === 'completed') return result;
-  throw error('runner-call-failed', `Planner ${result.role} call ${result.status}`, {
-    callId: result.callId,
-    role: result.role,
-    backendKind: result.backendKind,
-    status: result.status,
-    partial: result.partial,
-    error: result.error,
-  });
 }
 
 export function formatRepoMapBlock(codebaseContext: string | undefined): string {

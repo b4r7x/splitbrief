@@ -30,7 +30,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
-import { readRunSnapshotLedger } from '../snapshots/run.js';
+import { readRunSnapshotLedger } from '../snapshots/run/ledger.js';
 
 let dirs: string[] = [];
 

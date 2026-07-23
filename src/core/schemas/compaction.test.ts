@@ -11,37 +11,55 @@ const structuredSummary = {
 };
 
 describe('resolveCompactionFormat', () => {
-  it('uses structured summaries for api planners in auto mode', () => {
-    expect(resolveCompactionFormat('auto', 'api')).toBe('structured');
-  });
-
-  it('uses structured summaries for agent-sdk planners in auto mode', () => {
-    expect(resolveCompactionFormat('auto', 'agent-sdk')).toBe('structured');
-  });
-
-  it('uses freeform summaries for cli planners in auto mode', () => {
-    expect(resolveCompactionFormat('auto', 'cli')).toBe('freeform');
-  });
-
-  it('keeps explicit freeform mode regardless of planner kind', () => {
-    expect(resolveCompactionFormat('freeform', 'api')).toBe('freeform');
-  });
-
-  it('keeps explicit structured mode regardless of planner kind', () => {
-    expect(resolveCompactionFormat('structured', 'cli')).toBe('structured');
+  it.each([
+    {
+      description: 'uses structured summaries for api planners in auto mode',
+      input: { configured: 'auto' as const, plannerKind: 'api' as const },
+      expected: 'structured' as const,
+    },
+    {
+      description: 'uses structured summaries for agent-sdk planners in auto mode',
+      input: { configured: 'auto' as const, plannerKind: 'agent-sdk' as const },
+      expected: 'structured' as const,
+    },
+    {
+      description: 'uses freeform summaries for cli planners in auto mode',
+      input: { configured: 'auto' as const, plannerKind: 'cli' as const },
+      expected: 'freeform' as const,
+    },
+    {
+      description: 'keeps explicit freeform mode regardless of planner kind',
+      input: { configured: 'freeform' as const, plannerKind: 'api' as const },
+      expected: 'freeform' as const,
+    },
+    {
+      description: 'keeps explicit structured mode regardless of planner kind',
+      input: { configured: 'structured' as const, plannerKind: 'cli' as const },
+      expected: 'structured' as const,
+    },
+  ])('$description', ({ input, expected }) => {
+    expect(resolveCompactionFormat(input.configured, input.plannerKind)).toBe(expected);
   });
 });
 
 describe('tryParseStructuredSummary', () => {
-  it('parses valid JSON summaries', () => {
-    expect(tryParseStructuredSummary(JSON.stringify(structuredSummary))).toEqual(structuredSummary);
-  });
-
-  it('returns null for invalid JSON', () => {
-    expect(tryParseStructuredSummary('not json')).toBeNull();
-  });
-
-  it('returns null for JSON missing fields', () => {
-    expect(tryParseStructuredSummary('{"goal":"x"}')).toBeNull();
+  it.each([
+    {
+      description: 'parses valid JSON summaries',
+      input: JSON.stringify(structuredSummary),
+      expected: structuredSummary,
+    },
+    {
+      description: 'returns null for invalid JSON',
+      input: 'not json',
+      expected: null,
+    },
+    {
+      description: 'returns null for JSON missing fields',
+      input: '{"goal":"x"}',
+      expected: null,
+    },
+  ])('$description', ({ input, expected }) => {
+    expect(tryParseStructuredSummary(input)).toEqual(expected);
   });
 });

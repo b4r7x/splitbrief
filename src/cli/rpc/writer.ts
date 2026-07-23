@@ -1,5 +1,5 @@
 import type { EngineEvent } from '../../engine/events/types.js';
-import { RecoveryIssueSchema } from '../../core/schemas/recovery.js';
+import { RecoveryIssueSchema } from '../../core/schemas/recovery/schemas.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { protectConsumerPayload } from '../../core/consumer-policy.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
@@ -7,7 +7,7 @@ import {
   projectCostPredictionForTranscriptPolicy,
   projectUserEditConflictForTranscriptPolicy,
   protectEngineEventForConsumer,
-} from '../../engine/events/protection.js';
+} from '../../engine/events/protection/protect.js';
 import { projectRecoveryIssueForTranscriptPolicy } from '../../engine/events/public-json.js';
 import { userEditConflictSchema } from '../../engine/events/schema.js';
 import { isRecord } from '../../utils/type-guards.js';

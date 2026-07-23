@@ -53,7 +53,10 @@ describe('HomeConfigSummary', () => {
 
     const frame = ui.lastFrame() ?? '';
     expectNoControlBytes(frame);
-    expect(stripAnsiStyles(frame)).toContain('Ollama');
+    const stripped = stripAnsiStyles(frame);
+    expect(stripped).toContain('Ollama');
+    expect(stripped).toContain('Llama');
+    expect(stripped).toContain('Mistral');
     ui.unmount();
   });
 });

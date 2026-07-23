@@ -4,7 +4,7 @@ import type { EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
-import { rowText } from './row-format.js';
+import { rowText } from './row-format/rows.js';
 import type { ConversationRow, ConversationRowSegment } from './types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
@@ -171,20 +171,12 @@ describe('implementer_generate_done diff card', () => {
     );
     expect(segmentTone(countSegment)).toBe('textDim');
 
-    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
-  });
-
-  it('renders exactly one merged hint body row (one fewer than the old two-line form)', () => {
-    const diff = Array.from({ length: 47 }, (_, index) => `+ line ${index + 1}`).join('\n');
-    const rows = rowsFor(implementerDoneEvent({ diff, linesAdded: 47, linesRemoved: 0 }), true);
-    const bodyRows = rows.filter((rowValue) => rowValue.kind === 'card-body');
-
     const maxVisible = 12;
     const visibleCount = Math.min(diff.split('\n').length, maxVisible);
     expect(bodyRows.length).toBe(visibleCount + 1);
-    expect(bodyRows.some((rowValue) => rowText(rowValue).includes('to collapse'))).toBe(true);
     expect(bodyRows.some((rowValue) => rowText(rowValue).includes('to expand'))).toBe(false);
     expect(bodyRows.every((rowValue) => !rowText(rowValue).includes('Ctrl+D'))).toBe(true);
+    expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 80)).toBe(true);
   });
 
   it('keeps the merged overflow hint on a single row at width 48', () => {

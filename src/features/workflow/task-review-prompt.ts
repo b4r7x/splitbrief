@@ -42,7 +42,7 @@ const COMMAND_ALIASES: Record<string, TaskReviewResponse['action']> = {
   quit: 'abort',
 };
 
-export function buildTaskReviewPromptRows(request: TaskReviewRequest): PromptRow[] {
+function buildTaskReviewPromptRows(request: TaskReviewRequest): PromptRow[] {
   const passed = request.validation.passed === true;
   const headline: PromptRow = passed
     ? {

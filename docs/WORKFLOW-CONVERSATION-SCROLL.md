@@ -23,8 +23,8 @@ The user-visible symptom was block jumps: scrolling by one offset could reveal o
 The current path first turns the conversation into row-counted blocks:
 
 - `src/features/workflow/conversation-rows/types.ts` defines `ConversationRow`, row segments, tones, and scroll inputs.
-- `src/features/workflow/conversation-rows/row-format.ts` owns width-aware wrapping and compact card rows.
-- `src/features/workflow/conversation-rows/event-rows.ts` maps `EngineEvent` values to row blocks.
+- `src/features/workflow/conversation-rows/row-format/` owns width-aware wrapping and compact card rows (`text.ts`, `rows.ts`, `label-card.ts`, `card-block.ts`).
+- `src/features/workflow/conversation-rows/event-rows/dispatch.ts` maps `EngineEvent` values to row blocks (`visibility.ts` for silent types, `planner-text.ts` and `execution.ts` for specialized row builders).
 - `src/features/workflow/conversation-rows/build.ts` builds a projection with total row count and window materializers.
 - `src/features/workflow/conversation-rows/projection-cache.ts` reuses that projection while the source identity, width, streaming state, and expansion state are unchanged.
 - `src/features/workflow/conversation-rows/scroll.ts` computes scroll state from the projection's `totalRows`.
@@ -90,7 +90,7 @@ Width changes are not cosmetic here. They can change the number of rows in `task
 
 ## Prompt Rows
 
-Prompt row budgeting lives in `src/features/workflow/prompt-rows.ts`.
+Prompt row budgeting lives in `src/features/workflow/prompt-rows/workflow.ts`.
 
 Approval and cost prompts declare the same measured row heights that the workflow layout subtracts. The rendered prompt components use fixed heights, `overflow="hidden"`, and `flexShrink={0}`.
 

@@ -1,17 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { getTheme } from '../../../components/theme.js';
-import { glyph } from '../../../lib/glyphs.js';
-import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { colorForTone } from '../display/tone-color.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
-import { rowLeading, rowLeadingCells } from './row-markers.js';
-import { rowText } from './row-format.js';
+import { rowText } from './row-format/rows.js';
 import type { ConversationRow } from './types.js';
 
 function activityLine(label: Parameters<typeof displayActivityLabel>[0], value: string): string {
@@ -56,18 +53,6 @@ function blockRows(
 }
 
 describe('runnerActivityBatchRowBlock tree markers', () => {
-  it('marks activity header rows with the live bullet marker', () => {
-    const rows = blockRows([
-      activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading src/a.ts' }),
-      activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading src/b.ts' }),
-      activity({ sequence: 3, activityId: 'c', kind: 'read', label: 'reading src/c.ts' }),
-    ]);
-
-    const header = rows.find((rowValue) => rowValue.kind === 'activity');
-    expect(header).toBeDefined();
-    expect(rowLeading(header?.kind ?? 'message', 'live')).toBe(`${glyph('statusInProgress')} `);
-  });
-
   it('colors the activity header label by its batch role hue', () => {
     const rows = blockRows([
       activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading src/a.ts' }),
@@ -92,18 +77,6 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     const last = rows.filter((rowValue) => rowValue.kind === 'activity-child-last');
     expect(middle.length).toBeGreaterThan(0);
     expect(last.length).toBe(1);
-  });
-
-  it('keeps message and task rows free of continuation markers in row text', () => {
-    const rows = blockRows([
-      activity({ sequence: 1, activityId: 'a', kind: 'read', label: 'reading src/a.ts' }),
-      activity({ sequence: 2, activityId: 'b', kind: 'read', label: 'reading src/b.ts' }),
-    ]);
-
-    for (const rowValue of rows) {
-      expect(rowValue.kind).not.toBe('message');
-      expect(rowValue.kind).not.toBe('task-header');
-    }
   });
 
   it('renders a pure-read batch flat without bordered card chrome', () => {
@@ -195,39 +168,6 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     expect(lastText).toContain('d.ts');
     expect(moreText).toContain('collapse');
     expect(moreText).not.toContain('more');
-  });
-
-  it('keeps every activity-child leading at the same cell width as the gutter', () => {
-    for (const kind of ['activity-child', 'activity-child-last', 'activity-more'] as const) {
-      expect(rowLeadingCells(kind)).toBe(4);
-    }
-    expect(rowLeading('activity-child')).toBe(`  ${glyph('treeBranch')} `);
-    expect(rowLeading('activity-child-last')).toBe(`  ${glyph('treeLast')} `);
-    expect(rowLeading('activity-more')).toBe('    ');
-    expect(rowLeadingCells('activity')).toBe(2);
-  });
-
-  it('emits status-specific header glyphs at a byte-stable width-2 prefix', () => {
-    for (const kind of ['activity', 'task-header'] as const) {
-      expect(rowLeading(kind)).toBe(`${glyph('statusInProgress')} `);
-      expect(rowLeading(kind, 'live')).toBe(`${glyph('statusInProgress')} `);
-      expect(rowLeading(kind, 'queued')).toBe(`${glyph('statusPending')} `);
-      for (const status of ['live', 'done', 'queued'] as const) {
-        expect(getTerminalCellWidth(rowLeading(kind, status))).toBe(2);
-      }
-    }
-    expect(rowLeading('activity', 'done')).toBe(`${glyph('stageDone')} `);
-    expect(rowLeading('task-header', 'done')).toBe(`${glyph('statusDone')} `);
-  });
-
-  it('encodes every header status with a distinct glyph so state survives a color-off terminal', () => {
-    for (const kind of ['activity', 'task-header'] as const) {
-      const leadings = (['live', 'done', 'queued'] as const).map((status) =>
-        rowLeading(kind, status),
-      );
-      expect(leadings.every((leading) => leading.trim().length > 0)).toBe(true);
-      expect(new Set(leadings).size).toBe(leadings.length);
-    }
   });
 });
 

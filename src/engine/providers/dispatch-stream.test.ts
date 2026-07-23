@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { matches } from '../../utils/error.js';
 import { dispatchStreamCompletion } from './dispatch-stream.js';
-import type { StreamClient } from './openai-stream.js';
+import type { StreamClient } from './openai-stream/request.js';
 
 function makeOpenAIClient(
   chunks: Array<{ content?: string; finishReason?: string | null }>,

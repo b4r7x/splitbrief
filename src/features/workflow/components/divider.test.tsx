@@ -47,7 +47,6 @@ describe('Divider', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('── 3 lines above ──');
-    expect(frame.length).toBeGreaterThan(0);
 
     ui.unmount();
   });

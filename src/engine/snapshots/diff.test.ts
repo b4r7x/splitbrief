@@ -251,18 +251,6 @@ describe('formatSnapshotDiff', () => {
     expect(formatted).toMatch(/no\s+differences|0.*changed/i);
   });
 
-  it('includes snapshot ID in header', () => {
-    const result = {
-      snapshotId: '2026-04-26T14-00-00-000Z',
-      createdAt: '2026-04-26T14:00:00.000Z',
-      files: [],
-      changedCount: 0,
-    };
-
-    const formatted = formatSnapshotDiff(result, { color: false });
-    expect(formatted).toContain('2026-04-26T14-00-00-000Z');
-  });
-
   it('includes snapshot ID and numeric counts when there are changes', () => {
     const result = {
       snapshotId: 'snap-abc',

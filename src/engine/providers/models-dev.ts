@@ -5,7 +5,7 @@ import {
   type ModelsDevCatalog,
   type ModelsDevModel,
 } from '../../core/schemas/models-dev.js';
-import { fetchJsonWithTimeout } from './client.js';
+import { fetchJsonWithTimeout } from './client/request.js';
 import { isModelFree, pricingFieldsFromResolved } from './metadata.js';
 
 const MODELS_DEV_URL = 'https://models.dev/api.json';

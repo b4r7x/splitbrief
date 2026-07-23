@@ -26,7 +26,7 @@ import {
   type BriefReviewCommandAction,
 } from '../../core/schemas/brief-review-command.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
-import { IpcRecoveryIssueSchema } from '../../core/schemas/recovery.js';
+import { IpcRecoveryIssueSchema } from '../../core/schemas/recovery/ipc.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 const IPC_MAX_AUTH_TOKEN_BYTES = 512;

@@ -54,7 +54,7 @@ describe('findImportBoundaryViolations', () => {
   it('allows any feature to import the shared editor feature (workflow -> editor)', () => {
     write('features/editor/brief-field-editor.tsx', 'export const E = 1;');
     write(
-      'features/workflow/components/brief-review-view.tsx',
+      'features/workflow/components/brief-review/view.tsx',
       "import { E } from '../../editor/brief-field-editor.js';\nexport const v = E;",
     );
 

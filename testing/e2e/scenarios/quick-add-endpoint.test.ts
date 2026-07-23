@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SESSION_LOG_FILE, sessionsRoot } from '../../../src/core/paths.js';
@@ -36,7 +36,6 @@ describe('e2e: quick mode add endpoint', () => {
     const taskEvents = ctx.events.filter((event) => event.type === 'task_completed');
     expect(taskEvents.length).toBeGreaterThanOrEqual(1);
     const healthPath = join(ctx.projectDir, 'src/health.ts');
-    expect(readFileSync(healthPath, 'utf-8')).toContain("status: 'ok'");
     expect(evaluateTsArtifact(healthPath, 'mod.getHealth()')).toEqual({ status: 'ok' });
 
     expect(hasSessionArtifact(ctx.projectDir, SESSION_LOG_FILE)).toBe(true);

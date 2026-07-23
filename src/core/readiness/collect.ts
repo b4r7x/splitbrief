@@ -2,17 +2,17 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPackageJson } from '../project-meta.js';
 import { configPath, loadConfig } from '../config/load/io.js';
-import { workflowOptsToCLIOverrides } from '../config/runtime/overrides.js';
+import { workflowOptsToCLIOverrides } from '../config/runtime/overrides/from-options.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import { readActive, isSessionLive } from '../sessions/lifecycle.js';
 import {
   isGitRepo,
-  getGitStatus,
   hasCommits,
   getInProgressGitOp,
-  getCurrentBranch,
   hasCommitterIdentity,
-} from '../../lib/git.js';
+} from '../../lib/git/repository.js';
+import { getGitStatus } from '../../lib/git/files.js';
+import { getCurrentBranch } from '../../lib/git/refs.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { buildReadinessReport } from './checks/build.js';
@@ -35,14 +35,12 @@ import type { ReadinessCheck, ReadinessReport } from './types.js';
 export interface CollectedReadiness {
   report: ReadinessReport;
   config?: Config | undefined;
-  warnings: string[];
 }
 
 export interface CollectReadinessOptions {
   projectDir: string;
   opts?: WorkflowOpts | undefined;
   config?: Config | undefined;
-  configWarnings?: string[] | undefined;
   defaultAutoApprove?: boolean | undefined;
   probeValidation?: boolean | undefined;
 }
@@ -77,7 +75,6 @@ export async function collectReadiness(
   return {
     report,
     config: loaded.config,
-    warnings: loaded.warnings,
   };
 }
 
@@ -98,23 +95,20 @@ function loadReadinessConfig(
   options: CollectReadinessOptions,
   filePath: string,
   configExists: boolean,
-): { config?: Config | undefined; warnings: string[]; configLoad: ConfigReadinessInput } {
+): { config?: Config | undefined; configLoad: ConfigReadinessInput } {
   if (options.config) {
-    const warnings = options.configWarnings ?? [];
     return {
       config: options.config,
-      warnings,
       configLoad: {
         state: configExists ? 'loaded' : 'missing',
         path: filePath,
-        warnings,
+        warnings: [],
       },
     };
   }
 
   if (!configExists) {
     return {
-      warnings: [],
       configLoad: {
         state: 'missing',
         path: filePath,
@@ -125,28 +119,28 @@ function loadReadinessConfig(
 
   try {
     const loaded = loadConfig(options.projectDir);
-    const { config, warnings } = resolveEffectiveConfig({
+    const { config, warnings: effectiveWarnings } = resolveEffectiveConfig({
       base: loaded.config,
       overrides: {
         ...workflowOptsToCLIOverrides(options.opts ?? {}),
         autoApprove:
           options.opts?.auto !== undefined ? options.opts.auto : options.defaultAutoApprove,
       },
-      baseWarnings: loaded.warnings,
+      loaderDiagnostics: loaded.loaderDiagnostics,
     });
     return {
       config,
-      warnings,
       configLoad: {
         state: 'loaded',
         path: filePath,
-        warnings,
-        migratedInMemory: warnings.some((warning) => warning.includes('config.version 2')),
+        warnings: effectiveWarnings,
+        migratedInMemory: loaded.loaderDiagnostics.some(
+          (diagnostic) => diagnostic.kind === 'config-migration',
+        ),
       },
     };
   } catch (err) {
     return {
-      warnings: [],
       configLoad: {
         state: 'invalid',
         path: filePath,

@@ -1,15 +1,14 @@
 import type { Section } from '../../../core/sections/event-sections.js';
-import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
 import { diffEventKey } from '../../../core/sections/event-sections.js';
 import type {
-  ConversationRow,
   ConversationRowInputs,
   ConversationRowsResult,
   ConversationRowsProjection,
   ConversationRowBlock,
   RowBuildContext,
 } from './types.js';
-import { blankRow } from './row-format.js';
+import { blankRow } from './row-format/rows.js';
 import { wrapWidthFor } from './row-markers.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
@@ -20,34 +19,20 @@ import {
   rememberEventRowBlock,
   type EventBlockCacheKey,
 } from './block-cache.js';
-import {
-  eventRowBlock,
-  isPlannerTextRenderedAsMarkdown,
-  isTranscriptRowlessEvent,
-} from './event-rows.js';
+import { eventRowBlock } from './event-rows/dispatch.js';
+import { isPlannerTextRenderedAsMarkdown } from './event-rows/planner-text.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRowsCacheKey,
 } from './markdown-rows.js';
+import { materializeConversationRowsWindow } from './materialize-window.js';
+import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
 
 const MIN_ROW_WIDTH = 1;
 // One blank row separates consecutive top-level transcript sections, giving the log a calmer
 // one-row rhythm. renderableUnits stays 0 so the spacer never registers as a scrolled-past event.
 const SECTION_SPACER_ROWS = 1;
-
-export type ConversationRowAction =
-  | { type: 'toggle-diff'; key: string }
-  | { type: 'toggle-activity-batch'; key: string };
-
-type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
-
-interface RunnerActivityBatch {
-  callId: string;
-  firstIndex: number;
-  events: RunnerActivityEvent[];
-  lastEvent: RunnerActivityEvent;
-}
 
 export function buildConversationRows(inputs: ConversationRowInputs): ConversationRowsResult {
   const projection = buildConversationRowsProjection(inputs);
@@ -87,7 +72,6 @@ function buildConversationRowsProjectionWithContext(
 ): ConversationRowsProjection {
   const blocks: ConversationRowBlock[] = [];
   let renderableCount = 0;
-  let activityBatch: RunnerActivityBatch | null = null;
   let hasRenderableBlock = false;
   // The feature/prompt, captured from the first user_message so the planner's opening H1 echo of it
   // can be stripped (the prompt already renders as the first transcript row).
@@ -111,73 +95,48 @@ function buildConversationRowsProjectionWithContext(
     renderableCount += block.renderableUnits;
   };
 
-  const flushActivityBatch = (): void => {
-    if (activityBatch === null) return;
-    const batchKey = activityBatchKey(activityBatch.firstIndex, activityBatch.callId);
-    const events = [...activityBatch.events];
-    const firstIndex = activityBatch.firstIndex;
+  const flushActivityBatch = (batch: RunnerActivityBatch): void => {
+    const batchKey = activityBatchKey(batch.firstIndex, batch.callId);
+    const events = [...batch.events];
     const expanded = inputs.expandedActivityBatches.has(batchKey);
     const key = { batchKey, count: events.length, width: ctx.width, expanded };
-    let block = getCachedActivityBatchBlock(activityBatch.lastEvent, key);
+    let block = getCachedActivityBatchBlock(batch.lastEvent, key);
     if (block === undefined) {
       const model = buildActivityBatchViewModel({ events, batchKey, expanded });
       block = runnerActivityBatchRowBlock({ model, width: ctx.width });
-      rememberActivityBatchBlock(activityBatch.lastEvent, key, block);
+      rememberActivityBatchBlock(batch.lastEvent, key, block);
     }
-    if (block !== null) appendBlock(block, firstIndex);
-    activityBatch = null;
+    if (block !== null) appendBlock(block, batch.firstIndex);
   };
 
-  for (const section of inputs.sections) {
-    if (section.type === 'completed-task') {
-      flushActivityBatch();
+  for (const step of walkTranscript(inputs.sections)) {
+    if (step.kind === 'activity-batch') {
+      flushActivityBatch(step.batch);
       continue;
     }
-    for (const [index, event] of section.items.entries()) {
-      const globalIndex = section.startIndex + index;
-      if (event.type === 'runner_call_activity') {
-        if (activityBatch !== null && activityBatch.callId === event.callId) {
-          activityBatch.events.push(event);
-          activityBatch.lastEvent = event;
-        } else {
-          flushActivityBatch();
-          activityBatch = {
-            callId: event.callId,
-            firstIndex: globalIndex,
-            events: [event],
-            lastEvent: event,
-          };
-        }
-        continue;
-      }
+    const { event, globalIndex } = step;
 
-      if (event.type === 'user_message' && dedupTitle === undefined) {
-        dedupTitle = event.text;
-      }
-
-      const expanded = inputs.expandedDiffs.has(diffEventKey(event, globalIndex));
-      const blockKey: EventBlockCacheKey = {
-        width: ctx.width,
-        viewportRows: ctx.viewportRows,
-        expanded,
-        keyPrefix: String(globalIndex),
-        dedupTitle,
-      };
-      let block = getCachedEventRowBlock(event, blockKey);
-      if (block === undefined) {
-        block = eventRowBlock({ event, globalIndex, ctx, expanded, dedupTitle });
-        rememberEventRowBlock(event, blockKey, block);
-      }
-      if (block === null) {
-        if (!isTranscriptRowlessEvent(event)) flushActivityBatch();
-        continue;
-      }
-      flushActivityBatch();
-      appendBlock(block, globalIndex);
+    if (event.type === 'user_message' && dedupTitle === undefined) {
+      dedupTitle = event.text;
     }
+
+    const expanded = inputs.expandedDiffs.has(diffEventKey(event, globalIndex));
+    const blockKey: EventBlockCacheKey = {
+      width: ctx.width,
+      viewportRows: ctx.viewportRows,
+      expanded,
+      keyPrefix: String(globalIndex),
+      dedupTitle,
+    };
+    let block = getCachedEventRowBlock(event, blockKey);
+    if (block === undefined) {
+      block = eventRowBlock({ event, globalIndex, ctx, expanded, dedupTitle });
+      rememberEventRowBlock(event, blockKey, block);
+    }
+    if (block === null) continue;
+    appendBlock(block, globalIndex);
   }
 
-  flushActivityBatch();
   const totalRows = blocks.reduce((count, block) => count + block.rowCount, 0);
   return { blocks, renderableCount, totalRows };
 }
@@ -200,111 +159,4 @@ function markdownProjectionCacheKeys(
     }
   }
   return keys;
-}
-
-export function materializeConversationRowsWindow(options: {
-  projection: ConversationRowsProjection;
-  windowStart: number;
-  windowEnd: number;
-}): ConversationRow[] {
-  const { projection, windowStart, windowEnd } = options;
-  const rows: ConversationRow[] = [];
-  const start = Math.max(0, windowStart);
-  const end = Math.max(start, windowEnd);
-  let cursor = 0;
-
-  for (const block of projection.blocks) {
-    const blockStart = cursor;
-    const blockEnd = cursor + block.rowCount;
-    cursor = blockEnd;
-    if (blockEnd <= start) continue;
-    if (blockStart >= end) break;
-
-    rows.push(
-      ...block.createRows(
-        Math.max(0, start - blockStart),
-        Math.min(block.rowCount, end - blockStart),
-      ),
-    );
-  }
-
-  return rows;
-}
-
-// Maps each actionable transcript row key to its expand/collapse action so a click on the row can
-// trigger the same toggle as the keyboard. Only the activity disclosure (`+N more` / `collapse`) and
-// diff rows are actionable; every other row key is absent and a click on it is inert.
-export function buildConversationRowActions(
-  inputs: ConversationRowInputs,
-): Map<string, ConversationRowAction> {
-  const ctx: RowBuildContext = {
-    width: Math.max(MIN_ROW_WIDTH, inputs.cols),
-    viewportRows: inputs.viewportHeight,
-    streaming: inputs.streaming,
-  };
-  const actions = new Map<string, ConversationRowAction>();
-  let activityBatch: RunnerActivityBatch | null = null;
-
-  const flushActivityBatch = (): void => {
-    if (activityBatch === null) return;
-    const batchKey = activityBatchKey(activityBatch.firstIndex, activityBatch.callId);
-    const model = buildActivityBatchViewModel({
-      events: [...activityBatch.events],
-      batchKey,
-      expanded: inputs.expandedActivityBatches.has(batchKey),
-    });
-    activityBatch = null;
-    if (model.expandableKey === null) return;
-    const block = runnerActivityBatchRowBlock({ model, width: ctx.width });
-    if (block === null) return;
-    for (const row of block.createRows(0, block.rowCount)) {
-      if (row.kind === 'activity-more') {
-        actions.set(row.key, { type: 'toggle-activity-batch', key: batchKey });
-      }
-    }
-  };
-
-  for (const section of inputs.sections) {
-    if (section.type === 'completed-task') {
-      flushActivityBatch();
-      continue;
-    }
-    for (const [index, event] of section.items.entries()) {
-      const globalIndex = section.startIndex + index;
-      if (event.type === 'runner_call_activity') {
-        if (activityBatch !== null && activityBatch.callId === event.callId) {
-          activityBatch.events.push(event);
-          activityBatch.lastEvent = event;
-        } else {
-          flushActivityBatch();
-          activityBatch = {
-            callId: event.callId,
-            firstIndex: globalIndex,
-            events: [event],
-            lastEvent: event,
-          };
-        }
-        continue;
-      }
-      if (event.type === 'implementer_generate_done' && event.diff) {
-        flushActivityBatch();
-        const key = diffEventKey(event, globalIndex);
-        const block = eventRowBlock({
-          event,
-          globalIndex,
-          ctx,
-          expanded: inputs.expandedDiffs.has(key),
-        });
-        if (block !== null) {
-          for (const row of block.createRows(0, block.rowCount)) {
-            actions.set(row.key, { type: 'toggle-diff', key });
-          }
-        }
-        continue;
-      }
-      if (!isTranscriptRowlessEvent(event)) flushActivityBatch();
-    }
-  }
-  flushActivityBatch();
-  return actions;
 }

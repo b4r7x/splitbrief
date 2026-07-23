@@ -1,6 +1,9 @@
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { openCostApprovalPrompt } from '../../stores/cost-approval/prompt.js';
-import { markInterruptParked, markInterruptRequested } from '../../stores/workflow/actions.js';
+import {
+  markInterruptParked,
+  markInterruptRequested,
+} from '../../stores/workflow/actions/interrupt.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';

@@ -2,15 +2,15 @@ import { PassThrough } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import type { ReactElement } from 'react';
 import { render } from 'ink';
+import { createFilteredStdin } from '../../src/lib/terminal/filtered-stdin/create.js';
 import {
-  createFilteredStdin,
   getActiveFilteredStdin,
   setActiveFilteredStdin,
-  type FilteredStdin,
-} from '../../src/lib/terminal/filtered-stdin.js';
+} from '../../src/lib/terminal/filtered-stdin/active.js';
+import type { FilteredStdin } from '../../src/lib/terminal/filtered-stdin/types.js';
 
 // Bridges raw terminal bytes through the real FilteredStdin (mouse filter +
-// bracketed-paste stripper) into a real Ink render, the way src/cli/render.ts wires
+// bracketed-paste stripper) into a real Ink render, the way src/cli/render/app.ts wires
 // production: createFilteredStdin(process.stdin) -> render({ stdin: filtered.stdin }).
 // Drive input via `pressBytes`.
 

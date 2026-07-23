@@ -1,10 +1,6 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createInitialState } from '../../core/state/machine.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
-import { makeUsage } from '#testing/helpers/factories/summary.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureSessionDir } from '../../core/paths-io.js';
 
 import {
   createBusTextHandler,
@@ -15,24 +11,8 @@ import {
   publishGitCommit,
   publishDriftChainDetected,
 } from './events.js';
-import { addUsageAndSave } from './state-ops.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
-import { protectEngineEventForConsumer } from '../events/protection.js';
-
-let dirs: string[] = [];
-
-afterEach(() => {
-  for (const d of dirs) cleanupTempDir(d);
-  dirs = [];
-});
-
-function setupProject(): { projectDir: string; sessionId: string } {
-  const projectDir = createTempDir('emit-test');
-  dirs.push(projectDir);
-  const sessionId = 'sess-emit';
-  ensureSessionDir(projectDir, sessionId);
-  return { projectDir, sessionId };
-}
+import { protectEngineEventForConsumer } from '../events/protection/protect.js';
 
 describe('createBusTextHandler', () => {
   it('stamps an implementer role so streamed implementer output is not attributed to the planner', () => {
@@ -395,60 +375,5 @@ describe('publish* payload forwarding', () => {
       representativePath: 'src/a.ts',
     });
     expect((events[0] as { ts: number }).ts).toBeGreaterThan(0);
-  });
-});
-
-function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
-  return {
-    stateVersion: 1,
-    phase: 'implementing',
-    feature: 'test',
-    currentTaskIndex: 0,
-    attempt: 0,
-    tasks: [],
-    plannerSessionId: null,
-    startedAt: new Date().toISOString(),
-    tokenUsage: makeUsage(),
-    awaitingContinue: false,
-    messageQueue: [],
-    ...overrides,
-  };
-}
-
-describe('addUsageAndSave', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('accumulates token usage into the new state and emits a cost-update event', () => {
-    const { projectDir, sessionId } = setupProject();
-    const state = makeState({ tokenUsage: makeUsage({ plannerInput: 100, plannerOutput: 50 }) });
-    const { bus, events } = makeBusRecorder();
-
-    const result = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', {
-      inputTokens: 200,
-      outputTokens: 100,
-    });
-
-    expect(result.tokenUsage.plannerInput).toBe(300);
-    expect(result.tokenUsage.plannerOutput).toBe(150);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: 'cost_update' });
-  });
-
-  it('returns the same state instance and emits nothing when usage is null', () => {
-    const { projectDir, sessionId } = setupProject();
-    const state = makeState();
-    const { bus, events } = makeBusRecorder();
-
-    const result = addUsageAndSave({ projectDir, sessionId, bus }, state, 'implementer', null);
-
-    expect(result).toBe(state);
-    expect(events).toHaveLength(0);
   });
 });

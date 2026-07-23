@@ -86,6 +86,70 @@ describe('applyEditAction', () => {
       undefined,
       { value: `a${EMOJI}b`, cursor: 3 },
     ],
+    [
+      'REQ-011 — ascii delete backward',
+      'delete-char-backward',
+      'abc',
+      2,
+      undefined,
+      { value: 'ac', cursor: 1 },
+    ],
+    [
+      'REQ-011 — ascii delete forward',
+      'delete-char-forward',
+      'abc',
+      0,
+      undefined,
+      { value: 'bc', cursor: 0 },
+    ],
+    [
+      'REQ-011 — ascii move backward',
+      'move-char-backward',
+      'abc',
+      2,
+      undefined,
+      { value: 'abc', cursor: 1 },
+    ],
+    [
+      'REQ-011 — ascii move forward',
+      'move-char-forward',
+      'abc',
+      0,
+      undefined,
+      { value: 'abc', cursor: 1 },
+    ],
+    [
+      'REQ-011 — ascii move line start',
+      'move-line-start',
+      'hello',
+      3,
+      undefined,
+      { value: 'hello', cursor: 0 },
+    ],
+    [
+      'REQ-011 — ascii move line end',
+      'move-line-end',
+      'hello',
+      3,
+      undefined,
+      { value: 'hello', cursor: 5 },
+    ],
+    [
+      'REQ-011 — surrogate delete backward stays whole',
+      'delete-char-backward',
+      `a${EMOJI}b`,
+      3,
+      undefined,
+      { value: 'ab', cursor: 1 },
+    ],
+    [
+      'REQ-011 — surrogate delete forward stays whole',
+      'delete-char-forward',
+      `${EMOJI}b`,
+      0,
+      undefined,
+      { value: 'b', cursor: 0 },
+    ],
   ] as const)('%s', (_label, action, value, cursor, columns, expected) => {
     expect(edit(action, value, cursor, columns)).toEqual(expected);
   });
@@ -132,77 +196,11 @@ describe('applyEditAction', () => {
   });
 });
 
-describe('composer regression (REQ-011)', () => {
-  it.each([
-    ['ascii delete backward', 'delete-char-backward', 'abc', 2, { value: 'ac', cursor: 1 }],
-    ['ascii delete forward', 'delete-char-forward', 'abc', 0, { value: 'bc', cursor: 0 }],
-    ['ascii move backward', 'move-char-backward', 'abc', 2, { value: 'abc', cursor: 1 }],
-    ['ascii move forward', 'move-char-forward', 'abc', 0, { value: 'abc', cursor: 1 }],
-    ['ascii delete word', 'delete-word-backward', 'foo bar', 7, { value: 'foo ', cursor: 4 }],
-    ['ascii move line start', 'move-line-start', 'hello', 3, { value: 'hello', cursor: 0 }],
-    ['ascii move line end', 'move-line-end', 'hello', 3, { value: 'hello', cursor: 5 }],
-    [
-      'surrogate delete backward stays whole',
-      'delete-char-backward',
-      `a${EMOJI}b`,
-      3,
-      { value: 'ab', cursor: 1 },
-    ],
-    [
-      'surrogate delete forward stays whole',
-      'delete-char-forward',
-      `${EMOJI}b`,
-      0,
-      { value: 'b', cursor: 0 },
-    ],
-  ] as const)('applyEditAction preserves %s', (_label, action, value, cursor, expected) => {
-    expect(edit(action, value, cursor)).toEqual(expected);
-  });
-
-  it.each([
-    ['ascii down to middle line', 'down', 'aaa\nbbb\nccc', 1, 5],
-    ['surrogate down keeps goal column', 'down', `a${EMOJI}\nbcd`, 3, 7],
-    ['surrogate down clamps without splitting', 'down', `${EMOJI}\nx`, 2, 4],
-    ['surrogate up keeps goal column', 'up', `bcd\na${EMOJI}`, 7, 3],
-  ] as const)('navigateVertically preserves %s', (_label, direction, value, cursorIndex, expected) => {
-    expect(navigateVertically({ direction, value, cursorIndex })).toBe(expected);
-  });
-
-  it('code-point helpers step whole surrogate pairs and ascii units', () => {
-    expect(prevGraphemeBoundary(`a${EMOJI}`, 3)).toBe(1);
-    expect(nextGraphemeBoundary(`a${EMOJI}`, 1)).toBe(3);
-    expect(prevGraphemeBoundary('abc', 3)).toBe(2);
-    expect(nextGraphemeBoundary('abc', 0)).toBe(1);
-  });
-});
-
 describe('resolveEditAction', () => {
   const noMods = { ctrl: false, meta: false, super: false, backspace: false, delete: false };
 
-  it.each([
-    ['Ctrl+W', 'w', { ctrl: true }, 'delete-word-backward'],
-    ['Ctrl+U', 'u', { ctrl: true }, 'delete-line-backward'],
-    ['Ctrl+A', 'a', { ctrl: true }, 'move-line-start'],
-    ['Ctrl+E', 'e', { ctrl: true }, 'move-line-end'],
-    ['Ctrl+B', 'b', { ctrl: true }, 'move-char-backward'],
-    ['Ctrl+F', 'f', { ctrl: true }, 'move-char-forward'],
-    ['plain Backspace', '', { backspace: true }, 'delete-char-backward'],
-    ['plain Delete', '', { delete: true }, 'delete-char-forward'],
-    ['raw terminal DEL', '\x7f', {}, 'delete-char-backward'],
-  ] as const)('%s resolves to %s', (_label, input, key, expected) => {
-    expect(resolveEditAction(input, { ...noMods, ...key })).toBe(expected);
-  });
-
-  it('reserves modifier deletion chords for text editing', () => {
-    expect(resolveEditAction('', { ...noMods, meta: true, backspace: true })).toBe(
-      'delete-word-backward',
-    );
-    expect(resolveEditAction('', { ...noMods, ctrl: true, delete: true })).toBe(
-      'delete-word-backward',
-    );
-    expect(resolveEditAction('', { ...noMods, super: true, delete: true })).toBe(
-      'delete-line-backward',
-    );
+  it('maps raw terminal DEL to delete-char-backward', () => {
+    expect(resolveEditAction('\x7f', noMods)).toBe('delete-char-backward');
   });
 
   it('returns null for ordinary input', () => {
@@ -213,6 +211,7 @@ describe('resolveEditAction', () => {
 describe('code-point helpers', () => {
   it('steps over surrogate pairs', () => {
     expect(prevGraphemeBoundary(`a${EMOJI}`, 3)).toBe(1);
+    expect(nextGraphemeBoundary(`a${EMOJI}`, 1)).toBe(3);
     expect(nextGraphemeBoundary(EMOJI, 0)).toBe(2);
   });
 
@@ -239,6 +238,9 @@ describe('navigateVertically', () => {
     ['down from first boundary', 'down', 'abc\ndef', 3, 7],
     ['down to middle line', 'down', 'aaa\nbbb\nccc', 1, 5],
     ['up to middle line', 'up', 'aaa\nbbb\nccc', 9, 5],
+    ['REQ-011 — surrogate down keeps goal column', 'down', `a${EMOJI}\nbcd`, 3, 7],
+    ['REQ-011 — surrogate down clamps without splitting', 'down', `${EMOJI}\nx`, 2, 4],
+    ['REQ-011 — surrogate up keeps goal column', 'up', `bcd\na${EMOJI}`, 7, 3],
   ] as const)('%s', (_label, direction, value, cursorIndex, expected) => {
     expect(navigateVertically({ direction, value, cursorIndex })).toBe(expected);
   });

@@ -7,7 +7,7 @@ import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
-import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude-invoke.js';
+import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude/invoke.js';
 import { toTokenDelta } from '../calls/projection.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import {

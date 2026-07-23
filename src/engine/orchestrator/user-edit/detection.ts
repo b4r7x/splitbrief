@@ -12,8 +12,8 @@ import { publishUserEditConflict, publishWarningFromError } from '../events.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 
 export async function checkUserEditConflicts(opts: {
   projectDir: string;

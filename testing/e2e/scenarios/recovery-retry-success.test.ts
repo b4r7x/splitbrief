@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
@@ -26,7 +25,6 @@ describe('e2e: recovery retry success', () => {
     expect(taskCompleted.length).toBeGreaterThan(0);
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
     const validationPath = join(ctx.projectDir, 'src/form-validation.ts');
-    expect(readFileSync(validationPath, 'utf-8')).toContain('validateForm');
     expect(
       evaluateTsArtifact(validationPath, "mod.validateForm({ email: 'ada@example.com' })"),
     ).toEqual({ valid: true, errors: [] });

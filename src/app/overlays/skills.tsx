@@ -13,8 +13,12 @@ import { useStores } from '../../stores/use-stores.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 
-const filterSkill = (s: SkillMeta, query: string): boolean =>
-  filterByFields(s, query, ['name', 'description']);
+const filterSkill = (s: SkillMeta, query: string): boolean => {
+  if (query.endsWith(' ')) {
+    return filterByFields(s, query, ['name']);
+  }
+  return filterByFields(s, query, ['name', 'description']);
+};
 
 const SECTION_LABELS = {
   project: 'Project',
@@ -82,8 +86,6 @@ export function SkillsPicker() {
     overlayStore.close();
   };
 
-  const shouldAppendChar = (ch: string) => ch !== ' ' || !navigating;
-
   const hintText = navigating
     ? `space toggle${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`
     : `↑↓ navigate${SOFT_SEP}ctrl+a all${SOFT_SEP}⏎ confirm${SOFT_SEP}esc close`;
@@ -103,8 +105,11 @@ export function SkillsPicker() {
       hint={hintText}
       chromeRows={12}
       width={panelWidth}
-      shouldAppendChar={shouldAppendChar}
-      customKeys={(input, key, { filtered: current, selectedIndex: currentIndex }) => {
+      customKeys={(
+        input,
+        key,
+        { filtered: current, selectedIndex: currentIndex, appendToFilter },
+      ) => {
         if (key.upArrow || key.downArrow || key.pageUp || key.pageDown || key.home || key.end) {
           setNavigating(true);
           return false;
@@ -127,9 +132,13 @@ export function SkillsPicker() {
           });
           return true;
         }
-        if (input === ' ' && navigating) {
-          const item = current[currentIndex];
-          if (item) toggle(item.id);
+        if (input === ' ') {
+          if (navigating) {
+            const item = current[currentIndex];
+            if (item) toggle(item.id);
+          } else {
+            appendToFilter(' ');
+          }
           return true;
         }
         if (input && !key.ctrl && !key.meta && input !== ' ') {

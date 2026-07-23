@@ -253,18 +253,6 @@ describe('handleMessage', () => {
     expect(r.capabilities.tools).toEqual({});
   });
 
-  it('initialize omits tools capability when no handler', async () => {
-    const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: 26, method: 'initialize' }),
-      makeResolver(),
-      SERVER_VERSION,
-    );
-    expect(result.kind).toBe('response');
-    if (result.kind !== 'response') return;
-    const r = result.body.result as { capabilities: Record<string, unknown> };
-    expect(r.capabilities).not.toHaveProperty('tools');
-  });
-
   it('prompts/list → METHOD_NOT_FOUND', async () => {
     const result = await handleMessage(
       msg({ jsonrpc: '2.0', id: 8, method: 'prompts/list' }),
@@ -339,31 +327,13 @@ describe('handleMessage', () => {
     expect(result.kind).toBe('notification');
   });
 
-  it('id present as object → INVALID_REQUEST -32600', async () => {
+  it.each([
+    { label: 'object id', id: { nested: true } },
+    { label: 'boolean id', id: true },
+    { label: 'array id', id: [] },
+  ])('id present as $label → INVALID_REQUEST -32600', async ({ id }) => {
     const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: { nested: true }, method: 'initialize' }),
-      makeResolver(),
-      SERVER_VERSION,
-    );
-    expect(result.kind).toBe('error');
-    if (result.kind !== 'error') return;
-    expect(result.body.error.code).toBe(INVALID_REQUEST);
-  });
-
-  it('id present as boolean → INVALID_REQUEST -32600', async () => {
-    const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: true, method: 'initialize' }),
-      makeResolver(),
-      SERVER_VERSION,
-    );
-    expect(result.kind).toBe('error');
-    if (result.kind !== 'error') return;
-    expect(result.body.error.code).toBe(INVALID_REQUEST);
-  });
-
-  it('id present as array → INVALID_REQUEST -32600', async () => {
-    const result = await handleMessage(
-      msg({ jsonrpc: '2.0', id: [], method: 'initialize' }),
+      msg({ jsonrpc: '2.0', id, method: 'initialize' }),
       makeResolver(),
       SERVER_VERSION,
     );

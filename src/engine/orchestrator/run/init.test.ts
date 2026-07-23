@@ -14,9 +14,9 @@ import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
-import { formatValidationError } from '../validation.js';
+import { formatValidationError } from '../validation/format-error.js';
 import { loadState } from '../../../core/state/persistence.js';
-import type { SummaryBase } from '../summary.js';
+import type { SummaryBase } from '../summary/build.js';
 import { initializeWorkflow } from './init.js';
 
 describe('initializeWorkflow', () => {

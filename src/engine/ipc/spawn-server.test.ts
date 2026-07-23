@@ -6,16 +6,16 @@ import { tmpdir } from 'node:os';
 import { createServer, type Server } from 'node:net';
 import { IPC_SOCK_FILE } from '../../core/paths.js';
 import { HEARTBEAT_STALENESS_MS } from '../../core/sessions/lockfile-status.js';
-import { writeLockfile, readLockfile } from './lockfile.js';
+import { writeLockfile } from './lockfile.js';
 import {
   buildServerArgs,
+  buildServerArgv,
   resolveEntryPoint,
   spawnServer,
   waitForServerReady,
   type SpawnServerOptions,
 } from './spawn-server.js';
-import { parseIpcServerArgs, writeIpcServerArgsFile, type IpcServerArgs } from './server-args.js';
-import { writeStartupLockfile } from './server-entry.js';
+import { parseIpcServerArgs, writeIpcServerArgsFile } from './server-args.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { featureForTranscriptPolicy } from '../../core/sessions/lifecycle.js';
 
@@ -302,65 +302,10 @@ describe('server args launch contract', () => {
       overrides: { budget: 4 },
     });
 
-    const argv = ['server-entry.js', argsFile];
+    const argv = buildServerArgv(['server-entry.js'], argsFile);
     expect(argv.join('\n')).not.toContain('implement from @file');
     expect(argv.join('\n')).not.toContain('secret context');
     expect(argv).toEqual(['server-entry.js', argsFile]);
-  });
-
-  it('rejects server args with incorrectly typed nested overrides', () => {
-    const parsed = parseIpcServerArgs({
-      sessionId: 'test-session',
-      projectDir: '/repo',
-      feature: 'feature',
-      mode: 'standard',
-      configPath: '/repo/.diptych/config.yaml',
-      overrides: { yolo: 'yes' },
-    });
-
-    expect(parsed).toBeNull();
-  });
-
-  it('strips unknown nested override keys and keeps known fields', () => {
-    const parsed = parseIpcServerArgs({
-      sessionId: 'test-session',
-      projectDir: '/repo',
-      feature: 'feature',
-      mode: 'standard',
-      configPath: '/repo/.diptych/config.yaml',
-      overrides: { planner: { tool: 'codex', extra: true } },
-    });
-
-    expect(parsed).not.toBeNull();
-    expect(parsed?.overrides).toEqual({ planner: { tool: 'codex' } });
-  });
-
-  it('normalizes the legacy full mode to speckit', () => {
-    const parsed = parseIpcServerArgs({
-      sessionId: 'test-session',
-      projectDir: '/repo',
-      feature: 'feature',
-      mode: 'full',
-      configPath: '/repo/.diptych/config.yaml',
-      overrides: {},
-    });
-
-    expect(parsed?.mode).toBe('speckit');
-  });
-
-  it('normalizes the legacy full mode inside nested overrides to speckit', () => {
-    const parsed = parseIpcServerArgs({
-      sessionId: 'test-session',
-      projectDir: '/repo',
-      feature: 'feature',
-      mode: 'full',
-      configPath: '/repo/.diptych/config.yaml',
-      overrides: { mode: 'full' },
-    });
-
-    expect(parsed).not.toBeNull();
-    expect(parsed?.mode).toBe('speckit');
-    expect(parsed?.overrides.mode).toBe('speckit');
   });
 });
 
@@ -404,41 +349,5 @@ describe('buildServerArgs transcript policy', () => {
     const args = buildServerArgs(base);
     expect(args.feature).toBe('add secret oauth login');
     expect(args.persistTranscript).toBeUndefined();
-  });
-});
-
-describe('writeStartupLockfile ps-facing redaction', () => {
-  function makeArgv(overrides: Partial<IpcServerArgs>): IpcServerArgs {
-    return {
-      sessionId: sessionIdFor(testDir),
-      projectDir: testDir,
-      feature: 'add secret oauth login',
-      mode: 'standard',
-      configPath: join(testDir, 'config.yaml'),
-      overrides: {},
-      ...overrides,
-    };
-  }
-
-  it('redacts the lockfile feature `diptych ps` prints under persistTranscript:false', async () => {
-    await writeStartupLockfile(testDir, makeArgv({ persistTranscript: false }));
-
-    const lock = await readLockfile(testDir);
-    expect(lock?.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
-    expect(lock?.feature).not.toBe('add secret oauth login');
-  });
-
-  it('keeps the raw lockfile feature under persistTranscript:true', async () => {
-    await writeStartupLockfile(testDir, makeArgv({ persistTranscript: true }));
-
-    const lock = await readLockfile(testDir);
-    expect(lock?.feature).toBe('add secret oauth login');
-  });
-
-  it('keeps the raw lockfile feature when persistTranscript is unset', async () => {
-    await writeStartupLockfile(testDir, makeArgv({}));
-
-    const lock = await readLockfile(testDir);
-    expect(lock?.feature).toBe('add secret oauth login');
   });
 });

@@ -113,7 +113,7 @@ idle
 
 ## Task briefs
 
-A **Task Brief** is the atomic semantic unit of implementation. It is transported in `tasks.md` and parsed into structured objects by `src/engine/spec/parser.ts`.
+A **Task Brief** is the atomic semantic unit of implementation. It is transported in `tasks.md` and parsed into structured objects by `src/engine/spec/tasks/parse.ts`.
 
 Task fields (`src/core/schemas/task.ts`):
 
@@ -135,7 +135,7 @@ Task briefs are topologically sorted on dependency. Each task is independently p
 
 ## Validation pipeline
 
-Runs after every implementer response. Defined in `src/engine/orchestrator/validation.ts`.
+Runs after every implementer response. Defined in `src/engine/orchestrator/validation/run.ts`.
 
 1. **Type-check** — the configured, discovered, or heuristic command. The built-in `npx tsc --noEmit` default applies only on TypeScript projects (a `tsconfig.json` exists or `typescript` is a dependency); on other languages the stage is skipped when nothing else resolves.
 2. **Lint** — the configured, discovered, or heuristic command; the stage is skipped when no lint command resolves.
@@ -344,7 +344,7 @@ Entries come in three **kinds**, distinguished by the `kind` field:
 
 Filtering happens at read time: `lines.filter(l => l.kind === 'message')`. There is no separate file for events vs. messages — this is deliberate. A log is a chronological stream, and splitting it would force consumers to merge-sort at every read while opening new crash-atomicity problems. This is the same design Claude Code uses (`~/.claude/projects/<cwd>/<id>.jsonl`), and the same pattern event-sourcing frameworks settle on.
 
-Typed event schema: `src/engine/events/schema.ts` (`EngineEventSchema`; the `EngineEvent` alias is re-exported from `src/engine/events/types.ts`). Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/features/workflow/conversation-rows/event-rows.ts`.
+Typed event schema: `src/engine/events/schema.ts` (`EngineEventSchema`; the `EngineEvent` alias is re-exported from `src/engine/events/types.ts`). Reader API (async iterables for log, messages, events): `src/core/sessions/log-reader.ts`. Renderer registry for the TUI: `src/features/workflow/conversation-rows/event-rows/dispatch.ts` (with `visibility.ts`, `planner-text.ts`, and `execution.ts` helpers).
 
 ---
 

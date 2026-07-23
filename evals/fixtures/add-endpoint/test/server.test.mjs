@@ -1,24 +1,15 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { handleRequest } from '../src/server.ts';
 
-const fixtureDir = dirname(dirname(fileURLToPath(import.meta.url)));
-
-async function readFixtureSource(path) {
-  return readFile(join(fixtureDir, path), 'utf8');
-}
-
-test('fixture starts with an existing version route', async () => {
-  const routes = await readFixtureSource('src/routes.ts');
-  assert.match(routes, /path:\s*['"]\/api\/version['"]/);
-  assert.match(routes, /version:\s*['"]1\.0\.0['"]/);
+test('GET /api/version returns the fixture version payload', () => {
+  const response = handleRequest('GET', '/api/version');
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { version: '1.0.0' });
 });
 
-test('fixture server exposes route dispatch behavior', async () => {
-  const server = await readFixtureSource('src/server.ts');
-  assert.match(server, /export function handleRequest/);
-  assert.match(server, /statusCode:\s*404/);
-  assert.match(server, /route\.handler\(\)/);
+test('unknown paths return 404', () => {
+  const response = handleRequest('GET', '/api/unknown');
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.body, { error: 'Not found' });
 });

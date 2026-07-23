@@ -1,17 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Box, Text, type Key } from 'ink';
 import { MultilineInput } from '../input/multiline-input.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
 import { ReferenceCompletionMenu } from './completion/reference/menu.js';
-import {
-  AttachmentChips,
-  attachmentChipRows,
-  expandPastes,
-  extractPasteCapture,
-  insertPasteDraftMarker,
-  pasteDraftMarker,
-  type PasteMarker,
-} from './attachments.js';
+import { AttachmentChips, attachmentChipRows, expandPastes } from './attachments.js';
 import { useCommandCompletion } from './completion/command/hook.js';
 import { useReferenceCompletion } from './completion/reference/hook.js';
 import { useTheme, type Theme } from '../theme.js';
@@ -21,14 +13,9 @@ import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { completionStore } from '../../stores/ui/completion.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { focusStore } from '../../stores/ui/focus.js';
-import { projectFilesStore } from '../../stores/ui/project-files.js';
 import { configStore } from '../../stores/project/config.js';
-import { listProjectFiles } from '../../lib/file-listing.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
-import { overlayStore } from '../../stores/ui/overlay.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { useStores } from '../../stores/use-stores.js';
-import { registerMouseZone } from '../../lib/terminal/mouse-zones.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
@@ -42,11 +29,9 @@ import {
   matchKnownFeedbackMessage,
   type FeedbackMessageInput,
 } from './feedback-fit.js';
-import {
-  compactComposerHints,
-  composerHintZoneRects,
-  computeComposerHintBudget,
-} from './hint-zones.js';
+import { useProjectFiles } from './use-project-files.js';
+import { usePasteDrafts } from './use-paste-drafts.js';
+import { useHintZones } from './use-hint-zones.js';
 
 const MAX_REFERENCE_SUGGESTIONS = 8;
 const RESUME_INTERRUPTED_PREFIX = 'Cannot resume "';
@@ -70,27 +55,12 @@ function placeholderForMode(mode: InputMode, hint?: string): string {
   return 'Describe a change…';
 }
 
-const SESSIONS_REL_DIR = `${DIPTYCH_DIR}/${SESSIONS_DIR}`;
-const SESSIONS_EXCLUDE = new RegExp(`(?:^|/)${SESSIONS_REL_DIR.replace(/[.]/g, '\\$&')}/`);
-
 function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {
   return (
     matchKnownFeedbackMessage(message, RESUME_INTERRUPTED_PREFIX, RESUME_INTERRUPTED_SUFFIX) ??
     matchKnownFeedbackMessage(message, SESSION_FAILED_PREFIX, SESSION_FAILED_SUFFIX) ??
     message
   );
-}
-
-async function readProjectFiles(projectDir: string): Promise<string[]> {
-  if (!projectDir) return [];
-  try {
-    return await listProjectFiles(projectDir, {
-      excludePatterns: [SESSIONS_EXCLUDE],
-      skipRelativeDirs: [SESSIONS_REL_DIR],
-    });
-  } catch {
-    return [];
-  }
 }
 
 export interface ComposerBoxHints {
@@ -150,14 +120,9 @@ export function Composer({
   const [{ pending: pendingAttachments }] = useStores(attachmentsStore);
   const inputColumns = Math.max(1, (width ?? cols) - 4 - inputPaddingX * 2);
   const [value, setValue] = useState('');
-  const [pastes, setPastes] = useState<PasteMarker[]>([]);
-  const pasteIdRef = useRef(0);
   const [visibleRows, setVisibleRows] = useState(1);
-  const chipRows = attachmentChipRows(pastes, pendingAttachments, cols);
-  const [projectFiles, setProjectFiles] = useState<string[]>([]);
   const persistTranscript = config?.workflow.persistTranscript ?? true;
 
-  const refreshEpoch = projectFilesStore.use((s) => s.refreshEpoch);
   const rowFocusHeld = focusStore.use((f) => f !== null) && currentScreen === 'workflow';
 
   const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange, historyActive } =
@@ -169,25 +134,9 @@ export function Composer({
       persistTranscript,
     });
 
-  const handleChange = (next: string) => {
-    const capture = extractPasteCapture(value, next);
-    if (capture) {
-      const id = `paste-${pasteIdRef.current++}`;
-      const marker = pasteDraftMarker();
-      setPastes((prev) => [
-        ...prev,
-        { id, lineCount: capture.lineCount, marker, text: capture.text },
-      ]);
-      const inlineMarker = capture.insertAt > 0 || capture.remaining.length > capture.insertAt;
-      onChange(
-        inlineMarker
-          ? insertPasteDraftMarker(capture.remaining, capture.insertAt, marker)
-          : capture.remaining,
-      );
-      return;
-    }
-    onChange(next);
-  };
+  const { pastes, handleChange, clearPastes } = usePasteDrafts({ value, onChange });
+  const chipRows = attachmentChipRows(pastes, pendingAttachments, cols);
+  const projectFiles = useProjectFiles(projectDir);
 
   const completionValue = mode === 'normal' ? value : '';
   const command = useCommandCompletion({
@@ -229,7 +178,7 @@ export function Composer({
     if (mode !== 'normal') {
       onSubmit(expandPastes(text, pastes));
       setValue('');
-      setPastes([]);
+      clearPastes();
       resetHistory();
       bumpEpoch();
       return;
@@ -250,7 +199,7 @@ export function Composer({
       onSubmit(expandPastes(trimmed, pastes));
     }
     setValue('');
-    setPastes([]);
+    clearPastes();
     resetHistory();
     bumpEpoch();
   };
@@ -264,23 +213,20 @@ export function Composer({
   };
 
   const hintBoxWidth = width ?? cols;
-  const hintDisplay = boxHints
-    ? compactComposerHints(
-        { keys: boxHints.keys, cost: boxHints.cost },
-        computeComposerHintBudget({ boxWidth: hintBoxWidth, paddingX: inputPaddingX }),
-      )
-    : null;
-  // A click is an alternate trigger for the same store action the keyboard calls. The docked
-  // full-width composer sits at column 1 (`width === undefined`); the review-column composer is
-  // inset by `reviewColumn.leftOffset`, threaded in as `boxLeftOffset` so its zones land on the
-  // shifted box. A width-constrained composer registers zones ONLY when that offset is known, so an
-  // unknown inset can never produce a misaligned phantom hotspot. Never while disabled, so an open
-  // overlay/prompt cannot be clicked through.
   const registerHintZones =
     currentScreen === 'workflow' &&
     !disabled &&
     (width === undefined || boxLeftOffset !== undefined);
   const hintBoxLeft = 1 + (boxLeftOffset ?? 0);
+  const hintDisplay = useHintZones({
+    boxHints,
+    hintBoxWidth,
+    inputPaddingX,
+    visibleRows,
+    rows,
+    registerHintZones,
+    hintBoxLeft,
+  });
 
   const completionCap = computeCompletionCap(rows, visibleRows);
   const referenceSuggestionsCap = Math.min(MAX_REFERENCE_SUGGESTIONS, completionCap);
@@ -314,16 +260,6 @@ export function Composer({
       : null;
 
   useEffect(() => {
-    let active = true;
-    void readProjectFiles(projectDir).then((files) => {
-      if (active) setProjectFiles(files);
-    });
-    return () => {
-      active = false;
-    };
-  }, [projectDir, refreshEpoch]);
-
-  useEffect(() => {
     inputHeightStore.setRows(visibleRows + 2 + chipRows);
   }, [visibleRows, chipRows]);
 
@@ -333,7 +269,7 @@ export function Composer({
   useEffect(() => {
     if (mode === 'question') {
       setValue('');
-      setPastes([]);
+      clearPastes();
       resetHistory();
       bumpEpoch();
     }
@@ -344,49 +280,6 @@ export function Composer({
     completionStore.setOpen(completionOpen);
     return () => completionStore.setOpen(false);
   }, [completionOpen]);
-
-  // The composer is docked to the bottom of the workflow shell above the one-row InputFooter, so
-  // the single-line hint row sits at `rows - visibleRows - 1` (byline at rows, box bottom border at
-  // rows-1, the box is visibleRows + 2 tall). Zones come from the post-compaction render, so a
-  // dropped cost is never a phantom hotspot.
-  const hintKeys = hintDisplay?.keys;
-  const hintCost = hintDisplay?.cost;
-  useEffect(() => {
-    if (!registerHintZones || hintDisplay === null) return;
-    const hintRow = rows - visibleRows - 1;
-    const rects = composerHintZoneRects({
-      boxLeft: hintBoxLeft,
-      boxWidth: hintBoxWidth,
-      hintRow,
-      display: hintDisplay,
-      paddingX: inputPaddingX,
-    });
-    const disposers = rects.map((rect) =>
-      registerMouseZone({
-        id: `composer-hint-${rect.id}`,
-        left: rect.left,
-        right: rect.right,
-        top: rect.top,
-        bottom: rect.bottom,
-        z: 5,
-        onClick: () => overlayStore.open('cost-drilldown'),
-      }),
-    );
-    return () => {
-      for (const dispose of disposers) dispose();
-    };
-    // hintDisplay is derived from hintKeys/hintCost; depending on those primitives keeps the zones
-    // in sync without re-registering on every keystroke.
-  }, [
-    registerHintZones,
-    hintKeys,
-    hintCost,
-    hintBoxWidth,
-    hintBoxLeft,
-    inputPaddingX,
-    rows,
-    visibleRows,
-  ]);
 
   return (
     <Box flexDirection="column" width="100%" flexShrink={0} overflow="visible">

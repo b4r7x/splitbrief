@@ -128,7 +128,7 @@ describe('aggregateSessionCosts', () => {
           totalActualCost: 1.5,
           savingsAmount: 4.5,
           savingsPercentage: 90,
-          localCompletionRate: 1,
+          localCompletionRate: 0.9,
         },
       }),
     });
@@ -138,7 +138,7 @@ describe('aggregateSessionCosts', () => {
     expect(result.totalCost).toBe(4.5);
     expect(result.totalSavings).toBe(11.5);
     expect(result.averageSavingsPercentage).toBe(80);
-    expect(result.averageLocalCompletionRate).toBe(0.9);
+    expect(result.averageLocalCompletionRate).toBeCloseTo(0.85);
   });
 
   it('skips non-complete sessions', () => {
@@ -163,14 +163,6 @@ describe('aggregateSessionCosts', () => {
     expect(result.totalSessions).toBe(3);
     expect(result.completedSessions).toBe(1);
     expect(result.totalCost).toBe(1);
-  });
-
-  it('counts interrupted sessions with null summary in total but excludes their cost', () => {
-    const session = makeInterruptedSession();
-    const result = aggregateSessionCosts([session]);
-    expect(result.totalSessions).toBe(1);
-    expect(result.completedSessions).toBe(0);
-    expect(result.totalCost).toBe(0);
   });
 
   it('skips complete sessions without costBreakdown', () => {
@@ -208,7 +200,7 @@ describe('aggregateSessionCosts', () => {
           savingsPercentage: 70,
           localCompletionRate: 0.85,
           providerCosts: {
-            'claude-code': { inputTokens: 100, outputTokens: 50, cost: 1.5 },
+            'claude-code': { inputTokens: 100, outputTokens: 50, cost: 1.0 },
             ollama: { inputTokens: 300, outputTokens: 150, cost: 0.3 },
           },
         },
@@ -226,7 +218,7 @@ describe('aggregateSessionCosts', () => {
           savingsPercentage: 66,
           localCompletionRate: 0.75,
           providerCosts: {
-            'claude-code': { inputTokens: 120, outputTokens: 60, cost: 2.0 },
+            'claude-code': { inputTokens: 120, outputTokens: 60, cost: 0.89 },
             openrouter: { inputTokens: 400, outputTokens: 200, cost: 0.7 },
           },
         },
@@ -237,86 +229,10 @@ describe('aggregateSessionCosts', () => {
     expect(result.completedSessions).toBe(2);
     expect(result.totalCost).toBeCloseTo(4.5);
     expect(result.totalSavings).toBeCloseTo(9.5);
-    expect(result.providerTotals['claude-code']).toEqual({ cost: 3.5, sessions: 2 });
+    expect(result.providerTotals['claude-code']!.cost).toBeCloseTo(1.89);
+    expect(result.providerTotals['claude-code']!.sessions).toBe(2);
     expect(result.providerTotals['ollama']).toEqual({ cost: 0.3, sessions: 1 });
     expect(result.providerTotals['openrouter']).toEqual({ cost: 0.7, sessions: 1 });
     expect(Object.keys(result.providerTotals)).toHaveLength(3);
-  });
-
-  it('aggregates provider costs across sessions', () => {
-    const s1 = makeCompleteSession({
-      id: 's1',
-      summary: makeSummary({
-        costBreakdown: {
-          hypotheticalCost: 5,
-          actualPlannerCost: 1,
-          actualImplementerCost: 0.5,
-          totalActualCost: 1.5,
-          savingsAmount: 3.5,
-          savingsPercentage: 70,
-          localCompletionRate: 0.8,
-          providerCosts: {
-            'claude-code': { inputTokens: 100, outputTokens: 50, cost: 1.0 },
-            ollama: { inputTokens: 200, outputTokens: 100, cost: 0.5 },
-          },
-        },
-      }),
-    });
-    const s2 = makeCompleteSession({
-      id: 's2',
-      summary: makeSummary({
-        costBreakdown: {
-          hypotheticalCost: 4,
-          actualPlannerCost: 0.8,
-          actualImplementerCost: 0.1,
-          totalActualCost: 0.9,
-          savingsAmount: 3.1,
-          savingsPercentage: 77,
-          localCompletionRate: 0.9,
-          providerCosts: {
-            'claude-code': { inputTokens: 80, outputTokens: 40, cost: 0.89 },
-          },
-        },
-      }),
-    });
-
-    const result = aggregateSessionCosts([s1, s2]);
-    expect(result.providerTotals['claude-code']!.sessions).toBe(2);
-    expect(result.providerTotals['claude-code']!.cost).toBeCloseTo(1.89);
-    expect(result.providerTotals['ollama']).toEqual({ cost: 0.5, sessions: 1 });
-  });
-
-  it('averages localCompletionRate correctly with 0–1 ratio values', () => {
-    const s1 = makeCompleteSession({
-      id: 's1',
-      summary: makeSummary({
-        costBreakdown: {
-          hypotheticalCost: 5,
-          actualPlannerCost: 1,
-          actualImplementerCost: 0,
-          totalActualCost: 1,
-          savingsAmount: 4,
-          savingsPercentage: 80,
-          localCompletionRate: 0.8,
-        },
-      }),
-    });
-    const s2 = makeCompleteSession({
-      id: 's2',
-      summary: makeSummary({
-        costBreakdown: {
-          hypotheticalCost: 5,
-          actualPlannerCost: 1,
-          actualImplementerCost: 0,
-          totalActualCost: 1,
-          savingsAmount: 4,
-          savingsPercentage: 80,
-          localCompletionRate: 0.9,
-        },
-      }),
-    });
-
-    const result = aggregateSessionCosts([s1, s2]);
-    expect(result.averageLocalCompletionRate).toBeCloseTo(0.85);
   });
 });

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import {
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
 } from './task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import type { ValidationResult } from '../validation-result.js';
+import type { ValidationResult } from '../validation/result.js';
 
 function passing(stage: 'typecheck' | 'lint' | 'test'): ValidationResult {
   return { passed: true, stage };

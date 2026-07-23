@@ -4,15 +4,17 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { RecoveryIssue } from '../../../core/schemas/recovery.js';
+import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createEventBus } from '../../events/bus.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { applyRecoveryAction } from './actions.js';
-import { buildBudgetPausedRecoveryIssue } from './builders/workflow.js';
+import { buildDependencyBlockedRecoveryIssue } from './builders/task.js';
+import { buildBudgetExceededRecoveryIssue } from './builders/workflow.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -31,10 +33,11 @@ function setupSession(name: string): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-function makeBus(): { bus: EventBus; events: EngineEvent[] } {
+function makeBus(projectDir: string, sessionId: string): { bus: EventBus; events: EngineEvent[] } {
   const bus = createEventBus();
   const events: EngineEvent[] = [];
   bus.subscribe((event) => events.push(event));
+  bus.subscribe(createJsonlSink({ projectDir, sessionId, persistTranscript: true }));
   return { bus, events };
 }
 
@@ -111,7 +114,7 @@ describe('applyRecoveryAction: reason policy', () => {
       createdAt,
     };
     const state = { ...implementingState([task]), pendingRecovery: issue };
-    const { bus } = makeBus();
+    const { bus } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
       projectDir,
@@ -129,87 +132,13 @@ describe('applyRecoveryAction: reason policy', () => {
   });
 });
 
-describe('applyRecoveryAction: abort-workflow', () => {
-  it('keeps the pre-cancel task record so the aborted summary is not gutted to zero tasks', () => {
-    const { projectDir, sessionId } = setupSession('abort');
-    const tasks = [makeTask({ id: 'T001', status: 'done' }), makeTask({ id: 'T002' })];
-    const issue: RecoveryIssue = {
-      ...routeBiggerIssue(tasks[1] as Task),
-      reason: 'context-overflow',
-      availableActions: ['route-bigger-worker', 'pause-run', 'abort-workflow'],
-    };
-    const state: WorkflowState = {
-      ...implementingState(tasks),
-      currentTaskIndex: 1,
-      pendingRecovery: issue,
-    };
-    const { bus } = makeBus();
-
-    const result = applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'abort-workflow',
-      bus,
-    });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.status).toBe('aborted');
-    expect(result.state.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
-    expect(result.state.pendingRecovery).toBeUndefined();
-    const persisted = loadState({ projectDir, sessionId });
-    expect(persisted?.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
-  });
-});
-
-describe('applyRecoveryAction: route-bigger-worker', () => {
-  it('retries the current task with the bigger profile when it exists', () => {
-    const { projectDir, sessionId } = setupSession('route-bigger-success');
-    const task = makeTask({ id: 'T100', status: 'in_progress' });
-    const issue = routeBiggerIssue(task, { routeBiggerProfile: 'cloud-capable' });
-    const state = { ...implementingState([task]), attempt: 2, pendingRecovery: issue };
-    const { bus, events } = makeBus();
-
-    const result = applyRecoveryAction({
-      projectDir,
-      sessionId,
-      state,
-      action: 'route-bigger-worker',
-      bus,
-      config: configWithProfiles(),
-    });
-
-    expect(result).toMatchObject({
-      ok: true,
-      status: 'retry-current-task',
-      implementerProfile: 'cloud-capable',
-    });
-    expect(result.state).toMatchObject({
-      currentTaskIndex: 0,
-      attempt: 0,
-      pendingRecovery: undefined,
-    });
-    expect(result.state.tasks[0]).toMatchObject({ id: task.id, status: 'pending' });
-    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-    expect(events).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: 'recovery_resolved',
-          action: 'route-bigger-worker',
-          outcome: 'retry-current-task',
-          implementerProfile: 'cloud-capable',
-        }),
-      ]),
-    );
-  });
-
+describe('applyRecoveryAction: route-bigger-worker blocked', () => {
   it('blocks when the recovery issue does not name a bigger profile', () => {
     const { projectDir, sessionId } = setupSession('route-bigger-missing-fact');
     const task = makeTask({ id: 'T101', status: 'in_progress' });
     const issue = routeBiggerIssue(task, {});
     const state = { ...implementingState([task]), pendingRecovery: issue };
-    const { bus } = makeBus();
+    const { bus } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
       projectDir,
@@ -234,7 +163,7 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
     const task = makeTask({ id: 'T102', status: 'in_progress' });
     const issue = routeBiggerIssue(task, { routeBiggerProfile: 'frontier-big' });
     const state = { ...implementingState([task]), pendingRecovery: issue };
-    const { bus } = makeBus();
+    const { bus } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
       projectDir,
@@ -259,7 +188,7 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
     const task = makeTask({ id: 'T103', status: 'in_progress' });
     const issue = routeBiggerIssue(task, { routeBiggerProfile: 'cloud-capable' });
     const state = { ...implementingState([task]), pendingRecovery: issue };
-    const { bus } = makeBus();
+    const { bus } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
       projectDir,
@@ -278,20 +207,22 @@ describe('applyRecoveryAction: route-bigger-worker', () => {
   });
 });
 
-describe('applyRecoveryAction: continue on budget-paused', () => {
-  it('records the acknowledged cost so later tasks do not re-pause', () => {
-    const { projectDir, sessionId } = setupSession('budget-continue-ack');
-    const task = makeTask({ id: 'T300', status: 'in_progress' });
-    const issue = buildBudgetPausedRecoveryIssue({
-      currentCost: 1.2,
-      maxBudget: 2,
-      phase: 'implementing',
-      threshold: 0.5,
-      nextTask: task,
-      createdAt,
-    });
-    const state: WorkflowState = { ...implementingState([task]), pendingRecovery: issue };
-    const { bus } = makeBus();
+describe('applyRecoveryAction: unsafe continue blocked', () => {
+  it('blocks ordinary continue for budget-exceeded even if an issue was malformed to advertise it', () => {
+    const { projectDir, sessionId } = setupSession('continue-budget-exceeded');
+    const issue = {
+      ...buildBudgetExceededRecoveryIssue({
+        createdAt,
+        currentCost: 5.25,
+        maxBudget: 5,
+      }),
+      availableActions: ['continue', 'pause-run', 'abort-workflow'] as ReturnType<
+        typeof buildBudgetExceededRecoveryIssue
+      >['availableActions'],
+    };
+    const state = { ...implementingState([makeTask({ id: 'T031' })]), pendingRecovery: issue };
+    saveState({ projectDir, sessionId }, state);
+    const { bus, events } = makeBus(projectDir, sessionId);
 
     const result = applyRecoveryAction({
       projectDir,
@@ -299,12 +230,52 @@ describe('applyRecoveryAction: continue on budget-paused', () => {
       state,
       action: 'continue',
       bus,
-      config: makeConfig(),
     });
 
-    expect(result).toMatchObject({ ok: true, status: 'continued' });
-    expect(result.state.pendingRecovery).toBeUndefined();
-    expect(result.state.budgetPauseAcknowledgedAtCost).toBe(1.2);
-    expect(loadState({ projectDir, sessionId })?.budgetPauseAcknowledgedAtCost).toBe(1.2);
+    expect(result).toMatchObject({ ok: false, status: 'blocked', code: 'unsafe-continue' });
+    expect(result.state.pendingRecovery).toEqual(issue);
+    expect(loadState({ projectDir, sessionId })).toBeNull();
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
+    );
+    expect(state.pendingRecovery).toEqual(issue);
+  });
+});
+
+describe('applyRecoveryAction: planner-split-rebase blocked', () => {
+  it('blocks planner-split-rebase until a proposal approval flow exists', () => {
+    const { projectDir, sessionId } = setupSession('planner-proposal-required');
+    const task = makeTask({ id: 'T037' });
+    const issue = {
+      ...buildDependencyBlockedRecoveryIssue({
+        task,
+        createdAt,
+        blockedByTaskIds: ['T001' as Task['id']],
+      }),
+      availableActions: ['planner-split-rebase', 'pause-run', 'abort-workflow'],
+      recommendedAction: 'planner-split-rebase',
+    } satisfies ReturnType<typeof buildDependencyBlockedRecoveryIssue>;
+    const state = { ...implementingState([task]), pendingRecovery: issue };
+    saveState({ projectDir, sessionId }, state);
+    const { bus, events } = makeBus(projectDir, sessionId);
+
+    const result = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state,
+      action: 'planner-split-rebase',
+      bus,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'blocked',
+      code: 'planner-proposal-required',
+    });
+    expect(result.state.pendingRecovery).toEqual(issue);
+    expect(loadState({ projectDir, sessionId })).toBeNull();
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['recovery_action_selected', 'recovery_action_failed']),
+    );
   });
 });

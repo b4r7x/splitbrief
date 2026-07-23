@@ -1,8 +1,8 @@
 import type { ProviderDef, ProviderOverrides } from './types.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
-import type { Config } from '../../core/schemas/config.js';
 import type { ProviderDetection } from '../../core/discovery/detection.js';
-import { apiKeyEnvReference, validateProviderBaseURL } from './client.js';
+import { apiKeyEnvReference } from './client/api-key.js';
+import { validateProviderBaseURL } from './client/connection.js';
 import { createOllamaProvider } from './ollama.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createOpenRouterProvider } from './openrouter.js';
@@ -13,14 +13,11 @@ import { createOpenAICompatProvider } from './openai-compat.js';
 import { PROVIDER_CATALOG, isSameOrigin } from '../../core/providers/catalog.js';
 import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { warnError } from '../../lib/warn.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
 import { error } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact.js';
-import { lookupCatalogContextLength } from './model/catalog.js';
-
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 
 const BESPOKE_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
@@ -100,63 +97,6 @@ function rejectApiBaseExfiltration(name: string, overrides: ProviderOverrides): 
   const envKey = process.env[envVar];
   if (!envKey) return;
   throw providerError.apiBaseExfiltration(name, envVar);
-}
-
-function getImplementerProvider(config: Config): ProviderDef {
-  const impl = config.implementer;
-  if (impl.kind !== 'api') throw providerError.notApi(impl.kind);
-  return getProvider(impl.provider, {
-    apiBase: impl.apiBase,
-    apiKey: impl.apiKey,
-  });
-}
-
-export type ContextLengthOrigin = 'env' | 'config' | 'detected' | 'catalog' | 'fallback';
-
-export interface DetectedCapabilities {
-  contextLength: number;
-  origin: ContextLengthOrigin;
-}
-
-function lookupConfiguredCatalogContextLength(config: Config): number | undefined {
-  const implementer = config.implementer;
-  if (implementer.model === undefined || implementer.model === 'auto') return undefined;
-  if (implementer.kind === 'api') {
-    return lookupCatalogContextLength(implementer.provider, implementer.model);
-  }
-  if (implementer.kind === 'cli') {
-    return lookupCatalogContextLength(implementer.tool, implementer.model);
-  }
-  return undefined;
-}
-
-export async function detectCapabilities(config: Config): Promise<DetectedCapabilities> {
-  const envCtx = process.env.DIPTYCH_CONTEXT_LENGTH;
-  const parsed = envCtx ? parseInt(envCtx, 10) : NaN;
-  if (!Number.isNaN(parsed)) return { contextLength: parsed, origin: 'env' };
-
-  if (config.implementer.contextLength !== undefined) {
-    return { contextLength: config.implementer.contextLength, origin: 'config' };
-  }
-
-  if (config.implementer.kind === 'api') {
-    const provider = getImplementerProvider(config);
-    if (provider.detectContextLength) {
-      try {
-        const ctx = await provider.detectContextLength(config.implementer.model);
-        if (ctx) return { contextLength: ctx, origin: 'detected' };
-      } catch (error) {
-        warnError(`detectCapabilities(${provider.name})`, error);
-      }
-    }
-  }
-
-  const catalogContextLength = lookupConfiguredCatalogContextLength(config);
-  if (catalogContextLength !== undefined) {
-    return { contextLength: catalogContextLength, origin: 'catalog' };
-  }
-
-  return { contextLength: 32768, origin: 'fallback' };
 }
 
 async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<ProviderDetection> {

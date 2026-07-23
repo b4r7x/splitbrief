@@ -3,7 +3,6 @@ import type { InvokeResult } from '../runners/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
-import { error } from '../../utils/error.js';
 import type {
   Planner,
   PlannerCallbacks,
@@ -14,7 +13,6 @@ import type {
   PlanResult,
   EscalationResult,
   RegenerateResult,
-  PhaseResult,
   PlannerCapabilities,
   PriorMessage,
   PlannerSummaryMessage,
@@ -22,37 +20,17 @@ import type {
   PlannerSummaryOptions,
   PlannerUserTurnOptions,
 } from './types.js';
-import { buildResearchPrompt } from '../spec/prompts/research.js';
-import { buildSpecPrompt } from '../spec/prompts/spec.js';
-import { buildPlanPrompt } from '../spec/prompts/plan.js';
-import { buildTasksPrompt } from '../spec/prompts/tasks.js';
 import { buildQuickPlanPrompt } from '../spec/prompts/quick-plan.js';
 import { buildInstantPrompt } from '../spec/prompts/instant.js';
-import {
-  buildProjectLanguageContext,
-  extractLanguageFromResearch,
-} from '../spec/prompts/language-context.js';
-import { parseTasksStrict } from '../spec/parser.js';
-import { RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
-import { buildProjectContextMarkdown } from './context.js';
-import { accumulateUsage } from '../streaming/token-usage.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
-import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
-import type { Phase } from '../../core/schemas/enums.js';
 import { escalateFull, escalateHint } from './escalation.js';
-import { formatRepoMapBlock, prepareInvokeArgs, runSinglePhasePlanning } from './single-phase.js';
+import { runSinglePhasePlanning } from './single-phase.js';
+import { runMultiPhasePlanning } from './multi-phase.js';
+import { createPlannerCallContext } from './call-context.js';
 import { summarize, summarizeStructured } from './summary.js';
 import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
-
-const PHASE_MAP: Partial<Record<string, Phase>> = {
-  researching: 'researching',
-  specifying: 'specifying',
-  planning: 'planning',
-  'generating-tasks': 'planning',
-};
-
-type PlannerArtifactPhase = Phase | 'generating-tasks';
+import { requireCompletedCall } from './require-completed-call.js';
 
 type InternalInvokeFn = (opts: {
   prompt: string;
@@ -67,35 +45,6 @@ type InternalInvokeFn = (opts: {
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
 }) => Promise<RunnerCallResult>;
-
-const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
-
-let plannerBaseCallSequence = 0;
-
-function createPlannerCallContext(
-  config: Pick<PlannerBaseConfig, 'backendKind' | 'runnerName' | 'model'>,
-  role: RunnerCallContext['role'],
-): RunnerCallContext {
-  return {
-    callId: `planner-${++plannerBaseCallSequence}`,
-    role,
-    backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
-    ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
-    ...(config.model !== undefined && { model: config.model }),
-  };
-}
-
-function requireCompletedCall(result: RunnerCallResult): RunnerCallResult {
-  if (result.status === 'completed') return result;
-  throw error('runner-call-failed', `Planner ${result.role} call ${result.status}`, {
-    callId: result.callId,
-    role: result.role,
-    backendKind: result.backendKind,
-    status: result.status,
-    partial: result.partial,
-    error: result.error,
-  });
-}
 
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
 export interface PlannerBaseConfig {
@@ -148,116 +97,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
 
   return {
     async plan(opts: PlanOptions): Promise<PlanResult> {
-      const { feature, projectDir, callbacks, skillsContext, codebaseContext } = opts;
-      const projectContext = await buildProjectContextMarkdown(projectDir);
-      const repoMapBlock = formatRepoMapBlock(codebaseContext);
-      let usage: TokenDelta | null = null;
-      const phases: PhaseResult[] = [];
-
-      let priorInjected = false;
-      let imagesInjected = false;
-      const pendingImages = callbacks.attachments;
-      async function runPhase(
-        phase: PlannerArtifactPhase,
-        prompt: string,
-        filename: string,
-      ): Promise<string> {
-        const plannerPhase = PHASE_MAP[phase];
-        if (plannerPhase) callbacks.onPhase?.(plannerPhase);
-        const buffer = createTranscriptBuffer({
-          projectDir,
-          sessionId: callbacks.sessionId ?? '',
-          phase: plannerPhase,
-          persistTranscript: callbacks.persistTranscript ?? true,
-        });
-
-        const priorMessages = !priorInjected ? callbacks.priorMessages : undefined;
-        priorInjected = true;
-        const images =
-          !imagesInjected && pendingImages && pendingImages.length > 0 ? pendingImages : undefined;
-        imagesInjected = true;
-
-        const { effectivePrompt, extras } = prepareInvokeArgs({
-          prompt,
-          priorMessages,
-          images,
-          consumesPriorMessages: config.consumesPriorMessages,
-        });
-
-        const callContext = createPlannerCallContext(config, 'planner');
-        let result: RunnerCallResult;
-        try {
-          result = requireCompletedCall(
-            await config.invokePlan({
-              prompt: effectivePrompt,
-              projectDir,
-              callContext,
-              callbacks: {
-                onOutput: (text) => {
-                  callbacks.onOutput(text);
-                  buffer.append(text);
-                },
-                onQuestion: callbacks.onQuestion,
-                onSessionId: callbacks.onSessionId,
-                onSessionExpired: callbacks.onSessionExpired,
-                onCallEvent: callbacks.onCallEvent,
-              },
-              ...extras,
-              signal: callbacks.signal,
-            }),
-          );
-        } catch (err) {
-          if (callbacks.signal?.aborted) {
-            buffer.flushInterrupted();
-          } else {
-            buffer.flush();
-          }
-          throw err;
-        }
-        buffer.flush();
-        const usageDelta = toTokenDelta(result.usage);
-        if (usageDelta) usage = accumulateUsage(usage, usageDelta);
-        const artifactText = config.readPhaseOutput
-          ? config.readPhaseOutput(filename, result.text, projectDir, callbacks.sessionId)
-          : result.text;
-        const rawOutput = artifactText !== result.text ? result.text : undefined;
-        phases.push({ text: artifactText, filename, rawOutput });
-        return artifactText;
-      }
-
-      const research = await runPhase(
-        'researching',
-        repoMapBlock + buildResearchPrompt(feature, projectContext, skillsContext),
-        RESEARCH_FILE,
-      );
-      const languageContext = buildProjectLanguageContext(
-        projectDir,
-        extractLanguageFromResearch(research) ?? callbacks.discoveredValidation?.language,
-      );
-      const spec = await runPhase(
-        'specifying',
-        buildSpecPrompt(feature, research, languageContext),
-        SPEC_FILE,
-      );
-      const plan = await runPhase(
-        'planning',
-        buildPlanPrompt(
-          { content: spec, hasClarifications: spec.includes('## Clarifications') },
-          projectContext,
-          skillsContext,
-          languageContext,
-        ),
-        PLAN_FILE,
-      );
-      const tasksMarkdown = await runPhase(
-        'generating-tasks',
-        buildTasksPrompt(spec, plan, languageContext),
-        TASKS_FILE,
-      );
-
-      const tasks = parseTasksStrict(tasksMarkdown, callbacks.onWarning);
-
-      return { spec, plan, tasks, usage, phases };
+      return runMultiPhasePlanning(config, opts);
     },
     async quickPlan(opts: PlanOptions): Promise<PlanResult> {
       return runSinglePhasePlanning(

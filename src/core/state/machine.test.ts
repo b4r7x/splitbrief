@@ -41,12 +41,6 @@ describe('transition', () => {
     );
   });
 
-  it('START -> researching', () => {
-    const state = createInitialState('feat');
-    const next = transition(state, { type: 'START' });
-    expect(next.phase).toBe('researching');
-  });
-
   it('START_QUICK -> implementing with tasks set', () => {
     const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
     const state = createInitialState('feat');
@@ -121,10 +115,12 @@ describe('transition', () => {
       phase: 'escalating',
       tasks,
       currentTaskIndex: 0,
+      attempt: 3,
     };
     const next = transition(state, { type: 'HINT_SUCCESS' });
     expect(next.phase).toBe('implementing');
     expect(next.currentTaskIndex).toBe(1);
+    expect(next.attempt).toBe(0);
     expect(getCompletedTaskIds(next)).toEqual([]);
     expect(getEscalatedTaskIds(next)).toEqual(['T001']);
   });
@@ -253,36 +249,11 @@ describe('transition', () => {
     expect(next.attempt).toBe(0);
   });
 
-  it('SET_PLANNER_SESSION_ID updates plannerSessionId', () => {
-    const state = createInitialState('feat');
-    const next = transition(state, { type: 'SET_PLANNER_SESSION_ID', sessionId: 'abc-123' });
-    expect(next.plannerSessionId).toBe('abc-123');
-  });
-
-  it('plannerSessionId defaults to null in initial state', () => {
-    const state = createInitialState('feat');
-    expect(state.plannerSessionId).toBeNull();
-  });
-
   it('SET_PLANNER_SESSION_ID overwrites existing plannerSessionId', () => {
     let state = createInitialState('feat');
     state = transition(state, { type: 'SET_PLANNER_SESSION_ID', sessionId: 'first' });
     state = transition(state, { type: 'SET_PLANNER_SESSION_ID', sessionId: 'second' });
     expect(state.plannerSessionId).toBe('second');
-  });
-
-  it('START_TASK preserves the persisted attempt so the retry budget survives re-entry', () => {
-    const tasks = [makeTask({ id: 'T001' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 2,
-    };
-    const next = transition(state, { type: 'START_TASK', taskId: tasks[0]!.id });
-    expect(next.attempt).toBe(2);
-    expect(next.tasks[0]?.status).toBe('in_progress');
   });
 
   it('a re-entered task at attempt 2 of maxRetries 3 escalates after one local VALIDATION_FAIL', () => {
@@ -296,6 +267,7 @@ describe('transition', () => {
     };
     const started = transition(resumed, { type: 'START_TASK', taskId: tasks[0]!.id });
     expect(started.attempt).toBe(2);
+    expect(started.tasks[0]?.status).toBe('in_progress');
 
     const sent = transition(started, { type: 'TASK_SENT' });
     const failed = transition(sent, { type: 'VALIDATION_FAIL' });
@@ -322,21 +294,6 @@ describe('transition', () => {
 
     expect(next.tasks[0]?.currentCode).toBeUndefined();
     expect(next.tasks[1]?.currentCode).toBe('keep code');
-  });
-
-  it('HINT_SUCCESS resets attempt to 0', () => {
-    const tasks = [makeTask({ id: 'T001' }), makeTask({ id: 'T002' })];
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-      tasks,
-      currentTaskIndex: 0,
-      attempt: 3,
-    };
-    const next = transition(state, { type: 'HINT_SUCCESS' });
-    expect(next.phase).toBe('implementing');
-    expect(next.attempt).toBe(0);
-    expect(getEscalatedTaskIds(next)).toEqual(['T001']);
   });
 
   it('configurable maxRetries: attempt < custom max stays in implementing', () => {

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createServer, type Server, type Socket } from 'node:net';
-import { detachCommand, detachError, type DetachDeps } from './detach.js';
+import { detachCommand, type DetachDeps } from './detach.js';
 import type { ServerStatus } from '../../engine/ipc/lockfile.js';
 
 let testDir: string;
@@ -196,13 +196,6 @@ describe('detachCommand', () => {
         createDeps(runningStatus('alive-session')),
       ),
     ).rejects.toMatchObject({ message });
-  });
-
-  it('tags a server rejection with a domain kind', () => {
-    const err = detachError.serverRejected('already attached');
-    expect(err.kind).toBe('detach-server-rejected');
-    expect(err.message).toBe('already attached');
-    expect(err.data).toEqual({ message: 'already attached' });
   });
 
   it('fails when a running session has no auth token', async () => {

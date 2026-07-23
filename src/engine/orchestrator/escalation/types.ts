@@ -6,9 +6,9 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer } from '../../implementers/types.js';
 import type { WorkflowContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots.js';
+import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import type { StagedProjectRunnerRole } from '../approval/staged-project.js';
-import type { ValidationResult } from '../validation-result.js';
+import type { ValidationResult } from '../validation/result.js';
 
 export const MAX_HINT_ERROR_LENGTH = 4000;
 
@@ -55,6 +55,14 @@ export type RetryInvokeArgs = {
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
   fileIgnoreProjectDir?: string | undefined;
+};
+
+export type TierStepInput = {
+  ctx: EscalationContext;
+  task: Task;
+  state: WorkflowState;
+  lastError: string;
+  priorAttempts: number;
 };
 
 export type RetryStepOpts = {

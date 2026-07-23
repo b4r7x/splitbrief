@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
 import { terminalSequences } from '../../src/lib/terminal/control.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   PTY_CHILD_EXIT_INPUT,
   PTY_CHILD_MARKER,
@@ -7,13 +9,8 @@ import {
   PTY_CHILD_SCENARIO,
   PTY_CHILD_VIEWPORT,
 } from './pty/child.js';
-import {
-  runPtySmoke,
-  type PtyCapability,
-  type PtyExitEvent,
-  type PtyProcess,
-  type PtySpawn,
-} from './pty/smoke.js';
+import type { PtyCapability, PtyExitEvent, PtyProcess, PtySpawn } from './pty/smoke/capability.js';
+import { runPtySmoke, safeChildEnvironment } from './pty/smoke/run.js';
 
 interface FakePtyState {
   active: boolean;
@@ -25,7 +22,7 @@ interface FakePtyState {
   killCalls: Array<string | undefined>;
 }
 
-function fakeCapability(mode: 'success' | 'timeout'): {
+function fakeCapability(mode: 'success' | 'unresponsive'): {
   readonly capability: PtyCapability;
   readonly state: FakePtyState;
 } {
@@ -85,6 +82,12 @@ function fakeCapability(mode: 'success' | 'timeout'): {
       },
       kill: (signal) => {
         state.killCalls.push(signal);
+        if (mode === 'unresponsive') {
+          if (signal === 'SIGKILL') {
+            emitExit({ exitCode: 137, signal: 9 });
+          }
+          return;
+        }
         emitExit({ exitCode: 143, signal: 15 });
       },
     };
@@ -102,13 +105,66 @@ function fakeCapability(mode: 'success' | 'timeout'): {
   return { capability: { kind: 'available', spawn }, state };
 }
 
+const PTY_ENV_ALLOWLIST = [
+  'HOME',
+  'USERPROFILE',
+  'XDG_CONFIG_HOME',
+  'TMPDIR',
+  'TEMP',
+  'TMP',
+  'TERM',
+  'COLORTERM',
+  'FORCE_COLOR',
+  'LANG',
+  'LC_ALL',
+  'TZ',
+  'GIT_CONFIG_NOSYSTEM',
+  'GIT_TERMINAL_PROMPT',
+  'DIPTYCH_QUIET',
+  'NODE_NO_WARNINGS',
+] as const;
+
+const PTY_ENV_PLATFORM_KEYS = ['PATH', 'SystemRoot', 'WINDIR', 'ComSpec', 'PATHEXT'] as const;
+
+const HOST_ONLY_SENTINEL = 'DIPTYCH_HOST_ONLY_SENTINEL';
+
 describe('PTY parity smoke', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('uses fixed argv, verifies resize and restoration, then exits through supported input', async () => {
+    const environmentRoot = createTempDir('diptych-pty-environment-test');
+    const priorSentinel = process.env[HOST_ONLY_SENTINEL];
+    process.env[HOST_ONLY_SENTINEL] = 'host-only-value';
+    try {
+      const isolated = safeChildEnvironment(environmentRoot);
+      expect(isolated[HOST_ONLY_SENTINEL]).toBeUndefined();
+      expect(isolated.HOME).toBe(environmentRoot);
+      expect(isolated.USERPROFILE).toBe(environmentRoot);
+      expect(isolated.XDG_CONFIG_HOME).toBe(join(environmentRoot, 'xdg'));
+      const expectedKeys = new Set<string>(PTY_ENV_ALLOWLIST);
+      for (const name of PTY_ENV_PLATFORM_KEYS) {
+        if (process.env[name]) expectedKeys.add(name);
+      }
+      expect(new Set(Object.keys(isolated))).toEqual(expectedKeys);
+    } finally {
+      if (priorSentinel === undefined) delete process.env[HOST_ONLY_SENTINEL];
+      else process.env[HOST_ONLY_SENTINEL] = priorSentinel;
+      cleanupTempDir(environmentRoot);
+    }
+
     const fake = fakeCapability('success');
-    const result = await runPtySmoke(
+    const resultPromise = runPtySmoke(
       { viewport: PTY_CHILD_VIEWPORT, timeoutMs: 500 },
       { loadCapability: async () => fake.capability },
     );
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
 
     expect(result.status).toBe('passed');
     expect(fake.state.executable).toBe(process.execPath);
@@ -124,20 +180,34 @@ describe('PTY parity smoke', () => {
     ]);
     expect(fake.state.writes).toEqual([PTY_CHILD_EXIT_INPUT]);
     expect(fake.state.active).toBe(false);
-    expect(Object.keys(fake.state.env).some((name) => /api|token|secret|key/iu.test(name))).toBe(
-      false,
-    );
+    expect(fake.state.env[HOST_ONLY_SENTINEL]).toBeUndefined();
+    expect(fake.state.env.HOME).not.toBe(process.env.HOME);
+    expect(fake.state.env.HOME).toBe(fake.state.env.USERPROFILE);
+    const home = fake.state.env.HOME;
+    expect(home).toBeDefined();
+    expect(fake.state.env.XDG_CONFIG_HOME).toBe(join(home as string, 'xdg'));
+    const spawnKeys = new Set(Object.keys(fake.state.env));
+    const expectedSpawnKeys = new Set<string>(PTY_ENV_ALLOWLIST);
+    for (const name of PTY_ENV_PLATFORM_KEYS) {
+      if (process.env[name]) expectedSpawnKeys.add(name);
+    }
+    expect(spawnKeys).toEqual(expectedSpawnKeys);
   });
 
   it('kills the PTY process group after a forced timeout', async () => {
-    const fake = fakeCapability('timeout');
+    const fake = fakeCapability('unresponsive');
     const promise = runPtySmoke(
       { viewport: PTY_CHILD_VIEWPORT, timeoutMs: 10 },
       { loadCapability: async () => fake.capability },
     );
 
-    await expect(promise).rejects.toMatchObject({ name: 'pty-smoke-timeout' });
-    expect(fake.state.killCalls).toContain('SIGTERM');
+    const asserted = expect(promise).rejects.toMatchObject({ name: 'pty-smoke-timeout' });
+
+    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(250);
+    await asserted;
+
+    expect(fake.state.killCalls).toEqual(['SIGTERM', 'SIGKILL']);
     expect(fake.state.active).toBe(false);
   });
 

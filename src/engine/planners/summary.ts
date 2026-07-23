@@ -3,7 +3,6 @@ import {
   type StructuredSummary,
 } from '../../core/schemas/compaction.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { error } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import type {
   PlannerCallEventCallbacks,
@@ -13,6 +12,7 @@ import type {
 } from './types.js';
 import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import { requireCompletedCall } from './require-completed-call.js';
 
 type PlannerSummaryConfig = {
   invokeEscalate: (opts: {
@@ -42,18 +42,6 @@ function createSummaryCallContext(
     ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
     ...(config.model !== undefined && { model: config.model }),
   };
-}
-
-function requireCompletedCall(result: RunnerCallResult): RunnerCallResult {
-  if (result.status === 'completed') return result;
-  throw error('runner-call-failed', `Planner ${result.role} call ${result.status}`, {
-    callId: result.callId,
-    role: result.role,
-    backendKind: result.backendKind,
-    status: result.status,
-    partial: result.partial,
-    error: result.error,
-  });
 }
 
 const SUMMARY_PROMPT =

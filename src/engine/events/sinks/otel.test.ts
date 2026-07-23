@@ -85,9 +85,9 @@ describe('createOtelSink', () => {
     expect(workflow?.attributes['diptych.implementer.model']).toBe('llama3');
   });
 
-  it('emits a phase span nested under workflow when planner_status running fires', () => {
+  it('opens the researching phase span on a fresh run with duration when workflow_started precedes planner_status running and done', () => {
     const sink = createOtelSink({ provider });
-    sink({ type: 'workflow_started', ts: 1, phase: 'idle', feature: 'x' });
+    sink({ type: 'workflow_started', ts: 1, phase: 'researching', feature: 'x' });
     sink({ type: 'planner_status', ts: 2, phase: 'researching', status: 'running' });
     sink({ type: 'planner_status', ts: 50, phase: 'researching', status: 'done', duration: 48 });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
@@ -98,19 +98,6 @@ describe('createOtelSink', () => {
     expect(phase).toBeDefined();
     expect(phase?.attributes['diptych.phase.duration_ms']).toBe(48);
     expect(phase?.parentSpanContext?.spanId).toBe(workflow?.spanContext().spanId);
-  });
-
-  it('opens the researching phase span on a fresh run when workflow_started precedes the first planner_status running', () => {
-    const sink = createOtelSink({ provider });
-    sink({ type: 'workflow_started', ts: 1, phase: 'researching', feature: 'x' });
-    sink({ type: 'planner_status', ts: 2, phase: 'researching', status: 'running' });
-    sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
-
-    const spans = exporter.getFinishedSpans();
-    const researching = spans.find((s) => s.name === 'diptych.phase.researching');
-    const workflow = spans.find((s) => s.name === 'diptych.workflow');
-    expect(researching).toBeDefined();
-    expect(researching?.parentSpanContext?.spanId).toBe(workflow?.spanContext().spanId);
   });
 
   it('drops the researching phase span when the first planner_status running precedes workflow_started', () => {

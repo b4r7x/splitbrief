@@ -11,7 +11,7 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
 import { maybeMigrateAndReport } from './migrate.js';
-import { resumeSavedSession } from './continue.js';
+import { resumeSavedSession } from './continue/resume.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
 export interface ResumeDeps {

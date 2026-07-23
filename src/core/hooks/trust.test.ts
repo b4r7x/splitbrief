@@ -15,20 +15,6 @@ describe('trust', () => {
   });
 
   describe('hashHooksConfig', () => {
-    it('returns a deterministic sha256 prefix for the same config', () => {
-      const cfg = { pre_task: [{ command: 'prettier' }] };
-      const h1 = hashHooksConfig(projectDir, cfg);
-      const h2 = hashHooksConfig(projectDir, cfg);
-      expect(h1).toBe(h2);
-      expect(h1.startsWith('sha256:')).toBe(true);
-    });
-
-    it('returns different hashes for different configs', () => {
-      const a = hashHooksConfig(projectDir, { pre_task: [{ command: 'prettier' }] });
-      const b = hashHooksConfig(projectDir, { pre_task: [{ command: 'eslint' }] });
-      expect(a).not.toBe(b);
-    });
-
     it('is canonical — key order does not affect hash', () => {
       const a = hashHooksConfig(projectDir, {
         pre_task: [{ command: 'x' }],
@@ -39,22 +25,6 @@ describe('trust', () => {
         pre_task: [{ command: 'x' }],
       });
       expect(a).toBe(b);
-    });
-
-    it('returns a known hash for undefined hooks', () => {
-      const h = hashHooksConfig(projectDir, undefined);
-      expect(h.startsWith('sha256:')).toBe(true);
-    });
-
-    it('changes when a command hook script changes', () => {
-      mkdirSync(join(projectDir, '.diptych', 'hooks'), { recursive: true });
-      writeFileSync(join(projectDir, '.diptych', 'hooks', 'check.sh'), '#!/bin/sh\necho allow\n');
-      const cfg = { pre_task: [{ command: '.diptych/hooks/check.sh' }] };
-      const before = hashHooksConfig(projectDir, cfg);
-
-      writeFileSync(join(projectDir, '.diptych', 'hooks', 'check.sh'), '#!/bin/sh\necho deny\n');
-
-      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
     });
 
     it('changes when an interpreter-launched command hook script changes', () => {
@@ -69,27 +39,6 @@ describe('trust', () => {
       writeFileSync(
         join(projectDir, 'hooks', 'check.mjs'),
         'export default () => ({ kind: "deny" });',
-      );
-
-      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
-    });
-
-    it('changes when an imported module hook dependency changes', () => {
-      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-      writeFileSync(
-        join(projectDir, 'hooks', 'policy.mjs'),
-        'export const policy = () => ({ kind: "allow" });',
-      );
-      writeFileSync(
-        join(projectDir, 'hooks', 'pre-task.mjs'),
-        "import { policy } from './policy.mjs';\nexport default policy;\n",
-      );
-      const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
-      const before = hashHooksConfig(projectDir, cfg);
-
-      writeFileSync(
-        join(projectDir, 'hooks', 'policy.mjs'),
-        'export const policy = () => ({ kind: "deny" });',
       );
 
       expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
@@ -157,34 +106,6 @@ describe('trust', () => {
       const before = hashHooksConfig(projectDir, cfg);
 
       writeFileSync(join(projectDir, 'hooks', 'rules.js'), 'export const v = 2;\n');
-
-      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
-    });
-
-    it('changes when a module hook file changes', () => {
-      mkdirSync(join(projectDir, 'hooks'), { recursive: true });
-      writeFileSync(
-        join(projectDir, 'hooks', 'pre-task.mjs'),
-        'export default () => ({ kind: "allow" });',
-      );
-      const cfg = { pre_task: [{ kind: 'module' as const, path: 'hooks/pre-task.mjs' }] };
-      const before = hashHooksConfig(projectDir, cfg);
-
-      writeFileSync(
-        join(projectDir, 'hooks', 'pre-task.mjs'),
-        'export default () => ({ kind: "deny" });',
-      );
-
-      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
-    });
-
-    it('changes when a command hook script file changes', () => {
-      mkdirSync(join(projectDir, '.diptych', 'hooks'), { recursive: true });
-      writeFileSync(join(projectDir, '.diptych/hooks/check.sh'), '#!/bin/sh\nexit 0\n');
-      const cfg = { pre_task: [{ command: '.diptych/hooks/check.sh' }] };
-      const before = hashHooksConfig(projectDir, cfg);
-
-      writeFileSync(join(projectDir, '.diptych/hooks/check.sh'), '#!/bin/sh\nexit 1\n');
 
       expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
     });

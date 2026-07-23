@@ -12,8 +12,8 @@ import { buildRewindAction } from '../../core/state/build-rewind-action.js';
 import { sessionDir } from '../../core/paths.js';
 import { rebuildRepomap } from '../../engine/codebase/rebuild.js';
 import { writeHandoffPack } from '../../engine/handoff/write.js';
-import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run.js';
-import { performManualCompaction } from '../../engine/orchestrator/transcript-rebuild.js';
+import { acceptRunSnapshot, rejectRunSnapshot } from '../../engine/snapshots/run/lifecycle.js';
+import { performManualCompaction } from '../../engine/orchestrator/transcript/compaction.js';
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
 import {
   readApprovalsStore,

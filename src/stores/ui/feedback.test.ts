@@ -70,6 +70,20 @@ describe('feedbackStore', () => {
     expect(feedbackStore.get().isError).toBe(false);
   });
 
+  it('a later setError replaces a pending setMessage', () => {
+    feedbackStore.setMessage('saved');
+    feedbackStore.setError('Connection lost');
+
+    expect(feedbackStore.get().message).toBe('Connection lost');
+    expect(feedbackStore.get().isError).toBe(true);
+
+    vi.advanceTimersByTime(3000);
+    expect(feedbackStore.get().message).toBe('Connection lost');
+
+    vi.advanceTimersByTime(2000);
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
   it('publishFeedbackReset clears feedback immediately', () => {
     feedbackStore.setError('persistent');
     expect(feedbackStore.get().message).toBe('persistent');

@@ -10,7 +10,6 @@ import type {
   MarkdownTableCell,
 } from './types.js';
 import {
-  hasTaskBriefMetadataKeys,
   isMarkdownBlockquoteLine as isBlockquoteLine,
   isMarkdownFenceCloseLine as isFenceClose,
   isMarkdownHtmlCommentStartLine as isHtmlCommentStartLine,
@@ -18,14 +17,12 @@ import {
   isMarkdownTableLine as isTableLine,
   isMarkdownTableSeparatorLine as isTableSeparatorLine,
   isMarkdownThematicBreakLine as isThematicBreak,
-  isMarkdownYamlContinuationLine as isYamlContinuationLine,
-  isMarkdownYamlLikeLine as isYamlLikeLine,
   markdownHtmlCommentEndsOnLine as commentEndsOnLine,
   parseMarkdownFenceStart as parseFenceStart,
   parseMarkdownHeadingStart,
-  parseMarkdownYamlKey as parseYamlKey,
   type MarkdownFenceStart,
 } from './grammar.js';
+import { parseFrontmatter, parseTaskBriefMetadata } from './frontmatter.js';
 
 interface ParseState {
   lines: readonly string[];
@@ -38,12 +35,6 @@ interface ParseLinesOptions {
   lines: readonly string[];
   allowFrontmatter: boolean;
   blockquoteDepth: number;
-}
-
-interface MetadataCandidate {
-  lines: string[];
-  keys: ReadonlySet<string>;
-  nextIndex: number;
 }
 
 const MAX_BLOCKQUOTE_NESTING = 8;
@@ -80,14 +71,16 @@ function parseLines(options: ParseLinesOptions): MarkdownBlock[] {
 
     const taskBriefMetadata = parseTaskBriefMetadata(state);
     if (taskBriefMetadata) {
-      blocks.push(taskBriefMetadata);
+      blocks.push(taskBriefMetadata.block);
+      state.index = taskBriefMetadata.nextIndex;
       continue;
     }
 
     if (state.allowFrontmatter && state.index === 0) {
       const frontmatter = parseFrontmatter(state);
       if (frontmatter) {
-        blocks.push(frontmatter);
+        blocks.push(frontmatter.block);
+        state.index = frontmatter.nextIndex;
         continue;
       }
     }
@@ -139,130 +132,6 @@ function parseLines(options: ParseLinesOptions): MarkdownBlock[] {
 
 function splitLines(source: string): string[] {
   return source.replace(/\r\n?/g, '\n').split('\n').map(stripTerminalControls);
-}
-
-function parseFrontmatter(state: ParseState): MarkdownBlock | undefined {
-  const firstLine = state.lines[state.index];
-  if (firstLine === undefined) return undefined;
-
-  if (firstLine.trim() === '---') {
-    const lines: string[] = [];
-    let cursor = state.index + 1;
-    while (cursor < state.lines.length) {
-      const line = state.lines[cursor];
-      if (line === undefined) break;
-      if (line.trim() === '---') {
-        state.index = cursor + 1;
-        return { kind: 'frontmatter', lines };
-      }
-      lines.push(line);
-      cursor += 1;
-    }
-    return undefined;
-  }
-
-  const yamlLines: string[] = [];
-  let cursor = state.index;
-  while (cursor < state.lines.length) {
-    const line = state.lines[cursor];
-    if (line === undefined || line.trim().length === 0) break;
-    if (!isYamlLikeLine(line)) break;
-    yamlLines.push(line);
-    cursor += 1;
-  }
-
-  if (yamlLines.length >= 2) {
-    state.index = cursor;
-    return { kind: 'frontmatter', lines: yamlLines };
-  }
-
-  return undefined;
-}
-
-function parseTaskBriefMetadata(state: ParseState): MarkdownBlock | undefined {
-  const delimited = collectDelimitedYamlMetadata(state);
-  if (delimited && hasTaskBriefMetadataKeys(delimited.keys)) {
-    state.index = delimited.nextIndex;
-    return { kind: 'frontmatter', lines: delimited.lines };
-  }
-
-  const bare = collectBareYamlMetadata(state);
-  if (!bare || !hasTaskBriefMetadataKeys(bare.keys)) return undefined;
-
-  const closingLine = state.lines[bare.nextIndex];
-  state.index = closingLine?.trim() === '---' ? bare.nextIndex + 1 : bare.nextIndex;
-  return { kind: 'frontmatter', lines: bare.lines };
-}
-
-function collectDelimitedYamlMetadata(state: ParseState): MetadataCandidate | undefined {
-  const firstLine = state.lines[state.index];
-  if (firstLine?.trim() !== '---') return undefined;
-
-  const lines: string[] = [];
-  let cursor = state.index + 1;
-  while (cursor < state.lines.length) {
-    const line = state.lines[cursor];
-    if (line === undefined) break;
-    if (line.trim() === '---') {
-      return createMetadataCandidate(lines, cursor + 1);
-    }
-    lines.push(line);
-    cursor += 1;
-  }
-
-  return undefined;
-}
-
-function collectBareYamlMetadata(state: ParseState): MetadataCandidate | undefined {
-  const lines: string[] = [];
-  let cursor = state.index;
-  let hasTopLevelKey = false;
-
-  while (cursor < state.lines.length) {
-    const line = state.lines[cursor];
-    if (line === undefined || line.trim().length === 0 || line.trim() === '---') break;
-
-    const key = parseYamlKey(line);
-    if (key !== undefined) {
-      hasTopLevelKey = true;
-      lines.push(line);
-      cursor += 1;
-      continue;
-    }
-
-    if (hasTopLevelKey && isYamlContinuationLine(line)) {
-      lines.push(line);
-      cursor += 1;
-      continue;
-    }
-
-    break;
-  }
-
-  return createMetadataCandidate(lines, cursor);
-}
-
-function createMetadataCandidate(
-  lines: readonly string[],
-  nextIndex: number,
-): MetadataCandidate | undefined {
-  const keys = new Set<string>();
-  let hasTopLevelKey = false;
-
-  for (const line of lines) {
-    const key = parseYamlKey(line);
-    if (key !== undefined) {
-      hasTopLevelKey = true;
-      keys.add(key);
-      continue;
-    }
-
-    if (hasTopLevelKey && isYamlContinuationLine(line)) continue;
-    return undefined;
-  }
-
-  if (lines.length === 0) return undefined;
-  return { lines: [...lines], keys, nextIndex };
 }
 
 function parseCodeBlock(state: ParseState, fence: MarkdownFenceStart): MarkdownCodeBlock {

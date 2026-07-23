@@ -33,11 +33,23 @@ describe('resolveCharsPerToken', () => {
 
   it('returns default when no modelId provided', () => {
     expect(resolveCharsPerToken()).toBe(4);
-    expect(resolveCharsPerToken(undefined)).toBe(4);
   });
 });
 
 describe('estimateTokens', () => {
+  it.each([
+    ['known text', 'Hello, world!', Math.ceil(13 / 4)],
+    ['empty string', '', 0],
+  ] as const)('estimates %s', (_name, text, expected) => {
+    expect(estimateTokens(text)).toBe(expected);
+  });
+
+  it('rounds up — 1 token per 4 chars', () => {
+    expect(estimateTokens('')).toBe(0);
+    expect(estimateTokens('1234')).toBe(1);
+    expect(estimateTokens('12345')).toBe(2);
+  });
+
   it('estimates without model (backward compatible)', () => {
     expect(estimateTokens('a'.repeat(400))).toBe(100);
   });

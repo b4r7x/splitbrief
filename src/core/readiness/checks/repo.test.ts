@@ -110,7 +110,7 @@ describe('buildRepoChecks dirty worktree', () => {
     expect(dirty?.severity).toBe('warning');
     expect(dirty?.nextAction).toBeUndefined();
     expect(dirty?.fix).toContain('Review local edits before starting');
-    expect(checks.find((check) => check.id === 'repo.dirty-worktree-blocked')).toBeUndefined();
+    expect(checks.some((check) => check.severity === 'blocker')).toBe(false);
   });
 
   it('emits no dirty-worktree check on a clean worktree', () => {

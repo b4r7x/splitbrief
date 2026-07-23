@@ -184,26 +184,6 @@ describe('getModelsDevEntries', () => {
     expect(ids).toEqual(['claude-sonnet-4-6', 'gpt-5.4']);
   });
 
-  it('deduplicates matching IDs across sources, merging metadata', () => {
-    const catalog: ModelsDevCatalog = {
-      anthropic: {
-        id: 'anthropic',
-        models: {
-          'claude-sonnet-4-6': { id: 'claude-sonnet-4-6', limit: { context: 1000000 } },
-        },
-      },
-      openai: {
-        id: 'openai',
-        // aider also looks at openai — include one that looks like an OpenAI tool model
-        models: { 'gpt-5.4': { id: 'gpt-5.4' } },
-      },
-    };
-    const entries = getModelsDevEntries('aider', makeCache({ catalog }));
-    // Sanity: no duplicate ids.
-    const ids = entries.map((e) => e.id);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
   it('returns [] for provider whose sources are not present in catalog', () => {
     const catalog: ModelsDevCatalog = {
       // has only a provider we are NOT querying

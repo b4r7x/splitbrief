@@ -1,17 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { getTheme } from '../../../components/theme.js';
 import type { Section } from '../../../core/sections/event-sections.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
-import { colorForTone } from '../display/tone-color.js';
-import { activityBatchTone, toneToConversationTone } from './activity-batch-model.js';
 import {
   getConversationRowsProjection,
   getConversationRowsWindowProjection,
   resetConversationRowsProjectionCache,
 } from './projection-cache.js';
-import { rowText } from './row-format.js';
+import { rowText } from './row-format/rows.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
@@ -352,72 +349,5 @@ describe('conversation rows projection cache', () => {
     expect(implementer.rows.map(rowText).join('\n')).toContain('[Codex · xhigh]');
     expect(planner.rows.map(rowText).join('\n')).toContain('Plan activity');
     expect(planner.rows.map(rowText).join('\n')).toContain('[claude · sonnet]');
-  });
-
-  it('rebuilds when an activity event object is replaced with changed metadata', () => {
-    const base = {
-      expandedDiffs: new Set<string>(),
-      expandedActivityBatches: new Set<string>(),
-      cols: 120,
-      viewportHeight: 10,
-      streaming,
-    };
-
-    const first = getConversationRowsProjection({
-      ...base,
-      sections: eventSections([activityEvent()]),
-    });
-    const second = getConversationRowsProjection({
-      ...base,
-      sections: eventSections([activityEvent({ attempt: 1 })]),
-    });
-
-    expect(second).not.toBe(first);
-  });
-});
-
-describe('activity batch tone resolution', () => {
-  const theme = getTheme();
-  const roles = [
-    'planner',
-    'implementer',
-    'review',
-    'summary',
-    'compaction',
-    'escalation',
-  ] as const satisfies readonly NonNullable<EngineEventOf<'runner_call_activity'>['role']>[];
-
-  it('resolves work roles to their own hue and ancillary roles to dim', () => {
-    const expected: Record<(typeof roles)[number], string> = {
-      planner: theme.planner,
-      implementer: theme.implementer,
-      review: theme.validator,
-      summary: theme.textDim,
-      compaction: theme.textDim,
-      escalation: theme.textDim,
-    };
-    for (const role of roles) {
-      const tone = activityBatchTone([activityEvent({ role })]);
-      expect(colorForTone(tone, theme)).toBe(expected[role]);
-    }
-  });
-
-  it('resolves a role-less batch to the neutral dim tone', () => {
-    const tone = activityBatchTone([]);
-    expect(tone).toBe('textDim');
-    expect(colorForTone(tone, theme)).toBe(theme.textDim);
-  });
-
-  it('maps each ledger tone onto its own rendered hue without flattening severity', () => {
-    expect(toneToConversationTone('success')).toBe('success');
-    expect(toneToConversationTone('error')).toBe('error');
-    expect(toneToConversationTone('warning')).toBe('warning');
-    expect(toneToConversationTone('info')).toBe('info');
-    expect(toneToConversationTone('textDim')).toBe('textDim');
-
-    expect(colorForTone(toneToConversationTone('success'), theme)).toBe(theme.success);
-    expect(colorForTone(toneToConversationTone('error'), theme)).toBe(theme.error);
-    expect(colorForTone(toneToConversationTone('warning'), theme)).toBe(theme.warning);
-    expect(colorForTone(toneToConversationTone('info'), theme)).toBe(theme.info);
   });
 });

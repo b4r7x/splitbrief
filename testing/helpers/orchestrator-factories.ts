@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { ValidationResult } from '../../src/engine/orchestrator/validation-result.js';
+import type { ValidationResult } from '../../src/engine/orchestrator/validation/result.js';
 import type {
   OrchestratorCallbacks,
   WorkflowContext,
@@ -10,7 +10,7 @@ import type { Implementer } from '../../src/engine/implementers/types.js';
 import { makeTask } from './factories/task.js';
 import { createEventBus } from '../../src/engine/events/bus.js';
 import type { EngineEvent, EventBus } from '../../src/engine/events/types.js';
-import { createValidator } from '../../src/engine/orchestrator/validation.js';
+import { createValidator } from '../../src/engine/orchestrator/validation/run.js';
 import { defaultContext, makeNoValidationConfig } from './factories/config.js';
 
 export const TEST_METADATA = {

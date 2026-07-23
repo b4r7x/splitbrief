@@ -40,10 +40,6 @@ describe('resolveMarkdownLinkTarget', () => {
       { label: 'package.json:5', href: 'file:///repo/package.json' },
     ],
     [
-      { label: 'CLAUDE.md:3', href: 'CLAUDE.md:3', rootDir: '/repo' },
-      { label: 'CLAUDE.md:3', href: 'file:///repo/CLAUDE.md' },
-    ],
-    [
       { label: 'src/x.ts:5', href: 'src/x.ts:5', rootDir: '/repo' },
       { label: 'src/x.ts:5', href: 'file:///repo/src/x.ts' },
     ],

@@ -95,12 +95,12 @@ function reconcileLegacyCommitStrategy(obj: Record<string, unknown>): Record<str
   return { ...obj, workflow: newWorkflow };
 }
 
-export interface DeriveApproveLevelInput {
+interface DeriveApproveLevelInput {
   autoApproveSpec?: boolean;
   autoApprovePlan?: boolean;
 }
 
-export function deriveApproveLevel(flags: DeriveApproveLevelInput): ApproveLevel {
+function deriveApproveLevel(flags: DeriveApproveLevelInput): ApproveLevel {
   const spec = flags.autoApproveSpec === true;
   const plan = flags.autoApprovePlan === true;
   if (spec && plan) return 'none';

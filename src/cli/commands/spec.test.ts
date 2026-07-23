@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
-import { mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -61,7 +68,6 @@ describe('spec command', () => {
 
     expect(exitCode).not.toBe(0);
     expect(stderr).toMatch(/unknown option.*--auto/i);
-    expect(createPlannerMock).not.toHaveBeenCalled();
   });
 
   it('runs the planner and writes the spec artifact to the session folder', async () => {
@@ -107,7 +113,9 @@ describe('spec command', () => {
         'add health endpoint',
       ]),
     ).rejects.toMatchObject({ kind: 'runner-not-trusted' });
-    expect(createPlannerMock).not.toHaveBeenCalled();
+    if (existsSync(sessionsRoot())) {
+      expect(readdirSync(sessionsRoot(), { withFileTypes: true })).toHaveLength(0);
+    }
   });
 
   it('allows repo-local planner commands with --allow-repo-runners', async () => {
@@ -131,7 +139,11 @@ describe('spec command', () => {
       'add health endpoint',
     ]);
 
-    expect(createPlannerMock).toHaveBeenCalled();
+    const [session, ...rest] = readdirSync(sessionsRoot());
+    expect(rest).toHaveLength(0);
+    if (!session) throw new Error('expected one session folder');
+    const specPath = join(sessionsRoot(), session, SPEC_FILE);
+    expect(readFileSync(specPath, 'utf8')).toContain('# Generated Spec');
   });
 
   it('strips terminal controls from streamed planner output', async () => {

@@ -2,7 +2,7 @@ import type { StateAction } from '../../core/state/types.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import type { RecoveryIssue } from '../../core/schemas/recovery.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { assertPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
 import { matches } from '../../utils/error.js';

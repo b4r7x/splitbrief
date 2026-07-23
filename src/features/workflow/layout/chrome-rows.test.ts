@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { PHASES } from '../../../core/schemas/enums.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import {
-  BOTTOM_FIXED_CHROME_ROWS,
-  BOTTOM_FOOTER_DIVIDER_ROWS,
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,
   RAIL_STAGES,
-  TOP_FIXED_CHROME_ROWS,
   chooseFormBVariant,
   getActiveRailStage,
   getChromeContentWidth,
@@ -16,7 +14,6 @@ import {
   getContentTopRow,
   getRailActiveIndex,
   getRailDriftPassed,
-  getRailFormBMinWidth,
   getRailStages,
   isRailCurrent,
   measureFormB,
@@ -54,10 +51,7 @@ describe('getChromeContentWidth', () => {
 
 describe('getChromeHeight', () => {
   it('sums top + bottom + inputRows for the baseline horizontal rail', () => {
-    const inputRows = 2;
-    expect(getChromeHeight(inputRows)).toBe(
-      TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROWS + inputRows,
-    );
+    expect(getChromeHeight(2)).toBe(7);
   });
 
   it('each additional input row increases chrome height by exactly 1', () => {
@@ -66,17 +60,9 @@ describe('getChromeHeight', () => {
   });
 });
 
-describe('bottom footer chrome', () => {
-  it('reserves divider, feedback, and the one-row input footer before variable composer rows', () => {
-    expect(BOTTOM_FOOTER_DIVIDER_ROWS).toBe(1);
-    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(3);
-    expect(BOTTOM_FIXED_CHROME_ROWS).toBe(2 + BOTTOM_FOOTER_DIVIDER_ROWS);
-  });
-});
-
 describe('getContentTopRow', () => {
   it('starts after the baseline top chrome rows', () => {
-    expect(getContentTopRow()).toBe(TOP_FIXED_CHROME_ROWS + 1);
+    expect(getContentTopRow()).toBe(3);
   });
 });
 
@@ -212,22 +198,11 @@ describe('rail Form-B width primitives', () => {
   });
 });
 
-describe('getRailFormBMinWidth', () => {
-  it('is the short-label line and identical across phases (same stages, same roles)', () => {
-    expect(getRailFormBMinWidth('implementing', 'unicode')).toBe(37);
-    expect(getRailFormBMinWidth('implementing', 'ascii')).toBe(39);
-    expect(getRailFormBMinWidth('idle', 'unicode')).toBe(
-      getRailFormBMinWidth('implementing', 'unicode'),
-    );
-    expect(getRailFormBMinWidth('complete', 'ascii')).toBe(
-      getRailFormBMinWidth('reviewing-briefs', 'ascii'),
-    );
-  });
-});
-
 describe('selectRailForm', () => {
   it('drops to Form C one cell before the thinnest five-stage line would overflow', () => {
-    const min = getRailFormBMinWidth('implementing');
+    forceUnicodeGlyphs();
+    const stages = getRailStages('implementing');
+    const min = measureFormB(stages, true, 'unicode');
     // contentWidth = cols; at exactly `min` it fits (B), one cell under it does not (C).
     expect(selectRailForm({ phase: 'implementing', cols: min })).toBe('B');
     expect(selectRailForm({ phase: 'implementing', cols: min - 1 })).toBe('C');

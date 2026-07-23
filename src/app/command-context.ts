@@ -6,7 +6,7 @@ import { requestRewind, requestClearQueue } from '../features/workflow/handlers.
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
-import { getSections } from '../stores/workflow/actions.js';
+import { getSections } from '../stores/workflow/actions/sections.js';
 import type { Screen } from '../core/navigation/types.js';
 import { configStore } from '../stores/project/config.js';
 import { overlayStore } from '../stores/ui/overlay.js';
@@ -37,8 +37,8 @@ import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { sessionDir } from '../core/paths.js';
 import { rebuildRepomap } from '../engine/codebase/rebuild.js';
 import { writeHandoffPack } from '../engine/handoff/write.js';
-import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run.js';
-import { performManualCompaction } from '../engine/orchestrator/transcript-rebuild.js';
+import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
+import { performManualCompaction } from '../engine/orchestrator/transcript/compaction.js';
 import { writeSessionHtmlReport } from '../engine/export/collect.js';
 import {
   readApprovalsStore,

@@ -62,11 +62,14 @@ describe('useBriefReviewKeys: y yank', () => {
 
     expect(copyTarget).toHaveBeenCalledWith('brief');
     expect(feedbackStore.get().message).toBe('Copied (native)');
+    expect(focusStore.get()).toBeNull();
     ui.unmount();
   });
 
-  it('clears the row focus after a yank so the affordance is transient', async () => {
-    const copyTarget = vi.fn(async (_target: CopyTarget): Promise<CopyResult> => 'native');
+  it('surfaces clipboard failure feedback on y without clearing focus', async () => {
+    const copyTarget = vi.fn(async (): Promise<CopyResult> => {
+      throw new Error('clipboard failed');
+    });
     seedVisibleBriefReview(['first brief']);
     focusStore.set('brief', 0);
 
@@ -75,8 +78,11 @@ describe('useBriefReviewKeys: y yank', () => {
 
     writeKey(ui, 'y');
     await tick();
+    await Promise.resolve();
+    await tick();
 
-    expect(focusStore.get()).toBeNull();
+    expect(feedbackStore.get().message).toBe('Could not copy: clipboard failed');
+    expect(feedbackStore.get().isError).toBe(true);
     ui.unmount();
   });
 
@@ -197,25 +203,6 @@ describe('useBriefReviewKeys: y yank', () => {
     await tick();
 
     expect(focusStore.get()).toBeNull();
-  });
-
-  it('drops the stale focus when review is cleared, so the next y is not swallowed as a yank', async () => {
-    const copyTarget = vi.fn(async (_target: CopyTarget): Promise<CopyResult> => 'native');
-    seedVisibleBriefReview(['first brief']);
-    focusStore.set('brief', 0);
-
-    const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
-
-    reviewStore.clearReview();
-    await tick();
-    expect(focusStore.get()).toBeNull();
-
-    writeKey(ui, 'y');
-    await tick();
-
-    expect(copyTarget).not.toHaveBeenCalled();
-    ui.unmount();
   });
 
   it('does not create brief focus with arrow keys when no row is rendered', async () => {

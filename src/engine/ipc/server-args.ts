@@ -1,7 +1,7 @@
 import { readFileSync, lstatSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
-import { CLIOverridesSchema } from '../../core/config/runtime/overrides.js';
+import { CLIOverridesSchema } from '../../core/config/runtime/overrides/schema.js';
 import { WorkflowModeSchema, normalizeLegacyMode } from '../../core/schemas/enums.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';

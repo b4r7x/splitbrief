@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { configStore } from '../../../stores/project/config.js';
-import { readEvidenceLedger } from '../../../core/evidence/ledger.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 
 interface SummaryEvidenceLedgerState {
   key: string;

@@ -48,8 +48,7 @@ describe('/handoff command', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
     expect(calls).toEqual([{ target: 'spec-kit', taskId: undefined }]);
   });
 
@@ -63,8 +62,7 @@ describe('/handoff command', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/handoff claude-code T003', 'workflow', noop);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await executeRuntimeCommand(commands, '/handoff claude-code T003', 'workflow', noop);
     expect(calls).toEqual([{ target: 'claude-code', taskId: 'T003' }]);
   });
 
@@ -78,8 +76,7 @@ describe('/handoff command', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
     expect(message).toContain('/proj/.diptych/sessions/s1/handoffs/spec-kit');
   });
 
@@ -95,8 +92,7 @@ describe('/handoff command', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
     expect(error).toContain('No active session for handoff');
   });
 });
@@ -159,8 +155,7 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/accept-run', 'workflow', noop);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await executeRuntimeCommand(commands, '/accept-run', 'workflow', noop);
     expect(message).toContain('snap-1');
   });
 
@@ -200,8 +195,7 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
     expect(message).toContain('2 file(s)');
     expect(message).toContain('snap-2');
   });
@@ -245,8 +239,7 @@ describe('run snapshot runtime commands', () => {
         },
       }),
     );
-    executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await executeRuntimeCommand(commands, '/reject-run confirm', 'workflow', noop);
     expect(error).toMatch(/conflict/i);
   });
 });

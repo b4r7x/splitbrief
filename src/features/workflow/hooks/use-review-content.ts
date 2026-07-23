@@ -4,7 +4,22 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { labelError } from '../../../utils/format-errors.js';
 
-export function useReviewContent(filePath: string | null): string {
+export type ReviewContentReader = (
+  path: string,
+  options: { signal: AbortSignal; encoding: 'utf8' },
+) => Promise<string>;
+
+async function readReviewContent(
+  path: string,
+  options: { signal: AbortSignal; encoding: 'utf8' },
+): Promise<string> {
+  return fs.readFile(path, options);
+}
+
+export function useReviewContent(
+  filePath: string | null,
+  reader: ReviewContentReader = readReviewContent,
+): string {
   const [content, setContent] = useState('');
   const revision = reviewStore.use((s) => s.revision);
 
@@ -17,7 +32,7 @@ export function useReviewContent(filePath: string | null): string {
 
     const controller = new AbortController();
     setContent('');
-    fs.readFile(filePath, { signal: controller.signal, encoding: 'utf8' })
+    reader(filePath, { signal: controller.signal, encoding: 'utf8' })
       .then((data) => {
         setContent(data);
       })
@@ -31,7 +46,7 @@ export function useReviewContent(filePath: string | null): string {
     return () => {
       controller.abort();
     };
-  }, [filePath, revision]);
+  }, [filePath, revision, reader]);
 
   return content;
 }

@@ -1,8 +1,8 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
-import type { ValidationResult } from '../validation-result.js';
+import type { ValidationResult } from '../validation/result.js';
 import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
-import { findOrSeed, withUpdatedTask } from '../../../core/evidence/ledger.js';
+import { findOrSeed, withUpdatedTask } from '../../../core/evidence/ledger-state.js';
 import { uniquePush } from '../../../utils/collections.js';
 
 const VALIDATION_PASSED_LABEL: Record<EvidenceValidationEntry['stage'], string> = {

@@ -161,7 +161,7 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 **Type-safety judgment items (not fully gated):**
 - **Single-source every closed set.** A union/enum (conflict kinds, context-fit, hook-event names, recovery outcomes) defined once — as a Zod `z.enum` over an `as const` tuple in `core/schemas/`, with the TS type via `z.infer`. Re-spelling the same literals in a second file (TS union ↔ Zod ↔ `Set`) is a drift hazard. Engine/UI copies must derive *from* the core schema, never the reverse.
 - **Exhaustive `switch` over a closed union ends in `assertNever`.** A value-returning switch with a pass-through `default: return x` silently degrades when the union grows. (`tsconfig` lacks `noImplicitReturns`, so the compiler will not save you on `void` switches.)
-- **Narrow, don't assert.** Use the existing `isRecord` type guard instead of `as Record<string, unknown>`; re-validate hand-rebuilt shapes through their Zod schema instead of `as Config`. Reuse `TokenUsageLikeSchema`/`TaskIdSchema` rather than re-typing `z.record(z.string(), z.unknown())` or a bare `string` for a branded ID.
+- **Narrow, don't assert.** Use the existing `isRecord` type guard instead of `as Record<string, unknown>`; re-validate hand-rebuilt shapes through their Zod schema instead of `as Config`. Reuse `BackendTokenUsageSchema` from its canonical owner, `src/engine/calls/usage.ts`, or `TaskIdSchema` rather than re-typing a token-usage shape or using a bare `string` for a branded ID.
 - **No config object built from fake data to satisfy a type.** Fabricating `{ name: 'unknown', runtime: 'node' }` just to call an engine function means the function's parameter is too wide — narrow it or thread the real value.
 
 ---

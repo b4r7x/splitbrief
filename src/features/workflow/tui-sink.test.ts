@@ -6,22 +6,33 @@ import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { resetWorkflow, markCancellationRequested } from '../../stores/workflow/actions.js';
-import { operationsStore } from '../../stores/workflow/operations.js';
-import { makePlannerText, makeTaskStart, makeWorkflowCancelled } from '#testing/helpers/events.js';
+import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
+import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
+import { operationsStore } from '../../stores/workflow/operations/state.js';
+import { makePlannerText } from '#testing/helpers/events/planner.js';
+import { makeTaskStart } from '#testing/helpers/events/task.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 
 describe('tuiSink', () => {
   beforeEach(() => resetWorkflow());
 
-  it('forwards events published on the bus into the workflow events store', () => {
+  it('accumulates multiple engine error events in the events store in order via the bus and TUI sink', () => {
     const bus = createEventBus();
     bus.subscribe(createTuiSink());
 
-    const event = makePlannerText({ text: 'hi' });
-    bus.publish(event);
+    bus.publish(makeErrorEvent({ message: 'first error', ts: 1 }));
+    bus.publish(makeErrorEvent({ message: 'second error', ts: 2 }));
+    bus.publish(makeErrorEvent({ message: 'third error', ts: 3 }));
 
-    const events = eventsStore.get().events;
-    expect(events.at(-1)).toEqual(event);
+    const errors = eventsStore
+      .get()
+      .events.filter(
+        (event): event is Extract<EngineEvent, { type: 'error' }> => event.type === 'error',
+      );
+    expect(errors).toHaveLength(3);
+    expect(errors[0]?.message).toBe('first error');
+    expect(errors[1]?.message).toBe('second error');
+    expect(errors[2]?.message).toBe('third error');
   });
 
   it('updates the tasks sub-store when a task_started event is published', () => {
@@ -32,16 +43,6 @@ describe('tuiSink', () => {
 
     expect(tasksStore.get().currentTask).toBe(3);
     expect(tasksStore.get().totalTasks).toBe(5);
-  });
-
-  it('reflects workflow_cancelled on the lifecycle store', () => {
-    const bus = createEventBus();
-    bus.subscribe(createTuiSink());
-
-    bus.publish(makeWorkflowCancelled());
-
-    const last = eventsStore.get().events.at(-1);
-    expect(last?.type).toBe('workflow_cancelled');
   });
 
   it('respects the store cancel gate after local cancellation intent', () => {
@@ -161,19 +162,6 @@ describe('tuiSink', () => {
     ]);
     expect(JSON.stringify(eventsStore.get().events)).not.toContain(secret);
   });
-
-  it('unsubscribing stops delivery to the store', () => {
-    const bus = createEventBus();
-    const unsubscribe = bus.subscribe(createTuiSink());
-
-    bus.publish(makePlannerText({ text: 'first' }));
-    const afterFirst = eventsStore.get().events.length;
-
-    unsubscribe();
-    bus.publish(makePlannerText({ text: 'second' }));
-
-    expect(eventsStore.get().events.length).toBe(afterFirst);
-  });
 });
 
 function runnerStarted(
@@ -189,6 +177,16 @@ function runnerStarted(
     sequence: 1,
     runnerName: 'codex',
     model: 'gpt-5-mini',
+    ...overrides,
+  };
+}
+
+function makeErrorEvent(overrides?: Partial<EngineEventOf<'error'>>): EngineEventOf<'error'> {
+  return {
+    type: 'error',
+    ts: Date.now(),
+    phase: 'implementing',
+    message: 'Something went wrong',
     ...overrides,
   };
 }

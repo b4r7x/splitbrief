@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ProviderDefWithMetadata, ProviderOverrides } from './types.js';
-import { createMetadataProvider } from './client.js';
+import { createMetadataProvider } from './client/metadata.js';
 import { v1ModelsUrl } from './constants.js';
 
 type CompatModel = { id: string };

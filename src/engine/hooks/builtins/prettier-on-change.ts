@@ -1,6 +1,6 @@
 import type { EngineEvent } from '../../events/types.js';
 import type { HookOutcome, HookContext } from '../types.js';
-import { runCommand } from '../../../lib/process/spawn.js';
+import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { resolveFromProject } from '../../../utils/path-patterns.js';
 

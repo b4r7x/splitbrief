@@ -3,15 +3,13 @@ import { normalizeConfiguredModel, resolveAutoModel } from './model-selection.js
 
 describe('resolveAutoModel', () => {
   it.each([
-    ['auto', undefined, undefined],
-    [undefined, undefined, undefined],
-    ['', undefined, undefined],
-    ['   ', undefined, undefined],
-    ['Auto', undefined, undefined],
-    ['AUTO', undefined, undefined],
-    ['aUtO', undefined, undefined],
-    ['default', 'claude-code', undefined],
-  ])('resolves %j (tool=%j) to undefined', (model, tool, _expected) => {
+    ['auto', undefined],
+    [undefined, undefined],
+    ['', undefined],
+    ['   ', undefined],
+    ['aUtO', undefined],
+    ['default', 'claude-code'],
+  ])('resolves %j (tool=%j) to undefined', (model, tool) => {
     expect(resolveAutoModel(model, tool as string | undefined)).toBeUndefined();
   });
 

@@ -111,6 +111,9 @@ describe('commitCustomCommand', () => {
       kind: 'shell',
     });
     expect(updated.implementer.kind).toBe('shell');
+    if (updated.implementer.kind === 'shell') {
+      expect(updated.implementer.command).toBe('new-impl-cmd');
+    }
   });
 
   it('preserves implementer kind: agent for agent implementer selection', () => {
@@ -129,6 +132,9 @@ describe('commitCustomCommand', () => {
       kind: 'agent',
     });
     expect(updated.implementer.kind).toBe('agent');
+    if (updated.implementer.kind === 'agent') {
+      expect(updated.implementer.command).toBe('new-agent-impl');
+    }
   });
 });
 
@@ -229,19 +235,15 @@ describe('removeCustomModel', () => {
     };
   }
 
-  it('removes the model from planner customModels', () => {
+  it('removes inactive planner custom models and clears model when deleting the active one', () => {
     const config = makeConfigWithCustomModels();
-    const updated = removeCustomModel(config, 'planner', 'other-planner-model');
-    expect(updated.planner.customModels).toEqual(['my-custom-planner']);
-  });
+    const updatedInactive = removeCustomModel(config, 'planner', 'other-planner-model');
+    expect(updatedInactive.planner.customModels).toEqual(['my-custom-planner']);
 
-  it('clears planner.model when it points to the deleted custom model', () => {
-    const config = makeConfigWithCustomModels();
-    const updated = removeCustomModel(config, 'planner', 'my-custom-planner');
-    expect(updated.planner.customModels).toEqual(['other-planner-model']);
-    // planner.model is optional — key should be absent after clearing
-    expect(updated.planner.model).toBeUndefined();
-    expect('model' in updated.planner).toBe(false);
+    const updatedActive = removeCustomModel(config, 'planner', 'my-custom-planner');
+    expect(updatedActive.planner.customModels).toEqual(['other-planner-model']);
+    expect(updatedActive.planner.model).toBeUndefined();
+    expect('model' in updatedActive.planner).toBe(false);
   });
 
   it('does not clear planner.model when it points to a different model', () => {
@@ -250,18 +252,14 @@ describe('removeCustomModel', () => {
     expect(updated.planner.model).toBe('my-custom-planner');
   });
 
-  it('removes the model from implementer customModels', () => {
+  it('removes inactive implementer custom models and reassigns model when deleting the active one', () => {
     const config = makeConfigWithCustomModels();
-    const updated = removeCustomModel(config, 'implementer', 'other-impl-model');
-    expect(updated.implementer.customModels).toEqual(['my-custom-impl']);
-  });
+    const updatedInactive = removeCustomModel(config, 'implementer', 'other-impl-model');
+    expect(updatedInactive.implementer.customModels).toEqual(['my-custom-impl']);
 
-  it('clears implementer.model when it points to the deleted custom model', () => {
-    const config = makeConfigWithCustomModels();
-    const updated = removeCustomModel(config, 'implementer', 'my-custom-impl');
-    expect(updated.implementer.customModels).toEqual(['other-impl-model']);
-    // implementer.model is required (string); falls back to first remaining custom model
-    expect(updated.implementer.model).toBe('other-impl-model');
+    const updatedActive = removeCustomModel(config, 'implementer', 'my-custom-impl');
+    expect(updatedActive.implementer.customModels).toEqual(['other-impl-model']);
+    expect(updatedActive.implementer.model).toBe('other-impl-model');
   });
 
   it('does not clear implementer.model when it points to a different model', () => {

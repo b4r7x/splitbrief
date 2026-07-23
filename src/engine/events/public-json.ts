@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { TaskIdSchema } from '../../core/schemas/task.js';
 import { RecoveryActionSchema, RecoveryReasonSchema } from '../../core/schemas/enums.js';
-import type { RecoveryIssue } from '../../core/schemas/recovery.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { protectConsumerPayload, type CallConsumerContext } from '../../core/consumer-policy.js';
 import { EngineEventSchema } from './schema.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
-import { protectEngineEventForConsumer } from './protection.js';
+import { protectEngineEventForConsumer } from './protection/protect.js';
 
 export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
   z.strictObject({

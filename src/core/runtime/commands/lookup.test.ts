@@ -46,21 +46,11 @@ const COMMANDS: RuntimeCommandDef[] = [
 ];
 
 describe('suggestRuntimeCommand', () => {
-  it('returns null for empty query', () => {
-    expect(suggestRuntimeCommand(COMMANDS, '')).toBeNull();
-    expect(suggestRuntimeCommand(COMMANDS, '/')).toBeNull();
-  });
-
-  it('/mde resolves to /mode (dropped letter)', () => {
-    expect(suggestRuntimeCommand(COMMANDS, '/mde')?.name).toBe('/mode');
-  });
-
-  it('/settngs resolves to /settings', () => {
-    expect(suggestRuntimeCommand(COMMANDS, '/settngs')?.name).toBe('/settings');
-  });
-
-  it('/hlp resolves to /help', () => {
-    expect(suggestRuntimeCommand(COMMANDS, '/hlp')?.name).toBe('/help');
+  it.each([
+    { description: 'returns null for empty query', input: '', expected: null },
+    { description: 'returns null for empty query', input: '/', expected: null },
+  ])('$description', ({ input, expected }) => {
+    expect(suggestRuntimeCommand(COMMANDS, input)).toBe(expected);
   });
 
   it('returns null when the query has no resemblance to any command', () => {

@@ -28,33 +28,18 @@ describe('WorkflowHeader', () => {
     resetAllStores();
   });
 
-  it('renders the pipeline rail with all five compile stages below the header', async () => {
+  it('renders the full rail/chrome frame: five stages, no retired dot labels, one divider', async () => {
     const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
     await tick();
     const frame = ui.lastFrame() ?? '';
-
-    for (const stage of RAIL_STAGES) expect(frame).toContain(stage);
-    ui.unmount();
-  });
-
-  it('drops the retired res/impl/rev dot-strip labels', async () => {
-    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
-    await tick();
-    const frame = ui.lastFrame() ?? '';
-
-    expect(frame).not.toContain('res ');
-    expect(frame).not.toContain('impl');
-    expect(frame).not.toContain('rev');
-    ui.unmount();
-  });
-
-  it('separates the rail region from the body with a single hairline divider', async () => {
-    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
-    await tick();
-    const lines = (ui.lastFrame() ?? '').split('\n');
+    const lines = frame.split('\n');
     const rule = glyph('divider', 'unicode');
     const dividerLines = lines.filter((line) => stripAnsiStyles(line).includes(rule.repeat(20)));
 
+    for (const stage of RAIL_STAGES) expect(frame).toContain(stage);
+    expect(frame).not.toContain('res ');
+    expect(frame).not.toContain('impl');
+    expect(frame).not.toContain('rev');
     expect(dividerLines).toHaveLength(1);
     ui.unmount();
   });
