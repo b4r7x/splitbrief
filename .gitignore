@@ -47,7 +47,10 @@ notes/
 coverage/
 
 # Visual test artifacts
-.test-artifacts/ui/
+.test-artifacts
+
+# Specify
+.specify
 
 # OS
 .DS_Store
