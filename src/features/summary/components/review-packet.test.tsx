@@ -56,8 +56,8 @@ describe('buildReviewPacketDetailRows', () => {
             warningCount: 2,
           },
           reviewPacket: {
-            markdownPath: '.diptych/sessions/s1/review-packet.md',
-            jsonPath: '.diptych/sessions/s1/review-packet.json',
+            markdownPath: '.splitbrief/sessions/s1/review-packet.md',
+            jsonPath: '.splitbrief/sessions/s1/review-packet.json',
             generatedAt: '2026-04-28T10:00:00.000Z',
             finalReviewStatus: 'written',
             driftPassed: false,
@@ -71,8 +71,8 @@ describe('buildReviewPacketDetailRows', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Review packet');
-    expect(frame).toContain('.diptych/sessions/s1/review-packet.md');
-    expect(frame).toContain('.diptych/sessions/s1/review-packet.json');
+    expect(frame).toContain('.splitbrief/sessions/s1/review-packet.md');
+    expect(frame).toContain('.splitbrief/sessions/s1/review-packet.json');
     expect(frame).toContain('final review: written');
     expect(frame).toContain('drift: failed');
     expect(frame).toContain('score 0.84');
@@ -107,8 +107,8 @@ describe('buildReviewPacketDetailRows', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('.diptych/sessions/session-123/review-packet.md');
-    expect(frame).toContain('.diptych/sessions/session-123/review-packet.json');
+    expect(frame).toContain('.splitbrief/sessions/session-123/review-packet.md');
+    expect(frame).toContain('.splitbrief/sessions/session-123/review-packet.json');
 
     ui.unmount();
   });
@@ -143,8 +143,8 @@ describe('buildReviewPacketDetailRows', () => {
   });
 
   it('keeps review packet filenames visible when paths are truncated on small terminals', () => {
-    const longMarkdownPath = `.diptych/sessions/${'very-long-session-id-'.repeat(5)}/review-packet.md`;
-    const longJsonPath = `.diptych/sessions/${'very-long-session-id-'.repeat(5)}/review-packet.json`;
+    const longMarkdownPath = `.splitbrief/sessions/${'very-long-session-id-'.repeat(5)}/review-packet.md`;
+    const longJsonPath = `.splitbrief/sessions/${'very-long-session-id-'.repeat(5)}/review-packet.json`;
     terminalSizeStore.__testReset({ isSmall: true });
 
     const ui = renderFeature(
@@ -182,8 +182,8 @@ describe('buildReviewPacketDetailRows', () => {
       <ReviewPacketRows
         summary={makeSummary({
           reviewPacket: {
-            markdownPath: `.diptych/sessions/s1/review${ESC}]52;c;clip-md${BEL}-packet.md`,
-            jsonPath: `.diptych/sessions/s1/review${ESC}[31m-packet.json`,
+            markdownPath: `.splitbrief/sessions/s1/review${ESC}]52;c;clip-md${BEL}-packet.md`,
+            jsonPath: `.splitbrief/sessions/s1/review${ESC}[31m-packet.json`,
             generatedAt: '2026-04-28T10:00:00.000Z',
             finalReviewStatus: 'written',
             driftPassed: true,
@@ -196,8 +196,8 @@ describe('buildReviewPacketDetailRows', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('.diptych/sessions/s1/review-packet.md');
-    expect(frame).toContain('.diptych/sessions/s1/review-packet.json');
+    expect(frame).toContain('.splitbrief/sessions/s1/review-packet.md');
+    expect(frame).toContain('.splitbrief/sessions/s1/review-packet.json');
     expect(frame).not.toContain('clip-md');
     expect(frame).not.toContain('52;c');
 

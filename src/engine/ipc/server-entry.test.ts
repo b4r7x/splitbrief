@@ -22,7 +22,7 @@ describe('getArgv', () => {
     projectDir,
     feature: 'add login',
     mode: 'standard',
-    configPath: '/tmp/diptych.yaml',
+    configPath: '/tmp/splitbrief.yaml',
     overrides: {},
   });
 
@@ -51,7 +51,7 @@ describe('getArgv', () => {
       projectDir,
       feature: 'add login',
       mode: 'standard',
-      configPath: '/tmp/diptych.yaml',
+      configPath: '/tmp/splitbrief.yaml',
     });
   });
 
@@ -91,7 +91,9 @@ describe('emitConfigWarnings', () => {
     ]);
 
     const written = stderrChunks.join('');
-    expect(written).toContain('⚠ config.version 2 is deprecated; diptych migrated it in memory.');
+    expect(written).toContain(
+      '⚠ config.version 2 is deprecated; SPLITBRIEF migrated it in memory.',
+    );
     expect(written).toContain('⚠ budget override exceeds the configured ceiling.');
   });
 
@@ -120,13 +122,13 @@ describe('emitConfigWarnings', () => {
 // The detached `start --detach` host runs in a process spawned by spawn-server.ts; main() must call
 // bootstrapOtel() first or every span is a NonRecordingSpan (the original F-540 defect). This probe
 // invokes the real main() — bootstrapOtel() runs synchronously before main's first await — with the
-// exporter on DIPTYCH_OTEL_EXPORTER (the env channel spawn-server forwards into), then samples
+// exporter on SPLITBRIEF_OTEL_EXPORTER (the env channel spawn-server forwards into), then samples
 // whether main()'s bootstrap left a recording provider registered before bailing out of startup.
 function runDetachedHostOtelProbe(forwardedExporter: string | undefined): string {
   const env = { ...process.env };
   delete env['OTEL_TRACES_EXPORTER'];
-  delete env['DIPTYCH_OTEL_EXPORTER'];
-  if (forwardedExporter !== undefined) env['DIPTYCH_OTEL_EXPORTER'] = forwardedExporter;
+  delete env['SPLITBRIEF_OTEL_EXPORTER'];
+  if (forwardedExporter !== undefined) env['SPLITBRIEF_OTEL_EXPORTER'] = forwardedExporter;
 
   const script = `
     import { mkdtempSync } from 'node:fs';
@@ -141,7 +143,7 @@ function runDetachedHostOtelProbe(forwardedExporter: string | undefined): string
       projectDir,
       feature: 'probe',
       mode: 'standard',
-      configPath: join(projectDir, 'diptych.yaml'),
+      configPath: join(projectDir, 'splitbrief.yaml'),
       overrides: {},
     };
 
@@ -199,7 +201,7 @@ describe('writeStartupLockfile ps-facing redaction', () => {
     };
   }
 
-  it('redacts the lockfile feature `diptych ps` prints under persistTranscript:false', async () => {
+  it('redacts the lockfile feature `splitbrief ps` prints under persistTranscript:false', async () => {
     await writeStartupLockfile(testDir, makeArgv({ persistTranscript: false }));
 
     const lock = await readLockfile(testDir);

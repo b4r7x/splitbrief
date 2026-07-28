@@ -182,7 +182,7 @@ describe('startIpcServer replay', () => {
       category: 'ipc',
       code: 'replay_unknown_events_skipped',
       transcriptSafe: true,
-      message: 'IPC replay skipped 1 unknown future event(s). Upgrade diptych to display them.',
+      message: 'IPC replay skipped 1 unknown future event(s). Upgrade SPLITBRIEF to display them.',
     });
     const complete = msgs.find(
       (m): m is Extract<ServerMessage, { kind: 'event' }> =>

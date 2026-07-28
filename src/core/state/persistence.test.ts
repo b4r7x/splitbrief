@@ -6,7 +6,7 @@ import { createInitialState } from './machine.js';
 import { taskId } from '../schemas/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 
 const fsControl = vi.hoisted(() => ({ throwEnoentOnStatOnce: false }));
 
@@ -77,6 +77,31 @@ describe('saveState / loadState roundtrip', () => {
     expect(loaded?.external).toEqual({ 'my-board': { lanes: { T001: 'in-review' } } });
   });
 
+  it('preserves an active changed-files snapshot in roundtrip', () => {
+    const dir = makeTmp();
+    const activeTaskSnapshot = {
+      head: 'abc123',
+      files: ['src/a.ts'],
+      dirtyFileContents: { 'src/a.ts': 'before\n' },
+      gitlinks: ['vendor/module'],
+      baselineFileHashes: { 'src/a.ts': 'hash' },
+      ignoreProjectDir: '/tmp/staged-project',
+    };
+    const state = {
+      ...createInitialState('snapshot-roundtrip'),
+      changedFilesBaseline: {
+        head: 'abc123',
+        fingerprints: { 'src/a.ts': 'hash' },
+        activeTaskSnapshot,
+      },
+    };
+
+    saveState({ projectDir: dir, sessionId: SESSION_ID }, state);
+    const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
+
+    expect(loaded?.changedFilesBaseline?.activeTaskSnapshot).toEqual(activeTaskSnapshot);
+  });
+
   it('preserves pending recovery in roundtrip', () => {
     const dir = makeTmp();
     const issue = makeRecoveryIssue({
@@ -127,7 +152,7 @@ describe('loadState mtime cache', () => {
     loadState({ projectDir: dir, sessionId: SESSION_ID });
 
     const updated = { ...original, feature: 'cache-feature-renamed' };
-    const statePath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'state.json');
+    const statePath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'state.json');
     writeFileSync(statePath, JSON.stringify(updated));
 
     const loaded = loadState({ projectDir: dir, sessionId: SESSION_ID });
@@ -143,26 +168,44 @@ describe('loadState', () => {
 
   it('returns null when state is malformed (missing phase)', () => {
     const dir = makeTmp();
-    const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
-    writeFileSync(join(stateDir, 'state.json'), JSON.stringify({ stateVersion: 2, tasks: [] }));
-    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+    const malformed = { ...createInitialState('missing-phase') };
+    Reflect.deleteProperty(malformed, 'phase');
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(malformed));
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(output).toContain('failed schema validation');
+      expect(output).not.toContain('is incompatible');
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 
   it('returns null when state is malformed (tasks not an array)', () => {
     const dir = makeTmp();
-    const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
-    writeFileSync(
-      join(stateDir, 'state.json'),
-      JSON.stringify({ stateVersion: 2, phase: 'idle', tasks: 'not-array' }),
-    );
-    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+    const malformed = { ...createInitialState('invalid-tasks'), tasks: 'not-array' };
+    writeFileSync(join(stateDir, 'state.json'), JSON.stringify(malformed));
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
+      const output = stderrSpy.mock.calls.map((c) => String(c[0])).join('');
+      expect(output).toContain('failed schema validation');
+      expect(output).not.toContain('is incompatible');
+    } finally {
+      stderrSpy.mockRestore();
+    }
   });
 
   it('returns null when state file contains invalid JSON', () => {
     const dir = makeTmp();
-    const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
     writeFileSync(join(stateDir, 'state.json'), '{not valid json!!!');
     expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toBeNull();
@@ -170,7 +213,7 @@ describe('loadState', () => {
 
   it('warns about the incompatible version when state is from an older version', () => {
     const dir = makeTmp();
-    const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
     const older = { ...createInitialState('legacy'), stateVersion: 2 };
     writeFileSync(join(stateDir, 'state.json'), JSON.stringify(older));
@@ -187,7 +230,7 @@ describe('loadState', () => {
 
   it('warns that schema validation failed for a current-version but malformed state', () => {
     const dir = makeTmp();
-    const stateDir = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
     const malformed = { ...createInitialState('broken'), phase: 'not-a-real-phase' };
     writeFileSync(join(stateDir, 'state.json'), JSON.stringify(malformed));

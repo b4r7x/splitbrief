@@ -7,9 +7,9 @@ import type { FilteredStdin } from '../../lib/terminal/filtered-stdin/types.js';
 import { setActiveFilteredStdin } from '../../lib/terminal/filtered-stdin/active.js';
 import { detectKittyKeyboardFlags } from '../../lib/terminal/kitty-keyboard.js';
 import {
-  configureDiptychKeyDebugLog,
+  configureSplitbriefKeyDebugLog,
   isConfiguredKeyDebugEnabled,
-  logDiptychRawKeyChunk,
+  logSplitbriefRawKeyChunk,
 } from '../../core/key-debug.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import {
@@ -54,7 +54,7 @@ export async function renderApp(
   const kittyKeyboard = detectKittyKeyboardFlags();
   installTerminalOutputErrorGuard();
 
-  configureDiptychKeyDebugLog(projectDir ? { projectDir } : undefined);
+  configureSplitbriefKeyDebugLog(projectDir ? { projectDir } : undefined);
 
   const { useFilteredStdin, useMouse, useHover, usePaste } = resolveRenderInputConfig({
     fullscreen,
@@ -65,7 +65,7 @@ export async function renderApp(
   let filteredDisabled = false;
 
   const rawKeyTap = isConfiguredKeyDebugEnabled()
-    ? (chunk: Buffer) => logDiptychRawKeyChunk(chunk)
+    ? (chunk: Buffer) => logSplitbriefRawKeyChunk(chunk)
     : undefined;
   if (rawKeyTap) {
     process.stdin.on('data', rawKeyTap);
@@ -124,7 +124,7 @@ export async function renderApp(
   const onCrash = createCrashHandler({
     cleanup: reapAndRestore,
     report: (reason) => {
-      process.stderr.write(`diptych crashed: ${toErrorMessage(reason)}\n`);
+      process.stderr.write(`SPLITBRIEF crashed: ${toErrorMessage(reason)}\n`);
     },
     exit: (code) => {
       void flushOtel().finally(() => process.exit(code));

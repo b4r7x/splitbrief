@@ -98,14 +98,14 @@ export async function resolveNumericAlias(input: string, projectDir: string): Pr
   const sessions = await buildAliasedSessions(projectDir);
 
   if (sessions.length === 0) {
-    throw cliError('no sessions found; start one with `diptych start`.', 1);
+    throw cliError('no sessions found; start one with `splitbrief start`.', 1);
   }
 
   const match = sessions.find((s) => s.alias === num);
 
   if (!match) {
     throw cliError(
-      `session alias ${num} is out of range; there are ${sessions.length} session(s). Use \`diptych ps\` to see them.`,
+      `session alias ${num} is out of range; there are ${sessions.length} session(s). Use \`splitbrief ps\` to see them.`,
       1,
     );
   }

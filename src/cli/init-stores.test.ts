@@ -8,7 +8,7 @@ import { initStores } from './init-stores.js';
 import { configStore } from '../stores/project/config.js';
 import { sessionsStore } from '../stores/project/sessions.js';
 import { skillsStore } from '../stores/project/skills.js';
-import { DIPTYCH_DIR } from '../core/paths.js';
+import { SPLITBRIEF_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
 import { createDefaultConfig } from '../core/config/load/io.js';
 import { detectCapabilities } from '../engine/providers/capabilities.js';
@@ -42,15 +42,15 @@ function makeProjectDir(): string {
 
 beforeEach(() => {
   vi.mocked(globalThis.fetch).mockImplementation(async () => new Response('{}', { status: 200 }));
-  savedContextLengthEnv = process.env.DIPTYCH_CONTEXT_LENGTH;
-  delete process.env.DIPTYCH_CONTEXT_LENGTH;
+  savedContextLengthEnv = process.env.SPLITBRIEF_CONTEXT_LENGTH;
+  delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
   resetAllStores();
 });
 
 afterEach(() => {
   resetAllStores();
-  if (savedContextLengthEnv === undefined) delete process.env.DIPTYCH_CONTEXT_LENGTH;
-  else process.env.DIPTYCH_CONTEXT_LENGTH = savedContextLengthEnv;
+  if (savedContextLengthEnv === undefined) delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
+  else process.env.SPLITBRIEF_CONTEXT_LENGTH = savedContextLengthEnv;
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -119,7 +119,7 @@ describe('initStores', () => {
 
     // Create a session on disk with a valid summary.json matching SessionSchema.
     const sessionId = '2026-04-18-bootstrap-test';
-    const sDir = join(dir, DIPTYCH_DIR, 'sessions', sessionId);
+    const sDir = join(dir, SPLITBRIEF_DIR, 'sessions', sessionId);
     mkdirSync(sDir, { recursive: true });
     const session = {
       id: sessionId,
@@ -236,8 +236,8 @@ Skill body for bootstrap proof.
   }, 30_000);
 
   it('preserves an explicitly configured implementer contextLength through boot', async () => {
-    const savedEnv = process.env.DIPTYCH_CONTEXT_LENGTH;
-    delete process.env.DIPTYCH_CONTEXT_LENGTH;
+    const savedEnv = process.env.SPLITBRIEF_CONTEXT_LENGTH;
+    delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
     try {
       const dir = makeProjectDir();
       writeConfigYaml(
@@ -262,8 +262,8 @@ Skill body for bootstrap proof.
       // An explicit value is not boot-detected, so context routing must not label it 'detected'.
       expect(configStore.getDetectedContextLength()).toBeUndefined();
     } finally {
-      if (savedEnv === undefined) delete process.env.DIPTYCH_CONTEXT_LENGTH;
-      else process.env.DIPTYCH_CONTEXT_LENGTH = savedEnv;
+      if (savedEnv === undefined) delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
+      else process.env.SPLITBRIEF_CONTEXT_LENGTH = savedEnv;
     }
   }, 30_000);
 
@@ -324,7 +324,7 @@ Skill body for bootstrap proof.
     // Write a config that is valid YAML but structurally malformed enough
     // that loadConfig raises. An unknown planner tool triggers schema error.
     writeFileSync(
-      join(dir, DIPTYCH_DIR, 'config.yaml'),
+      join(dir, SPLITBRIEF_DIR, 'config.yaml'),
       YAML.stringify({
         version: 2,
         planner: { kind: 'cli', tool: 'not-a-real-tool' },

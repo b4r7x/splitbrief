@@ -22,8 +22,8 @@ interface ClipboardExecFixture {
 }
 
 const COMMANDS = ['pbcopy', 'clip', 'wl-copy', 'xclip', 'xsel', 'tmux'] as const;
-const CALLS_ENV = 'DIPTYCH_TEST_CLIPBOARD_CALLS';
-const EXIT_CODES_ENV = 'DIPTYCH_TEST_CLIPBOARD_EXIT_CODES';
+const CALLS_ENV = 'SPLITBRIEF_TEST_CLIPBOARD_CALLS';
+const EXIT_CODES_ENV = 'SPLITBRIEF_TEST_CLIPBOARD_EXIT_CODES';
 
 // Copies are fire-and-forget spawns polled from the test; under multi-fork load the spawn plus
 // the record append can still take seconds, so give the poll generous headroom.

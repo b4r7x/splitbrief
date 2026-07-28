@@ -5,14 +5,14 @@ import { clearStaleSession } from './guards.js';
 import { writeActive } from './lifecycle.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
-import { activeFile, sessionDir, STATE_FILE, DIPTYCH_DIR, LOCKFILE } from '../paths.js';
+import { activeFile, sessionDir, STATE_FILE, SPLITBRIEF_DIR, LOCKFILE } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
 
 let tmp: string;
 
 function makeTmp(): string {
   tmp = createTempDir('guards-test');
-  mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
+  mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
   return tmp;
 }
 

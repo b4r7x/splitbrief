@@ -22,7 +22,7 @@ function putSession(
   data: LockfileData | null,
   status: ServerStatus = { alive: false, crashed: false, data },
 ): void {
-  const sessDir = join(testDir, '.diptych', 'sessions', sessionId);
+  const sessDir = join(testDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   lockfiles.set(sessDir, data);
   statuses.set(sessDir, status);
@@ -30,7 +30,7 @@ function putSession(
 
 function putInteractiveSession(sessionId: string, mtimeMs: number): void {
   putSession(sessionId, null);
-  const statePath = join(testDir, '.diptych', 'sessions', sessionId, 'state.json');
+  const statePath = join(testDir, '.splitbrief', 'sessions', sessionId, 'state.json');
   writeFileSync(statePath, JSON.stringify({ feature: `feature-${sessionId}` }));
   const seconds = mtimeMs / 1000;
   utimesSync(statePath, seconds, seconds);
@@ -68,7 +68,7 @@ describe('psCommand', () => {
   });
 
   it('prints "No sessions found" when sessions directory is empty', async () => {
-    mkdirSync(join(testDir, '.diptych', 'sessions'), { recursive: true });
+    mkdirSync(join(testDir, '.splitbrief', 'sessions'), { recursive: true });
 
     const lines = await collectPsOutput();
 

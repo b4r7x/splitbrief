@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { runInvariantGates, type Gate } from './check-invariants.js';
+import { getInvariantGates, runInvariantGates, type Gate } from './check-invariants.js';
 
 describe('check-invariants', () => {
   it('fails closed when a gate command fails', () => {
@@ -28,13 +28,13 @@ describe('check-invariants', () => {
     const gate: Gate = {
       id: 'pipeline',
       description: 'Broken pipeline',
-      command: '__diptych_missing_command__ | wc -l',
+      command: '__splitbrief_missing_command__ | wc -l',
       expected: 0,
     };
     const log = vi.fn();
 
     expect(
-      execSync('bash -c "__diptych_missing_command__ | wc -l"', {
+      execSync('bash -c "__splitbrief_missing_command__ | wc -l"', {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
       }).trim(),
@@ -121,6 +121,24 @@ describe('check-invariants', () => {
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
     expect(log).toHaveBeenCalledWith(
       '  ✗ [nonnumeric] Nonnumeric gate: invalid output "not-a-number" (expected 0) FAIL',
+    );
+  });
+
+  it('runs brand gate 27 through the fail-closed command runner', () => {
+    const brandGates = getInvariantGates('27');
+    const execCommand = vi.fn(() => {
+      throw new Error('brand scan failed');
+    });
+    const log = vi.fn();
+
+    expect(brandGates).toHaveLength(1);
+    expect(runInvariantGates(brandGates, execCommand, log)).toBe(1);
+    expect(execCommand).toHaveBeenCalledOnce();
+    expect(execCommand).toHaveBeenCalledWith(
+      "tsx scripts/check-brand.ts >/dev/null && printf '0\\n'",
+    );
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [27] Maintained tree uses only canonical SPLITBRIEF identity: command failed (expected 0) FAIL',
     );
   });
 });

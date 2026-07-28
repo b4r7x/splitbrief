@@ -12,7 +12,7 @@ import { ensureSessionDir } from '../../../../src/core/paths-io.js';
 import {
   BRIEF_QUALITY_FILE,
   CONFIG_FILE,
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   sessionDir,
   TASKS_FILE,
 } from '../../../../src/core/paths.js';
@@ -30,9 +30,9 @@ const isRpcShuttingDown = matches('rpc-shutting-down');
 let dirs: string[] = [];
 
 function writeConfig(projectDir: string, persistTranscript = false): void {
-  const diptychDir = join(projectDir, DIPTYCH_DIR);
-  mkdirSync(diptychDir, { recursive: true });
-  const configPath = join(diptychDir, CONFIG_FILE);
+  const splitbriefDir = join(projectDir, SPLITBRIEF_DIR);
+  mkdirSync(splitbriefDir, { recursive: true });
+  const configPath = join(splitbriefDir, CONFIG_FILE);
   writeFileSync(
     configPath,
     [

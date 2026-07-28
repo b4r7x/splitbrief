@@ -8,7 +8,7 @@ import {
   setupStartCommandIntegration,
   writeConfigMarker,
 } from '#testing/helpers/start-command.js';
-import { DIPTYCH_DIR } from '../../../src/core/paths.js';
+import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 
@@ -30,8 +30,8 @@ describe('start command — non-TTY preflight', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect((captured as Error).message).toContain('interactive mode needs a TTY');
-    expect(existsSync(join(tmp, DIPTYCH_DIR, 'active'))).toBe(false);
-    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions'))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
     expect(renderCalls).toEqual([]);
   });
 });
@@ -42,9 +42,9 @@ describe('start command — session lifecycle during setup', () => {
     await runStart(['--project', tmp, 'implement X']);
 
     expect(routerStore.get()).toMatchObject({ screen: 'setup', feature: 'implement X' });
-    const activePath = join(tmp, DIPTYCH_DIR, 'active');
+    const activePath = join(tmp, SPLITBRIEF_DIR, 'active');
     expect(existsSync(activePath)).toBe(false);
-    const sessionsDir = join(tmp, DIPTYCH_DIR, 'sessions');
+    const sessionsDir = join(tmp, SPLITBRIEF_DIR, 'sessions');
     expect(existsSync(sessionsDir)).toBe(false);
   });
 
@@ -55,7 +55,7 @@ describe('start command — session lifecycle during setup', () => {
     await runStart(['--project', tmp, 'implement X']);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement X' });
-    const activePath = join(tmp, DIPTYCH_DIR, 'active');
+    const activePath = join(tmp, SPLITBRIEF_DIR, 'active');
     expect(existsSync(activePath)).toBe(true);
   });
 });

@@ -12,7 +12,7 @@ Companion to [`STRUCTURE.md`](./STRUCTURE.md) (file tree, feature anatomy) and [
 |---|---|---|---|
 | `src/utils/` | Generic primitives — pure, stateless, zero domain | Node stdlib, npm, other `utils/` | anyone |
 | `src/lib/` | Infrastructure wrappers — single-purpose adapters for Node/terminal/external libs | Node stdlib, npm, `utils/`, other `lib/` | anyone except `utils/` |
-| `src/core/` | Domain logic — knows diptych concepts (config, state machine, paths, types, formatting of cost/tokens) | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
+| `src/core/` | Domain logic — knows SPLITBRIEF concepts (config, state machine, paths, types, formatting of cost/tokens) | `utils/`, `lib/`, `core/` siblings | `engine/`, `stores/`, `features/` |
 | `src/engine/` | Workflow orchestrator — runs planners, implementers, validation. Zero React/Ink | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `app/`, `features/workflow/`, `features/runners/` |
 | `src/stores/` | External state stores — the only cross-cutting channel between engine and UI | `utils/`, `core/`, `lib/`, `engine/` (type-only) | anyone |
 | `src/features/{f}/` | Vertical business slices — screens, feature-local hooks, components | everything below + shared `components/`, `hooks/` | only the `app/` shell (pages in `app/screens\|overlays` + `app/router.tsx`) |
@@ -27,7 +27,7 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 
 **Acceptance criteria:**
 - No imports from `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, or `lib/`
-- No diptych string literals (`.diptych`, `claude-code`, `ollama`, `cost`, `planner`, `workflow`, etc.)
+- No SPLITBRIEF string literals (`.splitbrief`, `claude-code`, `ollama`, `cost`, `planner`, `workflow`, etc.)
 - Pure function or small stateless module — you could publish it to npm under a different name without touching the code
 - Reusable across unrelated projects
 
@@ -44,10 +44,10 @@ Import direction is one-way, top to bottom. For the cross-check table and blocke
 **Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `lib/`, `cli/`.
 
 **Red flags that something does not belong in `utils/`:**
-- Contains a string literal that names a diptych tool, provider, or internal path
+- Contains a string literal that names a SPLITBRIEF tool, provider, or internal path
 - Imports `node:child_process`, `simple-git`, `better-sqlite3`, or wraps a specific binary — that's `lib/`
 - Has `process.exit` or hardcoded exit codes — that's feature-level
-- Depends on a specific file-system layout (`.diptych/sessions/` etc.) — that's `core/`
+- Depends on a specific file-system layout (`.splitbrief/sessions/` etc.) — that's `core/`
 
 **Pure validators live in `utils/`, even when a related error kind lives in `lib/`:**
 
@@ -67,12 +67,12 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 
 ## `lib/` — infrastructure wrappers
 
-**Purpose.** Single-responsibility adapters around Node stdlib, npm packages, or terminal protocols. Infra the codebase needs but does not speak diptych.
+**Purpose.** Single-responsibility adapters around Node stdlib, npm packages, or terminal protocols. Infra the codebase needs but does not speak SPLITBRIEF.
 
 **Acceptance criteria:**
 - Wraps a single external system (Node stdlib, npm package, terminal protocol)
-- Does not know about diptych concepts — the wrapper is generic, the caller supplies context
-- May have state (caches, registries) but not diptych-specific state
+- Does not know about SPLITBRIEF concepts — the wrapper is generic, the caller supplies context
+- May have state (caches, registries) but not SPLITBRIEF-specific state
 - Survives without the rest of the codebase (the wrapper is reusable)
 
 **What lives here:**
@@ -86,7 +86,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 
 **Why `lib/` is not `utils/`:** these modules depend on Node APIs, external packages, or protocol specifics. They are reusable, but not as drop-in primitives. `utils/` is for things you could copy-paste into any TypeScript project; `lib/` is for things that only make sense in a Node + terminal context.
 
-**Why `lib/` is not `core/`:** these modules don't know anything about diptych. A workflow runner, a `.diptych/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git/client.ts` changes; `core/` doesn't.
+**Why `lib/` is not `core/`:** these modules don't know anything about SPLITBRIEF. A workflow runner, a `.splitbrief/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git/client.ts` changes; `core/` doesn't.
 
 **Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`). Git helpers live under `lib/git/` (`client.ts` owns the `simple-git` boundary).
 
@@ -110,10 +110,10 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 
 ## `core/` — domain logic (no React, no orchestration)
 
-**Purpose.** Describes diptych: config shape, state machine, paths, sessions, cost/token math. UI-agnostic and orchestration-agnostic.
+**Purpose.** Describes SPLITBRIEF: config shape, state machine, paths, sessions, cost/token math. UI-agnostic and orchestration-agnostic.
 
 **Acceptance criteria:**
-- Knows diptych concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
+- Knows SPLITBRIEF concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
 - No React, no Ink, no DOM — pure TypeScript
 - No workflow orchestration — `core/` does not run planners, implementers, retries, or commits (that's `engine/`). The one sanctioned subprocess in `core/` is the read-only readiness baseline probe (`core/readiness/checks/validation.ts` runs the configured typecheck/lint/test commands via `lib/process/spawn/run-command.ts` to detect a pre-broken tree before any task starts); it spawns nothing else
 - Domain persistence is allowed: `core/` writes its own state to disk (sessions, stats, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `readJsonSafe`, `ensureSecureDir`, confined writes) and `lib/file-lock.ts` for whole-file payloads (e.g. `evidence/ledger-storage.ts`), but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/tree/io.ts`, `sessions/compaction.ts`, `migration/executor.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
@@ -126,7 +126,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `core/state/` — workflow state machine, transitions, persistence shape
 - `core/sessions/` — session metadata, analytics, ID generation
 - `core/formatting.ts` — LLM-specific formatters (`formatCost`, `formatContextLength`)
-- `core/paths.ts`, `core/paths-io.ts` — `.diptych/` path derivation and validation
+- `core/paths.ts`, `core/paths-io.ts` — `.splitbrief/` path derivation and validation
 - `core/runtime/commands/` — runtime command definitions (pure data + handlers; see also `core/keybindings/`)
 - `core/providers/` — provider catalog, known-models, model-selection logic
 - `core/hooks/` — workflow hook config validation + sha256 trust hashing (`trust.ts`)
@@ -164,9 +164,9 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `engine/error-hints.ts` — engine-scoped error diagnosis (provider hints, etc.)
 - `engine/events/` — event bus subsystem: `schema.ts` (`EngineEventSchema` type-dispatched schema + `parseEngineEvent`), `types.ts` (the `EngineEvent` alias inferred from that schema, plus the `EventBus`/`EventSink` ports), `bus.ts` (`createEventBus()` factory with crash isolation per sink), and `sinks/` holding headless/persistence/telemetry subscribers:
   - `features/workflow/tui-sink.ts` — pass-through sink forwarding `EngineEvent` to `workflow/actions/event.addEvent` (workflow sub-stores consume `EngineEvent` directly)
-  - `sinks/jsonl.ts` — appends every event to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent`
-  - `sinks/tree-recorder.ts` — always-on sink appending `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`
-  - `sinks/stdout-json.ts` — public NDJSON emitter for `diptych start --json` / headless mode (`event` envelope plus bounded/redacted payload policy)
+  - `sinks/jsonl.ts` — appends every event to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent`
+  - `sinks/tree-recorder.ts` — always-on sink appending `.splitbrief/sessions/<id>/session-tree.jsonl` and `tree-meta.json`
+  - `sinks/stdout-json.ts` — public NDJSON emitter for `splitbrief start --json` / headless mode (`event` envelope plus bounded/redacted payload policy)
   - `sinks/otel.ts` — optional OpenTelemetry span emitter (workflow → phase → task span tree)
 - `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks; inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), `load-module.ts` (in-process `module` hooks), `substitute.ts` (safe `${event.*}` regex substitution — values are emitted verbatim as distinct argv elements, never shell-evaluated), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`, `builtins/` (`prettier-on-change`, `block-secrets`, `registry.ts`)
 - `engine/codebase/` — repo-map pipeline (`parse`, `cache`, `graph`, `pagerank`, `format`, `budget`, `rebuild`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).

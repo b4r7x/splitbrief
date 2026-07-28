@@ -1,10 +1,24 @@
 import { getGitForDir, gitError, runGit } from './client.js';
+import { hasCommits } from './repository.js';
 
-export async function getRunStartHead(
+export const GIT_EMPTY_TREE_HASH = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+export type RunStartProvenance =
+  | { kind: 'captured'; head: string | null }
+  | { kind: 'legacy-prefix'; commitMessagePrefix: string };
+
+export type RunStartBase =
+  | { kind: 'commit'; ref: string }
+  | { kind: 'empty-tree'; ref: typeof GIT_EMPTY_TREE_HASH }
+  | { kind: 'working-tree-only' };
+
+export async function deriveLegacyRunStartHead(
   dir: string,
   runCommitMessagePrefix: string,
 ): Promise<string | null> {
-  try {
+  if (!(await hasCommits(dir))) return null;
+
+  return runGit('log --format=%H%x00%s HEAD', async () => {
     const log = await getGitForDir(dir).raw(['log', '--format=%H%x00%s', 'HEAD']);
     for (const line of log.split('\n')) {
       const sep = line.indexOf('\0');
@@ -14,16 +28,40 @@ export async function getRunStartHead(
       if (!subject.startsWith(runCommitMessagePrefix)) return sha;
     }
     return null;
-  } catch {
-    return null;
+  });
+}
+
+export async function resolveRunStartBase(opts: {
+  projectDir: string;
+  provenance: RunStartProvenance;
+}): Promise<RunStartBase> {
+  const { projectDir, provenance } = opts;
+  if (provenance.kind === 'legacy-prefix') {
+    const head = await deriveLegacyRunStartHead(projectDir, provenance.commitMessagePrefix);
+    if (head !== null) return { kind: 'commit', ref: head };
+    return (await hasCommits(projectDir))
+      ? { kind: 'empty-tree', ref: GIT_EMPTY_TREE_HASH }
+      : { kind: 'working-tree-only' };
   }
+  if (provenance.head === null) {
+    return (await hasCommits(projectDir))
+      ? { kind: 'empty-tree', ref: GIT_EMPTY_TREE_HASH }
+      : { kind: 'working-tree-only' };
+  }
+  await runGit(`rev-parse --verify ${provenance.head}^{commit}`, () =>
+    getGitForDir(projectDir).raw(['rev-parse', '--verify', `${provenance.head}^{commit}`]),
+  );
+  return { kind: 'commit', ref: provenance.head };
 }
 
 export async function getCurrentCommitSha(dir: string): Promise<string> {
-  return runGit('rev-parse HEAD', async () => {
-    const sha = (await getGitForDir(dir).raw(['rev-parse', 'HEAD'])).trim();
-    return sha.length > 0 ? sha : 'HEAD';
-  });
+  const sha = (
+    await runGit('rev-parse HEAD', () => getGitForDir(dir).raw(['rev-parse', 'HEAD']))
+  ).trim();
+  if (sha.length === 0) {
+    throw gitError.commandFailed('rev-parse HEAD', 'rev-parse HEAD returned empty output');
+  }
+  return sha;
 }
 
 export async function getCurrentBranch(dir: string): Promise<string> {
@@ -73,10 +111,14 @@ export async function showFileAtRef(
   }
 }
 
-export async function restoreFileFromRef(dir: string, ref: string, file: string): Promise<void> {
-  await runGit(`checkout ${ref} -- ${file}`, () => getGitForDir(dir).checkout([ref, '--', file]));
+export function restoreFileFromRef(dir: string, ref: string, file: string): Promise<void> {
+  return runGit(`checkout ${ref} -- ${file}`, () =>
+    getGitForDir(dir).checkout([ref, '--', file]),
+  ).then(() => undefined);
 }
 
-export async function resetIndexEntryToRef(dir: string, ref: string, file: string): Promise<void> {
-  await runGit(`reset ${ref} -- ${file}`, () => getGitForDir(dir).reset([ref, '--', file]));
+export function resetIndexEntryToRef(dir: string, ref: string, file: string): Promise<void> {
+  return runGit(`reset ${ref} -- ${file}`, () => getGitForDir(dir).reset([ref, '--', file])).then(
+    () => undefined,
+  );
 }

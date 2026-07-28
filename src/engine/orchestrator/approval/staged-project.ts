@@ -3,11 +3,13 @@ import { cp, lstat, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import { INTERNAL_SKIP_DIRS } from '../../../core/paths.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { createSandboxEnv, runnerAuthEnvKeys } from '../../runners/sandbox-env.js';
 import { captureProjectFileHashes, getChangedFilesSnapshot } from './file-snapshots/capture.js';
-import type { ChangedFilesSnapshot, FileContentSnapshot } from './file-snapshots/types.js';
+import type { FileContentSnapshot } from './file-snapshots/types.js';
 import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots/contents.js';
 
 export type StagedProject = {
@@ -33,9 +35,7 @@ const STAGED_COPY_EXCLUDE = new Set([
 ]);
 
 function isStagedCopyExcluded(name: string): boolean {
-  if (STAGED_COPY_EXCLUDE.has(name)) return true;
-  if (name.startsWith('.env.')) return true;
-  return false;
+  return STAGED_COPY_EXCLUDE.has(name) || name.startsWith('.env.');
 }
 
 async function shouldCopyToStagedProject(source: string): Promise<boolean> {
@@ -49,7 +49,7 @@ export async function createStagedProject(
   runnerRole: StagedProjectRunnerRole = 'implementer',
 ): Promise<StagedProject> {
   const snapshot = await getChangedFilesSnapshot(projectDir);
-  const stagedRoot = await mkdtemp(join(tmpdir(), 'diptych-stage-'));
+  const stagedRoot = await mkdtemp(join(tmpdir(), `${SPLITBRIEF_IDENTITY.slug}-stage-`));
   try {
     const stagedProjectDir = join(stagedRoot, basename(projectDir));
     await cp(projectDir, stagedProjectDir, {

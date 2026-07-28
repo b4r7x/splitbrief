@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { registerStatusCommand } from './status.js';
-import { DIPTYCH_DIR, STATE_FILE, SESSION_LOG_FILE } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, STATE_FILE, SESSION_LOG_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { CONFIG_FILE } from '../../core/paths.js';
@@ -29,17 +29,17 @@ function captureOutput(): string {
 }
 
 function writeActiveSession(projectDir: string, sessionId: string, feature: string): void {
-  const sessionDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  const sessionDir = join(projectDir, SPLITBRIEF_DIR, 'sessions', sessionId);
   mkdirSync(sessionDir, { recursive: true });
   const state = { ...createInitialState(feature), phase: 'implementing' as const };
   writeFileSync(join(sessionDir, STATE_FILE), JSON.stringify(state));
   writeFileSync(join(sessionDir, SESSION_LOG_FILE), '');
-  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
-  writeFileSync(join(projectDir, DIPTYCH_DIR, 'active'), sessionId + '\n');
+  mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
+  writeFileSync(join(projectDir, SPLITBRIEF_DIR, 'active'), sessionId + '\n');
 }
 
 function writeCompletedSession(projectDir: string, sessionId: string, startedAt: number): void {
-  const sessionDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  const sessionDir = join(projectDir, SPLITBRIEF_DIR, 'sessions', sessionId);
   mkdirSync(sessionDir, { recursive: true });
   const base = makeSession({ status: 'complete' });
   if (!base.summary) throw new Error('expected complete session summary');
@@ -72,11 +72,11 @@ async function runStatus(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   registerStatusCommand(program);
-  await program.parseAsync(['node', 'diptych', 'status', '--project', tmp, ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'status', '--project', tmp, ...args]);
 }
 
 describe('status command', () => {
-  it('reports no active workflow when .diptych has no active marker', async () => {
+  it('reports no active workflow when .splitbrief has no active marker', async () => {
     await runStatus([]);
     const out = captureOutput();
     expect(out.length).toBeGreaterThan(0);
@@ -93,9 +93,9 @@ describe('status command', () => {
   });
 
   it('omits the feature name when persistTranscript is false', async () => {
-    mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
+    mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
     writeFileSync(
-      join(tmp, DIPTYCH_DIR, CONFIG_FILE),
+      join(tmp, SPLITBRIEF_DIR, CONFIG_FILE),
       ['version: 3', 'workflow:', '  persistTranscript: false', '  mode: standard'].join('\n'),
     );
     writeActiveSession(tmp, '2026-04-18-private', 'secret oauth login');

@@ -1,6 +1,6 @@
 # Debugging
 
-Common issues, diagnostic tools, and a troubleshooting workflow for diptych. Factual — everything below is backed by code in `src/` or documented configuration.
+Common issues, diagnostic tools, and a troubleshooting workflow for SPLITBRIEF. Factual — everything below is backed by code in `src/` or documented configuration.
 
 ## Diagnostic modes
 
@@ -9,7 +9,7 @@ Common issues, diagnostic tools, and a troubleshooting workflow for diptych. Fac
 Every run writes its full `EngineEvent` stream to:
 
 ```
-.diptych/sessions/<session-id>/session.jsonl
+.splitbrief/sessions/<session-id>/session.jsonl
 ```
 
 One JSON object per line. Written by `src/engine/events/sinks/jsonl.ts` through the protected session-log appender in `src/core/sessions/log-writer.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
@@ -18,22 +18,22 @@ Inspect with `jq`:
 
 ```bash
 # All events across sessions
-cat .diptych/sessions/*/session.jsonl | jq .
+cat .splitbrief/sessions/*/session.jsonl | jq .
 
 # Only failures
 jq 'select(.type == "task_full_fail" or .type == "error")' \
-  .diptych/sessions/<id>/session.jsonl
+  .splitbrief/sessions/<id>/session.jsonl
 
 # Validation outcomes
 jq 'select(.type == "validate") | {taskId, passed: .data.passed, stages: .data.stages, error: .data.error}' \
-  .diptych/sessions/<id>/session.jsonl
+  .splitbrief/sessions/<id>/session.jsonl
 
 # Cost accumulation
-jq 'select(.type == "cost_update")' .diptych/sessions/<id>/session.jsonl
+jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl
 
 # Runner-call warnings with grouping fields
 jq 'select(.type == "runner_call_warning") | {callId: .data.callId, phase, warning: .data.warning}' \
-  .diptych/sessions/<id>/session.jsonl
+  .splitbrief/sessions/<id>/session.jsonl
 ```
 
 Stderr is diagnostic by default. A `call_stderr_delta` from the raw runner stream is not projected into `session.jsonl` as a `runner_call_warning` and does not create a primary warning row. Actionable warnings appear as `runner_call_warning` and carry `code`, `severity`, `source`, `surface`, `fingerprint`, `message`, and optional `rawRef`. Repeated warnings are grouped in the TUI by fingerprint/code/source/surface; session tree rows keep warning counts and warning codes on runner invocation entries.
@@ -46,14 +46,14 @@ The tree recorder writes protected structured entries under the same session dir
 
 ### Active session pointer
 
-`.diptych/active` stores the active session id. If commands like `diptych status` or `diptych resume` report "no active session", the pointer is missing or stale — start a new workflow or manually `cat .diptych/active`.
+`.splitbrief/active` stores the active session id. If commands like `splitbrief status` or `splitbrief resume` report "no active session", the pointer is missing or stale — start a new workflow or manually `cat .splitbrief/active`.
 
 ### Headless mode (`--json`)
 
 For CI or programmatic inspection, bypass the Ink TUI entirely and emit NDJSON `EngineEvent` records to stdout:
 
 ```bash
-diptych start --json "feature description" 2>/dev/null | jq .
+splitbrief start --json "feature description" 2>/dev/null | jq .
 ```
 
 Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log. With `workflow.persistTranscript: false`, stdout JSON applies the same transcript protection as session logs, IPC, RPC, summaries, and telemetry: transcript events are omitted, queued-message text is stripped, runner payload events are omitted, safe runner activity is kept, and feature prompt metadata is replaced or omitted.
@@ -66,22 +66,22 @@ For a timeline view with span hierarchy (workflow → phase → task), opt into 
 
 ```bash
 # One of:
-OTEL_TRACES_EXPORTER=console diptych start --mode quick "…"
-DIPTYCH_OTEL_EXPORTER=console diptych start --mode quick "…"
-diptych start --otel-exporter console --mode quick "…"
+OTEL_TRACES_EXPORTER=console splitbrief start --mode quick "…"
+SPLITBRIEF_OTEL_EXPORTER=console splitbrief start --mode quick "…"
+splitbrief start --otel-exporter console --mode quick "…"
 ```
 
-Also set `otel.enabled: true` in `.diptych/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. The console exporter writes spans with `console.dir`, so diptych disables the console exporter in machine-readable stdout modes (`--json` and `--rpc`). Full details: [OTEL.md](./OTEL.md). Bootstrap source: `src/lib/otel.ts`.
+Also set `otel.enabled: true` in `.splitbrief/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. The console exporter writes spans with `console.dir`, so SPLITBRIEF disables the console exporter in machine-readable stdout modes (`--json` and `--rpc`). Full details: [OTEL.md](./OTEL.md). Bootstrap source: `src/lib/otel.ts`.
 
 ### Debug environment variables
 
-There is no `debug` package / namespace logger in diptych today. The diagnostic surface is:
+There is no `debug` package / namespace logger in SPLITBRIEF today. The diagnostic surface is:
 
 | Variable | Effect | Source |
 |---|---|---|
 | `OTEL_TRACES_EXPORTER=console` | Bootstrap built-in OTel console exporter | `src/lib/otel.ts` |
-| `DIPTYCH_OTEL_EXPORTER=console` | Alias for the above | `src/lib/otel.ts` |
-| `DIPTYCH_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
+| `SPLITBRIEF_OTEL_EXPORTER=console` | Alias for the above | `src/lib/otel.ts` |
+| `SPLITBRIEF_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
 
 For finer-grained traces, use the event log or OTel spans. API-key-bearing env vars (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc.) are listed in [CONFIGURATION.md](./CONFIGURATION.md) — missing keys surface as loud config-validation warnings.
@@ -92,7 +92,7 @@ Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnEr
 
 ## Common issues
 
-### "Configuration errors in .diptych/config.yaml"
+### "Configuration errors in .splitbrief/config.yaml"
 
 Cause: YAML failed zod validation. The message lists each failing path. Check:
 - `version: 3` is present (2 accepted but deprecated).
@@ -104,9 +104,9 @@ See [CONFIGURATION.md](./CONFIGURATION.md) for the full schema. The loader throw
 
 ### "Hook config is not trusted and no TTY available"
 
-Cause: `.diptych/config.yaml` declares `hooks:` but `.diptych/hook-trust.json` does not record the current hook config and module-file hash, and stdin is not a TTY (CI).
+Cause: `.splitbrief/config.yaml` declares `hooks:` but `.splitbrief/hook-trust.json` does not record the current hook config and module-file hash, and stdin is not a TTY (CI).
 
-Fix: run interactively once to trust (`diptych start`), or pass `--allow-hooks` on every CI run. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) §Trust model. Editing the hook config or a module hook file invalidates trust and triggers a re-prompt.
+Fix: run interactively once to trust (`splitbrief start`), or pass `--allow-hooks` on every CI run. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) §Trust model. Editing the hook config or a module hook file invalidates trust and triggers a re-prompt.
 
 ### Planner hangs / implementer times out
 
@@ -114,7 +114,7 @@ Diagnostic path:
 
 1. Inspect `session.jsonl` — the last event tells you which phase was active:
    ```bash
-   tail -20 .diptych/sessions/<id>/session.jsonl | jq .
+   tail -20 .splitbrief/sessions/<id>/session.jsonl | jq .
    ```
 2. Check the runner timeout — the `timeout` field in `planner.*` / `implementer.*` (max 600000 ms, schema ceiling).
 3. For API runners, check network reachability to `apiBase`.
@@ -125,9 +125,9 @@ Diagnostic path:
 
 ### OTel spans never appear
 
-Cause (most common): ESM dual-resolution. Diptych's sink imports `@opentelemetry/api` as a bare specifier; a pre-registration from an external wrapper script using an absolute path lands in a different module cache entry.
+Cause (most common): ESM dual-resolution. SPLITBRIEF's sink imports `@opentelemetry/api` as a bare specifier; a pre-registration from an external wrapper script using an absolute path lands in a different module cache entry.
 
-Fix: use the bundled bootstrap (`OTEL_TRACES_EXPORTER=console` / `DIPTYCH_OTEL_EXPORTER=console` / `--otel-exporter console`) or register your provider from within the same module-resolution context. See [OTEL.md](./OTEL.md) §Quick-start for the full explanation.
+Fix: use the bundled bootstrap (`OTEL_TRACES_EXPORTER=console` / `SPLITBRIEF_OTEL_EXPORTER=console` / `--otel-exporter console`) or register your provider from within the same module-resolution context. See [OTEL.md](./OTEL.md) §Quick-start for the full explanation.
 
 Also verify `otel.enabled: true` in config — the bootstrap registers the provider unconditionally, but the sink itself is gated on the config flag (`src/engine/orchestrator/run/init.ts`).
 
@@ -146,11 +146,11 @@ See [PRINCIPLES.md](./PRINCIPLES.md) — ESM rule.
 
 ### "No active workflow" on `resume`
 
-Cause: `.diptych/active` is missing, or the pointed-to session has no `state.json`, or `stateVersion` is from a pre-v3 layout.
+Cause: `.splitbrief/active` is missing, or the pointed-to session has no `state.json`, or `stateVersion` is from a pre-v3 layout.
 
 Fix:
-- Stale pre-v3 state: run `diptych migrate` (see `src/cli/commands/migrate.ts`).
-- Unresumable phase (e.g. `complete`): start a fresh workflow with `diptych start`.
+- Stale pre-v3 state: run `splitbrief migrate` (see `src/cli/commands/migrate.ts`).
+- Unresumable phase (e.g. `complete`): start a fresh workflow with `splitbrief start`.
 - The `resume` command's exact error messages are in `src/cli/commands/resume.ts`.
 
 ### Tests pass locally but fail in CI (or vice versa)
@@ -158,33 +158,33 @@ Fix:
 Diagnostic checklist:
 - Node version: engines field requires `>=22`. Check `node --version` matches CI.
 - `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
-- Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/diptych-*`.
+- Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
 - API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
 - Run the CI pipeline exactly: `npm run test-ci` (format:check → typecheck → lint → test:coverage → invariants).
 
 ### API key warning in logs
 
-Cause: config file contains `apiKey: sk-...` inline. diptych detects and warns via `warnStderr` — config load still succeeds. Migrate to the corresponding env var (see [API-KEYS.md](./API-KEYS.md) and [CONFIGURATION.md](./CONFIGURATION.md) §Environment variables).
+Cause: config file contains `apiKey: sk-...` inline. SPLITBRIEF detects and warns via `warnStderr` — config load still succeeds. Migrate to the corresponding env var (see [API-KEYS.md](./API-KEYS.md) and [CONFIGURATION.md](./CONFIGURATION.md) §Environment variables).
 
-### `.diptych/config.yaml` permissions warning
+### `.splitbrief/config.yaml` permissions warning
 
 Cause: on non-Windows, the config file permissions are looser than `0600`. Source: `src/core/config/load/io.ts`. Fix:
 
 ```bash
-chmod 600 .diptych/config.yaml
-chmod 700 .diptych
+chmod 600 .splitbrief/config.yaml
+chmod 700 .splitbrief
 ```
 
 ## Troubleshooting workflow
 
-1. **Reproduce minimally.** `diptych start --json --mode quick "minimal repro"` — the quick mode is one planner call with no approval gates; easiest to script.
+1. **Reproduce minimally.** `splitbrief start --json --mode quick "minimal repro"` — the quick mode is one planner call with no approval gates; easiest to script.
 2. **Check the session log.**
    ```bash
-   cat .diptych/active
-   jq . .diptych/sessions/$(cat .diptych/active)/session.jsonl | less
+   cat .splitbrief/active
+   jq . .splitbrief/sessions/$(cat .splitbrief/active)/session.jsonl | less
    ```
    The last event before failure usually points at the failing phase/task.
-3. **Run headless.** Decouples TUI from engine logic. `diptych start --json …` lets you see events without Ink rendering errors.
+3. **Run headless.** Decouples TUI from engine logic. `splitbrief start --json …` lets you see events without Ink rendering errors.
 4. **Enable OTel.** For timing / hierarchy. `--otel-exporter console` is enough for local inspection.
 5. **Check invariants.** If the bug looks like an architecture regression (engine importing React, barrels reappearing, etc.), see [INVARIANTS.md](./INVARIANTS.md) for the pre-merge grep gates — run them.
 
@@ -193,4 +193,4 @@ chmod 700 .diptych
 - [WORKFLOW.md](./WORKFLOW.md) — expected behavior per `mode`.
 - [CHANGELOG.md](./CHANGELOG.md) — recent changes that may have caused regressions.
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — system diagram, planner/implementer contracts.
-- Open an issue with: the session id (`.diptych/active`), the contents of `.diptych/sessions/<id>/session.jsonl`, and your `.diptych/config.yaml` with any `apiKey` values stripped.
+- Open an issue with: the session id (`.splitbrief/active`), the contents of `.splitbrief/sessions/<id>/session.jsonl`, and your `.splitbrief/config.yaml` with any `apiKey` values stripped.

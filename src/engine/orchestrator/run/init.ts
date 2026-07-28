@@ -13,7 +13,11 @@ import type { StreamingSink } from '../task/streaming-feed.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
-import { ensureSessionDir, ensureDiptychDir, type SpecMetadata } from '../../../core/paths-io.js';
+import {
+  ensureSessionDir,
+  ensureSplitbriefDir,
+  type SpecMetadata,
+} from '../../../core/paths-io.js';
 import { readPackageJson } from '../../../core/project-meta.js';
 import { createPlanner, createImplementer } from '../../runners/factory.js';
 import { createEventBus } from '../../events/bus.js';
@@ -29,6 +33,7 @@ import { error } from '../../../utils/error.js';
 import { createBranch } from '../../../lib/git/refs.js';
 import { slugify } from '../../../utils/slugify.js';
 import { generateOpaqueSessionSlug } from '../../../core/sessions/lifecycle.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import type {
   OrchestratorCallbacks,
   ResumeContextHolder,
@@ -122,7 +127,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const { opts, sessionId, summaryBase, metadata, setTrackedState, resumeHolder } = args;
   const { feature, projectDir, callbacks, sinks } = opts;
 
-  ensureDiptychDir(projectDir);
+  ensureSplitbriefDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
 
   const hooks = await resolveHooksConfig(projectDir, opts.config.hooks);
@@ -279,8 +284,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
     if (config.workflow.git?.createBranch) {
       const desired = config.workflow.persistTranscript
-        ? `diptych/${slugify(feature, 40)}`
-        : `diptych/${generateOpaqueSessionSlug()}`;
+        ? `${SPLITBRIEF_IDENTITY.branchPrefix}${slugify(feature, 40)}`
+        : `${SPLITBRIEF_IDENTITY.branchPrefix}${generateOpaqueSessionSlug()}`;
       try {
         const actual = await createBranch(projectDir, desired);
         publishGitBranchCreated({ bus: bus, phase: state.phase }, actual);

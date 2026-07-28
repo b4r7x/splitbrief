@@ -26,16 +26,17 @@ import { registerLastCommand } from './cli/commands/last.js';
 import { isCliError } from './cli/errors.js';
 import { HELP_EXAMPLES } from './cli/help-examples.js';
 import { toErrorMessage } from './utils/format-errors.js';
-import { getDiptychVersion } from './core/paths-io.js';
+import { getSplitbriefVersion } from './core/paths-io.js';
+import { SPLITBRIEF_IDENTITY } from './core/identity.js';
 
 bootstrapOtel();
 
 const program = new Command();
 
 program
-  .name('diptych')
-  .version(getDiptychVersion())
-  .description('Cost-optimized AI coding orchestrator');
+  .name(SPLITBRIEF_IDENTITY.executable)
+  .version(getSplitbriefVersion())
+  .description(`${SPLITBRIEF_IDENTITY.displayName} — cost-optimized AI coding orchestrator`);
 
 program.addHelpText('after', HELP_EXAMPLES);
 

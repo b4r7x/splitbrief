@@ -46,7 +46,7 @@ function initUIChrome(): void {
 
 function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
   const rawMode = opts.mode as string | undefined;
-  if (rawMode === 'full' && process.env.DIPTYCH_QUIET !== '1') {
+  if (rawMode === 'full' && process.env.SPLITBRIEF_QUIET !== '1') {
     warnStderr('--mode full is deprecated; use --mode speckit');
   }
   const overrides = workflowOptsToCLIOverrides(opts);

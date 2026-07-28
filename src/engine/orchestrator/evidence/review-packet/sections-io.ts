@@ -6,10 +6,15 @@ import type {
   ReviewPacket,
   ReviewPacketFinalReviewStatus,
 } from '../../../../core/schemas/review-packet.js';
-import { REVIEW_FILE, STATE_FILE, sessionDir } from '../../../../core/paths.js';
-import { getCommittedFilesSince } from '../../../../lib/git/diff.js';
+import {
+  REVIEW_FILE,
+  STATE_FILE,
+  isInternalGitStatusPath,
+  sessionDir,
+} from '../../../../core/paths.js';
+import { getCommittedFilesSince, getCurrentDiff, getDiffSince } from '../../../../lib/git/diff.js';
 import { getCurrentChangedFiles } from '../../../../lib/git/files.js';
-import { getRunStartHead } from '../../../../lib/git/refs.js';
+import { resolveRunStartBase, type RunStartProvenance } from '../../../../lib/git/refs.js';
 import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';
@@ -19,24 +24,51 @@ import { addMissing } from './missing-artifacts.js';
 
 const REVIEW_EXCERPT_MAX = 500;
 
-export async function resolveChangedFiles(
+type PersistedRunBaseline = { head: string | null } | undefined;
+
+type RunUniverse = {
+  fullDiff: string;
+  changedFiles: string[];
+};
+
+function runStartProvenance(baseline: PersistedRunBaseline): RunStartProvenance {
+  return baseline
+    ? { kind: 'captured', head: baseline.head }
+    : { kind: 'legacy-prefix', commitMessagePrefix: RUN_COMMIT_MESSAGE_PREFIX };
+}
+
+export async function resolveRunUniverse(
   projectDir: string,
-  drift: DriftReport | null,
-  missing: string[],
-): Promise<string[]> {
+  baseline: PersistedRunBaseline,
+): Promise<RunUniverse> {
+  const base = await resolveRunStartBase({
+    projectDir,
+    provenance: runStartProvenance(baseline),
+  });
+  const status = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
+  if (base.kind === 'working-tree-only') {
+    return {
+      fullDiff: await getCurrentDiff(projectDir, isInternalGitStatusPath),
+      changedFiles: uniqueSorted(status),
+    };
+  }
+  const committed = userVisibleChangedFiles(await getCommittedFilesSince(projectDir, base.ref));
+  return {
+    fullDiff: await getDiffSince(projectDir, base.ref, isInternalGitStatusPath),
+    changedFiles: uniqueSorted([...committed, ...status]),
+  };
+}
+
+export async function resolveChangedFiles(opts: {
+  projectDir: string;
+  drift: DriftReport | null;
+  missing: string[];
+  baseline?: PersistedRunBaseline;
+}): Promise<string[]> {
+  const { projectDir, drift, missing, baseline } = opts;
   if (drift) return uniqueSorted(drift.changedFiles);
-  // No drift report: live `git status` alone is not the run-attributed universe
-  // (per-task commits move changes out of the working tree), so it must be unioned
-  // with files committed since the run-start HEAD; an empty result is unavailable
-  // evidence rather than a confident "nothing changed".
   try {
-    const runStartHead = await getRunStartHead(projectDir, RUN_COMMIT_MESSAGE_PREFIX);
-    const status = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
-    const committed =
-      runStartHead === null
-        ? []
-        : userVisibleChangedFiles(await getCommittedFilesSince(projectDir, runStartHead));
-    const files = uniqueSorted([...committed, ...status]);
+    const { changedFiles: files } = await resolveRunUniverse(projectDir, baseline);
     if (files.length === 0) addMissing(missing, 'changed files');
     return files;
   } catch {

@@ -19,7 +19,7 @@ function tracked(dir: string) {
 
 describe('runGit error wrapping', () => {
   it('wraps a failed simple-git call as a typed GitCommandError', async () => {
-    const dir = tracked(createTempDir('diptych-nogit-diff'));
+    const dir = tracked(createTempDir('splitbrief-nogit-diff'));
     await expect(getCurrentDiff(dir)).rejects.toMatchObject({ kind: 'git-command-failed' });
   });
 });

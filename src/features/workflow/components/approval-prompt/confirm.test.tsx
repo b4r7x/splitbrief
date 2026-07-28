@@ -45,11 +45,11 @@ afterEach(() => {
 describe('ApprovalPrompt confirm tier', () => {
   it('labels confirm prompts by action class', async () => {
     const ui = render(<ApprovalPrompt />);
-    const first = openApprovalPrompt(makeConfirmRequest('.diptych/state.json', 'destructive'));
+    const first = openApprovalPrompt(makeConfirmRequest('.splitbrief/state.json', 'destructive'));
     await tick(PAST_GRACE);
 
     expect(ui.lastFrame() ?? '').toContain('control-plane file write');
-    expect(ui.lastFrame() ?? '').toContain('.diptych/state.json');
+    expect(ui.lastFrame() ?? '').toContain('.splitbrief/state.json');
 
     const second = openApprovalPrompt(makeConfirmRequest('package.json', 'package_change'));
     await expect(first).resolves.toEqual({ decision: 'deny', reason: 'superseded' });

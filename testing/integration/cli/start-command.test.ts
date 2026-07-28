@@ -13,7 +13,7 @@ import {
   writeSessionLockfile,
 } from '#testing/helpers/start-command.js';
 import { registerStartCommand } from '../../../src/cli/commands/start/register.js';
-import { DIPTYCH_DIR } from '../../../src/core/paths.js';
+import { SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 
@@ -35,7 +35,7 @@ describe('start command — concurrency guard', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect((captured as Error).message.length).toBeGreaterThan(0);
-    const activePath = join(tmp, DIPTYCH_DIR, 'active');
+    const activePath = join(tmp, SPLITBRIEF_DIR, 'active');
     expect(existsSync(activePath)).toBe(true);
     expect(readFileSync(activePath, 'utf-8').trim()).toBe('2026-04-18-live');
   });
@@ -49,7 +49,7 @@ describe('start command — concurrency guard', () => {
     await runStart(['--project', tmp, 'another feature']);
 
     expect(routerStore.get()).toMatchObject({ screen: 'setup', feature: 'another feature' });
-    expect(existsSync(join(tmp, DIPTYCH_DIR, 'active'))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
   });
 });
 
@@ -65,7 +65,7 @@ describe('start command — shorthand invocation', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, fakeDeps);
-    await program.parseAsync(['node', 'diptych', 'implement auth flow', '--project', tmp]);
+    await program.parseAsync(['node', 'splitbrief', 'implement auth flow', '--project', tmp]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement auth flow' });
   });
@@ -79,7 +79,7 @@ describe('start command — shorthand invocation', () => {
     program.command('spec').action(() => {
       specCalled = true;
     });
-    await program.parseAsync(['node', 'diptych', 'spec']);
+    await program.parseAsync(['node', 'splitbrief', 'spec']);
 
     expect(specCalled).toBe(true);
     expect(renderCalls).toEqual([]);
@@ -94,7 +94,7 @@ describe('start command — shorthand invocation', () => {
     registerStartCommand(program, fakeDeps);
     await program.parseAsync([
       'node',
-      'diptych',
+      'splitbrief',
       '--mode',
       'quick',
       'build feature X',
@@ -121,7 +121,7 @@ describe('start command — @file syntax', () => {
     registerStartCommand(program, fakeDeps);
     await program.parseAsync([
       'node',
-      'diptych',
+      'splitbrief',
       'start',
       'build it',
       '@brief.md',
@@ -146,7 +146,7 @@ describe('start command — @file syntax', () => {
     registerStartCommand(program, fakeDeps);
     await program.parseAsync([
       'node',
-      'diptych',
+      'splitbrief',
       'start',
       'build it',
       '@ghost.md',
@@ -168,7 +168,7 @@ describe('start command — @file syntax', () => {
     registerStartCommand(program, fakeDeps);
     await program.parseAsync([
       'node',
-      'diptych',
+      'splitbrief',
       'start',
       'build it',
       '@\u001b]0;pwned\u0007ghost.md',

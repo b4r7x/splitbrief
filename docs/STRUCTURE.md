@@ -2,7 +2,7 @@
 
 How `src/` is organized on disk. For data flow between layers (CLI → stores → engine/UI), see [`ARCHITECTURE.md`](./ARCHITECTURE.md). For state patterns, see [`STORES.md`](./STORES.md). For hook placement rules, see [`HOOKS.md`](./HOOKS.md).
 
-diptych organizes UI code by **business domain**, not by technical layer. A feature is a self-contained business concept — its internals (components, hooks, pure helpers, tests) live in one folder under `src/features/`. The **entry** of each surface is a FLAT page in the `src/app/` shell that *composes* that feature. Cross-cutting primitives (shared UI, shared hooks, low-level utilities) live flat at `src/` root.
+SPLITBRIEF organizes UI code by **business domain**, not by technical layer. A feature is a self-contained business concept — its internals (components, hooks, pure helpers, tests) live in one folder under `src/features/`. The **entry** of each surface is a FLAT page in the `src/app/` shell that *composes* that feature. Cross-cutting primitives (shared UI, shared hooks, low-level utilities) live flat at `src/` root.
 
 ## What we follow
 
@@ -132,7 +132,7 @@ src/engine/events/
     ├── tree-recorder/
     │   ├── persistence.ts       # tree init/resume, protected append/branch, disk commit
     │   └── runner-invocation.ts # runner call payloads and warning aggregation for the tree
-    ├── stdout-json.ts # NDJSON emitter for `diptych start --json`
+    ├── stdout-json.ts # NDJSON emitter for `splitbrief start --json`
     └── otel.ts        # optional OpenTelemetry span emitter
 ```
 The interactive TUI sink lives at `src/features/workflow/tui-sink.ts` because it forwards into workflow stores.
@@ -173,7 +173,7 @@ src/engine/codebase/
 
 ```
 src/core/hooks/
-└── trust.ts           # hook config + module file digest trust hash; compared against .diptych/hook-trust.json
+└── trust.ts           # hook config + module file digest trust hash; compared against .splitbrief/hook-trust.json
 ```
 
 ### `src/core/tokens/` — token math
@@ -326,14 +326,14 @@ Is it global state with subscribers?
 └── YES → src/stores/<domain>/  (see STORES.md)
 
 Is it a pure, zero-dep, framework-agnostic primitive?
-  (no diptych literals, no Node APIs beyond stdlib types, npm-publishable in isolation)
+  (no SPLITBRIEF literals, no Node APIs beyond stdlib types, npm-publishable in isolation)
 └── YES → src/utils/
 
 Is it a boundary wrapper around an external system?
   (git, fs, node:child_process, terminal I/O, better-sqlite3, simple-git, HTTP)
 └── YES → src/lib/<domain>/
 
-Does it know diptych concepts (config, cost, tokens, sessions, `.diptych/`, state machine)?
+Does it know SPLITBRIEF concepts (config, cost, tokens, sessions, `.splitbrief/`, state machine)?
 ├── Workflow orchestration (planner/implementer/validation/retry) → src/engine/<domain>/
 └── Pure domain logic / types / formatting                         → src/core/<domain>/
 

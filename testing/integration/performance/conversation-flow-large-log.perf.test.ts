@@ -133,7 +133,7 @@ function highlightScopes(layout: MarkdownLayout): Set<string> {
   return scopes;
 }
 
-describe.skipIf(process.env.DIPTYCH_PERF !== '1')('conversation row projection perf', () => {
+describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('conversation row projection perf', () => {
   it('projects and reuses a 10k event conversation log', () => {
     const input = {
       sections: largeSections(10_000),

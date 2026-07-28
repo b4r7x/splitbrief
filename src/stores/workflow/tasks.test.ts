@@ -3,7 +3,12 @@ import { tasksStore } from './tasks.js';
 import { addEvent } from './actions/event.js';
 import { resetWorkflow } from './actions/reset.js';
 import { taskId } from '../../core/schemas/task.js';
-import { makeTaskStart, makeTaskComplete, makeTaskSkipped } from '#testing/helpers/events/task.js';
+import {
+  makeRetry,
+  makeTaskStart,
+  makeTaskComplete,
+  makeTaskSkipped,
+} from '#testing/helpers/events/task.js';
 
 describe('tasksStore — via addEvent', () => {
   beforeEach(() => resetWorkflow());
@@ -62,6 +67,42 @@ describe('tasksStore — via addEvent', () => {
     addEvent(makeTaskStart({ taskId: taskId('T003'), title: 'Tool task' }));
     addEvent(makeTaskComplete({ taskId: taskId('T003'), method: 'mcp-tool' }));
     expect(tasksStore.get().taskMap.get('T003')!.status).toBe('done');
+  });
+
+  it('keeps the latest task route current across retries and completion', () => {
+    addEvent(
+      makeTaskStart({
+        taskId: taskId('T001'),
+        implementerProfile: 'stale-profile',
+        tool: 'old-tool',
+        model: 'old-model',
+      }),
+    );
+    addEvent(
+      makeTaskStart({
+        taskId: taskId('T001'),
+        implementerProfile: 'cheap-cloud',
+        tool: 'codex',
+        model: 'gpt-5.6',
+      }),
+    );
+
+    expect(tasksStore.get().taskMap.get('T001')?.route).toEqual({
+      profile: 'cheap-cloud',
+      runner: 'codex',
+      model: 'gpt-5.6',
+    });
+
+    const beforeRetry = tasksStore.get();
+    addEvent(makeRetry({ taskId: taskId('T001') }));
+    expect(tasksStore.get()).toBe(beforeRetry);
+
+    addEvent(makeTaskComplete({ taskId: taskId('T001') }));
+    expect(tasksStore.get().taskMap.get('T001')?.route).toEqual({
+      profile: 'cheap-cloud',
+      runner: 'codex',
+      model: 'gpt-5.6',
+    });
   });
 
   it('returns failed or done tasks to pending on task_reset', () => {

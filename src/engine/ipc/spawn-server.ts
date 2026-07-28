@@ -86,13 +86,13 @@ export function buildServerArgs(opts: SpawnServerOptions): IpcServerArgs {
   };
 }
 
-// The detached child inherits process.env, so OTEL_TRACES_EXPORTER / DIPTYCH_OTEL_EXPORTER
+// The detached child inherits process.env, so OTEL_TRACES_EXPORTER / SPLITBRIEF_OTEL_EXPORTER
 // already propagate. The `--otel-exporter` CLI flag lives only in the parent's argv, so it
 // must be translated into an env var the child's bootstrapOtel() can read.
 export function buildServerEnv(): NodeJS.ProcessEnv {
   const exporter = readOtelExporterFromArgv(process.argv);
   if (exporter === undefined) return process.env;
-  return { ...process.env, DIPTYCH_OTEL_EXPORTER: exporter };
+  return { ...process.env, SPLITBRIEF_OTEL_EXPORTER: exporter };
 }
 
 function tryConnect(sockPath: string): Promise<boolean> {

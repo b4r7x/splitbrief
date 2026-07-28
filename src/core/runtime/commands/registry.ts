@@ -523,7 +523,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       kind: 'arg',
       name: '/reject-run',
       label: 'reject run',
-      description: 'Restore diptych-written files from the run baseline',
+      description: 'Restore files written by SPLITBRIEF from the run baseline',
       validScreens: ['workflow', 'summary'],
       handler: async (args) => {
         if (args?.trim().toLowerCase() !== 'confirm') {

@@ -17,7 +17,7 @@ import {
   readCompactedMessages,
 } from './log-reader.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../schemas/session-log.js';
 import type { StructuredSummary } from '../schemas/compaction.js';
 
@@ -36,7 +36,7 @@ function makeTmp(): string {
 }
 
 function writeFixture(dir: string, lines: string[]): void {
-  const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+  const sessionPath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
   mkdirSync(sessionPath, { recursive: true });
   writeFileSync(join(sessionPath, 'session.jsonl'), lines.join('\n') + '\n');
 }
@@ -141,7 +141,7 @@ describe('readSessionLog', () => {
   itUnix('treats a symlinked session.jsonl as empty', async () => {
     const dir = makeTmp();
     const outside = createTempDir('log-reader-outside');
-    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const sessionPath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     try {
       mkdirSync(sessionPath, { recursive: true });
       writeFileSync(join(outside, 'session.jsonl'), FIXTURE_LINES.join('\n') + '\n');
@@ -186,7 +186,7 @@ describe('readCompactedMessages', () => {
   let sessionDir: string;
 
   beforeEach(() => {
-    sessionDir = mkdtempSync(join(tmpdir(), 'diptych-compact-read-'));
+    sessionDir = mkdtempSync(join(tmpdir(), 'splitbrief-compact-read-'));
   });
 
   afterEach(() => {

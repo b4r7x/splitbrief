@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { _resetMouseZones, hitTopmostZone } from '../../lib/terminal/mouse-zones.js';
 import { ListViewport } from './list-viewport.js';
@@ -99,6 +99,40 @@ describe('ListViewport row zones (integration)', () => {
 
     expect(second).toHaveBeenCalled();
     expect(first).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+
+  it('remeasures the same logical zone after its row width changes', async () => {
+    const activate = vi.fn();
+    const ui = renderFeature(
+      <Box width={12}>
+        <RowZone zoneId="row:stable" z={100} onActivate={activate}>
+          <Box width="100%">
+            <Text>row</Text>
+          </Box>
+        </RowZone>
+      </Box>,
+    );
+    await tick();
+
+    expect(hitTopmostZone(12, 1)?.id).toBe('row:stable');
+    expect(hitTopmostZone(13, 1)).toBeUndefined();
+
+    ui.rerender(
+      <Box width={6}>
+        <RowZone zoneId="row:stable" z={100} onActivate={activate}>
+          <Box width="100%">
+            <Text>row</Text>
+          </Box>
+        </RowZone>
+      </Box>,
+    );
+    await tick();
+
+    expect(hitTopmostZone(6, 1)?.id).toBe('row:stable');
+    expect(hitTopmostZone(7, 1)).toBeUndefined();
+    hitTopmostZone(6, 1)?.onClick?.();
+    expect(activate).toHaveBeenCalledOnce();
     ui.unmount();
   });
 });

@@ -1,29 +1,29 @@
 # Hook system (workflow lifecycle hooks)
 
-> **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands or built-in scanners that fire at well-known moments during a diptych workflow. Lifecycle hooks are not React hooks.
+> **Different from `docs/HOOKS.md`!** That doc covers React hooks. This doc covers user-extensible **workflow lifecycle hooks** — shell commands or built-in scanners that fire at well-known moments during a SPLITBRIEF workflow. Lifecycle hooks are not React hooks.
 
-User-extensible hook system inspired by Claude Agent SDK. Declare commands or modules in `.diptych/config.yaml`, or drop convention-named JS/TS modules into `.diptych/hooks/`, to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script or module.
+User-extensible hook system inspired by Claude Agent SDK. Declare commands or modules in `.splitbrief/config.yaml`, or drop convention-named JS/TS modules into `.splitbrief/hooks/`, to fire at workflow events (pre/post task, pre/post validation, optional pre/post commit, etc.). Used for `prettier --write` after each task, secret scanning when product-level commit hooks are enabled, Slack notifications, custom validators — anything you can run from a script or module.
 
 ## Quick start
 
 ```yaml
-# .diptych/config.yaml
+# .splitbrief/config.yaml
 hooks:
   post_task:
     - command: "npx"
       args: ["prettier", "--write", "${event.file}"]
       on_failure: warn
   pre_commit:
-    - command: ".diptych/hooks/check-secrets.sh"
+    - command: ".splitbrief/hooks/check-secrets.sh"
       timeout_ms: 10000
       on_failure: block
 ```
 
 ```bash
-diptych start --allow-hooks "add JWT auth"
+splitbrief start --allow-hooks "add JWT auth"
 ```
 
-The first time you run with hooks defined, diptych prompts to trust them. Use `--allow-hooks` in CI.
+The first time you run with hooks defined, SPLITBRIEF prompts to trust them. Use `--allow-hooks` in CI.
 
 ## Hook events
 
@@ -124,37 +124,37 @@ Return value shape:
 
 **Module not found:** Treated as `warn` regardless of `on_failure` config, same as ENOENT for command hooks.
 
-### `.diptych/hooks/` auto-discovery
+### `.splitbrief/hooks/` auto-discovery
 
-Diptych also auto-discovers JS/TS module hooks from `.diptych/hooks/`. Files named after hook events in kebab-case are registered for the matching event:
+SPLITBRIEF also auto-discovers JS/TS module hooks from `.splitbrief/hooks/`. Files named after hook events in kebab-case are registered for the matching event:
 
 | File                              | Event             |
 |-----------------------------------|-------------------|
-| `.diptych/hooks/pre-task.ts`      | `pre_task`        |
-| `.diptych/hooks/post-task.js`     | `post_task`       |
-| `.diptych/hooks/pre-validation.ts` | `pre_validation`  |
-| `.diptych/hooks/on-complete.js`   | `on_complete`     |
+| `.splitbrief/hooks/pre-task.ts`      | `pre_task`        |
+| `.splitbrief/hooks/post-task.js`     | `post_task`       |
+| `.splitbrief/hooks/pre-validation.ts` | `pre_validation`  |
+| `.splitbrief/hooks/on-complete.js`   | `on_complete`     |
 
-Discovery only considers `.js` and `.ts` files. Non-matching filenames such as `utils.ts`, `readme.md`, or `pre_task.ts` are ignored. A missing `.diptych/hooks/` directory is fine and registers no hooks.
+Discovery only considers `.js` and `.ts` files. Non-matching filenames such as `utils.ts`, `readme.md`, or `pre_task.ts` are ignored. A missing `.splitbrief/hooks/` directory is fine and registers no hooks.
 
-Discovered hooks are equivalent to `kind: module` entries with their `path` set to the project-relative discovered file, for example `.diptych/hooks/pre-task.js`. For the same event, explicitly configured hooks run first, then discovered hooks.
+Discovered hooks are equivalent to `kind: module` entries with their `path` set to the project-relative discovered file, for example `.splitbrief/hooks/pre-task.js`. For the same event, explicitly configured hooks run first, then discovered hooks.
 
 ### `command` restrictions
 
 Inline shell launchers are rejected. `command` cannot be `sh`, `bash`, `zsh`, `dash`, `fish`, `ksh`, `csh`, `tcsh`, `powershell`, `pwsh`, `cmd`, `cmd.exe`, common absolute variants such as `/bin/sh` and `/usr/bin/bash`, or `/usr/bin/env`. Hook `args` also cannot contain those shell launchers or shell-evaluation flags such as `-c`, `--command`, `/c`, and `/C`.
 
-Diptych does not run hooks with `shell: true`; substitution values pass through as argv elements safely. Inline shell is rejected so a hook cannot reintroduce shell evaluation at the argv boundary.
+SPLITBRIEF does not run hooks with `shell: true`; substitution values pass through as argv elements safely. Inline shell is rejected so a hook cannot reintroduce shell evaluation at the argv boundary.
 
 To run a shell pipeline, put it in a script file:
 
 ```yaml
 hooks:
   pre_commit:
-    - command: ".diptych/hooks/scan.sh"
+    - command: ".splitbrief/hooks/scan.sh"
       args: ["${event.file}"]
 ```
 
-Then make the script executable: `chmod +x .diptych/hooks/scan.sh`.
+Then make the script executable: `chmod +x .splitbrief/hooks/scan.sh`.
 
 ## Variable substitution
 
@@ -201,7 +201,7 @@ Which placeholders resolve depends on the event type. Missing fields collapse to
 
 ## Subprocess protocol
 
-For `kind: command` hooks, diptych communicates with the child process over stdio using JSON. The same shape applies whether the hook is a shell script, a Node program, or a binary.
+For `kind: command` hooks, SPLITBRIEF communicates with the child process over stdio using JSON. The same shape applies whether the hook is a shell script, a Node program, or a binary.
 
 ### stdin — input to the hook
 
@@ -265,7 +265,7 @@ Post hooks fire after the action has already happened. A `deny` returned from `p
 
 ## Execution order
 
-Hooks for the **same event** run **sequentially** — built-ins first, explicitly configured hooks in `.diptych/config.yaml` declaration order, then discovered `.diptych/hooks/` modules. There is no fan-out or parallelism.
+Hooks for the **same event** run **sequentially** — built-ins first, explicitly configured hooks in `.splitbrief/config.yaml` declaration order, then discovered `.splitbrief/hooks/` modules. There is no fan-out or parallelism.
 
 Hooks for **different events** never overlap — the orchestrator runs one task at a time, so `post_task` for task N completes before `pre_task` for task N+1 starts. A hung or slow hook at one event does not race with hooks at another event for the same task.
 
@@ -311,25 +311,25 @@ A hung hook can never stall the workflow indefinitely — `timeout_ms` is mandat
 
 Hook commands run with the user's **full shell privileges** — the same authority as any other process they launch. This is intentional and matches the posture of Claude Agent SDK hooks and comparable tools (opencode plugins, Cursor Composer hooks). Without full privileges, hooks could not invoke `npx prettier`, open a scanner, or call the user's CI.
 
-Because of that authority, diptych layers several guardrails:
+Because of that authority, SPLITBRIEF layers several guardrails:
 
 1. **No inline shell.** Schema rejects common shell launchers and shell-evaluation flags. Substitution never uses `shell: true`, so event-field values cannot be injected as shell syntax. If you need a pipeline, put it in a script file and invoke the script.
 2. **Mandatory timeout.** `timeout_ms` has a default (30000 ms) and a hard ceiling (300000 ms). A hung hook cannot stall the workflow indefinitely.
 3. **Project cwd start.** Hooks start in `cwd: projectDir`, matching the implementer subprocess. This is not a filesystem sandbox: hook commands retain normal user access and can read or write anywhere the user account can.
-4. **Trust recheck before execution.** Before running a configured hook, diptych re-hashes the trusted hook configuration and referenced hook files. If bytes changed after trust, the hook is refused until the user re-trusts the new configuration.
+4. **Trust recheck before execution.** Before running a configured hook, SPLITBRIEF re-hashes the trusted hook configuration and referenced hook files. If bytes changed after trust, the hook is refused until the user re-trusts the new configuration.
 
-Claude Code `PreToolUse` hooks do not sandbox or intercept child processes spawned by diptych hooks. In this repository, `.claude/hooks/block-git-commits.sh` guards agent tool calls, not arbitrary subprocesses launched by lifecycle hooks. Do not rely on it as a git guard for diptych hook scripts.
+Claude Code `PreToolUse` hooks do not sandbox or intercept child processes spawned by SPLITBRIEF hooks. In this repository, `.claude/hooks/block-git-commits.sh` guards agent tool calls, not arbitrary subprocesses launched by lifecycle hooks. Do not rely on it as a git guard for SPLITBRIEF hook scripts.
 
 ### Trust model
 
-Adding a hook to `.diptych/config.yaml` is RCE on the next `diptych start`. A malicious PR could drop a `hooks:` block and own the reviewer's machine. To prevent this:
+Adding a hook to `.splitbrief/config.yaml` is RCE on the next `splitbrief start`. A malicious PR could drop a `hooks:` block and own the reviewer's machine. To prevent this:
 
-- The first time diptych sees a hook config, it computes `sha256(canonical-JSON + module dependency digests + local command script digests)` and prompts in TTY: `Trust these hooks for this project? [y/N]`
-- On `y`: hash stored in `.diptych/hook-trust.json`. Future runs compare against the stored hash.
+- The first time SPLITBRIEF sees a hook config, it computes `sha256(canonical-JSON + module dependency digests + local command script digests)` and prompts in TTY: `Trust these hooks for this project? [y/N]`
+- On `y`: hash stored in `.splitbrief/hook-trust.json`. Future runs compare against the stored hash.
 - On `N`: refuses to start.
 - Editing the config, a module hook file/dependency, or a local command hook script invalidates the trust. The next run re-prompts, and an in-flight run refuses configured hook execution if the trusted bytes change before the hook runs.
 
-**In CI** (non-TTY): you must pass `--allow-hooks` explicitly. Without it, diptych refuses to start with an actionable error message.
+**In CI** (non-TTY): you must pass `--allow-hooks` explicitly. Without it, SPLITBRIEF refuses to start with an actionable error message.
 
 ## Built-in hooks
 
@@ -370,7 +370,7 @@ Built-ins run **before** user-declared hooks for the same event.
 
 Goal: auto-run Prettier after each task.
 
-1. Edit `.diptych/config.yaml`:
+1. Edit `.splitbrief/config.yaml`:
 
 ```yaml
 hooks:
@@ -381,10 +381,10 @@ hooks:
 2. Run:
 
 ```bash
-diptych start --allow-hooks "add login form"
+splitbrief start --allow-hooks "add login form"
 ```
 
-3. Diptych runs the workflow. After each task succeeds, Prettier reformats the touched file.
+3. SPLITBRIEF runs the workflow. After each task succeeds, Prettier reformats the touched file.
 
 That's it. No script needed — `prettier-on-change` is shipped as a built-in.
 
@@ -412,6 +412,6 @@ Schema: `src/core/schemas/hooks.ts`.
 Alternatives that were considered and rejected when the hook system was designed:
 
 - **JS modules only (no shell).** Type-safe and in-process, but excludes users who want to wire up `prettier`, a secret scanner, or a Slack notifier without writing TypeScript against a not-yet-public SDK. Shell / script hooks cover the common case today; `kind: module` was added later as a complement, not a replacement.
-- **Reuse Claude Code's hooks file format.** Their schema (`~/.claude/settings.json`, `PreToolUse(tool_name)` matchers) is shaped around tool-call lifecycles, not a workflow lifecycle. Forcing the same shape would lie about what diptych exposes — our events are workflow-shaped (`pre_task`, `post_validation`, optional `pre_commit`). Tool calls belong to the configured planner or implementer runner, while diptych hooks stay at deterministic workflow boundaries.
-- **Auto-trust hook config (no `--allow-hooks` prompt).** Simpler UX, but a malicious diff that adds a hook becomes RCE on the next `diptych start`. Unacceptable. Explicit trust (hash + prompt) is the cost of safety.
+- **Reuse Claude Code's hooks file format.** Their schema (`~/.claude/settings.json`, `PreToolUse(tool_name)` matchers) is shaped around tool-call lifecycles, not a workflow lifecycle. Forcing the same shape would lie about what SPLITBRIEF exposes — our events are workflow-shaped (`pre_task`, `post_validation`, optional `pre_commit`). Tool calls belong to the configured planner or implementer runner, while SPLITBRIEF hooks stay at deterministic workflow boundaries.
+- **Auto-trust hook config (no `--allow-hooks` prompt).** Simpler UX, but a malicious diff that adds a hook becomes RCE on the next `splitbrief start`. Unacceptable. Explicit trust (hash + prompt) is the cost of safety.
 - **Parallel / async fan-out within an event.** Lower latency, but deny short-circuiting is order-dependent — a later hook should never run after an earlier one has already aborted the action. The latency win is hypothetical; five hooks on one event is already pathological.

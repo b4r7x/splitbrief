@@ -2,6 +2,8 @@ import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { hitTopmostZone } from '../../../lib/terminal/mouse-zones.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { hoverStore } from '../../../stores/ui/hover.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { completionStore } from '../../../stores/ui/completion.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
@@ -31,14 +33,6 @@ type WorkflowHit =
   | { surface: 'brief'; index: number }
   | { surface: 'conversation'; index: number };
 
-function withinRect(
-  rect: { left: number; right: number; top: number; bottom: number },
-  sgrX: number,
-  sgrY: number,
-): boolean {
-  return sgrX >= rect.left && sgrX <= rect.right && sgrY >= rect.top && sgrY <= rect.bottom;
-}
-
 function resolveWorkflowHit(
   sgrX: number,
   sgrY: number,
@@ -46,19 +40,20 @@ function resolveWorkflowHit(
 ): WorkflowHit | null {
   const railIndex = hitRailStage(readRailSnapshot().zones, sgrX, sgrY);
   if (railIndex !== null) return { surface: 'rail', index: railIndex };
-  const brief = readBriefListSnapshot();
-  if (brief) {
+  if (controlsStore.get().inputMode === 'review') {
+    if (reviewStore.get().filePath === null) return null;
+    const brief = readBriefListSnapshot();
+    if (brief === null) return null;
     const index = hitBriefTaskRow({
       rect: brief.rect,
       sgrX,
       sgrY,
-      hasLoadError: brief.hasLoadError,
+      taskTopOffset: brief.taskTopOffset,
       visibleCount: brief.visibleCount,
       previousCount: brief.previousCount,
     });
     return index === null ? null : { surface: 'brief', index };
   }
-  if (reviewStore.get().filePath) return null;
   const visibleCount = hoverSnapshot.stickyLeadingRows + hoverSnapshot.viewportHeight;
   const index = hitTranscriptRow({
     rect: hoverSnapshot.conversationRect,
@@ -69,23 +64,12 @@ function resolveWorkflowHit(
   return index === null ? null : { surface: 'conversation', index };
 }
 
-function isOverWorkflowHoverSurface(
-  sgrX: number,
-  sgrY: number,
-  hoverSnapshot: ConversationHoverSnapshot,
-): boolean {
-  const brief = readBriefListSnapshot();
-  if (brief && withinRect(brief.rect, sgrX, sgrY)) return true;
-  if (reviewStore.get().filePath) return false;
-  return withinRect(hoverSnapshot.conversationRect, sgrX, sgrY);
-}
-
 function scrollToRailStage(stageIndex: number): void {
   const { activeIndex } = readRailSnapshot();
   const target = activeIndex >= RAIL_STAGES.length ? RAIL_STAGES.length - 1 : activeIndex;
   const snapshot = readConversationScrollSnapshot();
   conversationScrollStore.scrollToBottom(snapshot.renderableCount);
-  // The transcript runs oldest to newest while the rail runs spec to verify: stage 0 anchors to the top
+  // The transcript runs oldest to newest while the rail runs Plan to Verify: stage 0 anchors to the top
   // (maxOffset), the current stage to the just-set bottom. An in-between stage lands proportionally
   // on its slice of the transcript instead of collapsing every click to top-or-bottom.
   if (stageIndex >= target) return;
@@ -100,14 +84,9 @@ function scrollToRailStage(stageIndex: number): void {
 }
 
 function handleHover(sgrX: number, sgrY: number): void {
-  const railIndex = hitRailStage(readRailSnapshot().zones, sgrX, sgrY);
-  if (railIndex !== null) {
-    hoverStore.clear();
-    return;
-  }
-
   const hoverSnapshot = readConversationHoverSnapshot();
-  if (!isOverWorkflowHoverSurface(sgrX, sgrY, hoverSnapshot)) {
+  const hit = resolveWorkflowHit(sgrX, sgrY, hoverSnapshot);
+  if (!hit || hit.surface === 'rail') {
     hoverStore.clear();
     return;
   }
@@ -116,11 +95,6 @@ function handleHover(sgrX: number, sgrY: number): void {
   if (now - lastHoverAt < HOVER_THROTTLE_MS) return;
   lastHoverAt = now;
 
-  const hit = resolveWorkflowHit(sgrX, sgrY, hoverSnapshot);
-  if (!hit || hit.surface === 'rail') {
-    hoverStore.clear();
-    return;
-  }
   hoverStore.set(hit.surface, hit.index);
 }
 
@@ -161,6 +135,10 @@ export function clearWorkflowHover(): void {
 }
 
 export function handleWorkflowMouseMove(event: MouseEvent): void {
+  if (completionStore.get().open) {
+    hoverStore.clear();
+    return;
+  }
   handleHover(event.x, event.y);
 }
 
@@ -169,6 +147,7 @@ export function handleWorkflowPromptMousePress(event: MouseEvent): void {
 }
 
 export function handleWorkflowMousePress(event: MouseEvent): void {
+  if (completionStore.get().open) return;
   const zone = hitTopmostZone(event.x, event.y);
   if (zone) {
     zone.onClick?.();

@@ -3,6 +3,7 @@ import type { McpResponse, McpError } from './types.js';
 import type { McpResolver } from './resolver.js';
 import type { McpToolHandler } from './types.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 
 export const PARSE_ERROR = -32700;
 export const INVALID_REQUEST = -32600;
@@ -89,7 +90,7 @@ export async function handleMessage(
             resources: {},
             ...(toolHandler ? { tools: {} } : {}),
           },
-          serverInfo: { name: 'diptych', version: serverVersion },
+          serverInfo: { name: SPLITBRIEF_IDENTITY.slug, version: serverVersion },
         },
       },
     };

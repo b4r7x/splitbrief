@@ -53,18 +53,18 @@ function renderList(worktrees: WorktreeInfo[]): void {
 }
 
 export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = defaultDeps): void {
-  const worktree = program.command('worktree').description('Manage diptych-managed git worktrees');
+  const worktree = program.command('worktree').description('Manage SPLITBRIEF git worktrees');
 
   worktree
     .command('list')
-    .description('List all diptych-managed worktrees')
+    .description('List all SPLITBRIEF worktrees')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { project?: string }) => {
       const projectDir = resolveProjectDir(opts.project);
       const worktrees = await deps.listWorktrees(projectDir);
 
       if (worktrees.length === 0) {
-        console.log('No diptych-managed worktrees found.');
+        console.log('No SPLITBRIEF worktrees found.');
         return;
       }
 
@@ -88,7 +88,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
       console.log(`  cd .trees/${name}`);
       console.log('');
       console.log('Or add the following shell function to your profile:');
-      console.log('  diptych-switch() { cd "$(diptych worktree path "$1")"; }');
+      console.log('  splitbrief-switch() { cd "$(splitbrief worktree path "$1")"; }');
     });
 
   worktree
@@ -109,9 +109,9 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
 
   worktree
     .command('remove <name>')
-    .description('Remove a diptych-managed worktree')
+    .description('Remove a SPLITBRIEF worktree')
     .option('--force', 'Bypass live-session and uncommitted-changes guards')
-    .option('--delete-branch', 'Also delete the diptych/<name> branch')
+    .option('--delete-branch', 'Also delete the splitbrief/<name> branch')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(
       async (name: string, opts: { force?: boolean; deleteBranch?: boolean; project?: string }) => {
@@ -130,7 +130,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
 
         console.log(`Removed worktree ".trees/${name}".`);
         if (opts.deleteBranch) {
-          console.log(`Deleted branch diptych/${name}.`);
+          console.log(`Deleted branch splitbrief/${name}.`);
         }
       },
     );

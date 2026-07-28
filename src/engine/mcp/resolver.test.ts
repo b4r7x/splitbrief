@@ -10,7 +10,7 @@ import { createInitialState, CURRENT_STATE_VERSION } from '../../core/state/mach
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import { createResolver } from './resolver.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../../core/paths.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -122,13 +122,13 @@ function makeResolver(projectDir: string, sessionId: string, persistTranscript =
   return createResolver({
     projectDir,
     sessionIds: [sessionId],
-    diptychVersion: '1.2.3',
+    splitbriefVersion: '1.2.3',
     persistTranscript,
   });
 }
 
 function sessionPath(projectDir: string, sessionId: string): string {
-  return join(projectDir, '.diptych', 'sessions', sessionId);
+  return join(projectDir, '.splitbrief', 'sessions', sessionId);
 }
 
 describe('listResources', () => {
@@ -142,8 +142,8 @@ describe('listResources', () => {
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map((r) => r.uri);
 
-    expect(uris).toContain('mcp://diptych/sessions');
-    expect(uris).toContain(`mcp://diptych/sessions/${id}/manifest.json`);
+    expect(uris).toContain('mcp://splitbrief/sessions');
+    expect(uris).toContain(`mcp://splitbrief/sessions/${id}/manifest.json`);
   });
 
   it('does not advertise manifest.json when canonical summary/state artifacts are unavailable', async () => {
@@ -156,8 +156,8 @@ describe('listResources', () => {
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map((r) => r.uri);
 
-    expect(uris).toContain('mcp://diptych/sessions');
-    expect(uris).not.toContain(`mcp://diptych/sessions/${id}/manifest.json`);
+    expect(uris).toContain('mcp://splitbrief/sessions');
+    expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/manifest.json`);
   });
 
   it('always includes /tasks URI', async () => {
@@ -170,7 +170,7 @@ describe('listResources', () => {
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map((r) => r.uri);
 
-    expect(uris).toContain(`mcp://diptych/sessions/${id}/tasks`);
+    expect(uris).toContain(`mcp://splitbrief/sessions/${id}/tasks`);
   });
 
   it('omits plan.md URI when no plan.md exists', async () => {
@@ -183,7 +183,7 @@ describe('listResources', () => {
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map((r) => r.uri);
 
-    expect(uris).not.toContain(`mcp://diptych/sessions/${id}/plan.md`);
+    expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/plan.md`);
   });
 
   it('includes spec.md URI when file exists', async () => {
@@ -197,7 +197,7 @@ describe('listResources', () => {
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map((r) => r.uri);
 
-    expect(uris).toContain(`mcp://diptych/sessions/${id}/spec.md`);
+    expect(uris).toContain(`mcp://splitbrief/sessions/${id}/spec.md`);
   });
 
   it('includes task URIs for tasks found in tasks.md', async () => {
@@ -211,8 +211,8 @@ describe('listResources', () => {
     const resolver = makeResolver(projectDir, id);
     const uris = (await resolver.listResources()).map((r) => r.uri);
 
-    expect(uris).toContain(`mcp://diptych/sessions/${id}/tasks/T001`);
-    expect(uris).toContain(`mcp://diptych/sessions/${id}/tasks/T002`);
+    expect(uris).toContain(`mcp://splitbrief/sessions/${id}/tasks/T001`);
+    expect(uris).toContain(`mcp://splitbrief/sessions/${id}/tasks/T002`);
   });
 
   it('excludes sessions not in sessionIds', async () => {
@@ -225,10 +225,10 @@ describe('listResources', () => {
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
     saveSummary({ projectDir: projectDir, sessionId: otherId }, { ...SESSION_STUB, id: otherId });
 
-    const resolver = createResolver({ projectDir, sessionIds: [id], diptychVersion: '1.0.0' });
+    const resolver = createResolver({ projectDir, sessionIds: [id], splitbriefVersion: '1.0.0' });
     const uris = (await resolver.listResources()).map((r) => r.uri);
 
-    expect(uris).not.toContain(`mcp://diptych/sessions/${otherId}/manifest.json`);
+    expect(uris).not.toContain(`mcp://splitbrief/sessions/${otherId}/manifest.json`);
   });
 
   itUnix(
@@ -239,17 +239,17 @@ describe('listResources', () => {
       const outside = createTempDir('resolver-symlink-sessions-outside');
       const id = 'sess-symlink';
       try {
-        mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+        mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
         writeCanonicalArtifactsAtSessionsRoot(outside, id);
-        symlinkSync(outside, join(projectDir, DIPTYCH_DIR, SESSIONS_DIR), 'dir');
+        symlinkSync(outside, join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR), 'dir');
 
         const resolver = makeResolver(projectDir, id);
         const uris = (await resolver.listResources()).map((r) => r.uri);
 
-        expect(uris).not.toContain(`mcp://diptych/sessions/${id}/manifest.json`);
-        expect(uris).not.toContain(`mcp://diptych/sessions/${id}/tasks`);
-        expect(uris).not.toContain(`mcp://diptych/sessions/${id}/summary.json`);
-        expect(uris).not.toContain(`mcp://diptych/sessions/${id}/state.json`);
+        expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/manifest.json`);
+        expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/tasks`);
+        expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/summary.json`);
+        expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/state.json`);
       } finally {
         cleanupTempDir(outside);
       }
@@ -266,7 +266,7 @@ describe('readResource - /sessions', () => {
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource('mcp://diptych/sessions');
+    const result = await resolver.readResource('mcp://splitbrief/sessions');
 
     expect(result).not.toBeNull();
     expect(result?.mimeType).toBe('application/json');
@@ -275,27 +275,27 @@ describe('readResource - /sessions', () => {
     expect(parsed[0]).toMatchObject({ id, status: 'interrupted' });
   });
 
-  itUnix('does not read sessions through a symlinked .diptych directory', async () => {
-    const projectDir = createTempDir('resolver-symlink-diptych');
+  itUnix('does not read sessions through a symlinked .splitbrief directory', async () => {
+    const projectDir = createTempDir('resolver-symlink-splitbrief');
     dirs.push(projectDir);
-    const outsideDiptych = createTempDir('resolver-symlink-diptych-outside');
+    const outsideSplitbrief = createTempDir('resolver-symlink-splitbrief-outside');
     const id = 'sess-outside';
     try {
-      writeCanonicalArtifactsAtSessionsRoot(join(outsideDiptych, SESSIONS_DIR), id);
-      symlinkSync(outsideDiptych, join(projectDir, DIPTYCH_DIR), 'dir');
+      writeCanonicalArtifactsAtSessionsRoot(join(outsideSplitbrief, SESSIONS_DIR), id);
+      symlinkSync(outsideSplitbrief, join(projectDir, SPLITBRIEF_DIR), 'dir');
 
       const resolver = makeResolver(projectDir, id);
       const resources = await resolver.listResources();
       const uris = resources.map((r) => r.uri);
-      const result = await resolver.readResource('mcp://diptych/sessions');
+      const result = await resolver.readResource('mcp://splitbrief/sessions');
 
-      expect(uris).not.toContain(`mcp://diptych/sessions/${id}/manifest.json`);
-      expect(uris).not.toContain(`mcp://diptych/sessions/${id}/tasks`);
-      expect(uris).not.toContain(`mcp://diptych/sessions/${id}/summary.json`);
-      expect(uris).not.toContain(`mcp://diptych/sessions/${id}/state.json`);
+      expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/manifest.json`);
+      expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/tasks`);
+      expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/summary.json`);
+      expect(uris).not.toContain(`mcp://splitbrief/sessions/${id}/state.json`);
       expect(JSON.parse(result!.text!)).toEqual([]);
     } finally {
-      cleanupTempDir(outsideDiptych);
+      cleanupTempDir(outsideSplitbrief);
     }
   });
 });
@@ -313,7 +313,7 @@ describe('readResource - /manifest.json', () => {
     );
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/manifest.json`);
 
     expect(result).not.toBeNull();
     expect(result?.mimeType).toBe('application/json');
@@ -321,7 +321,7 @@ describe('readResource - /manifest.json', () => {
     expect(manifest.target).toBe('live-mcp');
     expect(manifest.sessionId).toBe(id);
     expect(manifest.packVersion).toBe('1');
-    expect(manifest.diptychVersion).toBe('1.2.3');
+    expect(manifest.splitbriefVersion).toBe('1.2.3');
     expect(manifest.generatedAt).toBe(new Date(1700000005000).toISOString());
     expect(manifest.mode).toBe('speckit');
     expect(manifest.taskIds).toEqual(['T001', 'T002']);
@@ -338,11 +338,11 @@ describe('readResource - /manifest.json', () => {
 
     const resolver = makeResolver(projectDir, id);
     const manifestResult = await resolver.readResource(
-      `mcp://diptych/sessions/${id}/manifest.json`,
+      `mcp://splitbrief/sessions/${id}/manifest.json`,
     );
     const manifest = JSON.parse(manifestResult!.text!);
     for (const artifact of manifest.artifacts.tasks as string[]) {
-      const read = await resolver.readResource(`mcp://diptych/sessions/${id}/${artifact}`);
+      const read = await resolver.readResource(`mcp://splitbrief/sessions/${id}/${artifact}`);
       expect(read).not.toBeNull();
       expect(read?.mimeType).toBe('text/markdown');
       expect(read?.text?.length).toBeGreaterThan(0);
@@ -358,7 +358,7 @@ describe('readResource - /manifest.json', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
-    const read = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks/T001.md`);
+    const read = await resolver.readResource(`mcp://splitbrief/sessions/${id}/tasks/T001.md`);
     expect(read).not.toBeNull();
     expect(read?.text).toContain('id: T001');
   });
@@ -378,7 +378,7 @@ describe('readResource - /manifest.json', () => {
     );
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/manifest.json`);
 
     expect(result).toBeNull();
   });
@@ -391,7 +391,7 @@ describe('readResource - /manifest.json', () => {
     saveSummary({ projectDir: projectDir, sessionId: id }, makeCompleteSession(id));
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/manifest.json`);
 
     expect(result).toBeNull();
   });
@@ -404,7 +404,7 @@ describe('readResource - /manifest.json', () => {
     writeCanonicalArtifacts(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/manifest.json`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/manifest.json`);
     const manifest = JSON.parse(result!.text!);
 
     expect(manifest.briefHash).toBe(hashTaskBrief([taskOne, taskTwo]));
@@ -421,7 +421,7 @@ describe('readResource - file resources', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'spec.md'), '# My Spec\nHello');
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/spec.md`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/spec.md`);
 
     expect(result?.mimeType).toBe('text/markdown');
     expect(result?.text).toBe('# My Spec\nHello');
@@ -435,7 +435,7 @@ describe('readResource - file resources', () => {
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/evidence.json`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/evidence.json`);
 
     expect(result).toBeNull();
   });
@@ -448,8 +448,8 @@ describe('readResource - file resources', () => {
     writeCanonicalArtifacts(projectDir, id);
 
     const resolver = makeResolver(projectDir, id);
-    const summary = await resolver.readResource(`mcp://diptych/sessions/${id}/summary.json`);
-    const state = await resolver.readResource(`mcp://diptych/sessions/${id}/state.json`);
+    const summary = await resolver.readResource(`mcp://splitbrief/sessions/${id}/summary.json`);
+    const state = await resolver.readResource(`mcp://splitbrief/sessions/${id}/state.json`);
 
     expect(summary?.mimeType).toBe('application/json');
     expect(JSON.parse(summary!.text!).id).toBe(id);
@@ -497,8 +497,8 @@ describe('readResource - file resources', () => {
     );
 
     const resolver = makeResolver(projectDir, id, false);
-    const sessions = await resolver.readResource('mcp://diptych/sessions');
-    const state = await resolver.readResource(`mcp://diptych/sessions/${id}/state.json`);
+    const sessions = await resolver.readResource('mcp://splitbrief/sessions');
+    const state = await resolver.readResource(`mcp://splitbrief/sessions/${id}/state.json`);
 
     expect(sessions).not.toBeNull();
     expect(JSON.parse(sessions!.text!)[0].title).toBe(TRANSCRIPT_OMITTED_MESSAGE);
@@ -542,8 +542,8 @@ describe('readResource - file resources', () => {
     );
 
     const resolver = makeResolver(projectDir, id, true);
-    const sessions = await resolver.readResource('mcp://diptych/sessions');
-    const state = await resolver.readResource(`mcp://diptych/sessions/${id}/state.json`);
+    const sessions = await resolver.readResource('mcp://splitbrief/sessions');
+    const state = await resolver.readResource(`mcp://splitbrief/sessions/${id}/state.json`);
 
     expect(sessions).not.toBeNull();
     expect(JSON.parse(sessions!.text!)[0].title).toBe(TRANSCRIPT_OMITTED_MESSAGE);
@@ -562,8 +562,8 @@ describe('readResource - file resources', () => {
 
     const resolver = makeResolver(projectDir, id);
 
-    expect(await resolver.readResource(`mcp://diptych/sessions/${id}/summary.json`)).toBeNull();
-    expect(await resolver.readResource(`mcp://diptych/sessions/${id}/state.json`)).toBeNull();
+    expect(await resolver.readResource(`mcp://splitbrief/sessions/${id}/summary.json`)).toBeNull();
+    expect(await resolver.readResource(`mcp://splitbrief/sessions/${id}/state.json`)).toBeNull();
   });
 });
 
@@ -577,7 +577,7 @@ describe('readResource - tasks', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks/T001`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/tasks/T001`);
 
     expect(result).not.toBeNull();
     expect(result?.mimeType).toBe('text/markdown');
@@ -593,7 +593,7 @@ describe('readResource - tasks', () => {
     writeFileSync(join(sessionPath(projectDir, id), 'tasks.md'), TASKS_MD);
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks/T999`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/tasks/T999`);
 
     expect(result).toBeNull();
   });
@@ -608,7 +608,7 @@ describe('readResource - edge cases', () => {
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource('mcp://diptych/unknown/path');
+    const result = await resolver.readResource('mcp://splitbrief/unknown/path');
 
     expect(result).toBeNull();
   });
@@ -618,8 +618,8 @@ describe('readResource - edge cases', () => {
     dirs.push(projectDir);
     const id = 'sess-j';
 
-    const resolver = createResolver({ projectDir, sessionIds: [id], diptychVersion: '1.0.0' });
-    const uri = `mcp://diptych/sessions/${id}/spec.md`;
+    const resolver = createResolver({ projectDir, sessionIds: [id], splitbriefVersion: '1.0.0' });
+    const uri = `mcp://splitbrief/sessions/${id}/spec.md`;
 
     await expect(resolver.readResource(uri)).resolves.toBeNull();
   });
@@ -631,8 +631,8 @@ describe('readResource - edge cases', () => {
     const otherId = 'sess-other';
     ensureSessionDir(projectDir, otherId);
 
-    const resolver = createResolver({ projectDir, sessionIds: [id], diptychVersion: '1.0.0' });
-    const result = await resolver.readResource(`mcp://diptych/sessions/${otherId}/spec.md`);
+    const resolver = createResolver({ projectDir, sessionIds: [id], splitbriefVersion: '1.0.0' });
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${otherId}/spec.md`);
 
     expect(result).toBeNull();
   });
@@ -645,7 +645,7 @@ describe('readResource - edge cases', () => {
     saveSummary({ projectDir: projectDir, sessionId: id }, { ...SESSION_STUB, id });
 
     const resolver = makeResolver(projectDir, id);
-    const result = await resolver.readResource(`mcp://diptych/sessions/${id}/tasks`);
+    const result = await resolver.readResource(`mcp://splitbrief/sessions/${id}/tasks`);
 
     expect(result).not.toBeNull();
     expect(JSON.parse(result!.text!)).toEqual([]);

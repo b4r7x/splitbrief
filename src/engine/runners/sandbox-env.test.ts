@@ -104,7 +104,7 @@ describe('createSandboxEnv', () => {
     setEnv('REDIS_URL', 'redis://:pass@host:6379');
     setEnv('MONGODB_URI', 'mongodb://user:pass@host/db');
     setEnv('AWS_SECRET_ACCESS_KEY', 'aws-secret');
-    setEnv('DIPTYCH_PUBLIC_FLAG', 'keep-me');
+    setEnv('SPLITBRIEF_PUBLIC_FLAG', 'keep-me');
 
     const env = await createSandboxEnv(projectDir);
 
@@ -115,7 +115,7 @@ describe('createSandboxEnv', () => {
     expect(env.REDIS_URL).toBeUndefined();
     expect(env.MONGODB_URI).toBeUndefined();
     expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
-    expect(env.DIPTYCH_PUBLIC_FLAG).toBe('keep-me');
+    expect(env.SPLITBRIEF_PUBLIC_FLAG).toBe('keep-me');
   });
 
   it('strips credential handle env vars unless allowlisted', async () => {

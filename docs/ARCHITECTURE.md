@@ -1,4 +1,4 @@
-# diptych — Architecture
+# SPLITBRIEF — Architecture
 
 How the code is organized and how data flows through the system. For *what* the system does, see `docs/CONCEPTS.md` and `README.md`. For the workflow state machine itself, see `docs/WORKFLOW.md`.
 
@@ -124,42 +124,42 @@ UI code is organized by **business feature**, not technical layer — see [`STRU
 Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow the same pattern:
 
 1. Parse CLI flags via commander.
-2. Resolve project dir; load config from `.diptych/config.yaml`.
+2. Resolve project dir; load config from `.splitbrief/config.yaml`.
 3. `initStores()` — load config, sessions, skills into module-scoped stores before anything renders. This is the only place where `store.load()` runs. Doing it earlier (inside React hooks) caused infinite render loops, so it's lifted out.
 4. Initialise the router store (`routerStore.init({ screen, feature?, resumeState? })`).
 5. Call `renderApp(<App/>)`, which hands off to Ink.
 
 | Command | Screen entered | Active pointer / saved state |
 |---------|---------------|-------------------------------|
-| `diptych start "feature"` | `workflow` or `setup` | Creates a new session folder. Foreground/headless/RPC runs write `.diptych/active`; detached runs write a lockfile. |
-| `diptych resume` | `workflow` with `resumeState` | Reads `.diptych/active`, loads `sessions/<id>/state.json`; fails if missing or version mismatched |
-| `diptych spec "feature"` | `workflow` (engine returns after planning artifacts) | Creates session like `start`, but exits after planning phases |
-| `diptych init` | `setup` (interactive config builder) | No session created |
-| `diptych status` | Prints active session's `state.json` to stdout, no TUI | Read-only; doesn't claim the lock |
+| `splitbrief start "feature"` | `workflow` or `setup` | Creates a new session folder. Foreground/headless/RPC runs write `.splitbrief/active`; detached runs write a lockfile. |
+| `splitbrief resume` | `workflow` with `resumeState` | Reads `.splitbrief/active`, loads `sessions/<id>/state.json`; fails if missing or version mismatched |
+| `splitbrief spec "feature"` | `workflow` (engine returns after planning artifacts) | Creates session like `start`, but exits after planning phases |
+| `splitbrief init` | `setup` (interactive config builder) | No session created |
+| `splitbrief status` | Prints active session's `state.json` to stdout, no TUI | Read-only; doesn't claim the lock |
 
 ---
 
 ## Data flow, one task
 
-1. **User** runs `diptych start "add JWT auth"`.
+1. **User** runs `splitbrief start "add JWT auth"`.
 2. `cli/commands/start/register.ts` boots stores, initialises router with the feature, renders `<App/>`.
 3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
 4. `useWorkflowRunner()` is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/workflow.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the sinks described in [Event bus + sinks](#5-event-bus--sinks). The bus is threaded through `WorkflowContext.bus`.
 5. `runWorkflow` creates planner + implementer via factories, compiles Task Briefs, produces supporting spec/plan artifacts when the selected mode includes them, then runs the task loop and final review.
 6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
    - `tuiSink` (`src/features/workflow/tui-sink.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
-   - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.diptych/sessions/<id>/session.jsonl` via `appendEngineEvent` in `src/core/sessions/log-writer.ts`.
-   - `treeRecorderSink` (`src/engine/events/sinks/tree-recorder.ts`) — appends `.diptych/sessions/<id>/session-tree.jsonl` and `tree-meta.json`.
-   - `stdoutJsonSink` (`src/engine/events/sinks/stdout-json.ts`) — opt-in under `--json` / `diptych start --json`; writes NDJSON events on stdout for headless integration (see `src/cli/headless.ts`).
+   - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent` in `src/core/sessions/log-writer.ts`.
+   - `treeRecorderSink` (`src/engine/events/sinks/tree-recorder.ts`) — appends `.splitbrief/sessions/<id>/session-tree.jsonl` and `tree-meta.json`.
+   - `stdoutJsonSink` (`src/engine/events/sinks/stdout-json.ts`) — opt-in under `--json` / `splitbrief start --json`; writes NDJSON events on stdout for headless integration (see `src/cli/headless.ts`).
    - `otelSink` (`src/engine/events/sinks/otel.ts`) — opt-in via `config.otel.enabled`; maps `EngineEvent` to OpenTelemetry spans. See [`OTEL.md`](./OTEL.md) §Design decisions.
    - Hook sink (`src/engine/hooks/sink.ts`) — dispatches matching `post_*`/`on_*` workflow hooks fire-and-forget. `pre_*` hooks are run synchronously at the orchestrator call site via `run-pre.ts`.
 
-   `saveState()` writes to `.diptych/sessions/<id>/state.json` on every phase transition.
+   `saveState()` writes to `.splitbrief/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
 8. For user-gated moments (approval, clarification, continuation, cost approval, edit conflicts, file-write tiered approvals, and task review), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onQuestionAsked(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onCostApprovalNeeded(…)`, `callbacks.onUserEditConflict(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onTaskReviewNeeded(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise. Budget pressure is not gated this way: spend thresholds publish `budget_warning` / `budget_paused` / `budget_exceeded` events and the pause/stop is driven through the recovery channel (`recovery_needed`).
 9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `WorkflowState.messageQueue`; workflow lifecycle stores keep the UI queue indicators in sync. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For planners that implement `injectUserTurn()`, each queued message is also dispatched in parallel as a native user turn into the live session.
 10. **Abort**: a single Ctrl-C fires an `AbortController` which propagates into the active planner/implementer call (for HTTP) or sends SIGTERM (for subprocesses). The partial response is preserved in `session.jsonl` with `interrupted: true`. The workflow enters an **awaiting-continue** sub-state but the `phase` does *not* reset. A second Ctrl-C within 2 seconds exits the workflow after state is saved; continue later with an explicit session id if the saved state is resumable. Esc Esc also aborts via a two-press ladder: the first Esc arms an `interrupt` (live phase) or `cancel` (question prompt) intent, the second fires it (`src/app/keys.ts`); a lone Esc with an overlay open just closes the overlay. See [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) §Global keys.
-11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` writes `summary.json`, updates cumulative stats, clears `.diptych/active`, and the UI unmounts.
+11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` writes `summary.json`, updates cumulative stats, clears `.splitbrief/active`, and the UI unmounts.
 
 ---
 
@@ -214,16 +214,16 @@ One session = one folder. All per-session state lives inside it. See `docs/CONCE
 
 | What | Where | When | Lifecycle |
 |------|-------|------|-----------|
-| `active` pointer | `.diptych/active` | On foreground/headless/RPC `start`, cleared by `saveFinalSession()` unless active state must be preserved for pending recovery or rewind | Plain text, single session-id; acts as a foreground lock. Detached sessions use lockfiles. |
-| `state.json` | `.diptych/sessions/<id>/` | On every phase transition | Mutable — overwritten |
-| `session.jsonl` | `.diptych/sessions/<id>/` | Append-only, on every event and (unless disabled) every message chunk | Grows over the run |
-| `research.md` / `spec.md` / `plan.md` / `tasks.md` / speckit artifacts | `.diptych/sessions/<id>/` | At the end of each planning phase that produces the artifact | Mode-dependent; `tasks.md` is the markdown transport for Task Briefs |
-| `summary.json` | `.diptych/sessions/<id>/` | Exactly once at end-of-run | Final aggregates — tokens, cost, timings, task outcomes |
-| Skills metadata | `.claude/skills/`, `~/.claude/skills/`, `.diptych/skills/`, `~/.diptych/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` | Read-only; never written by diptych | Per-project or global, cross-session |
+| `active` pointer | `.splitbrief/active` | On foreground/headless/RPC `start`, cleared by `saveFinalSession()` unless active state must be preserved for pending recovery or rewind | Plain text, single session-id; acts as a foreground lock. Detached sessions use lockfiles. |
+| `state.json` | `.splitbrief/sessions/<id>/` | On every phase transition | Mutable — overwritten |
+| `session.jsonl` | `.splitbrief/sessions/<id>/` | Append-only, on every event and (unless disabled) every message chunk | Grows over the run |
+| `research.md` / `spec.md` / `plan.md` / `tasks.md` / speckit artifacts | `.splitbrief/sessions/<id>/` | At the end of each planning phase that produces the artifact | Mode-dependent; `tasks.md` is the markdown transport for Task Briefs |
+| `summary.json` | `.splitbrief/sessions/<id>/` | Exactly once at end-of-run | Final aggregates — tokens, cost, timings, task outcomes |
+| Skills metadata | `.claude/skills/`, `~/.claude/skills/`, `.splitbrief/skills/`, `~/.splitbrief/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` | Read-only; never written by SPLITBRIEF | Per-project or global, cross-session |
 
 Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing, corrupt, or from an older `stateVersion`, resume refuses. `session.jsonl` is consulted as a fallback context source when the stored `plannerSessionId` is rejected by the backend (see `docs/WORKFLOW.md` §1.5).
 
-**Concurrency model:** at most one foreground active session per project directory. The presence of `.diptych/active` is the foreground lock; detached sessions use lockfiles. Users needing true parallel workflows are expected to use git worktrees, which give each worktree its own `.diptych/` and therefore its own lock.
+**Concurrency model:** at most one foreground active session per project directory. The presence of `.splitbrief/active` is the foreground lock; detached sessions use lockfiles. Users needing true parallel workflows are expected to use git worktrees, which give each worktree its own `.splitbrief/` and therefore its own lock.
 
 ---
 
@@ -339,7 +339,7 @@ The engine emits **EngineEvent** values through a single `EventBus` port. Sinks 
 - **`createEventBus`** is a sync pub/sub with crash isolation per sink (`src/engine/events/bus.ts`)
 - **`publish*` helpers** (e.g. `publishTaskStart`, `publishPlannerStatus`) wrap `bus.publish` with typed signatures (`src/engine/orchestrator/events.ts`)
 - **`tuiSink`** (`src/features/workflow/tui-sink.ts`) forwards `EngineEvent` straight into `workflow/actions.addEvent` — no mapping, because workflow sub-stores now consume `EngineEvent` directly.
-- **`jsonlSink`** (`src/engine/events/sinks/jsonl.ts`) appends events to `.diptych/sessions/<id>/session.jsonl`. Transcript kinds respect `workflow.persistTranscript`.
+- **`jsonlSink`** (`src/engine/events/sinks/jsonl.ts`) appends events to `.splitbrief/sessions/<id>/session.jsonl`. Transcript kinds respect `workflow.persistTranscript`.
 - **`stdoutJsonSink`** (`src/engine/events/sinks/stdout-json.ts`) emits NDJSON to stdout for headless / `--json` mode (see `src/cli/headless.ts`).
 - **`otelSink`** (opt-in, `config.otel.enabled: true`) maps `EngineEvent` → OpenTelemetry spans — see [OTEL.md](./OTEL.md) §Design decisions.
 - **Event sinks are synchronous.** Each `publish()` runs all subscribed sinks in registration order, inline. A throw inside one sink is caught per-sink and does not break fan-out to the others.
@@ -365,15 +365,15 @@ The bus is synchronous by design so fan-out order matches the pre-bus `addEvent`
 
 ### Headless mode (--json)
 
-`diptych start --json` skips the Ink render entirely and attaches `stdoutJsonSink` instead of `tuiSink`. Every published `EngineEvent` is written as one NDJSON line to stdout, one object per line, snake_case `type` field, monotonic `ts`. Non-interactive stubs in `src/cli/headless.ts` auto-approve workflow review gates, answer questions with empty strings, and exit non-zero for recovery. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. `jsonlSink` still writes the normal structured `session.jsonl` log for the run.
+`splitbrief start --json` skips the Ink render entirely and attaches `stdoutJsonSink` instead of `tuiSink`. Every published `EngineEvent` is written as one NDJSON line to stdout, one object per line, snake_case `type` field, monotonic `ts`. Non-interactive stubs in `src/cli/headless.ts` auto-approve workflow review gates, answer questions with empty strings, and exit non-zero for recovery. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. `jsonlSink` still writes the normal structured `session.jsonl` log for the run.
 
 ```bash
-diptych start --json "add endpoint" | jq -c 'select(.type == "task_completed")'
+splitbrief start --json "add endpoint" | jq -c 'select(.type == "task_completed")'
 ```
 
 ### RPC mode (--rpc)
 
-`diptych start --rpc` also skips Ink, but it does not attach `stdoutJsonSink`. Instead `src/cli/rpc/run/host.ts` owns an `EventBus`, subscribes a response writer, and emits workflow events as wrapped responses: `{ "type": "event", "data": <EngineEvent> }`. Status projection, Task Brief review draft handling, and recovery prompting live in `src/cli/rpc/run/status.ts`, `brief-review.ts`, and `recovery.ts` respectively. Stdin is parsed as NDJSON commands by `src/cli/rpc/reader.ts`; stdout responses are `ack`, `error`, `status`, or `event`.
+`splitbrief start --rpc` also skips Ink, but it does not attach `stdoutJsonSink`. Instead `src/cli/rpc/run/host.ts` owns an `EventBus`, subscribes a response writer, and emits workflow events as wrapped responses: `{ "type": "event", "data": <EngineEvent> }`. Status projection, Task Brief review draft handling, and recovery prompting live in `src/cli/rpc/run/status.ts`, `brief-review.ts`, and `recovery.ts` respectively. Stdin is parsed as NDJSON commands by `src/cli/rpc/reader.ts`; stdout responses are `ack`, `error`, `status`, or `event`.
 
 RPC keeps engine gates bidirectional. Approval, question, continuation, cost, tiered approval, user-edit conflict, task-review, and recovery prompts publish status/event responses and wait until the client sends `approve`, `reject`, `regenerate`, prompt-scoped `brief_review`, `message`, or `recovery`. The `message` command feeds either the active prompt or the workflow message queue. The `status` command reads the current persisted `WorkflowState`; `abort` trips the workflow abort signal.
 
@@ -396,7 +396,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 
 - Multi-agent coordination — we have exactly two roles. See `docs/VISION.md`.
 - Parallel task execution — tasks run sequentially so validation and git stay linear.
-- Concurrent foreground workflows in the same project directory — one active session at a time, enforced by the `.diptych/active` lock. Detached sessions use lockfiles, and users wanting isolated parallel runs use git worktrees, which give each worktree its own `.diptych/`.
+- Concurrent foreground workflows in the same project directory — one active session at a time, enforced by the `.splitbrief/active` lock. Detached sessions use lockfiles, and users wanting isolated parallel runs use git worktrees, which give each worktree its own `.splitbrief/`.
 - Mid-task interjection at the implementer level — small models lose coherence when their self-contained task prompt is perturbed. User messages during implementing are not queued into the implementer; the user aborts and uses `/redo-task` instead.
 - Tool-call output from the implementer — small models can't reliably produce it; we extract code from plain text.
 - Full message-level rewind (Claude Code "double-Esc" style) and Cursor-style code snapshot undo — see `docs/FUTURE.md`.
@@ -415,7 +415,7 @@ A snapshot of the codebase as it actually stands today, generated for an AI agen
 
 ## 1. System overview
 
-diptych is a cost-aware task compiler for AI coding agents. It composes two roles around a strict workflow:
+SPLITBRIEF is a cost-aware task compiler for AI coding agents. It composes two roles around a strict workflow:
 
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of single-file `Task` objects with scope, validation, and evidence.
 2. **Implementer** — a cheaper, smaller model that executes one task at a time against its self-contained brief, with typecheck / lint / test gates resolved from config, planner-discovered validation, heuristic fallback, or defaults.
@@ -425,12 +425,12 @@ The repository layers many supporting subsystems on top of that core loop:
 - **Workflow modes** (`instant` / `quick` / `standard` / `speckit`) trade ceremony for speed, all four converging on the same Task Brief contract and going through a shared `runWorkflow` orchestrator (`src/engine/orchestrator/run/workflow.ts`).
 - **EventBus** (`src/engine/events/bus.ts`) — single pub/sub port; sinks include the TUI store, an append-only JSONL log, a session-tree recorder, an opt-in NDJSON-on-stdout sink for `--json` headless runs, an opt-in OpenTelemetry sink, and a workflow-hook dispatcher.
 - **Quality gates** — every mode runs a brief-quality scoring pass before tasks start; standard and speckit additionally enter a `reviewing-briefs` phase for human approval. The final deterministic `drift-report.json` / `drift_report` event is produced during final review; per-task cross-scope accumulation is `drift-chains.json` / `drift_chain_detected`.
-- **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/` with a baseline + delta layout. Auto-snapshots fire on user-configured triggers (`preTask` / `postTask` / `preFinalReview`); manual ones via `diptych snapshot create` (CLI-only; no `/snapshot` slash command).
-- **Handoff packs** (`src/engine/handoff/`) — render the compiled brief into formats other agents consume (`spec-kit`, `agents-md`, `claude-code`, `copilot-issue`) plus user-supplied custom renderers under `.diptych/handoff-renderers/`.
+- **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/` with a baseline + delta layout. Auto-snapshots fire on user-configured triggers (`preTask` / `postTask` / `preFinalReview`); manual ones via `splitbrief snapshot create` (CLI-only; no `/snapshot` slash command).
+- **Handoff packs** (`src/engine/handoff/`) — render the compiled brief into formats other agents consume (`spec-kit`, `agents-md`, `claude-code`, `copilot-issue`) plus user-supplied custom renderers under `.splitbrief/handoff-renderers/`.
 - **MCP server** (`src/engine/mcp/`) — exposes session artifacts (sessions index, manifest, spec, plan, tasks, evidence, drift report, state, and summary) as read-only MCP resources for external clients, plus constrained evidence-ledger tools. It is not an execution path.
-- **IPC server** (`src/engine/ipc/`) — UNIX-domain socket per session so a `diptych attach` TUI client can re-bind to a long-running background workflow; `diptych ps` lists status.
-- **Worktree management** (`src/engine/worktree/`) — `diptych worktree list / switch / path / remove` for isolated parallel sessions under `.trees/<name>/`.
-- **Tiered approval** (`src/engine/orchestrator/approval/tiered-approval.ts` dispatches `gateAction`; `types.ts`, `sticky.ts`, `confirm.ts`, `events.ts`) — declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and go through `auto` / `sticky` / `confirm` tiers, with sticky grants persisted at `.diptych/approvals.json` and managed via `diptych approval list / clear`. `network` is accepted only for config compatibility; it is not shell/network sandboxing.
+- **IPC server** (`src/engine/ipc/`) — UNIX-domain socket per session so a `splitbrief attach` TUI client can re-bind to a long-running background workflow; `splitbrief ps` lists status.
+- **Worktree management** (`src/engine/worktree/`) — `splitbrief worktree list / switch / path / remove` for isolated parallel sessions under `.trees/<name>/`.
+- **Tiered approval** (`src/engine/orchestrator/approval/tiered-approval.ts` dispatches `gateAction`; `types.ts`, `sticky.ts`, `confirm.ts`, `events.ts`) — declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and go through `auto` / `sticky` / `confirm` tiers, with sticky grants persisted at `.splitbrief/approvals.json` and managed via `splitbrief approval list / clear`. `network` is accepted only for config compatibility; it is not shell/network sandboxing.
 - **Repo-map context** (`src/engine/codebase/`) — token-budgeted PageRank-based codebase summary fed to every planner call.
 - **Hooks** (`src/engine/hooks/`) — `pre_*` (sync) and `post_*` / `on_*` (fire-and-forget) commands declared in config and dispatched on matching events.
 
@@ -468,9 +468,9 @@ src/
 │   ├── render/                    Ink / fullscreen-ink mount (`app.ts` entry)
 │   └── setup.ts                   resolveProjectDir + setup helpers
 │
-├── core/                          Diptych-domain (no React, no engine)
+├── core/                          SPLITBRIEF-domain (no React, no engine)
 │   ├── approval/                  Sticky-grant persistence (store, types)
-│   │                              — .diptych/approvals.json
+│   │                              — .splitbrief/approvals.json
 │   ├── config/
 │   │   ├── accessors/             runner-config, state accessors
 │   │   ├── load/                  load, migrate (v1→v2→v3), transform,
@@ -478,7 +478,7 @@ src/
 │   │   ├── runtime/               build-runner, overrides, resolve
 │   │   └── errors.ts              ConfigError types
 │   ├── formatting.ts              formatCost, formatDuration, etc.
-│   ├── hooks/trust.ts             Hook trust store (.diptych/hook-trust.json)
+│   ├── hooks/trust.ts             Hook trust store (.splitbrief/hook-trust.json)
 │   ├── sections/                  pure section builders:
 │   │                              completed-task-summary-rows,
 │   │                              event-sections
@@ -539,7 +539,7 @@ src/
 │   │                              path, cleanliness, errors
 │   ├── handoff/
 │   │   ├── load-renderer.ts       Dynamic import of custom .ts/.js
-│   │   │                          renderers from .diptych/handoff-renderers/
+│   │   │                          renderers from .splitbrief/handoff-renderers/
 │   │   ├── manifest.ts            buildManifest, writeManifest
 │   │   ├── render.ts              renderHandoff (sync built-ins),
 │   │   │                          renderHandoffWithCustom (async)
@@ -774,7 +774,7 @@ Sectioned picker display now lives in the picker display-window/ListViewport pat
 |---|---|---|
 | `src/utils/` | pure / generic / no domain (canonical-json is the model) | holds |
 | `src/lib/` | third-party adapters (Node fs, simple-git, terminal escapes) | holds |
-| `src/core/` | diptych domain — schemas, paths, phase taxonomy, sessions; **no React, no engine** | holds |
+| `src/core/` | SPLITBRIEF domain — schemas, paths, phase taxonomy, sessions; **no React, no engine** | holds |
 | `src/engine/` | orchestrator, planners, implementers, runners, hooks, snapshots, handoff, providers, mcp, ipc, codebase, parsers, streaming, skills, detection; **no React, no Ink, no `src/features/` / `src/components/` / `src/hooks/`** | holds |
 | `src/features/{X}/` | feature-local screen/picker/overlay + components/hooks/helpers; **never imports another feature** | holds |
 | `src/components/` | shared UI primitives (cross-feature only) | holds |
@@ -819,7 +819,7 @@ Single `EventBus` port (`src/engine/events/bus.ts`), synchronous fan-out, per-si
 
 | Sink | File | Trigger | Purpose |
 |---|---|---|---|
-| `jsonlSink` | `events/sinks/jsonl.ts` | always | appends to `.diptych/sessions/<id>/session.jsonl` |
+| `jsonlSink` | `events/sinks/jsonl.ts` | always | appends to `.splitbrief/sessions/<id>/session.jsonl` |
 | `treeRecorderSink` | `events/sinks/tree-recorder.ts` | always | appends `session-tree.jsonl` / `tree-meta.json` |
 | `tuiSink` | `features/workflow/tui-sink.ts` | interactive runs | forwards every event to `workflow/actions.addEvent` |
 | `stdoutJsonSink` | `events/sinks/stdout-json.ts` | `--json` headless | NDJSON line per event on stdout |
@@ -881,16 +881,16 @@ Adding a new EngineEvent variant without adding it to this switch is a compile e
 
 ### Headless mode
 
-`diptych start --json` skips Ink, replaces `tuiSink` with `stdoutJsonSink`, and stubs workflow host callbacks non-interactively: review gates approve, questions answer empty, and recovery exits non-zero. File-write tiered approvals still use approval config and fail closed for sticky/confirm tiers without a grant. `jsonlSink` still writes the normal structured `session.jsonl` log. See `src/cli/headless.ts`.
+`splitbrief start --json` skips Ink, replaces `tuiSink` with `stdoutJsonSink`, and stubs workflow host callbacks non-interactively: review gates approve, questions answer empty, and recovery exits non-zero. File-write tiered approvals still use approval config and fail closed for sticky/confirm tiers without a grant. `jsonlSink` still writes the normal structured `session.jsonl` log. See `src/cli/headless.ts`.
 
 ---
 
 ## 6. Persistence layout
 
-All per-session state lives under `.diptych/sessions/<session-id>/`. Path constants are in `src/core/paths.ts`.
+All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path constants are in `src/core/paths.ts`.
 
 ```
-.diptych/
+.splitbrief/
 ├── active                          plain text — single session-id (the lock)
 ├── config.yaml                     Project config (version: 3; v2 accepted/migrated)
 ├── approvals.json                  Sticky approval grants (cross-session)
@@ -902,7 +902,7 @@ All per-session state lives under `.diptych/sessions/<session-id>/`. Path consta
         ├── state.json              Mutable WorkflowState (overwritten every transition)
         ├── session.jsonl           Append-only EngineEvent log (transcript when persistTranscript=true)
         ├── server.log              IPC server log (when running detached)
-        ├── ipc.sock                UNIX socket for `diptych attach`
+        ├── ipc.sock                UNIX socket for `splitbrief attach`
         ├── lockfile.json           IPC server lockfile (pid + heartbeat)
         ├── tasks.md                Task-Brief transport (parsed by spec/tasks/parse.ts)
         ├── spec.md                 Standard / speckit only
@@ -935,14 +935,14 @@ All per-session state lives under `.diptych/sessions/<session-id>/`. Path consta
 
 `copilot-issue` uses the same handoff directory root but writes only `manifest.json` and one `issue.md` body.
 
-Also relative to project root, **outside** `.diptych/`:
+Also relative to project root, **outside** `.splitbrief/`:
 
-- `./.trees/<slug>/` — git worktrees managed by `diptych worktree`.
-- `./.claude/skills/`, `~/.claude/skills/`, `./.diptych/skills/`, `~/.diptych/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` — skill sources, read-only to diptych.
+- `./.trees/<slug>/` — git worktrees managed by `splitbrief worktree`.
+- `./.claude/skills/`, `~/.claude/skills/`, `./.splitbrief/skills/`, `~/.splitbrief/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` — skill sources, read-only to SPLITBRIEF.
 
 Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
 
-**Concurrency:** at most one foreground active session per project directory; the presence of `.diptych/active` is the foreground lock. Background sessions register in `lockfile.json` so `diptych ps` and `diptych attach` can find them; `attach` then connects via `ipc.sock`.
+**Concurrency:** at most one foreground active session per project directory; the presence of `.splitbrief/active` is the foreground lock. Background sessions register in `lockfile.json` so `splitbrief ps` and `splitbrief attach` can find them; `attach` then connects via `ipc.sock`.
 
 Path encoding: snapshots URL-encode each path segment then join with `__` to flatten to a single filename per file (`encodeSnapshotPath` in `engine/snapshots/path-codec.ts`).
 
@@ -1018,7 +1018,7 @@ export async function acquireSnapshotLock(projectDir, sessionId): Promise<() => 
 export async function createSnapshot(opts: CreateSnapshotOptions): Promise<CreateSnapshotResult>
 ```
 
-`ALWAYS_EXCLUDED = ['.git', '.diptych', 'node_modules']` — non-negotiable; see invariants.
+`ALWAYS_EXCLUDED = ['.git', '.splitbrief', 'node_modules']` — non-negotiable; see invariants.
 
 ### `engine/snapshots/restore.ts`
 
@@ -1046,7 +1046,7 @@ export async function renderHandoffWithCustom(
   input: Omit<HandoffInput, 'target'> & { target: string },
   projectDir: string,
 ): Promise<HandoffPack>
-//  Async; loads .diptych/handoff-renderers/<target>.{ts|js} only when trusted.
+//  Async; loads .splitbrief/handoff-renderers/<target>.{ts|js} only when trusted.
 ```
 
 ### `engine/handoff/write.ts`
@@ -1154,26 +1154,26 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 | Command | Subcommands | Purpose |
 |---|---|---|
-| `diptych start` | — | Begin a new workflow. Args: `[feature] [files...]`. Flags: `--mode`, `--planner`, `--implementer`, `--json`, `--detach`, `--worktree [name]`. Foreground/headless/RPC runs write `.diptych/active`; detached runs create a session folder and lockfile. |
-| `diptych spec` | — | Same as start but exits after planning artifacts are produced. |
-| `diptych init` | — | Interactive setup; writes `.diptych/config.yaml`. |
-| `diptych status` | — | Print active session state to stdout. Read-only; doesn't acquire the lock. |
-| `diptych resume` | — | Re-enter the workflow at the saved phase. Refuses if `state.json` is missing or stateVersion-mismatched. |
-| `diptych doctor` | — | Run readiness checks for config, tools, models, hooks, and project state. |
-| `diptych stats` | — | Print aggregate cost and routing statistics. |
-| `diptych export` | — | Export a session report. |
-| `diptych explain` | — | Explain session artifacts and routing decisions. |
-| `diptych migrate` | — | Migrate pre-v3 `.diptych/current/` session state into the session-folder layout. |
-| `diptych handoff [target]` | — | Export Handoff Pack. Flags: `--session`, `--out`, `--task <ids>`, `--mode default\|append\|overwrite`, `--list`. Default target `spec-kit`. |
-| `diptych snapshot` | `create`, `list`, `restore <id-or-name>`, `diff <id-or-name>` | Working-tree snapshots. `restore` supports `--force` to overwrite conflicts. `diff` exits non-zero when changes detected. |
-| `diptych approval` | `list`, `clear --scope session\|always\|all` | Manage sticky approval grants in `.diptych/approvals.json`. |
-| `diptych mcp` | `serve` | Start MCP HTTP server (default port 4321) exposing session resources and constrained evidence tools. Generates one-shot bearer token; supports `--session` or `--all-sessions`. |
-| `diptych worktree` | `list`, `switch <name>`, `path <name>`, `remove <name>` | Manage `.trees/<name>/` git worktrees. `path` prints the resolved filesystem path. `remove` supports `--force` and `--delete-branch`. |
-| `diptych attach [session-id]` | — | Connect TUI client to a running background session via `ipc.sock`. Auto-resolves the session-id if exactly one is running. (Not supported on Windows.) |
-| `diptych detach [session-id]` | — | Disconnect a TUI client while keeping the background workflow server running. |
-| `diptych ps` | — | List sessions with status (`running` / `exited` / `crashed` / `unknown`), pid, mode, elapsed time, feature. Sorted newest-first. (Not supported on Windows.) |
-| `diptych continue [session-id]` | — | Continue a session: attach if running, resume if interrupted. |
-| `diptych last` | — | Continue the most recent session. |
+| `splitbrief start` | — | Begin a new workflow. Args: `[feature] [files...]`. Flags: `--mode`, `--planner`, `--implementer`, `--json`, `--detach`, `--worktree [name]`. Foreground/headless/RPC runs write `.splitbrief/active`; detached runs create a session folder and lockfile. |
+| `splitbrief spec` | — | Same as start but exits after planning artifacts are produced. |
+| `splitbrief init` | — | Interactive setup; writes `.splitbrief/config.yaml`. |
+| `splitbrief status` | — | Print active session state to stdout. Read-only; doesn't acquire the lock. |
+| `splitbrief resume` | — | Re-enter the workflow at the saved phase. Refuses if `state.json` is missing or stateVersion-mismatched. |
+| `splitbrief doctor` | — | Run readiness checks for config, tools, models, hooks, and project state. |
+| `splitbrief stats` | — | Print aggregate cost and routing statistics. |
+| `splitbrief export` | — | Export a session report. |
+| `splitbrief explain` | — | Explain session artifacts and routing decisions. |
+| `splitbrief migrate` | — | Migrate pre-v3 `.splitbrief/current/` session state into the session-folder layout. |
+| `splitbrief handoff [target]` | — | Export Handoff Pack. Flags: `--session`, `--out`, `--task <ids>`, `--mode default\|append\|overwrite`, `--list`. Default target `spec-kit`. |
+| `splitbrief snapshot` | `create`, `list`, `restore <id-or-name>`, `diff <id-or-name>` | Working-tree snapshots. `restore` supports `--force` to overwrite conflicts. `diff` exits non-zero when changes detected. |
+| `splitbrief approval` | `list`, `clear --scope session\|always\|all` | Manage sticky approval grants in `.splitbrief/approvals.json`. |
+| `splitbrief mcp` | `serve` | Start MCP HTTP server (default port 4321) exposing session resources and constrained evidence tools. Generates one-shot bearer token; supports `--session` or `--all-sessions`. |
+| `splitbrief worktree` | `list`, `switch <name>`, `path <name>`, `remove <name>` | Manage `.trees/<name>/` git worktrees. `path` prints the resolved filesystem path. `remove` supports `--force` and `--delete-branch`. |
+| `splitbrief attach [session-id]` | — | Connect TUI client to a running background session via `ipc.sock`. Auto-resolves the session-id if exactly one is running. (Not supported on Windows.) |
+| `splitbrief detach [session-id]` | — | Disconnect a TUI client while keeping the background workflow server running. |
+| `splitbrief ps` | — | List sessions with status (`running` / `exited` / `crashed` / `unknown`), pid, mode, elapsed time, feature. Sorted newest-first. (Not supported on Windows.) |
+| `splitbrief continue [session-id]` | — | Continue a session: attach if running, resume if interrupted. |
+| `splitbrief last` | — | Continue the most recent session. |
 
 ---
 
@@ -1210,7 +1210,7 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 | `/detach <index-or-id>` | Remove a pending image attachment |
 | `/approval` | List or clear sticky approval grants |
 | `/accept-run` | Accept current run changes and prevent run rejection |
-| `/reject-run confirm` | Restore diptych-written files from the run baseline |
+| `/reject-run confirm` | Restore SPLITBRIEF-written files from the run baseline |
 | `/yolo` | Toggle file-write tiered approvals off/on for the session |
 | `/quit` | Exit application |
 
@@ -1218,7 +1218,7 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 
 ## 11. Configuration schema additions
 
-`.diptych/config.yaml` is written as `version: 3`; `version: 2` is accepted and migrated for backwards compatibility. The full schema lives in `src/core/schemas/config.ts`. The optional sections below are recognized:
+`.splitbrief/config.yaml` is written as `version: 3`; `version: 2` is accepted and migrated for backwards compatibility. The full schema lives in `src/core/schemas/config.ts`. The optional sections below are recognized:
 
 ```yaml
 workflow:
@@ -1257,7 +1257,7 @@ Full verification: `npm run test-ci` (format:check, typecheck, lint, test:covera
 Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breaking any of these silently corrupts state or causes exponential I/O.
 
 1. **NEVER commit, NEVER stage** — `.claude/hooks/block-git-commits.sh` (`PreToolUse` hook, exit code 2) blocks `git add` / `git stage` / `git commit` (and `git -c …` variants). The user reviews and commits.
-2. **`.diptych/`, `.git/`, `node_modules/` MUST be excluded from snapshots / drift / file collection.** `ALWAYS_EXCLUDED` in `engine/snapshots/files.ts` enforces this for snapshots; the same set is honoured by `collectTrackedFiles`. Including `.diptych/` causes exponential snapshot growth (snapshots-of-snapshots).
+2. **`.splitbrief/`, `.git/`, `node_modules/` MUST be excluded from snapshots / drift / file collection.** `ALWAYS_EXCLUDED` in `engine/snapshots/files.ts` enforces this for snapshots; the same set is honoured by `collectTrackedFiles`. Including `.splitbrief/` causes exponential snapshot growth (snapshots-of-snapshots).
 3. **`briefHash` must propagate** from `createEvidenceLedger` (or the existing-ledger fallback) to every `record*` call in the per-task path. Lost propagation produces `briefHash: null` entries that break post-hoc evidence audits.
 4. **`TaskStatus` value is `'done'` NOT `'completed'`.** The enum is `['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped']` (`core/schemas/enums.ts`). `task_completed` is the *event* name; the *status* string is `'done'`. Auto-snapshot `postTask` checks `completedTask?.status === 'done'`.
 5. **Every terminal point in `runSingleTask` must call `runChainAnalysisSafe`** (drift chain analysis) — otherwise chain state desyncs from per-task drift. There are five+ such points (success, fail, escalate-success, escalate-fail, skip).
@@ -1266,7 +1266,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 8. **Zero barrels.** No re-export-only `index.ts` anywhere in `src/`; currently there are no `index.ts` or `index.tsx` files in `src/`.
 9. **ESM `.js` suffix on every internal import.** `'./foo.js'` not `'./foo'`. Required for Node 22 ESM resolution.
 10. **Conversation row exhaustive switch handles EVERY EngineEvent variant.** `eventRowBlock` ends with `default: return assertNever(event)`. Adding a variant without updating it is a TypeScript error.
-11. **One foreground active session per project directory.** `.diptych/active` is the foreground lock; detached sessions use lockfiles, and for isolated parallel work use `diptych worktree` (each worktree has its own `.diptych/`).
+11. **One foreground active session per project directory.** `.splitbrief/active` is the foreground lock; detached sessions use lockfiles, and for isolated parallel work use `splitbrief worktree` (each worktree has its own `.splitbrief/`).
 12. **Snapshot path encoding.** Blob filenames always go through `encodeSnapshotPath` (a one-way `sha256` hash) — never bare-join slashes. Encoding is not reversible; the original path is recovered from the manifest's `fileEntries[].path`, never decoded.
 13. **Sanctioned `as` / `!` only.** Production code may not use unsafe assertions outside the named modules listed in `CLAUDE.md`.
 

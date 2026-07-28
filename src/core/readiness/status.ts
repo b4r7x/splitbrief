@@ -18,7 +18,7 @@ const NEXT_ACTION_LABELS: Record<
   { label: string; command?: string | undefined }
 > = {
   continue: { label: 'Continue' },
-  'run-init': { label: 'Run init', command: 'diptych init' },
+  'run-init': { label: 'Run init', command: 'splitbrief init' },
   'fix-config': { label: 'Fix config' },
   'clean-or-isolate-repo': { label: 'Clean or isolate repo' },
   'raise-context': { label: 'Raise context' },

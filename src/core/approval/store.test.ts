@@ -10,7 +10,7 @@ import {
   mutateApprovalsStore,
 } from './store.js';
 import type { ApprovalsStore, ApprovalGrant } from '../schemas/approval-store.js';
-import { DIPTYCH_DIR, approvalsFile } from '../paths.js';
+import { SPLITBRIEF_DIR, approvalsFile } from '../paths.js';
 import { lockSibling } from '../../lib/file-lock.js';
 
 const REPO_ROOT = join(import.meta.dirname, '../../..');
@@ -68,9 +68,9 @@ describe('readApprovalsStore', () => {
   });
 
   it('throws when file contains corrupted JSON', () => {
-    const diptychDir = join(tmpDir, DIPTYCH_DIR);
-    mkdirSync(diptychDir, { recursive: true });
-    writeFileSync(join(diptychDir, 'approvals.json'), '{not valid json', 'utf-8');
+    const splitbriefDir = join(tmpDir, SPLITBRIEF_DIR);
+    mkdirSync(splitbriefDir, { recursive: true });
+    writeFileSync(join(splitbriefDir, 'approvals.json'), '{not valid json', 'utf-8');
     expect(() => readApprovalsStore(tmpDir)).toThrow(/approval store is corrupt/);
   });
 
@@ -79,9 +79,9 @@ describe('readApprovalsStore', () => {
       version: 1,
       grants: [makeGrant({ scope: 'always', sessionId: undefined })],
     };
-    const diptychDir = join(tmpDir, DIPTYCH_DIR);
-    mkdirSync(diptychDir, { recursive: true });
-    writeFileSync(join(diptychDir, 'approvals.json'), JSON.stringify(store), 'utf-8');
+    const splitbriefDir = join(tmpDir, SPLITBRIEF_DIR);
+    mkdirSync(splitbriefDir, { recursive: true });
+    writeFileSync(join(splitbriefDir, 'approvals.json'), JSON.stringify(store), 'utf-8');
     const result = readApprovalsStore(tmpDir);
     expect(result.grants).toHaveLength(1);
     expect(result.grants[0]?.scope).toBe('always');
@@ -92,8 +92,8 @@ describe('writeApprovalsStore', () => {
   it('creates file with secure mode 0o600', () => {
     const store: ApprovalsStore = { version: 1, grants: [] };
     writeApprovalsStore(tmpDir, store);
-    const diptychDir = join(tmpDir, DIPTYCH_DIR);
-    const stats = statSync(join(diptychDir, 'approvals.json'));
+    const splitbriefDir = join(tmpDir, SPLITBRIEF_DIR);
+    const stats = statSync(join(splitbriefDir, 'approvals.json'));
     expect(stats.mode & 0o777).toBe(0o600);
   });
 
@@ -133,14 +133,14 @@ describe('mutateApprovalsStore', () => {
   it('does not leave a lock file behind after a successful mutation', () => {
     mutateApprovalsStore(tmpDir, () => ({ version: 1, grants: [makeGrant()] }));
 
-    const files = readdirSync(join(tmpDir, DIPTYCH_DIR));
+    const files = readdirSync(join(tmpDir, SPLITBRIEF_DIR));
     expect(files.some((file) => file.endsWith('.lock'))).toBe(false);
   });
 
   it('serializes read-modify-write so interleaved appends never lose a grant', async () => {
     const syncDir = join(tmpDir, 'sync');
     mkdirSync(syncDir, { recursive: true });
-    mkdirSync(join(tmpDir, DIPTYCH_DIR), { recursive: true });
+    mkdirSync(join(tmpDir, SPLITBRIEF_DIR), { recursive: true });
 
     const lockPath = lockSibling(approvalsFile(tmpDir));
     const childA = spawnActor(ACTOR_A, tmpDir, syncDir);
@@ -157,7 +157,7 @@ describe('mutateApprovalsStore', () => {
       .grants.map((g) => g.pattern)
       .sort();
     expect(patterns).toEqual(['a', 'b']);
-    expect(readdirSync(join(tmpDir, DIPTYCH_DIR)).some((file) => file.endsWith('.lock'))).toBe(
+    expect(readdirSync(join(tmpDir, SPLITBRIEF_DIR)).some((file) => file.endsWith('.lock'))).toBe(
       false,
     );
   }, 30_000);

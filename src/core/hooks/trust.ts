@@ -6,7 +6,7 @@ import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { getDiptychPath } from '../paths.js';
+import { getSplitbriefPath } from '../paths.js';
 import { HookEventSchema, HooksConfigSchema } from '../schemas/hooks.js';
 import {
   commandTokensAfterInterpreter,
@@ -240,7 +240,7 @@ function hashHookFile(projectDir: string, relativePath: string): HookFileDigest 
 }
 
 function trustFilePath(projectDir: string): string {
-  return getDiptychPath(projectDir, TRUST_FILE);
+  return getSplitbriefPath(projectDir, TRUST_FILE);
 }
 
 export function isHooksConfigTrusted(projectDir: string, hooks: unknown): boolean {

@@ -30,7 +30,7 @@ const request: TaskReviewRequest = {
     stages: [{ stage: 'test', passed: true }],
   },
   evidence: {
-    path: '/tmp/project/.diptych/sessions/s1/evidence.json',
+    path: '/tmp/project/.splitbrief/sessions/s1/evidence.json',
     summary: 'task reached done; test passed',
     expected: ['auth works'],
     observed: ['task reached done'],
@@ -78,7 +78,7 @@ describe('task review prompt', () => {
     expect(visible).toContain('status done');
     expect(visible).toContain('files src/auth.ts');
     expect(visible).toContain('checks validation passed');
-    expect(visible).toContain('evidence path /tmp/project/.diptych/sessions/s1/evidence.js');
+    expect(visible).toContain('evidence task reached done; test passed');
     expect(visible).toMatch(/15 implementer, 0 escalation/);
     expect(visible).toMatch(/route fits 120\/1000 tokens/);
     expect(visible).toContain('[c]  continue');
@@ -107,6 +107,7 @@ describe('task review prompt', () => {
     const prompt = formatTaskReviewPrompt(request);
 
     expect(prompt).toContain(`${glyph('check')} T001 ready for review · Add auth`);
+    expect(prompt).toContain('evidence path /tmp/project/.splitbrief/sessions/s1/evidence.json');
     expect(prompt).toContain(`${glyph('liveBar')} [c]  continue`);
     expect(prompt).toContain('[r]  redo task');
   });

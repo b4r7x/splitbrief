@@ -15,7 +15,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
-  const dir = createTempDir('diptych-git-test');
+  const dir = createTempDir('splitbrief-git-test');
   createTestGitRepo(dir);
   return dir;
 }
@@ -105,7 +105,7 @@ describe('discardChangedFiles', () => {
 
 describe('submodule gitlinks', () => {
   function setupSuperproject(): string {
-    const root = tracked(createTempDir('diptych-git-submodule'));
+    const root = tracked(createTempDir('splitbrief-git-submodule'));
     const sub = join(root, 'subrepo');
     mkdirSync(sub, { recursive: true });
     execSync('git init -q', { cwd: sub, stdio: 'pipe' });
@@ -197,7 +197,7 @@ describe('listTrackedAndUntrackedFiles', () => {
     writeFileSync(join(dir, '.gitignore'), 'ignored.txt\n');
     writeFileSync(join(dir, 'ignored.txt'), 'x');
     writeFileSync(join(dir, 'tracked.ts'), 'export {}');
-    execSync('git add tracked.ts && git commit -m "feat(diptych): T001"', {
+    execSync('git add tracked.ts && git commit -m "feat(splitbrief): T001"', {
       cwd: dir,
       stdio: 'pipe',
     });
@@ -218,7 +218,7 @@ describe('listTrackedAndUntrackedFiles', () => {
   });
 
   it('returns null outside a git repository', async () => {
-    const dir = tracked(createTempDir('diptych-nogit-ls'));
+    const dir = tracked(createTempDir('splitbrief-nogit-ls'));
     expect(await listTrackedAndUntrackedFiles(dir)).toBeNull();
   });
 });

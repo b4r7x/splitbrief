@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import {
   handoffWriterTasks,
   writeHandoffWriterSessionState,
@@ -23,9 +23,9 @@ afterEach(() => {
 
 describe('writeHandoffPack — validation metadata', () => {
   function writeValidationConfig(): void {
-    mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
+    mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
     writeFileSync(
-      join(tmp, DIPTYCH_DIR, 'config.yaml'),
+      join(tmp, SPLITBRIEF_DIR, 'config.yaml'),
       [
         'version: 3',
         'validation:',

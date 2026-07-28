@@ -38,11 +38,11 @@ describe('resolveChangedFiles', () => {
     const projectDir = makeProject();
     const missing: string[] = [];
 
-    const files = await resolveChangedFiles(
+    const files = await resolveChangedFiles({
       projectDir,
-      driftWith(['src/b.ts', 'src/a.ts', 'src/a.ts']),
+      drift: driftWith(['src/b.ts', 'src/a.ts', 'src/a.ts']),
       missing,
-    );
+    });
 
     expect(files).toEqual(['src/a.ts', 'src/b.ts']);
     expect(missing).toEqual([]);
@@ -52,7 +52,7 @@ describe('resolveChangedFiles', () => {
     const projectDir = makeProject();
     const missing: string[] = [];
 
-    const files = await resolveChangedFiles(projectDir, null, missing);
+    const files = await resolveChangedFiles({ projectDir, drift: null, missing });
 
     expect(files).toEqual([]);
     expect(missing).toContain('changed files');
@@ -62,32 +62,78 @@ describe('resolveChangedFiles', () => {
     const projectDir = makeProject();
     const git = (args: string) => execSync(`git ${args}`, { cwd: projectDir, stdio: 'pipe' });
     mkdirSync(join(projectDir, 'src'), { recursive: true });
-    // A per-task commit (prefixed `feat(diptych):`) moves the run's change out of
+    // A per-task commit (prefixed `feat(splitbrief):`) moves the run's change out of
     // the working tree, leaving `git status` empty.
     writeFileSync(join(projectDir, 'src/feature.ts'), 'export const x = 1;\n');
     git('add src/feature.ts');
-    git('commit -m "feat(diptych): T1 - add feature"');
+    git('commit -m "feat(splitbrief): T1 - add feature"');
 
     const missing: string[] = [];
-    const files = await resolveChangedFiles(projectDir, null, missing);
+    const files = await resolveChangedFiles({ projectDir, drift: null, missing });
 
     expect(files).toEqual(['src/feature.ts']);
     expect(missing).not.toContain('changed files');
   });
 
-  it('routes the no-drift fallback through the run-baseline filter, dropping diptych-internal paths', async () => {
+  it('routes the no-drift fallback through the run-baseline filter, dropping splitbrief-internal paths', async () => {
     const projectDir = makeProject();
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/feature.ts'), 'export const x = 1;\n');
     // An internal control-plane write that must NOT surface as a changed file.
-    mkdirSync(join(projectDir, '.diptych', 'sessions'), { recursive: true });
-    writeFileSync(join(projectDir, '.diptych', 'sessions', 'state.json'), '{}\n');
+    mkdirSync(join(projectDir, '.splitbrief', 'sessions'), { recursive: true });
+    writeFileSync(join(projectDir, '.splitbrief', 'sessions', 'state.json'), '{}\n');
 
     const missing: string[] = [];
-    const files = await resolveChangedFiles(projectDir, null, missing);
+    const files = await resolveChangedFiles({ projectDir, drift: null, missing });
 
     expect(files).toContain('src/feature.ts');
-    expect(files.some((f) => f.startsWith('.diptych'))).toBe(false);
+    expect(files.some((f) => f.startsWith('.splitbrief'))).toBe(false);
+    expect(missing).not.toContain('changed files');
+  });
+
+  it('uses the persisted run boundary for no-drift review packets', async () => {
+    const projectDir = makeProject();
+    const git = (args: string) =>
+      execSync(`git ${args}`, { cwd: projectDir, stdio: 'pipe', encoding: 'utf8' }).trim();
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/pre-run.ts'), 'export const preRun = true;\n');
+    git('add src/pre-run.ts');
+    git('commit -m "feat(splitbrief): misleading pre-run subject"');
+    const runStartHead = git('rev-parse HEAD');
+
+    writeFileSync(join(projectDir, 'src/post-run.ts'), 'export const postRun = true;\n');
+    git('add src/post-run.ts');
+    git('commit -m "chore: arbitrary post-run subject"');
+
+    const missing: string[] = [];
+    const files = await resolveChangedFiles({
+      projectDir,
+      drift: null,
+      missing,
+      baseline: { head: runStartHead },
+    });
+
+    expect(files).toEqual(['src/post-run.ts']);
+    expect(missing).not.toContain('changed files');
+  });
+
+  it('includes commits from an explicitly captured unborn boundary', async () => {
+    const projectDir = makeProject();
+    const git = (args: string) => execSync(`git ${args}`, { cwd: projectDir, stdio: 'pipe' });
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/from-unborn.ts'), 'export const value = true;\n');
+    git('add src/from-unborn.ts');
+    git('commit -m "chore: arbitrary subject"');
+
+    const missing: string[] = [];
+    const files = await resolveChangedFiles({
+      projectDir,
+      drift: null,
+      missing,
+      baseline: { head: null },
+    });
+
+    expect(files).toContain('src/from-unborn.ts');
     expect(missing).not.toContain('changed files');
   });
 });

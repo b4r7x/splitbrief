@@ -237,7 +237,7 @@ describe('runApprovalLoop', () => {
     });
 
     const onDisk = readFileSync(
-      join(projectDir, '.diptych', 'sessions', sessionId, SPEC_FILE),
+      join(projectDir, '.splitbrief', 'sessions', sessionId, SPEC_FILE),
       'utf8',
     );
     expect(onDisk).toContain('With auth.');
@@ -411,7 +411,7 @@ describe('runApprovalLoop', () => {
     expect(result.aborted).toBe(true);
     expect(result.rejected).toBe(false);
     const onDisk = readFileSync(
-      join(projectDir, '.diptych', 'sessions', sessionId, SPEC_FILE),
+      join(projectDir, '.splitbrief', 'sessions', sessionId, SPEC_FILE),
       'utf8',
     );
     expect(onDisk).not.toContain('should-not-be-accepted');

@@ -7,6 +7,11 @@ export interface WorkflowTask {
   id: string;
   title: string;
   status: TaskStatus;
+  route?: {
+    profile?: string;
+    runner?: string;
+    model?: string;
+  };
 }
 
 export interface TasksState {
@@ -47,7 +52,22 @@ export function updateTaskMap(
 ): Map<string, WorkflowTask> {
   if (event.type === 'task_started') {
     const next = new Map(taskMap);
-    next.set(event.taskId, { id: event.taskId, title: event.title, status: 'in_progress' });
+    const hasRoute =
+      event.implementerProfile !== undefined ||
+      event.tool !== undefined ||
+      event.model !== undefined;
+    next.set(event.taskId, {
+      id: event.taskId,
+      title: event.title,
+      status: 'in_progress',
+      ...(hasRoute && {
+        route: {
+          ...(event.implementerProfile !== undefined && { profile: event.implementerProfile }),
+          ...(event.tool !== undefined && { runner: event.tool }),
+          ...(event.model !== undefined && { model: event.model }),
+        },
+      }),
+    });
     return next;
   }
   if (event.type === 'task_completed' || event.type === 'task_skipped') {

@@ -10,7 +10,7 @@ import {
   spawnServerMock,
   writeConfigMarker,
 } from '#testing/helpers/start-command.js';
-import { CONFIG_FILE, DIPTYCH_DIR, worktreePath } from '../../../src/core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR, worktreePath } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
 import { MAX_SLUG_LENGTH } from '../../../src/core/sessions/lifecycle.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
@@ -80,7 +80,7 @@ describe('start command — --worktree flag', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect((captured as { exitCode: number }).exitCode).toBe(1);
-    expect((captured as Error).message).toContain('Branch diptych/my-feature already exists.');
+    expect((captured as Error).message).toContain('Branch splitbrief/my-feature already exists.');
   });
 
   it('requests setup in the returned worktree path without writing config when createWorktree succeeds', async () => {
@@ -93,8 +93,8 @@ describe('start command — --worktree flag', () => {
     expect(existsSync(wtPath)).toBe(true);
     expect(routerStore.get()).toMatchObject({ screen: 'setup', feature: 'implement X' });
     expect(consoleSpy.mock.calls.flat().join(' ')).toContain('.trees/my-feature');
-    expect(existsSync(join(wtPath, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
-    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
+    expect(existsSync(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
   });
 
   it('rolls back the worktree and branch when server spawn fails, so the same command can be retried', async () => {
@@ -115,7 +115,7 @@ describe('start command — --worktree flag', () => {
     expect(isCliError(captured)).toBe(true);
     expect((captured as Error).message).toContain('Failed to start server');
     expect(existsSync(worktreePath(tmp, 'retry-me'))).toBe(false);
-    const branchesAfterFailure = execSync('git branch --list diptych/retry-me', {
+    const branchesAfterFailure = execSync('git branch --list splitbrief/retry-me', {
       cwd: tmp,
       encoding: 'utf-8',
     });

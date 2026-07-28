@@ -4,7 +4,7 @@ import { writeSecureFile } from '../../lib/fs.js';
 import { isInsideRoot } from '../../lib/path-confinement.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import {
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   STATE_FILE,
   SESSION_LOG_FILE,
   SPEC_FILE,
@@ -52,16 +52,10 @@ function assertLegacyDirConfined(projectDir: string, dir: string): void {
 }
 
 function findLegacySourceDir(projectDir: string): string | null {
-  const candidates = [
-    join(projectDir, DIPTYCH_DIR, 'current'),
-    join(projectDir, '.tiny-spec', 'current'),
-  ];
-  for (const dir of candidates) {
-    if (!existsSync(dir)) continue;
-    assertLegacyDirConfined(projectDir, dir);
-    return dir;
-  }
-  return null;
+  const dir = join(projectDir, SPLITBRIEF_DIR, 'current');
+  if (!existsSync(dir)) return null;
+  assertLegacyDirConfined(projectDir, dir);
+  return dir;
 }
 
 export async function migrateCommand(projectDir: string): Promise<MigrationResult> {

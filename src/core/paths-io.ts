@@ -1,7 +1,7 @@
 import { join, resolve } from 'node:path';
 import { readPackageJson } from './project-meta.js';
 import {
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   SESSIONS_DIR,
   SPEC_FILE,
   PLAN_FILE,
@@ -45,7 +45,7 @@ function readPackageVersion(): string {
   }
 }
 
-export function getDiptychVersion(): string {
+export function getSplitbriefVersion(): string {
   if (cachedVersion !== null) return cachedVersion;
   cachedVersion = readPackageVersion();
   return cachedVersion;
@@ -75,7 +75,7 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
     : `implementer: ${opts.implementerTool}`;
   const lines = [
     '---',
-    `generated_by: diptych v${getDiptychVersion()}`,
+    `generated_by: splitbrief v${getSplitbriefVersion()}`,
     plannerLine,
     implementerLine,
     `mode: ${opts.mode}`,
@@ -88,11 +88,11 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
 
 export function ensureSessionDir(projectDir: string, sessionId: string): void {
   validateSessionId(sessionId);
-  confinedEnsureDir(projectDir, join(DIPTYCH_DIR, SESSIONS_DIR, sessionId));
+  confinedEnsureDir(projectDir, join(SPLITBRIEF_DIR, SESSIONS_DIR, sessionId));
 }
 
-export function ensureDiptychDir(projectDir: string): void {
-  confinedEnsureDir(projectDir, DIPTYCH_DIR);
+export function ensureSplitbriefDir(projectDir: string): void {
+  confinedEnsureDir(projectDir, SPLITBRIEF_DIR);
 }
 
 export function validateFilename(filename: string): void {
@@ -124,7 +124,7 @@ export function writeSpecFile(
 
 function specFileRelativePath(sessionId: string, filename: string): string {
   validateSessionId(sessionId);
-  return join(DIPTYCH_DIR, SESSIONS_DIR, sessionId, filename);
+  return join(SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, filename);
 }
 
 export function readSpecFile(ref: SpecFileRef, filename: string): string | null {

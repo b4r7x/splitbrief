@@ -7,7 +7,7 @@ describe('buildConfigChecks', () => {
   it('sets fix-config for config-migration loader diagnostics', () => {
     const checks = buildConfigChecks({
       state: 'loaded',
-      path: '/tmp/.diptych/config.yaml',
+      path: '/tmp/.splitbrief/config.yaml',
       warnings: [
         {
           source: 'loader',
@@ -17,7 +17,7 @@ describe('buildConfigChecks', () => {
           source: 'loader',
           diagnostic: {
             kind: 'config-file-permissions',
-            path: '/tmp/.diptych/config.yaml',
+            path: '/tmp/.splitbrief/config.yaml',
           },
         },
         { source: 'validation', message: 'planner.model: unknown model' },
@@ -49,7 +49,7 @@ describe('buildConfigChecks', () => {
 
     const checks = buildConfigChecks({
       state: 'loaded',
-      path: '/tmp/.diptych/config.yaml',
+      path: '/tmp/.splitbrief/config.yaml',
       warnings: [{ source: 'validation', message }],
     });
     const warning = checks.find((check) => check.id === 'config.warning');

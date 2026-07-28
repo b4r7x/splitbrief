@@ -18,7 +18,7 @@ export interface RunCommandResult {
 
 export async function runCommand(args: string[]): Promise<RunCommandResult> {
   const program = new Command();
-  program.name('diptych').version('0.1.0').exitOverride();
+  program.name('splitbrief').version('0.1.0').exitOverride();
 
   registerStartCommand(program);
   registerSpecCommand(program);
@@ -53,7 +53,7 @@ export async function runCommand(args: string[]): Promise<RunCommandResult> {
 
   let exitCode = 0;
   try {
-    await program.parseAsync(['node', 'diptych', ...args]);
+    await program.parseAsync(['node', 'splitbrief', ...args]);
   } catch (err) {
     const commanderErr = err as { exitCode?: number; code?: string; message?: string };
     exitCode = typeof commanderErr.exitCode === 'number' ? commanderErr.exitCode : 1;

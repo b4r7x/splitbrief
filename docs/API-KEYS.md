@@ -1,6 +1,6 @@
 # API key security
 
-diptych connects to AI providers (planner + implementer) that may require API keys. This guide covers how keys are handled and best practices for keeping them secure.
+SPLITBRIEF connects to AI providers (planner + implementer) that may require API keys. This guide covers how keys are handled and best practices for keeping them secure.
 
 ## Recommended: environment variables
 
@@ -30,7 +30,7 @@ Add the export to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.) so it persi
 
 ## Alternative: config file
 
-You can set `apiKey` directly in `.diptych/config.yaml` under `planner` or `implementer`:
+You can set `apiKey` directly in `.splitbrief/config.yaml` under `planner` or `implementer`:
 
 ```yaml
 planner:
@@ -43,15 +43,15 @@ implementer:
   apiKey: sk-...
 ```
 
-⚠️ **diptych warns when API keys are detected in config files** — it will recommend switching to the corresponding environment variable when the provider uses its official endpoint. Keep an inline key for a known provider with a custom/proxy `apiBase`; environment keys are intentionally rejected for that case to avoid sending your provider key to an unexpected endpoint.
+⚠️ **SPLITBRIEF warns when API keys are detected in config files** — it will recommend switching to the corresponding environment variable when the provider uses its official endpoint. Keep an inline key for a known provider with a custom/proxy `apiBase`; environment keys are intentionally rejected for that case to avoid sending your provider key to an unexpected endpoint.
 
 ## Security measures
 
-diptych takes several steps to protect your API keys:
+SPLITBRIEF takes several steps to protect your API keys:
 
-- **Restrictive file permissions** — `.diptych/` directories are created with `0700` (owner-only access) and config files with `0600` (owner-only read/write). **Note (Windows):** File permission modes (0600/0700) are Unix-specific. On Windows, file access is managed through OS-level ACLs. Ensure your config directory is in a user-private location.
+- **Restrictive file permissions** — `.splitbrief/` directories are created with `0700` (owner-only access) and config files with `0600` (owner-only read/write). **Note (Windows):** File permission modes (0600/0700) are Unix-specific. On Windows, file access is managed through OS-level ACLs. Ensure your config directory is in a user-private location.
 - **Automatic redaction** — error messages and logs are passed through `redactSecrets()`, which strips patterns matching API keys (`sk-ant-...`, `sk-...`, Bearer tokens, and generic key/token assignments)
-- **No intentional key persistence** — Diptych does not intentionally persist configured provider keys to state/session output, and protected outputs redact known secret patterns. Do not paste secrets into prompts or rely on this for external runner logs.
+- **No intentional key persistence** — SPLITBRIEF does not intentionally persist configured provider keys to state/session output, and protected outputs redact known secret patterns. Do not paste secrets into prompts or rely on this for external runner logs.
 - **Header-only transport** — keys are only used in HTTP `Authorization` headers, never embedded in URLs or query parameters
 - **Boolean detection flags** — provider detection returns `hasKey: true/false`, never the actual key value
 - **Key format validation** — known providers (e.g., Anthropic keys starting with `sk-ant-`) are validated against expected formats; mismatches produce warnings, not errors, since key formats may change over time
@@ -59,8 +59,8 @@ diptych takes several steps to protect your API keys:
 ## Best practices
 
 1. ✅ **Use environment variables** over config file storage
-2. ✅ **Add `.diptych/` to `.gitignore`** — prevents accidental commits of config files that may contain keys
-3. ✅ **Never commit** `.diptych/config.yaml` with API keys to version control
+2. ✅ **Add `.splitbrief/` to `.gitignore`** — prevents accidental commits of config files that may contain keys
+3. ✅ **Never commit** `.splitbrief/config.yaml` with API keys to version control
 4. ✅ **Rotate keys periodically** — especially if you suspect exposure
 5. ✅ **Use minimum-privilege scopes** — if your provider offers restricted API key scopes, use the narrowest one that works
 6. ✅ **One key per developer** — in team environments, each developer should use their own API keys via their own environment

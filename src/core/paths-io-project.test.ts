@@ -27,7 +27,7 @@ describe('writeProjectFile', () => {
 
   it.each([
     ['.git/config'],
-    ['.diptych/config.yaml'],
+    ['.splitbrief/config.yaml'],
   ])('rejects model-named write into the control plane (%s) and leaves nothing on disk', (path) => {
     const dir = makeTmp();
     expect(() => writeProjectFile(dir, path, 'malicious')).toThrow('escapes project directory');
@@ -80,7 +80,7 @@ describe('validateTaskPath', () => {
   it.each([
     ['.git/config'],
     ['.git/hooks/pre-commit'],
-    ['.diptych/config.yaml'],
+    ['.splitbrief/config.yaml'],
   ])('rejects model-named write into the control plane (%s)', (path) => {
     const dir = makeTmp();
     expect(() => validateTaskPath(dir, path)).toThrow('escapes project directory');

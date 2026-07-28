@@ -54,7 +54,7 @@ export function registerStatsCommand(program: Command): void {
 
         console.log(
           ansis.bold.green(
-            `\n  diptych savings: ${formatCost(stats.totalSavings)} saved across ${countNoun(stats.totalSessions, 'session')}\n`,
+            `\n  SPLITBRIEF savings: ${formatCost(stats.totalSavings)} saved across ${countNoun(stats.totalSessions, 'session')}\n`,
           ),
         );
         console.log(`  ${ansis.dim('Total spent:')}          ${formatCost(stats.totalCost)}`);

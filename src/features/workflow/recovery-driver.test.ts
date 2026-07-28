@@ -99,7 +99,7 @@ describe('createRecoveryDriver — unparseable answers', () => {
 
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(false);
-    expect(feedbackStore.get().message).toBe('Recovery paused. Resume with diptych resume.');
+    expect(feedbackStore.get().message).toBe('Recovery paused. Resume with splitbrief resume.');
   });
 
   it('reopens paused recovery and applies the selected action', async () => {

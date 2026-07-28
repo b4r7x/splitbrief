@@ -68,7 +68,7 @@ function createSelection() {
 }
 
 async function createOutputRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'diptych-artifact-paths-'));
+  const root = await mkdtemp(join(tmpdir(), 'splitbrief-artifact-paths-'));
   temporaryRoots.push(root);
   return root;
 }

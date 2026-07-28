@@ -397,7 +397,7 @@ grep -rn 'phase: string' src/ | grep -v test | grep -v node_modules | grep -v '.
   - **Done when**: `grep -n 'ImplementerWriteMode\|ImplementerCapabilities' src/engine/implementers/types.ts | grep 'type\|interface'` → 0 lines
 
 - [ ] T069 [P] [P5] Remove unnecessary `export` keyword from 5 file-local symbols:
-  - `diptychDir` in `core/paths.ts:11`
+  - `splitbriefDir` in `core/paths.ts:11`
   - `applyEffortPrefix` in `engine/claude-invoke.ts:112`
   - `AdvisoryStore` in `engine/orchestrator/planning/mode-advisor.ts:244`
   - `createAdvisoryStore` in `engine/orchestrator/planning/mode-advisor.ts:250`

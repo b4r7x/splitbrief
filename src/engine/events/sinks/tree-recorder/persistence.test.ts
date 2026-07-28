@@ -12,7 +12,7 @@ import {
 import { taskId } from '../../../../core/schemas/task.js';
 
 function makeSessionDir(projectDir: string, sessionId: string): void {
-  mkdirSync(join(projectDir, '.diptych', 'sessions', sessionId), { recursive: true });
+  mkdirSync(join(projectDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
 }
 
 describe('tree-recorder persistence', () => {
@@ -32,12 +32,12 @@ describe('tree-recorder persistence', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'add login' });
 
-    const meta = readTreeMeta(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const meta = readTreeMeta(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(meta).not.toBeNull();
     expect(meta!.entryCount).toBe(1);
     expect(meta!.createdAt).toBe(1000);
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     expect(tree!.entries.size).toBe(1);
     const root = tree!.entries.get(tree!.meta.leafId);
@@ -61,7 +61,7 @@ describe('tree-recorder persistence', () => {
       action: 'create',
     });
 
-    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+    const sDir = join(tmpDir, '.splitbrief', 'sessions', sessionId);
     const tree = reconstructTree(sDir);
     expect(tree).not.toBeNull();
     const planStep = [...tree!.entries.values()].find((entry) => entry.type === 'plan-step');
@@ -78,7 +78,7 @@ describe('tree-recorder persistence', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
 
-    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+    const sDir = join(tmpDir, '.splitbrief', 'sessions', sessionId);
     const jsonlPath = treeJsonlPath(sDir);
     const before = readFileSync(jsonlPath, 'utf-8');
     chmodSync(jsonlPath, 0o400);
@@ -151,13 +151,13 @@ describe('tree-recorder persistence', () => {
       duration: 2000,
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     expect(tree!.meta.entryCount).toBe(3);
   });
 
   it('workflow_resumed does not reset session-tree.jsonl (no duplicate root appended)', () => {
-    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+    const sDir = join(tmpDir, '.splitbrief', 'sessions', sessionId);
 
     const sink1 = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink1({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
@@ -192,7 +192,7 @@ describe('tree-recorder persistence', () => {
   });
 
   it('workflow_started does not append a second root when a tree already exists on disk', () => {
-    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+    const sDir = join(tmpDir, '.splitbrief', 'sessions', sessionId);
 
     const sink1 = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink1({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'x' });
@@ -248,7 +248,7 @@ describe('tree-recorder persistence', () => {
       action: 'create',
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree).toBeNull();
   });
 
@@ -256,7 +256,7 @@ describe('tree-recorder persistence', () => {
     const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
     sink({ type: 'workflow_started', ts: 1000, phase: 'researching', feature: 'add login' });
 
-    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+    const sDir = join(tmpDir, '.splitbrief', 'sessions', sessionId);
     const jsonlStat = statSync(treeJsonlPath(sDir));
     const metaStat = statSync(treeMetaPath(sDir));
 

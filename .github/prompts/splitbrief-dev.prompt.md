@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: Use at the start of any diptych development session. Load project conventions before touching the codebase.
+description: Use at the start of any SPLITBRIEF development session. Load project conventions before touching the codebase.
 ---
 
 Read **`CLAUDE.md`** first. It is the single source of truth for stack, commands, documentation map, and core conventions.

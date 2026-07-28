@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
 import {
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   SESSIONS_DIR,
   SPEC_FILE,
   PLAN_FILE,
@@ -14,7 +14,7 @@ import { hashTaskBrief } from '../brief-hash.js';
 import { getCurrentCommitSha } from '../../lib/git/refs.js';
 
 function sessionResourcePath(sessionId: string, file: string): string {
-  return join(DIPTYCH_DIR, SESSIONS_DIR, sessionId, file);
+  return join(SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, file);
 }
 
 async function readSessionJson(
@@ -51,7 +51,7 @@ export async function hasCanonicalManifestArtifacts(
 export async function buildManifest(
   projectDir: string,
   sessionId: string,
-  diptychVersion: string,
+  splitbriefVersion: string,
 ): Promise<Record<string, unknown> | null> {
   const summaryResult = parsePersistedSession(
     await readSessionJson(projectDir, sessionId, SUMMARY_FILE),
@@ -90,7 +90,7 @@ export async function buildManifest(
 
   const manifest: Record<string, unknown> = {
     packVersion: '1',
-    diptychVersion,
+    splitbriefVersion,
     generatedAt,
     sessionId: session.id,
     briefHash,

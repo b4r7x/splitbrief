@@ -49,7 +49,7 @@ describe('tasks.md spec-file provenance', () => {
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE, formatted, meta);
     const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE);
     if (content === null) throw new Error('expected tasks file to be present');
-    expect(content.startsWith('---\ngenerated_by: diptych v')).toBe(true);
+    expect(content.startsWith('---\ngenerated_by: splitbrief v')).toBe(true);
     expect(content).toContain('planner: claude-code');
     expect(content).toContain('id: T001');
 

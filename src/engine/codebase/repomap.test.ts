@@ -75,7 +75,7 @@ describe('buildRepoMap', () => {
       await buildRepoMap(dir, { tokenBudget: 5000, cacheDir: '.custom-cache' });
 
       expect(existsSync(join(dir, '.custom-cache', 'repomap.sqlite'))).toBe(true);
-      expect(existsSync(join(dir, '.diptych'))).toBe(false);
+      expect(existsSync(join(dir, '.splitbrief'))).toBe(false);
     } finally {
       cleanupTempDir(dir);
     }
@@ -203,8 +203,8 @@ describe('buildRepoMap', () => {
     const dir = createTempDir('repomap-corrupt-cache');
     try {
       writeFileSync(join(dir, 'entry.ts'), 'export function entry() { return "ok"; }');
-      mkdirSync(join(dir, '.diptych'), { recursive: true });
-      writeFileSync(join(dir, '.diptych', 'repomap.sqlite'), 'torn header garbage'.repeat(16));
+      mkdirSync(join(dir, '.splitbrief'), { recursive: true });
+      writeFileSync(join(dir, '.splitbrief', 'repomap.sqlite'), 'torn header garbage'.repeat(16));
 
       const warnings: string[] = [];
       const out = await buildRepoMap(dir, {
@@ -215,7 +215,7 @@ describe('buildRepoMap', () => {
       expect(out).toContain('entry.ts:');
       expect(warnings).toHaveLength(1);
       expect(warnings[0]).toContain('corrupt');
-      expect(existsSync(join(dir, '.diptych', 'repomap.sqlite'))).toBe(true);
+      expect(existsSync(join(dir, '.splitbrief', 'repomap.sqlite'))).toBe(true);
     } finally {
       cleanupTempDir(dir);
     }

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SkillMeta } from '../core/skills/types.js';
-import { DIPTYCH_DIR } from '../core/paths.js';
+import { SPLITBRIEF_DIR } from '../core/paths.js';
 
 const TMP = join(import.meta.dirname, '.tmp-skills-test');
 const FAKE_HOME = join(TMP, '__home__');
@@ -176,8 +176,8 @@ describe('discoverSkills', () => {
     }
   });
 
-  it('falls back to .diptych/skills for shell planner', async () => {
-    const skillsDir = join(TMP, DIPTYCH_DIR, 'skills');
+  it('falls back to .splitbrief/skills for shell planner', async () => {
+    const skillsDir = join(TMP, SPLITBRIEF_DIR, 'skills');
     mkdirSync(skillsDir, { recursive: true });
     writeFileSync(
       join(skillsDir, 'custom.md'),

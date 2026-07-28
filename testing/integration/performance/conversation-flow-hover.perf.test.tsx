@@ -36,7 +36,7 @@ function countGlyphOccurrences(frame: string, mark: string): number {
   return count;
 }
 
-describe.skipIf(process.env.DIPTYCH_PERF !== '1')('conversation flow hover perf', () => {
+describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('conversation flow hover perf', () => {
   it('updates hover focus with bounded cost on a large transcript', async () => {
     resetConversationRowsProjectionCache();
     eventsStore.__testReset();

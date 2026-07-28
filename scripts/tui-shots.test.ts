@@ -221,7 +221,7 @@ function successfulCapture(outputRoot: string, artifactCount: number): TuiShotsC
 }
 
 async function createTemporaryCwd(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'diptych-tui-shots-'));
+  const root = await mkdtemp(join(tmpdir(), 'splitbrief-tui-shots-'));
   temporaryRoots.push(root);
   return root;
 }

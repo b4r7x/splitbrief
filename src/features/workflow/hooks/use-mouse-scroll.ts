@@ -1,5 +1,6 @@
 import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { completionStore } from '../../../stores/ui/completion.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
@@ -19,15 +20,17 @@ export function promptOwnsInput(): boolean {
 
 export function handleWorkflowMouseWheel(event: MouseEvent): void {
   if (event.type !== 'wheel-up' && event.type !== 'wheel-down') return;
+  if (completionStore.get().open) return;
 
   const direction = event.type === 'wheel-up' ? -1 : 1;
 
-  const review = reviewStore.get();
-
-  if (review.filePath) {
+  if (controlsStore.get().inputMode === 'review') {
+    const review = reviewStore.get();
+    if (!review.filePath) return;
     const visibleHeight = readReviewContentHeight();
     const maxOffset = Math.max(0, review.renderedLineCount - visibleHeight);
-    const nextOffset = clamp(review.scrollOffset + direction * WHEEL_STEP, 0, maxOffset);
+    const visibleOffset = clamp(review.scrollOffset, 0, maxOffset);
+    const nextOffset = clamp(visibleOffset + direction * WHEEL_STEP, 0, maxOffset);
     reviewStore.setScrollOffset(nextOffset);
     return;
   }
@@ -41,7 +44,11 @@ export function handleWorkflowMouseWheel(event: MouseEvent): void {
       step: WHEEL_STEP,
       maxOffset,
     });
-  } else {
-    conversationScrollStore.scrollDown(WHEEL_STEP);
+    return;
   }
+
+  const storedOffset = conversationScrollStore.get().scrollOffset;
+  conversationScrollStore.scrollDown(
+    WHEEL_STEP + Math.max(0, storedOffset - snapshot.scrollOffset),
+  );
 }

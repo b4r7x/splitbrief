@@ -16,6 +16,17 @@ describe('availableRows', () => {
   it('uses the floor when chrome exceeds rows', () => {
     expect(availableRows({ rows: 6, chromeRows: 12, floor: 2 })).toBe(2);
   });
+
+  it('normalizes negative row inputs and budgets', () => {
+    expect(availableRows({ rows: -4, chromeRows: -2, floor: -1 })).toBe(0);
+    expect(
+      computeListDisplayWindow({
+        items: ['alpha'],
+        selectedIndex: 0,
+        rowBudget: -3,
+      }).visibleSlots,
+    ).toEqual([]);
+  });
 });
 
 describe('windowSlice', () => {
@@ -29,6 +40,17 @@ describe('windowSlice', () => {
     expect(window.visibleSlice).toEqual([13, 14, 15, 16, 17]);
     expect(window.showScrollUp).toBe(true);
     expect(window.showScrollDown).toBe(true);
+  });
+
+  it('returns an empty window for a zero or negative row budget', () => {
+    for (const windowSize of [0, -2]) {
+      expect(windowSlice({ items, selectedIndex: 15, windowSize })).toEqual({
+        scrollOffset: 0,
+        visibleSlice: [],
+        showScrollUp: false,
+        showScrollDown: false,
+      });
+    }
   });
 });
 
@@ -98,14 +120,18 @@ describe('isItemIndexVisible', () => {
     ).toBe(false);
   });
 
-  it('returns false when the selected index is outside the visible window', () => {
+  it('keeps the selected logical item visible and rejects an empty list', () => {
+    const selectedIndex = 20;
+    const display = computeListDisplayWindow({
+      items,
+      selectedIndex,
+      rowBudget: 4,
+    });
+
     expect(
-      isItemIndexVisible({
-        items,
-        selectedIndex: 20,
-        rowBudget: 4,
-      }),
+      display.visibleSlots.some((slot) => slot.kind === 'item' && slot.itemIndex === selectedIndex),
     ).toBe(true);
+    expect(isItemIndexVisible({ items, selectedIndex, rowBudget: 4 })).toBe(true);
     expect(
       isItemIndexVisible({
         items: [],

@@ -55,7 +55,7 @@ function getContentAwareSessionLimit(input: SessionLimitInput): {
   if (baseCapacity <= 1) {
     return { recentSessionLimit: baseCapacity, showHiddenCount: false };
   }
-  return { recentSessionLimit: Math.max(0, baseCapacity - 1), showHiddenCount: true };
+  return { recentSessionLimit: baseCapacity - 1, showHiddenCount: true };
 }
 
 export function getHomeLayout({

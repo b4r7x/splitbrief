@@ -34,7 +34,7 @@ Rough math for stores before this principle was adopted: every test file re-init
 
 ### 3. Startup latency
 
-CLI UX is sensitive to time-to-first-output. Every module on the path between `bin/diptych` and the first rendered frame runs synchronously. Barrels inflate that path with modules the current command doesn't use.
+CLI UX is sensitive to time-to-first-output. Every module on the path between `bin/splitbrief` and the first rendered frame runs synchronously. Barrels inflate that path with modules the current command doesn't use.
 
 Next.js internal case study (Vercel 2024): removing barrel files dropped module count from ~11,000 to ~3,500 (**−68%**), cutting startup by 5–10 seconds in dev.
 

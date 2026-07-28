@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, type RenderFeatureResult, tick } from '#testing/helpers/ink.js';
 import { App } from '../../src/app/root.js';
+import { getWorkflowPromptRows } from '../../src/features/workflow/prompt-rows/workflow.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
+import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js';
 import { controlsStore } from '../../src/stores/ui/controls.js';
@@ -16,6 +18,7 @@ import { scenarioId, type ScenarioId } from './contracts/identifiers.js';
 import type { FixtureLifecycle } from './fixtures/common.js';
 import { teardownVisualFixture } from './fixtures/screen-fixtures.js';
 import {
+  getWorkflowFixturePromptRows,
   workflowFixtureProjections,
   type WorkflowFixtureProjection,
 } from './fixtures/workflow/projections.js';
@@ -56,15 +59,23 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
     await tick(20);
     const frame = ui.lastFrame() ?? '';
     const predicate = workflowCheckpointPredicates.get(checkpoint.id);
-    expect(predicate, projection.scenarioId).toBeDefined();
+    if (predicate === undefined) {
+      throw new Error(`Missing workflow checkpoint predicate ${checkpoint.id}`);
+    }
     expect(
-      predicate?.({ output: frame, scenario, checkpoint }),
+      predicate({ output: frame, scenario, checkpoint }),
       `${projection.scenarioId}: ${checkpoint.marker}`,
     ).toBe(true);
     expect(controlsStore.get().inputMode).toBe(projection.inputMode);
+    expect(controlsStore.get().sidebarVisible).toBe(projection.sidebarVisible);
     expect(eventsStore.get().events).toHaveLength(
       projection.events.filter((event) => projectEventForTuiEventLog(event) !== null).length,
     );
+    if (projection.review !== undefined) {
+      expect(approvalPromptStore.get().status).toBe('pending');
+      expect(questionPromptStore.get().hint).toBeNull();
+      expect(getWorkflowFixturePromptRows(projection, VIEWPORT.cols)).toBeGreaterThan(0);
+    }
     return frame;
   } finally {
     ui?.unmount();
@@ -96,12 +107,21 @@ describe('workflow visual fixtures', () => {
   it('initializes the requested viewport and resets prompt, review, event, and stream state', async () => {
     const review = workflowFixtureProjections.get(scenarioId('workflow-review'));
     const question = workflowFixtureProjections.get(scenarioId('workflow-question'));
+    const implementation = workflowFixtureProjections.get(scenarioId('workflow-implementation'));
     const idle = workflowFixtureProjections.get(scenarioId('workflow-idle'));
-    if (!review || !question || !idle) throw new Error('Missing required workflow projections');
+    if (!review || !question || !implementation || !idle) {
+      throw new Error('Missing required workflow projections');
+    }
 
     const reviewSetup = await setupProjection(review);
     expect(approvalPromptStore.get().status).toBe('pending');
     expect(reviewStore.get().filePath).not.toBeNull();
+    expect(questionPromptStore.get().hint).toBeNull();
+    expect(controlsStore.get().inputMode).toBe('review');
+    expect(getWorkflowFixturePromptRows(review, VIEWPORT.cols)).toBeGreaterThan(0);
+
+    const implementationSetup = await setupProjection(implementation);
+    expect(controlsStore.get().sidebarVisible).toBe(true);
 
     const questionSetup = await setupProjection(question);
     expect(approvalPromptStore.get().status).toBe('idle');
@@ -115,10 +135,39 @@ describe('workflow visual fixtures', () => {
     expect(eventsStore.get().events).toEqual([]);
     expect(questionPromptStore.get().hint).toBeNull();
     expect(controlsStore.get().inputMode).toBe('normal');
+    expect(controlsStore.get().sidebarVisible).toBe(false);
     expect(streamingOutputStore.get()).toMatchObject({ active: false, lines: [] });
 
     await reviewSetup.teardown();
+    await implementationSetup.teardown();
     await questionSetup.teardown();
     await idleSetup.teardown();
+  });
+
+  it('projects prompt rows from the same state rendered by the workflow fixture', async () => {
+    const review = workflowFixtureProjections.get(scenarioId('workflow-review'));
+    const question = workflowFixtureProjections.get(scenarioId('workflow-question'));
+    const idle = workflowFixtureProjections.get(scenarioId('workflow-idle'));
+    if (!review || !question || !idle) {
+      throw new Error('Missing required prompt projections');
+    }
+
+    expect(getWorkflowFixturePromptRows(review, VIEWPORT.cols)).toBeGreaterThan(0);
+    expect(getWorkflowFixturePromptRows(question, VIEWPORT.cols)).toBeGreaterThan(0);
+
+    for (const projection of [review, question, idle]) {
+      const lifecycle = await setupProjection(projection);
+      const questionHint =
+        controlsStore.get().inputMode === 'question' ? questionPromptStore.get().hint : null;
+      expect(getWorkflowFixturePromptRows(projection, VIEWPORT.cols)).toBe(
+        getWorkflowPromptRows({
+          approvalState: approvalPromptStore.get(),
+          costApprovalState: costApprovalStore.get(),
+          questionHint,
+          cols: VIEWPORT.cols,
+        }),
+      );
+      await lifecycle.teardown();
+    }
   });
 });

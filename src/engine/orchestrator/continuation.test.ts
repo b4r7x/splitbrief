@@ -276,7 +276,7 @@ describe('withContinuationLoop', () => {
     resolvePrompt('resume anyway');
 
     await expect(loop).rejects.toThrow('workflow rewound');
-    const statePath = join(projectDir, '.diptych', 'sessions', sessionId, STATE_FILE);
+    const statePath = join(projectDir, '.splitbrief', 'sessions', sessionId, STATE_FILE);
     const saved = JSON.parse(readFileSync(statePath, 'utf8')) as { awaitingContinue?: boolean };
     expect(saved.awaitingContinue).toBe(true);
   });
@@ -428,8 +428,8 @@ describe('withContinuationLoop', () => {
       },
     });
 
-    const realStatePath = join(projectDir, '.diptych', 'sessions', sessionId, STATE_FILE);
-    const stagedStatePath = join(stagedDir, '.diptych', 'sessions', sessionId, STATE_FILE);
+    const realStatePath = join(projectDir, '.splitbrief', 'sessions', sessionId, STATE_FILE);
+    const stagedStatePath = join(stagedDir, '.splitbrief', 'sessions', sessionId, STATE_FILE);
     expect(existsSync(realStatePath)).toBe(true);
     expect(existsSync(stagedStatePath)).toBe(false);
     const saved = JSON.parse(readFileSync(realStatePath, 'utf8')) as { awaitingContinue?: boolean };

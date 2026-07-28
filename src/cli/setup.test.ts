@@ -9,7 +9,7 @@ import {
   loadConfigOrExit,
   setupWorkflow,
 } from './setup.js';
-import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE } from '../core/paths.js';
 import { isCliError } from './errors.js';
 
 let tmp: string;
@@ -48,7 +48,7 @@ describe('setupWorkflow', () => {
     expect(result.needsSetup).toBe(true);
     // The default config write is deferred to wizard completion; an abandoned
     // wizard must leave no config on disk so setup is re-requested next time.
-    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
   });
 
   it.each([
@@ -62,7 +62,7 @@ describe('setupWorkflow', () => {
     const result = await setupWorkflow({ project: tmp, fullscreen: false, ...opts });
 
     expect(result.needsSetup).toBeUndefined();
-    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
   });
 
   it('still requests setup when non-runner flags (mode / auto / budget) are the only extras', async () => {
@@ -78,7 +78,7 @@ describe('setupWorkflow', () => {
     // First call signals setup but writes nothing (wizard never completes).
     const first = await setupWorkflow({ project: tmp, fullscreen: false });
     expect(first.needsSetup).toBe(true);
-    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
 
     // Abandoned wizard -> next start still requests setup, not skips it.
     const second = await setupWorkflow({ project: tmp, fullscreen: false });
@@ -90,7 +90,7 @@ describe('setupWorkflow', () => {
     // Simulate a completed wizard by passing a runner override (eager write).
     const first = await setupWorkflow({ project: tmp, fullscreen: false, planner: 'claude-code' });
     expect(first.needsSetup).toBeUndefined();
-    expect(existsSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
 
     // Second invocation: config exists -> no setup prompt.
     const second = await setupWorkflow({ project: tmp, fullscreen: false });
@@ -115,8 +115,8 @@ describe('setupWorkflow', () => {
     expect(result.projectDir).not.toBe(subdir);
     expect(result.projectDir).toBe(realpathSync(tmp));
     // The config landed at the toplevel, not under the invocation subdir.
-    expect(existsSync(join(result.projectDir, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
-    expect(existsSync(join(subdir, DIPTYCH_DIR, CONFIG_FILE))).toBe(false);
+    expect(existsSync(join(result.projectDir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
+    expect(existsSync(join(subdir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
     errorSpy.mockRestore();
   });
 });
@@ -261,8 +261,8 @@ describe('assertInteractiveTty', () => {
 
 describe('loadConfigOrExit', () => {
   it('maps config load failures to CLI exit code 1', () => {
-    mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
-    writeFileSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE), 'planner: [unterminated\n');
+    mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE), 'planner: [unterminated\n');
 
     let captured: unknown;
     try {

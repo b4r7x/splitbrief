@@ -56,7 +56,7 @@ describe('renderSessionHtml', () => {
   it('renders the nominal complete report', () => {
     const html = renderSessionHtml(makeExportData());
     expect(html).toMatch(/^<!DOCTYPE html>/);
-    expect(html).toContain('<title>diptych — add user auth</title>');
+    expect(html).toContain('<title>SPLITBRIEF — add user auth</title>');
     expect(html).toContain('86%');
     expect(html).toContain('$0.17');
     expect(html).not.toContain('Evidence');
@@ -137,7 +137,7 @@ describe('renderSessionHtml', () => {
       makeExportData({ feature: 'use sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa for auth' }),
     );
     expect(html).not.toContain('sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa');
-    expect(html).toContain('<title>diptych — use sk-ant-***REDACTED*** for auth</title>');
+    expect(html).toContain('<title>SPLITBRIEF — use sk-ant-***REDACTED*** for auth</title>');
     expect(html).toContain('<h1>use sk-ant-***REDACTED*** for auth</h1>');
   });
 });

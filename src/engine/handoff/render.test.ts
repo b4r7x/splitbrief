@@ -148,11 +148,11 @@ describe('renderHandoff — claude-code', () => {
     expect(file!.content).toContain('Do not stage or commit');
   });
 
-  it('includes .claude/agents/diptych-handoff.md', () => {
+  it('includes .claude/agents/splitbrief-handoff.md', () => {
     const pack = renderHandoff({ ...baseInput, target: 'claude-code' });
-    const file = pack.files.find((f) => f.path === '.claude/agents/diptych-handoff.md');
+    const file = pack.files.find((f) => f.path === '.claude/agents/splitbrief-handoff.md');
     expect(file).toBeDefined();
-    expect(file!.content).toContain('diptych-handoff');
+    expect(file!.content).toContain('splitbrief-handoff');
     expect(file!.content).toContain('Do NOT stage or commit');
     expect(file!.content).toContain('typecheck');
   });
@@ -263,7 +263,7 @@ describe('renderHandoffWithCustom', () => {
   });
 
   it('loads and calls a custom renderer for an unknown target when trusted', async () => {
-    const renderersDir = join(customRendererTmp, '.diptych', 'handoff-renderers');
+    const renderersDir = join(customRendererTmp, '.splitbrief', 'handoff-renderers');
     mkdirSync(renderersDir, { recursive: true });
     writeFileSync(
       join(renderersDir, 'my-custom.js'),
@@ -283,7 +283,7 @@ describe('renderHandoffWithCustom', () => {
   });
 
   it('blocks custom renderer when not trusted', async () => {
-    const renderersDir = join(customRendererTmp, '.diptych', 'handoff-renderers');
+    const renderersDir = join(customRendererTmp, '.splitbrief', 'handoff-renderers');
     mkdirSync(renderersDir, { recursive: true });
     writeFileSync(
       join(renderersDir, 'my-custom.js'),

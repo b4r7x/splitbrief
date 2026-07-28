@@ -70,7 +70,7 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
       severity: 'warning',
       summary: 'Repository is in a detached HEAD state.',
       details: ['Per-task commits will not be on any branch and can be lost.'],
-      fix: 'Check out a branch (e.g. `git switch -c diptych/work`) before starting a workflow.',
+      fix: 'Check out a branch (e.g. `git switch -c splitbrief/work`) before starting a workflow.',
     });
   }
 
@@ -96,7 +96,7 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
         ? `Active session ${repo.activeSession} is still live.`
         : `Stale active session marker ${repo.activeSession} can be cleared.`,
       fix: repo.activeSessionLive
-        ? 'Run `diptych resume` or clear .diptych/active after confirming the session is not live.'
+        ? 'Run `splitbrief resume` or clear .splitbrief/active after confirming the session is not live.'
         : undefined,
       nextAction: repo.activeSessionLive ? 'clean-or-isolate-repo' : undefined,
       metadata: { sessionId: repo.activeSession, live: repo.activeSessionLive === true },

@@ -7,7 +7,7 @@ import { lastCommand } from './last.js';
 import type { LastDeps } from './last.js';
 
 function makeTmpProject(): string {
-  const dir = join(tmpdir(), `diptych-test-${randomUUID()}`);
+  const dir = join(tmpdir(), `splitbrief-test-${randomUUID()}`);
   mkdirSync(dir, { recursive: true });
   tmpProjects.push(dir);
   return dir;
@@ -19,7 +19,7 @@ function makeSessionWithLockfile(
   startTimeMs: number,
   extra: Record<string, unknown> = {},
 ): void {
-  const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  const sessDir = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   const data = {
     version: 1,
@@ -36,7 +36,7 @@ function makeSessionWithLockfile(
 }
 
 function makeInteractiveSession(projectDir: string, sessionId: string, mtimeMs: number): void {
-  const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  const sessDir = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   const statePath = join(sessDir, 'state.json');
   writeFileSync(statePath, JSON.stringify({ feature: `feature-${sessionId}` }));
@@ -100,7 +100,7 @@ describe('lastCommand', () => {
     makeSessionWithLockfile(projectDir, '2025-04-01-only', 5000);
 
     await expect(lastCommand({ projectDir, worktree: 'feature-x' } as never, deps)).rejects.toThrow(
-      /--worktree is only supported by `diptych start`/,
+      /--worktree is only supported by `splitbrief start`/,
     );
     expect(sessionIds).toEqual([]);
   });

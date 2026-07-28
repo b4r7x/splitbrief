@@ -1,5 +1,5 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runLocalRetries } from './local-retries.js';
@@ -9,7 +9,6 @@ import { failedRetry } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { publishWarning, publishWarningFromError } from '../events.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { nowIso } from '../../../utils/format-time.js';

@@ -1,8 +1,8 @@
 import { join, resolve } from 'node:path';
 import { assertWritablePathConfined } from '../../lib/path-confinement.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 
-const DEFAULT_CACHE_DIR = DIPTYCH_DIR;
+const DEFAULT_CACHE_DIR = SPLITBRIEF_DIR;
 const REPOMAP_DB_FILE = 'repomap.sqlite';
 
 export function resolveCodebaseCacheDir(projectDir: string, cacheDir?: string): string {

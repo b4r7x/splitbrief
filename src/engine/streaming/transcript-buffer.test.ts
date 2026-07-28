@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DIPTYCH_DIR, SESSIONS_DIR, SESSION_LOG_FILE } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_LOG_FILE } from '../../core/paths.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTranscriptBuffer } from './transcript-buffer.js';
 
@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 function readEntries(projectDir: string, sessionId: string): unknown[] {
-  const logPath = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId, SESSION_LOG_FILE);
+  const logPath = join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, SESSION_LOG_FILE);
   if (!existsSync(logPath)) return [];
   return readFileSync(logPath, 'utf-8')
     .split('\n')
@@ -61,7 +61,7 @@ describe('createTranscriptBuffer', () => {
     buf.flush();
     buf.flushInterrupted();
 
-    const logPath = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, SESSION_LOG_FILE);
+    const logPath = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, SESSION_LOG_FILE);
     expect(existsSync(logPath)).toBe(false);
   });
 
@@ -77,7 +77,7 @@ describe('createTranscriptBuffer', () => {
     buf.append('still no persistence');
     buf.flush();
 
-    const sessionsPath = join(tmp, DIPTYCH_DIR, SESSIONS_DIR);
+    const sessionsPath = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR);
     if (existsSync(sessionsPath)) {
       const empty = join(sessionsPath, '', SESSION_LOG_FILE);
       expect(existsSync(empty)).toBe(false);
@@ -172,7 +172,7 @@ describe('createTranscriptBuffer', () => {
     buf.flush();
     buf.flushInterrupted();
 
-    const logPath = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, SESSION_LOG_FILE);
+    const logPath = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, SESSION_LOG_FILE);
     expect(existsSync(logPath)).toBe(false);
   });
 });

@@ -38,7 +38,7 @@ describe('checkRunnerTrust', () => {
   });
 
   it('flags bare commands that PATH resolves inside the project', () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-runner-trust-'));
+    const projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-runner-trust-'));
     const savedPath = process.env['PATH'];
     try {
       const binDir = join(projectDir, 'node_modules', '.bin');

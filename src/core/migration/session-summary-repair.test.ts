@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeLegacySessionSummaryWithoutContextDetected } from '#testing/helpers/factories/legacy-session-summary.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 import { repairSessionSummaries } from './session-summary-repair.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -30,7 +30,7 @@ describe('repairSessionSummaries', () => {
   it('persists legacy summaries missing contextDetected', () => {
     tmp = createTempDir('summary-repair-test');
     const sessionId = '2024-01-01-legacy-summary';
-    const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    const sessionDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
     const summaryPath = join(sessionDir, 'summary.json');
     mkdirSync(sessionDir, { recursive: true });
     writeLegacySummaryWithoutContextDetected(summaryPath, sessionId);
@@ -55,8 +55,8 @@ describe('repairSessionSummaries', () => {
     tmp = createTempDir('summary-repair-outside-root');
     const outside = createTempDir('summary-repair-outside-sessions');
     try {
-      mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
-      symlinkSync(outside, join(tmp, DIPTYCH_DIR, SESSIONS_DIR), 'dir');
+      mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
+      symlinkSync(outside, join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR), 'dir');
 
       const result = repairSessionSummaries(tmp);
       expect(result).toMatchObject({
@@ -73,8 +73,8 @@ describe('repairSessionSummaries', () => {
 
   it('warns and skips when the sessions root is a regular file', () => {
     tmp = createTempDir('summary-repair-root-file');
-    mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
-    writeFileSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR), 'not-a-directory');
+    mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR), 'not-a-directory');
 
     const result = repairSessionSummaries(tmp);
     expect(result).toMatchObject({
@@ -91,7 +91,7 @@ describe('repairSessionSummaries', () => {
     const outside = createTempDir('summary-repair-outside-summary');
     try {
       const sessionId = '2024-01-01-symlink-summary';
-      const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+      const sessionDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
       const summaryPath = join(sessionDir, 'summary.json');
       mkdirSync(sessionDir, { recursive: true });
       writeLegacySummaryWithoutContextDetected(join(outside, 'summary.json'), sessionId);
@@ -110,7 +110,7 @@ describe('repairSessionSummaries', () => {
   itUnix('skips fifo summary.json as unreadable', () => {
     tmp = createTempDir('summary-repair-fifo-summary');
     const sessionId = '2024-01-01-fifo-summary';
-    const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    const sessionDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
     const summaryPath = join(sessionDir, 'summary.json');
     mkdirSync(sessionDir, { recursive: true });
     execSync(`mkfifo ${JSON.stringify(summaryPath)}`);
@@ -125,7 +125,7 @@ describe('repairSessionSummaries', () => {
   it('canonicalizes payload id to the directory id when repairing', () => {
     tmp = createTempDir('summary-repair-id-mismatch');
     const sessionId = '2024-01-01-directory-id';
-    const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    const sessionDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
     const summaryPath = join(sessionDir, 'summary.json');
     mkdirSync(sessionDir, { recursive: true });
     writeLegacySummaryWithoutContextDetected(summaryPath, sessionId, 'wrong-payload-id');

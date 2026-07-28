@@ -5,7 +5,7 @@ import { generateToken } from '../../engine/mcp/auth-token.js';
 import { createResolver } from '../../engine/mcp/resolver.js';
 import { startMcpServer } from '../../engine/mcp/server.js';
 import { createToolHandler } from '../../engine/mcp/tool/handler.js';
-import { getDiptychVersion } from '../../core/paths-io.js';
+import { getSplitbriefVersion } from '../../core/paths-io.js';
 import { cliError, withCliErrors } from '../errors.js';
 import { resolveSessionAlias } from '../sessions/aliases.js';
 
@@ -60,12 +60,12 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
         );
 
         const token = generateToken();
-        const diptychVersion = getDiptychVersion();
+        const splitbriefVersion = getSplitbriefVersion();
         const persistTranscript = loadConfigOrExit(projectDir).config.workflow.persistTranscript;
         const resolver = createResolver({
           projectDir,
           sessionIds,
-          diptychVersion,
+          splitbriefVersion,
           persistTranscript,
         });
         const toolHandler = createToolHandler(projectDir, sessionIds);
@@ -76,7 +76,7 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
             host: '127.0.0.1',
             token,
             resolver,
-            serverVersion: diptychVersion,
+            serverVersion: splitbriefVersion,
             toolHandler,
           }),
         );
@@ -86,7 +86,7 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
 
         process.stdout.write(
           [
-            'diptych MCP server ready',
+            'SPLITBRIEF MCP server ready',
             `  Exposes session resources and ${toolHandler.listTools().length} evidence tools.`,
             '',
             `  URL:    http://127.0.0.1:${actualPort}/mcp`,
@@ -96,7 +96,7 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
             'To configure in Claude Code (.claude/settings.json):',
             '  {',
             '    "mcpServers": {',
-            '      "diptych": {',
+            '      "splitbrief": {',
             '        "type": "http",',
             `        "url": "http://127.0.0.1:${actualPort}/mcp",`,
             `        "headers": { "Authorization": "Bearer ${token}" }`,

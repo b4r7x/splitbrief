@@ -5,7 +5,7 @@ import { symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -14,7 +14,7 @@ describe('detection cache', () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'diptych-cache-test-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-cache-test-'));
   });
 
   afterEach(async () => {
@@ -105,7 +105,7 @@ describe('detection cache', () => {
   });
 
   it('returns null for corrupted JSON', async () => {
-    const dir = join(tempDir, '.diptych');
+    const dir = join(tempDir, '.splitbrief');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'detection-cache.json'), 'not valid json', 'utf-8');
     const result = await loadDetectionCache(tempDir);
@@ -118,8 +118,8 @@ describe('detection cache', () => {
     expect(result).toEqual({ planners: [], implementers: [] });
   });
 
-  itUnix('returns null when .diptych is a symlink outside the project', async () => {
-    const projectDir = createTempDir('cache-symlink-diptych');
+  itUnix('returns null when .splitbrief is a symlink outside the project', async () => {
+    const projectDir = createTempDir('cache-symlink-splitbrief');
     const outside = createTempDir('cache-symlink-outside');
     try {
       mkdirSync(join(outside, 'nested'), { recursive: true });
@@ -132,7 +132,7 @@ describe('detection cache', () => {
           implementers,
         }),
       );
-      symlinkSync(outside, join(projectDir, DIPTYCH_DIR));
+      symlinkSync(outside, join(projectDir, SPLITBRIEF_DIR));
 
       await expect(loadDetectionCache(projectDir, 60_000)).resolves.toBeNull();
     } finally {
@@ -143,7 +143,7 @@ describe('detection cache', () => {
 
   it('includes version in saved cache', async () => {
     await saveDetectionCache(tempDir, planners, implementers);
-    const raw = await readFile(join(tempDir, '.diptych', 'detection-cache.json'), 'utf-8');
+    const raw = await readFile(join(tempDir, '.splitbrief', 'detection-cache.json'), 'utf-8');
     const parsed = JSON.parse(raw);
     expect(parsed.version).toBe(1);
   });

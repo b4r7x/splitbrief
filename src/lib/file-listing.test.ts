@@ -61,17 +61,17 @@ describe('listProjectFiles', () => {
   });
 
   it('skips caller-injected directories in the filesystem fallback', async () => {
-    mkdirSync(join(tmpDir, '.diptych', 'sessions', 'abc'), { recursive: true });
-    writeFileSync(join(tmpDir, '.diptych', 'sessions', 'abc', 'state.json'), '');
+    mkdirSync(join(tmpDir, '.splitbrief', 'sessions', 'abc'), { recursive: true });
+    writeFileSync(join(tmpDir, '.splitbrief', 'sessions', 'abc', 'state.json'), '');
     writeFileSync(join(tmpDir, 'src', 'app.ts'), '');
 
     const files = await listProjectFiles(tmpDir, {
-      excludePatterns: [/(?:^|\/)\.diptych\/sessions\//],
-      skipRelativeDirs: ['.diptych/sessions'],
+      excludePatterns: [/(?:^|\/)\.splitbrief\/sessions\//],
+      skipRelativeDirs: ['.splitbrief/sessions'],
     });
 
     expect(files).toContain('src/app.ts');
-    expect(files.some((file) => file.startsWith('.diptych/sessions/'))).toBe(false);
+    expect(files.some((file) => file.startsWith('.splitbrief/sessions/'))).toBe(false);
   });
 
   it('uses git listing when available so ignored files are omitted', async () => {
@@ -97,5 +97,5 @@ describe('listProjectFiles', () => {
 });
 
 function mkdtempProject(): string {
-  return mkdtempSync(join(tmpdir(), 'diptych-files-'));
+  return mkdtempSync(join(tmpdir(), 'splitbrief-files-'));
 }

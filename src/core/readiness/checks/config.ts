@@ -16,8 +16,8 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
       {
         id: 'config.missing',
         severity: 'blocker',
-        summary: 'No .diptych/config.yaml found.',
-        fix: 'Run `diptych init` to create a config.',
+        summary: 'No .splitbrief/config.yaml found.',
+        fix: 'Run `splitbrief init` to create a config.',
         nextAction: 'run-init',
         metadata: { path: configLoad.path },
       },
@@ -31,7 +31,7 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
         severity: 'blocker',
         summary: 'Config could not be loaded.',
         details: configLoad.error ? [configLoad.error] : undefined,
-        fix: 'Fix .diptych/config.yaml or run `diptych init --reconfigure`.',
+        fix: 'Fix .splitbrief/config.yaml or run `splitbrief init --reconfigure`.',
         nextAction: 'fix-config',
         metadata: { path: configLoad.path },
       },
@@ -61,7 +61,7 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
       id: 'config.warning',
       severity: 'warning',
       summary: message,
-      fix: migration ? 'Run `diptych init --reconfigure` to write a current config.' : undefined,
+      fix: migration ? 'Run `splitbrief init --reconfigure` to write a current config.' : undefined,
       nextAction: migration ? 'fix-config' : undefined,
     });
   }

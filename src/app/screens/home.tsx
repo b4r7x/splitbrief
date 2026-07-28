@@ -56,13 +56,7 @@ export function HomeScreen({ commands, onRuntimeCommand }: HomeScreenProps) {
   const hasRoomForSessions = preliminaryLayout.recentSessionLimit > 0;
   const canFocus = focusedLayout.recentSessionLimit > 0 && sessions.length > 0;
   const sessionsActive = sessionsFocused && canFocus;
-  const layout = getHomeLayout({
-    cols,
-    rows,
-    isSmall,
-    sessionCount: totalCount,
-    sessionsFocused: sessionsActive,
-  });
+  const layout = sessionsActive ? focusedLayout : preliminaryLayout;
 
   useEffect(() => {
     if (!canFocus) setSessionsFocused(false);

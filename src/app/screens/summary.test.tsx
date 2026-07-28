@@ -101,7 +101,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('diptych complete');
+    expect(frame).toContain('SPLITBRIEF complete');
 
     ui.unmount();
   });
@@ -112,9 +112,9 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('diptych failed');
+    expect(frame).toContain('SPLITBRIEF failed');
     expect(frame).not.toContain('with summary');
-    expect(frame).not.toContain('diptych complete');
+    expect(frame).not.toContain('SPLITBRIEF complete');
 
     ui.unmount();
   });
@@ -125,9 +125,9 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('diptych interrupted');
+    expect(frame).toContain('SPLITBRIEF interrupted');
     expect(frame).not.toContain('with summary');
-    expect(frame).not.toContain('diptych complete');
+    expect(frame).not.toContain('SPLITBRIEF complete');
 
     ui.unmount();
   });
@@ -267,8 +267,8 @@ describe('SummaryScreen', () => {
           preFinalReviewId: 'snap-pre-final',
           accepted: true,
           rejected: false,
-          diffCommand: 'diptych snapshot diff snap-post-1',
-          restoreCommand: 'diptych snapshot restore snap-post-1',
+          diffCommand: 'splitbrief snapshot diff snap-post-1',
+          restoreCommand: 'splitbrief snapshot restore snap-post-1',
         },
         reviewPacket: {
           markdownPath: 'review-packet.md',
@@ -289,9 +289,9 @@ describe('SummaryScreen', () => {
     expect(frame).toContain('Checkpoints');
     expect(frame).toContain('2 checkpoints');
     expect(frame).toContain('snap-pre-final');
-    expect(frame).toContain('diptych snapshot diff snap-post-1');
+    expect(frame).toContain('splitbrief snapshot diff snap-post-1');
     expect(frame).toContain('Review packet');
-    expect(frame).toContain('.diptych/sessions/summary-session/review-packet.md');
+    expect(frame).toContain('.splitbrief/sessions/summary-session/review-packet.md');
     expect(frame).toContain('final review: written');
     expect(frame).toContain('evidence: 2/2');
 
@@ -313,8 +313,8 @@ describe('SummaryScreen', () => {
           preFinalReviewId: 'snap-pre-final',
           accepted: null,
           rejected: null,
-          diffCommand: 'diptych snapshot diff snap-post-very-long-id',
-          restoreCommand: 'diptych snapshot restore snap-post-very-long-id',
+          diffCommand: 'splitbrief snapshot diff snap-post-very-long-id',
+          restoreCommand: 'splitbrief snapshot restore snap-post-very-long-id',
         },
         reviewPacket: {
           markdownPath: 'review-packet.md',
@@ -369,8 +369,8 @@ describe('SummaryScreen', () => {
           preFinalReviewId: 'snap-pre-final',
           accepted: true,
           rejected: false,
-          diffCommand: 'diptych snapshot diff snap-post-final',
-          restoreCommand: 'diptych snapshot restore snap-post-final',
+          diffCommand: 'splitbrief snapshot diff snap-post-final',
+          restoreCommand: 'splitbrief snapshot restore snap-post-final',
         },
         reviewPacket: {
           markdownPath: 'review-packet.md',
@@ -500,7 +500,7 @@ describe('SummaryScreen', () => {
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('diptych');
+    expect(frame).toContain('SPLITBRIEF');
     expect(frame).toContain('failed');
     expect(frame).toContain(`Codex ${glyph('connectorHandoff')} Codex`);
     const continueCount = frame.split('Press enter to continue').length - 1;

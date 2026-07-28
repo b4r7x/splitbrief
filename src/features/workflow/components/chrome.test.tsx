@@ -77,7 +77,7 @@ describe('WorkflowFooter', () => {
     resetAllStores();
     routerStore.init({ screen: 'workflow', feature: 'test feature' });
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
-    configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/diptych-test' });
+    configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/splitbrief-test' });
   });
 
   afterEach(() => {
@@ -86,9 +86,10 @@ describe('WorkflowFooter', () => {
 
   function renderFooter(
     props: Partial<{
-      mode: 'normal' | 'question';
+      mode: 'normal' | 'question' | 'review';
       inputHint: string;
       questionEpoch: number;
+      reviewEpoch: number;
       handleInput: (text: string) => void;
     }> = {},
   ) {
@@ -100,6 +101,7 @@ describe('WorkflowFooter', () => {
         mode={props.mode ?? 'normal'}
         inputHint={props.inputHint ?? ''}
         questionEpoch={props.questionEpoch ?? 0}
+        reviewEpoch={props.reviewEpoch}
         disabled={false}
       />,
     );
@@ -167,6 +169,42 @@ describe('WorkflowFooter', () => {
     ui.stdin.write('\r');
     await tick(20);
     expect(submits).not.toContain('stale answer');
+    ui.unmount();
+  });
+
+  it('preserves a review draft across rerenders and clears it when the review owner changes', async () => {
+    const ui = renderFooter({ mode: 'review', reviewEpoch: 1 });
+    ui.stdin.write('owner one draft');
+    await tick(20);
+    expect(ui.lastFrame()).toContain('owner one draft');
+
+    ui.rerender(
+      <WorkflowFooter
+        handleInput={() => {}}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode="review"
+        inputHint=""
+        reviewEpoch={1}
+        disabled={false}
+      />,
+    );
+    await tick(20);
+    expect(ui.lastFrame()).toContain('owner one draft');
+
+    ui.rerender(
+      <WorkflowFooter
+        handleInput={() => {}}
+        onRuntimeCommand={() => {}}
+        commands={[]}
+        mode="review"
+        inputHint=""
+        reviewEpoch={2}
+        disabled={false}
+      />,
+    );
+    await tick(20);
+    expect(ui.lastFrame()).not.toContain('owner one draft');
     ui.unmount();
   });
 });

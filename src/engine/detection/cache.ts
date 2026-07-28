@@ -2,14 +2,14 @@ import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { confinedReadFileAsync, confinedUnlinkSync } from '../../lib/confined-fs.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import type {
   DetectedModel,
   PlannerDetection,
   ProviderDetection,
 } from '../../core/discovery/detection.js';
 import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/schemas/enums.js';
-import { getDiptychPath } from '../../core/paths.js';
+import { getSplitbriefPath } from '../../core/paths.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
@@ -107,7 +107,7 @@ const DetectionCacheSchema = z.object({
 type DetectionCache = z.infer<typeof DetectionCacheSchema>;
 
 function cachePath(projectDir: string): string {
-  return getDiptychPath(projectDir, CACHE_FILENAME);
+  return getSplitbriefPath(projectDir, CACHE_FILENAME);
 }
 
 function parseCache(value: unknown): DetectionCache | null {
@@ -116,7 +116,7 @@ function parseCache(value: unknown): DetectionCache | null {
   return result.data;
 }
 
-const CACHE_RELATIVE_PATH = join(DIPTYCH_DIR, CACHE_FILENAME);
+const CACHE_RELATIVE_PATH = join(SPLITBRIEF_DIR, CACHE_FILENAME);
 
 async function readCacheRaw(projectDir: string): Promise<unknown | null> {
   try {

@@ -27,7 +27,7 @@ function buildCommandSources(
     phase: opts.phase ?? 'idle',
     tasks: [],
     sessions: [],
-    projectDir: '/tmp/diptych-test',
+    projectDir: '/tmp/splitbrief-test',
     onRuntimeCommand,
     onWorkflowMode: noop,
   }).commandItems;
@@ -150,7 +150,7 @@ describe('buildPaletteSources attached-client boundary', () => {
       phase: 'implementing',
       tasks: [],
       sessions: [],
-      projectDir: '/tmp/diptych-test',
+      projectDir: '/tmp/splitbrief-test',
       onRuntimeCommand: noop,
       onWorkflowMode: noop,
       isAttached: true,
@@ -171,7 +171,7 @@ describe('buildPaletteSources display descriptions', () => {
       phase: 'idle',
       tasks: [],
       sessions: [],
-      projectDir: '/tmp/diptych-test',
+      projectDir: '/tmp/splitbrief-test',
       onRuntimeCommand: noop,
       onWorkflowMode: noop,
     });

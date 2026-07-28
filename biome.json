@@ -3,11 +3,21 @@
   "vcs": {
     "enabled": true,
     "clientKind": "git",
-    "useIgnoreFile": true
+    "useIgnoreFile": false
   },
   "files": {
     "includes": [
-      "**",
+      ".dependency-cruiser.cjs",
+      "biome.json",
+      "knip.json",
+      "package.json",
+      "tsconfig.json",
+      "tsconfig.test.json",
+      "vitest.config.ts",
+      "evals/**",
+      "scripts/**",
+      "src/**",
+      "testing/**",
       "!!**/dist",
       "!!**/node_modules",
       "!!**/coverage",
@@ -15,8 +25,7 @@
       "!!**/.specify",
       "!!**/.nuke",
       "!!**/specs",
-      "!!**/.diptych",
-      "!!**/.tiny-spec",
+      "!!**/.splitbrief",
       "!!**/.opencode"
     ]
   },

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
 import { matches } from '../../utils/error.js';
 import { runRpc } from './run/host.js';
@@ -13,9 +13,9 @@ const isRpcShuttingDown = matches('rpc-shutting-down');
 let dirs: string[] = [];
 
 function writeConfig(projectDir: string): void {
-  const diptychDir = join(projectDir, DIPTYCH_DIR);
-  mkdirSync(diptychDir, { recursive: true });
-  const configPath = join(diptychDir, CONFIG_FILE);
+  const splitbriefDir = join(projectDir, SPLITBRIEF_DIR);
+  mkdirSync(splitbriefDir, { recursive: true });
+  const configPath = join(splitbriefDir, CONFIG_FILE);
   writeFileSync(
     configPath,
     [

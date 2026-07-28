@@ -8,7 +8,7 @@ import { renderClaudeCode } from './renderers/claude-code.js';
 import { renderCopilotIssue } from './renderers/copilot-issue.js';
 import { loadRenderer } from './load-renderer.js';
 import { error } from '../../utils/error.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { includes } from '../../utils/type-guards.js';
 
 export const handoffRenderError = {
@@ -90,8 +90,8 @@ export async function renderHandoffWithCustom(
     throw handoffRenderError.customRendererBlocked(input.target);
   }
 
-  const tsPath = join(projectDir, DIPTYCH_DIR, 'handoff-renderers', `${input.target}.ts`);
-  const jsPath = join(projectDir, DIPTYCH_DIR, 'handoff-renderers', `${input.target}.js`);
+  const tsPath = join(projectDir, SPLITBRIEF_DIR, 'handoff-renderers', `${input.target}.ts`);
+  const jsPath = join(projectDir, SPLITBRIEF_DIR, 'handoff-renderers', `${input.target}.js`);
 
   const resolvedPath = existsSync(tsPath) ? tsPath : existsSync(jsPath) ? jsPath : null;
 

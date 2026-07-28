@@ -13,6 +13,7 @@ import {
 import { createTuiSink } from './tui-sink.js';
 import { formatRecoveryPrompt, parseRecoveryActionAnswer } from './recovery-prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 
 export type PendingRecoveryResult =
   | {
@@ -84,7 +85,9 @@ export function createRecoveryDriver(): (
         }
 
         if (result.status === 'paused') {
-          feedbackStore.setMessage('Recovery paused. Resume with diptych resume.');
+          feedbackStore.setMessage(
+            `Recovery paused. Resume with ${SPLITBRIEF_IDENTITY.executable} resume.`,
+          );
           return { shouldRun: false as const, state: result.state };
         }
 

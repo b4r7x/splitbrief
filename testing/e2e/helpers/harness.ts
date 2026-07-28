@@ -33,7 +33,7 @@ export interface E2eContext {
 
 const CASSETTE_DIR = join(import.meta.dirname, '..', 'cassettes');
 const CASSETTE_REPLAY_API_KEY = 'e2e-cassette-replay';
-const isRecording = process.env.DIPTYCH_E2E_RECORD === '1';
+const isRecording = process.env.SPLITBRIEF_E2E_RECORD === '1';
 
 export function setupE2eScenario(scenario: E2eScenario): E2eContext {
   const ctx: E2eContext = {
@@ -49,18 +49,18 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
     ctx.events = [];
     ctx.replayer = null;
     ctx.recorder = null;
-    originalApiKey = process.env.DIPTYCH_E2E_API_KEY;
+    originalApiKey = process.env.SPLITBRIEF_E2E_API_KEY;
 
     if (!isRecording && originalApiKey === undefined) {
-      process.env.DIPTYCH_E2E_API_KEY = CASSETTE_REPLAY_API_KEY;
+      process.env.SPLITBRIEF_E2E_API_KEY = CASSETTE_REPLAY_API_KEY;
     }
 
     ctx.projectDir = createTempDir(`e2e-${scenario.cassetteName}`);
     createTestGitRepo(ctx.projectDir);
 
-    const diptychDir = join(ctx.projectDir, '.diptych');
-    mkdirSync(diptychDir, { recursive: true });
-    writeFileSync(join(diptychDir, 'config.yaml'), YAML.stringify(scenario.config), 'utf-8');
+    const splitbriefDir = join(ctx.projectDir, '.splitbrief');
+    mkdirSync(splitbriefDir, { recursive: true });
+    writeFileSync(join(splitbriefDir, 'config.yaml'), YAML.stringify(scenario.config), 'utf-8');
 
     const cassettePath = join(CASSETTE_DIR, `${scenario.cassetteName}.json`);
 
@@ -83,9 +83,9 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
       if (ctx.replayer) ctx.replayer.uninstall();
       if (ctx.projectDir) cleanupTempDir(ctx.projectDir);
       if (originalApiKey === undefined) {
-        delete process.env.DIPTYCH_E2E_API_KEY;
+        delete process.env.SPLITBRIEF_E2E_API_KEY;
       } else {
-        process.env.DIPTYCH_E2E_API_KEY = originalApiKey;
+        process.env.SPLITBRIEF_E2E_API_KEY = originalApiKey;
       }
       ctx.projectDir = '';
       ctx.recorder = null;

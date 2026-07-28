@@ -17,7 +17,7 @@ import {
   spawnServerMock,
   writeReadyReadinessFixtures,
 } from '#testing/helpers/start-command.js';
-import { CONFIG_FILE, DIPTYCH_DIR, TREES_DIR, worktreePath } from '../../../src/core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR, TREES_DIR, worktreePath } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
 import {
   featureForTranscriptPolicy,
@@ -53,13 +53,13 @@ describe('start command — detached', () => {
       configPath?: string;
     };
     expect(artifact.projectDir).toBe(wtPath);
-    expect(artifact.configPath).toBe(join(wtPath, DIPTYCH_DIR, CONFIG_FILE));
+    expect(artifact.configPath).toBe(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE));
 
     const output = vi
       .mocked(console.log)
       .mock.calls.map((call) => call.join(' '))
       .join('\n');
-    expect(output).toContain('diptych attach');
+    expect(output).toContain('splitbrief attach');
     expect(output).toContain('--project');
     expect(output).not.toContain('cd ');
   });
@@ -75,7 +75,7 @@ describe('start command — detached', () => {
 
     await runStart(['--project', spaced, '--detach', 'implement X']);
 
-    const sessionIds = readdirSync(join(spaced, DIPTYCH_DIR, 'sessions'));
+    const sessionIds = readdirSync(join(spaced, SPLITBRIEF_DIR, 'sessions'));
     expect(sessionIds).toHaveLength(1);
     const sessionId = sessionIds[0] ?? '';
 
@@ -91,7 +91,7 @@ describe('start command — detached', () => {
   it('preserves config workflow mode when --detach omits --mode', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    const configFilePath = join(tmp, DIPTYCH_DIR, CONFIG_FILE);
+    const configFilePath = join(tmp, SPLITBRIEF_DIR, CONFIG_FILE);
     writeFileSync(
       configFilePath,
       readFileSync(configFilePath, 'utf-8').replace('mode: standard', 'mode: quick'),
@@ -184,7 +184,7 @@ describe('start command — detached', () => {
     };
     expect(artifact).toMatchObject({
       mode: 'quick',
-      configPath: join(tmp, DIPTYCH_DIR, CONFIG_FILE),
+      configPath: join(tmp, SPLITBRIEF_DIR, CONFIG_FILE),
       overrides: {
         planner: {
           tool: 'codex',
@@ -218,7 +218,7 @@ describe('start command — detached', () => {
   it('prints config load warnings to stderr on the detached path before spawning the server', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    const configFilePath = join(tmp, DIPTYCH_DIR, CONFIG_FILE);
+    const configFilePath = join(tmp, SPLITBRIEF_DIR, CONFIG_FILE);
     writeFileSync(
       configFilePath,
       [
@@ -302,7 +302,7 @@ describe('start command — detached', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect((captured as Error).message).toContain('Failed to start server');
-    expect(existsSync(join(tmp, DIPTYCH_DIR, 'active'))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
   });
 
   it('redacts the generated session id but forwards the raw feature to the detached planner when persistTranscript is false', async () => {
@@ -317,7 +317,7 @@ describe('start command — detached', () => {
     const spawnArgs = spawnServerMock.mock.calls[0]?.[0];
     expect(spawnArgs?.persistTranscript).toBe(false);
 
-    const sessionIds = readdirSync(join(tmp, DIPTYCH_DIR, 'sessions'));
+    const sessionIds = readdirSync(join(tmp, SPLITBRIEF_DIR, 'sessions'));
     expect(sessionIds).toHaveLength(1);
     const sessionId = sessionIds[0] ?? '';
     expect(isOpaqueSessionId(sessionId)).toBe(true);
@@ -346,7 +346,7 @@ describe('start command — detached', () => {
     const spawnArgs = spawnServerMock.mock.calls[0]?.[0];
     expect(spawnArgs?.persistTranscript).toBe(true);
 
-    const sessionIds = readdirSync(join(tmp, DIPTYCH_DIR, 'sessions'));
+    const sessionIds = readdirSync(join(tmp, SPLITBRIEF_DIR, 'sessions'));
     const sessionId = sessionIds[0] ?? '';
     expect(isOpaqueSessionId(sessionId)).toBe(false);
     expect(sessionId).toContain('add-email-validator');

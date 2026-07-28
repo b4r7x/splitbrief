@@ -114,7 +114,7 @@ describe('isPackageManagerScriptInvocation', () => {
 
 describe('resolveBareCommandOnPath', () => {
   it('resolves bare commands through PATH', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'diptych-path-classification-'));
+    const dir = mkdtempSync(join(tmpdir(), 'splitbrief-path-classification-'));
     try {
       const bin = join(dir, 'runner');
       writeFileSync(bin, '#!/bin/sh\n');
@@ -127,7 +127,7 @@ describe('resolveBareCommandOnPath', () => {
   });
 
   it('classifies a bare command as repo-local when PATH resolves inside the project', () => {
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-project-path-'));
+    const projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-project-path-'));
     try {
       const binDir = join(projectDir, 'node_modules', '.bin');
       mkdirSync(binDir, { recursive: true });

@@ -22,7 +22,7 @@ import { readRunSnapshotLedger, recordRunSnapshot } from './ledger.js';
 let tmp: string;
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'diptych-run-snapshot-'));
+  tmp = await mkdtemp(join(tmpdir(), 'splitbrief-run-snapshot-'));
 });
 
 afterEach(async () => {
@@ -33,21 +33,21 @@ describe('rejectRunSnapshot', () => {
   it('returns "empty" when no run ledger has been recorded', async () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
     // User manually creates a snapshot with no run association.
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     const result = await rejectRunSnapshot(tmp, 'sess-01');
 
     expect(result).toEqual({ status: 'empty' });
-    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after diptych');
+    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after splitbrief');
   });
 
   it('surfaces a session-mismatch error when a ledger belongs to a foreign session', async () => {
     // Record a run under session A, producing a ledger whose sessionId is A.
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-aaa', phase: 'manual' });
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
     const runSnapshot = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-aaa',
@@ -74,7 +74,7 @@ describe('rejectRunSnapshot', () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
     const runSnapshot = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-01',
@@ -101,7 +101,7 @@ describe('rejectRunSnapshot', () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
     const runSnapshot = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-01',
@@ -124,7 +124,7 @@ describe('rejectRunSnapshot', () => {
     expect(ledger?.rejected).toBe(false);
 
     // User resolves the conflict by reverting the file to what the run wrote.
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
 
     // Second attempt completes successfully.
     const second = await rejectRunSnapshot(tmp, 'sess-01');
@@ -179,7 +179,7 @@ describe('rejectRunSnapshot', () => {
     await writeFile(join(tmp, 'existing.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    await writeFile(join(tmp, 'created.ts'), 'created by diptych');
+    await writeFile(join(tmp, 'created.ts'), 'created by splitbrief');
     const runSnapshot = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-01',
@@ -200,7 +200,7 @@ describe('rejectRunSnapshot', () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
     const runSnapshot = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-01',
@@ -232,7 +232,7 @@ describe('rejectRunSnapshot', () => {
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     await mkdir(join(tmp, 'sub'), { recursive: true });
-    await writeFile(join(tmp, 'sub', 'created.ts'), 'created by diptych');
+    await writeFile(join(tmp, 'sub', 'created.ts'), 'created by splitbrief');
     const runSnapshot = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-01',
@@ -240,8 +240,8 @@ describe('rejectRunSnapshot', () => {
     });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
-    const outside = await mkdtemp(join(tmpdir(), 'diptych-outside-'));
-    await writeFile(join(outside, 'created.ts'), 'created by diptych');
+    const outside = await mkdtemp(join(tmpdir(), 'splitbrief-outside-'));
+    await writeFile(join(outside, 'created.ts'), 'created by splitbrief');
     try {
       await rm(join(tmp, 'sub', 'created.ts'));
       await rmdir(join(tmp, 'sub'));
@@ -251,7 +251,7 @@ describe('rejectRunSnapshot', () => {
         kind: 'path-confined-escape',
       });
       await expect(readFile(join(outside, 'created.ts'), 'utf-8')).resolves.toBe(
-        'created by diptych',
+        'created by splitbrief',
       );
     } finally {
       await rm(outside, { recursive: true, force: true });
@@ -274,7 +274,7 @@ describe('rejectRunSnapshot', () => {
     });
     await recordRunSnapshot(tmp, 'sess-01', runSnapshot.manifest);
 
-    const outside = await mkdtemp(join(tmpdir(), 'diptych-restore-outside-'));
+    const outside = await mkdtemp(join(tmpdir(), 'splitbrief-restore-outside-'));
     try {
       await rmdir(join(tmp, 'sub'));
       await symlink(outside, join(tmp, 'sub'));
@@ -327,19 +327,19 @@ describe('rejectRunSnapshot', () => {
   it('refuses to reject after the run has been accepted', async () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
 
     const accepted = await acceptRunSnapshot(tmp, 'sess-01');
     const result = await rejectRunSnapshot(tmp, 'sess-01');
 
     expect(result).toEqual({ status: 'accepted', snapshotId: accepted.snapshotId });
-    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after diptych');
+    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after splitbrief');
   });
 
   it('keeps accepted run state and on-disk files after later snapshots are created', async () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
 
     const accepted = await acceptRunSnapshot(tmp, 'sess-01');
     await writeFile(join(tmp, 'later.ts'), 'later snapshot');
@@ -352,13 +352,13 @@ describe('rejectRunSnapshot', () => {
     expect(ledger?.accepted).toBe(true);
     expect(ledger?.rejected).toBe(false);
     expect(ledger?.runSnapshotIds).toContain(accepted.snapshotId);
-    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after diptych');
+    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after splitbrief');
   });
 
   it('does not persist a taskIndex field in the run ledger', async () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
     const runSnapshot = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-01',
@@ -380,7 +380,7 @@ describe('run snapshot command serialization', () => {
   it('serializes overlapping accept and reject so stale ledger reads cannot win', async () => {
     await writeFile(join(tmp, 'feature.ts'), 'before');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
-    await writeFile(join(tmp, 'feature.ts'), 'after diptych');
+    await writeFile(join(tmp, 'feature.ts'), 'after splitbrief');
     const runSnapshot = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-01',
@@ -397,7 +397,7 @@ describe('run snapshot command serialization', () => {
     if (rejectResult.status === 'accepted') {
       expect(rejectResult.snapshotId).toBe(acceptResult.snapshotId);
     }
-    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after diptych');
+    await expect(readFile(join(tmp, 'feature.ts'), 'utf-8')).resolves.toBe('after splitbrief');
     const ledger = await readRunSnapshotLedger(tmp, 'sess-01');
     expect(ledger?.accepted).toBe(true);
     expect(ledger?.rejected).toBe(false);

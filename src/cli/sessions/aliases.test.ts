@@ -5,13 +5,13 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 
 function makeTmpProject(): string {
-  const dir = join(tmpdir(), `diptych-test-${randomUUID()}`);
+  const dir = join(tmpdir(), `splitbrief-test-${randomUUID()}`);
   mkdirSync(dir, { recursive: true });
   return dir;
 }
 
 function makeSessionWithLockfile(projectDir: string, sessionId: string, startTimeMs: number): void {
-  const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  const sessDir = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   const data = {
     version: 1,
@@ -27,7 +27,7 @@ function makeSessionWithLockfile(projectDir: string, sessionId: string, startTim
 }
 
 function makeInteractiveSession(projectDir: string, sessionId: string, mtimeMs: number): void {
-  const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  const sessDir = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   const statePath = join(sessDir, 'state.json');
   writeFileSync(statePath, JSON.stringify({ feature: `feature-${sessionId}` }));
@@ -85,7 +85,7 @@ describe('buildAliasedSessions', () => {
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'valid-session', 2000);
-    const mismatchedDir = join(projectDir, '.diptych', 'sessions', 'spoofed-session');
+    const mismatchedDir = join(projectDir, '.splitbrief', 'sessions', 'spoofed-session');
     mkdirSync(mismatchedDir, { recursive: true });
     writeFileSync(
       join(mismatchedDir, 'lockfile.json'),
@@ -124,7 +124,7 @@ describe('buildAliasedSessions', () => {
     const projectDir = makeTmpProject();
 
     makeSessionWithLockfile(projectDir, 'has-lockfile', 1000);
-    mkdirSync(join(projectDir, '.diptych', 'sessions', 'empty-dir'), { recursive: true });
+    mkdirSync(join(projectDir, '.splitbrief', 'sessions', 'empty-dir'), { recursive: true });
 
     const result = await buildAliasedSessions(projectDir);
     expect(result).toHaveLength(1);

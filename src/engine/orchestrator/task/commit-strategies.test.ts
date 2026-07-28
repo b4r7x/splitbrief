@@ -71,7 +71,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
     );
     expect(stagedSets).toEqual([[firstCommitTask(state).file]]);
     expect(commitMessages).toEqual([
-      expect.stringContaining(`feat(diptych): ${firstCommitTask(state).id}`),
+      expect.stringContaining(`feat(splitbrief): ${firstCommitTask(state).id}`),
     ]);
   });
 
@@ -106,13 +106,13 @@ describe('validateCommitAndAdvance — commit strategies', () => {
     });
 
     expect(result.completed).toBe(true);
-    expect(commitMessages).toEqual([`feat(diptych): ${task.id}`]);
+    expect(commitMessages).toEqual([`feat(splitbrief): ${task.id}`]);
     expect(commitMessages[0]).not.toContain(privateTitle);
 
     const gitEvent = events.find((e) => e.type === 'git_commit');
     expect(gitEvent).toMatchObject({ type: 'git_commit', taskId: task.id });
     const eventMessage = gitEvent && 'message' in gitEvent ? gitEvent.message : '';
-    expect(eventMessage).toBe(`feat(diptych): ${task.id}`);
+    expect(eventMessage).toBe(`feat(splitbrief): ${task.id}`);
     expect(eventMessage).not.toContain(privateTitle);
   });
 
@@ -256,14 +256,14 @@ describe('validateCommitAndAdvance — commit strategies', () => {
     expect(cpEvent).toBeDefined();
     expect(cpEvent).toMatchObject({
       type: 'git_checkpoint',
-      tag: `diptych/${sessionId}/T001`,
+      tag: `splitbrief/${sessionId}/T001`,
       taskId: 'T001',
     });
     expect(checkpointCalls).toEqual([
       {
         dir: projectDir,
-        message: `diptych checkpoint: ${firstCommitTask(state).id}`,
-        tagName: `diptych/${sessionId}/${firstCommitTask(state).id}`,
+        message: `splitbrief checkpoint: ${firstCommitTask(state).id}`,
+        tagName: `splitbrief/${sessionId}/${firstCommitTask(state).id}`,
       },
     ]);
   });

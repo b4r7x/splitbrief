@@ -1,20 +1,20 @@
-# diptych — Product & Engineering Direction
+# SPLITBRIEF — Product & Engineering Direction
 
-What diptych optimizes for, where it's going, and what tradeoffs we accept. Read `VISION.md` for identity and competitive framing; this doc is about **how we build**. Point-in-time status — what was built when, and what is still open — lives in the dated [Historical Appendix](#historical-appendix-2026-05-01) and the issue tracker, not in the durable sections above it.
+What SPLITBRIEF optimizes for, where it's going, and what tradeoffs we accept. Read `VISION.md` for identity and competitive framing; this doc is about **how we build**. Point-in-time status — what was built when, and what is still open — lives in the dated [Historical Appendix](#historical-appendix-2026-05-01) and the issue tracker, not in the durable sections above it.
 
 ---
 
 ## UX principles
 
-diptych is a CLI tool. CLI tools are loved when they respect the developer's time and attention. Seven principles guide every UX decision:
+SPLITBRIEF is a CLI tool. CLI tools are loved when they respect the developer's time and attention. Seven principles guide every UX decision:
 
 ### 1. Zero-ceremony entry
 
-`diptych "fix the typo in README"` must work. No subcommand, no prior `init`, no config file for single-shot tasks. Auto-detect available models. Reserve `start` as explicit subcommand for power users; bare positional arg is the default path.
+`splitbrief "fix the typo in README"` must work. No subcommand, no prior `init`, no config file for single-shot tasks. Auto-detect available models. Reserve `start` as explicit subcommand for power users; bare positional arg is the default path.
 
 ### 2. Savings as spectacle
 
-The entire switching argument is one number: "You spent $0.12. All-planner alternative: ~$0.95. Saved 87%." This stat must be loud, prominent, and post-run. It should be copy-pasteable (for sharing). Historical tracking across sessions (`diptych stats`) makes the case cumulative.
+The entire switching argument is one number: "You spent $0.12. All-planner alternative: ~$0.95. Saved 87%." This stat must be loud, prominent, and post-run. It should be copy-pasteable (for sharing). Historical tracking across sessions (`splitbrief stats`) makes the case cumulative.
 
 ### 3. Heartbeat over silence
 
@@ -22,7 +22,7 @@ Any wait > 5 seconds must show proof of life: token count incrementing, current 
 
 ### 4. One command for session continuity
 
-Users should never think about session lifecycle. `diptych continue` (or `diptych last`) figures out the right thing: attach if running, resume if interrupted. Kill the tmux-complexity of 5 separate session commands for the 90% case.
+Users should never think about session lifecycle. `splitbrief continue` (or `splitbrief last`) figures out the right thing: attach if running, resume if interrupted. Kill the tmux-complexity of 5 separate session commands for the 90% case.
 
 ### 5. Progressive disclosure everywhere
 
@@ -30,7 +30,7 @@ Default output is minimal. Details expand on keypress. Config starts at 3 lines 
 
 ### 6. Cost-gated approval
 
-Before implementation starts, show: "12 tasks | Est. $0.14 | All-planner: ~$1.20 | Approve? [Y/n]". This transforms rubber-stamp approval into the moment the user feels smart for using diptych.
+Before implementation starts, show: "12 tasks | Est. $0.14 | All-planner: ~$1.20 | Approve? [Y/n]". This transforms rubber-stamp approval into the moment the user feels smart for using SPLITBRIEF.
 
 ### 7. Streaming partial output
 
@@ -165,7 +165,7 @@ Implemented for transcript compaction: `workflow.compactionFormat` supports `aut
 
 ## Competitive advantages (preserve these)
 
-These are diptych-only features that no comparable tool offers:
+These are SPLITBRIEF-only features that no comparable tool offers:
 
 | Feature | What it does |
 |---|---|
@@ -200,12 +200,12 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 
 | Area | Score | Status |
 |---|---|---|
-| First-run experience | 9/10 | `diptych "feature"` shorthand, `@file` syntax, `--help` with examples |
+| First-run experience | 9/10 | `splitbrief "feature"` shorthand, `@file` syntax, `--help` with examples |
 | Core feedback loop | 9/10 | Planner heartbeat, streaming partial output from API implementers |
 | Error UX | 7/10 | Crash diagnostics excellent; recovery prompts lack consequence descriptions |
 | Session management | 9/10 | `continue`/`last`, numeric aliases in `ps` |
 | Planning phase UX | 9/10 | Per-task reject+regen, contextual footer keybindings |
-| Cost visibility | 9/10 | Hero savings stat, `diptych stats`, cost-gated approval |
+| Cost visibility | 9/10 | Hero savings stat, `splitbrief stats`, cost-gated approval |
 | Streaming output | 9/10 | Live partial output during API implementer generation |
 | Configuration | 6/10 | Progressive disclosure missing, three approval escape hatches |
 
@@ -213,12 +213,12 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 
 | Feature | What it does | Status |
 |---|---|---|
-| `diptych "feature"` shorthand | Bare positional arg = `diptych start "feature"` in instant mode | ✅ |
-| `@file` syntax | `diptych "refactor auth" @context.md @screenshot.png` enriches planner context | ✅ |
+| `splitbrief "feature"` shorthand | Bare positional arg = `splitbrief start "feature"` in instant mode | ✅ |
+| `@file` syntax | `splitbrief "refactor auth" @context.md @screenshot.png` enriches planner context | ✅ |
 | `--help` with 14 real examples | Not just flag descriptions — concrete command examples with explanations | ✅ |
-| `diptych continue` | Smart command: attaches if running, resumes if interrupted | ✅ |
-| `diptych last` | Attach or resume the most recent session | ✅ |
-| `diptych stats` | Cumulative savings across all sessions | ✅ |
+| `splitbrief continue` | Smart command: attaches if running, resumes if interrupted | ✅ |
+| `splitbrief last` | Attach or resume the most recent session | ✅ |
+| `splitbrief stats` | Cumulative savings across all sessions | ✅ |
 | Hero savings post-run | "$0.12 actual vs $0.95 all-planner — 87% saved" | ✅ |
 | Cost-gated approval | "12 tasks \| Est. $0.14 \| Approve? [Y/n]" before impl starts | ✅ |
 | Planner heartbeat | Token counter or phase hint during long waits | ✅ |
@@ -228,7 +228,7 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | Recovery consequence text | "retry-task: re-runs prompt, costs ~$0.02" | — |
 | Auto-expand active diffs | Diffs expanded for running task, collapsed for completed | — |
 | Unify approval flags | `--auto` / `--approve none` / `--yolo` → one concept | — |
-| Session numeric aliases | `diptych attach 1` instead of `diptych attach 20250412-143022-abc` | ✅ |
+| Session numeric aliases | `splitbrief attach 1` instead of `splitbrief attach 20250412-143022-abc` | ✅ |
 | HTML/Markdown session export | Export workflow results as shareable artifact | — |
 | External `$EDITOR` integration | Open editor for long feature descriptions | — |
 | Agent/profile cycling keybind | Ctrl+P cycles implementer profiles | — |

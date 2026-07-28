@@ -12,17 +12,13 @@ import {
   ControlledMultilineInput,
   type ControlledMultilineInputProps,
 } from './controlled-multiline-input.js';
+import { isLoneTerminalControl } from '../../lib/terminal/text-entry.js';
 import { SUPPORTED_IMAGE_EXTS } from '../../core/schemas/attachment.js';
 
 const MULTI_BYTE_SUPPRESS_MS = 50;
 const RAW_BACKSPACE = '\x7f';
 
 const FILE_DROP_EXT_PATTERN = new RegExp(`\\.(${SUPPORTED_IMAGE_EXTS.join('|')})$`, 'i');
-
-function isC0Control(ch: string): boolean {
-  const code = ch.codePointAt(0);
-  return code !== undefined && (code < 0x20 || code === 0x7f);
-}
 
 function parseDroppedImagePath(input: string): string | null {
   const trimmed = input.trim();
@@ -67,6 +63,9 @@ interface MultilineInputProps extends ControlledMultilineInputProps {
   onShortcut?: () => void;
   highlightPastedText?: boolean;
   focus?: boolean;
+  isActive?: boolean;
+  shouldHandleInput?: ((input: string, key: Key) => boolean) | undefined;
+  onInputAccepted?: ((input: string, key: Key) => void) | undefined;
   onBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
 }
 
@@ -81,6 +80,9 @@ export function MultilineInput({
   showCursor = true,
   highlightPastedText = false,
   focus = true,
+  isActive = focus,
+  shouldHandleInput,
+  onInputAccepted,
   onBoundaryNavigate,
   ...controlledProps
 }: MultilineInputProps) {
@@ -93,120 +95,121 @@ export function MultilineInput({
 
   const cursorIndex = Math.min(rawCursorIndex, value.length);
 
-  useInput(
-    (input, key) => {
-      if (Date.now() < suppressUntilRef.current) return;
+  const handleInput = (input: string, key: Key) => {
+    if (shouldHandleInput !== undefined && !shouldHandleInput(input, key)) return;
+    if (Date.now() < suppressUntilRef.current) return;
+    onInputAccepted?.(input, key);
 
-      if (key.shift && (key.upArrow || key.downArrow)) return;
-      if (key.pageUp || key.pageDown) return;
-      if (key.home || key.end) return;
+    if (key.shift && (key.upArrow || key.downArrow)) return;
+    if (key.pageUp || key.pageDown) return;
+    if (key.home || key.end) return;
 
-      const submitKey = keyBindings?.submit ?? ((k: Key) => k.return && k.ctrl);
-      const newlineKey = keyBindings?.newline ?? ((k: Key) => k.return);
+    const submitKey = keyBindings?.submit ?? ((k: Key) => k.return && k.ctrl);
+    const newlineKey = keyBindings?.newline ?? ((k: Key) => k.return);
 
-      if (submitKey(key)) {
-        onSubmit?.(value);
+    if (submitKey(key)) {
+      onSubmit?.(value);
+      return;
+    } else if (newlineKey(key)) {
+      const newValue = value.slice(0, cursorIndex) + '\n' + value.slice(cursorIndex);
+      onChange(newValue);
+      setCursorIndex(cursorIndex + 1);
+      setPasteLength(0);
+      return;
+    }
+
+    if (keyBindings?.shortcut?.(input, key)) {
+      onShortcut?.();
+      return;
+    }
+
+    if (key.tab || (key.shift && key.tab) || (key.ctrl && input === 'c')) {
+      return;
+    }
+
+    if (input.length > 1 && onFileDrop) {
+      const droppedPath = parseDroppedImagePath(input);
+      if (droppedPath) {
+        onFileDrop(droppedPath);
         return;
-      } else if (newlineKey(key)) {
-        const newValue = value.slice(0, cursorIndex) + '\n' + value.slice(cursorIndex);
+      }
+    }
+
+    const editKey =
+      latestInputSequenceRef.current === RAW_BACKSPACE && key.delete && !key.backspace
+        ? { ...key, backspace: true, delete: false }
+        : key;
+    const action = resolveEditAction(input, editKey);
+    const editResult = applyEditAction({ action, value, cursor: cursorIndex, columns });
+    if (editResult) {
+      onChange(editResult.value);
+      setCursorIndex(editResult.cursor);
+      setPasteLength(0);
+      if (action === 'delete-line-backward' && editResult.value !== value) {
+        suppressUntilRef.current = Date.now() + MULTI_BYTE_SUPPRESS_MS;
+      }
+      return;
+    }
+
+    if (key.ctrl || key.meta || key.super || key.hyper) return;
+
+    let nextPasteLength = 0;
+    if (input.length > 1) {
+      nextPasteLength = input.length;
+    }
+
+    if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
+      if (!showCursor) return;
+    }
+
+    if (key.upArrow) {
+      const newIndex = navigateVertically({ direction: 'up', value, cursorIndex });
+      if (newIndex !== undefined) {
+        setCursorIndex(newIndex);
+        setPasteLength(0);
+        return;
+      }
+      if (onBoundaryNavigate?.('up')) {
+        setPasteLength(0);
+      }
+    } else if (key.downArrow) {
+      const newIndex = navigateVertically({ direction: 'down', value, cursorIndex });
+      if (newIndex !== undefined) {
+        setCursorIndex(newIndex);
+        setPasteLength(0);
+        return;
+      }
+      if (onBoundaryNavigate?.('down')) {
+        setPasteLength(0);
+      }
+    } else if (key.leftArrow) {
+      setCursorIndex(prevGraphemeBoundary(value, cursorIndex));
+      setPasteLength(0);
+    } else if (key.rightArrow) {
+      setCursorIndex(nextGraphemeBoundary(value, cursorIndex));
+      setPasteLength(0);
+    } else if (key.backspace || key.delete) {
+      if (cursorIndex > 0) {
+        const prev = prevGraphemeBoundary(value, cursorIndex);
+        onChange(value.slice(0, prev) + value.slice(cursorIndex));
+        setCursorIndex(prev);
+        setPasteLength(0);
+      }
+    } else {
+      // A lone C0 control byte (e.g. Ctrl+/ as `\x1f` on legacy terminals) is a
+      // chord the global handler owns, not text — inserting it would corrupt the draft.
+      if (isLoneTerminalControl(input)) return;
+      if (input) {
+        const normalized = normalizeLineEndings(input).normalize('NFC');
+        const newValue = value.slice(0, cursorIndex) + normalized + value.slice(cursorIndex);
         onChange(newValue);
-        setCursorIndex(cursorIndex + 1);
-        setPasteLength(0);
-        return;
+        setCursorIndex(cursorIndex + normalized.length);
+        setPasteLength(nextPasteLength);
       }
+    }
+  };
 
-      if (keyBindings?.shortcut?.(input, key)) {
-        onShortcut?.();
-        return;
-      }
-
-      if (key.tab || (key.shift && key.tab) || (key.ctrl && input === 'c')) {
-        return;
-      }
-
-      if (input.length > 1 && onFileDrop) {
-        const droppedPath = parseDroppedImagePath(input);
-        if (droppedPath) {
-          onFileDrop(droppedPath);
-          return;
-        }
-      }
-
-      const editKey =
-        latestInputSequenceRef.current === RAW_BACKSPACE && key.delete && !key.backspace
-          ? { ...key, backspace: true, delete: false }
-          : key;
-      const action = resolveEditAction(input, editKey);
-      const editResult = applyEditAction({ action, value, cursor: cursorIndex, columns });
-      if (editResult) {
-        onChange(editResult.value);
-        setCursorIndex(editResult.cursor);
-        setPasteLength(0);
-        if (action === 'delete-line-backward' && editResult.value !== value) {
-          suppressUntilRef.current = Date.now() + MULTI_BYTE_SUPPRESS_MS;
-        }
-        return;
-      }
-
-      if (key.ctrl || key.meta || key.super || key.hyper) return;
-
-      let nextPasteLength = 0;
-      if (input.length > 1) {
-        nextPasteLength = input.length;
-      }
-
-      if (key.upArrow || key.downArrow || key.leftArrow || key.rightArrow) {
-        if (!showCursor) return;
-      }
-
-      if (key.upArrow) {
-        const newIndex = navigateVertically({ direction: 'up', value, cursorIndex });
-        if (newIndex !== undefined) {
-          setCursorIndex(newIndex);
-          setPasteLength(0);
-          return;
-        }
-        if (onBoundaryNavigate?.('up')) {
-          setPasteLength(0);
-        }
-      } else if (key.downArrow) {
-        const newIndex = navigateVertically({ direction: 'down', value, cursorIndex });
-        if (newIndex !== undefined) {
-          setCursorIndex(newIndex);
-          setPasteLength(0);
-          return;
-        }
-        if (onBoundaryNavigate?.('down')) {
-          setPasteLength(0);
-        }
-      } else if (key.leftArrow) {
-        setCursorIndex(prevGraphemeBoundary(value, cursorIndex));
-        setPasteLength(0);
-      } else if (key.rightArrow) {
-        setCursorIndex(nextGraphemeBoundary(value, cursorIndex));
-        setPasteLength(0);
-      } else if (key.backspace || key.delete) {
-        if (cursorIndex > 0) {
-          const prev = prevGraphemeBoundary(value, cursorIndex);
-          onChange(value.slice(0, prev) + value.slice(cursorIndex));
-          setCursorIndex(prev);
-          setPasteLength(0);
-        }
-      } else {
-        // A lone C0 control byte (e.g. Ctrl+/ as `\x1f` on legacy terminals) is a
-        // chord the global handler owns, not text — inserting it would corrupt the draft.
-        if (input.length === 1 && isC0Control(input)) return;
-        if (input) {
-          const normalized = normalizeLineEndings(input).normalize('NFC');
-          const newValue = value.slice(0, cursorIndex) + normalized + value.slice(cursorIndex);
-          onChange(newValue);
-          setCursorIndex(cursorIndex + normalized.length);
-          setPasteLength(nextPasteLength);
-        }
-      }
-    },
-    { isActive: focus },
-  );
+  useInput(handleInput, { isActive });
 
   const highlight =
     highlightPastedText && pasteLength > 1

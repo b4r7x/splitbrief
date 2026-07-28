@@ -1,12 +1,13 @@
-import { useInput } from 'ink';
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
 import { matchesFilter } from '../presentation.js';
 import { getConfigValue, applyEdits } from '../../../core/config/accessors/values.js';
+import { configError } from '../../../core/config/errors.js';
 import { useFilterableList, type PageSize } from '../../../hooks/use-filterable-list.js';
 import { useEditBuffer } from './buffer.js';
 import type { Config } from '../../../core/schemas/config.js';
+import { isTextEntryInput } from '../../../lib/terminal/text-entry.js';
 
 interface UseSettingsEditorParams {
   config: Config;
@@ -28,6 +29,12 @@ interface SettingsEditorState {
   activate: (index: number) => void;
 }
 
+function getCurrentConfig(): Config {
+  const current = configStore.get().config;
+  if (current === null) throw configError.loadNotCalled('updating settings');
+  return current;
+}
+
 export function useSettingsEditor({
   config,
   focusSetting,
@@ -36,11 +43,12 @@ export function useSettingsEditor({
   pageSize,
   canActOnIndex,
 }: UseSettingsEditorParams): SettingsEditorState {
-  const getValue = (def: SettingDef): unknown =>
-    def.readValue ? def.readValue(config) : getConfigValue(config, def.id);
+  const getValue = (def: SettingDef, source = config): unknown =>
+    def.readValue ? def.readValue(source) : getConfigValue(source, def.id);
 
   const saveValue = (dotPath: string, value: unknown) => {
-    const updated = applyEdits(config, { [dotPath]: value });
+    const current = getCurrentConfig();
+    const updated = applyEdits(current, { [dotPath]: value });
     const result = configStore.save(updated, { changedPaths: [dotPath] });
     if (result.ok) {
       feedbackStore.setMessage('Saved');
@@ -54,11 +62,12 @@ export function useSettingsEditor({
   });
 
   const onSpaceToggle = (def: SettingDef) => {
+    const currentConfig = getCurrentConfig();
     if (def.kind === 'boolean') {
-      saveValue(def.id, !getValue(def));
+      saveValue(def.id, !getValue(def, currentConfig));
     } else if (def.kind === 'enum' && def.options) {
       const firstOption = def.options[0];
-      const current = String(getValue(def) ?? firstOption ?? '');
+      const current = String(getValue(def, currentConfig) ?? firstOption ?? '');
       const idx = def.options.indexOf(current);
       const next = def.options[(idx + 1) % def.options.length];
       if (next !== undefined) saveValue(def.id, next);
@@ -67,12 +76,6 @@ export function useSettingsEditor({
 
   const isListActive = !editor.isEditing;
   const applicableDefs = SETTINGS_DEFS.filter((def) => def.appliesTo?.(config) ?? true);
-  const initialIndex = focusSetting
-    ? Math.max(
-        0,
-        applicableDefs.findIndex((d) => d.id === focusSetting),
-      )
-    : 0;
 
   const runSelect = (def: SettingDef) => {
     if (def.kind === 'picker') {
@@ -87,13 +90,20 @@ export function useSettingsEditor({
 
   const list = useFilterableList<SettingDef>({
     items: applicableDefs,
+    getKey: (def) => def.id,
     filterFn: matchesFilter,
     onSelect: runSelect,
+    onItemAction: onSpaceToggle,
     onClose,
     isActive: isListActive,
     shouldAppendChar: (c) => c !== ' ',
-    initialIndex,
+    initialKey: focusSetting,
     pageSize,
+    customKeys: (input, key, { runSelectedItemAction }) => {
+      if (input !== ' ' || !isTextEntryInput(input, key)) return false;
+      runSelectedItemAction();
+      return true;
+    },
   });
 
   const activate = (index: number) => {
@@ -102,21 +112,11 @@ export function useSettingsEditor({
     const def = list.filtered[index];
     if (!def) return;
     if (def.kind === 'boolean' || def.kind === 'enum') {
-      onSpaceToggle(def);
+      list.runItemAction(def);
       return;
     }
-    runSelect(def);
+    list.selectItem(def);
   };
-
-  useInput(
-    (input) => {
-      if (input !== ' ' || list.filtered.length === 0) return;
-      if (!canActOnIndex(list.filtered, list.selectedIndex)) return;
-      const def = list.filtered[list.selectedIndex];
-      if (def) onSpaceToggle(def);
-    },
-    { isActive: isListActive },
-  );
 
   return {
     filter: list.filter,

@@ -88,7 +88,7 @@ export function readinessBlockerMessage(report: ReadinessReport): string {
 }
 
 export function readinessBlockerPointer(report: ReadinessReport): string {
-  return `Run readiness blocked: ${countNoun(report.counts.blocker, 'blocker')}. Resolve the blockers above (run \`diptych doctor\` for details).`;
+  return `Run readiness blocked: ${countNoun(report.counts.blocker, 'blocker')}. Resolve the blockers above (run \`splitbrief doctor\` for details).`;
 }
 
 function blockerOnlySection(section: ReadinessSection): ReadinessSection | null {

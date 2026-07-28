@@ -1,5 +1,5 @@
 ---
-description: diptych project conventions entry point.
+description: SPLITBRIEF project conventions entry point.
 ---
 
 Read `CLAUDE.md` before editing this repository. Follow its documentation map for subsystem-specific rules.

@@ -2,10 +2,10 @@ import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { DIPTYCH_DIR, CONFIG_FILE } from '../../src/core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../src/core/paths.js';
 
 export function writeHeadlessConfigYaml(projectDir: string, yamlLines: string[]): void {
-  const dir = join(projectDir, DIPTYCH_DIR);
+  const dir = join(projectDir, SPLITBRIEF_DIR);
   mkdirSync(dir, { recursive: true });
   const filePath = join(dir, CONFIG_FILE);
   writeFileSync(filePath, yamlLines.join('\n'));

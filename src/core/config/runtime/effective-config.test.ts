@@ -39,7 +39,7 @@ describe('resolveEffectiveConfig', () => {
         apiKey: 'sk-ant-inline',
       },
     });
-    const permissionPath = '/tmp/project/.diptych/config.yaml';
+    const permissionPath = '/tmp/project/.splitbrief/config.yaml';
 
     const { config, warnings } = resolveEffectiveConfig({
       base,

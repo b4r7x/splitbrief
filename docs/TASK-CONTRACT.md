@@ -5,7 +5,7 @@
 
 ## Task Brief v1: the semantic contract
 
-A `Task` is the persisted, transport-stable form of a **Product Task Brief v1** — the durable contract the planner writes for the implementer. The brief is the meaning; `tasks.md` is the markdown rendering used to hand work between phases; `state.json` is the stable JSON that diptych and advanced read-only integrations consume.
+A `Task` is the persisted, transport-stable form of a **Product Task Brief v1** — the durable contract the planner writes for the implementer. The brief is the meaning; `tasks.md` is the markdown rendering used to hand work between phases; `state.json` is the stable JSON that SPLITBRIEF and advanced read-only integrations consume.
 
 Every Task Brief v1 covers nine semantic sections, even when a section is brief. Each section maps onto existing `Task` schema fields so external tools do not need a new shape:
 
@@ -25,7 +25,7 @@ Every Task Brief v1 covers nine semantic sections, even when a section is brief.
 
 ## Where tasks live on disk
 
-`state.json` at `.diptych/sessions/<id>/state.json`. Tasks are at `state.tasks: Task[]`. Current task index at `state.currentTaskIndex: number`. Current retry count at `state.attempt: number`.
+`state.json` at `.splitbrief/sessions/<id>/state.json`. Tasks are at `state.tasks: Task[]`. Current task index at `state.currentTaskIndex: number`. Current retry count at `state.attempt: number`.
 
 ## Task shape
 
@@ -95,7 +95,7 @@ These examples are side-channel integrations: read-only consumers of session sta
 
 ### Status board (read-only)
 
-Watch `.diptych/sessions/<id>/state.json` for changes. Group tasks by status:
+Watch `.splitbrief/sessions/<id>/state.json` for changes. Group tasks by status:
 
 - **Backlog**: `status === 'pending'`
 - **In progress**: `status === 'in_progress'`
@@ -127,7 +127,7 @@ Recommended mapping:
 
 ## External metadata (side-channel)
 
-External tools may attach their own metadata in `state.external` under a namespaced key. diptych does not read or validate these fields — they are opaque passthrough metadata.
+External tools may attach their own metadata in `state.external` under a namespaced key. SPLITBRIEF does not read or validate these fields — they are opaque passthrough metadata.
 
 ```json
 {
@@ -140,11 +140,11 @@ External tools may attach their own metadata in `state.external` under a namespa
 
 Guarantees:
 
-- diptych preserves `state.external` on round-trip read/write.
-- diptych never inspects the contents of `state.external`.
-- External keys should be URL-slug-safe identifiers. `diptych.*` is reserved.
+- SPLITBRIEF preserves `state.external` on round-trip read/write.
+- SPLITBRIEF never inspects the contents of `state.external`.
+- External keys should be URL-slug-safe identifiers. `splitbrief.*` is reserved.
 
-If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`). diptych takes no position.
+If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`). SPLITBRIEF takes no position.
 
 ## Breaking-change policy
 
@@ -193,8 +193,8 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 
 ```bash
 # Pick a session
-session=$(ls -t .diptych/sessions/ | head -1)
-cat .diptych/sessions/$session/state.json | jq '.tasks[0]'
+session=$(ls -t .splitbrief/sessions/ | head -1)
+cat .splitbrief/sessions/$session/state.json | jq '.tasks[0]'
 ```
 
 The output must match the shape above.
@@ -251,7 +251,7 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 
 ## Evidence ledger
 
-Every run writes a per-session evidence ledger to `.diptych/sessions/<id>/evidence.json`
+Every run writes a per-session evidence ledger to `.splitbrief/sessions/<id>/evidence.json`
 (constant `EVIDENCE_FILE`, file mode `0o600`). The ledger is the durable record
 of what each task was supposed to prove and what was actually observed. It is
 written incrementally as tasks reach a terminal state and amended once the

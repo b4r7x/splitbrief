@@ -1,6 +1,6 @@
 # Store Architecture
 
-diptych uses a DIY external store system built on React's `useSyncExternalStore`. The entire framework is 42 lines. It provides the same core capabilities as Zustand with zero dependencies.
+SPLITBRIEF uses a DIY external store system built on React's `useSyncExternalStore`. The entire framework is 42 lines. It provides the same core capabilities as Zustand with zero dependencies.
 
 ## Why DIY
 

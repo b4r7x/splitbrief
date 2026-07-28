@@ -18,7 +18,7 @@ export const sessionError = {
   stillActive: (sessionId: string) =>
     error(
       'session-still-active',
-      `session '${sessionId}' is still active.\nUse 'diptych continue' to attach or resume it (or 'diptych attach' if it is running), or delete .diptych/active to discard it.`,
+      `session '${sessionId}' is still active.\nUse 'splitbrief continue' to attach or resume it (or 'splitbrief attach' if it is running), or delete .splitbrief/active to discard it.`,
       { sessionId },
     ),
   invalidId: (sessionId: string) =>

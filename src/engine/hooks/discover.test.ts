@@ -24,7 +24,7 @@ const preTaskEvent: EngineEvent = {
 };
 
 beforeEach(async () => {
-  projectDir = await mkdtemp(join(tmpdir(), 'diptych-hooks-discovery-'));
+  projectDir = await mkdtemp(join(tmpdir(), 'splitbrief-hooks-discovery-'));
   await mkdir(hooksDir(), { recursive: true });
 });
 
@@ -33,7 +33,7 @@ afterEach(async () => {
 });
 
 function hooksDir(): string {
-  return join(projectDir, '.diptych', 'hooks');
+  return join(projectDir, '.splitbrief', 'hooks');
 }
 
 async function writeHook(
@@ -49,7 +49,9 @@ describe('discoverHookModules', () => {
 
     const hooks = await discoverHookModules(projectDir);
 
-    expect(hooks).toEqual([{ event: 'pre_task', path: join('.diptych', 'hooks', 'pre-task.ts') }]);
+    expect(hooks).toEqual([
+      { event: 'pre_task', path: join('.splitbrief', 'hooks', 'pre-task.ts') },
+    ]);
   });
 
   it('discovers multiple hook files', async () => {
@@ -72,7 +74,7 @@ describe('discoverHookModules', () => {
   });
 
   it('returns empty when hooks directory does not exist', async () => {
-    const emptyProject = await mkdtemp(join(tmpdir(), 'diptych-no-hooks-'));
+    const emptyProject = await mkdtemp(join(tmpdir(), 'splitbrief-no-hooks-'));
     try {
       await expect(discoverHookModules(emptyProject)).resolves.toEqual([]);
     } finally {
@@ -84,7 +86,7 @@ describe('discoverHookModules', () => {
 describe('mergeDiscoveredHooks', () => {
   it('appends discovered hooks after explicit hooks for the same event', () => {
     const explicit = makeCommandHookEntry({ name: 'explicit', command: 'true' });
-    const discoveredPath = join('.diptych', 'hooks', 'pre-task.ts');
+    const discoveredPath = join('.splitbrief', 'hooks', 'pre-task.ts');
 
     const hooks = mergeDiscoveredHooks({ pre_task: [explicit] }, [
       { event: 'pre_task', path: discoveredPath },

@@ -28,7 +28,7 @@ const context = { ...defaultContext };
 let testDir: string;
 
 function setupGitRepo(): string {
-  const dir = createTempDir('diptych-agent-test');
+  const dir = createTempDir('splitbrief-agent-test');
   createTestGitRepo(dir);
   return dir;
 }
@@ -191,7 +191,7 @@ describe('agent implementer', () => {
     const outFile = join(testDir, 'trusted-prompt-out.txt');
     const config = makeConfig({
       command: 'bash',
-      args: ['-c', `cat > ${outFile} <<'DIPTYCH_PROMPT_EOF'\n{prompt}\nDIPTYCH_PROMPT_EOF`],
+      args: ['-c', `cat > ${outFile} <<'SPLITBRIEF_PROMPT_EOF'\n{prompt}\nSPLITBRIEF_PROMPT_EOF`],
     });
 
     const implementer = createAgentImplementer(config, { allowRepoRunners: true });
@@ -214,7 +214,7 @@ describe('agent implementer', () => {
       command: 'node',
       args: [
         '-e',
-        'const fs=require("node:fs");fs.writeFileSync(process.argv[1],process.env.DIPTYCH_SANDBOX_MARKER??"");fs.writeFileSync(process.argv[2],"done")',
+        'const fs=require("node:fs");fs.writeFileSync(process.argv[1],process.env.SPLITBRIEF_SANDBOX_MARKER??"");fs.writeFileSync(process.argv[2],"done")',
         envOutFile,
         writtenFile,
       ],
@@ -227,7 +227,7 @@ describe('agent implementer', () => {
       config,
       context: { ...context, dir: testDir },
       onOutput: () => {},
-      sandboxEnv: { ...process.env, DIPTYCH_SANDBOX_MARKER: 'sandbox-value' },
+      sandboxEnv: { ...process.env, SPLITBRIEF_SANDBOX_MARKER: 'sandbox-value' },
     });
 
     expect(result.success).toBe(true);

@@ -7,20 +7,20 @@ This document is the source of truth for cost-aware implementer work. Other docs
 
 ## Purpose
 
-Diptych's non-goals are the canonical NOT-list in [VISION.md](./VISION.md). The core product direction is narrower:
+SPLITBRIEF's non-goals are the canonical NOT-list in [VISION.md](./VISION.md). The core product direction is narrower:
 
 ```text
 expensive planner thinks clearly
-  -> diptych turns that thinking into small executable Task Briefs
+  -> SPLITBRIEF turns that thinking into small executable Task Briefs
   -> cheap or local implementers execute those briefs one task at a time
-  -> diptych guards context size, user edits, checkpoints, validation, drift, and escalation
+  -> SPLITBRIEF guards context size, user edits, checkpoints, validation, drift, and escalation
 ```
 
 The value is cost control without giving up planning quality. A user should pay the expensive model for the parts where it matters: research, planning, ambiguity reduction, task decomposition, review, and escalation. Mechanical implementation should be delegated to cheaper models or local tools whenever the task is small enough and sufficiently specified.
 
 ## Product identity
 
-Diptych is a cost-aware planner-to-implementer orchestrator.
+SPLITBRIEF is a cost-aware planner-to-implementer orchestrator.
 
 It owns:
 
@@ -40,7 +40,7 @@ It does not own a long-lived project-management database or generalized MCP tool
 
 The core sentence is:
 
-> Diptych pays a strong planner to decide what should happen, then feeds cheap workers small safe chunks and stops before overwriting the user.
+> SPLITBRIEF pays a strong planner to decide what should happen, then feeds cheap workers small safe chunks and stops before overwriting the user.
 
 ## Sessions, not plan archives
 
@@ -75,7 +75,7 @@ The implementer is the cheaper execution role. It may be:
 - a shell or agent subprocess,
 - an optional configured pool of implementer profiles.
 
-The important point is that this is still one role: implementer. A pool means diptych can choose the cheapest capable executor for each Task Brief — it is profile selection, not the swarm/multi-agent behavior ruled out in [VISION.md](./VISION.md).
+The important point is that this is still one role: implementer. A pool means SPLITBRIEF can choose the cheapest capable executor for each Task Brief — it is profile selection, not the swarm/multi-agent behavior ruled out in [VISION.md](./VISION.md).
 
 The implementer should receive a fresh, bounded prompt per task. It should not receive the whole plan, whole transcript, or every previous task unless the current brief explicitly depends on that context.
 
@@ -101,7 +101,7 @@ Each call includes only:
 - escalation rules,
 - retry or hint context when applicable.
 
-If a task does not fit the selected worker's context window, diptych should not stuff more context into the prompt. It should either:
+If a task does not fit the selected worker's context window, SPLITBRIEF should not stuff more context into the prompt. It should either:
 
 1. ask the planner to split the task,
 2. route the task to a larger implementer,
@@ -179,13 +179,13 @@ If parallel execution is later considered, it should be a separate design using 
 
 ## User edits
 
-The user can edit files manually while diptych is planning or implementing. Those edits are not noise. They are source-of-truth changes made by the owner of the repository.
+The user can edit files manually while SPLITBRIEF is planning or implementing. Those edits are not noise. They are source-of-truth changes made by the owner of the repository.
 
-Diptych must distinguish:
+SPLITBRIEF must distinguish:
 
 - files already dirty before a task starts,
-- files changed by diptych during a task,
-- files changed by the user while diptych was waiting, prompting, validating, or applying,
+- files changed by SPLITBRIEF during a task,
+- files changed by the user while SPLITBRIEF was waiting, prompting, validating, or applying,
 - files changed by another process after a snapshot/checkpoint.
 
 The default behavior is to pause on conflicts, not overwrite.
@@ -203,7 +203,7 @@ User edits file after implementer output but before promote/apply:
   block promotion and show conflict.
 ```
 
-The right UX is not "diptych detected external changes, continue yes/no" only. The TUI should show which files changed, which tasks are affected, and what the safe choices mean.
+The right UX is not "SPLITBRIEF detected external changes, continue yes/no" only. The TUI should show which files changed, which tasks are affected, and what the safe choices mean.
 
 ## Checkpoints
 
@@ -223,16 +223,16 @@ In this repository, agents must never run `git add`, `git stage`, or `git commit
 
 ## Tool calls and MCP
 
-Tools belong to the underlying runner. Truth belongs to diptych.
+Tools belong to the underlying runner. Truth belongs to SPLITBRIEF.
 
 That means:
 
 - Claude Code, Codex, OpenCode, Kilo, Copilot, or Agent SDK may use their own tools and MCP clients when they are the planner or implementer.
-- Diptych should not become another tool-calling agent that independently reads, writes, browses, and shells around the worker.
-- Diptych should run deterministic orchestration operations: file snapshots, git status/diff, validation commands, budget checks, drift checks, evidence writes, approval gates.
-- Diptych's MCP server should keep project resources read-only. The current mutation surface is limited to evidence-ledger tools that let external agents report progress, evidence, validation results, completion, or errors.
+- SPLITBRIEF should not become another tool-calling agent that independently reads, writes, browses, and shells around the worker.
+- SPLITBRIEF should run deterministic orchestration operations: file snapshots, git status/diff, validation commands, budget checks, drift checks, evidence writes, approval gates.
+- SPLITBRIEF's MCP server should keep project resources read-only. The current mutation surface is limited to evidence-ledger tools that let external agents report progress, evidence, validation results, completion, or errors.
 
-MCP is useful as a way for external tools to read diptych session artifacts. It should not become the main execution path.
+MCP is useful as a way for external tools to read SPLITBRIEF session artifacts. It should not become the main execution path.
 
 ## TUI direction
 
@@ -264,7 +264,7 @@ Existing implementation has valuable pieces, but docs and product surface should
 
 High-confidence cleanup:
 
-- Update product docs that frame diptych as broad external-agent interop, kanban, archive, or plan-management product.
+- Update product docs that frame SPLITBRIEF as broad external-agent interop, kanban, archive, or plan-management product.
 - Preserve session history/resume/browse/filter/search as core workflow surfaces, but distinguish them from a plan archive.
 - Make the no-commit rule explicit for this repository, and separate it from optional product-level commit strategies.
 - Update stale config examples that use old snake_case or old config keys.

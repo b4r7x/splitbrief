@@ -7,7 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
-  const dir = createTempDir('diptych-git-test');
+  const dir = createTempDir('splitbrief-git-test');
   createTestGitRepo(dir);
   return dir;
 }
@@ -46,11 +46,11 @@ describe('createTaggedStash', () => {
     writeFileSync(join(dir, 'unstaged.txt'), 'left in working tree');
     await git.add(['--', 'staged.txt']);
 
-    const tag = await createTaggedStash(dir, 'diptych checkpoint: T001', 'diptych/T001');
-    expect(tag).toBe('diptych/T001');
+    const tag = await createTaggedStash(dir, 'splitbrief checkpoint: T001', 'splitbrief/T001');
+    expect(tag).toBe('splitbrief/T001');
 
     const tags = await git.tags();
-    expect(tags.all).toContain('diptych/T001');
+    expect(tags.all).toContain('splitbrief/T001');
     const stagedAfter = (await git.diff(['--cached', '--name-only'])).trim();
     expect(stagedAfter).toBe('staged.txt');
     expect(existsSync(join(dir, 'staged.txt'))).toBe(true);
@@ -63,13 +63,13 @@ describe('createTaggedStash', () => {
     writeFileSync(join(dir, 'seed.txt'), 'seed');
     await git.add('seed.txt');
     const seedSha = (await git.raw(['stash', 'create', 'seed stash'])).trim();
-    await git.tag(['diptych/T001', seedSha]);
+    await git.tag(['splitbrief/T001', seedSha]);
     await git.reset(['--mixed', 'HEAD']);
 
     writeFileSync(join(dir, 'staged.txt'), 'new content');
 
     await expect(
-      createTaggedStash(dir, 'diptych checkpoint: T001', 'diptych/T001'),
+      createTaggedStash(dir, 'splitbrief checkpoint: T001', 'splitbrief/T001'),
     ).rejects.toMatchObject({ kind: 'git-command-failed' });
 
     const stagedAfter = (await git.diff(['--cached', '--name-only'])).trim();

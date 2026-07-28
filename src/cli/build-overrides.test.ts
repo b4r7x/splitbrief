@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { CONFIG_FILE, DIPTYCH_DIR } from '../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../core/paths.js';
 import { resolveRunConfigWithBase } from './build-overrides.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -10,8 +10,8 @@ const itUnix = process.platform === 'win32' ? it.skip : it;
 let tempDir: string;
 
 function writeMinimalV3Config(projectDir: string): string {
-  const filePath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
-  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+  const filePath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+  mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
   writeFileSync(
     filePath,
     [

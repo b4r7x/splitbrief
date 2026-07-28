@@ -13,7 +13,7 @@ import { makeCommandHookEntry, makeAllowHook } from '#testing/helpers/factories/
 let projectDir: string;
 
 beforeEach(() => {
-  projectDir = mkdtempSync(join(tmpdir(), 'diptych-hook-sink-'));
+  projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-hook-sink-'));
 });
 
 afterEach(() => {

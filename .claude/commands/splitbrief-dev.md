@@ -1,9 +1,9 @@
 ---
-name: diptych-dev
-description: Use at the start of any diptych development session. Load project conventions before touching the codebase.
+name: splitbrief-dev
+description: Use at the start of any SPLITBRIEF development session. Load project conventions before touching the codebase.
 ---
 
-# diptych Development Context
+# SPLITBRIEF development context
 
 Read **`CLAUDE.md`** first. It is the single source of truth for stack, commands, documentation map, and core conventions.
 

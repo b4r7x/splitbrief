@@ -6,7 +6,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeLegacySessionSummaryWithoutContextDetected } from '#testing/helpers/factories/legacy-session-summary.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../../core/paths.js';
 import { maybeMigrateAndReport, registerMigrateCommand } from './migrate.js';
 
 let tmp: string;
@@ -24,11 +24,11 @@ async function runMigrate(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   registerMigrateCommand(program);
-  await program.parseAsync(['node', 'diptych', 'migrate', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'migrate', ...args]);
 }
 
 function writeLegacySummary(sessionId: string): string {
-  const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  const sessionDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
   const summaryPath = join(sessionDir, 'summary.json');
   mkdirSync(sessionDir, { recursive: true });
   writeFileSync(
@@ -39,7 +39,7 @@ function writeLegacySummary(sessionId: string): string {
 }
 
 function writeCurrentSummary(sessionId: string): void {
-  const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  const sessionDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
   mkdirSync(sessionDir, { recursive: true });
   writeFileSync(
     join(sessionDir, 'summary.json'),
@@ -109,7 +109,7 @@ describe('migrate command', () => {
 
   it('reports skipped unreadable summaries without printing only nothing to migrate', async () => {
     const sessionId = '2024-01-01-cli-invalid';
-    const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    const sessionDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
     mkdirSync(sessionDir, { recursive: true });
     writeFileSync(join(sessionDir, 'summary.json'), '{not-json');
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -125,7 +125,7 @@ describe('migrate command', () => {
 
   it('reports skipped invalid-schema summaries without printing only nothing to migrate', async () => {
     const sessionId = '2024-01-01-cli-schema';
-    const sessionDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    const sessionDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
     mkdirSync(sessionDir, { recursive: true });
     writeFileSync(join(sessionDir, 'summary.json'), JSON.stringify({ not: 'a session' }));
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

@@ -18,7 +18,7 @@ import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 function makeInput(overrides: Partial<GateChangedFilesInput> = {}): GateChangedFilesInput {
   const { bus } = makeBusRecorder();
   const task = makeTask({ file: 'src/foo.ts' });
-  const projectDir = createTempDir('diptych-test');
+  const projectDir = createTempDir('splitbrief-test');
   dirs.push(projectDir);
   return {
     changedFiles: ['src/foo.ts'],
@@ -103,7 +103,7 @@ describe('gateChangedFiles', () => {
       bus,
       task,
       taskId: task.id,
-      changedFiles: ['package.json', '.diptych/config.yaml', 'package.json'],
+      changedFiles: ['package.json', '.splitbrief/config.yaml', 'package.json'],
       config: makeApprovalConfig({ enabled: true }),
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
@@ -119,10 +119,10 @@ describe('gateChangedFiles', () => {
     const result = await gateChangedFiles(input);
 
     expect(result.allow).toBe(true);
-    expect(result.changedFiles).toEqual(['.diptych/config.yaml', 'package.json']);
+    expect(result.changedFiles).toEqual(['.splitbrief/config.yaml', 'package.json']);
     expect(result.confirmReason).toBe('config plane reason');
     expect(result.confirmApprovals).toHaveLength(2);
-    expect(result.confirmApprovals?.[0]?.actionDescription).toBe('write .diptych/config.yaml');
+    expect(result.confirmApprovals?.[0]?.actionDescription).toBe('write .splitbrief/config.yaml');
     expect(result.confirmApprovals?.[1]?.actionDescription).toBe('write package.json');
     expect(result.confirmApprovals?.[0]?.reason).toBe('config plane reason');
     expect(result.confirmApprovals?.[1]?.reason).toBe('package manifest reason');

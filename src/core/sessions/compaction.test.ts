@@ -17,7 +17,7 @@ let sessionDir: string;
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
 beforeEach(() => {
-  sessionDir = mkdtempSync(join(tmpdir(), 'diptych-compact-'));
+  sessionDir = mkdtempSync(join(tmpdir(), 'splitbrief-compact-'));
 });
 
 afterEach(() => {

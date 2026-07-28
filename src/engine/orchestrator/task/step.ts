@@ -1,5 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { formatValidationError } from '../validation/format-error.js';
 
@@ -14,7 +14,6 @@ import { validateCommitAndAdvance } from './commit.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { gateAction } from '../approval/tiered-approval.js';
 import type { GateDecision } from '../approval/types.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import { detectValidationFailureUserEdit } from '../user-edit/detection.js';
 import type { EngineEvent } from '../../events/types.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../types.js';
@@ -91,7 +90,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   setTrackedState(state);
 
   let task = opts.task;
-  if (opts.taskCodeRefreshed !== true) {
+  if (!opts.taskCodeRefreshed) {
     ({ task, state } = await refreshAndPersistCode(opts.task, wctx, state));
     setTrackedState(state);
   }

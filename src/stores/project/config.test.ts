@@ -7,7 +7,7 @@ import { configStore } from './config.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { expectApi, expectCli } from '#testing/helpers/config-narrowing.js';
-import { DIPTYCH_DIR, TREES_DIR, CONFIG_FILE } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE } from '../../core/paths.js';
 import { createDefaultConfig, loadConfig } from '../../core/config/load/io.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -99,7 +99,7 @@ describe('configStore.load', () => {
 
   itUnix('prints stable loader warnings once after resolveEffectiveConfig', () => {
     writeConfigYaml();
-    const configPath = join(tmpDir, DIPTYCH_DIR, CONFIG_FILE);
+    const configPath = join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE);
     chmodSync(configPath, 0o666);
     const stderrChunks: string[] = [];
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
@@ -198,7 +198,7 @@ describe('configStore.save', () => {
     expect(result.ok).toBe(true);
     expect(result.error).toBeUndefined();
     expect(loadedConfig().theme).toBe('mono');
-    const written = YAML.parse(readFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'));
+    const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
     expect(written.theme).toBe('mono');
   });
 
@@ -331,7 +331,7 @@ describe('configStore.save', () => {
     const result = configStore.save(updated, { changedPaths: ['theme'] });
 
     expect(result.ok).toBe(true);
-    const written = YAML.parse(readFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'));
+    const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
     expect(written.theme).toBe('mono');
     expect(written.version).toBe(3);
     const { config: diskConfig, warnings } = loadConfig(tmpDir);
@@ -355,15 +355,15 @@ describe('configStore.save preserves the raw config document', () => {
   });
 
   function writeRawConfig(yaml: string) {
-    mkdirSync(join(tmpDir, DIPTYCH_DIR), { recursive: true });
-    writeFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), yaml, 'utf-8');
+    mkdirSync(join(tmpDir, SPLITBRIEF_DIR), { recursive: true });
+    writeFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), yaml, 'utf-8');
   }
 
   function readRawConfig(): string {
-    return readFileSync(join(tmpDir, DIPTYCH_DIR, 'config.yaml'), 'utf-8');
+    return readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8');
   }
 
-  const HAND_EDITED = `# diptych config — hand edited, keep me
+  const HAND_EDITED = `# splitbrief config — hand edited, keep me
 version: 3
 implementer:
   model: qwen2.5-coder:7b # my favourite model
@@ -372,7 +372,7 @@ theme: terminal
 my_custom_key: keep-this-too
 `;
 
-  it('preserves hand-edited document and creates .diptych/ and .diptych/trees/ gitignore entries once when absent', () => {
+  it('preserves hand-edited document and creates .splitbrief/ and .splitbrief/trees/ gitignore entries once when absent', () => {
     expect(existsSync(join(tmpDir, '.gitignore'))).toBe(false);
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
@@ -382,12 +382,12 @@ my_custom_key: keep-this-too
 
     expect(result.ok).toBe(true);
     const raw = readRawConfig();
-    expect(raw).toContain('# diptych config — hand edited, keep me');
+    expect(raw).toContain('# splitbrief config — hand edited, keep me');
     expect(raw).toContain('# my favourite model');
     expect(raw).toContain('my_custom_key: keep-this-too');
     expect(raw).toMatch(/theme: mono/);
     const gitignore = readFileSync(join(tmpDir, '.gitignore'), 'utf-8');
-    expect(gitignore.split('\n').filter((line) => line === `${DIPTYCH_DIR}/`)).toHaveLength(1);
+    expect(gitignore.split('\n').filter((line) => line === `${SPLITBRIEF_DIR}/`)).toHaveLength(1);
     expect(gitignore.split('\n').filter((line) => line === `${TREES_DIR}/`)).toHaveLength(1);
   });
 
@@ -400,7 +400,7 @@ my_custom_key: keep-this-too
 
     expect(result.ok).toBe(true);
     const raw = readRawConfig();
-    expect(raw).toContain('# diptych config — hand edited, keep me');
+    expect(raw).toContain('# splitbrief config — hand edited, keep me');
     expect(raw).toContain('# my favourite model');
     expect(raw).toContain('my_custom_key: keep-this-too');
     expect(raw).toMatch(/theme: mono/);

@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { createDefaultConfig, initConfig, loadConfig } from './io.js';
-import { DIPTYCH_DIR } from '../../paths.js';
+import { SPLITBRIEF_DIR } from '../../paths.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { expectApi } from '#testing/helpers/config-narrowing.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
@@ -94,7 +94,7 @@ describe('config defaults', () => {
       initConfig(dir);
 
       const written = YAML.parse(
-        readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'),
+        readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
       const workflow = written.workflow as Record<string, unknown>;
       expect(workflow.auto_approve_spec).toBeUndefined();

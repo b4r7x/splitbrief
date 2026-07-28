@@ -11,7 +11,7 @@ import { WorkflowModeSchema } from './enums.js';
  */
 export const HandoffManifestSchema = z.object({
   packVersion: z.literal('1'),
-  diptychVersion: z.string(),
+  splitbriefVersion: z.string(),
   generatedAt: z.string(),
   sessionId: z.string(),
   briefHash: z.string(),

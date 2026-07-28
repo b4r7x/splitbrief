@@ -16,17 +16,15 @@ import type { ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailForm } from '../layout/chrome-rows.js';
 import type { WorkflowReviewColumn } from '../layout/rect.js';
 
-// The composer no longer advertises the ⏎ submit hint; the keys slot carries only override hints
-// (cancelled/attach bylines) and the completion check mark.
 function useComposerBoxHints(override?: ComposerBoxHintOverride | undefined): ComposerBoxHints {
   const complete = lifecycleStore.use((s) => s.phase === 'complete');
   const { localRate, costBreakdown, pricingState } = useCostStats();
-  const baseKeys = override ? override.keys : '';
+  const baseKeys = override?.keys ?? '';
   const keys = complete
     ? [baseKeys, glyph('check')].filter((part) => part.length > 0).join('  ')
     : baseKeys;
   const display = formatCostDisplay(localRate, costBreakdown, pricingState);
-  const cost = override?.cost === true && display.hasPricedUsage ? display.spentText : undefined;
+  const cost = override?.cost && display.hasPricedUsage ? display.spentText : undefined;
   return { keys, cost };
 }
 
@@ -59,6 +57,10 @@ export function WorkflowFooter({
   boxHintOverride,
   disabled,
   onEditShortcut,
+  onReviewBoundaryNavigate,
+  onReviewInteraction,
+  reviewYankActive,
+  reviewEpoch,
   reviewColumn,
   questionEpoch,
   waitingForUser = false,
@@ -73,6 +75,10 @@ export function WorkflowFooter({
   boxHintOverride?: ComposerBoxHintOverride | undefined;
   disabled: boolean;
   onEditShortcut?: (() => void) | undefined;
+  onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
+  onReviewInteraction?: (() => void) | undefined;
+  reviewYankActive?: boolean | undefined;
+  reviewEpoch?: number | undefined;
   reviewColumn?: WorkflowReviewColumn | undefined;
   questionEpoch?: number | undefined;
   waitingForUser?: boolean | undefined;
@@ -83,10 +89,12 @@ export function WorkflowFooter({
   const footerWidthProps = reviewColumn ? { width: reviewColumn.width } : {};
   const boxHints = useComposerBoxHints(boxHintOverride);
   const fieldEditorOpen = useFieldSessionOwned();
+  const composerSession = mode === 'review' ? `review:${reviewEpoch ?? 0}` : 'non-review';
   const footer = (
     <>
       <FeedbackRow inputHint={feedbackHint ?? inputHint} />
       <Composer
+        key={composerSession}
         onSubmit={handleInput}
         onEmptySubmit={onEmptySubmit}
         onRuntimeCommand={onRuntimeCommand}
@@ -100,6 +108,9 @@ export function WorkflowFooter({
         inputPaddingX={0}
         {...composerWidthProps}
         {...(onEditShortcut ? { onEditShortcut } : {})}
+        {...(onReviewBoundaryNavigate ? { onReviewBoundaryNavigate } : {})}
+        {...(onReviewInteraction ? { onReviewInteraction } : {})}
+        reviewYankActive={reviewYankActive}
       />
       <InputFooter {...footerWidthProps} waiting={waitingForUser} />
     </>

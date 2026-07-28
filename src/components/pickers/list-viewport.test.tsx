@@ -124,4 +124,39 @@ describe('ListViewport', () => {
     ui.unmount();
     resetAllStores();
   });
+
+  it('counts remaining sectioned items from the last visible global index', async () => {
+    resetAllStores();
+
+    const items = [
+      { id: 'p1', scope: 'project' },
+      { id: 'p2', scope: 'project' },
+      { id: 'g1', scope: 'global' },
+      { id: 'g2', scope: 'global' },
+      { id: 'g3', scope: 'global' },
+    ];
+    const ui = renderFeature(
+      <ListViewport
+        items={items}
+        selectedIndex={2}
+        getKey={(item) => item.id}
+        rowBudget={4}
+        showRemainingCount
+        section={{
+          by: (item) => item.scope,
+          gapBetweenSections: true,
+          renderHeader: (section) => <Text>{section}</Text>,
+        }}
+        renderItem={(item, { globalIndex }) => <Text>{`${item.id}:${globalIndex}`}</Text>}
+      />,
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('g1:2');
+    expect(frame).toContain('↓ 2 more');
+
+    ui.unmount();
+    resetAllStores();
+  });
 });

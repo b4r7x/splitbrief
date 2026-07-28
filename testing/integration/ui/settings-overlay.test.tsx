@@ -14,7 +14,10 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { _resetMouseZones } from '../../../src/lib/terminal/mouse-zones.js';
 
 const PAGE_DOWN = '\u001b[6~';
+const ARROW_DOWN = '\u001b[B';
 const CURSOR_GLYPH = '▌';
+const KITTY_SUPER_SPACE = '\u001b[32;9u';
+const KITTY_HYPER_SPACE = '\u001b[32;17u';
 
 function lineContaining(frame: string, text: string): string {
   const line = frame.split('\n').find((candidate) => candidate.includes(text));
@@ -29,7 +32,7 @@ describe('settings overlay integration', () => {
     forceUnicodeGlyphs();
     resetAllStores();
     _resetMouseZones();
-    dir = createTempDir('diptych-settings-it');
+    dir = createTempDir('splitbrief-settings-it');
     configStore.load(dir);
     overlayStore.open('settings');
   });
@@ -49,6 +52,74 @@ describe('settings overlay integration', () => {
     ui.stdin.write(' ');
     await vi.waitFor(() => {
       expect(loadConfig(dir).config.validation.typecheck).toBe(false);
+    });
+
+    ui.unmount();
+  });
+
+  it('applies queued Down before Space and toggles the new logical selection', async () => {
+    expect(configStore.get().config?.validation.typecheck).toBe(true);
+    expect(configStore.get().config?.validation.lint).toBe(true);
+
+    overlayStore.open('settings', 'validation.typecheck');
+    const ui = renderFeature(<SettingsOverlay />);
+    await flushEffects();
+
+    ui.stdin.write(ARROW_DOWN);
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      const validation = loadConfig(dir).config.validation;
+      expect(validation.typecheck).toBe(true);
+      expect(validation.lint).toBe(false);
+    });
+
+    ui.unmount();
+  });
+
+  it('applies rapid boolean toggles sequentially against the latest config', async () => {
+    overlayStore.open('settings', 'validation.typecheck');
+    const ui = renderFeature(<SettingsOverlay />);
+    await flushEffects();
+
+    ui.stdin.write(' ');
+    ui.stdin.write(' ');
+    await flushEffects();
+
+    expect(loadConfig(dir).config.validation.typecheck).toBe(true);
+
+    ui.stdin.write(' ');
+    ui.stdin.write(ARROW_DOWN);
+    ui.stdin.write(' ');
+    await flushEffects();
+
+    const validation = loadConfig(dir).config.validation;
+    expect(validation.typecheck).toBe(false);
+    expect(validation.lint).toBe(false);
+    ui.unmount();
+  });
+
+  it('does not toggle settings on modified Space input', async () => {
+    overlayStore.open('settings', 'validation.typecheck');
+    const ui = renderFeature(<SettingsOverlay />);
+    await flushEffects();
+
+    ui.stdin.write(KITTY_SUPER_SPACE);
+    ui.stdin.write(KITTY_HYPER_SPACE);
+    await flushEffects();
+
+    expect(loadConfig(dir).config.validation.typecheck).toBe(true);
+    ui.unmount();
+  });
+
+  it('advances an enum twice from the latest saved value', async () => {
+    overlayStore.open('settings', 'workflow.mode');
+    const ui = renderFeature(<SettingsOverlay />);
+    await flushEffects();
+
+    ui.stdin.write(' ');
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      expect(loadConfig(dir).config.workflow.mode).toBe('instant');
     });
 
     ui.unmount();

@@ -18,8 +18,8 @@ const checkpointSummary: CheckpointSummaryRollup = {
   preFinalReviewId: 'snap-pre-final',
   accepted: true,
   rejected: false,
-  diffCommand: 'diptych snapshot diff snap-post-2',
-  restoreCommand: 'diptych snapshot restore snap-post-2',
+  diffCommand: 'splitbrief snapshot diff snap-post-2',
+  restoreCommand: 'splitbrief snapshot restore snap-post-2',
 };
 
 function CheckpointRows({
@@ -59,8 +59,8 @@ describe('buildCheckpointDetailRows', () => {
     expect(frame).toContain('pre-final-review');
     expect(frame).toContain('snap-pre-final');
     expect(frame).toContain('run status: accepted');
-    expect(frame).toContain('diptych snapshot diff snap-post-2');
-    expect(frame).toContain('diptych snapshot restore snap-post-2');
+    expect(frame).toContain('splitbrief snapshot diff snap-post-2');
+    expect(frame).toContain('splitbrief snapshot restore snap-post-2');
     expect(frame).toContain('hash-guarded');
     expect(frame).toContain('conflicts skipped');
     expect(frame).toContain('--force');
@@ -101,8 +101,8 @@ describe('buildCheckpointDetailRows', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('diptych snapshot diff snap-post-2');
-    expect(frame).toContain('diptych snapshot restore snap-post-2');
+    expect(frame).toContain('splitbrief snapshot diff snap-post-2');
+    expect(frame).toContain('splitbrief snapshot restore snap-post-2');
 
     ui.unmount();
   });
@@ -124,7 +124,7 @@ describe('buildCheckpointDetailRows', () => {
 
     expect(frame).not.toContain(longName);
     expect(frame).toContain('latest: snap-post-2');
-    expect(frame).toContain('diptych snapshot diff snap-post-2');
+    expect(frame).toContain('splitbrief snapshot diff snap-post-2');
 
     ui.unmount();
   });
@@ -140,7 +140,7 @@ describe('buildCheckpointDetailRows', () => {
           latestName: `post${ESC}[31m-task`,
           preFinalReviewId: `snap-pre${ESC}]52;c;clip-pre${BEL}`,
           latestRunCheckpointId: `snaprun${ESC}]52;c;clip-run${BEL}-9`,
-          diffCommand: `diptych snapshot diff ${ESC}]52;c;clip-diff${BEL}snap-9`,
+          diffCommand: `splitbrief snapshot diff ${ESC}]52;c;clip-diff${BEL}snap-9`,
           restoreCommand: null,
         }}
       />,

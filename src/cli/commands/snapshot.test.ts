@@ -11,12 +11,12 @@ let tmp: string;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
 
 function makeSessionDir(sessionId: string): void {
-  mkdirSync(join(tmp, '.diptych', 'sessions', sessionId), { recursive: true });
+  mkdirSync(join(tmp, '.splitbrief', 'sessions', sessionId), { recursive: true });
 }
 
 async function makeAliasableSession(sessionId: string, sortKeyMs: number): Promise<void> {
   makeSessionDir(sessionId);
-  const summaryPath = join(tmp, '.diptych', 'sessions', sessionId, 'summary.json');
+  const summaryPath = join(tmp, '.splitbrief', 'sessions', sessionId, 'summary.json');
   await writeFile(summaryPath, '{}');
   const time = new Date(sortKeyMs);
   utimesSync(summaryPath, time, time);
@@ -42,7 +42,7 @@ async function runSnapshot(args: string[]): Promise<void> {
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
   registerSnapshotCommand(program);
-  await program.parseAsync(['node', 'diptych', 'snapshot', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'snapshot', ...args]);
 }
 
 describe('snapshot create', () => {
@@ -87,7 +87,7 @@ describe('snapshot create', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect((captured as Error).message).toMatch(/session 'missing-sess' not found/);
-    expect(existsSync(join(tmp, '.diptych', 'sessions', 'missing-sess'))).toBe(false);
+    expect(existsSync(join(tmp, '.splitbrief', 'sessions', 'missing-sess'))).toBe(false);
   });
 });
 

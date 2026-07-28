@@ -8,7 +8,7 @@ import { simpleGit, type SimpleGit } from 'simple-git';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { initConfig } from '../../core/config/load/io.js';
 import { createWorktree } from './create.js';
-import { DIPTYCH_DIR, CONFIG_FILE, TREES_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE, TREES_DIR } from '../../core/paths.js';
 
 let repoDir: string;
 let git: SimpleGit;
@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe('createWorktree', () => {
-  it('creates a worktree directory with a .git file and diptych branch', async () => {
+  it('creates a worktree directory with a .git file and splitbrief branch', async () => {
     const slug = 'feat-a';
     await createWorktree({ projectDir: repoDir, slug, git });
     const wtPath = join(repoDir, TREES_DIR, slug);
@@ -37,23 +37,23 @@ describe('createWorktree', () => {
     expect(existsSync(gitMarker)).toBe(true);
     expect(statSync(gitMarker).isFile()).toBe(true);
     const branches = await git.branch();
-    expect(branches.all).toContain(`diptych/${slug}`);
+    expect(branches.all).toContain(`splitbrief/${slug}`);
   });
 
-  it('throws when the branch diptych/<slug> already exists', async () => {
+  it('throws when the branch splitbrief/<slug> already exists', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-c', git });
     await expect(createWorktree({ projectDir: repoDir, slug: 'feat-c', git })).rejects.toThrow(
-      'Branch diptych/feat-c already exists',
+      'Branch splitbrief/feat-c already exists',
     );
   });
 
   it('hands a git-valid prune remediation when retry-create hits the stale branch (F-392)', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-stale', git });
     rmSync(join(repoDir, TREES_DIR, 'feat-stale'), { recursive: true, force: true });
-    expect((await git.branch()).all).toContain('diptych/feat-stale');
+    expect((await git.branch()).all).toContain('splitbrief/feat-stale');
 
     await expect(createWorktree({ projectDir: repoDir, slug: 'feat-stale', git })).rejects.toThrow(
-      'git worktree prune" then "git branch -D diptych/feat-stale',
+      'git worktree prune" then "git branch -D splitbrief/feat-stale',
     );
   });
 
@@ -86,7 +86,7 @@ describe('createWorktree', () => {
 
   it('still names a user-edited .gitignore beyond the bookkeeping lines as dirty', async () => {
     initConfig(repoDir);
-    await writeFile(join(repoDir, '.gitignore'), '.diptych/\n.trees/\nnode_modules/\n');
+    await writeFile(join(repoDir, '.gitignore'), '.splitbrief/\n.trees/\nnode_modules/\n');
 
     await expect(
       createWorktree({ projectDir: repoDir, slug: 'feat-user-edit', git }),
@@ -98,7 +98,7 @@ describe('createWorktree', () => {
     const slug = '../escape';
     await expect(createWorktree({ projectDir: repoDir, slug, git })).rejects.toThrow();
     const branches = await git.branch();
-    expect(branches.all).not.toContain(`diptych/${slug}`);
+    expect(branches.all).not.toContain(`splitbrief/${slug}`);
     expect(existsSync(join(repoDir, TREES_DIR, slug))).toBe(false);
   });
 
@@ -114,17 +114,17 @@ describe('createWorktree', () => {
     expect(existsSync(join(repoDir, TREES_DIR, slug))).toBe(true);
   });
 
-  it('carries the base .diptych/config.yaml into the new worktree', async () => {
+  it('carries the base .splitbrief/config.yaml into the new worktree', async () => {
     const ignoredRepo = await mkdtemp(join(tmpdir(), 'worktree-config-'));
     try {
       createTestGitRepo(ignoredRepo, {
         'README.md': '# test\n',
-        '.gitignore': '.diptych/\n.trees/\n',
+        '.gitignore': '.splitbrief/\n.trees/\n',
       });
       const ignoredGit = simpleGit(ignoredRepo);
       const configBody = 'version: 3\nimplementer:\n  kind: api\n  provider: ollama\n';
-      await mkdir(join(ignoredRepo, DIPTYCH_DIR), { recursive: true });
-      await writeFile(join(ignoredRepo, DIPTYCH_DIR, CONFIG_FILE), configBody);
+      await mkdir(join(ignoredRepo, SPLITBRIEF_DIR), { recursive: true });
+      await writeFile(join(ignoredRepo, SPLITBRIEF_DIR, CONFIG_FILE), configBody);
 
       const wtPath = await createWorktree({
         projectDir: ignoredRepo,
@@ -132,14 +132,14 @@ describe('createWorktree', () => {
         git: ignoredGit,
       });
 
-      const propagated = await readFile(join(wtPath, DIPTYCH_DIR, CONFIG_FILE), 'utf-8');
+      const propagated = await readFile(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE), 'utf-8');
       expect(propagated).toBe(configBody);
     } finally {
       await rm(ignoredRepo, { recursive: true, force: true });
     }
   });
 
-  it('gitignores .diptych/ in the new worktree so a copied config secret stays untracked', async () => {
+  it('gitignores .splitbrief/ in the new worktree so a copied config secret stays untracked', async () => {
     initConfig(repoDir);
 
     const wtPath = await createWorktree({ projectDir: repoDir, slug: 'feat-ignore', git });
@@ -147,9 +147,9 @@ describe('createWorktree', () => {
     const ignoreLines = (await readFile(join(wtPath, '.gitignore'), 'utf-8'))
       .split('\n')
       .map((line) => line.trim());
-    expect(ignoreLines).toContain(`${DIPTYCH_DIR}/`);
+    expect(ignoreLines).toContain(`${SPLITBRIEF_DIR}/`);
     expect(ignoreLines).toContain(`${TREES_DIR}/`);
-    expect(existsSync(join(wtPath, DIPTYCH_DIR, CONFIG_FILE))).toBe(true);
+    expect(existsSync(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
   });
 
   it('populates submodules in the new worktree instead of leaving empty dirs (F-405)', async () => {

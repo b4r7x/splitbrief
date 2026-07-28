@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeHandoffWriterSessionState } from '#testing/helpers/handoff-writer-fixture.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CURRENT_STATE_VERSION } from '../../core/state/machine.js';
 import { writeHandoffPack } from './write.js';
 
@@ -135,7 +135,7 @@ describe('writeHandoffPack — mode: append', () => {
     writeFileSync(join(outDir, 'tasks', 'T001.md'), staleTask);
     const staleManifest = {
       packVersion: '1',
-      diptychVersion: '0.0.0',
+      splitbriefVersion: '0.0.0',
       generatedAt: new Date().toISOString(),
       sessionId,
       briefHash: 'a'.repeat(64),
@@ -200,7 +200,7 @@ describe('writeHandoffPack — mode: overwrite', () => {
     const sessionId = 'test-session';
     writeHandoffWriterSessionState(tmp, sessionId);
 
-    const outDir = join(tmp, DIPTYCH_DIR, 'handoffs', 'spec-kit');
+    const outDir = join(tmp, SPLITBRIEF_DIR, 'handoffs', 'spec-kit');
     mkdirSync(join(outDir, 'tasks'), { recursive: true });
     const oldContent = 'old content that should be replaced';
     writeFileSync(join(outDir, 'tasks', 'T001.md'), oldContent);
@@ -222,7 +222,7 @@ describe('writeHandoffPack — mode: overwrite', () => {
     const sessionId = 'stale-test-session';
     writeHandoffWriterSessionState(tmp, sessionId);
 
-    const outDir = join(tmp, DIPTYCH_DIR, 'handoffs', 'stale-overwrite');
+    const outDir = join(tmp, SPLITBRIEF_DIR, 'handoffs', 'stale-overwrite');
 
     // First pass: write all three tasks
     await writeHandoffPack({
@@ -280,7 +280,7 @@ describe('writeHandoffPack — mode resolution', () => {
     const sessionId = 'mode-test-session';
     writeHandoffWriterSessionState(tmp, sessionId);
 
-    const sDir = join(tmp, DIPTYCH_DIR, 'sessions', sessionId);
+    const sDir = join(tmp, SPLITBRIEF_DIR, 'sessions', sessionId);
     const session = {
       id: sessionId,
       feature: 'Authentication System',

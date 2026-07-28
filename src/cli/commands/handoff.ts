@@ -5,7 +5,7 @@ import {
   normalizeHandoffTarget,
   validateHandoffTargetName,
 } from '../../core/handoff/targets.js';
-import { getDiptychPath } from '../../core/paths.js';
+import { getSplitbriefPath } from '../../core/paths.js';
 import { listCustomRenderers } from '../../engine/handoff/load-renderer.js';
 import { HANDOFF_WRITE_MODES, writeHandoffPack } from '../../engine/handoff/write.js';
 import { cliError, withCliErrors } from '../errors.js';
@@ -27,7 +27,7 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
     .command('handoff [target]')
     .description('Export a Handoff Pack for an external coding agent')
     .option('--session <id>', 'Session ID (default: active session)')
-    .option('--out <dir>', 'Output directory (default: .diptych/handoffs/<target>/)')
+    .option('--out <dir>', 'Output directory (default: .splitbrief/handoffs/<target>/)')
     .option('--task <ids>', 'Comma-separated task IDs to include (default: all)')
     .option('--mode <mode>', 'default | append | overwrite (default: default)', 'default')
     .option('--project <dir>', 'Project directory (default: cwd)')
@@ -82,7 +82,7 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
             throw cliError(`Invalid target "${resolvedTarget}": ${targetValidation.reason}`, 1);
           }
 
-          const outDir = opts.out ?? getDiptychPath(projectDir, 'handoffs', resolvedTarget);
+          const outDir = opts.out ?? getSplitbriefPath(projectDir, 'handoffs', resolvedTarget);
 
           const selectedTaskIds = opts.task ? opts.task.split(',').map((s) => s.trim()) : undefined;
 

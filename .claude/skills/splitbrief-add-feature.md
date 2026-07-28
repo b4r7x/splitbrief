@@ -1,13 +1,13 @@
 ---
-name: diptych-add-feature
-description: Design flow for a new feature that is not yet covered by any spec under notes/superpowers/specs/. Use when the user wants to add a feature to diptych, extend the workflow, add a new backend, or change an architectural decision. Produces a new spec folder under notes/superpowers/specs/ with an execute-prompt.md and agent-briefs/ — not code.
+name: splitbrief-add-feature
+description: Design flow for a new feature that is not yet covered by any spec under notes/superpowers/specs/. Use when the user wants to add a feature to SPLITBRIEF, extend the workflow, add a new backend, or change an architectural decision. Produces a new spec folder under notes/superpowers/specs/ with an execute-prompt.md and agent-briefs/ — not code.
 ---
 
-# Add a new feature to diptych
+# Add a new feature to SPLITBRIEF
 
 Local-only: this skill writes ignored, machine-local `notes/superpowers/specs/**` design artifacts. In a fresh checkout without the local notes workflow, use the tracked SpecKit commands or ask the user where feature specs should live.
 
-This skill designs a new feature by producing a new spec under `notes/superpowers/specs/`. It does **not** implement the feature. Use `diptych-implement-spec` for that, after the user reviews and approves the spec.
+This skill designs a new feature by producing a new spec under `notes/superpowers/specs/`. It does **not** implement the feature. Use `splitbrief-implement-spec` for that, after the user reviews and approves the spec.
 
 ## Prerequisites
 

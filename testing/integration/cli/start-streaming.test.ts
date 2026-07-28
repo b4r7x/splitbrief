@@ -10,7 +10,7 @@ import {
 } from '#testing/helpers/start-command.js';
 import { registerStartCommand } from '../../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../../src/cli/commands/start/types.js';
-import { DIPTYCH_DIR, sessionDir } from '../../../src/core/paths.js';
+import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { runHeadless } from '../../../src/cli/headless.js';
 import { readLockfile, checkServerStatus } from '../../../src/engine/ipc/lockfile.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
@@ -23,7 +23,7 @@ describe('start command — liveness record', () => {
   });
 
   function onlySessionId(projectDir: string): string {
-    const sessionsDir = join(projectDir, DIPTYCH_DIR, 'sessions');
+    const sessionsDir = join(projectDir, SPLITBRIEF_DIR, 'sessions');
     const ids = readdirSync(sessionsDir);
     expect(ids).toHaveLength(1);
     return ids[0] ?? '';
@@ -63,7 +63,7 @@ describe('start command — liveness record', () => {
     await expect(
       program.parseAsync([
         'node',
-        'diptych',
+        'splitbrief',
         'start',
         '--json',
         '--mode',

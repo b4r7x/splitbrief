@@ -12,7 +12,7 @@ function blockedReport(): ReadinessReport {
     projectDir: '/tmp/project',
     configLoad: {
       state: 'missing',
-      path: '/tmp/project/.diptych/config.yaml',
+      path: '/tmp/project/.splitbrief/config.yaml',
       warnings: [],
     },
     packageScripts: {

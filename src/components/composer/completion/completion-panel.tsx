@@ -136,9 +136,6 @@ function OcclusionBackplate({ rows, width }: { rows: number; width: number }) {
   );
 }
 
-// The thumb tracks the selected item's position in the full list (1:1) instead of the window offset,
-// so it glides on every arrow press rather than freezing while the selection moves inside the window
-// and then jumping when the window finally slides. Same proportional thumb size as the shared bar.
 function menuScrollThumb(input: {
   selectedIndex: number;
   lineCount: number;

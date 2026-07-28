@@ -67,7 +67,7 @@ export function buildValidationChecks(
       id: 'validation.disabled',
       severity: 'warning',
       summary: `Validation checks disabled: ${disabled.join(', ')}.`,
-      fix: 'Enable validation checks in .diptych/config.yaml when the project supports them.',
+      fix: 'Enable validation checks in .splitbrief/config.yaml when the project supports them.',
     });
   }
 
@@ -201,7 +201,7 @@ export async function probeValidationBaseline(
       details: [
         'These stages fail on the working tree as-is, so first-task failures here are not caused by the implementer.',
       ],
-      fix: 'Fix the pre-existing validation failures, or disable the affected stages in .diptych/config.yaml.',
+      fix: 'Fix the pre-existing validation failures, or disable the affected stages in .splitbrief/config.yaml.',
     },
   ];
 }

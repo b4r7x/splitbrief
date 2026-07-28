@@ -8,14 +8,14 @@ import { acquireSnapshotLock } from './lock.js';
 let tmp: string;
 
 function snapshotLockPath(sessionId: string): string {
-  return join(tmp, '.diptych', 'sessions', sessionId, 'snapshots', '.lock');
+  return join(tmp, '.splitbrief', 'sessions', sessionId, 'snapshots', '.lock');
 }
 
 async function writeAgedLock(
   sessionId: string,
   payload: { pid: number; startedAt: number },
 ): Promise<string> {
-  const lockDir = join(tmp, '.diptych', 'sessions', sessionId, 'snapshots');
+  const lockDir = join(tmp, '.splitbrief', 'sessions', sessionId, 'snapshots');
   await mkdir(lockDir, { recursive: true });
   const lockPath = join(lockDir, '.lock');
   await writeFile(lockPath, JSON.stringify(payload));
@@ -25,7 +25,7 @@ async function writeAgedLock(
 }
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'diptych-snapshot-'));
+  tmp = await mkdtemp(join(tmpdir(), 'splitbrief-snapshot-'));
 });
 
 afterEach(async () => {
@@ -52,7 +52,7 @@ describe('acquireSnapshotLock', () => {
   });
 
   it('removes and retakes stale lock (mtime > 60s)', async () => {
-    const lockDir = join(tmp, '.diptych', 'sessions', 'sess-01', 'snapshots');
+    const lockDir = join(tmp, '.splitbrief', 'sessions', 'sess-01', 'snapshots');
     await mkdir(lockDir, { recursive: true });
     const lockPath = join(lockDir, '.lock');
 

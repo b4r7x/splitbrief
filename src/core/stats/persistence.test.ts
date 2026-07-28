@@ -7,7 +7,7 @@ import { readStats, updateStats, rebuildStats } from './persistence.js';
 import type { CostBreakdown } from '../schemas/summary.js';
 
 function makeTestDir(): string {
-  return mkdtempSync(join(tmpdir(), 'diptych-stats-'));
+  return mkdtempSync(join(tmpdir(), 'splitbrief-stats-'));
 }
 
 function makeCostBreakdown(overrides: Partial<CostBreakdown> = {}): CostBreakdown {
@@ -50,8 +50,8 @@ describe('stats persistence', () => {
   });
 
   it('readStats warns once and returns empty stats when the file is corrupt', () => {
-    mkdirSync(join(testDir, '.diptych'), { recursive: true });
-    writeFileSync(join(testDir, '.diptych', 'stats.json'), '{ this is not json');
+    mkdirSync(join(testDir, '.splitbrief'), { recursive: true });
+    writeFileSync(join(testDir, '.splitbrief', 'stats.json'), '{ this is not json');
     const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
     const stats = readStats(testDir);
@@ -64,8 +64,8 @@ describe('stats persistence', () => {
   });
 
   it('readStats warns and returns empty stats when the file fails schema validation', () => {
-    mkdirSync(join(testDir, '.diptych'), { recursive: true });
-    writeFileSync(join(testDir, '.diptych', 'stats.json'), JSON.stringify({ version: 999 }));
+    mkdirSync(join(testDir, '.splitbrief'), { recursive: true });
+    writeFileSync(join(testDir, '.splitbrief', 'stats.json'), JSON.stringify({ version: 999 }));
     const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 
     const stats = readStats(testDir);
@@ -78,8 +78,8 @@ describe('stats persistence', () => {
   });
 
   it('updateStats preserves an unreadable stats.json instead of overwriting lifetime totals', () => {
-    const statsFile = join(testDir, '.diptych', 'stats.json');
-    mkdirSync(join(testDir, '.diptych'), { recursive: true });
+    const statsFile = join(testDir, '.splitbrief', 'stats.json');
+    mkdirSync(join(testDir, '.splitbrief'), { recursive: true });
     const corrupt = '{ this is not json';
     writeFileSync(statsFile, corrupt);
     const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
@@ -98,8 +98,8 @@ describe('stats persistence', () => {
   });
 
   it('updateStats preserves a schema-invalid stats.json instead of resetting totals', () => {
-    const statsFile = join(testDir, '.diptych', 'stats.json');
-    mkdirSync(join(testDir, '.diptych'), { recursive: true });
+    const statsFile = join(testDir, '.splitbrief', 'stats.json');
+    mkdirSync(join(testDir, '.splitbrief'), { recursive: true });
     const stale = JSON.stringify({ version: 999, totalSessions: 42 });
     writeFileSync(statsFile, stale);
     const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
@@ -239,7 +239,7 @@ describe('stats persistence', () => {
       escalatedToPlanner: 0,
     });
 
-    const files = readdirSync(join(testDir, '.diptych'));
+    const files = readdirSync(join(testDir, '.splitbrief'));
     expect(files).toContain('stats.json');
     expect(files.some((file) => file.endsWith('.tmp'))).toBe(false);
   });
@@ -252,7 +252,7 @@ describe('stats persistence', () => {
       escalatedToPlanner: 0,
     });
 
-    const files = readdirSync(join(testDir, '.diptych'));
+    const files = readdirSync(join(testDir, '.splitbrief'));
     expect(files.some((file) => file.endsWith('.lock'))).toBe(false);
   });
 });

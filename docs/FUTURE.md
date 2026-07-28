@@ -1,4 +1,4 @@
-# diptych — Future Work
+# SPLITBRIEF — Future Work
 
 Scope that is **deliberately deferred** from the current release. These ideas have been discussed, have concrete shape, and will likely be built — but not yet. Keeping them here keeps [docs/WORKFLOW.md](./WORKFLOW.md) focused on the shipped state machine instead of things that are just "not now" rather than "not decided".
 
@@ -76,13 +76,13 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ## ~~**[Could]** Parallel sessions in the same project~~ ✅ Done
 
-**Why we wanted it.** Users sometimes want to run multiple diptych workflows against the same codebase at once — e.g., plan one feature while implementing another. The `.diptych/active` lock blocks concurrent runs in a single working tree.
+**Why we wanted it.** Users sometimes want to run multiple SPLITBRIEF workflows against the same codebase at once — e.g., plan one feature while implementing another. The `.splitbrief/active` lock blocks concurrent runs in a single working tree.
 
 **What was built.**
 
-- `diptych start --worktree <name>` creates `.trees/<name>` on branch `diptych/<name>`, selects it as the run's project root, and starts the workflow there (`--worktree [name]` flag in `src/cli/options.ts`).
-- `diptych worktree list` shows every diptych-managed worktree with its branch, status, session, and phase; `diptych worktree switch <name>` prints the shell instructions to enter it, and `diptych worktree remove <name>` tears one down with live-session and dirty-tree guards (`src/cli/commands/worktree.ts`).
-- Each worktree gets its own isolated `.diptych/` (sessions, active pointer, snapshots, ledger), with config and hooks copied from the base checkout.
+- `splitbrief start --worktree <name>` creates `.trees/<name>` on branch `splitbrief/<name>`, selects it as the run's project root, and starts the workflow there (`--worktree [name]` flag in `src/cli/options.ts`).
+- `splitbrief worktree list` shows every SPLITBRIEF-managed worktree with its branch, status, session, and phase; `splitbrief worktree switch <name>` prints the shell instructions to enter it, and `splitbrief worktree remove <name>` tears one down with live-session and dirty-tree guards (`src/cli/commands/worktree.ts`).
+- Each worktree gets its own isolated `.splitbrief/` (sessions, active pointer, snapshots, ledger), with config and hooks copied from the base checkout.
 - Full workflow and isolation caveats are documented in [WORKTREES.md](./WORKTREES.md).
 
 **Remaining.** Per-worktree environment isolation (ports, databases) is still the user's responsibility — see the mitigation recipes in WORKTREES.md.
@@ -117,13 +117,13 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ## **[Could]** Session browser UI
 
-**Current baseline.** The `/sessions` runtime command opens an in-TUI picker (`SessionsPicker`, `src/app/overlays/sessions.tsx`) that lists past sessions, filters by feature, and resumes or views the selected one on Enter. The home screen also shows a recent-sessions list. Each `.diptych/sessions/<id>/` folder is self-contained with a `summary.json` at a glance.
+**Current baseline.** The `/sessions` runtime command opens an in-TUI picker (`SessionsPicker`, `src/app/overlays/sessions.tsx`) that lists past sessions, filters by feature, and resumes or views the selected one on Enter. The home screen also shows a recent-sessions list. Each `.splitbrief/sessions/<id>/` folder is self-contained with a `summary.json` at a glance.
 
 **What remains.**
 
-- A standalone `diptych sessions` CLI command (the picker only exists inside the running TUI today).
+- A standalone `splitbrief sessions` CLI command (the picker only exists inside the running TUI today).
 - Read-only replay mode that scrolls through `session.jsonl` rendered the way the live TUI renders events.
-- `diptych sessions delete <id>` to remove a session folder with confirmation.
+- `splitbrief sessions delete <id>` to remove a session folder with confirmation.
 
 **Why deferred.**
 
@@ -162,7 +162,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 - Not tested on Windows at all.
 - Subprocess handling is POSIX-ish (SIGTERM/SIGKILL). Windows uses different signal semantics.
-- `.diptych/active` as a text file vs. a file lock differs in concurrency guarantees across platforms.
+- `.splitbrief/active` as a text file vs. a file lock differs in concurrency guarantees across platforms.
 
 Testing + CI on Windows would come first, before any behavioural fixes.
 
@@ -193,8 +193,8 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 Follow-ups from the EventBus and OpenTelemetry work — see [ARCHITECTURE.md §Design decisions](./ARCHITECTURE.md#design-decisions--why-eventbus) and [OTEL.md §Design decisions](./OTEL.md#design-decisions). The bus is in; these are the rough edges that did not make the current release.
 
 - **[Should] Subprocess context propagation.** Planner and implementer spawns do not receive a `traceparent` today, so calls into Claude Code / Ollama / LM Studio appear as opaque windows inside the parent phase span. Fix: thread a W3C trace-context propagator through every runner adapter — as an environment variable for `cli` / `shell` / `agent` kinds, and as a request header for `api` kinds.
-- **[Should] CLI bootstrap UX.** Pre-registering a `NodeTracerProvider` from an external wrapper is defeated by ESM's dual-resolution of `@opentelemetry/api` (absolute path vs. bare specifier → distinct module-cache entries). Fix approach: a `--otel-exporter <console|otlp-http>` CLI flag, or a `DIPTYCH_OTEL_EXPORTER` env variable read inside `src/engine/orchestrator/run/init.ts` so the provider is registered in the same resolution context the sink imports from.
-- **[Could] Retry span semantics.** Today a task with two retries produces one span covering all attempts. Open question: model retries as sibling spans under a shared parent, or keep a single task span with a `diptych.task.retries` attribute. Ambiguous which users actually want — deferred until we see real trace consumption.
+- **[Should] CLI bootstrap UX.** Pre-registering a `NodeTracerProvider` from an external wrapper is defeated by ESM's dual-resolution of `@opentelemetry/api` (absolute path vs. bare specifier → distinct module-cache entries). Fix approach: a `--otel-exporter <console|otlp-http>` CLI flag, or a `SPLITBRIEF_OTEL_EXPORTER` env variable read inside `src/engine/orchestrator/run/init.ts` so the provider is registered in the same resolution context the sink imports from.
+- **[Could] Retry span semantics.** Today a task with two retries produces one span covering all attempts. Open question: model retries as sibling spans under a shared parent, or keep a single task span with a `splitbrief.task.retries` attribute. Ambiguous which users actually want — deferred until we see real trace consumption.
 - **[Could] Error status propagation.** `task_full_fail` marks only the task span `ERROR`; parent phase and workflow stay `OK`. OTel convention varies across backends (Honeycomb vs. Tempo bubble-up behavior differs). Needs a calibration pass before codifying.
 - **[Won't] Logs via `@opentelemetry/api-logs`.** Structured log records with trace correlation, replacing `console.*` inside the engine. Out of scope for now. Would land alongside a `/log` channel that exposes planner/implementer stdout as log records.
 - **[Could] Metric emission.** Counters (`task_completed{method=local|escalated|escalated-full}`), histograms (phase durations), gauges (tokens remaining against budget). Derivable from spans by most backends today; a future `otel.metrics.enabled` flag could emit them natively if derived metrics prove lossy.
@@ -203,7 +203,7 @@ Follow-ups from the EventBus and OpenTelemetry work — see [ARCHITECTURE.md §D
 
 ## Hook system v2 (mixed)
 
-Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). Today the system ships command-kind hooks, JS/TS module hooks, and `.diptych/hooks/` discovery.
+Follow-ups from the workflow hook system — see [HOOKS-CONFIG.md §Design decisions](./HOOKS-CONFIG.md#design-decisions). Today the system ships command-kind hooks, JS/TS module hooks, and `.splitbrief/hooks/` discovery.
 
 - **[Could] Async fan-out within a single event.** Today hooks run sequentially in declaration order (order matters for `modify` patches). Opt-in parallel execution for events where ordering is irrelevant (`post_*`, `on_*`), with timeout aggregation and an explicit `parallel: true` flag on the entry.
 
@@ -215,4 +215,4 @@ Follow-ups from the repo-map subsystem — see [REPOMAP.md §Design decisions](.
 
 - **[Won't] Embeddings-based retrieval.** Optional `codebase.kind: 'embeddings'` with a pluggable provider (Voyage, OpenAI, a local embedding model). Semantically richer than symbol matching; deferred because of per-call cost, index-sync work, and the cost/latency profile for local-only users. The symbol-graph path stays the default.
 - ~~**[Should] Non-TypeScript language support.** Python, Go, Rust via their respective tree-sitter grammars. Each language needs its own `tags.scm`-equivalent extractor and a validator pipeline fit for the language.~~ ✅ Done
-- **[Should] Grammar version bumps.** Procedure to increment the `parse_version` column in `.diptych/repomap.sqlite` and force a global cache rebuild when the tree-sitter grammar changes. Today `/repomap rebuild` handles it per-project, but a migration note in release notes and an automatic bump on install is cleaner.
+- **[Should] Grammar version bumps.** Procedure to increment the `parse_version` column in `.splitbrief/repomap.sqlite` and force a global cache rebuild when the tree-sitter grammar changes. Today `/repomap rebuild` handles it per-project, but a migration note in release notes and an automatic bump on install is cleaner.

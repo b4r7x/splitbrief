@@ -1,6 +1,6 @@
-# diptych — Approval gates, escalation, and recovery
+# SPLITBRIEF — Approval gates, escalation, and recovery
 
-How diptych keeps the user in control during a workflow run. Three systems work together: document gates pause on spec, plan, and brief review; tiered approval reviews declared file writes; escalation handles validation failures automatically; and recovery gives the user the final say when automation runs out of options. Budget enforcement and drift detection run alongside these systems as continuous checks.
+How SPLITBRIEF keeps the user in control during a workflow run. Four systems work together: document gates pause on spec, plan, and brief review; tiered approval reviews declared file writes; escalation handles validation failures automatically; and recovery gives the user the final say when automation runs out of options. Budget enforcement and drift detection run alongside these systems as continuous checks.
 
 For the workflow state machine, see `docs/WORKFLOW.md`. For the event model, see `docs/ARCHITECTURE.md`.
 
@@ -45,7 +45,7 @@ The classifier lives in `src/engine/orchestrator/approval/action-classifier.ts`.
 | `read` | Action descriptions beginning with `read`/`cat`/`ls`/`find`/`grep`, or anything with no write verb | `auto` |
 | `write_in_scope` | Writing to a file named in the task brief or matching `scope.inBounds` / `approval.allowedPaths` | `auto` |
 | `write_out_of_scope` | Writing to a file not covered by the task's scope | `sticky` |
-| `destructive` | Writing to a control-plane path (`.git`, `.diptych`) | `confirm` |
+| `destructive` | Writing to a control-plane path (`.git`, `.splitbrief`) | `confirm` |
 | `package_change` | Writing to a package manifest or lockfile (`package.json`, `pnpm-lock.yaml`, …) | `confirm` |
 
 Classification extracts the target file path from the action description, then checks scope membership. A write to a control-plane path is `destructive`; a write to a package manifest is `package_change`; a write to a file in the task's `scope.inBounds`, `scope.approvedOutOfBounds`, or `approval.allowedPaths` is `write_in_scope`; any other write is `write_out_of_scope`. Anything that is not a write defaults to `read`.
@@ -56,7 +56,7 @@ The `validation` and `network` classes remain part of the action-class enum and 
 
 `auto` — Allow silently, no prompt. The implementer proceeds without interruption. Most in-scope work and reads fall here.
 
-`sticky` — Check `.diptych/approvals.json` for a matching grant. If a grant exists with the right pattern and action class, allow silently. If not, prompt the user through `onTieredApproval`. The user can grant once (this action only), for the session (this run), or always (persisted to `approvals.json`). `gateAction()` in `src/engine/orchestrator/approval/tiered-approval.ts` classifies the action and dispatches sticky-tier handling in `sticky.ts`, which reads the grants store, tries to match against `always` grants first, then `session` grants scoped to the current session ID.
+`sticky` — Check `.splitbrief/approvals.json` for a matching grant. If a grant exists with the right pattern and action class, allow silently. If not, prompt the user through `onTieredApproval`. The user can grant once (this action only), for the session (this run), or always (persisted to `approvals.json`). `gateAction()` in `src/engine/orchestrator/approval/tiered-approval.ts` classifies the action and dispatches sticky-tier handling in `sticky.ts`, which reads the grants store, tries to match against `always` grants first, then `session` grants scoped to the current session ID.
 
 `confirm` — Always prompt the user, regardless of prior grants. The user must type the literal phrase "I confirm" and provide a reason (`src/engine/orchestrator/approval/confirm.ts`). This is deliberately high-friction for control-plane writes, package-manifest writes, and any produced file-write class you configure as `confirm`. Approval events (`approval_prompted`, `approval_granted`, `approval_rejected`) are published from `events.ts`; shared gate input/output types live in `types.ts`.
 
@@ -182,7 +182,7 @@ When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` 
 
 `continue` — Only allowed for `budget-paused` (when below hard cap) and `user-edit-conflict` (when safe). Resolves recovery and the workflow resumes where it left off. Blocked for `budget-exceeded`.
 
-`pause-run` — Transitions `PAUSE_PENDING_RECOVERY`. State is saved to disk. The user can `diptych resume` later.
+`pause-run` — Transitions `PAUSE_PENDING_RECOVERY`. State is saved to disk. The user can `splitbrief resume` later.
 
 `abort-workflow` — Transitions `CANCEL`, resolves recovery. The workflow ends.
 
@@ -200,6 +200,10 @@ The recovery state tracks the issue lifecycle:
 ## Drift detection
 
 Before final review, `src/engine/orchestrator/final-review.ts` calls `analyzeBriefDrift()` from `src/engine/orchestrator/drift/analyze.ts` against the current diff, tasks, and evidence ledger.
+
+Drift analyzes the full untruncated diff; only the planner-facing review copy is bounded to 100,000 characters.
+
+Primary task files remain required outputs; `task.file`, `scope.inBounds`, and `scope.approvedOutOfBounds` are accepted change patterns.
 
 `analyzeBriefDrift()` takes the task list, the list of changed files, and the diff text. It checks for:
 

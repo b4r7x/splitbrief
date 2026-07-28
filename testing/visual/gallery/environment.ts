@@ -7,7 +7,7 @@ import {
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 
 const FIXED_CLOCK = '2026-01-01T00:00:00.000Z';
-const RANDOM_SEED = 'diptych-visual-v1';
+const RANDOM_SEED = 'splitbrief-visual-v1';
 const ENVIRONMENT_VALUES = {
   TZ: 'UTC',
   LANG: 'en_US.UTF-8',
@@ -17,7 +17,7 @@ const ENVIRONMENT_VALUES = {
   FORCE_COLOR: '3',
   FORCE_HYPERLINK: '0',
   NO_COLOR: undefined,
-  DIPTYCH_VISUAL_MOTION: '0',
+  SPLITBRIEF_VISUAL_MOTION: '0',
 } as const;
 
 type EnvironmentKey = keyof typeof ENVIRONMENT_VALUES;

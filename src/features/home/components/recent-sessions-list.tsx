@@ -1,15 +1,16 @@
-import { Box, Text, type Key } from 'ink';
+import { Box, Text } from 'ink';
 import type { Session } from '../../../core/schemas/session.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { useTheme } from '../../../components/theme.js';
-import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import { SessionRow } from '../../../components/session-row.js';
 import { RecentSessionsShell } from './recent-sessions-shell.js';
 import { FilterInput } from '../../../components/filter-input.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { ROW_ZONE_Z_SCREEN } from '../../../components/pickers/row-zone.js';
+import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import { filterSession } from '../../../core/sessions/search.js';
 import { copyToClipboard } from '../../../lib/clipboard/clipboard.js';
+import { isUnmodifiedYInput } from '../../../lib/terminal/text-entry.js';
 
 export const RECENT_SESSIONS_HINT = `↑↓ navigate${SOFT_SEP}⏎ open${SOFT_SEP}y copy${SOFT_SEP}esc back`;
 
@@ -30,34 +31,25 @@ export function RecentSessionsList({
 }: RecentSessionsListProps) {
   const theme = useTheme();
   const pageSize = maxVisible === undefined ? sessions.length : Math.max(0, maxVisible);
-  const customKeys = (
-    input: string,
-    key: Key,
-    ctx: { filtered: Session[]; selectedIndex: number },
-  ) => {
-    if (key.upArrow && ctx.selectedIndex === 0) {
-      onClose();
-      return true;
-    }
-    if (input === 'y' && !key.ctrl && !key.meta) {
-      if (pageSize <= 0) return true;
-      const session = ctx.filtered[ctx.selectedIndex];
-      if (session !== undefined) void copyToClipboard(session.feature).catch(() => undefined);
-      return true;
-    }
-    return undefined;
-  };
-
-  const { filter, filtered, selectedIndex } = useFilterableList<Session>({
+  const list = useFilterableList({
     items: sessions,
+    getKey: (session) => session.id,
     filterFn: filterSession,
-    onSelect,
-    onClose,
     isActive: !hasOverlay,
-    initialIndex: 0,
     pageSize,
-    customKeys,
+    onSelect,
+    onItemAction: (session) => {
+      void copyToClipboard(session.feature);
+    },
+    onClose,
+    upAtStart: 'close',
+    customKeys: (input, key, { runSelectedItemAction }) => {
+      if (!isUnmodifiedYInput(input, key)) return false;
+      runSelectedItemAction();
+      return true;
+    },
   });
+  const { filter, filtered, selectedIndex, selectItem } = list;
 
   return (
     <RecentSessionsShell>
@@ -78,7 +70,7 @@ export function RecentSessionsList({
             : {
                 onRowActivate: (index: number) => {
                   const session = filtered[index];
-                  if (session !== undefined) onSelect(session);
+                  if (session !== undefined) selectItem(session);
                 },
               })}
           placeholder={<Text color={theme.textDim}>No matching sessions</Text>}

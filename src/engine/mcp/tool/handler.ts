@@ -6,6 +6,7 @@ import {
   handleReportValidationResult,
   handleReportError,
 } from './operations.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
 const TOOL_DEFINITIONS: McpToolDefinition[] = [
   {
@@ -15,7 +16,10 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        sessionId: { type: 'string', description: 'Active diptych session ID' },
+        sessionId: {
+          type: 'string',
+          description: `Active ${SPLITBRIEF_IDENTITY.displayName} session ID`,
+        },
         taskId: { type: 'string', description: 'Task ID (e.g. T001)' },
         observedEvidence: {
           type: 'array',
@@ -34,12 +38,14 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
   },
   {
     name: 'report_progress',
-    description:
-      'Report progress on a task. Call periodically during long-running implementations to update diptych on status.',
+    description: `Report progress on a task. Call periodically during long-running implementations to update ${SPLITBRIEF_IDENTITY.displayName} on status.`,
     inputSchema: {
       type: 'object',
       properties: {
-        sessionId: { type: 'string', description: 'Active diptych session ID' },
+        sessionId: {
+          type: 'string',
+          description: `Active ${SPLITBRIEF_IDENTITY.displayName} session ID`,
+        },
         taskId: { type: 'string', description: 'Task ID (e.g. T001)' },
         message: { type: 'string', description: 'Progress message' },
         percentComplete: {
@@ -59,7 +65,10 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        sessionId: { type: 'string', description: 'Active diptych session ID' },
+        sessionId: {
+          type: 'string',
+          description: `Active ${SPLITBRIEF_IDENTITY.displayName} session ID`,
+        },
         taskId: { type: 'string', description: 'Task ID (e.g. T001)' },
         changedFiles: {
           type: 'array',
@@ -84,7 +93,10 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
     inputSchema: {
       type: 'object',
       properties: {
-        sessionId: { type: 'string', description: 'Active diptych session ID' },
+        sessionId: {
+          type: 'string',
+          description: `Active ${SPLITBRIEF_IDENTITY.displayName} session ID`,
+        },
         taskId: { type: 'string', description: 'Task ID (e.g. T001)' },
         stage: {
           type: 'string',
@@ -104,12 +116,14 @@ const TOOL_DEFINITIONS: McpToolDefinition[] = [
   },
   {
     name: 'report_error',
-    description:
-      'Report an error during task implementation. Call when the agent encounters an unrecoverable error or needs diptych to make a recovery decision.',
+    description: `Report an error during task implementation. Call when the agent encounters an unrecoverable error or needs ${SPLITBRIEF_IDENTITY.displayName} to make a recovery decision.`,
     inputSchema: {
       type: 'object',
       properties: {
-        sessionId: { type: 'string', description: 'Active diptych session ID' },
+        sessionId: {
+          type: 'string',
+          description: `Active ${SPLITBRIEF_IDENTITY.displayName} session ID`,
+        },
         taskId: { type: 'string', description: 'Task ID (e.g. T001)' },
         error: { type: 'string', description: 'Error description' },
         changedFiles: {

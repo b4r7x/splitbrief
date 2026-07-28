@@ -365,6 +365,129 @@ describe('BriefReviewView focus and hover', () => {
     }
   });
 
+  it('reloads the same task-brief path on revision without showing the prior rows', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-revision-test-'));
+    try {
+      focusStore.clear();
+      reviewStore.clearReview();
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      const filePath = join(projectDir, TASKS_FILE);
+      reviewStore.setReviewFile(filePath);
+      await writeFile(
+        filePath,
+        formatTasks([makeTask({ id: 'T001', title: 'Before revision', file: 'src/before.ts' })]),
+        'utf8',
+      );
+
+      const ui = renderFeature(
+        createElement(BriefReviewView, { filePath, height: 16, width: 120 }),
+      );
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('Before revision');
+      });
+
+      await writeFile(
+        filePath,
+        formatTasks([makeTask({ id: 'T002', title: 'After revision', file: 'src/after.ts' })]),
+        'utf8',
+      );
+      reviewStore.reloadReviewFile();
+      await tick();
+      expect(ui.lastFrame() ?? '').not.toContain('Before revision');
+
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('After revision');
+        expect(reviewStore.get().briefSources[0]).toContain('id: T002');
+        expect(reviewStore.get().briefPaths).toEqual(['src/after.ts']);
+      });
+      ui.unmount();
+    } finally {
+      focusStore.clear();
+      reviewStore.clearReview();
+      configStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('publishes only the current owner when same-path brief loads settle out of order', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-owner-race-test-'));
+    const loaderModule = await import('../../brief-review-loader.js');
+    type BriefLoadResult = Awaited<ReturnType<typeof loaderModule.loadBriefReviewData>>;
+    const pending: Array<{
+      resolve: (result: BriefLoadResult) => void;
+      reject: (error: Error) => void;
+    }> = [];
+    const loader = vi.spyOn(loaderModule, 'loadBriefReviewData').mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          pending.push({ resolve, reject });
+        }),
+    );
+    try {
+      focusStore.clear();
+      reviewStore.clearReview();
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      const filePath = join(projectDir, TASKS_FILE);
+      await writeFile(filePath, '', 'utf8');
+      reviewStore.setReviewFile(filePath);
+      const ui = renderFeature(
+        createElement(BriefReviewView, { filePath, height: 16, width: 120 }),
+      );
+      await vi.waitFor(() => {
+        expect(pending).toHaveLength(1);
+      });
+
+      reviewStore.setReviewFile(filePath);
+      await tick();
+      expect(ui.lastFrame() ?? '').not.toContain('First owner');
+      await vi.waitFor(() => {
+        expect(pending).toHaveLength(2);
+      });
+      reviewStore.setReviewFile(filePath);
+      await tick();
+      await vi.waitFor(() => {
+        expect(pending).toHaveLength(3);
+      });
+
+      const currentTask = makeTask({
+        id: 'T003',
+        title: 'Current owner',
+        file: 'src/current.ts',
+      });
+      pending[2]?.resolve({
+        tasks: [currentTask],
+        quality: null,
+        reviewMetadata: new Map(),
+        briefSources: ['id: T003\nCurrent owner'],
+      });
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('Current owner');
+      });
+
+      pending[1]?.reject(new Error('stale owner failure'));
+      pending[0]?.resolve({
+        tasks: [makeTask({ id: 'T001', title: 'First owner', file: 'src/first.ts' })],
+        quality: null,
+        reviewMetadata: new Map(),
+        briefSources: ['id: T001\nFirst owner'],
+      });
+      await tick(20);
+
+      expect(ui.lastFrame() ?? '').toContain('Current owner');
+      expect(ui.lastFrame() ?? '').not.toContain('First owner');
+      expect(reviewStore.get().loadError).toBeNull();
+      expect(reviewStore.get().briefSources).toEqual(['id: T003\nCurrent owner']);
+      expect(reviewStore.get().briefPaths).toEqual(['src/current.ts']);
+      ui.unmount();
+    } finally {
+      loader.mockRestore();
+      focusStore.clear();
+      reviewStore.clearReview();
+      configStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('aligns the focus accent to the visible window after scrolling', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-focus-window-test-'));
     try {

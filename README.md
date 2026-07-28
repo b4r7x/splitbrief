@@ -1,14 +1,14 @@
-# diptych
+# SPLITBRIEF
 
 A cost-aware task compiler for AI coding agents.
 
-## What is diptych?
+## What is SPLITBRIEF?
 
 An open-source CLI that compiles user requests into precise Task Briefs with an expensive planner, then executes them with a cheaper implementer. It keeps cost, validation, retry, escalation, and evidence in the loop instead of treating them as afterthoughts.
 
 ## The idea
 
-Most AI coding tokens go to reasoning and handoff churn, not to the mechanical parts of implementation. Diptych keeps an expensive planner on the hard work: codebase research, Task Brief compilation, and deciding when a spec is worth the cost. The cheaper implementer gets a narrow brief and executes it directly.
+Most AI coding tokens go to reasoning and handoff churn, not to the mechanical parts of implementation. SPLITBRIEF keeps an expensive planner on the hard work: codebase research, Task Brief compilation, and deciding when a spec is worth the cost. The cheaper implementer gets a narrow brief and executes it directly.
 
 ## How it works
 
@@ -62,8 +62,8 @@ The TUI shows planner and implementer working together as a conversation flow �
 
 ```bash
 # Not yet published on npm. Install from source:
-git clone https://github.com/b4r7x/tiny-spec.git
-cd tiny-spec
+git clone https://github.com/b4r7x/splitbrief.git
+cd splitbrief
 npm install
 npm run build
 npm link
@@ -81,14 +81,14 @@ npm link
 #   Any OpenAI-compatible API: set apiBase in config
 
 cd your-project
-diptych init        # auto-detects running models
-diptych start "add user authentication with JWT"
+splitbrief init        # auto-detects running models
+splitbrief start "add user authentication with JWT"
 ```
 
-After `diptych init` and the first `diptych start`, diptych creates a `.diptych/` folder in your project:
+After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `.splitbrief/` folder in your project:
 
 ```
-.diptych/
+.splitbrief/
 ├── config.yaml
 ├── active              ← current session-id
 └── sessions/
@@ -106,11 +106,11 @@ Needs **Node.js 22+** and **git** in the project.
 Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are scoped to one workflow each — see [docs/VISION.md](./docs/VISION.md) for the full list of non-goals.
 
 If using Ollama, configure the model's real context window first (for example, set
-`num_ctx` in the model/template you run). Then set diptych's prompt-budget view
+`num_ctx` in the model/template you run). Then set SPLITBRIEF's prompt-budget view
 to match when auto-detection is wrong:
 
 ```bash
-export DIPTYCH_CONTEXT_LENGTH=32768
+export SPLITBRIEF_CONTEXT_LENGTH=32768
 ```
 
 ## Interaction during a run
@@ -119,19 +119,19 @@ export DIPTYCH_CONTEXT_LENGTH=32768
 |--------|-----|--------|
 | Queue a message | Type + Enter | During live planner phases, queues text for the next safe point; planners with `injectUserTurn()` also receive it immediately |
 | Abort current call | Ctrl-C (single press) | During live phases, aborts the active model call and enters awaiting-continue |
-| Exit workflow | Ctrl-C twice within 2s | Saves state and exits; continue later with `diptych continue <session-id>` if the saved state is resumable |
+| Exit workflow | Ctrl-C twice within 2s | Saves state and exits; continue later with `splitbrief continue <session-id>` if the saved state is resumable |
 | Continue | Enter (empty) or type + Enter | Exit awaiting-continue; queued messages folded into next call |
 
 ## Commands
 
 | Command | What it does |
 |---------|-------------|
-| `diptych start "feature"` | Complete pipeline: compile Task Briefs, implement, validate, and review |
-| `diptych spec "feature"` | Generate Task Brief transport and supporting planning artifacts only, no implementation |
-| `diptych init` | Create config, auto-detect available models |
-| `diptych resume` | Resume an interrupted workflow |
-| `diptych status` | Show current workflow state |
-| `diptych migrate` | Migrate pre-v3 `.diptych/current/` state to new layout |
+| `splitbrief start "feature"` | Complete pipeline: compile Task Briefs, implement, validate, and review |
+| `splitbrief spec "feature"` | Generate Task Brief transport and supporting planning artifacts only, no implementation |
+| `splitbrief init` | Create config, auto-detect available models |
+| `splitbrief resume` | Resume an interrupted workflow |
+| `splitbrief status` | Show current workflow state |
+| `splitbrief migrate` | Migrate pre-v3 `.splitbrief/current/` state to new layout |
 
 `--auto` auto-approves spec/plan review gates only. Briefs review and file-write tiered approvals still follow workflow and approval config; use `--yolo` or approval tiers for unattended file writes.
 
@@ -147,7 +147,7 @@ export DIPTYCH_CONTEXT_LENGTH=32768
 
 ## Configuration
 
-`diptych init` creates `.diptych/config.yaml`:
+`splitbrief init` creates `.splitbrief/config.yaml`:
 
 ```yaml
 version: 3
@@ -178,9 +178,9 @@ workflow:
   persistTranscript: true  # Save planner/user messages to session.jsonl for resume context
 ```
 
-`contextLength` should match the model's effective window after the provider itself is configured. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: diptych selects the cheapest capable profile for each Task Brief instead of becoming a multi-agent manager.
+`contextLength` should match the model's effective window after the provider itself is configured. 25% is reserved for output. Minimum 8192. Optional implementer profiles still keep one implementer role: SPLITBRIEF selects the cheapest capable profile for each Task Brief instead of becoming a multi-agent manager.
 
-Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves changes unstaged for manual review; set `checkpoint` or `per-task` only if you want diptych to create git history.
+Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves changes unstaged for manual review; set `checkpoint` or `per-task` only if you want SPLITBRIEF to create git history.
 
 ### Planner backends
 
@@ -199,7 +199,7 @@ Eight built-in, plus anything via shell:
 
 #### Shell planner
 
-Use any CLI tool that reads stdin and writes stdout. Diptych does not sandbox shell or network access for that command; it runs with normal user permissions.
+Use any CLI tool that reads stdin and writes stdout. SPLITBRIEF does not sandbox shell or network access for that command; it runs with normal user permissions.
 
 ```yaml
 planner:
@@ -256,7 +256,7 @@ implementer:
 
 #### Shell implementer
 
-Shell implementers use the same stdin/stdout subprocess contract. Diptych parses stdout for changes; it does not sandbox shell or network access for the command.
+Shell implementers use the same stdin/stdout subprocess contract. SPLITBRIEF parses stdout for changes; it does not sandbox shell or network access for the command.
 
 ```yaml
 implementer:
@@ -269,12 +269,12 @@ implementer:
 
 ## Models
 
-diptych loads model metadata from [models.dev](https://models.dev) first. Runtime provider detection and CLI discovery are overlays. The bundled model list is only the last-resort offline fallback.
+SPLITBRIEF loads model metadata from [models.dev](https://models.dev) first. Runtime provider detection and CLI discovery are overlays. The bundled model list is only the last-resort offline fallback.
 
 ### Catalog notes
 
 - Claude Code uses `auto`, `sonnet`, `opus`, and `opusplan` in the picker. A stored `default` resolves to `auto` for compatibility.
-- For `opencode` and `kilo-code`, prefer `auto` and configure the real default model in the tool itself before launching diptych.
+- For `opencode` and `kilo-code`, prefer `auto` and configure the real default model in the tool itself before launching SPLITBRIEF.
 - Dollar pricing is shown only for real API providers. CLI tools, subscriptions, and local backends are intentionally unpriced.
 
 ### By VRAM
@@ -286,7 +286,7 @@ diptych loads model metadata from [models.dev](https://models.dev) first. Runtim
 | 16 GB | Qwen 2.5 Coder 14B Q4 | 16-32K | `contextLength: 16384` |
 | 32 GB+ | Qwen 3.5 27B Q4 | 32K+ | `contextLength: 32768` |
 
-For large files (300+ LOC), diptych switches from whole-file to function-level context — sends only the target function, imports, and surrounding lines. 8K models can still modify large files this way.
+For large files (300+ LOC), SPLITBRIEF switches from whole-file to function-level context — sends only the target function, imports, and surrounding lines. 8K models can still modify large files this way.
 
 ### Local (free)
 
@@ -305,7 +305,7 @@ For large files (300+ LOC), diptych switches from whole-file to function-level c
 
 ## Cost model
 
-diptych is designed to keep expensive models on planning, review, and escalation while routing routine implementation to cheaper or local models. The actual savings depend on current provider pricing, subscription limits, task size, local model quality, validation coverage, and escalation rate.
+SPLITBRIEF is designed to keep expensive models on planning, review, and escalation while routing routine implementation to cheaper or local models. The actual savings depend on current provider pricing, subscription limits, task size, local model quality, validation coverage, and escalation rate.
 
 The planner handles research, Task Brief compilation, and escalation. Implementation can be local for routine tasks when the brief is specific enough and validation is available.
 
@@ -318,18 +318,18 @@ npm test                         # Vitest colocated test suite
 npm run build                    # tsc → dist/
 ```
 
-Running the installed `diptych` binary requires a fresh build (`npm run build`) if you've just pulled. `npm run dev -- start` runs the TypeScript source through `tsx`. The `dist/` directory is gitignored and regenerated.
+Running the installed `splitbrief` binary requires a fresh build (`npm run build`) if you've just pulled. `npm run dev -- start` runs the TypeScript source through `tsx`. The `dist/` directory is gitignored and regenerated.
 
 TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated with source files.
 
 ## Extensibility
 
-- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/ARCHITECTURE.md#eventbus).
-- **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/HOOKS-CONFIG.md).
-- **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/REPOMAP.md).
-- **Headless mode** — `diptych start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
+- **EventBus architecture** — engine emits typed `EngineEvent` values; UI, persistence, hooks, and observability subscribe as independent sinks. See [docs/ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md#eventbus).
+- **Workflow hooks** — fire shell commands or JS modules at workflow events (`pre_task`, `post_commit`, etc.). 2 built-ins: `prettier-on-change`, `block-secrets`. See [docs/HOOKS-CONFIG.md](https://github.com/b4r7x/splitbrief/blob/main/docs/HOOKS-CONFIG.md).
+- **Repo-map context** — Aider-style symbol summary auto-injected into the planner prompt so it can compile a sharper Task Brief. Tree-sitter + PageRank + SQLite cache for fast incremental updates. See [docs/REPOMAP.md](https://github.com/b4r7x/splitbrief/blob/main/docs/REPOMAP.md).
+- **Headless mode** — `splitbrief start --json "feature"` emits each engine event as NDJSON to stdout and skips the TUI. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
 - **Advanced interop** — handoff packs and the MCP server expose read-only session artifacts for external tools; they are escape hatches, not the main execution path.
-- **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](https://github.com/b4r7x/tiny-spec/blob/main/docs/OTEL.md).
+- **OpenTelemetry** — opt-in span emission for workflow, phase, and task lifecycle with per-cost attributes. See [docs/OTEL.md](https://github.com/b4r7x/splitbrief/blob/main/docs/OTEL.md).
 
 ## Current state
 
@@ -337,7 +337,7 @@ Primary development stack is TypeScript/JavaScript. Command-based validation als
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/b4r7x/tiny-spec/blob/main/CONTRIBUTING.md) for development setup, conventions, and pre-merge gates.
+See [CONTRIBUTING.md](https://github.com/b4r7x/splitbrief/blob/main/CONTRIBUTING.md) for development setup, conventions, and pre-merge gates.
 
 ## License
 

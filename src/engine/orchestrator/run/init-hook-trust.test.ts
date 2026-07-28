@@ -37,7 +37,7 @@ afterEach(() => {
 function setupProjectDir(prefix: string) {
   const projectDir = createTempDir(prefix);
   dirs.push(projectDir);
-  mkdirSync(join(projectDir, '.diptych'), { recursive: true });
+  mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
   mkdirSync(join(projectDir, '.git'), { recursive: true });
   writeFileSync(join(projectDir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
   return projectDir;
@@ -185,7 +185,7 @@ describe('engine-level hook trust gate', () => {
 
   it('blocks discovered filesystem hooks that are not trusted', async () => {
     const projectDir = setupProjectDir('hook-trust-discovered');
-    const hooksDir = join(projectDir, '.diptych', 'hooks');
+    const hooksDir = join(projectDir, '.splitbrief', 'hooks');
     mkdirSync(hooksDir, { recursive: true });
     writeFileSync(join(hooksDir, 'post-task.js'), 'export default function() {}');
 
@@ -205,7 +205,7 @@ describe('engine-level hook trust gate', () => {
 
   it('trust hash changes when discovered hook content changes', async () => {
     const projectDir = setupProjectDir('hook-trust-hash-change');
-    const hooksDir = join(projectDir, '.diptych', 'hooks');
+    const hooksDir = join(projectDir, '.splitbrief', 'hooks');
     mkdirSync(hooksDir, { recursive: true });
     writeFileSync(join(hooksDir, 'post-task.js'), 'export default function() { return "v1"; }');
 

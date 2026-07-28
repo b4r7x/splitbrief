@@ -212,7 +212,7 @@ This task has missing required fields and invalid action.
 
   it('parses task frontmatter when planner narration is attached to the delimiter', () => {
     const input = `---
-generated_by: diptych v0.1.0
+generated_by: splitbrief v0.1.0
 planner: codex
 implementer: codex
 mode: quick

@@ -20,7 +20,7 @@ let projectDir: string;
 
 beforeEach(() => {
   attachmentsStore.reset();
-  projectDir = mkdtempSync(join(tmpdir(), 'diptych-attachments-'));
+  projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-attachments-'));
 });
 
 afterEach(() => {

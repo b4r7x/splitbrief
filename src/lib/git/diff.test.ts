@@ -7,7 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
-  const dir = createTempDir('diptych-git-test');
+  const dir = createTempDir('splitbrief-git-test');
   createTestGitRepo(dir);
   return dir;
 }
@@ -61,7 +61,7 @@ describe('getDiffSince', () => {
     const dir = tracked(setupGitRepo());
     const base = execSync('git rev-parse HEAD', { cwd: dir }).toString().trim();
     writeFileSync(join(dir, 'committed.txt'), 'COMMITTED_BODY');
-    execSync('git add committed.txt && git commit -m "feat(diptych): T001"', {
+    execSync('git add committed.txt && git commit -m "feat(splitbrief): T001"', {
       cwd: dir,
       stdio: 'pipe',
     });
@@ -78,7 +78,7 @@ describe('getCommittedFilesSince', () => {
     const dir = tracked(setupGitRepo());
     const base = execSync('git rev-parse HEAD', { cwd: dir }).toString().trim();
     writeFileSync(join(dir, 'résumé.md'), 'body');
-    execSync('git add "résumé.md" && git commit -m "feat(diptych): T001"', {
+    execSync('git add "résumé.md" && git commit -m "feat(splitbrief): T001"', {
       cwd: dir,
       stdio: 'pipe',
     });

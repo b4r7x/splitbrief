@@ -4,7 +4,7 @@ For changes and amendments after the 2026-04-20 release, see [`docs/CHANGELOG.md
 
 ## TL;DR
 
-If you're a **user** of diptych (running `diptych start ...` from the CLI), no action needed. Existing config and session files work unchanged.
+If you're a **user** of SPLITBRIEF (running `splitbrief start ...` from the CLI), no action needed. Existing config and session files work unchanged.
 
 If you're an **integrator** (building on the engine API):
 - `OrchestratorCallbacks.onEvent` is gone. Subscribe to the EventBus via `_eventSink` instead, or write a sink module.
@@ -41,10 +41,10 @@ To disable: set `enabled: false`. To force a cache rebuild: type `/repomap rebui
 ```yaml
 otel:
   enabled: true
-  serviceName: diptych
+  serviceName: splitbrief
 ```
 
-For the built-in console exporter, use `OTEL_TRACES_EXPORTER=console`, `DIPTYCH_OTEL_EXPORTER=console`, or `--otel-exporter console`. For OTLP or custom exporters, register a `TracerProvider` before invoking diptych. See [OTEL.md](./OTEL.md).
+For the built-in console exporter, use `OTEL_TRACES_EXPORTER=console`, `SPLITBRIEF_OTEL_EXPORTER=console`, or `--otel-exporter console`. For OTLP or custom exporters, register a `TracerProvider` before invoking `splitbrief`. See [OTEL.md](./OTEL.md).
 
 ## CLI flag additions
 
@@ -53,7 +53,7 @@ For the built-in console exporter, use `OTEL_TRACES_EXPORTER=console`, `DIPTYCH_
 
 ## Breaking changes for integrators
 
-If you wrap diptych programmatically (not as CLI):
+If you wrap SPLITBRIEF programmatically (not as CLI):
 
 - **Event subscription replaced `callbacks.onEvent(event)`.** There are two supported paths:
   1. Pass `_eventSink: (event: EngineEvent) => void` in the `runWorkflow` config — the sink is subscribed to the internal bus at workflow init and receives every event.
@@ -68,7 +68,7 @@ If you query session JSONL files programmatically:
 
 ## New CLI surface
 
-- `diptych start --json "..."` runs the workflow without the Ink TUI and streams `EngineEvent` as NDJSON on stdout. `resume`, `continue`, and `last` support the same headless mode for interrupted sessions. Driver: `src/cli/headless.ts`.
+- `splitbrief start --json "..."` runs the workflow without the Ink TUI and streams `EngineEvent` as NDJSON on stdout. `resume`, `continue`, and `last` support the same headless mode for interrupted sessions. Driver: `src/cli/headless.ts`.
 - `--allow-hooks` bypasses the interactive hook-trust prompt — required in CI / non-TTY.
 
 ## Headless mode (--json flag)
@@ -84,9 +84,9 @@ Use case: CI integration, logging pipelines, headless servers, agent-to-agent ha
 Example:
 
 ```bash
-diptych start --json "feature-name" | jq .
-diptych start --json --allow-hooks "feature-name" > run.ndjson
-diptych resume --json
+splitbrief start --json "feature-name" | jq .
+splitbrief start --json --allow-hooks "feature-name" > run.ndjson
+splitbrief resume --json
 ```
 
 Driver: `src/cli/headless.ts`. NDJSON sink: `src/engine/events/sinks/stdout-json.ts`.

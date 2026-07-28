@@ -44,9 +44,9 @@ function makeClaudeConfig(): Config {
 }
 
 beforeEach(() => {
-  projectDir = createTempDir('diptych-cli-impl');
+  projectDir = createTempDir('splitbrief-cli-impl');
   createTestGitRepo(projectDir);
-  shimDir = createTempDir('diptych-cli-impl-shim');
+  shimDir = createTempDir('splitbrief-cli-impl-shim');
   originalPath = process.env['PATH'];
   process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 });

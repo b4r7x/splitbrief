@@ -1,6 +1,6 @@
-# diptych Features
+# SPLITBRIEF Features
 
-User-facing capability reference for diptych. For each feature: what it does, how to invoke it, when to reach for it, the relevant config, and the on-screen output where applicable. Deeper rationale lives in the linked specs and design docs.
+User-facing capability reference for SPLITBRIEF. For each feature: what it does, how to invoke it, when to reach for it, the relevant config, and the on-screen output where applicable. Deeper rationale lives in the linked specs and design docs.
 
 > **Cross-references.** Workflow phases: [WORKFLOW.md](./WORKFLOW.md). Config schema: [CONFIGURATION.md](./CONFIGURATION.md). Slash commands: [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md). Architecture inventory: [ARCHITECTURE.md#part-2--current-state-the-what](./ARCHITECTURE.md#part-2--current-state-the-what). Hooks: [HOOKS-CONFIG.md](./HOOKS-CONFIG.md). Worktrees: [WORKTREES.md](./WORKTREES.md).
 
@@ -15,10 +15,10 @@ User-facing capability reference for diptych. For each feature: what it does, ho
 **How to use.** `--mode` flag, `workflow.mode` config, or `/mode` at runtime. Legacy `full` is accepted as an alias for `speckit`.
 
 ```bash
-diptych start --mode instant "rename foo to bar"
-diptych start --mode quick "add unit test for X"
-diptych start --mode standard "add JWT middleware"   # default
-diptych start --mode speckit "redesign auth subsystem"
+splitbrief start --mode instant "rename foo to bar"
+splitbrief start --mode quick "add unit test for X"
+splitbrief start --mode standard "add JWT middleware"   # default
+splitbrief start --mode speckit "redesign auth subsystem"
 ```
 
 **When to use.**
@@ -32,15 +32,15 @@ diptych start --mode speckit "redesign auth subsystem"
 
 **Configuration.** `workflow.mode`, `workflow.approve` (`none|spec|plan|all|default`), `workflow.maxRetries`. See [CONFIGURATION.md §workflow](./CONFIGURATION.md#5-workflow).
 
-### Zero-ceremony entry (`diptych "feature"` shorthand)
+### Zero-ceremony entry (`splitbrief "feature"` shorthand)
 
-**What it does.** `start` is the default command (`isDefault`). A bare `diptych "feature"` invocation is equivalent to `diptych start "feature"`. No subcommand required for the happy path.
+**What it does.** `start` is the default command (`isDefault`). A bare `splitbrief "feature"` invocation is equivalent to `splitbrief start "feature"`. No subcommand required for the happy path.
 
 **How to use.**
 
 ```bash
-diptych "fix the typo in README"
-diptych "add JWT middleware" --mode standard
+splitbrief "fix the typo in README"
+splitbrief "add JWT middleware" --mode standard
 ```
 
 ### `@file` context injection
@@ -50,17 +50,17 @@ diptych "add JWT middleware" --mode standard
 **How to use.**
 
 ```bash
-diptych "refactor auth" @context.md @screenshot.png
-diptych start "add endpoint" @api-spec.yaml @existing-handler.ts
+splitbrief "refactor auth" @context.md @screenshot.png
+splitbrief start "add endpoint" @api-spec.yaml @existing-handler.ts
 ```
 
 **When to use.** When the planner needs additional context (design docs, screenshots, existing code) that isn't captured by the repo-map or the feature description alone.
 
 ### Runner kinds (cli / api / shell / agent / agent-sdk)
 
-**What it does.** Both planner and implementer dispatch on a `kind` discriminant. Five kinds cover every backend diptych supports.
+**What it does.** Both planner and implementer dispatch on a `kind` discriminant. Five kinds cover every backend SPLITBRIEF supports.
 
-**How to use.** Set `kind:` plus the kind-specific fields under `planner:` and `implementer:` in `.diptych/config.yaml`.
+**How to use.** Set `kind:` plus the kind-specific fields under `planner:` and `implementer:` in `.splitbrief/config.yaml`.
 
 | `kind` | What it is | Example |
 |---|---|---|
@@ -70,7 +70,7 @@ diptych start "add endpoint" @api-spec.yaml @existing-handler.ts
 | `agent` | Subprocess that writes files directly; no shell/network sandbox | File-writing tools (no stdout extraction) |
 | `agent-sdk` | `@anthropic-ai/claude-agent-sdk` library call | In-process Anthropic Agent SDK |
 
-**Auto-detection.** `diptych init` and `/refresh` probe installed CLI tools and reachable API endpoints; the picker overlays (`/planner`, `/implementer`) surface only what is available.
+**Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the picker overlays (`/planner`, `/implementer`) surface only what is available.
 
 ```yaml
 planner:  { kind: cli, tool: claude-code }
@@ -86,18 +86,18 @@ Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CON
 
 ### Run Readiness / Doctor
 
-**What it does.** Before `diptych start` spends planner or implementer tokens, diptych checks config, mode/approval resolution, runner posture, context length, validation settings, git status, active-session conflicts, and budget posture. Blockers stop the run; warnings can continue.
+**What it does.** Before `splitbrief start` spends planner or implementer tokens, SPLITBRIEF checks config, mode/approval resolution, runner posture, context length, validation settings, git status, active-session conflicts, and budget posture. Blockers stop the run; warnings can continue.
 
 **How to use.**
 
 ```bash
-diptych doctor
-diptych doctor --json
-diptych start "add profile settings"
-diptych start --json "fix parser edge case"
+splitbrief doctor
+splitbrief doctor --json
+splitbrief start "add profile settings"
+splitbrief start --json "fix parser edge case"
 ```
 
-`diptych doctor` is strictly read-only and writes no config, migrations, sessions, worktrees, snapshots, model calls, validation runs, or network probes. Every interactive workflow start writes a compact `.diptych/sessions/<id>/readiness.json` record inside the active execution session before model calls — CLI starts (`diptych start`) write it at session bootstrap, and TUI starts (home composer, setup completion) write the client-computed report once the session id exists. In headless mode the readiness report is emitted as the first structured JSON line.
+`splitbrief doctor` is strictly read-only and writes no config, migrations, sessions, worktrees, snapshots, model calls, validation runs, or network probes. Every interactive workflow start writes a compact `.splitbrief/sessions/<id>/readiness.json` record inside the active execution session before model calls — CLI starts (`splitbrief start`) write it at session bootstrap, and TUI starts (home composer, setup completion) write the client-computed report once the session id exists. In headless mode the readiness report is emitted as the first structured JSON line.
 
 **When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
 
@@ -105,13 +105,13 @@ diptych start --json "fix parser edge case"
 
 ### Validation pipeline + checkpoints
 
-**What it does.** After every implementer task, diptych runs `tsc --noEmit` → Biome lint → tests (in that order, stop on first failure). On success it records evidence and can create checkpoints. Product-level git commits are optional when explicitly configured; checkpoint safety does not depend on commits.
+**What it does.** After every implementer task, SPLITBRIEF runs `tsc --noEmit` → Biome lint → tests (in that order, stop on first failure). On success it records evidence and can create checkpoints. Product-level git commits are optional when explicitly configured; checkpoint safety does not depend on commits.
 
-**How to use.** Set `validation.{typecheck,lint,test,testCommand}` and `workflow.git.commitStrategy: none|checkpoint|per-task`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `diptych/<slug>`).
+**How to use.** Set `validation.{typecheck,lint,test,testCommand}` and `workflow.git.commitStrategy: none|checkpoint|per-task`. Optionally auto-create a branch with `workflow.git.createBranch: true` (writes to `splitbrief/<slug>`).
 
-**When to use.** `none` for manual review and commits. `checkpoint` and `per-task` are optional product behaviors for teams that want diptych to create git history as part of the run.
+**When to use.** `none` for manual review and commits. `checkpoint` and `per-task` are optional product behaviors for teams that want SPLITBRIEF to create git history as part of the run.
 
-Leave `workflow.git.commitStrategy: none` (the default) if you want diptych to keep changes unstaged for manual review.
+Leave `workflow.git.commitStrategy: none` (the default) if you want SPLITBRIEF to keep changes unstaged for manual review.
 
 ```yaml
 validation: { typecheck: true, lint: true, test: true, testCommand: "npm test" }
@@ -142,7 +142,7 @@ Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`
 
 **What it does.** After all tasks reach a terminal state, the planner reviews the entire diff against the Task Brief and any supporting spec. The deterministic drift report (see below) is rendered into the prompt under `## Deterministic Drift Report` so the reviewer sees both signals at once.
 
-**How to use.** Always runs in every mode. Output is written to `.diptych/sessions/<id>/review.md`. Fires `workflow_complete` and writes `summary.json`.
+**How to use.** Always runs in every mode. Output is written to `.splitbrief/sessions/<id>/review.md`. Fires `workflow_complete` and writes `summary.json`.
 
 **When to use.** No opt-out — final review is the closing safety check before the workflow is marked complete. Pre-final-review snapshots can be enabled (see Snapshots below).
 
@@ -153,12 +153,12 @@ Outcome events: `task_retry`, `task_escalating`, `hint_failed`, `task_full_fail`
 **How to use.**
 
 ```bash
-diptych explain                         # active in-progress session
-diptych explain --session <id>          # completed or inactive session
-diptych explain --session <id> --json   # machine-readable
+splitbrief explain                         # active in-progress session
+splitbrief explain --session <id>          # completed or inactive session
+splitbrief explain --session <id> --json   # machine-readable
 ```
 
-**When to use.** After a run, or while a run is paused, when you want to know why diptych picked a worker, why cost is partial or unknown, what retries/escalations happened, and which artifacts to inspect next.
+**When to use.** After a run, or while a run is paused, when you want to know why SPLITBRIEF picked a worker, why cost is partial or unknown, what retries/escalations happened, and which artifacts to inspect next.
 
 **Output.** Human output is compact and references artifact paths such as `summary.json`, `review-packet.json`, `readiness.json`, and `session.jsonl`. It does not embed full plans, Task Briefs, logs, diffs, or source code. JSON output is a single `{ type: "run_explain", explain: ... }` object.
 
@@ -170,7 +170,7 @@ diptych explain --session <id> --json   # machine-readable
 
 **What it does.** The Task Brief is a single-file, self-contained executable contract with nine semantic sections: Identity, Intent, Scope, Code Context, Implementation Plan, Validation, Constraints, Escalation, Evidence. Persisted as `Task[]` in `state.json`; transported as `tasks.md`.
 
-**How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.diptych/sessions/<id>/tasks.md` or the task list in `.diptych/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence, drift, and handoff/MCP artifacts when available; `state.json` task objects do not carry `briefHash`.
+**How to use.** Briefs are written by the planner in every mode. External tools consume the active brief by reading `.splitbrief/sessions/<id>/tasks.md` or the task list in `.splitbrief/sessions/<id>/state.json`. Brief hash metadata is recorded in evidence, drift, and handoff/MCP artifacts when available; `state.json` task objects do not carry `briefHash`.
 
 **Example (truncated `tasks.md`):**
 
@@ -192,7 +192,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 ### Spec / plan / tasks artifacts (mode-dependent)
 
-**What it does.** Standard and speckit modes write supporting markdown files to `.diptych/sessions/<id>/`:
+**What it does.** Standard and speckit modes write supporting markdown files to `.splitbrief/sessions/<id>/`:
 
 | File | Modes |
 |---|---|
@@ -209,7 +209,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **How to use.** Always runs in all four modes. Result persists at `brief-quality.json`; events are `brief_quality_passed` or `brief_quality_failed`. Visible in the summary screen as a `Brief quality` row.
 
-**When to use.** Out of the box. To inspect after the fact, read `.diptych/sessions/<id>/brief-quality.json`.
+**When to use.** Out of the box. To inspect after the fact, read `.splitbrief/sessions/<id>/brief-quality.json`.
 
 ### Mode advisor (deterministic risk classifier)
 
@@ -225,7 +225,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 The review surface includes a compact execution-readiness scorecard: `ready`, `routing pending`, `split/overflow`, `risky/tight`, `stale/conflict`, and `missing checks`. Unknown, stale, pending, or missing routing/context fit does not count as ready.
 
-**How to use.** The brief review gate uses the simple review surface. `workflow.briefReview: rich` is deprecated and treated the same as `simple` for compatibility. The view exposes approve/comment/reject/edit text commands. Approve reads `.diptych/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
+**How to use.** The brief review gate uses the simple review surface. `workflow.briefReview: rich` is deprecated and treated the same as `simple` for compatibility. The view exposes approve/comment/reject/edit text commands. Approve reads `.splitbrief/sessions/<id>/tasks.md`, parses it, and re-runs the brief quality gate before implementation. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` contract in the external editor, then return to the gate on parse or quality errors.
 
 ```yaml
 workflow:
@@ -236,7 +236,7 @@ workflow:
 
 **What it does.** Opens the persisted Task Brief markdown before any implementer token is spent. The editor resolver uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`. Implicit GUI auto-detection probes only safe absolute `PATH` segments (empty, `.`, and relative segments are skipped) and spawns the resolved absolute executable path. On Windows, implicit discovery also honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` suffixes. The inline rich plan editor is disabled; the external editor is the text-editing path for brief changes.
 
-After the editor exits successfully, diptych re-reads `.diptych/sessions/<id>/tasks.md`, parses the Task Brief contract, and re-runs brief-quality validation before letting implementation proceed. If parsing or quality checks fail, the review gate stays open so you can edit again or send feedback for regeneration.
+After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<id>/tasks.md`, parses the Task Brief contract, and re-runs brief-quality validation before letting implementation proceed. If parsing or quality checks fail, the review gate stays open so you can edit again or send feedback for regeneration.
 
 **How to use.** At the `reviewing-briefs` gate, press `Ctrl+E` or type `e`, `edit`, `E`, or `edit-file`. Save and close the editor, then approve once the reloaded brief passes validation.
 
@@ -296,19 +296,19 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 
 **How to use.** Always shown on the post-run summary screen when pricing data is available. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount.
 
-### Cumulative stats (`diptych stats`)
+### Cumulative stats (`splitbrief stats`)
 
-**What it does.** Tracks cumulative cost savings for saved session summaries with cost data in `.diptych/stats.json`. Shows total sessions, total spend, all-planner estimate, and aggregate savings percentage.
+**What it does.** Tracks cumulative cost savings for saved session summaries with cost data in `.splitbrief/stats.json`. Shows total sessions, total spend, all-planner estimate, and aggregate savings percentage.
 
 **How to use.**
 
 ```bash
-diptych stats
-diptych stats --json
-diptych stats --rebuild
+splitbrief stats
+splitbrief stats --json
+splitbrief stats --rebuild
 ```
 
-**When to use.** To see the cumulative value of the planner/implementer split over time. Use `--rebuild` to reconstruct `.diptych/stats.json` from completed session history after the cache is deleted, corrupted, or copied between projects. Retention hook: "You've saved $47 across 23 sessions this month."
+**When to use.** To see the cumulative value of the planner/implementer split over time. Use `--rebuild` to reconstruct `.splitbrief/stats.json` from completed session history after the cache is deleted, corrupted, or copied between projects. Retention hook: "You've saved $47 across 23 sessions this month."
 
 ### Planner heartbeat
 
@@ -332,7 +332,7 @@ diptych stats --rebuild
 
 ### Recovery stops
 
-**What it does.** When diptych cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, budget pause, and budget exceeded.
+**What it does.** When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to `state.json`, appends recovery events to `session.jsonl`, and shows one compact decision prompt. Triggers include context overflow before worker dispatch, retry exhaustion, dependency-blocked tasks, user-edit or approval-promotion conflicts, budget pause, and budget exceeded.
 
 **Actions.** Available actions are filtered per issue:
 
@@ -346,41 +346,41 @@ diptych stats --rebuild
 | `route-bigger-worker` | Resets the current task and reruns it with the larger implementer profile named by the recovery issue. |
 | `planner-split-rebase` | Legacy/manual only; new recovery prompts do not offer it, and old states block with `planner-proposal-required`. |
 
-**Resume/headless.** `diptych resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero.
+**Resume/headless.** `splitbrief resume` shows pending recovery before any planner or implementer call. Headless JSON runs emit `recovery_required` with reason, task/files, available actions, and recommendation, then exit non-zero.
 
 ### Tiered approval gates (auto / sticky / confirm)
 
-**What it does.** Declared implementer file writes are classified before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.diptych/approvals.json`), `confirm` (always require typed confirmation phrase). The current classifier produces `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`; retained config keys such as `validation` and `network` do not sandbox shell commands or network access. Composes orthogonally with the document-level approval loop.
+**What it does.** Declared implementer file writes are classified before application: `auto` (proceed silently), `sticky` (prompt once per session per pattern; persisted to `.splitbrief/approvals.json`), `confirm` (always require typed confirmation phrase). The current classifier produces `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, and `package_change`; retained config keys such as `validation` and `network` do not sandbox shell commands or network access. Composes orthogonally with the document-level approval loop.
 
 **How to use.** Defaults are deterministic; override via `approval:` config block. Inspect or clear sticky grants:
 
 ```bash
-diptych approval list
-diptych approval clear --scope session   # session | always | all
+splitbrief approval list
+splitbrief approval clear --scope session   # session | always | all
 ```
 
 Or in the TUI: `/approval list` / `/approval clear`. Headless mode fails fast at sticky/confirm tier.
 
 **Events.** `approval_prompted`, `approval_granted`, `approval_rejected`, `approval_sticky_recorded`. Rejections are also written to the evidence ledger with a reason string.
 
-### Snapshots (`diptych snapshot create / list / restore / diff`) (advanced run safety)
+### Snapshots (`splitbrief snapshot create / list / restore / diff`) (advanced run safety)
 
-**What it does.** Content-addressed working-tree snapshots with a baseline + delta layout under `.diptych/sessions/<id>/snapshots/`. Restore is hash-guarded — files modified after the snapshot was taken are reported as conflicts and skipped unless `--force` is passed.
+**What it does.** Content-addressed working-tree snapshots with a baseline + delta layout under `.splitbrief/sessions/<id>/snapshots/`. Restore is hash-guarded — files modified after the snapshot was taken are reported as conflicts and skipped unless `--force` is passed.
 
 **How to use.**
 
 ```bash
-diptych snapshot create [--name "before-refactor"]
-diptych snapshot list
-diptych snapshot restore <id-or-name> [--force]
-diptych snapshot diff <id-or-name>          # exits non-zero when changes detected
+splitbrief snapshot create [--name "before-refactor"]
+splitbrief snapshot list
+splitbrief snapshot restore <id-or-name> [--force]
+splitbrief snapshot diff <id-or-name>          # exits non-zero when changes detected
 ```
 
 Manual snapshots require the CLI command above; there is no `/snapshot` slash command. Run-level TUI accept/reject is available through `/accept-run` and `/reject-run confirm`; reject is hash-guarded and preserves user edits as conflicts. Auto-triggers (`preTask`, `postTask`, `preFinalReview`) are configurable without manual invocation.
 
 **When to use.** Bookmark known-good states before risky refactors; recover from a planner that wandered. Layered on top of git — never replaces it.
 
-**Excluded paths.** `.git/`, `.diptych/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/store.ts`). Including them would cause exponential snapshot growth. `.trees/` exclusion also prevents worktree directories from leaking into cross-worktree snapshots.
+**Excluded paths.** `.git/`, `.splitbrief/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/store.ts`). Including them would cause exponential snapshot growth. `.trees/` exclusion also prevents worktree directories from leaking into cross-worktree snapshots.
 
 ### Auto-snapshots
 
@@ -402,7 +402,7 @@ Auto-snapshot failures emit a `warning` event and do not abort the run. See [CON
 
 **What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the evidence ledger. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, missing observed evidence, and failed tasks that nevertheless left changes.
 
-**How to use.** Always runs. Persisted as `.diptych/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible on the summary screen as a `Drift` row.
+**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `score`, `errorCount`, `warningCount`. Visible on the summary screen as a `Drift` row.
 
 **When to use.** No setup needed; the report is the deterministic input to the planner reviewer's qualitative judgment.
 
@@ -423,7 +423,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 **What it does.** Per-task validation, retry, escalation, and final-review log. Captures expected evidence (from `task.evidence` ++ `task.tests`) alongside observed evidence strings the orchestrator emits (`typecheck passed`, `lint passed`, `test passed`, `diff written for <file>`, `task reached done`, `task reached escalated`, `final review written`, `skipped: <reason>`). Every entry carries `briefHash` so post-hoc audits can detect brief mutations.
 
-**How to use.** Always runs. Persisted at `.diptych/sessions/<id>/evidence.json` (mode 0o600). Summary screen shows `Evidence: N/M validated`.
+**How to use.** Always runs. Persisted at `.splitbrief/sessions/<id>/evidence.json` (mode 0o600). Summary screen shows `Evidence: N/M validated`.
 
 ---
 
@@ -431,7 +431,7 @@ Persisted as `drift-chains.json`. Surfaces as `chainDriftSummary` in `summary.js
 
 ### External agent handoff packs (advanced)
 
-**What it does.** Renders the compiled Task Brief into a self-contained folder another tool can consume. This is an advanced escape hatch for manual handoff; it is not the primary execution path and diptych never spawns an external agent for you. Built-in targets:
+**What it does.** Renders the compiled Task Brief into a self-contained folder another tool can consume. This is an advanced escape hatch for manual handoff; it is not the primary execution path and SPLITBRIEF never spawns an external agent for you. Built-in targets:
 
 | Target | Consumed by |
 |---|---|
@@ -445,87 +445,87 @@ Each pack is an inert artifact.
 **How to use.**
 
 ```bash
-diptych handoff spec-kit                          # default target
-diptych handoff claude-code --task T003           # single-task pack
-diptych handoff agents-md --out ./my-handoff      # custom output dir
-diptych handoff --list                            # list available targets
+splitbrief handoff spec-kit                          # default target
+splitbrief handoff claude-code --task T003           # single-task pack
+splitbrief handoff agents-md --out ./my-handoff      # custom output dir
+splitbrief handoff --list                            # list available targets
 ```
 
-In the TUI: `/handoff <target> [task-id]` writes to `.diptych/sessions/<id>/handoffs/<target>/`.
+In the TUI: `/handoff <target> [task-id]` writes to `.splitbrief/sessions/<id>/handoffs/<target>/`.
 
 **Pack shape.** Most built-in targets write `manifest.json` (with `briefHash`), `spec.md`, `plan.md`, `constitution.md` (when `.specify/memory/constitution.md` is present), `tasks/T001.md`, `tasks/T002.md`, …, and `README.md`. `copilot-issue` is the exception: it writes `manifest.json` and one self-contained `issue.md` body with the selected tasks embedded.
 
 ### Custom handoff renderers (advanced)
 
-**What it does.** Drop a `.js` or runtime-loadable `.ts` file at `.diptych/handoff-renderers/<name>.<ext>` exporting a default function. `diptych handoff --list` discovers it. Executing it requires `diptych handoff <name> --allow-custom-renderer` or `trust.customRenderers: true`.
+**What it does.** Drop a `.js` or runtime-loadable `.ts` file at `.splitbrief/handoff-renderers/<name>.<ext>` exporting a default function. `splitbrief handoff --list` discovers it. Executing it requires `splitbrief handoff <name> --allow-custom-renderer` or `trust.customRenderers: true`.
 
 **How to use.**
 
 ```js
-// .diptych/handoff-renderers/jira.js
+// .splitbrief/handoff-renderers/jira.js
 export default async function render(input) {
   return { files: [{ path: 'JIRA.md', content: '...' }] };
 }
 ```
 
 ```bash
-diptych handoff jira --allow-custom-renderer
+splitbrief handoff jira --allow-custom-renderer
 ```
 
-**When to use.** When you need to push the brief into a tool diptych does not ship a renderer for.
+**When to use.** When you need to push the brief into a tool SPLITBRIEF does not ship a renderer for.
 
 ### MCP resources and evidence tools server (advanced)
 
 **What it does.** A localhost-only HTTP MCP server exposing supported session resources via standard `resources/list` / `resources/read`: the sessions index, `manifest.json` when canonical `summary.json` and `state.json` exist, `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json` when present. Missing concrete resources return resource-not-found; unavailable manifests are not advertised. Bound to `127.0.0.1`, Bearer-token authenticated (one-shot token printed at startup). With `workflow.persistTranscript: false`, the sessions index and `state.json` read resource replace transcript-sensitive feature, task, queued-message, and queued-question text.
 
-MCP also exposes constrained evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. These tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shells, write project files, or dispatch implementation work. General tool calls belong to the selected planner or implementer runner.
+MCP also exposes constrained evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. These tools only update `.splitbrief/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shells, write project files, or dispatch implementation work. General tool calls belong to the selected planner or implementer runner.
 
 **Transport.** Implements the MCP Streamable HTTP transport (`2025-11-25`). Accepts `POST /mcp` for requests and notifications. `GET /mcp` returns `405 Method Not Allowed` with an `Allow: POST` header (SSE not implemented). Non-local browser `Origin` headers are rejected with `403`. The server supports `MCP-Protocol-Version: 2025-11-25`; when the request header is missing, the server defaults to that current supported version and echoes it in the response header. Unsupported protocol-version headers return `400` with a JSON-RPC error. Notifications receive `202 Accepted` (no body); requests receive `200` with a JSON-RPC response body.
 
 **How to use.**
 
 ```bash
-diptych mcp serve --port 4321 --session <id>
-diptych mcp serve --all-sessions               # expose every session in the project
+splitbrief mcp serve --port 4321 --session <id>
+splitbrief mcp serve --all-sessions               # expose every session in the project
 ```
 
 External MCP-aware tools (Claude Code, Codex, Cursor) configure the URL plus the printed token. URI scheme is forward-compatible with the handoff pack paths. The bearer token is a one-shot random value generated in-memory at server startup (`src/engine/mcp/auth-token.ts` — `generateToken()`); it is never persisted to disk. Every `manifest.json` exposed by the server includes `briefHash`.
 
-**When to use.** Live mode for external agents that need to inspect diptych state without a copied handoff pack and report evidence back to the active ledger. MCP does not become diptych's project write path; implementation remains inside the configured planner or implementer runner.
+**When to use.** Live mode for external agents that need to inspect SPLITBRIEF state without a copied handoff pack and report evidence back to the active ledger. MCP does not become SPLITBRIEF's project write path; implementation remains inside the configured planner or implementer runner.
 
 ---
 
 ## Advanced worktrees and parallel sessions
 
-### `diptych start --worktree [name]`
+### `splitbrief start --worktree [name]`
 
-**What it does.** Creates an isolated git worktree at `.trees/<slug>` on a fresh `diptych/<slug>` branch and runs the session inside it. Each worktree has its own `.diptych/active` pointer and session directory, so sessions cannot conflict at the diptych level.
+**What it does.** Creates an isolated git worktree at `.trees/<slug>` on a fresh `splitbrief/<slug>` branch and runs the session inside it. Each worktree has its own `.splitbrief/active` pointer and session directory, so sessions cannot conflict at the SPLITBRIEF level.
 
 **Name restrictions.** The `<name>` argument is validated before any worktree or branch is created. Names must match `[A-Za-z0-9_][A-Za-z0-9._-]{0,63}` — no `/`, `\`, `..`, no leading `.` or `-`, and no shell-sensitive characters. Invalid names (including names that contain path separators or would navigate outside `.trees/`) are rejected immediately with a descriptive error.
 
 **How to use.**
 
 ```bash
-diptych start --worktree feature-a "add user auth"
-diptych start --worktree feature-b "refactor billing"
+splitbrief start --worktree feature-a "add user auth"
+splitbrief start --worktree feature-b "refactor billing"
 ```
 
-The source worktree must be clean before creation. `--detach` combination validation (missing feature, `--json`/`--rpc` conflict, Windows) runs **before** the worktree is created so a failed validation never leaves behind a `.trees/<slug>` directory or a `diptych/<slug>` branch. With `--detach --worktree`, worktree selection happens before the detached server is spawned.
+The source worktree must be clean before creation. `--detach` combination validation (missing feature, `--json`/`--rpc` conflict, Windows) runs **before** the worktree is created so a failed validation never leaves behind a `.trees/<slug>` directory or a `splitbrief/<slug>` branch. With `--detach --worktree`, worktree selection happens before the detached server is spawned.
 
 **When to use.** Isolate unrelated sessions in separate working directories; A/B-test two implementer model configs against the same brief; keep a long planner exploration alive while making quick edits elsewhere. This is not same-directory parallel writing, and same-checkout fan-out is out of scope.
 
-**Caveat.** Filesystem and diptych-state are isolated; **runtime** isolation (ports, environment) is the user's responsibility. See [WORKTREES.md](./WORKTREES.md) for the isolation gap and mitigations.
+**Caveat.** Filesystem and SPLITBRIEF state are isolated; **runtime** isolation (ports, environment) is the user's responsibility. See [WORKTREES.md](./WORKTREES.md) for the isolation gap and mitigations.
 
-### `diptych worktree list / switch / remove`
+### `splitbrief worktree list / switch / remove`
 
 **What it does.** Manage worktrees registered under `.trees/`.
 
 **How to use.**
 
 ```bash
-diptych worktree list                              # path, branch, status, session, phase, updated
-diptych worktree switch <name>                     # print cd instructions for the worktree
-diptych worktree remove <name> [--force] [--delete-branch]
+splitbrief worktree list                              # path, branch, status, session, phase, updated
+splitbrief worktree switch <name>                     # print cd instructions for the worktree
+splitbrief worktree remove <name> [--force] [--delete-branch]
 ```
 
 `remove` refuses if the worktree has uncommitted changes or a live session, unless `--force` is passed. Forced removal prints specific warnings with the live session id when known and the uncommitted file count when known. Parallel `--parallel N` fan-out is deferred until isolated ownership boundaries are specified; same-directory parallel writes remain out of scope.
@@ -534,86 +534,86 @@ diptych worktree remove <name> [--force] [--delete-branch]
 
 ## Advanced server-client architecture
 
-### `diptych start --detach`
+### `splitbrief start --detach`
 
 **What it does.** Spawns a background server process that owns the orchestrator and subprocess lifetime, then exits the foreground. Closing the terminal no longer kills the workflow.
 
 **How to use.**
 
 ```bash
-diptych start --detach --mode speckit "long planner run"
+splitbrief start --detach --mode speckit "long planner run"
 ```
 
-Prints the session ID and exits. The server logs to `.diptych/sessions/<id>/server.log`. On spawn, writes `.diptych/sessions/<id>/lockfile.json` (heartbeat-tracked, see SCD-03).
+Prints the session ID and exits. The server logs to `.splitbrief/sessions/<id>/server.log`. On spawn, writes `.splitbrief/sessions/<id>/lockfile.json` (heartbeat-tracked, see SCD-03).
 
 **Constraints.** `--detach` requires a feature argument (cannot be omitted). It cannot be combined with `--json` or `--rpc` (`start/register.ts` throws before worktree creation).
 
-### `diptych attach [session-id]`
+### `splitbrief attach [session-id]`
 
 **What it does.** Connects a TUI client to a running background session over a per-session UNIX-domain socket (`ipc.sock`). Auto-resolves the session-id when exactly one is running. On attach, the client replays `session.jsonl` to rebuild full TUI state, then subscribes to the live event stream — no LLM call needed.
 
 **How to use.**
 
 ```bash
-diptych attach                # picks the only running session
-diptych attach <id>           # explicit
+splitbrief attach                # picks the only running session
+splitbrief attach <id>           # explicit
 ```
 
 (Not supported on Windows — attach requires Unix domain sockets.)
 
-### `diptych detach [session-id]`
+### `splitbrief detach [session-id]`
 
 **What it does.** Sends the same detach request as the TUI Ctrl-D path, disconnecting an attached client without stopping the background server. If `session-id` is omitted, it targets the unique running session in the project and errors when there are zero or multiple running sessions.
 
 **How to use.**
 
 ```bash
-diptych detach
-diptych detach <id>
+splitbrief detach
+splitbrief detach <id>
 ```
 
-Reattach with `diptych attach <id>`. The server remains visible in `diptych ps`.
+Reattach with `splitbrief attach <id>`. The server remains visible in `splitbrief ps`.
 
-### `diptych ps`
+### `splitbrief ps`
 
-**What it does.** Lists running and recently-finished diptych workflows in the project. Status: `running | exited | crashed | unknown`. Shows pid, mode, elapsed time, feature name, sorted newest-first.
+**What it does.** Lists running and recently-finished SPLITBRIEF workflows in the project. Status: `running | exited | crashed | unknown`. Shows pid, mode, elapsed time, feature name, sorted newest-first.
 
 ```bash
-diptych ps
+splitbrief ps
 ```
 
-If a session crashed, `diptych attach` shows a crash diagnostic with last-alive time and signal/cause before offering resume.
+If a session crashed, `splitbrief attach` shows a crash diagnostic with last-alive time and signal/cause before offering resume.
 
 ### Event replay on attach
 
 **What it does.** A freshly attached client reads `session.jsonl` from disk and reconstructs the TUI state before subscribing to the live stream. Replay never re-issues planner calls.
 
-### Session continuity (`diptych continue` / `diptych last`)
+### Session continuity (`splitbrief continue` / `splitbrief last`)
 
-**What it does.** One command for session lifecycle. `diptych continue` figures out the right thing for the active session, or for the only running session when there is no active pointer. `diptych last` targets the newest lockfile-backed session. Replaces the mental model of choosing between `ps`/`attach`/`detach`/`resume` for the common case.
+**What it does.** One command for session lifecycle. `splitbrief continue` figures out the right thing for the active session, or for the only running session when there is no active pointer. `splitbrief last` targets the newest lockfile-backed session. Replaces the mental model of choosing between `ps`/`attach`/`detach`/`resume` for the common case.
 
 **How to use.**
 
 ```bash
-diptych continue         # active session, or only running session
-diptych continue 1       # numeric alias from ps output
-diptych last             # always the most recent session
+splitbrief continue         # active session, or only running session
+splitbrief continue 1       # numeric alias from ps output
+splitbrief last             # always the most recent session
 ```
 
 **When to use.** Any time you return to a terminal and want to pick up where you left off.
 
-### Numeric session aliases in `diptych ps`
+### Numeric session aliases in `splitbrief ps`
 
-**What it does.** `diptych ps` output includes a `#` column with numeric aliases (1, 2, 3...). These aliases are accepted by `attach`, `continue`, and other session-targeting commands.
+**What it does.** `splitbrief ps` output includes a `#` column with numeric aliases (1, 2, 3...). These aliases are accepted by `attach`, `continue`, and other session-targeting commands.
 
 **How to use.**
 
 ```bash
-diptych ps               # shows #1, #2, #3...
-diptych attach 1         # instead of the full session ID
-diptych continue 2
-diptych handoff --session 1
-diptych snapshot list --session 1
+splitbrief ps               # shows #1, #2, #3...
+splitbrief attach 1         # instead of the full session ID
+splitbrief continue 2
+splitbrief handoff --session 1
+splitbrief snapshot list --session 1
 ```
 
 ---
@@ -684,7 +684,7 @@ diptych snapshot list --session 1
 | `/detach <index-or-id>` | Remove a pending image attachment |
 | `/approval [list\|clear]` | List or clear sticky approval grants |
 | `/accept-run` | Accept current run changes and prevent run rejection |
-| `/reject-run confirm` | Restore diptych-written files from the run baseline |
+| `/reject-run confirm` | Restore SPLITBRIEF-written files from the run baseline |
 | `/yolo` | Toggle file-write tiered approvals off/on for the session |
 | `/quit` | Exit application (Ctrl+Q) |
 
@@ -712,13 +712,13 @@ palette:
 
 ### Sessions picker
 
-**What it does.** Browses summary-backed past sessions from `.diptych/sessions/`. Open via `/sessions` or from the home screen. Each row shows status icon, feature, and relative start time.
+**What it does.** Browses summary-backed past sessions from `.splitbrief/sessions/`. Open via `/sessions` or from the home screen. Each row shows status icon, feature, and relative start time.
 
 Sessions are execution records scoped to one workflow each. The brief review gate is scoped to the current session's Task Briefs, routing, context fit, checkpoints, and conflict posture before execution.
 
 ### Settings overlay
 
-**What it does.** Edits planner / implementer / model / workflow defaults from inside the TUI. Open via `/settings` (Ctrl+,) or `/config`. Writes back to `.diptych/config.yaml`.
+**What it does.** Edits planner / implementer / model / workflow defaults from inside the TUI. Open via `/settings` (Ctrl+,) or `/config`. Writes back to `.splitbrief/config.yaml`.
 
 ### Mode / planner / implementer pickers
 
@@ -744,7 +744,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 
 **What it does.** Lifecycle hook events can fire user-declared shell commands or in-process JS modules. `pre_*` hooks block the next action; `post_*` and `on_*` are fire-and-forget.
 
-**How to use.** Declare in `.diptych/config.yaml` under `hooks:`. Full list:
+**How to use.** Declare in `.splitbrief/config.yaml` under `hooks:`. Full list:
 
 | Event | When |
 |---|---|
@@ -763,7 +763,7 @@ Sessions are execution records scoped to one workflow each. The brief review gat
 ```yaml
 hooks:
   pre_commit:
-    - command: ".diptych/hooks/check-secrets.sh"
+    - command: ".splitbrief/hooks/check-secrets.sh"
       timeout_ms: 10000
       on_failure: block
   post_task:
@@ -807,14 +807,14 @@ Return shape: `{ kind: 'allow' | 'deny' | 'warn' | 'crash', message?: string }`.
 
 ## Headless mode
 
-### `diptych start --json`
+### `splitbrief start --json`
 
 **What it does.** Skips Ink, emits a readiness report first, replaces the TUI sink with NDJSON-on-stdout, and stubs workflow host callbacks: review gates approve, questions answer empty, and recovery exits non-zero. File-write tiered approvals still follow approval config and fail closed for sticky/confirm tiers without a grant. The normal `session.jsonl` log is still written for the run.
 
 **How to use.**
 
 ```bash
-diptych start --json --allow-hooks --mode quick "add lint rule for empty catch" > events.ndjson
+splitbrief start --json --allow-hooks --mode quick "add lint rule for empty catch" > events.ndjson
 ```
 
 **When to use.** CI integration, scripted batch runs, or anywhere a TTY is unavailable.
@@ -827,14 +827,14 @@ diptych start --json --allow-hooks --mode quick "add lint rule for empty catch" 
 
 The first line is `{ type: "readiness_report", report: ... }`. After that, `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts` emits one `EngineEvent` JSON object per line.
 
-### `diptych start --rpc`
+### `splitbrief start --rpc`
 
 **What it does.** Runs without Ink like headless mode, but keeps stdin open for external controllers. Stdin accepts NDJSON commands: `approve`, `reject`, `regenerate`, `brief_review`, `message`, `recovery`, `status`, `abort`, and `slash`. Stdout emits NDJSON responses with `type: "ack"`, `"error"`, `"status"`, or `"event"`; event responses wrap the underlying `EngineEvent` in `data`. `brief_review` is prompt-scoped for the Task Brief gate and echoes optional `id` / `operationId` values in status, ack, or error data.
 
 **How to use.**
 
 ```bash
-diptych start --rpc --allow-hooks "add lint rule for empty catch"
+splitbrief start --rpc --allow-hooks "add lint rule for empty catch"
 ```
 
 **When to use.** IDE integrations, editor extensions, service wrappers, and tests that need to drive approvals, clarifications, recovery, or status polling programmatically.
@@ -845,37 +845,37 @@ diptych start --rpc --allow-hooks "add lint rule for empty catch"
 
 ## Operational extras
 
-### `diptych status` and `diptych init`
+### `splitbrief status` and `splitbrief init`
 
-**What it does.** `init` is the interactive setup that writes `.diptych/config.yaml` (or rewrites it with `--reconfigure`). `status` is read-only — prints the active session state without acquiring the lock; pass `--history` for cost rollups across sessions.
+**What it does.** `init` is the interactive setup that writes `.splitbrief/config.yaml` (or rewrites it with `--reconfigure`). `status` is read-only — prints the active session state without acquiring the lock; pass `--history` for cost rollups across sessions.
 
 ```bash
-diptych init [--reconfigure]
-diptych status [--history]
-diptych doctor [--json]
+splitbrief init [--reconfigure]
+splitbrief status [--history]
+splitbrief doctor [--json]
 ```
 
-### `diptych resume`
+### `splitbrief resume`
 
-**What it does.** Re-enters the active workflow at the saved phase. Refuses if `.diptych/active` or `state.json` is missing, version-mismatched, or in a non-resumable phase (`researching`, `specifying`, `planning` without `awaitingContinue`).
+**What it does.** Re-enters the active workflow at the saved phase. Refuses if `.splitbrief/active` or `state.json` is missing, version-mismatched, or in a non-resumable phase (`researching`, `specifying`, `planning` without `awaitingContinue`).
 
 ```bash
-diptych resume
+splitbrief resume
 ```
 
 For backends without native session resume, the planner context is rebuilt from `session.jsonl` (`transcript/rebuild.ts`).
 
-### `diptych migrate`
+### `splitbrief migrate`
 
-**What it does.** Migrates `.diptych/config.yaml` from v1 → v2 → v3.
+**What it does.** Migrates `.splitbrief/config.yaml` from v1 → v2 → v3.
 
 ```bash
-diptych migrate -p .
+splitbrief migrate -p .
 ```
 
 ### Repo-map context for the planner
 
-**What it does.** A token-budgeted PageRank-based summary of the codebase fed to every planner call inside a `<repo-map>` block. Cached at `.diptych/repomap.sqlite`.
+**What it does.** A token-budgeted PageRank-based summary of the codebase fed to every planner call inside a `<repo-map>` block. Cached at `.splitbrief/repomap.sqlite`.
 
 **How to use.**
 
@@ -883,7 +883,7 @@ diptych migrate -p .
 codebase:
   enabled: true
   tokenBudget: 4000
-  cacheDir: ".diptych"
+  cacheDir: ".splitbrief"
   include: ["src/**/*.ts"]
   exclude: ["\\.test\\.tsx?$"]
 ```
@@ -899,7 +899,7 @@ Force a rebuild with `/repomap rebuild`. Full details: [REPOMAP.md](./REPOMAP.md
 ```yaml
 otel:
   enabled: true
-  serviceName: diptych
+  serviceName: splitbrief
 ```
 
 Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
@@ -917,9 +917,9 @@ Or per-run: `--otel-exporter console`. Full details: [OTEL.md](./OTEL.md).
 
 ### Skills
 
-**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and covers `.claude/skills/`, `.diptych/skills/`, global tool skill dirs, `AGENTS.md`, and `CONVENTIONS.md` depending on the selected planner.
+**What it does.** Loads planner skills into the picker so the planner can be primed with project-specific knowledge. Source discovery lives in `src/engine/skill-discovery.ts` and covers `.claude/skills/`, `.splitbrief/skills/`, global tool skill dirs, `AGENTS.md`, and `CONVENTIONS.md` depending on the selected planner.
 
-**How to use.** Open the picker via `/skills` (home screen only; Ctrl+S). Read-only — diptych never writes to skill sources.
+**How to use.** Open the picker via `/skills` (home screen only; Ctrl+S). Read-only — SPLITBRIEF never writes to skill sources.
 
 ---
 

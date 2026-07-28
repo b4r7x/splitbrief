@@ -20,7 +20,7 @@ export async function resolveSessionOrThrow(
 
 export function assertSessionExists(projectDir: string, sessionId: string): void {
   if (!existsSync(sessionDir(projectDir, sessionId))) {
-    throw cliError(`session '${sessionId}' not found — run \`diptych ps\` to list sessions.`, 1);
+    throw cliError(`session '${sessionId}' not found — run \`splitbrief ps\` to list sessions.`, 1);
   }
 }
 
@@ -42,7 +42,7 @@ export async function resolveRunningSession(
 export function assertResumableState(state: WorkflowState, sessionId: string): void {
   if (state.stateVersion < CURRENT_STATE_VERSION) {
     throw cliError(
-      `session '${sessionId}' state is from an older version and cannot be resumed.\nStart a new workflow with \`diptych start\`.`,
+      `session '${sessionId}' state is from an older version and cannot be resumed.\nStart a new workflow with \`splitbrief start\`.`,
       1,
     );
   }

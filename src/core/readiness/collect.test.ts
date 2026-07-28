@@ -5,7 +5,7 @@ import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, detachHead, startConflictingMerge } from '#testing/helpers/git.js';
-import { LOCKFILE, sessionDir, STATE_FILE, DIPTYCH_DIR, CONFIG_FILE } from '../paths.js';
+import { LOCKFILE, sessionDir, STATE_FILE, SPLITBRIEF_DIR, CONFIG_FILE } from '../paths.js';
 import { createInitialState } from '../state/machine.js';
 import { writeActive } from '../sessions/lifecycle.js';
 import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
@@ -170,8 +170,8 @@ describe('collectReadiness config loader warnings', () => {
   });
 
   function writeMinimalV3Config(projectDir: string): string {
-    const filePath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const filePath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     writeFileSync(
       filePath,
       [

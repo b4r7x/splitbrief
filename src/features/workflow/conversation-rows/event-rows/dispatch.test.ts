@@ -151,7 +151,7 @@ describe('event row dispatch', () => {
 
     expect(text).toContain('Workflow cancelled');
     expect(text).not.toContain('Resume');
-    expect(text).not.toContain('diptych continue');
+    expect(text).not.toContain('splitbrief continue');
   });
 
   it('renders task_full_fail as a visible failed terminal row', () => {

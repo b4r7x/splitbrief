@@ -1,13 +1,13 @@
 ---
-name: diptych-implement-spec
+name: splitbrief-implement-spec
 description: Execute a specific implementation spec from notes/superpowers/specs/. Use when the user asks to implement a numbered spec like "implement 01", "run notes/superpowers/specs/04-rpc-mode", "do the polyglot validation spec", or similar. Reads the spec's execute-prompt and agent-briefs; executes briefs in order; runs tests between phases; updates docs at the end.
 ---
 
-# Implement a diptych spec end-to-end
+# Implement a SPLITBRIEF spec end-to-end
 
 Local-only: this skill depends on ignored, machine-local `notes/superpowers/specs/**` content. In a fresh checkout without those notes, stop and ask for the spec files or use tracked `.specify`/CLI workflows instead.
 
-This skill drives a full implementation pass through one spec directory under `notes/superpowers/specs/` (numbered, e.g. `04-rpc-mode/`, or dated, e.g. `2026-04-26-command-palette/`). It assumes you have already read the project primer (`diptych-dev` skill) — if not, read those files first.
+This skill drives a full implementation pass through one spec directory under `notes/superpowers/specs/` (numbered, e.g. `04-rpc-mode/`, or dated, e.g. `2026-04-26-command-palette/`). It assumes you have already read the project primer (`splitbrief-dev` skill) — if not, read those files first.
 
 ## Input
 

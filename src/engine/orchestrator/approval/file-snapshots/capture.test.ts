@@ -12,8 +12,8 @@ describe('uniqueProjectFiles', () => {
     expect(uniqueProjectFiles(['b.ts', 'a.ts', 'b.ts'])).toEqual(['a.ts', 'b.ts']);
   });
 
-  it('filters out diptych dir files', () => {
-    expect(uniqueProjectFiles(['src/a.ts', '.diptych/config.json'])).toEqual(['src/a.ts']);
+  it('filters out splitbrief dir files', () => {
+    expect(uniqueProjectFiles(['src/a.ts', '.splitbrief/config.json'])).toEqual(['src/a.ts']);
   });
 
   it('filters out worktree files nested under any directory level', () => {

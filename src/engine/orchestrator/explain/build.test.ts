@@ -309,14 +309,14 @@ describe('buildRunExplain', () => {
     expect(explain.warnings.runtimeWarnings).toContain('warning: context fit was tight');
     expect(explain.artifacts).toContainEqual({
       key: 'reviewPacketJson',
-      path: `.diptych/sessions/${SESSION_ID}/${REVIEW_PACKET_JSON_FILE}`,
+      path: `.splitbrief/sessions/${SESSION_ID}/${REVIEW_PACKET_JSON_FILE}`,
       present: true,
     });
 
     const text = formatRunExplain(explain);
     expect(text).toContain('Run explain');
     expect(text).toContain('T002 -> cheap-api');
-    expect(text).toContain(`summary: .diptych/sessions/${SESSION_ID}/summary.json`);
+    expect(text).toContain(`summary: .splitbrief/sessions/${SESSION_ID}/summary.json`);
   });
 
   it('handles sessions with missing cost and review packet artifacts', async () => {
@@ -359,7 +359,7 @@ describe('buildRunExplain', () => {
     );
     expect(explain.artifacts).toContainEqual({
       key: 'reviewPacketJson',
-      path: `.diptych/sessions/${SESSION_ID}/${REVIEW_PACKET_JSON_FILE}`,
+      path: `.splitbrief/sessions/${SESSION_ID}/${REVIEW_PACKET_JSON_FILE}`,
       present: false,
     });
   });

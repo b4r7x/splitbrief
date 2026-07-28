@@ -1,6 +1,6 @@
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { ReferenceCompletionMenu } from './menu.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -17,14 +17,11 @@ const LONG_FILES = [
   'docs/extra.md',
 ];
 
-function panelLines(frame: string): string[] {
-  return frame
-    .split('\n')
-    .map((line) => line.replace(/\s+$/, ''))
-    .filter((line) => line.trim().length > 0);
-}
-
 describe('ReferenceCompletionMenu', () => {
+  afterEach(() => {
+    terminalSizeStore.reset();
+  });
+
   it('truncates long paths so visible suggestions stay one line tall', () => {
     const ui = render(
       <Box width={70}>
@@ -35,11 +32,10 @@ describe('ReferenceCompletionMenu', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('tab/⏎ fill');
-    // The bare "↓ more" line is replaced by the in-frame scrollbar thumb in the right gutter.
     expect(frame).toContain(glyph('scrollThumb'));
-    const visiblePathRows = panelLines(frame).filter(
-      (line) => line.includes('notes/') || line.includes('src/'),
-    );
+    const visiblePathRows = frame
+      .split('\n')
+      .filter((line) => line.includes('notes/') || line.includes('src/'));
     expect(visiblePathRows.length).toBeLessThanOrEqual(8);
     expect(visiblePathRows.some((line) => line.includes('notes/superpowers'))).toBe(true);
     ui.unmount();
@@ -62,6 +58,5 @@ describe('ReferenceCompletionMenu', () => {
     expect(frame).not.toContain('select');
     expect(frame).not.toContain('tab/⏎ fill');
     ui.unmount();
-    terminalSizeStore.__testReset({ cols: 80 });
   });
 });

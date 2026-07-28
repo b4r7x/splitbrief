@@ -20,7 +20,7 @@ afterEach(() => {
 });
 
 function writeSession(sessionId: string, startedAt = 1_000): void {
-  const sessionDirectory = join(projectDir, '.diptych', 'sessions', sessionId);
+  const sessionDirectory = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessionDirectory, { recursive: true });
   writeFileSync(
     join(sessionDirectory, 'summary.json'),
@@ -42,7 +42,7 @@ async function runExport(args: string[]): Promise<void> {
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
   registerExportCommand(program);
-  await program.parseAsync(['node', 'diptych', 'export', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'export', ...args]);
 }
 
 describe('export command', () => {
@@ -55,7 +55,7 @@ describe('export command', () => {
 
     await runExport(['session-one', '--project', projectDir]);
 
-    const reportPath = join(projectDir, '.diptych', 'sessions', 'session-one', 'report.html');
+    const reportPath = join(projectDir, '.splitbrief', 'sessions', 'session-one', 'report.html');
     expect(readFileSync(reportPath, 'utf-8')).toMatch(/^<!DOCTYPE html>/);
     expect(logs).toContain(`Report written to ${reportPath}`);
   });
@@ -67,7 +67,7 @@ describe('export command', () => {
 
     await runExport(['session-one', '--project', projectDir, '--out', outPath]);
 
-    expect(readFileSync(outPath, 'utf-8')).toContain('<title>diptych — session-one</title>');
+    expect(readFileSync(outPath, 'utf-8')).toContain('<title>SPLITBRIEF — session-one</title>');
   });
 
   it('uses the most recent completed session when no session is specified', async () => {
@@ -77,7 +77,7 @@ describe('export command', () => {
 
     await runExport(['--project', projectDir]);
 
-    const reportPath = join(projectDir, '.diptych', 'sessions', 'new-session', 'report.html');
+    const reportPath = join(projectDir, '.splitbrief', 'sessions', 'new-session', 'report.html');
     expect(readFileSync(reportPath, 'utf-8')).toContain('new-session');
   });
 

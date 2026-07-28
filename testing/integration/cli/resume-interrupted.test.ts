@@ -13,7 +13,7 @@ import { toYaml } from '../../../src/core/config/load/transform.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState, loadState } from '../../../src/core/state/persistence.js';
 import { writeLockfile } from '../../../src/engine/ipc/lockfile.js';
-import { DIPTYCH_DIR, CONFIG_FILE, sessionDir } from '../../../src/core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE, sessionDir } from '../../../src/core/paths.js';
 
 let tmp: string;
 
@@ -21,10 +21,10 @@ beforeEach(() => {
   resetAllStores();
   tmp = createTempDir('cli-resume-interrupted');
   createTestGitRepo(tmp);
-  const diptychDir = join(tmp, DIPTYCH_DIR);
-  mkdirSync(diptychDir, { recursive: true });
+  const splitbriefDir = join(tmp, SPLITBRIEF_DIR);
+  mkdirSync(splitbriefDir, { recursive: true });
   writeFileSync(
-    join(diptychDir, CONFIG_FILE),
+    join(splitbriefDir, CONFIG_FILE),
     YAML.stringify(toYaml(createDefaultConfig())),
     'utf-8',
   );
@@ -48,7 +48,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
       currentTaskIndex: 1,
     };
     saveState({ projectDir: tmp, sessionId }, state);
-    writeFileSync(join(tmp, DIPTYCH_DIR, 'active'), sessionId + '\n');
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), sessionId + '\n');
 
     const { exitCode, stdout } = await runCommand(['resume', '--project', tmp]);
 
@@ -73,7 +73,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
       currentTaskIndex: 1,
     };
     saveState({ projectDir: tmp, sessionId }, state);
-    writeFileSync(join(tmp, DIPTYCH_DIR, 'active'), sessionId + '\n');
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), sessionId + '\n');
 
     // A live lockfile: this process's pid + a fresh heartbeat → checkServerStatus reports alive.
     // startTimeMs must match the test runner's real ps start time (within checkServerStatus's

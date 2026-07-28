@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { redactSecrets } from '../../utils/redact.js';
@@ -12,7 +12,7 @@ const DEBOUNCE_MS = 300;
 let activeTeardown: (() => void) | null = null;
 
 function historyFile(): string {
-  return join(homedir(), DIPTYCH_DIR, 'history');
+  return join(homedir(), SPLITBRIEF_DIR, 'history');
 }
 
 function saveHistoryToDisk(entries: readonly string[]): void {

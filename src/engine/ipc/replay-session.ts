@@ -3,6 +3,7 @@ import type { EngineEvent } from '../events/types.js';
 import type { ServerMessage } from './protocol.js';
 import type { ReplayDiagnostics } from './replay.js';
 import { streamReplayEvents, summarizeReplayEvents } from './replay.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 
 type ReplaySessionOptions = {
   socket: Socket;
@@ -43,7 +44,7 @@ function replayUnknownEventsWarning(diagnostics: ReplayDiagnostics): EngineEvent
     category: 'ipc',
     code: 'replay_unknown_events_skipped',
     transcriptSafe: true,
-    message: `IPC replay skipped ${diagnostics.skippedUnknown} unknown future event(s). Upgrade diptych to display them.`,
+    message: `IPC replay skipped ${diagnostics.skippedUnknown} unknown future event(s). Upgrade ${SPLITBRIEF_IDENTITY.displayName} to display them.`,
   };
 }
 

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -19,7 +19,7 @@ import { tick } from '#testing/helpers/ink.js';
 let tmp: string;
 
 function writeSessionSummary(projectDir: string, session: Session): void {
-  const dir = join(projectDir, DIPTYCH_DIR, 'sessions', session.id);
+  const dir = join(projectDir, SPLITBRIEF_DIR, 'sessions', session.id);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'summary.json'), JSON.stringify(session));
 }

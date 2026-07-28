@@ -20,7 +20,7 @@ describe('rebuildRepomap', () => {
   });
 
   it('deletes the sqlite + sidecar files when present', () => {
-    const dir = join(projectDir, '.diptych');
+    const dir = join(projectDir, '.splitbrief');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'repomap.sqlite'), 'data');
     writeFileSync(join(dir, 'repomap.sqlite-shm'), 'shm');
@@ -33,7 +33,7 @@ describe('rebuildRepomap', () => {
   });
 
   it('is idempotent — second call when file is gone returns deleted=false', () => {
-    const dir = join(projectDir, '.diptych');
+    const dir = join(projectDir, '.splitbrief');
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'repomap.sqlite'), 'data');
 

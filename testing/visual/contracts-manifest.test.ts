@@ -116,7 +116,7 @@ function makeManifest(options: { readonly includeDerived?: boolean } = {}): Mani
     schemaVersion: MANIFEST_SCHEMA_VERSION,
     catalogVersion: CATALOG_SCHEMA_VERSION,
     cellSchemaVersion: CELL_GRID_SCHEMA_VERSION,
-    tool: { name: 'diptych-tui-shots', version: '1.0.0' },
+    tool: { name: 'splitbrief-tui-shots', version: '1.0.0' },
     gitRevision: 'abcdef1',
     selection: { requests: [request], targets: [target] },
     determinism,

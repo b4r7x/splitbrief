@@ -2,6 +2,7 @@ import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/r
 import { getHomeLayout } from '../../../src/features/home/layout.js';
 import { getLogoHeight } from '../../../src/features/home/logo.js';
 import { getResponsivePanelWidth } from '../../../src/utils/terminal-width.js';
+import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
 
@@ -122,7 +123,15 @@ function resolveHomeComposer(context: LocatorContext): CellRect {
 
 function resolveWorkflowSidebar(context: LocatorContext): CellRect {
   const { cols, rows } = context.grid.identity.provenance.viewport;
-  const width = getWorkflowSidebarWidth({ cols, sidebarVisible: true, isSmall: cols < 120 });
+  const projection = workflowFixtureProjections.get(context.scenario.id);
+  if (projection === undefined) {
+    throw new Error(`Missing workflow fixture projection ${context.scenario.id}`);
+  }
+  const width = getWorkflowSidebarWidth({
+    cols,
+    sidebarVisible: projection.sidebarVisible,
+    isSmall: cols < 120,
+  });
   if (width === 0) return resolveWorkflowHeader(context);
   return CellRectSchema.parse({
     x: 0,

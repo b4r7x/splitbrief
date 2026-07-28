@@ -43,7 +43,7 @@ function answeringPrompt(answer: string): {
 
 beforeEach(() => {
   tmp = createTempDir('hooks-trust-test');
-  mkdirSync(join(tmp, '.diptych'), { recursive: true });
+  mkdirSync(join(tmp, '.splitbrief'), { recursive: true });
   originalIsTTY = process.stdin.isTTY;
 });
 

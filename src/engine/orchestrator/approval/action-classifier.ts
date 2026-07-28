@@ -1,5 +1,6 @@
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../../core/schemas/config.js';
+import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { matchesGlob } from '../../../utils/path-patterns.js';
 
 export type TierMap = Partial<Record<ActionClass, ApprovalTier>>;
@@ -87,7 +88,7 @@ function isKnownPackagePath(filePath: string): boolean {
   return PACKAGE_MANIFEST_FILES.has(name);
 }
 
-const CONTROL_PLANE_SEGMENTS = new Set(['.git', '.diptych']);
+const CONTROL_PLANE_SEGMENTS = new Set(['.git', SPLITBRIEF_DIR]);
 
 function isControlPlanePath(filePath: string): boolean {
   return CONTROL_PLANE_SEGMENTS.has(filePath.split('/')[0] ?? '');

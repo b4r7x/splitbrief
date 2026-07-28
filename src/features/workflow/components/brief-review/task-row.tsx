@@ -27,7 +27,7 @@ function getTaskStateWord(
   if (metadata?.validationStatus === 'fail' || issues.some((i) => i.severity === 'error'))
     return { text: 'failed', color: theme.error, dim: true };
   if (
-    metadata?.stale === true ||
+    metadata?.stale ||
     STALE_ESTIMATE_STATUSES.has(metadata?.estimateStatus) ||
     metadata?.validationStatus === 'warn' ||
     issues.some((i) => i.severity === 'warning')

@@ -141,7 +141,7 @@ function runnerTrustBoundaryCheck(opts: {
   const details = [
     `Spec/plan approval level: ${opts.approve}.`,
     `File-write approval prompts: ${opts.fileWriteApprovalDisabled ? 'disabled' : 'enabled'}.`,
-    'Diptych approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
+    'SPLITBRIEF approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
   ];
   if (automation.length > 0) {
     details.push(`Approval automation: ${automation.join('; ')}.`);

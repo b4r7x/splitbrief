@@ -1,8 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { publishWarningFromError, publishDriftChainDetected } from '../events.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import type { WorkflowContext } from '../types.js';
 import {
   readDriftChainState,

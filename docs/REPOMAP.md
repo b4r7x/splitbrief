@@ -1,6 +1,6 @@
 # Repo-map context
 
-The diptych planner sees a token-budgeted **repo-map** of your project's source on every workflow start. The repo-map gives the planner a structural overview — file paths, top-level signatures, exports — without burning context tokens on file reads. Inspired by [Aider's repomap](https://aider.chat/docs/repomap.html), tuned for a planner that compiles Task Briefs and decides when extra structure is worth paying for.
+The SPLITBRIEF planner sees a token-budgeted **repo-map** of your project's source on every workflow start. The repo-map gives the planner a structural overview — file paths, top-level signatures, exports — without burning context tokens on file reads. Inspired by [Aider's repomap](https://aider.chat/docs/repomap.html), tuned for a planner that compiles Task Briefs and decides when extra structure is worth paying for.
 
 ## Why
 
@@ -26,11 +26,11 @@ Only signatures (declarations) appear. Bodies elided. Files outside the budget a
 ## Configuration
 
 ```yaml
-# .diptych/config.yaml — all fields optional, defaults shown
+# .splitbrief/config.yaml — all fields optional, defaults shown
 codebase:
   enabled: true              # set to false to disable
   tokenBudget: 4000          # tokens reserved in the planner prompt
-  cacheDir: ".diptych"       # where the SQLite cache lives
+  cacheDir: ".splitbrief"       # where the SQLite cache lives
   include: ["src/**/*"]     # globs (default: discovery walks all known language extensions)
   exclude:                   # regex strings; default excludes test files + node_modules + dist
     - "\\.test\\.tsx?$"
@@ -57,7 +57,7 @@ Mentioned-file extraction lives in `src/engine/codebase/extract-mentioned-filena
 
 ## Cache
 
-Parsed symbols are cached in SQLite at `${projectDir}/.diptych/repomap.sqlite` via `better-sqlite3`. One row per file.
+Parsed symbols are cached in SQLite at `${projectDir}/.splitbrief/repomap.sqlite` via `better-sqlite3`. One row per file.
 
 ### Schema
 
@@ -87,7 +87,7 @@ Cold parse on a 200-file repo: ~3s on M1. Warm hit: <100ms (mtime check + JSON l
 ## Opt-out
 
 ```yaml
-# .diptych/config.yaml
+# .splitbrief/config.yaml
 codebase:
   enabled: false
 ```
@@ -131,7 +131,7 @@ Alternatives considered and rejected:
 - **A — TypeScript Compiler API (`ts-morph` / `typescript`).** Native to our stack, but 10–20× slower than tree-sitter for tag extraction and pulls the full TS compiler (~30 MB) at runtime just to list symbols. Overkill — we don't need semantic resolution. **Rejected.**
 - **B — Aider's repomap via subprocess.** Zero implementation effort, but requires Python in the user's environment, adds cross-process serialization, and breaks the "single TS binary" UX. The algorithm is small enough (PageRank ~50 LOC, tree-sitter wrapper ~100 LOC) to own. **Rejected.**
 - **C — Embedding-based retrieval (Voyage / OpenAI embeddings).** Semantically smarter than symbol matching, but adds per-call cost, network round-trip, vendor lock-in, and an index-sync problem. Local-only users get nothing. **Rejected for now**, deferred as a possible `codebase.kind: "embeddings"` adapter.
-- **D — Skip caching, parse every run.** Simpler, no SQLite, but ~3s on every `diptych start` for a 200-file repo is unacceptable repeated cost. **Rejected.**
+- **D — Skip caching, parse every run.** Simpler, no SQLite, but ~3s on every `splitbrief start` for a 200-file repo is unacceptable repeated cost. **Rejected.**
 - **E — TypeScript Language Server (tsserver) over LSP.** Zero new parsing code, but requires a long-running subprocess with a complex lifecycle, heavy startup overhead, and is TS-only by design anyway. Out of proportion for the gain. **Rejected.**
 
 Trade-offs accepted: ~3 MB of new runtime deps (`web-tree-sitter` + TS grammar WASM + `better-sqlite3`), a native module via `better-sqlite3` (prebuilt binaries cover macOS/Linux). Non-TS files are now supported via a language registry (Python, Go, Rust, JavaScript) with lazy grammar loading; unknown languages or missing grammars fall back to filename-only inclusion.

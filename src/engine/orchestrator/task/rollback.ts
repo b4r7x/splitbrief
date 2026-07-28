@@ -1,7 +1,6 @@
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { publishWarning, publishWarningFromError } from '../events.js';
 import { restoreDirtyFilesFromSnapshot } from '../approval/file-snapshots/restore.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import type { WorkflowContext } from '../types.js';
 
 async function restoreTaskFilesFromSnapshot(opts: {
@@ -31,7 +30,7 @@ async function restoreTaskFilesFromSnapshot(opts: {
   }
 }
 
-export async function restoreExhaustedTaskFiles(opts: {
+export function restoreExhaustedTaskFiles(opts: {
   wctx: WorkflowContext;
   phase: WorkflowState['phase'];
   taskChangedFiles: string[];
@@ -45,7 +44,7 @@ export async function restoreExhaustedTaskFiles(opts: {
   });
 }
 
-export async function restoreDeniedPreValidationFiles(opts: {
+export function restoreDeniedPreValidationFiles(opts: {
   wctx: WorkflowContext;
   phase: WorkflowState['phase'];
   taskChangedFiles: string[];

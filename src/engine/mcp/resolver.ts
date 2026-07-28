@@ -3,7 +3,7 @@ import { confinedReadFileAsync } from '../../lib/confined-fs.js';
 import { warnError } from '../../lib/warn.js';
 import type { McpResourceDescriptor, McpResourceContent } from './types.js';
 import {
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   SESSIONS_DIR,
   SPEC_FILE,
   PLAN_FILE,
@@ -22,11 +22,12 @@ import { splitTaskBlocks } from '../spec/tasks/blocks.js';
 import { parseTasks } from '../spec/tasks/parse.js';
 import { parseSimpleYamlFrontmatter } from '../../utils/frontmatter.js';
 import { buildManifest, hasCanonicalManifestArtifacts } from './manifest.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 
 export type McpResolverConfig = {
   projectDir: string;
   sessionIds: string[];
-  diptychVersion: string;
+  splitbriefVersion: string;
   persistTranscript?: boolean | undefined;
 };
 
@@ -35,7 +36,7 @@ export type McpResolver = {
   readResource(uri: string): Promise<McpResourceContent | null>;
 };
 
-const BASE = 'mcp://diptych';
+const BASE = `mcp://${SPLITBRIEF_IDENTITY.slug}`;
 
 const SESSION_RESOURCE_FILES: ReadonlyArray<{
   key: string;
@@ -95,7 +96,7 @@ function extractIdFromBlock(block: string): string | null {
 }
 
 export function createResolver(config: McpResolverConfig): McpResolver {
-  const { projectDir, sessionIds, diptychVersion } = config;
+  const { projectDir, sessionIds, splitbriefVersion } = config;
   const fallbackPersistTranscript = config.persistTranscript ?? true;
 
   function sessionPersistTranscript(id: string): boolean {
@@ -107,7 +108,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
   }
 
   function sessionResourcePath(id: string, file: string): string {
-    return join(DIPTYCH_DIR, SESSIONS_DIR, id, file);
+    return join(SPLITBRIEF_DIR, SESSIONS_DIR, id, file);
   }
 
   async function readSessionFile(id: string, file: string): Promise<string | null> {
@@ -237,7 +238,7 @@ export function createResolver(config: McpResolverConfig): McpResolver {
       const resource = rest.slice(slashIdx + 1);
 
       if (resource === 'manifest.json') {
-        const manifest = await buildManifest(projectDir, id, diptychVersion);
+        const manifest = await buildManifest(projectDir, id, splitbriefVersion);
         if (manifest === null) return null;
         return { uri, mimeType: 'application/json', text: JSON.stringify(manifest, null, 2) };
       }

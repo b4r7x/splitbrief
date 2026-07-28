@@ -15,7 +15,7 @@ export function bootstrapOtel(): void {
 }
 
 function resolveOtelExporter(): string | undefined {
-  const fromEnv = process.env['OTEL_TRACES_EXPORTER'] ?? process.env['DIPTYCH_OTEL_EXPORTER'];
+  const fromEnv = process.env['OTEL_TRACES_EXPORTER'] ?? process.env['SPLITBRIEF_OTEL_EXPORTER'];
   if (fromEnv) return fromEnv;
   return readOtelExporterFromArgv(process.argv);
 }
@@ -50,7 +50,7 @@ function resolveProvider(): object {
   return delegate && typeof delegate === 'object' ? delegate : proxy;
 }
 
-// diptych exits via process.exit() on signal/budget/crash and even on normal shutdown, which
+// splitbrief exits via process.exit() on signal/budget/crash and even on normal shutdown, which
 // abandons any spans still buffered in a BatchSpanProcessor. Hosts call this before exit so the
 // final batch is flushed. A flush/shutdown failure must never block the exit path.
 export async function flushOtel(): Promise<void> {

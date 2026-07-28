@@ -172,7 +172,7 @@ describe('parseAtFiles', () => {
     () => {
       const root = join(
         homedir(),
-        `.diptych-parse-at-files-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        `.splitbrief-parse-at-files-${Date.now()}-${Math.random().toString(36).slice(2)}`,
       );
       const project = join(root, 'project');
       const outside = join(root, 'outside');

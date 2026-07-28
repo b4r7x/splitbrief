@@ -58,11 +58,11 @@ async function resolveTargetSession(
   if (result.kind === 'single') return result.id;
   if (result.kind === 'multiple') {
     throw cliError(
-      `multiple sessions found (${result.ids.join(', ')}); pass a session ID or use \`diptych ps\` to list them.`,
+      `multiple sessions found (${result.ids.join(', ')}); pass a session ID or use \`splitbrief ps\` to list them.`,
       1,
     );
   }
-  throw cliError('no session to continue; start one with `diptych start`.', 1);
+  throw cliError('no session to continue; start one with `splitbrief start`.', 1);
 }
 
 export async function continueCommand(
@@ -116,7 +116,7 @@ export async function continueCommand(
 
   if (!state) {
     throw cliError(
-      `session '${sessionId}' has no usable saved state and is not running — cannot continue. Start a new workflow with \`diptych start\`.`,
+      `session '${sessionId}' has no usable saved state and is not running — cannot continue. Start a new workflow with \`splitbrief start\`.`,
       1,
     );
   }

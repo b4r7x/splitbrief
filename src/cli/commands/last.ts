@@ -17,7 +17,7 @@ async function findMostRecentSession(projectDir: string): Promise<string> {
 
   const newest = sessions[0];
   if (!newest) {
-    throw cliError('no sessions found; start one with `diptych start`.', 1);
+    throw cliError('no sessions found; start one with `splitbrief start`.', 1);
   }
 
   return newest.sessionId;

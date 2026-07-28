@@ -140,8 +140,8 @@ describe('Sidebar — completed count', () => {
   });
 
   it('keeps the waiting clock live under reduced motion without advancing the frame', async () => {
-    const previousReduceMotion = process.env.DIPTYCH_REDUCE_MOTION;
-    process.env.DIPTYCH_REDUCE_MOTION = '1';
+    const previousReduceMotion = process.env.SPLITBRIEF_REDUCE_MOTION;
+    process.env.SPLITBRIEF_REDUCE_MOTION = '1';
     vi.useFakeTimers();
     vi.setSystemTime(0);
 
@@ -167,9 +167,9 @@ describe('Sidebar — completed count', () => {
     } finally {
       ui?.unmount();
       if (previousReduceMotion === undefined) {
-        delete process.env.DIPTYCH_REDUCE_MOTION;
+        delete process.env.SPLITBRIEF_REDUCE_MOTION;
       } else {
-        process.env.DIPTYCH_REDUCE_MOTION = previousReduceMotion;
+        process.env.SPLITBRIEF_REDUCE_MOTION = previousReduceMotion;
       }
       vi.useRealTimers();
     }

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DIPTYCH_DIR, EVIDENCE_FILE, SESSIONS_DIR } from '../../../core/paths.js';
+import { SPLITBRIEF_DIR, EVIDENCE_FILE, SESSIONS_DIR } from '../../../core/paths.js';
 import { EvidenceLedgerSchema } from '../../../core/schemas/evidence.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
@@ -22,7 +22,7 @@ function createTestProject(): { projectDir: string; cleanup: () => void } {
 }
 
 function seedSession(projectDir: string, sessionId: string): void {
-  const sessDir = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  const sessDir = join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
   mkdirSync(sessDir, { recursive: true });
   const ledger = createEvidenceLedger({
     sessionId,
@@ -60,7 +60,7 @@ function seedSession(projectDir: string, sessionId: string): void {
 }
 
 function readLedger(projectDir: string, sessionId: string): ParsedLedger {
-  const path = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId, EVIDENCE_FILE);
+  const path = join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, EVIDENCE_FILE);
   return EvidenceLedgerSchema.parse(JSON.parse(readFileSync(path, 'utf-8')));
 }
 
@@ -163,7 +163,7 @@ describe('MCP tool handler', () => {
   it('report_evidence rejects traversal session id without writing outside sessions', () => {
     const handler = createToolHandler(projectDir);
     const before = readLedger(projectDir, 'sess-001');
-    const escapedEvidencePath = join(projectDir, DIPTYCH_DIR, 'escape', EVIDENCE_FILE);
+    const escapedEvidencePath = join(projectDir, SPLITBRIEF_DIR, 'escape', EVIDENCE_FILE);
     const result = handler.callTool('report_evidence', {
       sessionId: '../escape',
       taskId: 'T001',

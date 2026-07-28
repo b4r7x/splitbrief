@@ -119,5 +119,5 @@ export function makeApprovalConfig(
 
 export const defaultContext: ProjectContext = {
   name: 'test-project',
-  dir: join(tmpdir(), `diptych-test-${process.pid}`),
+  dir: join(tmpdir(), `splitbrief-test-${process.pid}`),
 };

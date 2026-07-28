@@ -64,11 +64,7 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
           maxVisible: props.maxVisible,
           listFloor: props.listFloor,
         };
-  const {
-    rowBudget: resolvedRows,
-    visibleSlots,
-    scrollOffset,
-  } = computeListDisplayWindow({
+  const { rowBudget: resolvedRows, visibleSlots } = computeListDisplayWindow({
     items,
     selectedIndex,
     ...rowBudgetInput,
@@ -78,8 +74,9 @@ export function ListViewport<T>(props: ListViewportProps<T>) {
   });
   if (resolvedRows <= 0) return null;
 
-  const visibleItemCount = visibleSlots.filter((slot) => slot.kind === 'item').length;
-  const remainingBelow = items.length - (scrollOffset + visibleItemCount);
+  const visibleItems = visibleSlots.filter((slot) => slot.kind === 'item');
+  const lastVisibleItemIndex = visibleItems.at(-1)?.itemIndex ?? -1;
+  const remainingBelow = Math.max(0, items.length - lastVisibleItemIndex - 1);
 
   return (
     <Box flexDirection="column">

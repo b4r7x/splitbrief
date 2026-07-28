@@ -100,7 +100,7 @@ describe('formatCrashDiagnostic', () => {
     const out = formatCrashDiagnostic(crashedDiag);
     expect(out).toContain('Options:');
     expect(out).toMatch(/\[1\]/);
-    expect(out).toMatch(/diptych start/);
+    expect(out).toMatch(/splitbrief start/);
     expect(out).toMatch(/\[2\]/);
   });
 });
@@ -198,7 +198,7 @@ describe('showCrashDiagnostic', () => {
   it('writes accurate new-workflow instructions and returns without exiting when key "1" is pressed', async () => {
     await withProcessStubs(async ({ written, exitCode }) => {
       await showCrashDiagnostic(tmpDir2, BASE_STATUS_CRASHED, async () => '1');
-      expect(written.join('')).toContain('Exiting. Run `diptych start`');
+      expect(written.join('')).toContain('Exiting. Run `splitbrief start`');
       expect(written.join('')).not.toContain('Starting new workflow');
       expect(exitCode()).toBeUndefined();
     });

@@ -107,7 +107,7 @@ export function pruneCoverageRuns(opts: PruneCoverageRunsOptions = {}): Coverage
 }
 
 function coverageKeepFromEnv(): number {
-  const raw = process.env.DIPTYCH_COVERAGE_KEEP;
+  const raw = process.env.SPLITBRIEF_COVERAGE_KEEP;
   if (raw === undefined) return DEFAULT_KEEP;
 
   const value = Number.parseInt(raw, 10);
@@ -125,12 +125,12 @@ function clearActive(runDir: string): void {
 
 function runVitestCoverage(runDir: string, args: readonly string[]): number {
   const vitestBin = process.platform === 'win32' ? 'vitest.cmd' : 'vitest';
-  const maxWorkers = process.env.DIPTYCH_COVERAGE_MAX_WORKERS ?? '2';
-  const retry = process.env.DIPTYCH_COVERAGE_RETRY ?? '0';
+  const maxWorkers = process.env.SPLITBRIEF_COVERAGE_MAX_WORKERS ?? '2';
+  const retry = process.env.SPLITBRIEF_COVERAGE_RETRY ?? '0';
   const vitestArgs = ['run', '--coverage', `--maxWorkers=${maxWorkers}`, ...args];
   if (retry !== '0') vitestArgs.splice(2, 0, `--retry=${retry}`);
   const result = spawnSync(vitestBin, vitestArgs, {
-    env: { ...process.env, DIPTYCH_COVERAGE_DIR: runDir },
+    env: { ...process.env, SPLITBRIEF_COVERAGE_DIR: runDir },
     stdio: 'inherit',
   });
 
@@ -147,7 +147,7 @@ function isMainModule(): boolean {
 }
 
 if (isMainModule()) {
-  const coverageDir = resolve(process.env.DIPTYCH_COVERAGE_ROOT ?? DEFAULT_COVERAGE_DIR);
+  const coverageDir = resolve(process.env.SPLITBRIEF_COVERAGE_ROOT ?? DEFAULT_COVERAGE_DIR);
   const keep = coverageKeepFromEnv();
   const passthroughArgs = process.argv.slice(2).filter((arg) => arg !== '--prune');
 
@@ -159,7 +159,9 @@ if (isMainModule()) {
     process.exit(0);
   }
 
-  const runDir = resolve(process.env.DIPTYCH_COVERAGE_DIR ?? coverageRunDirectory({ coverageDir }));
+  const runDir = resolve(
+    process.env.SPLITBRIEF_COVERAGE_DIR ?? coverageRunDirectory({ coverageDir }),
+  );
 
   markActive(runDir);
   pruneCoverageRuns({ coverageDir, keep, protectedRunDir: runDir });

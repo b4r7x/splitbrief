@@ -80,7 +80,6 @@ describe('RecentSessions', () => {
     await tick(20);
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    // 35 total sessions - 5 visible sessions = 30 more.
     expect(frame).toMatch(/\b30 more\b/);
     ui.unmount();
   });

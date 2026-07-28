@@ -16,7 +16,7 @@ import { appendEngineEvent, appendMessage, createSessionLogAppender } from './lo
 import { SessionLogEventEntrySchema } from '../schemas/session-log.js';
 import { taskId } from '../schemas/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
@@ -60,7 +60,7 @@ describe('appendEngineEvent', () => {
     appendEngineEvent({ projectDir: dir, sessionId: SESSION_ID }, event2);
 
     const raw = readFileSync(
-      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
       'utf-8',
     );
     const lines = raw.trim().split('\n');
@@ -84,7 +84,7 @@ describe('appendEngineEvent', () => {
       feature: 'test-feature',
     };
     appendEngineEvent({ projectDir: dir, sessionId: SESSION_ID }, event);
-    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(
+    expect(existsSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'))).toBe(
       true,
     );
   });
@@ -102,7 +102,7 @@ describe('appendEngineEvent', () => {
     );
 
     const mode =
-      statSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl')).mode & 0o777;
+      statSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl')).mode & 0o777;
     expect(mode).toBe(0o600);
   });
 
@@ -118,7 +118,7 @@ describe('appendEngineEvent', () => {
     );
 
     const raw = readFileSync(
-      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
       'utf-8',
     );
     const entry = JSON.parse(raw.trim());
@@ -130,7 +130,7 @@ describe('appendEngineEvent', () => {
 
   it('warns to stderr and does not throw when write fails on a read-only session dir', () => {
     const dir = makeTmp();
-    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const sessionPath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(sessionPath, { recursive: true });
     chmodSync(sessionPath, 0o500);
 
@@ -164,7 +164,7 @@ describe('createSessionLogAppender', () => {
     append({ kind: 'message', ts: '3', role: 'user', text: 'hi' });
 
     const raw = readFileSync(
-      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
       'utf-8',
     );
     const lines = raw.split('\n').filter(Boolean);
@@ -181,16 +181,16 @@ describe('createSessionLogAppender', () => {
       append({ kind: 'event', ts: String(i), type: 'planner_text', data: { text: `chunk ${i}` } });
     }
     const raw = readFileSync(
-      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
       'utf-8',
     );
     expect(raw.split('\n').filter(Boolean)).toHaveLength(50);
   });
 
   itUnix('refuses to append through a symlinked session log', () => {
-    const outside = mkdtempSync(join(tmpdir(), 'diptych-log-outside-'));
+    const outside = mkdtempSync(join(tmpdir(), 'splitbrief-log-outside-'));
     const dir = makeTmp();
-    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const sessionPath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(sessionPath, { recursive: true });
     const outsideLog = join(outside, 'session.jsonl');
     writeFileSync(outsideLog, '');
@@ -215,7 +215,7 @@ describe('appendMessage', () => {
       { persistTranscript: true },
     );
     const raw = readFileSync(
-      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
       'utf-8',
     );
     const entry = JSON.parse(raw.trim());
@@ -233,7 +233,7 @@ describe('appendMessage', () => {
       { role: 'assistant', text: 'planner output' },
       { persistTranscript: false },
     );
-    const filePath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl');
+    const filePath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl');
     expect(existsSync(filePath)).toBe(false);
   });
 
@@ -245,7 +245,7 @@ describe('appendMessage', () => {
       { persistTranscript: true },
     );
     const raw = readFileSync(
-      join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
+      join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'session.jsonl'),
       'utf-8',
     );
     const entry = JSON.parse(raw.trim());
@@ -256,9 +256,9 @@ describe('appendMessage', () => {
 
 describe('session append symlink confinement', () => {
   itUnix('appendEngineEvent refuses to append through a symlinked session log', () => {
-    const outside = mkdtempSync(join(tmpdir(), 'diptych-log-outside-'));
+    const outside = mkdtempSync(join(tmpdir(), 'splitbrief-log-outside-'));
     const dir = makeTmp();
-    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const sessionPath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(sessionPath, { recursive: true });
     const outsideLog = join(outside, 'session.jsonl');
     writeFileSync(outsideLog, '');
@@ -276,9 +276,9 @@ describe('session append symlink confinement', () => {
   });
 
   itUnix('appendMessage refuses to append through a symlinked session log', () => {
-    const outside = mkdtempSync(join(tmpdir(), 'diptych-log-outside-'));
+    const outside = mkdtempSync(join(tmpdir(), 'splitbrief-log-outside-'));
     const dir = makeTmp();
-    const sessionPath = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID);
+    const sessionPath = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(sessionPath, { recursive: true });
     const outsideLog = join(outside, 'session.jsonl');
     writeFileSync(outsideLog, '');

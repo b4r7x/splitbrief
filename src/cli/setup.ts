@@ -2,13 +2,13 @@ import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig, configPath } from '../core/config/load/io.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
-import { DIPTYCH_DIR, CONFIG_FILE } from '../core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE } from '../core/paths.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format-errors.js';
 import { stripTerminalControls } from '../utils/display-text.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 
-const NO_CONFIG_MSG = `No config found. Creating default ${DIPTYCH_DIR}/${CONFIG_FILE}`;
+const NO_CONFIG_MSG = `No config found. Creating default ${SPLITBRIEF_DIR}/${CONFIG_FILE}`;
 
 export function resolveProjectDir(dir?: string): string {
   return resolve(dir ?? process.cwd());

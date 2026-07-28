@@ -302,7 +302,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
   it('keeps external editor behavior for non-brief reviews', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-plan' });
     reviewStore.setReviewFile('/tmp/supporting-spec.md');
-    stubReviewEditor('/definitely/missing-diptych-editor');
+    stubReviewEditor('/definitely/missing-splitbrief-editor');
     const { handleInput } = createReviewInputHandler(makeInputMode('review'));
 
     await handleInput('edit');

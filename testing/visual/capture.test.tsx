@@ -290,7 +290,7 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 async function createOutputRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'diptych-capture-'));
+  const root = await mkdtemp(join(tmpdir(), 'splitbrief-capture-'));
   temporaryRoots.push(root);
   return root;
 }

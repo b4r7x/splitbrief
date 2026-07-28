@@ -55,7 +55,7 @@ export function assertModeFlagsExclusive(opts: { json?: boolean; rpc?: boolean }
 export function assertWorktreeStartOnly(opts: { worktree?: string }): void {
   if (opts.worktree !== undefined) {
     throw cliError(
-      '--worktree is only supported by `diptych start`; a resumed session already lives in its original worktree.',
+      '--worktree is only supported by `splitbrief start`; a resumed session already lives in its original worktree.',
     );
   }
 }

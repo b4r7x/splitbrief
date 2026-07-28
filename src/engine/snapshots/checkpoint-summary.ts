@@ -7,6 +7,7 @@ import { SNAPSHOT_BASELINE_ID } from '../../core/paths.js';
 import { readRunSnapshotLedger } from './run/ledger.js';
 import { listSnapshots } from './manifest.js';
 import { ALWAYS_EXCLUDED } from './files.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 
 export type CheckpointDisplayKind = RunSnapshotKind | 'manual' | 'other';
 
@@ -101,8 +102,8 @@ function toCheckpointSummary(
     trackedFileCount: manifest.trackedFileCount,
     kind,
     isRunCheckpoint,
-    diffCommand: `diptych snapshot diff ${manifest.id}`,
-    restoreCommand: `diptych snapshot restore ${manifest.id}`,
+    diffCommand: `${SPLITBRIEF_IDENTITY.executable} snapshot diff ${manifest.id}`,
+    restoreCommand: `${SPLITBRIEF_IDENTITY.executable} snapshot restore ${manifest.id}`,
     ...(manifest.name !== undefined && { name: manifest.name }),
     ...(manifest.taskIndex !== undefined && { taskIndex: manifest.taskIndex }),
     ...(inferredKind !== undefined && inferredKind !== kind && { inferredKind }),

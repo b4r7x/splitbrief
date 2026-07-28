@@ -4,41 +4,57 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { labelError } from '../../../utils/format-errors.js';
 
-export type ReviewContentReader = (
+type ReviewContentReader = (
   path: string,
   options: { signal: AbortSignal; encoding: 'utf8' },
 ) => Promise<string>;
 
-async function readReviewContent(
-  path: string,
-  options: { signal: AbortSignal; encoding: 'utf8' },
-): Promise<string> {
-  return fs.readFile(path, options);
+interface LoadedReviewContent {
+  content: string;
+  filePath: string;
+  ownerToken: number;
+  revision: number;
 }
 
 export function useReviewContent(
   filePath: string | null,
-  reader: ReviewContentReader = readReviewContent,
+  reader: ReviewContentReader = fs.readFile,
 ): string {
-  const [content, setContent] = useState('');
+  const [loaded, setLoaded] = useState<LoadedReviewContent | null>(null);
   const revision = reviewStore.use((s) => s.revision);
+  const ownerToken = reviewStore.use((s) => s.ownerToken);
 
   useEffect(() => {
     if (!filePath) {
-      setContent('');
+      setLoaded(null);
       reviewStore.setRenderedLineCount(0);
       return;
     }
 
     const controller = new AbortController();
-    setContent('');
+    const readOwnerToken = ownerToken;
+    const readRevision = revision;
+    const readStillCurrent = (): boolean => {
+      const current = reviewStore.get();
+      return (
+        !controller.signal.aborted &&
+        current.ownerToken === readOwnerToken &&
+        current.revision === readRevision
+      );
+    };
     reader(filePath, { signal: controller.signal, encoding: 'utf8' })
       .then((data) => {
-        setContent(data);
+        if (!readStillCurrent()) return;
+        setLoaded({
+          content: data,
+          filePath,
+          ownerToken: readOwnerToken,
+          revision: readRevision,
+        });
       })
       .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
-        setContent('');
+        if (!readStillCurrent()) return;
+        setLoaded(null);
         reviewStore.setRenderedLineCount(0);
         feedbackStore.setError(labelError(`Failed to read ${filePath}`, err));
       });
@@ -46,7 +62,11 @@ export function useReviewContent(
     return () => {
       controller.abort();
     };
-  }, [filePath, revision, reader]);
+  }, [filePath, ownerToken, revision, reader]);
 
-  return content;
+  return loaded?.filePath === filePath &&
+    loaded.ownerToken === ownerToken &&
+    loaded.revision === revision
+    ? loaded.content
+    : '';
 }

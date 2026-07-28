@@ -106,7 +106,7 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
   });
 
   it('renders a static active bullet without blinking under reduce-motion', async () => {
-    process.env.DIPTYCH_REDUCE_MOTION = '1';
+    process.env.SPLITBRIEF_REDUCE_MOTION = '1';
     try {
       const row = makeActivityRow('activity-batch:0:call-1');
       const ui = renderFeature(<ConversationRowView row={row} lifecycle="live" />);
@@ -118,7 +118,7 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
       expect(ui.lastFrame() ?? '').toContain(LIVE_MARK);
       ui.unmount();
     } finally {
-      delete process.env.DIPTYCH_REDUCE_MOTION;
+      delete process.env.SPLITBRIEF_REDUCE_MOTION;
     }
   });
 

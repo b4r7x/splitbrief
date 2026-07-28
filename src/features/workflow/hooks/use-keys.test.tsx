@@ -6,15 +6,18 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { completionStore } from '../../../stores/ui/completion.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
+import { eventsStore } from '../../../stores/workflow/events.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
-import { readReviewContentHeight } from '../layout/snapshot.js';
+import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
 import { useWorkflowKeys } from './use-keys.js';
 import { taskId } from '../../../core/schemas/task.js';
 
@@ -32,9 +35,27 @@ const END = '\x1B[F';
 const ARROW_UP = '\x1B[A';
 const ARROW_DOWN = '\x1B[B';
 
+const VIEWPORTS = [
+  { label: '120x40', cols: 120, rows: 40 },
+  { label: '80x24', cols: 80, rows: 24 },
+  { label: '60x18', cols: 60, rows: 18 },
+];
+
 function Harness({ isActive = true }: { isActive?: boolean }) {
   useWorkflowKeys({ isActive });
   return <Text> </Text>;
+}
+
+function seedLongConversation(): void {
+  const events: EngineEventOf<'planner_text'>[] = Array.from({ length: 80 }, (_, ts) => ({
+    type: 'planner_text',
+    ts,
+    phase: 'specifying',
+    text: `event-${ts}`,
+  }));
+  eventsStore.__testReset({
+    events,
+  });
 }
 
 function activity(
@@ -85,10 +106,14 @@ function seedDiff(): string {
 describe('useWorkflowKeys', () => {
   beforeEach(() => {
     resetAllStores();
+    completionStore.reset();
+    questionPromptStore.reset();
   });
 
   afterEach(() => {
     resetAllStores();
+    completionStore.reset();
+    questionPromptStore.reset();
   });
 
   it('Ctrl+G opens the cost-drilldown overlay', async () => {
@@ -185,7 +210,7 @@ describe('useWorkflowKeys', () => {
     routerStore.init({
       screen: 'workflow',
       feature: 'attached test',
-      attach: { sockPath: '/tmp/diptych.sock', authToken: 'token' },
+      attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'token' },
     });
     const key = seedDiff();
     const ui = render(<Harness />);
@@ -244,7 +269,7 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('any keypress closes the cost-drilldown overlay when it is open', async () => {
+  it('leaves cost-drilldown key handling to the overlay while it is open', async () => {
     overlayStore.open('cost-drilldown');
     const ui = render(<Harness />);
     await tick(1);
@@ -256,7 +281,44 @@ describe('useWorkflowKeys', () => {
     await tick(1);
     await tick(1);
 
+    expect(overlayStore.get().active).toBe('cost-drilldown');
+    ui.unmount();
+  });
+
+  it('completion and non-cost overlays keep workflow chords and transcript scroll', async () => {
+    seedLongConversation();
+    completionStore.setOpen(true);
+    const ui = render(<Harness />);
+    await tick(1);
+    await tick(1);
+
+    ui.stdin.write('\x07');
+    await tick(1);
+
     expect(overlayStore.get().active).toBe('none');
+
+    ui.stdin.write(SHIFT_UP);
+    await tick(1);
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
+
+    completionStore.setOpen(false);
+    overlayStore.open('help');
+    await tick(1);
+    ui.stdin.write('\x07');
+    await tick(1);
+    ui.stdin.write(SHIFT_UP);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('help');
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
+
+    overlayStore.close();
+    await tick(1);
+    ui.stdin.write(SHIFT_UP);
+    await tick(1);
+    await tick(1);
+
+    expect(conversationScrollStore.get().scrollOffset).toBe(1);
     ui.unmount();
   });
 
@@ -387,6 +449,82 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
+  it.each(
+    VIEWPORTS,
+  )('$label keys start from canonical clamped offsets and keep the sibling pane fixed', async ({
+    cols,
+    rows,
+  }) => {
+    terminalSizeStore.__testReset({ cols, rows });
+    inputHeightStore.__testReset({ rows: 3 });
+    seedLongConversation();
+
+    const initialConversation = readConversationScrollSnapshot();
+    expect(initialConversation.maxOffset).toBeGreaterThan(1);
+    conversationScrollStore.__testReset({
+      scrollOffset: initialConversation.maxOffset + 10,
+    });
+    const visibleConversation = readConversationScrollSnapshot();
+    reviewStore.setScrollOffset(7);
+
+    const ui = render(<Harness />);
+    await tick(1);
+    await tick(1);
+    ui.stdin.write(SHIFT_DOWN);
+    await tick(1);
+    await tick(1);
+
+    expect(readConversationScrollSnapshot().scrollOffset).toBe(visibleConversation.maxOffset - 1);
+    expect(reviewStore.get().scrollOffset).toBe(7);
+
+    const conversationOffset = conversationScrollStore.get().scrollOffset;
+    reviewStore.setReviewFile('/tmp/spec.md', 100);
+    controlsStore.setInputMode('review');
+    const reviewMaxOffset = 100 - readReviewContentHeight();
+    reviewStore.setScrollOffset(reviewMaxOffset + 10);
+    await tick(1);
+    ui.stdin.write(SHIFT_UP);
+    await tick(1);
+    await tick(1);
+
+    expect(reviewStore.get().scrollOffset).toBe(reviewMaxOffset - 1);
+    expect(conversationScrollStore.get().scrollOffset).toBe(conversationOffset);
+    ui.unmount();
+  });
+
+  it('question ownership preserves scroll through resize and resumes from the visible offset', async () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    inputHeightStore.__testReset({ rows: 3 });
+    seedLongConversation();
+    const narrow = readConversationScrollSnapshot();
+    conversationScrollStore.__testReset({ scrollOffset: narrow.maxOffset });
+    questionPromptStore.setHint(
+      'Question 1/1: Which implementation boundary should own this behavior?',
+    );
+    controlsStore.setInputMode('question');
+
+    const ui = render(<Harness />);
+    await tick(1);
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    await tick(1);
+    ui.stdin.write(SHIFT_DOWN);
+    await tick(1);
+
+    expect(conversationScrollStore.get().scrollOffset).toBe(narrow.maxOffset);
+
+    controlsStore.setInputMode('normal');
+    questionPromptStore.clearHint();
+    const wide = readConversationScrollSnapshot();
+    expect(wide.maxOffset).toBeLessThan(narrow.maxOffset);
+    await tick(1);
+    ui.stdin.write(SHIFT_DOWN);
+    await tick(1);
+    await tick(1);
+
+    expect(readConversationScrollSnapshot().scrollOffset).toBe(wide.maxOffset - 1);
+    ui.unmount();
+  });
+
   it('plain G does not scroll the open review pane so it stays composer text', async () => {
     reviewStore.setReviewFile('/tmp/spec.md', 1000);
     controlsStore.setInputMode('review');
@@ -406,22 +544,29 @@ describe('useWorkflowKeys', () => {
 describe('useWorkflowKeys suspended while a prompt is pending', () => {
   beforeEach(() => {
     resetAllStores();
+    completionStore.reset();
+    questionPromptStore.reset();
   });
 
   afterEach(() => {
     resetAllStores();
+    completionStore.reset();
+    questionPromptStore.reset();
   });
 
-  it('Ctrl+G does not open the cost-drilldown overlay', async () => {
+  it('prompt ownership blocks workflow chords and transcript scroll', async () => {
+    seedLongConversation();
     const ui = render(<Harness isActive={false} />);
     await tick(1);
     await tick(1);
 
     ui.stdin.write('\x07');
     await tick(1);
+    ui.stdin.write(SHIFT_UP);
     await tick(1);
 
     expect(overlayStore.get().active).toBe('none');
+    expect(conversationScrollStore.get().scrollOffset).toBe(0);
     ui.unmount();
   });
 

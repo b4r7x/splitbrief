@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, Text, type Key } from 'ink';
 import { MultilineInput } from '../input/multiline-input.js';
+import { isTextEntryInput, isUnmodifiedYInput } from '../../lib/terminal/text-entry.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
 import { ReferenceCompletionMenu } from './completion/reference/menu.js';
 import { AttachmentChips, attachmentChipRows, expandPastes } from './attachments.js';
@@ -63,6 +64,18 @@ function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {
   );
 }
 
+function resetComposerDraft(actions: {
+  setValue: (value: string) => void;
+  clearPastes: () => void;
+  resetHistory: () => void;
+  bumpEpoch: () => void;
+}): void {
+  actions.setValue('');
+  actions.clearPastes();
+  actions.resetHistory();
+  actions.bumpEpoch();
+}
+
 export interface ComposerBoxHints {
   keys: string;
   cost?: string | undefined;
@@ -82,6 +95,9 @@ interface ComposerProps {
   boxHints?: ComposerBoxHints | undefined;
   onEmptySubmit?: (() => void) | undefined;
   onEditShortcut?: (() => void) | undefined;
+  onReviewBoundaryNavigate?: ((direction: 'up' | 'down') => boolean | undefined) | undefined;
+  onReviewInteraction?: (() => void) | undefined;
+  reviewYankActive?: boolean | undefined;
   boxLeftOffset?: number | undefined;
   questionEpoch?: number | undefined;
   inputPaddingX?: number | undefined;
@@ -109,6 +125,9 @@ export function Composer({
   boxHints,
   onEmptySubmit,
   onEditShortcut,
+  onReviewBoundaryNavigate,
+  onReviewInteraction,
+  reviewYankActive = false,
   boxLeftOffset,
   questionEpoch,
   inputPaddingX = 1,
@@ -121,9 +140,11 @@ export function Composer({
   const inputColumns = Math.max(1, (width ?? cols) - 4 - inputPaddingX * 2);
   const [value, setValue] = useState('');
   const [visibleRows, setVisibleRows] = useState(1);
+  const previousModeRef = useRef(mode);
   const persistTranscript = config?.workflow.persistTranscript ?? true;
 
-  const rowFocusHeld = focusStore.use((f) => f !== null) && currentScreen === 'workflow';
+  const briefFocusHeld =
+    focusStore.use((focus) => focus?.region === 'brief') && currentScreen === 'workflow';
 
   const { inputEpoch, bumpEpoch, handleBoundaryNavigate, resetHistory, onChange, historyActive } =
     useHistory({
@@ -134,7 +155,17 @@ export function Composer({
       persistTranscript,
     });
 
-  const { pastes, handleChange, clearPastes } = usePasteDrafts({ value, onChange });
+  const handleDraftChange = (next: string) => {
+    onReviewInteraction?.();
+    onChange(next);
+  };
+  const { pastes, handleChange, clearPastes } = usePasteDrafts({
+    value,
+    onChange: handleDraftChange,
+  });
+  const clearDraft = (): void => {
+    resetComposerDraft({ setValue, clearPastes, resetHistory, bumpEpoch });
+  };
   const chipRows = attachmentChipRows(pastes, pendingAttachments, cols);
   const projectFiles = useProjectFiles(projectDir);
 
@@ -168,6 +199,7 @@ export function Composer({
     }
     const result = attachImage(path, projectDir);
     if (result.ok) {
+      onReviewInteraction?.();
       feedbackStore.setMessage(`Attached: ${result.path}`);
     } else {
       feedbackStore.setError(`Cannot attach: ${result.reason}`);
@@ -177,10 +209,7 @@ export function Composer({
   const handleSubmit = (text: string) => {
     if (mode !== 'normal') {
       onSubmit(expandPastes(text, pastes));
-      setValue('');
-      clearPastes();
-      resetHistory();
-      bumpEpoch();
+      clearDraft();
       return;
     }
 
@@ -198,10 +227,7 @@ export function Composer({
     } else {
       onSubmit(expandPastes(trimmed, pastes));
     }
-    setValue('');
-    clearPastes();
-    resetHistory();
-    bumpEpoch();
+    clearDraft();
   };
 
   const isEditShortcut = (input: string, key: Key): boolean =>
@@ -209,7 +235,19 @@ export function Composer({
 
   const handleInputBoundaryNavigate = (direction: 'up' | 'down') => {
     if (showCommandSuggestions || showReferenceSuggestions) return true;
+    if (mode !== 'normal') {
+      if (mode === 'review' && value.length === 0) onReviewBoundaryNavigate?.(direction);
+      return true;
+    }
     return handleBoundaryNavigate(direction);
+  };
+  const shouldHandleComposerInput = (input: string, key: Key): boolean =>
+    !briefFocusHeld ||
+    (mode === 'review' &&
+      (!reviewYankActive || !isUnmodifiedYInput(input, key)) &&
+      isTextEntryInput(input, key));
+  const handleComposerInputAccepted = (): void => {
+    if (briefFocusHeld) focusStore.clear();
   };
 
   const hintBoxWidth = width ?? cols;
@@ -263,16 +301,11 @@ export function Composer({
     inputHeightStore.setRows(visibleRows + 2 + chipRows);
   }, [visibleRows, chipRows]);
 
-  // Entering question mode swaps the composer's role to a blocking-prompt answer field; clear any
-  // normal-mode draft/pastes so stale text cannot be submitted as the answer. Fires only on the
-  // mode transition, so a typed answer is never wiped mid-question.
   useEffect(() => {
-    if (mode === 'question') {
-      setValue('');
-      clearPastes();
-      resetHistory();
-      bumpEpoch();
-    }
+    const leavingQuestion = previousModeRef.current === 'question' && mode !== 'question';
+    previousModeRef.current = mode;
+    if (mode !== 'question' && !leavingQuestion) return;
+    resetComposerDraft({ setValue, clearPastes, resetHistory, bumpEpoch });
   }, [mode, questionEpoch]);
 
   const completionOpen = showCommandSuggestions || showReferenceSuggestions;
@@ -317,7 +350,10 @@ export function Composer({
               onSubmit={handleSubmit}
               onFileDrop={handleFileDrop}
               columns={inputColumns}
-              focus={!disabled && !rowFocusHeld}
+              focus={!disabled && !briefFocusHeld}
+              isActive={!disabled && (!briefFocusHeld || mode === 'review')}
+              shouldHandleInput={shouldHandleComposerInput}
+              onInputAccepted={handleComposerInputAccepted}
               placeholder={placeholderForMode(mode, hint)}
               rows={1}
               maxRows={6}

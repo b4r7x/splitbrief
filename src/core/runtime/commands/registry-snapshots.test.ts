@@ -70,14 +70,16 @@ describe('/handoff command', () => {
     let message: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
-        writeHandoff: async () => ({ outputDir: '/proj/.diptych/sessions/s1/handoffs/spec-kit' }),
+        writeHandoff: async () => ({
+          outputDir: '/proj/.splitbrief/sessions/s1/handoffs/spec-kit',
+        }),
         setFeedbackMessage: (m) => {
           message = m;
         },
       }),
     );
     await executeRuntimeCommand(commands, '/handoff spec-kit', 'workflow', noop);
-    expect(message).toContain('/proj/.diptych/sessions/s1/handoffs/spec-kit');
+    expect(message).toContain('/proj/.splitbrief/sessions/s1/handoffs/spec-kit');
   });
 
   it('surfaces an error when the handoff fails', async () => {
@@ -111,7 +113,7 @@ describe('/export command', () => {
       makeCtx({
         exportSession: async () => ({
           status: 'ok',
-          path: '/proj/.diptych/sessions/s1/report.html',
+          path: '/proj/.splitbrief/sessions/s1/report.html',
         }),
         setFeedbackMessage: (m) => {
           message = m;
@@ -121,7 +123,7 @@ describe('/export command', () => {
 
     await executeRuntimeCommand(commands, '/export', 'workflow', noop);
 
-    expect(message).toContain('/proj/.diptych/sessions/s1/report.html');
+    expect(message).toContain('/proj/.splitbrief/sessions/s1/report.html');
   });
 
   it('surfaces export errors from the context', async () => {

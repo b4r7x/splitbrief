@@ -1,6 +1,8 @@
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
+import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
+import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 
@@ -89,6 +91,7 @@ export interface WorkflowFixtureProjection {
   readonly feature: string;
   readonly events: readonly EngineEvent[];
   readonly inputMode: 'normal' | 'review' | 'question';
+  readonly sidebarVisible: boolean;
   readonly question?: FixtureQuestion;
   readonly approval?: FixtureApproval;
   readonly review?: FixtureReview;
@@ -109,12 +112,14 @@ const idleProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   events: [],
   inputMode: 'normal',
+  sidebarVisible: false,
 };
 
 const planningProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_PLANNING_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
+  sidebarVisible: false,
   events: [
     {
       type: 'workflow_started',
@@ -145,6 +150,7 @@ const implementationProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IMPLEMENTATION_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
+  sidebarVisible: true,
   events: [
     {
       type: 'workflow_started',
@@ -216,6 +222,7 @@ const reviewProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_REVIEW_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'review',
+  sidebarVisible: false,
   events: [
     {
       type: 'workflow_started',
@@ -246,6 +253,7 @@ const questionProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_QUESTION_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
+  sidebarVisible: false,
   events: [
     {
       type: 'workflow_started',
@@ -264,6 +272,7 @@ const successProjection: WorkflowFixtureProjection = {
   scenarioId: SUMMARY_SUCCESS_ID,
   feature: WORKFLOW_FIXTURE_TEXT.success,
   inputMode: 'normal',
+  sidebarVisible: false,
   events: [
     {
       type: 'workflow_started',
@@ -284,6 +293,7 @@ const failureProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_FAILURE_ID,
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
+  sidebarVisible: false,
   events: [
     {
       type: 'workflow_started',
@@ -365,6 +375,36 @@ const projections = [
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
   new Map(projections.map((projection) => [projection.scenarioId, projection]));
+
+export function getWorkflowFixturePromptRows(
+  projection: WorkflowFixtureProjection,
+  cols: number,
+): number {
+  const approvalState: ApprovalPromptState =
+    projection.approval === undefined
+      ? { status: 'idle' }
+      : {
+          status: 'pending',
+          request: {
+            tier: 'sticky',
+            actionClass: 'write_out_of_scope',
+            actionDescription: projection.approval.actionDescription,
+            taskId: WORKFLOW_FIXTURE_TASK_ID,
+            phase: 'reviewing-plan',
+          },
+          resolve: () => {},
+        };
+  const questionHint =
+    projection.inputMode === 'question' && projection.question !== undefined
+      ? projection.question.prompt
+      : null;
+  return getWorkflowPromptRows({
+    approvalState,
+    costApprovalState: { status: 'idle' },
+    questionHint,
+    cols,
+  });
+}
 
 function projectionStrings(value: unknown): string[] {
   if (typeof value === 'string') return [value];

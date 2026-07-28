@@ -513,7 +513,7 @@ describe('runWorkflow — smoke', () => {
     const controller = new AbortController();
     controller.abort(WORKFLOW_REWIND_ABORT_REASON);
 
-    // No fixture pre-write of `.diptych/active`: runWorkflow itself must write the pointer
+    // No fixture pre-write of `.splitbrief/active`: runWorkflow itself must write the pointer
     // for the explicit sessionId, and the rewind-abort reason must preserve it (F-317).
     await runWorkflow({
       feature: 'rewind-active',
@@ -609,9 +609,9 @@ describe('runWorkflow — smoke', () => {
     expect(readActive(projectDir)).toBeNull();
   });
 
-  it('writes the .diptych/active pointer for a generated session id with no fixture pre-write', async () => {
+  it('writes the .splitbrief/active pointer for a generated session id with no fixture pre-write', async () => {
     // The flagship TUI journey passes no explicit sessionId; runWorkflow generates one and
-    // MUST publish it to `.diptych/active` so rewind/resume/status/recovery can find the run
+    // MUST publish it to `.splitbrief/active` so rewind/resume/status/recovery can find the run
     // (F-317). A rewind-abort reason preserves the pointer past saveFinalSession so we can
     // read back exactly the producer-written id without any hand-written fixture.
     const projectDir = setupProject();
@@ -909,10 +909,10 @@ describe('runWorkflow — smoke', () => {
 
   it('runs auto-discovered pre_task module hooks without hooks config', async () => {
     const projectDir = setupProject();
-    mkdirSync(join(projectDir, '.diptych', 'hooks'), { recursive: true });
+    mkdirSync(join(projectDir, '.splitbrief', 'hooks'), { recursive: true });
     writeFileSync(join(projectDir, 'package.json'), JSON.stringify({ type: 'module' }));
     writeFileSync(
-      join(projectDir, '.diptych', 'hooks', 'pre-task.js'),
+      join(projectDir, '.splitbrief', 'hooks', 'pre-task.js'),
       'export default () => ({ kind: "deny", message: "auto blocked" });',
     );
 
@@ -963,7 +963,7 @@ describe('runWorkflow — smoke', () => {
 });
 
 describe('runWorkflow — createBranch', () => {
-  it('creates diptych/<slug> branch when git.createBranch is enabled', async () => {
+  it('creates splitbrief/<slug> branch when git.createBranch is enabled', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();
     const events: EngineEvent[] = [];
@@ -995,7 +995,7 @@ describe('runWorkflow — createBranch', () => {
         e.type === 'git_branch_created',
     );
     expect(branchEvent).toBeDefined();
-    expect(branchEvent?.name).toMatch(/^diptych\/session-[a-f0-9]{12}$/);
+    expect(branchEvent?.name).toMatch(/^splitbrief\/session-[a-f0-9]{12}$/);
     expect(branchEvent?.name).not.toContain('add-auth');
 
     const g = simpleGit(projectDir);

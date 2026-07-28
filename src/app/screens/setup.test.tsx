@@ -1,3 +1,5 @@
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLIPBOARD_EXEC_WAIT_MS,
@@ -8,16 +10,48 @@ import {
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { ToolModelPicker } from '../overlays/runners.js';
+import { configPath, loadConfig } from '../../core/config/load/io.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 import { SetupScreen } from './setup.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+
+const ENTER = '\r';
+const ORIGINAL_PLATFORM = Object.getOwnPropertyDescriptor(process, 'platform');
+const ORIGINAL_TERM = process.env['TERM'];
+const ORIGINAL_LANG = process.env['LANG'];
+const ORIGINAL_STDOUT_IS_TTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+
+const INSTALLED_RUNNERS = {
+  planners: [
+    { tool: 'claude-code', type: 'cli', available: true, description: 'Claude Code' },
+    { tool: 'codex', type: 'cli', available: true, description: 'Codex' },
+  ],
+  implementers: [],
+} satisfies Parameters<typeof detectionStore.setDetection>[0];
+
+async function chooseRunner(
+  ui: ReturnType<typeof renderFeature>,
+  runnerId: 'claude-code' | 'codex',
+): Promise<void> {
+  ui.stdin.write(runnerId);
+  await flushEffects();
+  ui.stdin.write(ENTER);
+  await flushEffects();
+  ui.stdin.write(ENTER);
+  await flushEffects();
+}
 
 describe('SetupScreen', () => {
   beforeEach(() => {
@@ -25,6 +59,7 @@ describe('SetupScreen', () => {
     detectionStore.reset();
     routerStore.init({ screen: 'setup' });
     overlayStore.reset();
+    terminalSizeStore.reset();
     _resetMouseZones();
     installClipboardExecFixture();
     resetClipboardExecFixture();
@@ -32,17 +67,28 @@ describe('SetupScreen', () => {
   });
 
   afterEach(() => {
+    terminalSizeStore.reset();
     restoreClipboardExecFixture();
+    if (ORIGINAL_PLATFORM) Object.defineProperty(process, 'platform', ORIGINAL_PLATFORM);
+    else Reflect.deleteProperty(process, 'platform');
+    if (ORIGINAL_TERM === undefined) delete process.env['TERM'];
+    else process.env['TERM'] = ORIGINAL_TERM;
+    if (ORIGINAL_LANG === undefined) delete process.env['LANG'];
+    else process.env['LANG'] = ORIGINAL_LANG;
+    if (ORIGINAL_STDOUT_IS_TTY) {
+      Object.defineProperty(process.stdout, 'isTTY', ORIGINAL_STDOUT_IS_TTY);
+    } else {
+      Reflect.deleteProperty(process.stdout, 'isTTY');
+    }
   });
 
-  it('renders the de-boxed no-planners panel with lowercase voice', async () => {
+  it('renders the de-boxed no-planners panel with Splitbrief branding', async () => {
     const ui = renderFeature(<SetupScreen renderToolPicker={() => null} />);
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('SPLITBRIEF compiles task briefs');
     expect(frame).toContain('No planner detected');
-    // The guidance sentence reflows inside the restored OverlayPanel frame, so "re-run" and "init:"
-    // can land on separate wrapped lines; assert the phrase that stays intact.
     expect(frame).toContain('re-run');
     expect(frame).toContain('npm i -g @anthropic-ai/claude-code');
     expect(frame).toContain('npm i -g @openai/codex');
@@ -71,7 +117,7 @@ describe('SetupScreen', () => {
     ui.unmount();
   });
 
-  it('renders the planner picker with a lowercase step label when a non-shell planner is available', async () => {
+  it('renders the planner picker with the full step label when a non-shell planner is available', async () => {
     detectionStore.setDetection({
       planners: [
         { tool: 'claude-code', type: 'cli', available: true, description: 'Claude Code' },
@@ -113,8 +159,8 @@ describe('SetupScreen', () => {
     overlayStore.open('settings');
     await tick();
 
-    ui.stdin.write('\x1b'); // escape must not quit while the overlay owns input
-    ui.stdin.write('y'); // y must not copy while the overlay owns input
+    ui.stdin.write('\x1b');
+    ui.stdin.write('y');
     await tick(20);
 
     expect(readClipboardExecCalls()).toHaveLength(0);
@@ -123,18 +169,26 @@ describe('SetupScreen', () => {
     ui.unmount();
   });
 
-  it('focuses a clicked install command row and copies it via the y-copy click zone', async () => {
+  it('keeps the clicked install action selected across resize and copies that action', async () => {
     forceUnicodeGlyphs();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
     const ui = renderFeature(<SetupScreen renderToolPicker={() => null} />);
     await tick(20);
 
-    collectClickableZones({ cols: 120, rows: 50 }).get('setup-install:1')?.();
+    collectClickableZones({ cols: 120, rows: 40 }).get('setup-install:codex')?.();
     await tick(50);
 
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('▌ npm i -g @openai/codex');
+    expect(ui.lastFrame() ?? '').toContain('▌ npm i -g @openai/codex');
 
-    collectClickableZones({ cols: 120, rows: 50 }).get('setup-copy')?.();
+    terminalSizeStore.__testReset({ cols: 80, rows: 16 });
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').not.toContain('npm i -g @openai/codex');
+
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('▌ npm i -g @openai/codex');
+
+    collectClickableZones({ cols: 120, rows: 40 }).get('setup-copy')?.();
     await tick();
 
     await vi.waitFor(() => {
@@ -142,6 +196,107 @@ describe('SetupScreen', () => {
     }, CLIPBOARD_EXEC_WAIT_MS);
 
     ui.unmount();
+  });
+
+  it('keeps planner confirmation reachable after a real config save rejection', async () => {
+    await withTempDir('setup-invalid', async (projectDir) => {
+      configStore.load(projectDir);
+      writeFileSync(join(projectDir, SPLITBRIEF_DIR), 'blocks the canonical config directory');
+      detectionStore.setDetection(INSTALLED_RUNNERS);
+      routerStore.init({ screen: 'setup', onComplete: 'home' });
+      terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+
+      const ui = renderFeature(
+        <SetupScreen
+          renderToolPicker={({ role, stepLabel, onConfirm, onCancel }) => (
+            <ToolModelPicker
+              role={role}
+              stepLabel={stepLabel}
+              onConfirm={onConfirm}
+              onCancel={onCancel}
+            />
+          )}
+        />,
+      );
+      await flushEffects();
+      await chooseRunner(ui, 'claude-code');
+
+      expect(feedbackStore.get()).toMatchObject({
+        isError: true,
+        message: expect.stringContaining('Failed to save config'),
+      });
+      expect(ui.lastFrame() ?? '').toContain('Choose planner · 1 of 2');
+      expect(ui.lastFrame() ?? '').toContain('⏎ confirm');
+
+      ui.stdin.write(ENTER);
+      await flushEffects();
+      expect(feedbackStore.get().isError).toBe(true);
+      expect(routerStore.get().screen).toBe('setup');
+
+      ui.unmount();
+    });
+  });
+
+  it('resets the real picker between roles and completes to workflow with canonical config', async () => {
+    await withTempDir('setup-complete', async (projectDir) => {
+      configStore.load(projectDir);
+      detectionStore.setDetection(INSTALLED_RUNNERS);
+      routerStore.init({
+        screen: 'setup',
+        onComplete: 'workflow',
+        feature: 'Keep setup behavior',
+        plannerContext: 'Use the selected planner',
+        allowRepoRunners: true,
+      });
+      terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+
+      const ui = renderFeature(
+        <SetupScreen
+          renderToolPicker={({ role, stepLabel, onConfirm, onCancel }) => (
+            <ToolModelPicker
+              role={role}
+              stepLabel={stepLabel}
+              onConfirm={onConfirm}
+              onCancel={onCancel}
+            />
+          )}
+        />,
+      );
+      await flushEffects();
+      await chooseRunner(ui, 'claude-code');
+
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Implementer');
+      expect(frame).toContain('Choose model · 2 of 2');
+      expect(frame).toContain('Codex');
+      expect(frame).toContain('Claude Code');
+
+      ui.stdin.write('\u001b');
+      await flushEffects();
+      expect(ui.lastFrame() ?? '').toContain('Choose planner · 1 of 2');
+
+      await chooseRunner(ui, 'claude-code');
+      await chooseRunner(ui, 'codex');
+
+      expect(routerStore.get()).toMatchObject({
+        screen: 'workflow',
+        feature: 'Keep setup behavior',
+        plannerContext: 'Use the selected planner',
+        allowRepoRunners: true,
+      });
+      expect(configPath(projectDir)).toBe(join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE));
+      expect(existsSync(configPath(projectDir))).toBe(true);
+      expect(readdirSync(join(projectDir, SPLITBRIEF_DIR))).toEqual([CONFIG_FILE]);
+
+      const persisted = loadConfig(projectDir).config;
+      expect(persisted).toMatchObject({
+        version: 3,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'codex' },
+      });
+
+      ui.unmount();
+    });
   });
 
   it('does not copy a hidden install command on y at a compact height', async () => {
