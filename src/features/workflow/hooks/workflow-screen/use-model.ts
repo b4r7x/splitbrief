@@ -135,7 +135,7 @@ export function useWorkflowScreen({
 
   const globalKeysActive = !promptPending && !fieldSessionOwned;
   useWorkflowKeys({ isActive: globalKeysActive });
-  useBriefReviewKeys({
+  const navigateBriefReview = useBriefReviewKeys({
     isActive: globalKeysActive,
     copyTarget,
     canCopyFocused,
@@ -207,11 +207,11 @@ export function useWorkflowScreen({
     approvalPending,
     costPending,
     promptPending,
+    navigateBriefReview,
     startedAt: runner.startedAt,
     handleInput,
     handleRuntimeCommand,
     onEmptySubmit: canResumeCancelledSession ? runner.handleResume : undefined,
-    onEditShortcut: undefined,
     inputHint,
     feedbackHint,
     boxHintOverride,

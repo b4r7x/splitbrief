@@ -5,7 +5,7 @@ import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
 import { normalizeLoadedWorkflowState } from '../queue-state.js';
 import type { SessionRef } from '../types/session-ref.js';
-import { DIPTYCH_DIR, SESSIONS_DIR, STATE_FILE, sessionDir } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR, STATE_FILE, sessionDir } from '../paths.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 import { rejectSymlinkTarget } from '../../lib/fs.js';
 import { confinedWriteFile } from '../../lib/confined-fs.js';
@@ -32,7 +32,7 @@ export function saveState(ref: SessionRef, state: WorkflowState): void {
   assertSessionDirConfined(ref.projectDir, ref.sessionId);
   confinedWriteFile(
     ref.projectDir,
-    join(DIPTYCH_DIR, SESSIONS_DIR, ref.sessionId, STATE_FILE),
+    join(SPLITBRIEF_DIR, SESSIONS_DIR, ref.sessionId, STATE_FILE),
     JSON.stringify(state, null, 2) + '\n',
   );
   const filePath = join(sessionDir(ref.projectDir, ref.sessionId), STATE_FILE);
@@ -65,7 +65,7 @@ export function loadState(ref: SessionRef): WorkflowState | null {
     return null;
   }
   assertExistingPathConfined(
-    `${DIPTYCH_DIR}/${SESSIONS_DIR}/${ref.sessionId}/${STATE_FILE}`,
+    `${SPLITBRIEF_DIR}/${SESSIONS_DIR}/${ref.sessionId}/${STATE_FILE}`,
     ref.projectDir,
   );
   let stat: ReturnType<typeof statSync>;

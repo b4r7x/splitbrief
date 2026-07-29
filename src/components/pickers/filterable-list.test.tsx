@@ -8,6 +8,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { FilterableList } from './filterable-list.js';
 
 const ENTER = '\r';
+const PAGE_DOWN = '\u001b[6~';
 const VIEWPORT = { cols: 80, rows: 24 };
 
 async function clickListRow(rowKey: string): Promise<void> {
@@ -53,7 +54,7 @@ describe('FilterableList row activation', () => {
     await flushEffects();
 
     await vi.waitFor(() => {
-      expect(confirmed).toEqual(['alpha']);
+      expect(confirmed).toEqual(['bravo']);
     });
     expect(activated).toEqual(['bravo']);
 
@@ -77,6 +78,34 @@ describe('FilterableList row activation', () => {
 
     await vi.waitFor(() => {
       expect(confirmed).toEqual(['bravo']);
+    });
+
+    ui.unmount();
+  });
+
+  it('uses the rendered row budget for page navigation and confirmation', async () => {
+    const confirmed: string[] = [];
+    const ui = renderFeature(
+      <FilterableList
+        items={['alpha', 'bravo', 'charlie', 'delta']}
+        filterFn={(item, query) => item.includes(query)}
+        getKey={(item) => item}
+        onConfirm={(item) => confirmed.push(item)}
+        chromeRows={0}
+        maxVisible={2}
+        renderItem={(item) => <Text>{item}</Text>}
+      />,
+    );
+
+    await flushEffects();
+    ui.stdin.write(PAGE_DOWN);
+    await flushEffects();
+    expect(ui.lastFrame() ?? '').toContain('charlie');
+
+    ui.stdin.write(ENTER);
+    await flushEffects();
+    await vi.waitFor(() => {
+      expect(confirmed).toEqual(['charlie']);
     });
 
     ui.unmount();

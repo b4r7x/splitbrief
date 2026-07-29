@@ -49,8 +49,8 @@ setupFetchMock();
 
 describe('composer input history restart flow', () => {
   it('persists workflow input on teardown and recalls it with Up after a fresh startup', async () => {
-    const tmpHome = mkdtempSync(join(tmpdir(), 'diptych-history-e2e-'));
-    const projectDir = mkdtempSync(join(tmpdir(), 'diptych-history-project-'));
+    const tmpHome = mkdtempSync(join(tmpdir(), 'splitbrief-history-e2e-'));
+    const projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-history-project-'));
     seedProject(projectDir);
     const originalHome = process.env['HOME'];
     const originalPath = process.env['PATH'];
@@ -90,7 +90,7 @@ describe('composer input history restart flow', () => {
       runtime.teardownStores();
       firstUi.unmount();
 
-      expect(readFileSync(join(tmpHome, '.diptych', 'history'), 'utf-8')).toContain(
+      expect(readFileSync(join(tmpHome, '.splitbrief', 'history'), 'utf-8')).toContain(
         'persisted workflow prompt',
       );
 

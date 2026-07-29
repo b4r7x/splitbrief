@@ -84,7 +84,7 @@ describe('attachCommand', () => {
   it('throws exit-1 for a dead session using the real crash diagnostic without exiting the process', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
-    const sessDir = join(testDir, '.diptych', 'sessions', 'dead-session');
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'dead-session');
     mkdirSync(sessDir, { recursive: true });
 
     const status: ServerStatus = {
@@ -138,7 +138,7 @@ describe('attachCommand', () => {
   it('renders the workflow app in attached-client mode when server is alive', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
-    const sessDir = join(testDir, '.diptych', 'sessions', 'alive-session');
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'alive-session');
     mkdirSync(sessDir, { recursive: true });
 
     mockCheckServerStatus.mockResolvedValue({
@@ -178,7 +178,7 @@ describe('attachCommand', () => {
   it('auto-resolves single running session when sessionId is undefined', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
-    const sessDir = join(testDir, '.diptych', 'sessions', 'solo-session');
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'solo-session');
     mkdirSync(sessDir, { recursive: true });
 
     mockCheckServerStatus.mockResolvedValue({

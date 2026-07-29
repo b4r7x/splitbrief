@@ -64,7 +64,7 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
         autoApprovePlan: true,
         persistTranscript: false,
       },
-      codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.diptych' },
+      codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.splitbrief' },
     });
 
     let state = createInitialState('add bar feature');
@@ -121,7 +121,7 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
         autoApprovePlan: true,
         persistTranscript: false,
       },
-      codebase: { enabled: false, tokenBudget: 1000, cacheDir: '.diptych' },
+      codebase: { enabled: false, tokenBudget: 1000, cacheDir: '.splitbrief' },
     });
 
     let state = createInitialState('add baz feature');
@@ -153,9 +153,9 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
     const sessionId = 'sess-codebase-corrupt';
     ensureSessionDir(projectDir, sessionId);
 
-    mkdirSync(join(projectDir, '.diptych'), { recursive: true });
+    mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
     writeFileSync(
-      join(projectDir, '.diptych', 'repomap.sqlite'),
+      join(projectDir, '.splitbrief', 'repomap.sqlite'),
       'not a sqlite database — torn header garbage'.repeat(8),
     );
 
@@ -184,7 +184,7 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
         autoApprovePlan: true,
         persistTranscript: false,
       },
-      codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.diptych' },
+      codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.splitbrief' },
     });
 
     let state = createInitialState('add corrupt-cache feature');

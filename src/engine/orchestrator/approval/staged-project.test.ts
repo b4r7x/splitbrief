@@ -1,7 +1,7 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SANDBOX_DIR } from '../../../core/paths.js';
+import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
 import { captureCurrentFileContents } from './file-snapshots/contents.js';
 import { createStagedProject, promoteStagedChanges } from './staged-project.js';
@@ -26,12 +26,12 @@ describe('createStagedProject', () => {
       mkdirSync(join(dir, 'src'), { recursive: true });
       writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
       mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
-      mkdirSync(join(dir, '.diptych', 'sessions'), { recursive: true });
-      mkdirSync(join(dir, '.diptych-sandbox', 'cache'), { recursive: true });
+      mkdirSync(join(dir, SPLITBRIEF_DIR, 'sessions'), { recursive: true });
+      mkdirSync(join(dir, SANDBOX_DIR, 'cache'), { recursive: true });
       mkdirSync(join(dir, '.trees', 'worktree'), { recursive: true });
       writeFileSync(join(dir, 'node_modules', 'pkg', 'cache.js'), 'cache');
-      writeFileSync(join(dir, '.diptych', 'sessions', 'state.json'), '{}');
-      writeFileSync(join(dir, '.diptych-sandbox', 'cache', 'file'), 'cache');
+      writeFileSync(join(dir, SPLITBRIEF_DIR, 'sessions', 'state.json'), '{}');
+      writeFileSync(join(dir, SANDBOX_DIR, 'cache', 'file'), 'cache');
       writeFileSync(join(dir, '.trees', 'worktree', 'file.ts'), 'tree');
 
       const staged = await createStagedProject(dir);
@@ -42,7 +42,7 @@ describe('createStagedProject', () => {
           'export const app = true;\n',
         );
         expect(existsSync(join(staged.projectDir, 'node_modules'))).toBe(false);
-        expect(existsSync(join(staged.projectDir, '.diptych'))).toBe(false);
+        expect(existsSync(join(staged.projectDir, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
         const sandboxHome = join(staged.projectDir, SANDBOX_DIR, 'home');
         const sandboxTmp = join(staged.projectDir, SANDBOX_DIR, 'tmp');
         const sandboxCache = join(staged.projectDir, SANDBOX_DIR, 'cache');

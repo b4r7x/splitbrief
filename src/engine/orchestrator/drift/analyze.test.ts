@@ -1,10 +1,106 @@
 import { describe, expect, it } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { analyzeBriefDrift } from './analyze.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../../core/evidence/ledger-state.js';
 import { recordRetryOrEscalationEvidence } from '../evidence/task.js';
+import {
+  captureChangedFilesBaseline,
+  inferTaskAcceptedChangedFiles,
+} from '../changed-files-baseline.js';
+
+const acceptedScopeCases = [
+  {
+    label: 'exact primary',
+    task: makeTask({ file: 'src/primary.ts', status: 'done' }),
+    changedFile: 'src/primary.ts',
+    accepted: true,
+  },
+  {
+    label: 'glob primary',
+    task: makeTask({ file: 'src/primary/*.ts', status: 'done' }),
+    changedFile: 'src/primary/matched.ts',
+    accepted: true,
+  },
+  {
+    label: 'exact in-bounds',
+    task: makeTask({
+      file: 'src/primary.ts',
+      status: 'done',
+      scope: { inBounds: ['src/in-bounds.ts'] },
+    }),
+    changedFile: 'src/in-bounds.ts',
+    accepted: true,
+  },
+  {
+    label: 'glob in-bounds',
+    task: makeTask({
+      file: 'src/primary.ts',
+      status: 'done',
+      scope: { inBounds: ['src/in-bounds/**'] },
+    }),
+    changedFile: 'src/in-bounds/matched.ts',
+    accepted: true,
+  },
+  {
+    label: 'exact approved',
+    task: makeTask({
+      file: 'src/primary.ts',
+      status: 'done',
+      scope: { approvedOutOfBounds: ['generated/exact.ts'] },
+    }),
+    changedFile: 'generated/exact.ts',
+    accepted: true,
+  },
+  {
+    label: 'glob approved',
+    task: makeTask({
+      file: 'src/primary.ts',
+      status: 'done',
+      scope: { approvedOutOfBounds: ['generated/**'] },
+    }),
+    changedFile: 'generated/matched.ts',
+    accepted: true,
+  },
+  {
+    label: 'truly untargeted',
+    task: makeTask({ file: 'src/primary.ts', status: 'done' }),
+    changedFile: 'unrelated/extra.ts',
+    accepted: false,
+  },
+] as const;
 
 describe('analyzeBriefDrift', () => {
+  it.each(acceptedScopeCases)('matches task attribution for $label paths', async ({
+    task,
+    changedFile,
+    accepted,
+  }) => {
+    await withTempDir('drift-scope-parity', async (projectDir) => {
+      createTestGitRepo(projectDir);
+      const target = join(projectDir, changedFile);
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileSync(target, 'export const changed = true;\n');
+      const baseline = await captureChangedFilesBaseline(projectDir, []);
+
+      const attributed = await inferTaskAcceptedChangedFiles(projectDir, task, baseline.head);
+      const report = analyzeBriefDrift({
+        tasks: [task],
+        changedFiles: [changedFile],
+        diff: '',
+      });
+      const reportedUntargeted = report.findings.some(
+        (finding) => finding.code === 'out_of_scope_file' && finding.file === changedFile,
+      );
+
+      expect(attributed.includes(changedFile)).toBe(accepted);
+      expect(reportedUntargeted).toBe(!accepted);
+    });
+  });
+
   it('passes when only the exact task files changed', () => {
     const tasks = [
       makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' }),
@@ -66,6 +162,23 @@ describe('analyzeBriefDrift', () => {
     expect(finding?.severity).toBe('error');
     expect(finding?.taskId).toBe('T001');
     expect(report.passed).toBe(false);
+  });
+
+  it('errors when a failed task leaves a changed file matching its primary glob', () => {
+    const task = makeTask({ id: 'T001', file: 'src/failed/*.ts', status: 'failed' });
+    const report = analyzeBriefDrift({
+      tasks: [task],
+      changedFiles: ['src/failed/matched.ts'],
+      diff: '',
+    });
+
+    expect(report.findings).toContainEqual(
+      expect.objectContaining({
+        code: 'failed_task_with_diff',
+        taskId: 'T001',
+        file: 'src/failed/*.ts',
+      }),
+    );
   });
 
   it('errors when out-of-bounds pattern matches changed file', () => {
@@ -143,6 +256,44 @@ describe('analyzeBriefDrift', () => {
     expect(report.findings).toEqual([]);
   });
 
+  it('treats a glob primary match as present without changing the primary expected file', () => {
+    const task = makeTask({ file: 'src/feature/*.ts', status: 'done' });
+    const report = analyzeBriefDrift({
+      tasks: [task],
+      changedFiles: ['src/feature/matched.ts'],
+      diff: '',
+    });
+
+    expect(report.expectedFiles).toEqual(['src/feature/*.ts']);
+    expect(report.findings.some((finding) => finding.code === 'missing_expected_file')).toBe(false);
+    expect(report.findings.some((finding) => finding.code === 'out_of_scope_file')).toBe(false);
+  });
+
+  it('sorts changed files, primary expected files, and file findings deterministically', () => {
+    const tasks = [
+      makeTask({ id: 'T002', file: 'src/z.ts', status: 'done' }),
+      makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' }),
+    ];
+    const report = analyzeBriefDrift({
+      tasks,
+      changedFiles: ['src/z.ts', 'src/extra-z.ts', 'src/a.ts', 'src/extra-a.ts', 'src/z.ts'],
+      diff: '',
+    });
+
+    expect(report.changedFiles).toEqual([
+      'src/a.ts',
+      'src/extra-a.ts',
+      'src/extra-z.ts',
+      'src/z.ts',
+    ]);
+    expect(report.expectedFiles).toEqual(['src/a.ts', 'src/z.ts']);
+    expect(
+      report.findings
+        .filter((finding) => finding.code === 'out_of_scope_file')
+        .map((finding) => finding.file),
+    ).toEqual(['src/extra-a.ts', 'src/extra-z.ts']);
+  });
+
   it('warns when expected evidence missing in ledger', () => {
     const task = makeTask({
       id: 'T001',
@@ -172,7 +323,7 @@ describe('analyzeBriefDrift', () => {
     expect(f?.taskId).toBe('T001');
   });
 
-  it('annotates a pre-run-dirty changed file as pre-existing instead of out-of-scope when the ledger does not attribute it to the run', () => {
+  it('preserves the legacy no-baseline fallback when the ledger does not attribute an extra changed file', () => {
     const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
@@ -193,6 +344,36 @@ describe('analyzeBriefDrift', () => {
     expect(report.findings.some((f) => f.file === 'src/legacy.ts' && f.severity !== 'info')).toBe(
       false,
     );
+  });
+
+  it('uses an explicit run-start baseline to distinguish pre-existing files from unattributed run-produced files', () => {
+    const task = makeTask({
+      id: 'T001',
+      file: 'src/a.ts',
+      status: 'done',
+      scope: { outOfBounds: ['src/forbidden'] },
+    });
+    const ledger = withUpdatedTask(
+      createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
+      'T001',
+      (t) => ({ ...t, changedFiles: ['src/a.ts'] }),
+    );
+    const report = analyzeBriefDrift({
+      tasks: [task],
+      changedFiles: ['src/a.ts', 'src/legacy.ts', 'src/extra.ts'],
+      diff: '',
+      ledger,
+      preRunChangedFiles: ['src/legacy.ts'],
+    });
+    expect(report.findings.find((f) => f.file === 'src/legacy.ts')).toMatchObject({
+      code: 'out_of_scope_file',
+      severity: 'info',
+    });
+    expect(report.findings.find((f) => f.file === 'src/extra.ts')).toMatchObject({
+      code: 'out_of_scope_file',
+      severity: 'error',
+    });
+    expect(report.passed).toBe(false);
   });
 
   it('annotates a pre-run-dirty file as pre-existing using the run-start status baseline when no ledger is present', () => {
@@ -241,7 +422,7 @@ describe('analyzeBriefDrift', () => {
     expect(report.passed).toBe(true);
   });
 
-  it('keeps a baseline file in scope when the ledger attributes it to the run', () => {
+  it('treats a ledger-attributed baseline file as run-produced but still out-of-scope when untargeted', () => {
     const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),

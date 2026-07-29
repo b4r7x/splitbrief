@@ -19,8 +19,8 @@ const SKIP_TOP_LEVEL = new Set([
   'dist',
   '.git',
   '.trees',
-  '.diptych',
-  '.tiny-spec',
+  '.splitbrief',
+  '.splitbrief',
 ]);
 
 function copyProjectForSmoke(src: string, dest: string): void {
@@ -54,7 +54,7 @@ let pkgVersion: string;
 beforeAll(() => {
   pkgVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version;
 
-  workDir = mkdtempSync(join(tmpdir(), 'diptych-smoke-src-'));
+  workDir = mkdtempSync(join(tmpdir(), 'splitbrief-smoke-src-'));
   copyProjectForSmoke(ROOT, workDir);
 
   execFileSync('npm', ['ci'], {
@@ -64,7 +64,7 @@ beforeAll(() => {
   });
   execFileSync('npm', ['run', 'build'], { cwd: workDir, stdio: 'pipe' });
 
-  const packParent = mkdtempSync(join(tmpdir(), 'diptych smoke pack '));
+  const packParent = mkdtempSync(join(tmpdir(), 'splitbrief smoke pack '));
   const packDir = join(packParent, 'pack');
   mkdirSync(packDir, { recursive: true });
 
@@ -76,7 +76,7 @@ beforeAll(() => {
   const tgz = readdirSync(packDir).find((f) => f.endsWith('.tgz'));
   if (!tgz) throw new Error('npm pack produced no tarball');
 
-  const installParent = mkdtempSync(join(tmpdir(), 'diptych smoke install '));
+  const installParent = mkdtempSync(join(tmpdir(), 'splitbrief smoke install '));
   installDir = join(installParent, 'install');
   mkdirSync(installDir, { recursive: true });
 
@@ -86,8 +86,8 @@ beforeAll(() => {
     { cwd: installDir, stdio: 'pipe' },
   );
 
-  installedPkgDir = join(installDir, 'node_modules', 'diptych');
-  binPath = join(installDir, 'node_modules', '.bin', 'diptych');
+  installedPkgDir = join(installDir, 'node_modules', 'splitbrief');
+  binPath = join(installDir, 'node_modules', '.bin', 'splitbrief');
 }, 300_000);
 
 afterAll(() => {
@@ -108,15 +108,15 @@ describe('package smoke test', () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Usage:');
-    expect(result.stdout).toContain('diptych');
+    expect(result.stdout).toContain('splitbrief');
 
     const exampleLines = result.stdout
       .split('\n')
-      .filter((line) => line.trim().startsWith('$ diptych'));
+      .filter((line) => line.trim().startsWith('$ splitbrief'));
     expect(exampleLines.length).toBeGreaterThanOrEqual(10);
     for (const snippet of [
-      '$ diptych "',
-      '$ diptych start "',
+      '$ splitbrief "',
+      '$ splitbrief start "',
       '@design.md',
       '@screenshot.png',
       '--mode instant',
@@ -125,9 +125,9 @@ describe('package smoke test', () => {
       '--worktree',
       '--detach',
       '--json',
-      'diptych status',
-      'diptych resume',
-      'diptych doctor',
+      'splitbrief status',
+      'splitbrief resume',
+      'splitbrief doctor',
     ]) {
       expect(result.stdout).toContain(snippet);
     }

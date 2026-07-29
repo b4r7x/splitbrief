@@ -1,4 +1,5 @@
 import { discardChangedFiles, discardSubmoduleChange } from '../../../../lib/git/files.js';
+import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
 import {
   resetIndexEntryToRef,
   restoreFileFromRef,
@@ -7,11 +8,7 @@ import {
 } from '../../../../lib/git/refs.js';
 import { isPathConfinementError } from './contents.js';
 import { readCurrentFileContent, writeCurrentFileContent } from './contents.js';
-import type {
-  ChangedFilesSnapshot,
-  FileContentSnapshot,
-  RestoreChangedFilesResult,
-} from './types.js';
+import type { FileContentSnapshot, RestoreChangedFilesResult } from './types.js';
 
 async function restoreCommittedLegFile(
   projectDir: string,

@@ -1,5 +1,6 @@
 import { useInput, type Key } from 'ink';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { completionStore } from '../../../stores/ui/completion.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -7,6 +8,7 @@ import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { clamp } from '../../../utils/math.js';
 import { findLatestRenderableDiffKey } from '../../../core/sections/event-sections.js';
 import { resolveScrollKey } from '../../../core/keybindings/scroll.js';
 import { findLatestExpandableActivityBatchKey } from '../conversation-rows/activity-batch-key.js';
@@ -45,7 +47,11 @@ function applyAction(action: WorkflowKeyAction) {
       });
       return;
     case 'conversation-scroll-down':
-      conversationScrollStore.scrollDown(action.step);
+      {
+        const visibleOffset = readConversationScrollSnapshot().scrollOffset;
+        const storedOffset = conversationScrollStore.get().scrollOffset;
+        conversationScrollStore.scrollDown(action.step + Math.max(0, storedOffset - visibleOffset));
+      }
       return;
     case 'conversation-scroll-bottom':
       conversationScrollStore.scrollToBottom(action.renderableCount);
@@ -53,10 +59,6 @@ function applyAction(action: WorkflowKeyAction) {
     default:
       return assertNever(action);
   }
-}
-
-function isConversationScrollKey(input: string, key: Key): boolean {
-  return resolveScrollKey({ input, key, lineKeys: 'shifted' }) !== null;
 }
 
 interface ReviewScrollContext {
@@ -73,6 +75,8 @@ function getReviewScrollAction(
 ): WorkflowKeyAction {
   const review = reviewStore.get();
   if (!review.filePath) return { type: 'none' };
+  const visibleHeight = readReviewContentHeight();
+  const maxOffset = Math.max(0, review.renderedLineCount - visibleHeight);
   return handleReviewScroll({
     input,
     key,
@@ -81,9 +85,9 @@ function getReviewScrollAction(
     attachState: context.attachState,
     composerFocus: context.composerFocus,
     focus: context.inputMode === 'review' ? 'review' : 'workflow',
-    reviewScrollOffset: review.scrollOffset,
+    reviewScrollOffset: clamp(review.scrollOffset, 0, maxOffset),
     reviewLineCount: review.renderedLineCount,
-    visibleHeight: readReviewContentHeight(),
+    visibleHeight,
   });
 }
 
@@ -92,7 +96,9 @@ function getConversationScrollAction(
   key: Key,
   composerFocus: boolean,
 ): WorkflowKeyAction {
-  if (!isConversationScrollKey(input, key)) return { type: 'none' };
+  if (resolveScrollKey({ input, key, lineKeys: 'shifted' }) === null) {
+    return { type: 'none' };
+  }
 
   const { maxOffset, renderableCount, totalHeight, viewportHeight } =
     readConversationScrollSnapshot();
@@ -108,17 +114,10 @@ function getConversationScrollAction(
 }
 
 export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
-  const [overlay, route] = useStores(overlayStore, routerStore);
+  const [overlay, route, completion] = useStores(overlayStore, routerStore, completionStore);
   const { active: overlayActive } = overlay;
   const isOpen = overlayActive !== 'none';
   const isAttachedClient = route.screen === 'workflow' && route.attach !== undefined;
-
-  useInput(
-    (_input, _key) => {
-      overlayStore.close();
-    },
-    { isActive: isActive && overlayActive === 'cost-drilldown' },
-  );
 
   useInput(
     (input, key) => {
@@ -164,6 +163,6 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
         return;
       }
     },
-    { isActive: isActive && !isOpen },
+    { isActive: isActive && !isOpen && !completion.open },
   );
 }

@@ -18,7 +18,7 @@ const realDeps = (): HandoffDeps => ({
 });
 
 function makeAliasableSession(sessionId: string, sortKeyMs: number): void {
-  const dir = join(tmp, '.diptych', 'sessions', sessionId);
+  const dir = join(tmp, '.splitbrief', 'sessions', sessionId);
   mkdirSync(dir, { recursive: true });
   const summaryPath = join(dir, 'summary.json');
   writeFileSync(summaryPath, '{}');
@@ -43,7 +43,7 @@ async function runHandoff(args: string[], deps: HandoffDeps = realDeps()): Promi
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
   registerHandoffCommand(program, deps);
-  await program.parseAsync(['node', 'diptych', 'handoff', '--project', tmp, ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'handoff', '--project', tmp, ...args]);
   return logs;
 }
 
@@ -86,7 +86,7 @@ describe('handoff command — --list flag', () => {
   });
 
   it('prints custom renderers when renderer files exist', async () => {
-    const renderersDir = join(tmp, '.diptych', 'handoff-renderers');
+    const renderersDir = join(tmp, '.splitbrief', 'handoff-renderers');
     mkdirSync(renderersDir, { recursive: true });
     writeFileSync(join(renderersDir, 'linear-ticket.ts'), '');
     writeFileSync(join(renderersDir, 'jira-task.ts'), '');
@@ -112,7 +112,7 @@ describe('handoff command — artifact output', () => {
     makeAliasableSession('older-session', 1_000);
     makeAliasableSession('newer-session', 2_000);
 
-    const outDir = join(tmp, '.diptych', 'handoffs', 'spec-kit');
+    const outDir = join(tmp, '.splitbrief', 'handoffs', 'spec-kit');
     const logs = await runHandoff(['--task', 'T001,T002', '--session', '1']);
 
     expect(logs.join('\n')).toContain(outDir);
@@ -129,7 +129,7 @@ describe('handoff command — artifact output', () => {
   it('normalizes the speckit alias to spec-kit on disk', async () => {
     writeHandoffWriterSessionState(tmp, 'handoff-session');
 
-    const outDir = join(tmp, '.diptych', 'handoffs', 'spec-kit');
+    const outDir = join(tmp, '.splitbrief', 'handoffs', 'spec-kit');
     await runHandoff(['speckit', '--session', 'handoff-session']);
 
     expect(existsSync(join(outDir, 'README.md'))).toBe(true);
@@ -141,7 +141,7 @@ describe('handoff command — custom renderer routing', () => {
   it('routes unknown safe targets through writeHandoffPack with a fixed custom renderer result', async () => {
     writeHandoffWriterSessionState(tmp, 'handoff-session');
     const writer = vi.fn<HandoffDeps['writeHandoffPack']>().mockResolvedValue({
-      outputDir: `${tmp}/.diptych/handoffs/custom-target`,
+      outputDir: `${tmp}/.splitbrief/handoffs/custom-target`,
       files: ['custom-target.md'],
     });
     const logs = await runHandoff(['custom-target', '--session', 'handoff-session'], {
@@ -150,7 +150,7 @@ describe('handoff command — custom renderer routing', () => {
     });
 
     expect(writer).toHaveBeenCalledWith(expect.objectContaining({ target: 'custom-target' }));
-    expect(logs.join('\n')).toContain(`${tmp}/.diptych/handoffs/custom-target`);
+    expect(logs.join('\n')).toContain(`${tmp}/.splitbrief/handoffs/custom-target`);
     expect(logs.join('\n')).toContain('custom-target.md');
   });
 });

@@ -1,4 +1,4 @@
-# diptych — Engine internals
+# SPLITBRIEF — Engine internals
 
 How the orchestrator runs, how events flow, and how the engine talks to the UI without knowing the UI exists.
 
@@ -38,8 +38,8 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 - **`budget/`** — Cost prediction and budget enforcement. `cost-prediction.ts` estimates prompt-input cost before tasks start; `check.ts` holds pure threshold math; `knownness.ts` resolves usage-price knownness for runtime spend; `enforce.ts` publishes budget events, drives recovery, and runs post-task enforcement via `checkBudgetAfterTask`.
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
 - **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the planner.
-- **`user-edit/`** — Detects when the user edits files outside of diptych during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output.
-- **`explain/`** — Post-hoc explanation of workflow decisions. Formats artifacts, routing choices, and section breakdowns for the `diptych explain` CLI command.
+- **`user-edit/`** — Detects when the user edits files outside of SPLITBRIEF during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output.
+- **`explain/`** — Post-hoc explanation of workflow decisions. Formats artifacts, routing choices, and section breakdowns for the `splitbrief explain` CLI command.
 
 ---
 
@@ -126,7 +126,7 @@ Several sinks can subscribe to the bus. Two are unconditional (JSONL, tree recor
 
 **TUI sink** (`src/features/workflow/tui-sink.ts`) — calls `addEvent()` from `src/stores/workflow/actions/event.ts`. This is the bridge between engine and UI. It lives in `src/features/`, not `src/engine/`, because the engine layer must not import from React or stores. The sink is passed in as `opts.tuiSink` — the engine never constructs it.
 
-**JSONL sink** (`src/engine/events/sinks/jsonl.ts`) — appends protected events to `.diptych/sessions/<id>/session.jsonl`. When transcript persistence is disabled, transcript-like events are dropped or stripped before write. This is the audit log and the source for session replay.
+**JSONL sink** (`src/engine/events/sinks/jsonl.ts`) — appends protected events to `.splitbrief/sessions/<id>/session.jsonl`. When transcript persistence is disabled, transcript-like events are dropped or stripped before write. This is the audit log and the source for session replay.
 
 **Tree recorder sink** (`src/engine/events/sinks/tree-recorder.ts`) — maintains a branching session tree on disk. Records plan steps, agent invocations, recovery decisions, and cost checkpoints. Recovery actions that change the execution path (retry, route to bigger worker, planner split) create branches instead of appending linearly. Every raw event first passes `protectEngineEventForConsumer(context: 'tree')`; tree payloads and entry envelopes then pass consumer payload protection and schema validation before disk write. Runner invocations store control fields such as call id, role, backend kind, runner/model, phase, status, timing, usage, partial, error code, and warning counts/codes, not raw runner text/tool/artifact output.
 
@@ -179,7 +179,7 @@ The split exists because events and callbacks solve different problems. Events p
 
 Runner-call warning and error events remain structurally visible, but their message text is replaced with `[transcript omitted]` because backend diagnostics can contain prompt or transcript fragments. Ordinary operational `warning` and `error` events keep their bounded message text, so queue-full, queue-not-ready, IPC, replay, and protection diagnostics remain actionable in transcript-off mode.
 
-All protected consumers share `src/core/consumer-policy.ts`: terminal controls are stripped from strings, secrets are redacted with the shared redaction rules, strings and full payloads are byte-bounded per consumer, unsupported/circular values are replaced, and the normalized payload is validated again. If protection makes an event invalid or too large, the consumer receives a bounded protection warning or drops the payload rather than writing unsafe data. Hooks and OpenTelemetry have separate boundaries: hook command stdin and interpolated fields use consumer-payload protection, while builtin and module hooks receive engine events; OTel applies transcript projection before span handling and per-string protection before exporting attributes. When transcript persistence is disabled, `diptych.feature` is omitted or replaced with a placeholder rather than exporting the feature prompt. Summary JSON, summary UI, HTML export, `ps`, active-session metadata, and generated branch/session names use the same transcript policy for feature text.
+All protected consumers share `src/core/consumer-policy.ts`: terminal controls are stripped from strings, secrets are redacted with the shared redaction rules, strings and full payloads are byte-bounded per consumer, unsupported/circular values are replaced, and the normalized payload is validated again. If protection makes an event invalid or too large, the consumer receives a bounded protection warning or drops the payload rather than writing unsafe data. Hooks and OpenTelemetry have separate boundaries: hook command stdin and interpolated fields use consumer-payload protection, while builtin and module hooks receive engine events; OTel applies transcript projection before span handling and per-string protection before exporting attributes. When transcript persistence is disabled, `splitbrief.feature` is omitted or replaced with a placeholder rather than exporting the feature prompt. Summary JSON, summary UI, HTML export, `ps`, active-session metadata, and generated branch/session names use the same transcript policy for feature text.
 
 ---
 
@@ -209,7 +209,11 @@ The full path from engine to pixel:
 
 Two complementary paths:
 
-**`saveState()`** (`src/core/state/persistence.ts`) — writes `state.json` on every phase transition via `transitionAndSave()`. This is the resume source of truth. `diptych resume` reads this file to know what phase, which tasks, and what progress. It's overwritten, not appended.
+**`saveState()`** (`src/core/state/persistence.ts`) — writes `state.json` on every phase transition via `transitionAndSave()`. This is the resume source of truth. `splitbrief resume` reads this file to know what phase, which tasks, and what progress. It's overwritten, not appended.
+
+A persisted changed-files baseline has three provenance states: absent uses legacy commit-subject discovery, `head: null` records a known unborn start, and a SHA records the exact run-start commit.
+
+`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones.
 
 **`jsonlSink`** — appends protected events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source when transcript persistence is enabled. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
 
@@ -367,4 +371,4 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   implementerTool: string; implementerModel?: string }
 ```
 
-`routingReason` on `task_started` is intended for user-facing task-start rows. Fuller context-fit and per-task routing metadata is also retained for cost drilldown and `diptych explain`; the engine emits it as plain event data and does not import UI code.
+`routingReason` on `task_started` is intended for user-facing task-start rows. Fuller context-fit and per-task routing metadata is also retained for cost drilldown and `splitbrief explain`; the engine emits it as plain event data and does not import UI code.

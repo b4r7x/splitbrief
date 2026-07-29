@@ -4,6 +4,7 @@ import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { ApprovalPromptState } from '../../../stores/approval-prompt/prompt.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { approvalTextWidth, wrappedRows } from './measure.js';
 
 const BORDER_ROWS = 2;
@@ -29,7 +30,11 @@ export interface StickyOption {
 export const STICKY_OPTIONS: ReadonlyArray<StickyOption> = [
   { key: 'a', label: 'Approve once' },
   { key: 's', label: 'Approve this session' },
-  { key: 'w', label: 'Approve always', note: 'saved to .diptych/approvals.json' },
+  {
+    key: 'w',
+    label: 'Approve always',
+    note: `saved to ${SPLITBRIEF_DIR}/approvals.json`,
+  },
   { key: 'x', label: 'Deny' },
 ];
 

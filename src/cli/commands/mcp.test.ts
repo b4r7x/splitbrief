@@ -11,7 +11,7 @@ let tmp: string;
 let closeCount: number;
 
 function createSessionFixture(projectDir: string, sessionId: string, sortKeyMs = Date.now()): void {
-  const dir = join(projectDir, '.diptych', 'sessions', sessionId);
+  const dir = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(dir, { recursive: true });
   const summaryPath = join(dir, 'summary.json');
   writeFileSync(
@@ -31,9 +31,9 @@ function createSessionFixture(projectDir: string, sessionId: string, sortKeyMs =
 }
 
 function writeConfig(projectDir: string): void {
-  mkdirSync(join(projectDir, '.diptych'), { recursive: true });
+  mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
   writeFileSync(
-    join(projectDir, '.diptych', 'config.yaml'),
+    join(projectDir, '.splitbrief', 'config.yaml'),
     [
       'version: 3',
       'planner:',
@@ -82,7 +82,7 @@ async function runMcpServe(args: string[], deps = createDeps()): Promise<string>
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
   registerMcpCommand(program, deps);
-  await program.parseAsync(['node', 'diptych', 'mcp', 'serve', '--project', tmp, ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'mcp', 'serve', '--project', tmp, ...args]);
   return writes.join('');
 }
 
@@ -154,7 +154,7 @@ describe('mcp serve — startup announcement', () => {
   it('prints startup announcement with token and url to stdout', async () => {
     const output = await runMcpServe(['--session', '2026-04-26-test-session']);
 
-    expect(output).toContain('diptych MCP server ready');
+    expect(output).toContain('SPLITBRIEF MCP server ready');
     expect(output).toMatch(/resources/i);
     expect(output).toMatch(/5 evidence tools/i);
     expect(output).toContain('http://127.0.0.1:4321/mcp');

@@ -29,7 +29,9 @@ export async function applyWorktreeOption(
     createWorktree({ projectDir: baseProjectDir, slug, git }),
   );
   const displaySlug = stripTerminalControls(slug);
-  console.log(`Starting session in worktree .trees/${displaySlug} (branch diptych/${displaySlug})`);
+  console.log(
+    `Starting session in worktree .trees/${displaySlug} (branch splitbrief/${displaySlug})`,
+  );
   opts.project = wtPath;
   return { slug, baseProjectDir, git };
 }
@@ -47,7 +49,7 @@ export async function rollbackCreatedWorktree(created: CreatedWorktree): Promise
     const displaySlug = stripTerminalControls(created.slug);
     process.stderr.write(
       `Warning: failed to remove worktree .trees/${displaySlug} after a startup error; ` +
-        `run "git worktree prune" then "git branch -D diptych/${displaySlug}" to clean up.\n`,
+        `run "git worktree prune" then "git branch -D splitbrief/${displaySlug}" to clean up.\n`,
     );
   }
 }

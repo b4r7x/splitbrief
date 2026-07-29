@@ -58,7 +58,7 @@ describe('parseIpcServerArgs launch contract', () => {
       projectDir: '/repo',
       feature: 'feature',
       mode: 'standard',
-      configPath: '/repo/.diptych/config.yaml',
+      configPath: '/repo/.splitbrief/config.yaml',
       overrides: { yolo: 'yes' },
     });
 
@@ -71,7 +71,7 @@ describe('parseIpcServerArgs launch contract', () => {
       projectDir: '/repo',
       feature: 'feature',
       mode: 'standard',
-      configPath: '/repo/.diptych/config.yaml',
+      configPath: '/repo/.splitbrief/config.yaml',
       overrides: { planner: { tool: 'codex', extra: true } },
     });
 
@@ -85,7 +85,7 @@ describe('parseIpcServerArgs launch contract', () => {
       projectDir: '/repo',
       feature: 'feature',
       mode: 'full',
-      configPath: '/repo/.diptych/config.yaml',
+      configPath: '/repo/.splitbrief/config.yaml',
       overrides: {},
     });
 
@@ -98,7 +98,7 @@ describe('parseIpcServerArgs launch contract', () => {
       projectDir: '/repo',
       feature: 'feature',
       mode: 'full',
-      configPath: '/repo/.diptych/config.yaml',
+      configPath: '/repo/.splitbrief/config.yaml',
       overrides: { mode: 'full' },
     });
 

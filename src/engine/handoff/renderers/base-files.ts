@@ -1,5 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { HandoffFile, HandoffInput } from '../types.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
 function listOrNone(items: string[] | undefined): string {
   if (!items || items.length === 0) return 'none declared';
@@ -84,7 +85,7 @@ export function buildBaseFiles(input: HandoffInput & { tasks: Task[] }): Handoff
 
   const readme = `# Handoff Pack
 
-This folder contains a diptych Handoff Pack for: **${input.feature}**
+This folder contains a ${SPLITBRIEF_IDENTITY.displayName} Handoff Pack for: **${input.feature}**
 
 Run \`claude\`, \`codex exec\`, or \`cursor\` in this folder. Work through the tasks in the \`tasks/\` directory in dependency order.
 `;

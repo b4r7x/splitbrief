@@ -39,7 +39,7 @@ export const ManifestSchema = z
     cellSchemaVersion: z.literal(CELL_GRID_SCHEMA_VERSION),
     tool: z
       .object({
-        name: z.literal('diptych-tui-shots'),
+        name: z.literal('splitbrief-tui-shots'),
         version: ToolVersionSchema,
       })
       .strict()

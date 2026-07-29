@@ -25,7 +25,7 @@ const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
 const { writeActive } = await import('../../../src/core/sessions/lifecycle.js');
-const { ensureDiptychDir, ensureSessionDir } = await import('../../../src/core/paths-io.js');
+const { ensureSplitbriefDir, ensureSessionDir } = await import('../../../src/core/paths-io.js');
 const { READINESS_FILE, sessionDir } = await import('../../../src/core/paths.js');
 
 const SESSION_ID = '2026-06-14-tui-readiness';
@@ -52,7 +52,7 @@ describe('WorkflowScreen TUI readiness persistence', () => {
     runWorkflow.mockReturnValue(new Promise<never>(() => {}));
     collectReadiness.mockReset();
     projectDir = createTempDir('workflow-readiness-persist');
-    ensureDiptychDir(projectDir);
+    ensureSplitbriefDir(projectDir);
     ensureSessionDir(projectDir, SESSION_ID);
     writeActive({ projectDir, sessionId: SESSION_ID });
   });

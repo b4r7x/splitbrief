@@ -40,7 +40,7 @@ function publishAdvisory(advisory: AdvisorResult): void {
 describe('InputFooter', () => {
   beforeEach(() => {
     eventsStore.__testReset();
-    configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/diptych-test' });
+    configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/splitbrief-test' });
     routerStore.init({ screen: 'workflow', feature: 'demo' });
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();

@@ -10,7 +10,7 @@ import {
 import { PhaseSchema } from '../schemas/enums.js';
 import { TaskIdSchema } from '../schemas/task.js';
 import type { SessionRef } from '../types/session-ref.js';
-import { DIPTYCH_DIR, SESSIONS_DIR, SESSION_LOG_FILE } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_LOG_FILE } from '../paths.js';
 import { fsError, rejectSymlinkTarget } from '../../lib/fs.js';
 import { confinedAppendFileSync, confinedEnsureDir } from '../../lib/confined-fs.js';
 import { warnStderr } from '../../lib/warn.js';
@@ -31,7 +31,7 @@ export function createSessionLogAppender(
   ref: SessionRef,
   opts: { onFailure?: ((failure: SessionLogAppendFailure) => void) | undefined } = {},
 ): SessionLogAppender {
-  const sessionRel = join(DIPTYCH_DIR, SESSIONS_DIR, ref.sessionId);
+  const sessionRel = join(SPLITBRIEF_DIR, SESSIONS_DIR, ref.sessionId);
   const logRel = join(sessionRel, SESSION_LOG_FILE);
   const logFile = resolve(ref.projectDir, logRel);
   let ensured = false;

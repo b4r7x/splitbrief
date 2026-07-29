@@ -5,7 +5,7 @@ import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js'
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../../providers/catalog.js';
 import { validateConfig } from './validation/config.js';
 import { fromYaml, toYaml } from './transform.js';
-import { DIPTYCH_DIR, TREES_DIR, CONFIG_FILE, getDiptychPath } from '../../paths.js';
+import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
 import { migrateConfig } from './migrate.js';
 import { checkConfigPermissions, ensureGitignore } from '../../../lib/fs.js';
 import {
@@ -18,7 +18,7 @@ import { narrowRecord } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
 
 export function configPath(projectDir: string): string {
-  return getDiptychPath(projectDir, CONFIG_FILE);
+  return getSplitbriefPath(projectDir, CONFIG_FILE);
 }
 
 export function createDefaultConfig(): Config {
@@ -139,9 +139,9 @@ export function formatConfigLoaderDiagnostic(diagnostic: ConfigLoaderDiagnostic)
       return `Config file ${diagnostic.path} has overly permissive permissions. Consider running: chmod 600 ${diagnostic.path}`;
     case 'config-migration':
       if (diagnostic.code === 'deprecated-v2') {
-        return 'config.version 2 is deprecated; diptych migrated it in memory. Run `diptych init --reconfigure` to write a current config.';
+        return 'config.version 2 is deprecated; SPLITBRIEF migrated it in memory. Run `splitbrief init --reconfigure` to write a current config.';
       }
-      return 'config.version is missing; diptych assumed version 1 and migrated it in memory, which drops fields added after v1. Run `diptych init --reconfigure` to write a current config.';
+      return 'config.version is missing; SPLITBRIEF assumed version 1 and migrated it in memory, which drops fields added after v1. Run `splitbrief init --reconfigure` to write a current config.';
   }
 }
 
@@ -176,10 +176,10 @@ function combineLoadWarnings(
   ]);
 }
 
-const CONFIG_RELATIVE_PATH = join(DIPTYCH_DIR, CONFIG_FILE);
+const CONFIG_RELATIVE_PATH = join(SPLITBRIEF_DIR, CONFIG_FILE);
 
 export function ensureConfigGitignore(projectDir: string): void {
-  ensureGitignore(projectDir, `${DIPTYCH_DIR}/`);
+  ensureGitignore(projectDir, `${SPLITBRIEF_DIR}/`);
   ensureGitignore(projectDir, `${TREES_DIR}/`);
 }
 
@@ -212,7 +212,7 @@ export function loadConfig(projectDir: string): LoadConfigResult {
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw configError.validationFailed(filePath, [
-      `Configuration in ${DIPTYCH_DIR}/${CONFIG_FILE} must be a YAML object.`,
+      `Configuration in ${SPLITBRIEF_DIR}/${CONFIG_FILE} must be a YAML object.`,
     ]);
   }
 
@@ -228,7 +228,7 @@ export function loadConfig(projectDir: string): LoadConfigResult {
 
   const { errors, warnings: validationWarnings, data } = validateConfig(merged);
   if (errors.length > 0) {
-    const lines = [`Configuration errors in ${DIPTYCH_DIR}/${CONFIG_FILE}:`];
+    const lines = [`Configuration errors in ${SPLITBRIEF_DIR}/${CONFIG_FILE}:`];
     for (const err of errors) {
       lines.push(`  ${err.path}: ${err.message}`);
     }
@@ -247,7 +247,7 @@ export function loadConfig(projectDir: string): LoadConfigResult {
 export function writeConfig(projectDir: string, config: Config): string {
   const text = YAML.stringify(toYaml(config));
   ensureConfigGitignore(projectDir);
-  confinedEnsureDir(projectDir, DIPTYCH_DIR);
+  confinedEnsureDir(projectDir, SPLITBRIEF_DIR);
   confinedWriteFile(projectDir, CONFIG_RELATIVE_PATH, text);
   return text;
 }
@@ -284,7 +284,7 @@ export function writeConfigDocument(
   }
   const text = doc.toString();
   ensureConfigGitignore(projectDir);
-  confinedEnsureDir(projectDir, DIPTYCH_DIR);
+  confinedEnsureDir(projectDir, SPLITBRIEF_DIR);
   confinedWriteFile(projectDir, CONFIG_RELATIVE_PATH, text);
   return text;
 }

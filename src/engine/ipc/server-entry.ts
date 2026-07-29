@@ -65,7 +65,7 @@ export async function writeStartupLockfile(
     lastAliveMs: now,
     sessionId: argv.sessionId,
     mode: argv.mode,
-    // `diptych ps` prints this field, so it is a consumer surface: redact it under
+    // `splitbrief ps` prints this field, so it is a consumer surface: redact it under
     // persistTranscript:false. The raw feature still reaches the planner via argv.feature.
     feature: featureForTranscriptPolicy(argv.feature, argv.persistTranscript ?? true),
     authToken,

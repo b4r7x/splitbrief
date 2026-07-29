@@ -49,7 +49,7 @@ export function formatCrashDiagnostic(diag: CrashDiagnostic): string {
 
   lines.push('');
   lines.push('  Options:');
-  lines.push('    [1] Exit and run `diptych start` for a new workflow');
+  lines.push('    [1] Exit and run `splitbrief start` for a new workflow');
   lines.push('    [2] Exit and inspect logs manually');
 
   return lines.join('\n');
@@ -90,6 +90,6 @@ export async function showCrashDiagnostic(
 
   const key = await waitForKey();
   if (key === '1') {
-    process.stdout.write('Exiting. Run `diptych start` to begin a new workflow.\n');
+    process.stdout.write('Exiting. Run `splitbrief start` to begin a new workflow.\n');
   }
 }

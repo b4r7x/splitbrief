@@ -10,7 +10,7 @@ import {
   writeConfig,
   writeConfigDocument,
 } from './io.js';
-import { DIPTYCH_DIR, TREES_DIR } from '../../paths.js';
+import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-io-safety');
@@ -26,12 +26,12 @@ afterAll(() => {
 
 describe('config load safety', () => {
   describe('loadConfig', () => {
-    itUnix('rejects initConfig when .diptych is a symlink', () => {
+    itUnix('rejects initConfig when .splitbrief is a symlink', () => {
       const dir = createTempDir('config-symlink-init');
       const outside = createTempDir('config-symlink-init-outside');
       try {
         mkdirSync(join(outside, 'nested'), { recursive: true });
-        symlinkSync(outside, join(dir, DIPTYCH_DIR));
+        symlinkSync(outside, join(dir, SPLITBRIEF_DIR));
 
         expect(() => initConfig(dir)).toThrow(/unsafe path|symlink/);
       } finally {
@@ -40,7 +40,7 @@ describe('config load safety', () => {
       }
     });
 
-    it('gitignores both the diptych dir and the worktree dir so neither leaks into git-status change detection', () => {
+    it('gitignores both the splitbrief dir and the worktree dir so neither leaks into git-status change detection', () => {
       const dir = createTempDir('config-init-gitignore');
       try {
         initConfig(dir);
@@ -48,7 +48,7 @@ describe('config load safety', () => {
         const ignored = readFileSync(join(dir, '.gitignore'), 'utf-8')
           .split('\n')
           .map((line) => line.trim());
-        expect(ignored).toContain(`${DIPTYCH_DIR}/`);
+        expect(ignored).toContain(`${SPLITBRIEF_DIR}/`);
         expect(ignored).toContain(`${TREES_DIR}/`);
       } finally {
         cleanupTempDir(dir);
@@ -84,9 +84,9 @@ describe('config load safety', () => {
         expect(written).toContain('# keep this note');
         expect(written).toContain('custom: retained');
         expect(written).toContain('mode: quick');
-        expect(readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8')).toBe(written);
+        expect(readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8')).toBe(written);
         const ignored = readFileSync(join(dir, '.gitignore'), 'utf-8');
-        expect(ignored).toContain(`${DIPTYCH_DIR}/`);
+        expect(ignored).toContain(`${SPLITBRIEF_DIR}/`);
         expect(ignored).toContain(`${TREES_DIR}/`);
       } finally {
         cleanupTempDir(dir);
@@ -114,12 +114,12 @@ describe('config load safety', () => {
       },
     );
 
-    itUnix('rejects writeConfig when .diptych is a symlink', () => {
+    itUnix('rejects writeConfig when .splitbrief is a symlink', () => {
       const dir = createTempDir('config-symlink-write');
       const outside = createTempDir('config-symlink-write-outside');
       try {
         mkdirSync(join(outside, 'nested'), { recursive: true });
-        symlinkSync(outside, join(dir, DIPTYCH_DIR));
+        symlinkSync(outside, join(dir, SPLITBRIEF_DIR));
 
         expect(() => writeConfig(dir, createDefaultConfig())).toThrow(/unsafe path|symlink/);
       } finally {
@@ -132,9 +132,9 @@ describe('config load safety', () => {
       const dir = createTempDir('config-symlink-read');
       const outside = createTempDir('config-symlink-outside');
       try {
-        mkdirSync(join(dir, DIPTYCH_DIR), { recursive: true });
+        mkdirSync(join(dir, SPLITBRIEF_DIR), { recursive: true });
         writeFileSync(join(outside, 'config.yaml'), 'version: 3\n');
-        symlinkSync(join(outside, 'config.yaml'), join(dir, DIPTYCH_DIR, 'config.yaml'));
+        symlinkSync(join(outside, 'config.yaml'), join(dir, SPLITBRIEF_DIR, 'config.yaml'));
 
         expect(() => loadConfig(dir)).toThrow(/unsafe path/);
       } finally {
@@ -146,7 +146,7 @@ describe('config load safety', () => {
     it('throws instead of silently using defaults when an existing config cannot be read', () => {
       const dir = createTempDir('config-unreadable');
       try {
-        const configDir = join(dir, DIPTYCH_DIR);
+        const configDir = join(dir, SPLITBRIEF_DIR);
         mkdirSync(configDir, { recursive: true });
         mkdirSync(join(configDir, 'config.yaml'), { recursive: true });
 
@@ -186,7 +186,7 @@ describe('config load safety', () => {
 
     it('throws when YAML parses to a primitive', () => {
       const dir = join(TMP, 'yaml-primitive');
-      const configDir = join(dir, DIPTYCH_DIR);
+      const configDir = join(dir, SPLITBRIEF_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '42', 'utf-8');
 
@@ -195,7 +195,7 @@ describe('config load safety', () => {
 
     it('throws when YAML parses to an array', () => {
       const dir = join(TMP, 'yaml-array');
-      const configDir = join(dir, DIPTYCH_DIR);
+      const configDir = join(dir, SPLITBRIEF_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '- item1\n- item2', 'utf-8');
 
@@ -234,7 +234,7 @@ describe('config load safety', () => {
 
     it('throws for an empty YAML file', () => {
       const dir = join(TMP, 'empty-yaml');
-      const configDir = join(dir, DIPTYCH_DIR);
+      const configDir = join(dir, SPLITBRIEF_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), '', 'utf-8');
 
@@ -293,7 +293,7 @@ describe('config load safety', () => {
 
     it('invalid YAML syntax error says "Malformed YAML" not a cryptic Zod path', () => {
       const dir = join(TMP, 'yaml-syntax-error');
-      const configDir = join(dir, DIPTYCH_DIR);
+      const configDir = join(dir, SPLITBRIEF_DIR);
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, 'config.yaml'), ':\n  bad: [unclosed', 'utf-8');
 

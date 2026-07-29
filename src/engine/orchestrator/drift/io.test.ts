@@ -17,7 +17,7 @@ describe('readDriftReport — backward compat', () => {
   it('does not throw on legacy JSON without briefHash and normalizes to null', () => {
     const report = analyzeBriefDrift({ tasks: [], changedFiles: [], diff: '' });
     const { briefHash: _bh, ...legacy } = report;
-    const sessionPath = join(dir, '.diptych', 'sessions', 's1');
+    const sessionPath = join(dir, '.splitbrief', 'sessions', 's1');
     mkdirSync(sessionPath, { recursive: true });
     const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
     writeFileSync(path, `${JSON.stringify(legacy)}\n`);
@@ -53,7 +53,7 @@ describe('writeDriftReport', () => {
 
   it('returns null when the report file cannot be parsed', () => {
     const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
-    mkdirSync(join(dir, '.diptych', 'sessions', 's1'), { recursive: true });
+    mkdirSync(join(dir, '.splitbrief', 'sessions', 's1'), { recursive: true });
     writeFileSync(path, '{not valid json');
     expect(readDriftReport({ projectDir: dir, sessionId: 's1' })).toBeNull();
   });

@@ -5,6 +5,7 @@ import type { Theme } from '../../../components/theme.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
 function uniqueParts(parts: (string | null)[]): string[] {
   const seen = new Set<string>();
@@ -42,7 +43,7 @@ function commandFor(
 ): string | null {
   if (command) return stripTerminalControls(command);
   if (!checkpointId) return null;
-  return `diptych snapshot ${action} ${stripTerminalControls(checkpointId)}`;
+  return `${SPLITBRIEF_IDENTITY.executable} snapshot ${action} ${stripTerminalControls(checkpointId)}`;
 }
 
 function checkpointSummaryText(

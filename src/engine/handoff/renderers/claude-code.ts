@@ -1,5 +1,6 @@
 import type { HandoffInput, HandoffPack } from '../types.js';
 import { buildBaseFiles, buildTaskListSection } from './base-files.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
 export function renderClaudeCode(input: HandoffInput): HandoffPack {
   const base = buildBaseFiles(input);
@@ -12,7 +13,7 @@ Work through the tasks in dependency order. Do not stage or commit. Await review
 
 ${buildTaskListSection(input.tasks)}`;
 
-  const agentDef = `# diptych-handoff Agent
+  const agentDef = `# ${SPLITBRIEF_IDENTITY.slug}-handoff Agent
 
 Read tasks in the \`tasks/\` directory in dependency order and implement them.
 
@@ -25,7 +26,7 @@ Read tasks in the \`tasks/\` directory in dependency order and implement them.
     files: [
       ...base,
       { path: 'CLAUDE.md', content: claudeMd },
-      { path: '.claude/agents/diptych-handoff.md', content: agentDef },
+      { path: `.claude/agents/${SPLITBRIEF_IDENTITY.slug}-handoff.md`, content: agentDef },
     ],
   };
 }

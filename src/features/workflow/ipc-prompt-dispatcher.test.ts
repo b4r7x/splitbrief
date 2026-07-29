@@ -80,7 +80,7 @@ function reviewInputMode(
 function makeSessionDir(): string {
   const root = createTempDir('ipc-prompt-dispatcher');
   tmpDirs.push(root);
-  const sessionDir = join(root, '.diptych', 'sessions', 'session-1');
+  const sessionDir = join(root, '.splitbrief', 'sessions', 'session-1');
   mkdirSync(sessionDir, { recursive: true });
   return sessionDir;
 }

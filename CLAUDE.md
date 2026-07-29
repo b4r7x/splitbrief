@@ -1,4 +1,4 @@
-# diptych
+# SPLITBRIEF
 
 Open-source cost-aware task compiler for AI coding agents. An expensive planner compiles Task Briefs; a cheaper implementer executes them.
 
@@ -38,7 +38,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 
 | When you're about to… | Read |
 |---|---|
-| Understand what diptych is | [docs/MENTAL-MODEL.md](./docs/MENTAL-MODEL.md) — the concept, no code |
+| Understand what SPLITBRIEF is | [docs/MENTAL-MODEL.md](./docs/MENTAL-MODEL.md) — the concept, no code |
 | Understand how it works end-to-end | [docs/HOW-IT-WORKS.md](./docs/HOW-IT-WORKS.md) — data flow with file paths |
 | Understand the workflow state machine | [docs/WORKFLOW.md](./docs/WORKFLOW.md) — phases, transitions, modes |
 | Understand the orchestrator and EventBus | [docs/ENGINE.md](./docs/ENGINE.md) — orchestrator, sinks, callbacks vs events |
@@ -47,10 +47,10 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Understand approval gates and recovery | [docs/APPROVAL-AND-RECOVERY.md](./docs/APPROVAL-AND-RECOVERY.md) — tiered approval, escalation, drift |
 | Understand supporting subsystems | [docs/SUBSYSTEMS.md](./docs/SUBSYSTEMS.md) — hooks, snapshots, IPC, repo-map, handoff, MCP |
 | Add a command, event, store, or backend | [docs/EXTENDING.md](./docs/EXTENDING.md) — step-by-step recipes |
-| Get diptych running for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
+| Get SPLITBRIEF running for the first time | [docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md) — onboarding |
 | Look up a CLI command | [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md) — command reference |
 | Look up a runtime command (`/name`) | [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md) — runtime commands |
-| Configure diptych | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) — config reference |
+| Configure SPLITBRIEF | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) — config reference |
 | Run end-to-end scenarios / find a recipe | [docs/USAGE-EXAMPLES.md](./docs/USAGE-EXAMPLES.md) — recipes |
 | Hit a problem | [docs/TROUBLESHOOTING.md](./docs/TROUBLESHOOTING.md) — symptoms & fixes |
 | Add or move any file | [docs/STRUCTURE.md](./docs/STRUCTURE.md) — file tree, feature anatomy |

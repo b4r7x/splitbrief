@@ -44,14 +44,14 @@ export async function ensureHooksTrusted(
   }
 
   const summary = formatHookSummary(opts.hooks);
-  process.stderr.write(`\n  diptych config defines hooks (untrusted):\n${summary}\n`);
+  process.stderr.write(`\n  SPLITBRIEF config defines hooks (untrusted):\n${summary}\n`);
 
   const raw = await promptForTrust('Trust these hooks for this project? [y/N] ');
 
   const answer = raw.trim().toLowerCase();
   if (answer !== 'y' && answer !== 'yes') {
     throw cliError(
-      'Refusing to run with untrusted hooks. Edit .diptych/config.yaml or re-run and answer y.',
+      'Refusing to run with untrusted hooks. Edit .splitbrief/config.yaml or re-run and answer y.',
       1,
     );
   }

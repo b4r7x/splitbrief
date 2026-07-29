@@ -235,7 +235,7 @@ describe('runPlanningPhase — rewindPending', () => {
       runPhase({
         config: makeConfig({
           workflow: { ...auto(), persistTranscript: false },
-          codebase: { enabled: false, tokenBudget: 1, cacheDir: '.diptych/codebase-cache' },
+          codebase: { enabled: false, tokenBudget: 1, cacheDir: '.splitbrief/codebase-cache' },
         }),
         state: prepareState('specifying', { target: 'spec', comment: protectedComment }),
         rewindPending: { target: 'spec', comment: protectedComment },

@@ -13,6 +13,7 @@ import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/token
 import { assertNever } from '../../../utils/type-guards.js';
 import { protectConsumerPayload } from '../../../core/consumer-policy.js';
 import { projectEngineEventForTranscriptPolicy } from '../protection/protect.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
 export interface OtelSinkOptions {
   provider: TracerProvider;
@@ -27,7 +28,8 @@ function otelString(value: string): string {
 
 // SDK v2 pattern — context is propagated by passing it explicitly to startSpan, no global registration.
 export function createOtelSink(opts: OtelSinkOptions): EventSink {
-  const tracer = opts.provider.getTracer(opts.serviceName ?? 'diptych');
+  const namespace = SPLITBRIEF_IDENTITY.slug;
+  const tracer = opts.provider.getTracer(opts.serviceName ?? namespace);
   const persistTranscript = opts.persistTranscript ?? true;
 
   let workflowSpan: Span | null = null;
@@ -44,11 +46,11 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
     switch (event.type) {
       case 'workflow_started': {
         workflowSpan = tracer.startSpan(
-          'diptych.workflow',
+          `${namespace}.workflow`,
           {
             kind: SpanKind.INTERNAL,
             attributes: {
-              'diptych.feature': otelString(event.feature),
+              [`${namespace}.feature`]: otelString(event.feature),
             },
           },
           ROOT_CONTEXT,
@@ -58,14 +60,17 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       }
       case 'workflow_config': {
         if (workflowSpan) {
-          workflowSpan.setAttribute('diptych.mode', event.mode);
-          workflowSpan.setAttribute('diptych.planner.tool', otelString(event.plannerTool));
+          workflowSpan.setAttribute(`${namespace}.mode`, event.mode);
+          workflowSpan.setAttribute(`${namespace}.planner.tool`, otelString(event.plannerTool));
           if (event.plannerModel)
-            workflowSpan.setAttribute('diptych.planner.model', otelString(event.plannerModel));
-          workflowSpan.setAttribute('diptych.implementer.tool', otelString(event.implementerTool));
+            workflowSpan.setAttribute(`${namespace}.planner.model`, otelString(event.plannerModel));
+          workflowSpan.setAttribute(
+            `${namespace}.implementer.tool`,
+            otelString(event.implementerTool),
+          );
           if (event.implementerModel)
             workflowSpan.setAttribute(
-              'diptych.implementer.model',
+              `${namespace}.implementer.model`,
               otelString(event.implementerModel),
             );
         }
@@ -106,7 +111,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'workflow_resumed': {
         if (!workflowSpan) {
           workflowSpan = tracer.startSpan(
-            'diptych.workflow',
+            `${namespace}.workflow`,
             { kind: SpanKind.INTERNAL },
             ROOT_CONTEXT,
           );
@@ -123,9 +128,9 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         ) {
           if (phaseSpan) phaseSpan.end();
           phaseSpan = tracer.startSpan(
-            `diptych.phase.${event.phase}`,
+            `${namespace}.phase.${event.phase}`,
             {
-              attributes: { 'diptych.phase': event.phase },
+              attributes: { [`${namespace}.phase`]: event.phase },
             },
             workflowCtx,
           );
@@ -134,7 +139,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         }
         if (event.status === 'done' && phaseSpan && event.phase === lastPhase) {
           if (event.duration !== undefined) {
-            phaseSpan.setAttribute('diptych.phase.duration_ms', event.duration);
+            phaseSpan.setAttribute(`${namespace}.phase.duration_ms`, event.duration);
           }
         }
         return;
@@ -143,17 +148,17 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         if (workflowSpan) {
           const parentCtx = phaseSpan ? phaseCtx : workflowCtx;
           const span = tracer.startSpan(
-            'diptych.task',
+            `${namespace}.task`,
             {
               attributes: {
-                'diptych.task.id': taskIdToString(event.taskId),
-                'diptych.task.index': event.index,
-                'diptych.task.total': event.total,
+                [`${namespace}.task.id`]: taskIdToString(event.taskId),
+                [`${namespace}.task.index`]: event.index,
+                [`${namespace}.task.total`]: event.total,
                 ...(persistTranscript
                   ? {
-                      'diptych.task.title': otelString(event.title),
-                      'diptych.task.file': otelString(event.file),
-                      'diptych.task.action': otelString(event.action),
+                      [`${namespace}.task.title`]: otelString(event.title),
+                      [`${namespace}.task.file`]: otelString(event.file),
+                      [`${namespace}.task.action`]: otelString(event.action),
                     }
                   : {}),
               },
@@ -167,9 +172,9 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'task_completed': {
         const span = taskSpans.get(taskIdToString(event.taskId));
         if (span) {
-          span.setAttribute('diptych.task.method', event.method);
-          span.setAttribute('diptych.task.retries', event.retries);
-          span.setAttribute('diptych.task.duration_ms', event.duration);
+          span.setAttribute(`${namespace}.task.method`, event.method);
+          span.setAttribute(`${namespace}.task.retries`, event.retries);
+          span.setAttribute(`${namespace}.task.duration_ms`, event.duration);
           span.setStatus({ code: SpanStatusCode.OK });
           span.end();
           taskSpans.delete(taskIdToString(event.taskId));
@@ -189,7 +194,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
         const span = taskSpans.get(taskIdToString(event.taskId));
         if (span) {
           if (persistTranscript) {
-            span.setAttribute('diptych.task.skip_reason', otelString(event.reason));
+            span.setAttribute(`${namespace}.task.skip_reason`, otelString(event.reason));
           }
           span.end();
           taskSpans.delete(taskIdToString(event.taskId));
@@ -199,11 +204,11 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'cost_update': {
         if (workflowSpan) {
           workflowSpan.setAttribute(
-            'diptych.cost.input_tokens',
+            `${namespace}.cost.input_tokens`,
             totalInputTokens(event.tokenUsage),
           );
           workflowSpan.setAttribute(
-            'diptych.cost.output_tokens',
+            `${namespace}.cost.output_tokens`,
             totalOutputTokens(event.tokenUsage),
           );
         }
@@ -212,12 +217,12 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'validate': {
         const span = phaseSpan ?? workflowSpan;
         if (span && event.status === 'done') {
-          span.addEvent('diptych.validate', {
-            'diptych.validate.passed': event.passed,
-            'diptych.validate.typecheck': event.stages.typecheck,
-            'diptych.validate.lint': event.stages.lint,
-            'diptych.validate.test': event.stages.test,
-            ...(event.error ? { 'diptych.validate.error': otelString(event.error) } : {}),
+          span.addEvent(`${namespace}.validate`, {
+            [`${namespace}.validate.passed`]: event.passed,
+            [`${namespace}.validate.typecheck`]: event.stages.typecheck,
+            [`${namespace}.validate.lint`]: event.stages.lint,
+            [`${namespace}.validate.test`]: event.stages.test,
+            ...(event.error ? { [`${namespace}.validate.error`]: otelString(event.error) } : {}),
           });
         }
         return;
@@ -244,8 +249,8 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       }
       case 'warning': {
         if (workflowSpan) {
-          workflowSpan.addEvent('diptych.warning', {
-            'diptych.warning.message': otelString(event.message),
+          workflowSpan.addEvent(`${namespace}.warning`, {
+            [`${namespace}.warning.message`]: otelString(event.message),
           });
         }
         return;

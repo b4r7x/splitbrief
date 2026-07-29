@@ -7,7 +7,7 @@ import {
   sessionsRoot,
   STATE_FILE,
   validateSessionId,
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   SESSIONS_DIR,
 } from '../paths.js';
 import { ensureSessionDir } from '../paths-io.js';
@@ -34,14 +34,14 @@ export function readActive(projectDir: string): string | null {
   } catch {
     return null;
   }
-  assertExistingPathConfined(`${DIPTYCH_DIR}/active`, projectDir);
+  assertExistingPathConfined(`${SPLITBRIEF_DIR}/active`, projectDir);
   return readFileSync(p, 'utf-8').trim() || null;
 }
 
 export function writeActive(ref: SessionRef): void {
   const { projectDir, sessionId } = ref;
   validateSessionId(sessionId);
-  assertWritablePathConfined(`${DIPTYCH_DIR}/active`, projectDir);
+  assertWritablePathConfined(`${SPLITBRIEF_DIR}/active`, projectDir);
   writeSecureFile(activeFile(projectDir), sessionId + '\n');
 }
 
@@ -49,7 +49,7 @@ export function clearActive(ref: SessionRef): void {
   const { projectDir, sessionId } = ref;
   if (readActive(projectDir) !== sessionId) return;
   const p = activeFile(projectDir);
-  assertExistingPathConfined(`${DIPTYCH_DIR}/active`, projectDir);
+  assertExistingPathConfined(`${SPLITBRIEF_DIR}/active`, projectDir);
   unlinkSync(p);
 }
 
@@ -60,7 +60,7 @@ function readSessionPhase(ref: SessionRef): Phase | null {
   try {
     rejectSymlinkTarget(stateFile);
     assertExistingPathConfined(
-      `${DIPTYCH_DIR}/${SESSIONS_DIR}/${sessionId}/${STATE_FILE}`,
+      `${SPLITBRIEF_DIR}/${SESSIONS_DIR}/${sessionId}/${STATE_FILE}`,
       projectDir,
     );
     const raw = narrowRecord(JSON.parse(readFileSync(stateFile, 'utf-8')));

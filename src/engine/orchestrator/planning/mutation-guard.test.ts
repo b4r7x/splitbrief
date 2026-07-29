@@ -12,9 +12,9 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 
 describe('planning mutation guard', () => {
   it('allows only current-session artifact paths', () => {
-    expect(isAllowedPlanningMutation('.diptych/sessions/sess-1/spec.md', 'sess-1')).toBe(true);
+    expect(isAllowedPlanningMutation('.splitbrief/sessions/sess-1/spec.md', 'sess-1')).toBe(true);
     expect(isAllowedPlanningMutation('src/leak.ts', 'sess-1')).toBe(false);
-    expect(isAllowedPlanningMutation('.diptych/hook-trust.json', 'sess-1')).toBe(false);
+    expect(isAllowedPlanningMutation('.splitbrief/hook-trust.json', 'sess-1')).toBe(false);
     expect(isAllowedPlanningMutation('package.json', 'sess-1')).toBe(false);
   });
 
@@ -46,7 +46,7 @@ describe('planning mutation guard', () => {
     ensureSessionDir(projectDir, sessionId);
     try {
       const baseline = await capturePlanningMutationBaseline(projectDir);
-      writeFileSync(join(projectDir, '.diptych', 'sessions', sessionId, 'spec.md'), '# spec\n');
+      writeFileSync(join(projectDir, '.splitbrief', 'sessions', sessionId, 'spec.md'), '# spec\n');
 
       const unexpected = await findUnexpectedPlanningMutations({
         projectDir,

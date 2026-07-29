@@ -11,7 +11,7 @@ let projectDir: string;
 
 beforeEach(() => {
   projectDir = createTempDir('export-collect-test');
-  sessionDirectory = join(projectDir, '.diptych', 'sessions', 'test-session');
+  sessionDirectory = join(projectDir, '.splitbrief', 'sessions', 'test-session');
   mkdirSync(sessionDirectory, { recursive: true });
 });
 

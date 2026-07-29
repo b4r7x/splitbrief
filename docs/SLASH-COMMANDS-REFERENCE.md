@@ -1,6 +1,6 @@
 # Slash Commands Reference
 
-The complete reference for every slash command available in the diptych TUI. This document is the exhaustive lookup — every entry in [`src/core/runtime/commands/registry.ts`](../src/core/runtime/commands/registry.ts) is documented here, grouped by purpose, with usage, screen availability, behaviour, and cross-references.
+The complete reference for every slash command available in the SPLITBRIEF TUI. This document is the exhaustive lookup — every entry in [`src/core/runtime/commands/registry.ts`](../src/core/runtime/commands/registry.ts) is documented here, grouped by purpose, with usage, screen availability, behaviour, and cross-references.
 
 If you only want a short overview, see [`FEATURES.md`](./FEATURES.md#slash-commands-palette). If you are adding a new command, follow the contract in [`src/core/runtime/commands/types.ts`](../src/core/runtime/commands/types.ts) and the dispatch rules in [`src/core/runtime/commands/dispatch.ts`](../src/core/runtime/commands/dispatch.ts).
 
@@ -131,23 +131,23 @@ Commands that mutate the active workflow: rewind to an earlier phase, re-run a t
 - **Example**: `/accept-run`
 - **Behavior**: On success the feedback line includes the accepted snapshot ID. If there is no active session, the command reports `"No active session for /accept-run"`.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`; snapshot behavior in `src/engine/snapshots/run/lifecycle.ts`.
-- **See also**: `/reject-run confirm`, `diptych snapshot create`.
+- **See also**: `/reject-run confirm`, `splitbrief snapshot create`.
 
 ### `/reject-run confirm`
 
-- **Purpose**: Reject the latest run snapshot. Files are restored to the baseline only if their current hash still matches the latest diptych-written hash; user edits after that snapshot are preserved as conflicts.
+- **Purpose**: Reject the latest run snapshot. Files are restored to the baseline only if their current hash still matches the latest SPLITBRIEF-written hash; user edits after that snapshot are preserved as conflicts.
 - **Screens**: `workflow`, `summary`.
 - **Args**: required literal `confirm`. Calling `/reject-run` without it prints `"Usage: /reject-run confirm"`.
 - **Example**: `/reject-run confirm`
 - **Behavior**: Restored and deleted counts are reported on success. Conflicts or missing snapshot files surface as feedback errors and are never overwritten. If the latest run snapshot was accepted, rejection is refused.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`; hash-guarded rollback in `src/engine/snapshots/run/rollback.ts`.
-- **See also**: `/accept-run`, `diptych snapshot restore`.
+- **See also**: `/accept-run`, `splitbrief snapshot restore`.
 
 ---
 
 ## Mode and effort
 
-Configuration mutators that persist immediately to the project config (`.diptych/config.yaml`). Unlike opening a picker, these commands take effect on save and surface a confirmation message on the status line.
+Configuration mutators that persist immediately to the project config (`.splitbrief/config.yaml`). Unlike opening a picker, these commands take effect on save and surface a confirmation message on the status line.
 
 ### `/mode [name]`
 
@@ -187,7 +187,7 @@ Commands that open an overlay for interactive selection. None of these mutate st
 
 ### `/sessions`
 
-- **Purpose**: Browse summary-backed past sessions. Opens the sessions overlay backed by `.diptych/sessions/` so you can resume interrupted runs or inspect completed runs.
+- **Purpose**: Browse summary-backed past sessions. Opens the sessions overlay backed by `.splitbrief/sessions/` so you can resume interrupted runs or inspect completed runs.
 - **Screens**: all.
 - **Args**: none.
 - **Example**: `/sessions`
@@ -279,7 +279,7 @@ Commands that produce, copy, or manage output and artifacts: clipboard copies, h
   - `[task-id]` (optional): a single task ID (e.g. `T003`) to export a single-task pack instead of the full session.
 - **Parsing**: the argument string is split on whitespace; the first token is the target, the second (if any) is the task ID. Calling without a target prints `"Usage: /handoff <target> [task-id]"`.
 - **Example**: `/handoff spec-kit`, `/handoff claude-code T003`, `/handoff copilot-issue`
-- **Behavior**: Writes the pack to `.diptych/sessions/<sessionId>/handoffs/<target>/` in `overwrite` mode. On success prints `"Handoff written to: <outputDir>"`. On failure prints the error message. Requires an active session — fails with `"No active session for handoff"` otherwise.
+- **Behavior**: Writes the pack to `.splitbrief/sessions/<sessionId>/handoffs/<target>/` in `overwrite` mode. On success prints `"Handoff written to: <outputDir>"`. On failure prints the error message. Requires an active session — fails with `"No active session for handoff"` otherwise.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; calls `writeHandoffPack` from `src/engine/handoff/write.ts` via the wiring in `src/app/command-context.ts`.
 - **See also**: `/sessions`.
 
@@ -289,7 +289,7 @@ Commands that produce, copy, or manage output and artifacts: clipboard copies, h
 - **Screens**: `workflow`, `summary`.
 - **Args**: none.
 - **Example**: `/compact-transcript`
-- **Behavior**: Uses the current planner from config. If that planner does not advertise `supportsSelfSummarisation`, the feedback line reports that transcript compaction is unsupported and no file is changed. Otherwise diptych calls `compactTranscript()` for the current session directory, appends a summary entry to `session.jsonl`, leaves recent messages verbatim, and reports how many older messages were summarized. `workflow.compactionFormat` controls whether the appended summary is freeform text or structured JSON; `auto` picks structured for `api` and `agent-sdk` planners and freeform for `cli`, `shell`, and `agent`. Structured validation failures are saved as freeform text. The log stays append-only; compaction does not delete historical lines.
+- **Behavior**: Uses the current planner from config. If that planner does not advertise `supportsSelfSummarisation`, the feedback line reports that transcript compaction is unsupported and no file is changed. Otherwise SPLITBRIEF calls `compactTranscript()` for the current session directory, appends a summary entry to `session.jsonl`, leaves recent messages verbatim, and reports how many older messages were summarized. `workflow.compactionFormat` controls whether the appended summary is freeform text or structured JSON; `auto` picks structured for `api` and `agent-sdk` planners and freeform for `cli`, `shell`, and `agent`. Structured validation failures are saved as freeform text. The log stays append-only; compaction does not delete historical lines.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; context wiring at `src/app/command-context.ts`; core compaction in `src/core/sessions/compaction.ts`.
 - **See also**: `/sessions`, `/handoff`.
 
@@ -491,8 +491,8 @@ Typed commands:
 | Command | Action |
 |---|---|
 | `approve` / `y` | Approve briefs |
-| `Ctrl+E` / `e` / `edit` | Open persisted `tasks.md` in the external editor. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
-| `E` / `edit-file` | Open persisted `tasks.md` in the external editor. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
+| `Ctrl+E` / `e` / `edit` | Open persisted `tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
+| `E` / `edit-file` | Open persisted `tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
 | `comment <text>` | Send revise feedback |
 | `reject` / `q` / `quit` | Reject briefs |
 

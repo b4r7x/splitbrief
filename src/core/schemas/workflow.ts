@@ -27,19 +27,22 @@ export const QueuedMessageSchema = z.object({
   question: z.string().optional(),
 });
 
+export const ChangedFilesSnapshotSchema = z.object({
+  head: z.string(),
+  files: z.array(z.string()),
+  dirtyFileContents: z.record(z.string(), z.string().nullable()),
+  gitlinks: z.array(z.string()).optional(),
+  baselineFileHashes: z.record(z.string(), z.string().nullable()).optional(),
+  ignoreProjectDir: z.string().optional(),
+});
+
+export type ChangedFilesSnapshot = z.infer<typeof ChangedFilesSnapshotSchema>;
+
 export const ChangedFilesBaselineSchema = z.object({
   head: z.string().nullable(),
   fingerprints: z.record(z.string(), z.string()),
-  activeTaskSnapshot: z
-    .object({
-      head: z.string(),
-      files: z.array(z.string()),
-      dirtyFileContents: z.record(z.string(), z.string().nullable()),
-      gitlinks: z.array(z.string()).optional(),
-      baselineFileHashes: z.record(z.string(), z.string().nullable()).optional(),
-      ignoreProjectDir: z.string().optional(),
-    })
-    .optional(),
+  runStartChangedFiles: z.array(z.string()).optional(),
+  activeTaskSnapshot: ChangedFilesSnapshotSchema.optional(),
 });
 
 const TASK_ACTIVE_PHASES = new Set(['validating-task', 'escalating']);
@@ -88,10 +91,8 @@ export const WorkflowStateSchema = z
       });
     }
 
-    const taskCount = state.tasks.length;
-    if (taskCount === 0) return;
-
     if (TASK_ACTIVE_PHASES.has(state.phase)) {
+      const taskCount = state.tasks.length;
       if (state.currentTaskIndex >= taskCount) {
         ctx.addIssue({
           code: 'custom',
@@ -101,6 +102,9 @@ export const WorkflowStateSchema = z
       }
       return;
     }
+
+    const taskCount = state.tasks.length;
+    if (taskCount === 0) return;
 
     if (state.currentTaskIndex > taskCount) {
       ctx.addIssue({

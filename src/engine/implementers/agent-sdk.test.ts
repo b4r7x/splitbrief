@@ -287,7 +287,7 @@ describe('createAgentSdkImplementer', () => {
   it('resolves an env:NAME apiKey reference against process.env before injecting it', async () => {
     const origEnv = process.env['ANTHROPIC_API_KEY'];
     delete process.env['ANTHROPIC_API_KEY'];
-    process.env['DIPTYCH_TEST_KEY'] = 'sk-resolved-from-env';
+    process.env['SPLITBRIEF_TEST_KEY'] = 'sk-resolved-from-env';
 
     queryMock.mockImplementationOnce(async function* () {
       yield { type: 'system', subtype: 'init', session_id: 'sess-1' };
@@ -302,7 +302,7 @@ describe('createAgentSdkImplementer', () => {
     });
 
     try {
-      const cfg = makeAgentSdkConfig({ apiKey: 'env:DIPTYCH_TEST_KEY' });
+      const cfg = makeAgentSdkConfig({ apiKey: 'env:SPLITBRIEF_TEST_KEY' });
       const implementer = createAgentSdkImplementer(cfg);
 
       await implementer.implement({
@@ -322,7 +322,7 @@ describe('createAgentSdkImplementer', () => {
       );
       expect(process.env['ANTHROPIC_API_KEY']).toBeUndefined();
     } finally {
-      delete process.env['DIPTYCH_TEST_KEY'];
+      delete process.env['SPLITBRIEF_TEST_KEY'];
       if (origEnv === undefined) delete process.env['ANTHROPIC_API_KEY'];
       else process.env['ANTHROPIC_API_KEY'] = origEnv;
     }
@@ -343,7 +343,7 @@ describe('createAgentSdkImplementer', () => {
 
     const cfg = makeAgentSdkConfig();
     const implementer = createAgentSdkImplementer(cfg);
-    const sandboxHome = join(projectDir, '.diptych-sandbox', 'home');
+    const sandboxHome = join(projectDir, '.splitbrief/sandbox', 'home');
 
     await implementer.implement({
       task: makeTask(),
@@ -364,9 +364,9 @@ describe('createAgentSdkImplementer', () => {
   });
 
   it('throws a clear error when an env:NAME apiKey references an unset variable', () => {
-    delete process.env['DIPTYCH_MISSING_KEY'];
-    const cfg = makeAgentSdkConfig({ apiKey: 'env:DIPTYCH_MISSING_KEY' });
-    expect(() => createAgentSdkImplementer(cfg)).toThrow(/DIPTYCH_MISSING_KEY/);
+    delete process.env['SPLITBRIEF_MISSING_KEY'];
+    const cfg = makeAgentSdkConfig({ apiKey: 'env:SPLITBRIEF_MISSING_KEY' });
+    expect(() => createAgentSdkImplementer(cfg)).toThrow(/SPLITBRIEF_MISSING_KEY/);
   });
 
   it('threads apiKey through to the SDK via the scoped env option without mutating process.env', async () => {

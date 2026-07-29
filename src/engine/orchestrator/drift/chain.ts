@@ -6,7 +6,7 @@ import type {
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { emptyActiveChain } from './chain-state.js';
 import { clamp01 } from '../../../utils/math.js';
-import { matchesGlob } from '../../../utils/path-patterns.js';
+import { matchesActionPattern } from '../approval/action-classifier.js';
 
 export type DriftChainUpdate = {
   state: DriftChainState;
@@ -26,11 +26,11 @@ export function computePerTaskOutOfBounds(
 
   const result = new Set<string>();
 
-  for (const file of taskChangedFiles) {
-    if (file === task.file) continue;
+  for (const file of [...new Set(taskChangedFiles)].sort()) {
+    if (matchesActionPattern(file, task.file)) continue;
     if (dependsOn.has(file)) continue;
-    if (inBoundsPatterns.some((p) => matchesGlob(file, p))) continue;
-    if (approvedPatterns.some((p) => file.includes(p))) continue;
+    if (inBoundsPatterns.some((pattern) => matchesActionPattern(file, pattern))) continue;
+    if (approvedPatterns.some((pattern) => matchesActionPattern(file, pattern))) continue;
     result.add(file);
   }
 
@@ -77,7 +77,7 @@ export function analyzeDriftChain(
     };
   }
 
-  const currentFiles = Array.from(outOfBoundsFiles);
+  const currentFiles = Array.from(outOfBoundsFiles).sort();
   const prevEntry = state.activeChain.entries.at(-1);
 
   let newEntries: ActiveDriftChain['entries'];
@@ -95,18 +95,16 @@ export function analyzeDriftChain(
       const unionSet = new Set([...prevEntry.outOfBoundsFiles, ...currentFiles]);
       unionSize = unionSet.size;
 
-      const existingUnique = new Set(state.activeChain.uniqueFiles);
-      const addedUnique = currentFiles.filter((f) => !existingUnique.has(f));
-      newUniqueFiles = [...state.activeChain.uniqueFiles, ...addedUnique];
+      newUniqueFiles = [...new Set([...state.activeChain.uniqueFiles, ...currentFiles])].sort();
     } else {
       newEntries = [{ taskId, outOfBoundsFiles: currentFiles }];
-      newUniqueFiles = [...currentFiles];
+      newUniqueFiles = currentFiles;
       overlapCount = 0;
       unionSize = currentFiles.length;
     }
   } else {
     newEntries = [{ taskId, outOfBoundsFiles: currentFiles }];
-    newUniqueFiles = [...currentFiles];
+    newUniqueFiles = currentFiles;
     overlapCount = 0;
     unionSize = currentFiles.length;
   }

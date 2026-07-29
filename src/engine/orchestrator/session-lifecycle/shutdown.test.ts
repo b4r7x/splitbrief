@@ -7,6 +7,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import {
@@ -172,6 +173,39 @@ describe('shutdownWorkflow — interrupted-task rollback', () => {
       projectDir,
       sessionId,
       () => trackedState,
+      () => ({ file: 'src/a.ts', action: 'modify' }),
+    );
+
+    expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf-8')).toBe('user edit a\n');
+    expect(existsSync(join(projectDir, 'src/generated.ts'))).toBe(false);
+  });
+
+  it('restores from an active task snapshot after state is reloaded', async () => {
+    const projectDir = createTempDir('session-lifecycle-test');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir, { 'src/a.ts': 'committed a\n' });
+    const sessionId = 'sess-reloaded';
+    ensureSessionDir(projectDir, sessionId);
+
+    writeProjectFile(projectDir, 'src/a.ts', 'user edit a\n');
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      file: 'src/a.ts',
+      scope: { inBounds: ['src/generated.ts'] },
+    });
+    const state = await stateWithActiveTaskSnapshot(projectDir, [task]);
+    saveState({ projectDir, sessionId }, state);
+    const reloaded = loadState({ projectDir, sessionId });
+    if (!reloaded) throw new Error('expected persisted workflow state');
+
+    writeProjectFile(projectDir, 'src/a.ts', 'agent a\n');
+    writeProjectFile(projectDir, 'src/generated.ts', 'agent generated\n');
+
+    await shutdownWorkflow(
+      projectDir,
+      sessionId,
+      () => reloaded,
       () => ({ file: 'src/a.ts', action: 'modify' }),
     );
 

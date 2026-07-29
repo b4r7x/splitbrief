@@ -1,7 +1,8 @@
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
+
 export const ANTHROPIC_API_VERSION = '2023-06-01';
 
-export const TRUNCATION_WARNING =
-  '\n[diptych] warning: response truncated at max_tokens — output is incomplete.\n';
+export const TRUNCATION_WARNING = `\n[${SPLITBRIEF_IDENTITY.displayName}] warning: response truncated at max_tokens — output is incomplete.\n`;
 
 export function stripV1Suffix(url: string): string {
   return url.replace(/\/v1\/?$/, '');

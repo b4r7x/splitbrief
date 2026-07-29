@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Box } from 'ink';
 import type {
   RuntimeCommandDef,
@@ -17,12 +17,20 @@ import { Spinner } from '../../features/workflow/components/spinner.js';
 import { WorkflowBody } from '../../features/workflow/components/body.js';
 import { WorkflowFooter, WorkflowHeader } from '../../features/workflow/components/chrome.js';
 import {
+  DEFAULT_REVIEW_ACTION_ID,
+  getReviewActionCommand,
+  nextReviewActionId,
+  type SelectableReviewActionId,
+} from '../../features/workflow/components/brief-review/review-actions.js';
+import {
   useWorkflowScreen,
   type WorkflowScreenDeps,
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../stores/ui/controls.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
+import { focusStore } from '../../stores/ui/focus.js';
+import { reviewStore } from '../../stores/workflow/review.js';
 import { useStores } from '../../stores/use-stores.js';
 import {
   clampWorkflowPromptRows,
@@ -56,8 +64,51 @@ export function WorkflowScreen({
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
   const [scrollBelowLabel, setScrollBelowLabel] = useState('');
+  const activeReviewActionIdRef = useRef<SelectableReviewActionId>(DEFAULT_REVIEW_ACTION_ID);
+  const reviewActionKeyboardEngagedRef = useRef(false);
+  const reviewOwnerToken = reviewStore.use((state) => state.ownerToken);
+  const briefFocus = focusStore.use((focus) => focus);
 
   const model = useWorkflowScreen({ onRuntimeCommand, copyTarget, canCopyFocused, deps });
+  const documentReviewActive =
+    model.inputMode.mode === 'review' &&
+    (model.phase === 'reviewing-plan' || model.phase === 'reviewing-spec');
+  const reviewYankActive =
+    model.phase === 'reviewing-briefs' && (canCopyFocused?.(briefFocus) ?? false);
+
+  const resetReviewActionSelection = (): void => {
+    reviewActionKeyboardEngagedRef.current = false;
+    activeReviewActionIdRef.current = DEFAULT_REVIEW_ACTION_ID;
+  };
+
+  useLayoutEffect(() => {
+    resetReviewActionSelection();
+  }, [documentReviewActive, reviewOwnerToken]);
+
+  const handleReviewBoundaryNavigate = (direction: 'up' | 'down'): boolean => {
+    if (model.phase === 'reviewing-briefs') {
+      return model.navigateBriefReview(direction);
+    }
+    if (!documentReviewActive || model.hasOverlay || model.promptPending) return false;
+    const next = nextReviewActionId(
+      activeReviewActionIdRef.current,
+      direction === 'down' ? 'next' : 'previous',
+    );
+    activeReviewActionIdRef.current = next;
+    reviewActionKeyboardEngagedRef.current = true;
+    return true;
+  };
+
+  const handleFooterInput = (text: string): void => {
+    if (documentReviewActive && reviewActionKeyboardEngagedRef.current && text.trim() === '') {
+      const command = getReviewActionCommand(activeReviewActionIdRef.current);
+      resetReviewActionSelection();
+      void model.handleInput(command);
+      return;
+    }
+    if (text.length > 0) resetReviewActionSelection();
+    void model.handleInput(text);
+  };
 
   const sidebarWidth = getWorkflowSidebarWidth({
     cols,
@@ -120,7 +171,7 @@ export function WorkflowScreen({
         <>
           <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
-            handleInput={model.handleInput}
+            handleInput={handleFooterInput}
             onEmptySubmit={model.onEmptySubmit}
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
@@ -133,7 +184,18 @@ export function WorkflowScreen({
             waitingForUser={
               model.inputMode.mode !== 'normal' || model.approvalPending || model.costPending
             }
-            {...(model.onEditShortcut ? { onEditShortcut: model.onEditShortcut } : {})}
+            onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
+            {...(documentReviewActive
+              ? {
+                  onEditShortcut: () => {
+                    resetReviewActionSelection();
+                    void model.handleInput('edit-file');
+                  },
+                  onReviewInteraction: resetReviewActionSelection,
+                }
+              : {})}
+            reviewYankActive={reviewYankActive}
+            reviewEpoch={model.inputMode.mode === 'review' ? reviewOwnerToken : undefined}
             disabled={
               model.hasOverlay ||
               model.promptPending ||

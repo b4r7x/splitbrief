@@ -1,10 +1,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
-import { DIPTYCH_DIR } from '../../src/core/paths.js';
+import { SPLITBRIEF_DIR } from '../../src/core/paths.js';
 
 export function writeConfigYaml(projectDir: string, obj: Record<string, unknown>) {
-  const dir = join(projectDir, DIPTYCH_DIR);
+  const dir = join(projectDir, SPLITBRIEF_DIR);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'config.yaml'), YAML.stringify(obj), 'utf-8');
 }
@@ -14,7 +14,7 @@ export function optionalSectionsYaml(): Record<string, unknown> {
     codebase: {
       enabled: true,
       token_budget: 1234,
-      cache_dir: '.diptych-cache',
+      cache_dir: '.splitbrief-cache',
       include: ['src/**'],
       exclude: ['dist/**'],
     },
@@ -23,7 +23,7 @@ export function optionalSectionsYaml(): Record<string, unknown> {
     },
     otel: {
       enabled: true,
-      service_name: 'diptych-test',
+      service_name: 'splitbrief-test',
     },
     snapshots: {
       auto: {

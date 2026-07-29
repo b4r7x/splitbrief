@@ -68,7 +68,7 @@ function derivationLoopMs(state: LifecycleState): number {
   return best;
 }
 
-describe.skipIf(process.env.DIPTYCH_PERF !== '1')('input footer live status perf', () => {
+describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('input footer live status perf', () => {
   it('derives live status per tick in time independent of event count', () => {
     const small = lifecycleAfterWorkflow(1_000);
     const large = lifecycleAfterWorkflow(10_000);

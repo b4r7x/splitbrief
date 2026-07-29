@@ -7,12 +7,11 @@ node_modules/
 dist/
 *.tsbuildinfo
 
-# Runtime state (diptych working directory)
-.diptych/
-.tiny-spec/
-testing/fixtures/**/.diptych/
-!evals/fixtures/**/.diptych/
-!evals/fixtures/**/.diptych/config.yaml
+# Runtime state (splitbrief working directory)
+.splitbrief/
+testing/fixtures/**/.splitbrief/
+!evals/fixtures/**/.splitbrief/
+!evals/fixtures/**/.splitbrief/config.yaml
 
 # Eval generated artifacts
 evals/cassettes/*

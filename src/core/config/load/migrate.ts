@@ -31,12 +31,12 @@ export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
   } else if (version === 2) {
     v2 = obj;
     warnings?.push(
-      'config.version 2 is deprecated; diptych migrated it in memory. Run `diptych init --reconfigure` to write a current config.',
+      'config.version 2 is deprecated; SPLITBRIEF migrated it in memory. Run `splitbrief init --reconfigure` to write a current config.',
     );
   } else {
     if (version === undefined) {
       warnings?.push(
-        'config.version is missing; diptych assumed version 1 and migrated it in memory, which drops fields added after v1. Run `diptych init --reconfigure` to write a current config.',
+        'config.version is missing; SPLITBRIEF assumed version 1 and migrated it in memory, which drops fields added after v1. Run `splitbrief init --reconfigure` to write a current config.',
       );
     }
     v2 = narrowRecord(migrateV1ToV2(obj)) ?? {};

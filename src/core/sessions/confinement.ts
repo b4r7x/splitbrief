@@ -7,7 +7,7 @@ import {
   nearestExistingAncestor,
   pathConfinementError,
 } from '../../lib/path-confinement.js';
-import { DIPTYCH_DIR, SESSIONS_DIR, validateSessionId } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR, validateSessionId } from '../paths.js';
 import { error, matches } from '../../utils/error.js';
 
 export const SESSION_FILE_PATH_MAX_BYTES = 4096;
@@ -63,7 +63,7 @@ function hasControlCharacter(value: string): boolean {
 
 function assertNoSessionPathSymlink(sessionDir: string): void {
   const resolved = resolve(sessionDir);
-  const marker = `${sep}${DIPTYCH_DIR}${sep}${SESSIONS_DIR}${sep}`;
+  const marker = `${sep}${SPLITBRIEF_DIR}${sep}${SESSIONS_DIR}${sep}`;
   const markerIndex = resolved.indexOf(marker);
   const startIndex = markerIndex === -1 ? resolved.length : markerIndex + 1;
   const suffix = resolved.slice(startIndex).split(sep).filter(Boolean);
@@ -147,7 +147,7 @@ function assertInsideRoot(projectDir: string, fullPath: string): void {
 
 export function assertSessionDirConfined(projectDir: string, sessionId: string): void {
   validateSessionId(sessionId);
-  const sessionRel = join(DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  const sessionRel = join(SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
   assertPathConfined(sessionRel, projectDir);
   assertInsideRoot(projectDir, resolve(projectDir, sessionRel));
 }

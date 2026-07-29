@@ -2,14 +2,14 @@ import { Text } from 'ink';
 import type { ReviewPacketSummary, Summary } from '../../../core/schemas/summary.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
 import type { Theme } from '../../../components/theme.js';
-import { DIPTYCH_DIR } from '../../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { truncateWithEllipsis } from '../../../utils/truncate.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { formatScoreSummary } from '../../../core/formatting.js';
 
 function sessionPath(path: string, sessionId: string | undefined): string {
   if (path.includes('/')) return path;
-  return sessionId ? `${DIPTYCH_DIR}/sessions/${sessionId}/${path}` : path;
+  return sessionId ? `${SPLITBRIEF_DIR}/sessions/${sessionId}/${path}` : path;
 }
 
 function compactPath(path: string, maxLength: number): string {

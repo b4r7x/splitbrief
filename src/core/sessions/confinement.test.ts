@@ -15,7 +15,7 @@ const tmpDirs: string[] = [];
 function makeSessionDir(prefix: string, sessionId = 'session-1'): string {
   const root = createTempDir(prefix);
   tmpDirs.push(root);
-  const sessionDir = join(root, '.diptych', 'sessions', sessionId);
+  const sessionDir = join(root, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessionDir, { recursive: true });
   return sessionDir;
 }
@@ -117,7 +117,7 @@ describe('assertSessionConfinement', () => {
     const realSessions = join(root, 'real-sessions');
     const realSession = join(realSessions, 'session-1');
     mkdirSync(realSession, { recursive: true });
-    const sessionsParent = join(root, '.diptych', 'sessions');
+    const sessionsParent = join(root, '.splitbrief', 'sessions');
     mkdirSync(sessionsParent, { recursive: true });
     symlinkSync(realSession, join(sessionsParent, 'session-1'));
 

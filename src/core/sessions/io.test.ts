@@ -8,7 +8,7 @@ import {
   saveSummary,
   readSession,
 } from './io.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../paths.js';
 import { saveState, loadState } from '../state/persistence.js';
 import { isResumable } from '../phases.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -28,7 +28,7 @@ afterEach(() => {
 import type { Session } from '../schemas/session.js';
 
 function writeSessionSubdir(projectDir: string, sessionId: string, session: Session): void {
-  const subdir = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  const subdir = join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
   mkdirSync(subdir, { recursive: true });
   writeFileSync(join(subdir, 'summary.json'), JSON.stringify(session));
 }
@@ -41,7 +41,7 @@ describe('listSessions', () => {
 
   it('returns empty array when sessions directory is empty', () => {
     tmp = createTempDir('sessions-io-test');
-    const sessionsRoot = join(tmp, DIPTYCH_DIR, SESSIONS_DIR);
+    const sessionsRoot = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR);
     mkdirSync(sessionsRoot, { recursive: true });
     expect(listSessions(tmp)).toEqual([]);
   });
@@ -135,7 +135,7 @@ describe('listSessions', () => {
 
   it('skips subdirectories with neither summary.json nor a recoverable state.json', () => {
     tmp = createTempDir('sessions-io-test');
-    const emptySubdir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-empty');
+    const emptySubdir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, '2024-01-01-empty');
     mkdirSync(emptySubdir, { recursive: true });
     writeSessionSubdir(tmp, '2024-01-02-good', makeSession({ id: '2024-01-02-good' }));
 
@@ -146,7 +146,7 @@ describe('listSessions', () => {
 
   it('skips sessions with malformed summary.json and returns only the valid ones', () => {
     tmp = createTempDir('sessions-io-test');
-    const badDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-bad');
+    const badDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, '2024-01-01-bad');
     mkdirSync(badDir, { recursive: true });
     writeFileSync(join(badDir, 'summary.json'), '{not valid json!!!');
     writeSessionSubdir(tmp, '2024-01-02-good', makeSession({ id: '2024-01-02-good' }));
@@ -158,7 +158,7 @@ describe('listSessions', () => {
 
   it('skips valid JSON with invalid schema', () => {
     tmp = createTempDir('sessions-io-test');
-    const badDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-bad');
+    const badDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, '2024-01-01-bad');
     mkdirSync(badDir, { recursive: true });
     writeFileSync(join(badDir, 'summary.json'), JSON.stringify({ id: 'x' }));
     writeSessionSubdir(tmp, '2024-01-02-good', makeSession({ id: '2024-01-02-good' }));
@@ -171,9 +171,9 @@ describe('listSessions', () => {
   it('loads legacy summaries missing contextDetected without warning', () => {
     tmp = createTempDir('sessions-io-test');
     const sessionId = '2024-01-01-legacy-cost-prediction';
-    mkdirSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId), { recursive: true });
+    mkdirSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId), { recursive: true });
     writeFileSync(
-      join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId, 'summary.json'),
+      join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, 'summary.json'),
       JSON.stringify(makeLegacySessionSummaryWithoutContextDetected({ sessionId })),
     );
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
@@ -190,7 +190,7 @@ describe('listSessions', () => {
 
   it('ignores non-directory entries', () => {
     tmp = createTempDir('sessions-io-test');
-    const sessionsRoot = join(tmp, DIPTYCH_DIR, SESSIONS_DIR);
+    const sessionsRoot = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR);
     mkdirSync(sessionsRoot, { recursive: true });
     writeFileSync(join(sessionsRoot, 'notes.txt'), 'not a session');
     writeSessionSubdir(tmp, '2024-01-01-valid', makeSession({ id: '2024-01-01-valid' }));
@@ -206,8 +206,8 @@ describe('saveSummary', () => {
     tmp = createTempDir('sessions-io-test');
     const session = makeSession({ id: '2024-01-01-save-1' });
     saveSummary({ projectDir: tmp, sessionId: '2024-01-01-save-1' }, session);
-    const path = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-1', 'summary.json');
-    expect(existsSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-save-1'))).toBe(true);
+    const path = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, '2024-01-01-save-1', 'summary.json');
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, '2024-01-01-save-1'))).toBe(true);
     expect(readSession({ projectDir: tmp, sessionId: '2024-01-01-save-1' })).toEqual(session);
     const stats = statSync(path);
     expect(stats.mode & 0o777).toBe(0o600);
@@ -227,7 +227,7 @@ describe('saveSummary', () => {
     expect(() => saveSummary({ projectDir: tmp, sessionId: '2024-01-01-other' }, session)).toThrow(
       "Cannot save session summary for '2024-01-01-other'",
     );
-    expect(existsSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-other'))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, '2024-01-01-other'))).toBe(false);
   });
 
   it('rejects invalid session ids', () => {
@@ -297,7 +297,7 @@ describe('readSession', () => {
     tmp = createTempDir('sessions-io-test');
     expect(readSession({ projectDir: tmp, sessionId: '2024-01-01-missing' })).toBeNull();
 
-    const badDir = join(tmp, DIPTYCH_DIR, SESSIONS_DIR, '2024-01-01-invalid');
+    const badDir = join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, '2024-01-01-invalid');
     mkdirSync(badDir, { recursive: true });
     writeFileSync(join(badDir, 'summary.json'), JSON.stringify({ id: 'x' }));
     expect(readSession({ projectDir: tmp, sessionId: '2024-01-01-invalid' })).toBeNull();
@@ -310,7 +310,9 @@ describe('crashed-run recovery from state.json', () => {
     const sessionId = '2024-01-01-crashed';
     const state = makeImplState([makeTask()], { feature: 'crashed-feature' });
     saveState({ projectDir: tmp, sessionId }, state);
-    expect(existsSync(join(tmp, DIPTYCH_DIR, SESSIONS_DIR, sessionId, 'summary.json'))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, 'summary.json'))).toBe(
+      false,
+    );
 
     const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { configPath, createDefaultConfig, loadConfig, writeConfig } from './io.js';
-import { DIPTYCH_DIR } from '../../paths.js';
+import { SPLITBRIEF_DIR } from '../../paths.js';
 import { optionalSectionsYaml, writeConfigYaml } from '#testing/helpers/config-io.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-io-roundtrip');
@@ -42,7 +42,7 @@ describe('config roundtrip', () => {
       writeConfig(dir, config);
 
       const written = YAML.parse(
-        readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'),
+        readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
       expect(written.codebase).toBeDefined();
       expect(written.hooks).toBeDefined();
@@ -93,7 +93,7 @@ describe('config roundtrip', () => {
 
       writeConfig(dir, config);
       const written = YAML.parse(
-        readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'),
+        readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
       expect(written.implementer_profiles).toBeDefined();
       const profiles = written.implementer_profiles as Record<string, unknown>;
@@ -117,7 +117,7 @@ describe('config roundtrip', () => {
 
       writeConfig(dir, config);
       const written = YAML.parse(
-        readFileSync(join(dir, DIPTYCH_DIR, 'config.yaml'), 'utf-8'),
+        readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
       ) as Record<string, unknown>;
       expect(written.planner_estimate_review).toBe(true);
       expect(written.auto_split_overflow).toBe(true);

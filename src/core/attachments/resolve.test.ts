@@ -8,8 +8,8 @@ let projectDir: string;
 let externalDir: string;
 
 beforeEach(() => {
-  projectDir = mkdtempSync(join(tmpdir(), 'diptych-project-'));
-  externalDir = mkdtempSync(join(tmpdir(), 'diptych-external-'));
+  projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-project-'));
+  externalDir = mkdtempSync(join(tmpdir(), 'splitbrief-external-'));
 });
 
 afterEach(() => {

@@ -1,4 +1,4 @@
-# diptych — Workflow
+# SPLITBRIEF — Workflow
 
 The state machine reference. Every phase, every transition, what triggers each one, what code runs.
 
@@ -164,7 +164,7 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 
 **Cancellable** — single Ctrl-C aborts the active model call. This matches `isLivePhase()` in `src/core/phases.ts`.
 
-**Resumable** — `diptych resume` can pick up here. `RESUMABLE_PHASES` in `src/core/phases.ts` is exactly `planning`, `implementing`, `final-review`. Every other phase is resumable only through the `awaitingContinue` override below; terminal phases (`idle`, `complete`) never are.
+**Resumable** — `splitbrief resume` can pick up here. `RESUMABLE_PHASES` in `src/core/phases.ts` is exactly `planning`, `implementing`, `final-review`. Every other phase is resumable only through the `awaitingContinue` override below; terminal phases (`idle`, `complete`) never are.
 
 **Live** — streaming output is happening. Phases where the planner or implementer is actively generating: `researching`, `specifying`, `planning`, `implementing`, `escalating`, `final-review`.
 
@@ -228,7 +228,7 @@ Four user actions during a live phase:
 |--------|---------|--------|
 | Queue message | Type + Enter | During live planner phases, appends to `messageQueue`. Current call continues. Planners with `injectUserTurn()` also receive the message immediately. Still-pending delivery entries drain at the next safe-point. |
 | Abort turn | Ctrl-C (single) | `AbortController.abort()`. Current call terminates. Partial response preserved in `session.jsonl` with `interrupted: true`. Dispatches `ABORT_TURN` → `awaitingContinue: true`. |
-| Exit workflow | Ctrl-C twice within 2s | Exits after state is saved. The TUI unmounts; the saved state may be resumable later with `diptych continue <session-id>`. |
+| Exit workflow | Ctrl-C twice within 2s | Exits after state is saved. The TUI unmounts; the saved state may be resumable later with `splitbrief continue <session-id>`. |
 | Continue | Enter (from awaiting-continue) | Dispatches `CONTINUE_TURN` → `awaitingContinue: false`. Next planner call includes queued messages and partial context. |
 
 **Queue scope.** Planner-only across local TUI, attached clients, and RPC. Mid-task interjection at the implementer, validation, or escalation level is rejected instead of being queued or injected into the planner, because small local models lose coherence when their task prompt is perturbed mid-call.
@@ -283,7 +283,7 @@ Dispatches `RESET_TASK`. Sets the target task to `pending`, rewinds `currentTask
 
 ## 6. Resume
 
-`diptych resume` reads `.diptych/active` to find the session, loads `state.json`. If either is missing, version-mismatched, or the phase is not resumable, resume refuses with an error.
+`splitbrief resume` reads `.splitbrief/active` to find the session, loads `state.json`. If either is missing, version-mismatched, or the phase is not resumable, resume refuses with an error.
 
 ### Resumable phases
 
@@ -295,7 +295,7 @@ Every other phase — `researching`, `specifying`, `reviewing-spec`, `clarifying
 
 ### Recovery on resume
 
-If state has `pendingRecovery`, resume shows that recovery issue before dispatching any work. Selecting `pause-run` keeps `.diptych/active` intact so the same decision appears on next resume.
+If state has `pendingRecovery`, resume shows that recovery issue before dispatching any work. Selecting `pause-run` keeps `.splitbrief/active` intact so the same decision appears on next resume.
 
 ### Planner context rebuild
 
@@ -337,17 +337,17 @@ Recovery actions:
 | `abort-workflow` | Exits through normal shutdown |
 | `planner-split-rebase` | Legacy/manual only; new prompts do not offer it, and old states block with `planner-proposal-required` |
 
-Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `RESOLVE_PENDING_RECOVERY`). Or `awaiting-user` → `paused` (via `PAUSE_PENDING_RECOVERY`) → resumable on next `diptych resume`.
+Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`) → cleared (via `RESOLVE_PENDING_RECOVERY`). Or `awaiting-user` → `paused` (via `PAUSE_PENDING_RECOVERY`) → resumable on next `splitbrief resume`.
 
 ---
 
 ## 8. A standard run, step by step
 
 ```
- 1. diptych start "add email validator"
- 2. CLI loads .diptych/config.yaml → configStore
- 3. CLI checks .diptych/active → error if present.
-    Generate session ID, create .diptych/sessions/<id>/, write .diptych/active.
+ 1. splitbrief start "add email validator"
+ 2. CLI loads .splitbrief/config.yaml → configStore
+ 3. CLI checks .splitbrief/active → error if present.
+    Generate session ID, create .splitbrief/sessions/<id>/, write .splitbrief/active.
  4. routerStore → screen: workflow. useWorkflow starts.
 
  5. runWorkflow() begins. initializeWorkflow emits workflow_started.
@@ -404,7 +404,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Drift report computed. Planner reviews diff against Task Brief and spec.
 
 16. final-review → REVIEW_DONE → complete
-    summary.json written. .diptych/active cleared. Session done.
+    summary.json written. .splitbrief/active cleared. Session done.
 ```
 
 During live model-call phases, single Ctrl-C enters `awaitingContinue`; double Ctrl-C exits. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. `/revise-spec` and `/revise-plan` rewind to the appropriate phase. `/redo-task` replays a single task.

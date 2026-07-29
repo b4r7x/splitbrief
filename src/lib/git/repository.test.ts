@@ -7,7 +7,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, startConflictingMerge } from '#testing/helpers/git.js';
 
 function setupGitRepo(): string {
-  const dir = createTempDir('diptych-git-test');
+  const dir = createTempDir('splitbrief-git-test');
   createTestGitRepo(dir);
   return dir;
 }
@@ -33,7 +33,7 @@ describe('isGitRepo', () => {
   });
 
   it('returns false outside a git repo', async () => {
-    const dir = tracked(createTempDir('diptych-nogit'));
+    const dir = tracked(createTempDir('splitbrief-nogit'));
     expect(await isGitRepo(dir)).toBe(false);
   });
 });
@@ -45,7 +45,7 @@ describe('hasCommits', () => {
   });
 
   it('returns false for a freshly initialized repo with no commits', async () => {
-    const dir = tracked(createTempDir('diptych-unborn'));
+    const dir = tracked(createTempDir('splitbrief-unborn'));
     execSync('git init', { cwd: dir, stdio: 'pipe' });
     expect(await hasCommits(dir)).toBe(false);
   });
@@ -58,7 +58,7 @@ describe('getInProgressGitOp', () => {
   });
 
   it('detects a conflicted merge in progress', async () => {
-    const dir = tracked(createTempDir('diptych-merge'));
+    const dir = tracked(createTempDir('splitbrief-merge'));
     startConflictingMerge(dir);
     expect(existsSync(join(dir, '.git', 'MERGE_HEAD'))).toBe(true);
     expect(await getInProgressGitOp(dir)).toBe('merge');
@@ -77,7 +77,7 @@ describe('getInProgressGitOp', () => {
   });
 
   it('returns null outside a git repository', async () => {
-    const dir = tracked(createTempDir('diptych-nogit-op'));
+    const dir = tracked(createTempDir('splitbrief-nogit-op'));
     expect(await getInProgressGitOp(dir)).toBeNull();
   });
 });

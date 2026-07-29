@@ -1,6 +1,6 @@
 # Code Standard — the SOTA review bar
 
-The single yardstick a strict reviewer uses to judge diptych source. It does **not** restate the architecture docs — it consolidates them into one operative bar and adds the **judgment calls** that no grep gate can catch (parameter design, DRY-at-the-third-occurrence, dead exports, junk-drawer `shared.ts`, layer-buried helpers, fake-data-to-satisfy-types, test-behavior coupling).
+The single yardstick a strict reviewer uses to judge SPLITBRIEF source. It does **not** restate the architecture docs — it consolidates them into one operative bar and adds the **judgment calls** that no grep gate can catch (parameter design, DRY-at-the-third-occurrence, dead exports, junk-drawer `shared.ts`, layer-buried helpers, fake-data-to-satisfy-types, test-behavior coupling).
 
 Read this when you are about to write or review code and want to know "is this good enough?". For *where a file goes*, the canonical authorities stay:
 
@@ -46,8 +46,8 @@ utils/  →  lib/  →  core/  →  engine/  →  (stores/)  →  features/
 
 | Layer | May import from | Hard rule |
 |---|---|---|
-| `utils/` | stdlib, npm, `utils/` | leaf — zero diptych literals, zero Node-subsystem wrappers |
-| `lib/` | + `utils/` | infra wrappers only — knows no diptych concept (no `claude-code`, no `.diptych/`) |
+| `utils/` | stdlib, npm, `utils/` | leaf — zero SPLITBRIEF literals, zero Node-subsystem wrappers |
+| `lib/` | + `utils/` | infra wrappers only — knows no SPLITBRIEF concept (no `claude-code`, no `.splitbrief/`) |
 | `core/` | + `lib/`, `core/` | domain logic, **no React, no subprocess/file-writes** |
 | `engine/` | + `core/`, `engine/` | orchestration; **zero React/Ink, zero `features/`/`components/`/`hooks/`/`cli/`** |
 | `stores/` | `utils/`, `core/`, `lib/` | the only sanctioned engine↔UI channel |
@@ -189,7 +189,7 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 - [ ] No third copy of a pattern — extract at the 3rd occurrence ([PRINCIPLES.md](./PRINCIPLES.md) rule 17). Two copies may stay local; check an existing helper isn't simply mislayered first.
 - [ ] No newly-dead exports (unused `export`, unused type alias, write-only field, unreachable switch arm, param the caller always overwrites). Drop `export` on module-private symbols; delete genuinely unused code (no "future use").
 - [ ] File name matches its primary export; no stutter; no duplicate sibling names; no misleading directory (§5).
-- [ ] No raw octal perms / magic literals where a named constant exists (`SECURE_FILE_MODE`, `DIPTYCH_DIR`).
+- [ ] No raw octal perms / magic literals where a named constant exists (`SECURE_FILE_MODE`, `SPLITBRIEF_DIR`).
 
 **Tests**
 - [ ] Tests assert observable behavior, not implementation — no `vi.mock` of `./` siblings, no `toHaveBeenCalledTimes` unless the call count *is* the contract ([TESTING.md](./TESTING.md), STRUCTURE rule 15).

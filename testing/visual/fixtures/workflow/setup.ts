@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-runner.js';
 import {
@@ -11,23 +13,20 @@ import { addEvent } from '../../../../src/stores/workflow/actions/event.js';
 import { reviewStore } from '../../../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import type { FixtureContext, FixtureFactory } from '../common.js';
-import { createWorkflowBaseFixture, teardownVisualFixture } from '../screen-fixtures.js';
+import {
+  createWorkflowBaseFixture,
+  teardownVisualFixture,
+  VISUAL_FIXTURE_PROJECT_DIR,
+} from '../screen-fixtures.js';
 import { WORKFLOW_FIXTURE_TASK_ID, type WorkflowFixtureProjection } from './projections.js';
+
+function getReviewFilePath(review: NonNullable<WorkflowFixtureProjection['review']>): string {
+  return join(VISUAL_FIXTURE_PROJECT_DIR, review.filePath);
+}
 
 function teardownWorkflowFixture(): void {
   closeApprovalPrompt();
   teardownVisualFixture();
-}
-
-function assertFixtureContext(
-  projection: WorkflowFixtureProjection,
-  context: FixtureContext,
-): void {
-  if (context.scenario.id !== projection.scenarioId) {
-    throw new Error(
-      `Workflow fixture ${projection.scenarioId} cannot set up scenario ${context.scenario.id}`,
-    );
-  }
 }
 
 function applyProjection(projection: WorkflowFixtureProjection): void {
@@ -39,15 +38,17 @@ function applyProjection(projection: WorkflowFixtureProjection): void {
   }
 
   if (projection.review !== undefined) {
-    reviewStore.setReviewFile(projection.review.filePath);
+    const filePath = getReviewFilePath(projection.review);
+    reviewStore.setReviewFile(filePath);
     reviewStore.setBriefSources([projection.review.source]);
-    reviewStore.setBriefPaths([projection.review.filePath]);
+    reviewStore.setBriefPaths([filePath]);
   }
 
   if (projection.question !== undefined) {
     questionPromptStore.setHint(projection.question.prompt);
   }
 
+  controlsStore.setSidebar(projection.sidebarVisible);
   controlsStore.setInputMode(projection.inputMode);
 
   if (projection.approval !== undefined) {
@@ -65,9 +66,18 @@ async function setupProjection(
   projection: WorkflowFixtureProjection,
   context: FixtureContext,
 ): Promise<void> {
-  assertFixtureContext(projection, context);
+  if (context.scenario.id !== projection.scenarioId) {
+    throw new Error(
+      `Workflow fixture ${projection.scenarioId} cannot set up scenario ${context.scenario.id}`,
+    );
+  }
   closeApprovalPrompt();
   await createWorkflowBaseFixture().setup(context);
+  if (projection.review !== undefined) {
+    const filePath = getReviewFilePath(projection.review);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, projection.review.source);
+  }
 
   if (projection.summary !== undefined) {
     routerStore.init({ screen: 'summary', summary: projection.summary, status: 'complete' });
@@ -91,7 +101,7 @@ function activateFixtureInputMode(
   options: Parameters<RunWorkflowFn>[0],
 ): void {
   if (projection.review !== undefined) {
-    void options.callbacks.onApprovalNeeded('briefs', projection.review.filePath);
+    void options.callbacks.onApprovalNeeded('briefs', getReviewFilePath(projection.review));
   }
   if (projection.question !== undefined) {
     void options.callbacks.onQuestionAsked?.(

@@ -12,6 +12,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { useStores } from '../../stores/use-stores.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 
 const filterSkill = (s: SkillMeta, query: string): boolean => {
   if (query.endsWith(' ')) {
@@ -149,7 +150,7 @@ export function SkillsPicker() {
       placeholder={
         skills.length === 0 ? (
           <Text color={t.textDim}>
-            No skills yet — add them under .claude/skills/ or .diptych/skills/
+            No skills yet — add them under .claude/skills/ or {SPLITBRIEF_DIR}/skills/
           </Text>
         ) : (
           <Text color={t.textDim}>No matching skills</Text>

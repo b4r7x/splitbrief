@@ -206,7 +206,7 @@ describe('CLI_TOOLS trust metadata', () => {
 
 describe('CLI_TOOLS prompt argv clamping (Linux MAX_ARG_STRLEN guard)', () => {
   const MAX_ARGV_PROMPT_BYTES = 120_000;
-  const TRUNCATION_MARKER = '[diptych: prompt truncated to fit the OS argv limit';
+  const TRUNCATION_MARKER = '[SPLITBRIEF: prompt truncated to fit the OS argv limit';
 
   const longHead = 'HEAD_SENTINEL ';
   const longTail = ' TAIL_SENTINEL';

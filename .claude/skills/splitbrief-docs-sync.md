@@ -1,9 +1,9 @@
 ---
-name: diptych-docs-sync
+name: splitbrief-docs-sync
 description: Audit whether docs/ matches the current state of the code. Use when the user asks to sync docs, verify doc accuracy, check for stale references, or after a change that may have diverged docs from code. Does not rewrite specs under notes/superpowers/specs/ or notes/specs/ — those are immutable.
 ---
 
-# Sync diptych docs with current code
+# Sync SPLITBRIEF docs with current code
 
 Docs describe **current code, not plans**. After any code change that touches a public surface (state machine, storage layout, capability matrix, interaction model), this skill audits and fixes docs to match.
 
@@ -40,16 +40,16 @@ Run each item, collect findings, then fix in a single pass. Do not commit.
 
 ### 1. Command surface
 
-Derive the current CLI command list from code/help output, then grep for `diptych <command>` patterns in docs:
+Derive the current CLI command list from code/help output, then grep for `splitbrief <command>` patterns in docs:
 
 ```bash
 rg -n "register[A-Za-z]+Command\(program\)" src/cli.ts
 rg -n "\.command\(['\"]" src/cli/commands
 npm run dev -- --help
-rg -n "\bdiptych [a-z][a-z-]*\b" docs/ README.md CLAUDE.md AGENTS.md
+rg -n "\bsplitbrief [a-z][a-z-]*\b" docs/ README.md CLAUDE.md AGENTS.md
 ```
 
-For each doc hit, cross-reference the command name against `src/cli.ts`, `src/cli/commands/`, and the help output. Commands missing from code but present in docs → remove from docs or mark as planned-only in the same paragraph. In particular, `diptych sessions` is planned-only until a standalone CLI command exists; `/sessions` is a runtime UI command, not a top-level CLI command.
+For each doc hit, cross-reference the command name against `src/cli.ts`, `src/cli/commands/`, and the help output. Commands missing from code but present in docs → remove from docs or mark as planned-only in the same paragraph. In particular, `splitbrief sessions` is planned-only until a standalone CLI command exists; `/sessions` is a runtime UI command, not a top-level CLI command.
 
 ### 2. Phase list
 
@@ -67,10 +67,10 @@ Fix divergences in the doc, not the code (code is authoritative).
 
 ### 4. Path references
 
-Grep for `.diptych/` paths in docs:
+Grep for `.splitbrief/` paths in docs:
 
 ```bash
-grep -rn "\.diptych/" docs/ README.md
+grep -rn "\.splitbrief/" docs/ README.md
 ```
 
 Cross-reference with `src/core/paths.ts` for file-name constants. Paths in docs that reference files not produced by current code (e.g. `events.jsonl` after spec 003 lands) → update.
@@ -105,13 +105,15 @@ Every "see `src/...`" or "see `docs/...`" link in a doc file must point at a rea
 - "Project structure" tree matches the actual `src/` layout.
 - "Commands" table matches `package.json` scripts.
 
-### 10. Stale names
+### 10. State-layout drift
 
 ```bash
-grep -rn "tiny-spec\b\|\.tiny-spec\b\|EVENTS_FILE\|/current/" docs/ README.md CLAUDE.md AGENTS.md
+grep -rn "EVENTS_FILE\|/current/" docs/ README.md CLAUDE.md AGENTS.md
 ```
 
-Any `tiny-spec`, `.tiny-spec`, or `EVENTS_FILE` hit outside intentional historical references (CHANGELOG) is stale and needs replacement. `/current/` is context-sensitive: it is stale in normal session/storage docs, but valid in migration or legacy-compatibility sections that describe importing pre-v3 `.diptych/current/` state. Cross-reference current constants in `src/core/paths.ts` and migration support in `src/core/migration/` before editing.
+Any `EVENTS_FILE` hit is stale. `/current/` is valid only in schema-migration sections
+that describe importing the supported pre-v3 canonical layout. Cross-reference
+`src/core/paths.ts` and `src/core/migration/` before editing.
 
 ## Report format
 

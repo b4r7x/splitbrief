@@ -34,7 +34,7 @@ function lookupConfiguredCatalogContextLength(config: Config): number | undefine
 }
 
 export async function detectCapabilities(config: Config): Promise<DetectedCapabilities> {
-  const envCtx = process.env.DIPTYCH_CONTEXT_LENGTH;
+  const envCtx = process.env.SPLITBRIEF_CONTEXT_LENGTH;
   const parsed = envCtx ? parseInt(envCtx, 10) : NaN;
   if (!Number.isNaN(parsed)) return { contextLength: parsed, origin: 'env' };
 

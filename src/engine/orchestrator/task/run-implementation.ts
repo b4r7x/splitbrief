@@ -1,9 +1,8 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerResult } from '../../implementers/types.js';
 import type { StagedProject } from '../approval/staged-project.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import type { GateDecision } from '../approval/types.js';
 import { createBusTextHandler } from '../events.js';
 import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
@@ -44,12 +43,13 @@ export async function runImplementation(opts: {
   const streamingFeed = createStreamingFeed(task.id, opts.streamingSink ?? noopStreamingSink);
 
   const usesStaging = wctx.implementer.capabilities?.writesFiles === 'direct';
-  const staged = usesStaging ? await createStagedProject(projectDir, config) : undefined;
+  let staged: StagedProject | undefined;
   let preApplyApprovalDenied = false;
   let preApplyApprovedFiles: string[] = [];
 
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
+    staged = usesStaging ? await createStagedProject(projectDir, config) : undefined;
     loop = await withContinuationLoop<ImplementerResult>({
       ctx: {
         projectDir: staged?.projectDir ?? projectDir,
@@ -62,8 +62,8 @@ export async function runImplementation(opts: {
       },
       state,
       onStateChange: setTrackedState,
-      body: async ({ signal, continuationPrompt, steer, recordOutput }) => {
-        const result = await wctx.implementer.implement({
+      body: ({ signal, continuationPrompt, steer, recordOutput }) =>
+        wctx.implementer.implement({
           task,
           projectDir: staged?.projectDir ?? projectDir,
           config,
@@ -112,18 +112,16 @@ export async function runImplementation(opts: {
             persistApprovalEvidence({ wctx, state, decision, taskId: task.id });
             return { allow: true };
           },
-        });
-        return result;
-      },
+        }),
     });
   } catch (err) {
-    streamingFeed.stop();
     staged?.cleanup();
     throw err;
+  } finally {
+    streamingFeed.stop();
   }
 
   state = loop.state;
-  streamingFeed.stop();
 
   return {
     state,

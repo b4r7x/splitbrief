@@ -4,7 +4,6 @@ import type { FilteredStdin, MouseEvent } from '../../../src/lib/terminal/filter
 import { _resetMouseZones, registerMouseZone } from '../../../src/lib/terminal/mouse-zones.js';
 import { ROW_ZONE_Z_OVERLAY, ROW_ZONE_Z_SCREEN } from '../../../src/components/pickers/row-zone.js';
 import { PROMPT_ZONE_Z } from '../../../src/features/workflow/components/approval-prompt.js';
-import { briefListTopOffset } from '../../../src/features/workflow/layout/hit-test.js';
 import { readBriefListSnapshot } from '../../../src/features/workflow/layout/snapshot.js';
 import { _resetHoverThrottle } from '../../../src/features/workflow/hooks/use-mouse-pointer.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
@@ -196,7 +195,7 @@ describe('wireAppMouse', () => {
   it('blocks workflow fallback hit testing while question input owns the prompt', () => {
     const snapshot = openBriefReview(12);
     controlsStore.setInputMode('question');
-    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
     const mock = createMockFilteredStdin();
     const dispose = wireAppMouse(mock.filtered);
 
@@ -214,7 +213,7 @@ describe('wireAppMouse', () => {
       ownerToken: reviewStore.get().ownerToken,
       layout: { columns: 80, rows: 30 },
     });
-    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
     const mock = createMockFilteredStdin();
     const dispose = wireAppMouse(mock.filtered);
 

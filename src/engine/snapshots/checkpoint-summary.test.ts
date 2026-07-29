@@ -11,7 +11,7 @@ import { listCheckpointSummaries } from './checkpoint-summary.js';
 let tmp: string;
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'diptych-checkpoint-summary-'));
+  tmp = await mkdtemp(join(tmpdir(), 'splitbrief-checkpoint-summary-'));
 });
 
 afterEach(async () => {
@@ -248,7 +248,7 @@ describe('listCheckpointSummaries', () => {
 
     const summaries = await listCheckpointSummaries(tmp, 'sess-01');
 
-    expect(summaries[0]?.diffCommand).toBe('diptych snapshot diff snap-command-id');
-    expect(summaries[0]?.restoreCommand).toBe('diptych snapshot restore snap-command-id');
+    expect(summaries[0]?.diffCommand).toBe('splitbrief snapshot diff snap-command-id');
+    expect(summaries[0]?.restoreCommand).toBe('splitbrief snapshot restore snap-command-id');
   });
 });

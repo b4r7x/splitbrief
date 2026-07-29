@@ -3,7 +3,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './io.js';
 import { resolveMode } from '../runtime/resolve.js';
-import { DIPTYCH_DIR } from '../../paths.js';
+import { SPLITBRIEF_DIR } from '../../paths.js';
 import { expectCli } from '#testing/helpers/config-narrowing.js';
 import { optionalSectionsYaml, writeConfigYaml } from '#testing/helpers/config-io.js';
 
@@ -53,12 +53,12 @@ describe('config loading', () => {
       expect(config.codebase).toMatchObject({
         enabled: true,
         tokenBudget: 1234,
-        cacheDir: '.diptych-cache',
+        cacheDir: '.splitbrief-cache',
         include: ['src/**'],
         exclude: ['dist/**'],
       });
       expect(config.hooks).toEqual({ builtin: { snapshots: false } });
-      expect(config.otel).toEqual({ enabled: true, serviceName: 'diptych-test' });
+      expect(config.otel).toEqual({ enabled: true, serviceName: 'splitbrief-test' });
       expect(config.snapshots).toEqual({
         auto: { preTask: true, postTask: false, preFinalReview: true },
       });
@@ -197,10 +197,10 @@ describe('config loading', () => {
 
     it('defaults workflow.mode to standard when raw YAML omits mode', () => {
       const dir = join(TMP, 'workflow-without-mode');
-      const diptychDir = join(dir, DIPTYCH_DIR);
-      mkdirSync(diptychDir, { recursive: true });
+      const splitbriefDir = join(dir, SPLITBRIEF_DIR);
+      mkdirSync(splitbriefDir, { recursive: true });
       writeFileSync(
-        join(diptychDir, 'config.yaml'),
+        join(splitbriefDir, 'config.yaml'),
         [
           'version: 3',
           'planner:',

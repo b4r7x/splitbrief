@@ -29,6 +29,7 @@ import { readBriefQuality, readCheckpoints, readPacketEvents, readReadiness } fr
 import { addMissing } from './missing-artifacts.js';
 import type { BuildReviewPacketOptions } from './types.js';
 import { makeRecoveryWithSources } from './recovery.js';
+import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 
 export const REVIEWER_CHECKLIST = [
   'Inspect changed files against the requested scope.',
@@ -36,9 +37,9 @@ export const REVIEWER_CHECKLIST = [
   'Confirm validation commands passed or understand failures.',
   'Check escalated, skipped, or retried tasks.',
   'Inspect expected vs observed evidence for each completed task.',
-  'Run or review any project-specific tests not covered by diptych.',
-  'Use `diptych snapshot diff SNAPSHOT_ID` before any restore.',
-  'Use `diptych snapshot restore SNAPSHOT_ID` only after conflicts are understood.',
+  `Run or review any project-specific tests not covered by ${SPLITBRIEF_IDENTITY.displayName}.`,
+  `Use \`${SPLITBRIEF_IDENTITY.executable} snapshot diff SNAPSHOT_ID\` before any restore.`,
+  `Use \`${SPLITBRIEF_IDENTITY.executable} snapshot restore SNAPSHOT_ID\` only after conflicts are understood.`,
 ] as const;
 
 export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise<ReviewPacket> {
@@ -57,7 +58,12 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
   const briefQuality = readBriefQuality(opts.projectDir, opts.sessionId, missing);
   const readiness = readReadiness(opts.projectDir, opts.sessionId, missing);
   const events = await readPacketEvents(opts.projectDir, opts.sessionId, missing);
-  const changedFiles = await resolveChangedFiles(opts.projectDir, drift, missing);
+  const changedFiles = await resolveChangedFiles({
+    projectDir: opts.projectDir,
+    drift,
+    missing,
+    baseline: opts.state.changedFilesBaseline,
+  });
   const checkpoints = await readCheckpoints(opts.projectDir, opts.sessionId, missing);
   const finalReview = await buildFinalReview({
     projectDir: opts.projectDir,

@@ -1,7 +1,13 @@
 import { existsSync } from 'node:fs';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DIPTYCH_DIR, ACTIVE_FILE, STATE_FILE, SESSIONS_DIR, TREES_DIR } from '../../core/paths.js';
+import {
+  SPLITBRIEF_DIR,
+  ACTIVE_FILE,
+  STATE_FILE,
+  SESSIONS_DIR,
+  TREES_DIR,
+} from '../../core/paths.js';
 import { readJsonSafeAsync } from '../../lib/fs.js';
 import { getCurrentBranch } from '../../lib/git/refs.js';
 import { isRecord } from '../../utils/type-guards.js';
@@ -25,7 +31,7 @@ async function readSessionState(
   worktreeDir: string,
   sessionId: string,
 ): Promise<{ phase: Phase | null; lastUpdated: string | null }> {
-  const stateFile = join(worktreeDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId, STATE_FILE);
+  const stateFile = join(worktreeDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, STATE_FILE);
   if (!existsSync(stateFile)) return { phase: null, lastUpdated: null };
   let lastUpdated: string | null = null;
   try {
@@ -48,7 +54,7 @@ type WorktreeSession = {
 };
 
 async function listWorktreeSessionIds(worktreeDir: string): Promise<string[]> {
-  const sessionsDir = join(worktreeDir, DIPTYCH_DIR, SESSIONS_DIR);
+  const sessionsDir = join(worktreeDir, SPLITBRIEF_DIR, SESSIONS_DIR);
   if (!existsSync(sessionsDir)) return [];
   const entries = await readdir(sessionsDir, { withFileTypes: true });
   return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
@@ -57,7 +63,7 @@ async function listWorktreeSessionIds(worktreeDir: string): Promise<string[]> {
 async function isSessionLive(worktreeDir: string, sessionId: string): Promise<boolean> {
   const { phase } = await readSessionState(worktreeDir, sessionId);
   if (phase === null || isTerminalPhase(phase)) return false;
-  const sessDir = join(worktreeDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  const sessDir = join(worktreeDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
   const lockfile = await readLockfile(sessDir);
   if (lockfile === null) return true;
   const status = await checkServerStatus(sessDir);
@@ -111,7 +117,7 @@ export async function listWorktrees(projectDir: string): Promise<WorktreeInfo[]>
       lastUpdated = live.lastUpdated;
       status = 'active';
     } else {
-      const activeFilePath = join(wtDir, DIPTYCH_DIR, ACTIVE_FILE);
+      const activeFilePath = join(wtDir, SPLITBRIEF_DIR, ACTIVE_FILE);
       if (existsSync(activeFilePath)) {
         const content = (await readFile(activeFilePath, 'utf-8')).trim();
         sessionId = content || null;

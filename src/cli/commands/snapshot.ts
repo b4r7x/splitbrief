@@ -21,7 +21,7 @@ function printSnapshotResult(manifest: SnapshotManifest, snapshotDir: string, na
 export function registerSnapshotCommand(program: Command): void {
   const snapshot = program
     .command('snapshot')
-    .description('Manage working-tree snapshots for a diptych session');
+    .description('Manage working-tree snapshots for a SPLITBRIEF session');
 
   snapshot
     .command('create')

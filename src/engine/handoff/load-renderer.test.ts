@@ -69,7 +69,7 @@ describe('loadRenderer', () => {
 
 describe('listCustomRenderers', () => {
   it('returns basenames for .ts and .js files in renderers folder', () => {
-    const renderersDir = join(tmp, '.diptych', 'handoff-renderers');
+    const renderersDir = join(tmp, '.splitbrief', 'handoff-renderers');
     mkdirSync(renderersDir, { recursive: true });
     writeFileSync(join(renderersDir, 'linear-ticket.ts'), '');
     writeFileSync(join(renderersDir, 'jira-task.js'), '');

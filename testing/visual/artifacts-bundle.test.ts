@@ -199,7 +199,7 @@ async function createBundleFixture() {
 }
 
 async function createOutputRoot(): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'diptych-visual-bundle-'));
+  const root = await mkdtemp(join(tmpdir(), 'splitbrief-visual-bundle-'));
   temporaryRoots.push(root);
   return root;
 }

@@ -18,7 +18,7 @@ describe('transcript-off session artifact privacy', () => {
         '../../../src/engine/orchestrator/run/workflow.js'
       );
       const { readActive } = await import('../../../src/core/sessions/lifecycle.js');
-      const { DIPTYCH_DIR, LOCKFILE, SESSIONS_DIR } = await import('../../../src/core/paths.js');
+      const { SPLITBRIEF_DIR, LOCKFILE, SESSIONS_DIR } = await import('../../../src/core/paths.js');
       const { listAllSessions } = await import('../../../src/core/sessions/io.js');
       const { writeSessionHtmlReport } = await import('../../../src/engine/export/collect.js');
       const { psCommand } = await import('../../../src/cli/commands/ps.js');
@@ -43,7 +43,7 @@ describe('transcript-off session artifact privacy', () => {
         _planner: makePlanner(),
       });
 
-      const sessionsPath = join(projectDir, DIPTYCH_DIR, SESSIONS_DIR);
+      const sessionsPath = join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR);
       const sessionIds = readdirSync(sessionsPath);
       expect(sessionIds).toHaveLength(1);
       const sessionId = sessionIds[0] ?? '';
@@ -81,7 +81,7 @@ describe('transcript-off session artifact privacy', () => {
 
       expect(inspected).not.toContain(uniquePrompt);
       expect(sessionId).toMatch(/^\d{4}-\d{2}-\d{2}-session-[a-f0-9]{12}$/);
-      expect(branch).toMatch(/^diptych\/session-[a-f0-9]{12}$/);
+      expect(branch).toMatch(/^splitbrief\/session-[a-f0-9]{12}$/);
     } finally {
       cleanupTempDir(projectDir);
     }

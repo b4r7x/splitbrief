@@ -32,7 +32,7 @@ function printMigrationResult(
     case 'skipped':
       return;
     case 'migrated':
-      console.log(`Migrated ${result.sessionId}. Run 'diptych resume' to continue.`);
+      console.log(`Migrated ${result.sessionId}. Run 'splitbrief resume' to continue.`);
       return;
     default:
       assertNever(result);
@@ -68,7 +68,7 @@ export async function maybeMigrateAndReport(
 export function registerMigrateCommand(program: Command): void {
   program
     .command('migrate')
-    .description('Migrate pre-v3 .diptych/current/ state to new session folder layout')
+    .description('Migrate pre-v3 .splitbrief/current/ state to new session folder layout')
     .option('-p, --project <dir>', 'Project directory', '.')
     .action(async (opts: { project: string }) => {
       const projectDir = resolve(opts.project);

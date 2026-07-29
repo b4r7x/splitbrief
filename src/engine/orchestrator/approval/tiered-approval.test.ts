@@ -9,7 +9,7 @@ import { makeConfig, makeApprovalConfig } from '#testing/helpers/factories/confi
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { approvalsFile, DIPTYCH_DIR } from '../../../core/paths.js';
+import { approvalsFile, SPLITBRIEF_DIR } from '../../../core/paths.js';
 
 let dirs: string[] = [];
 
@@ -26,7 +26,7 @@ function makeInput(overrides: Partial<GateActionInput> = {}): GateActionInput {
     actionDescription: 'modify src/foo.ts',
     task,
     dependsOnFiles: [],
-    projectDir: trackTempDir('diptych-test'),
+    projectDir: trackTempDir('splitbrief-test'),
     sessionId: 'sess-001',
     phase: 'implementing',
     taskId: task.id,
@@ -105,8 +105,8 @@ describe('gateAction', () => {
 
   it('sticky tier, always grant exists → allow without callback', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = trackTempDir('diptych-test');
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const projectDir = trackTempDir('splitbrief-test');
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     const store = {
       version: 1,
       grants: [
@@ -148,8 +148,8 @@ describe('gateAction', () => {
 
   it('sticky tier, session grant matching sessionId → allow without callback', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = trackTempDir('diptych-test');
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const projectDir = trackTempDir('splitbrief-test');
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     const store = {
       version: 1,
       grants: [
@@ -193,8 +193,8 @@ describe('gateAction', () => {
 
   it('sticky tier, session grant for different sessionId → callback invoked', async () => {
     const { bus } = makeBusRecorder();
-    const projectDir = trackTempDir('diptych-test');
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const projectDir = trackTempDir('splitbrief-test');
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     const store = {
       version: 1,
       grants: [
@@ -233,8 +233,8 @@ describe('gateAction', () => {
 
   it('sticky tier, callback allow once → allow, no persistence', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = trackTempDir('diptych-test');
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const projectDir = trackTempDir('splitbrief-test');
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
@@ -262,8 +262,8 @@ describe('gateAction', () => {
 
   it('sticky tier, callback allow session → allow, persist, approval_sticky_recorded emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = trackTempDir('diptych-test');
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const projectDir = trackTempDir('splitbrief-test');
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
@@ -292,8 +292,8 @@ describe('gateAction', () => {
 
   it('sticky tier, callback deny → deny, approval_rejected emitted', async () => {
     const { bus, events } = makeBusRecorder();
-    const projectDir = trackTempDir('diptych-test');
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const projectDir = trackTempDir('splitbrief-test');
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     const config = makeApprovalConfig({ enabled: true });
     const input = makeInput({
       bus,
@@ -485,8 +485,8 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, session grant matches a different action description on same file (pattern match)', async () => {
-    const projectDir = trackTempDir('diptych-test');
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const projectDir = trackTempDir('splitbrief-test');
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
 
     const store = {
       version: 1,
@@ -531,8 +531,8 @@ describe('gateAction', () => {
   });
 
   it('sticky tier, session grant is replaced when same pattern already has a session grant for a different session', async () => {
-    const projectDir = trackTempDir('diptych-test');
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    const projectDir = trackTempDir('splitbrief-test');
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
 
     const store = {
       version: 1,

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createJsonlSink } from './jsonl.js';
 import { createEventBus } from '../bus.js';
-import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir } from '../../../core/paths.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
@@ -17,8 +17,8 @@ describe('jsonlSink', () => {
   const sessionId = 'test-session';
 
   beforeEach(() => {
-    projectDir = mkdtempSync(join(tmpdir(), 'diptych-jsonl-'));
-    ensureDiptychDir(projectDir);
+    projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-jsonl-'));
+    ensureSplitbriefDir(projectDir);
     ensureSessionDir(projectDir, sessionId);
   });
   afterEach(() => {

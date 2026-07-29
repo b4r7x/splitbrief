@@ -30,8 +30,8 @@ describe('getHomeLayout', () => {
     });
   });
 
-  it('falls back to the compact logo when cols < 44 even on a tall terminal', () => {
-    const layout = getHomeLayout({ cols: 40, rows: 30, isSmall: false });
+  it('falls back to the compact logo when the full wordmark cannot fit', () => {
+    const layout = getHomeLayout({ cols: 50, rows: 30, isSmall: true });
     expect(layout.logoTier).toBe('compact');
   });
 

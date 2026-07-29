@@ -36,7 +36,7 @@ export const SVG_FONT_SIZE_PX = 14;
 export const SVG_BASELINE_PX = 13;
 
 export const SVG_RENDERER_METADATA: RendererMetadata = RendererMetadataSchema.parse({
-  name: 'diptych-cell-svg',
+  name: 'splitbrief-cell-svg',
   version: '1.0.0',
   fontFamily: SVG_FONT_FAMILY,
   cellWidthPx: SVG_CELL_WIDTH_PX,

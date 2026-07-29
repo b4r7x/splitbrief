@@ -7,7 +7,10 @@ describe('/repomap rebuild command', () => {
     const messages: string[] = [];
     const commands = createRuntimeCommands(
       makeCtx({
-        rebuildRepomap: async () => ({ deleted: true, files: ['/proj/.diptych/repomap.sqlite'] }),
+        rebuildRepomap: async () => ({
+          deleted: true,
+          files: ['/proj/.splitbrief/repomap.sqlite'],
+        }),
         setFeedbackMessage: (m) => {
           messages.push(m);
         },

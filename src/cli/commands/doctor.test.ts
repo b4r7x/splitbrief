@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { isCliError } from '../errors.js';
 import { registerDoctorCommand } from './doctor.js';
 
@@ -33,9 +33,9 @@ function initGitRepoWithoutCommit(projectDir: string): void {
 }
 
 function writeConfig(projectDir: string, content = validConfigYaml()): string {
-  const diptychDir = join(projectDir, DIPTYCH_DIR);
-  mkdirSync(diptychDir, { recursive: true });
-  const filePath = join(diptychDir, CONFIG_FILE);
+  const splitbriefDir = join(projectDir, SPLITBRIEF_DIR);
+  mkdirSync(splitbriefDir, { recursive: true });
+  const filePath = join(splitbriefDir, CONFIG_FILE);
   writeFileSync(filePath, content);
   return filePath;
 }
@@ -69,7 +69,7 @@ async function runDoctor(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   registerDoctorCommand(program);
-  await program.parseAsync(['node', 'diptych', 'doctor', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'doctor', ...args]);
 }
 
 function captureStdout(): string[] {
@@ -96,8 +96,8 @@ describe('doctor command', () => {
     expect(output).toContain('Repository:');
     expect(output).toContain('warning validation.disabled');
     expect(readFileSync(configFile, 'utf-8')).toBe(beforeConfig);
-    expect(existsSync(join(tmp, DIPTYCH_DIR, 'active'))).toBe(false);
-    expect(existsSync(join(tmp, DIPTYCH_DIR, 'sessions'))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
   });
 
   it('emits JSON with warning and info severities', async () => {
@@ -140,7 +140,7 @@ describe('doctor command', () => {
     expect(parsed.type).toBe('readiness_report');
     expect(parsed.report?.status).toBe('blocked');
     expect(parsed.report?.nextAction?.kind).toBe('run-init');
-    expect(existsSync(join(tmp, DIPTYCH_DIR))).toBe(false);
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR))).toBe(false);
   });
 
   it('reports invalid config as a blocker without rewriting it', async () => {

@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
+import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
 import { uniqueInOrder } from '../../../../utils/collections.js';
 import { getCommittedFilesSince } from '../../../../lib/git/diff.js';
 import {
@@ -8,14 +9,12 @@ import {
   listGitlinkPaths,
   listTrackedAndUntrackedFiles,
 } from '../../../../lib/git/files.js';
-import { getCurrentCommitSha } from '../../../../lib/git/refs.js';
+import { GIT_EMPTY_TREE_HASH, getCurrentCommitSha } from '../../../../lib/git/refs.js';
 import { hasCommits } from '../../../../lib/git/repository.js';
 import { collectTrackedFiles, type CollectTrackedFilesOptions } from '../../../snapshots/files.js';
 import { hashFiles } from '../../../change-detection.js';
 import { readConfinedProjectFile } from './contents.js';
-import { type ChangedFilesSnapshot, uniqueProjectFiles } from './types.js';
-
-const GIT_EMPTY_TREE_HASH = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+import { uniqueProjectFiles } from './types.js';
 
 type ExpandedChangedFiles = {
   files: string[];

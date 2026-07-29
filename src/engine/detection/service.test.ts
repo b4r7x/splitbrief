@@ -42,7 +42,7 @@ describe('createDetectionService loadDetection', () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'diptych-detection-service-test-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-detection-service-test-'));
     service = createDetectionService();
   });
 

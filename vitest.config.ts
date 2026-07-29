@@ -1,7 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
-const coverageReportsDirectory = process.env.DIPTYCH_COVERAGE_DIR ?? 'coverage/manual';
-const underCoverage = process.env.DIPTYCH_COVERAGE_DIR !== undefined;
+const coverageReportsDirectory = process.env.SPLITBRIEF_COVERAGE_DIR ?? 'coverage/manual';
+const underCoverage = process.env.SPLITBRIEF_COVERAGE_DIR !== undefined;
 
 const workflowScreenIntegration = [
   'testing/integration/ui/workflow-key-ownership.test.tsx',
@@ -41,6 +41,7 @@ export default defineConfig({
           include: [
             'src/**/*.test.{ts,tsx}',
             'scripts/**/*.test.{ts,tsx}',
+            'testing/{architecture,ci,docs,rebrand}/**/*.test.{ts,tsx}',
             'testing/integration/**/*.test.{ts,tsx}',
             'testing/helpers/**/*.test.{ts,tsx}',
             'testing/visual/**/*.test.{ts,tsx}',

@@ -8,7 +8,7 @@ describe('trust', () => {
   let projectDir: string;
 
   beforeEach(() => {
-    projectDir = mkdtempSync(join(tmpdir(), 'diptych-trust-'));
+    projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-trust-'));
   });
   afterEach(() => {
     rmSync(projectDir, { recursive: true, force: true });
@@ -168,13 +168,13 @@ describe('trust', () => {
     });
 
     it('returns false after a trusted command hook script changes', () => {
-      mkdirSync(join(projectDir, '.diptych', 'hooks'), { recursive: true });
-      writeFileSync(join(projectDir, '.diptych/hooks/check.sh'), '#!/bin/sh\nexit 0\n');
-      const cfg = { pre_task: [{ command: '.diptych/hooks/check.sh' }] };
+      mkdirSync(join(projectDir, '.splitbrief', 'hooks'), { recursive: true });
+      writeFileSync(join(projectDir, '.splitbrief/hooks/check.sh'), '#!/bin/sh\nexit 0\n');
+      const cfg = { pre_task: [{ command: '.splitbrief/hooks/check.sh' }] };
       markHooksConfigTrusted(projectDir, cfg);
       expect(isHooksConfigTrusted(projectDir, cfg)).toBe(true);
 
-      writeFileSync(join(projectDir, '.diptych/hooks/check.sh'), '#!/bin/sh\nexit 1\n');
+      writeFileSync(join(projectDir, '.splitbrief/hooks/check.sh'), '#!/bin/sh\nexit 1\n');
 
       expect(isHooksConfigTrusted(projectDir, cfg)).toBe(false);
     });
@@ -183,7 +183,7 @@ describe('trust', () => {
   describe('markHooksConfigTrusted', () => {
     it('writes the trust file with version + trusted_hash', () => {
       markHooksConfigTrusted(projectDir, { pre_task: [{ command: 'x' }] });
-      const file = join(projectDir, '.diptych', 'hook-trust.json');
+      const file = join(projectDir, '.splitbrief', 'hook-trust.json');
       expect(existsSync(file)).toBe(true);
       const parsed = JSON.parse(readFileSync(file, 'utf8'));
       expect(parsed.version).toBe(1);

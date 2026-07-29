@@ -1,5 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
 import { changedFilesSinceBaseline, type ChangedFilesBaseline } from '../changed-files-baseline.js';
@@ -13,7 +13,6 @@ import { nowIso } from '../../../utils/format-time.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { buildUserEditConflictRecoveryIssue } from '../recovery/builders/workflow.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 
 export async function checkUserEditConflicts(opts: {
   projectDir: string;

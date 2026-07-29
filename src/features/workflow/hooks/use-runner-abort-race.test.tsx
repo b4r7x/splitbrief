@@ -15,7 +15,7 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { clearAllHandlers, requestRewind } from '../handlers.js';
-import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -23,7 +23,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 
 const FIRST_FEATURE = 'first run';
 const SECOND_FEATURE = 'second run';
-const MISSING_PLANNER_COMMAND = 'diptych-non-existent-planner-x7q9';
+const MISSING_PLANNER_COMMAND = 'splitbrief-non-existent-planner-x7q9';
 const REWIND_COMMENT = 'restart the first feature';
 
 const LONG_RUNNING_PLANNER: PlannerConfig = { kind: 'shell', command: 'sleep', args: ['10'] };
@@ -75,7 +75,7 @@ describe('useWorkflowRunner abort race', () => {
   beforeEach(() => {
     projectDir = createTempDir('workflow-abort-race-test');
     createTestGitRepo(projectDir);
-    ensureDiptychDir(projectDir);
+    ensureSplitbriefDir(projectDir);
     resetWorkflow();
     controlsStore.reset();
     feedbackStore.reset();

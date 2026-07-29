@@ -2,7 +2,7 @@
 
 > **This document is about React hooks.** It is not the same as the workflow lifecycle hook system (user-declared `pre_task` / `post_commit` / etc. commands fired on engine events). For that, see [`docs/HOOKS-CONFIG.md`](./HOOKS-CONFIG.md). The two concepts share the word "hook" and nothing else.
 
-diptych organizes React hooks by the **scope of consumption**, not by "what kind of hook it is". The same principle that shapes [`docs/STORES.md`](./STORES.md) and [`docs/NO-BARRELS.md`](./NO-BARRELS.md) applies here: put code where its consumers live, avoid flat dumping grounds, avoid fake hooks.
+SPLITBRIEF organizes React hooks by the **scope of consumption**, not by "what kind of hook it is". The same principle that shapes [`docs/STORES.md`](./STORES.md) and [`docs/NO-BARRELS.md`](./NO-BARRELS.md) applies here: put code where its consumers live, avoid flat dumping grounds, avoid fake hooks.
 
 ## Principle
 

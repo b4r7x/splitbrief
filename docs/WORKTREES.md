@@ -1,13 +1,13 @@
-# diptych — Worktrees
+# SPLITBRIEF — Worktrees
 
-Git worktrees let you run multiple diptych sessions in parallel, each on a separate branch and in a separate directory. This document covers what worktrees isolate, what they do not, and how to close the gaps.
+Git worktrees let you run multiple SPLITBRIEF sessions in parallel, each on a separate branch and in a separate directory. This document covers what worktrees isolate, what they do not, and how to close the gaps.
 
 ## What worktrees give you
 
 - **Filesystem isolation.** Each worktree is a separate directory. Files edited in `.trees/my-feature` do not affect the main tree and vice versa.
 - **Branch isolation.** Each worktree checks out its own branch. Implementer commits go to that branch, not to `main`.
-- **Diptych state isolation.** Each worktree has its own `.diptych/` directory, its own `.diptych/active` pointer, and its own session history. Running two diptych sessions in two worktrees is safe because the session state lives inside each worktree.
-- **Snapshot isolation.** Each worktree's snapshots and run accept/reject ledger are stored under its own `.diptych/sessions/`. Snapshots from one session do not appear in another.
+- **SPLITBRIEF state isolation.** Each worktree has its own `.splitbrief/` directory, its own `.splitbrief/active` pointer, and its own session history. Running two SPLITBRIEF sessions in two worktrees is safe because the session state lives inside each worktree.
+- **Snapshot isolation.** Each worktree's snapshots and run accept/reject ledger are stored under its own `.splitbrief/sessions/`. Snapshots from one session do not appear in another.
 
 ## What worktrees do NOT isolate
 
@@ -83,30 +83,30 @@ Tools like Firecracker or Lima allow creating lightweight VMs per worktree, prov
 Add `.trees/` to the project `.gitignore` to prevent the main tree from showing worktree directories in `git status`:
 
 ```
-# diptych worktrees
+# splitbrief worktrees
 .trees/
 ```
 
-Diptych does not write this automatically. Run the addition once before your first `diptych start --worktree`; the source working tree must be clean before diptych creates/selects a worktree.
+SPLITBRIEF does not write this automatically. Run the addition once before your first `splitbrief start --worktree`; the source working tree must be clean before SPLITBRIEF creates/selects a worktree.
 
 ## Command behavior
 
-`diptych start --worktree <name> "<feature>"` creates `.trees/<name>` on branch `diptych/<name>` and continues the workflow inside that worktree. Older docs described an earlier flow that only printed a follow-up `cd .trees/<name>; diptych start ...` command; current diptych does the directory selection for the run. `diptych start --detach --worktree <name> "<feature>"` applies the same ordering before spawning the detached server, so the server's project root is the worktree.
+`splitbrief start --worktree <name> "<feature>"` creates `.trees/<name>` on branch `splitbrief/<name>` and continues the workflow inside that worktree. Older docs described an earlier flow that only printed a follow-up `cd .trees/<name>; splitbrief start ...` command; current SPLITBRIEF does the directory selection for the run. `splitbrief start --detach --worktree <name> "<feature>"` applies the same ordering before spawning the detached server, so the server's project root is the worktree.
 
-On creation, diptych copies the base checkout's `.diptych/config.yaml` and `.diptych/hooks/` into the new worktree so the run uses your configured runners and hooks rather than factory defaults. Everything else under `.diptych/` stays isolated: sessions, the `.diptych/active` pointer, snapshots, and the accept/reject ledger are created fresh per worktree and are never shared back to the base tree.
+On creation, SPLITBRIEF copies the base checkout's `.splitbrief/config.yaml` and `.splitbrief/hooks/` into the new worktree so the run uses your configured runners and hooks rather than factory defaults. Everything else under `.splitbrief/` stays isolated: sessions, the `.splitbrief/active` pointer, snapshots, and the accept/reject ledger are created fresh per worktree and are never shared back to the base tree.
 
-When the repo declares submodules (a `.gitmodules` file at the root), diptych runs `git submodule update --init --recursive` in the new worktree after `git worktree add`, because `git worktree add` alone leaves submodule directories empty. Submodules are populated so builds and tests inside the worktree see the same dependencies as the base checkout.
+When the repo declares submodules (a `.gitmodules` file at the root), SPLITBRIEF runs `git submodule update --init --recursive` in the new worktree after `git worktree add`, because `git worktree add` alone leaves submodule directories empty. Submodules are populated so builds and tests inside the worktree see the same dependencies as the base checkout.
 
-`diptych worktree list` prints `NAME`, `PATH`, `BRANCH`, `STATUS`, `SESSION`, `PHASE`, and `UPDATED`. Missing session data renders as `unknown`. `diptych worktree switch <name>` prints shell instructions because a child process cannot change your parent shell's current directory. `diptych worktree remove <name>` refuses live sessions and uncommitted changes unless `--force` is passed; forced removal warns with the live session id and uncommitted file count when known.
+`splitbrief worktree list` prints `NAME`, `PATH`, `BRANCH`, `STATUS`, `SESSION`, `PHASE`, and `UPDATED`. Missing session data renders as `unknown`. `splitbrief worktree switch <name>` prints shell instructions because a child process cannot change your parent shell's current directory. `splitbrief worktree remove <name>` refuses live sessions and uncommitted changes unless `--force` is passed; forced removal warns with the live session id and uncommitted file count when known.
 
 ## Quick-start checklist
 
-Follow these steps to run two diptych sessions in parallel safely:
+Follow these steps to run two SPLITBRIEF sessions in parallel safely:
 
 1. Add `.trees/` to `.gitignore`.
 2. Pick distinct ports for each worktree's dev server, or set up `direnv` with per-worktree `.envrc` files.
 3. Use a separate database or schema per worktree if your project uses a local database.
 4. Open each worktree in a separate terminal window or VS Code window.
-5. Run `diptych start --worktree <name> "<feature>"` in each window.
-6. Use `diptych worktree list` from the main tree to see all active sessions.
-7. When done, merge the branch you prefer and run `diptych worktree remove <name> --delete-branch` to clean up.
+5. Run `splitbrief start --worktree <name> "<feature>"` in each window.
+6. Use `splitbrief worktree list` from the main tree to see all active sessions.
+7. When done, merge the branch you prefer and run `splitbrief worktree remove <name> --delete-branch` to clean up.

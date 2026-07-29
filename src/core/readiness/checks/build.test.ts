@@ -10,7 +10,7 @@ function baseInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRea
     config: makeConfig(),
     configLoad: {
       state: 'loaded',
-      path: '/tmp/project/.diptych/config.yaml',
+      path: '/tmp/project/.splitbrief/config.yaml',
       warnings: [],
     },
     packageScripts: {
@@ -65,7 +65,7 @@ describe('readiness checks', () => {
       config: undefined,
       configLoad: {
         state: 'missing',
-        path: '/tmp/project/.diptych/config.yaml',
+        path: '/tmp/project/.splitbrief/config.yaml',
         warnings: [],
       },
     });

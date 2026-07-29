@@ -9,7 +9,7 @@ export const CLI_TOOL_IDS = [
   'copilot',
   'kilo-code',
 ] as const;
-// agent-sdk is NOT here — it is a meta runner (unpriced-meta); diptych does not serve its pricing.
+// agent-sdk is NOT here — it is a meta runner (unpriced-meta); SPLITBRIEF does not serve its pricing.
 export const API_PROVIDER_IDS = [
   'anthropic',
   'openrouter',

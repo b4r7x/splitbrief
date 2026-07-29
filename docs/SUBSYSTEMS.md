@@ -1,4 +1,4 @@
-# diptych — Supporting subsystems
+# SPLITBRIEF — Supporting subsystems
 
 These subsystems sit outside the core workflow loop but are essential to the full system. Each section explains what it does, where the code lives, and how to use it. For the core workflow, see [HOW-IT-WORKS.md](./HOW-IT-WORKS.md). For the engine and EventBus, see [ENGINE.md](./ENGINE.md). For approval and recovery, see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
@@ -8,7 +8,7 @@ These subsystems sit outside the core workflow loop but are essential to the ful
 
 `src/engine/hooks/`
 
-User-declared commands that fire on workflow events. Configured in the `hooks` section of the diptych config file, or auto-discovered from `.diptych/hooks/` as ES module files named by event (e.g. `pre-task.ts`, `post-commit.js`). Discovery and merge logic lives in `src/engine/hooks/discover.ts`.
+User-declared commands that fire on workflow events. Configured in the `hooks` section of the SPLITBRIEF config file, or auto-discovered from `.splitbrief/hooks/` as ES module files named by event (e.g. `pre-task.ts`, `post-commit.js`). Discovery and merge logic lives in `src/engine/hooks/discover.ts`.
 
 **Pre-hooks** (`pre_planning`, `pre_task`, `pre_validation`, `pre_commit`, `pre_escalation`) run synchronously before the action. If a hook exits non-zero or returns `{ kind: 'deny' }`, the action is blocked. Dispatched at the orchestrator call site via `src/engine/hooks/run-pre.ts`, which also runs active built-in hooks before user entries. `pre_compact` is a reserved event key — it is config-validated but has no dispatch site yet (see `docs/HOOKS-CONFIG.md`).
 
@@ -16,7 +16,7 @@ User-declared commands that fire on workflow events. Configured in the `hooks` s
 
 Hooks support two kinds: `command` (spawns a subprocess, receives the event as JSON on stdin) and `module` (loads an ES module exporting a handler function). Variable substitution in command args uses `${event.<path>}` syntax -- for example `${event.taskId}`, `${event.phase}`. Resolved by `src/engine/hooks/substitute.ts`. Each hook entry declares an `on_failure` policy: `block`, `warn`, or `ignore`.
 
-**Trust model:** hooks must be trusted before first execution. `src/core/hooks/trust.ts` computes a SHA-256 hash of the hooks config and stores it in `.diptych/hook-trust.json`. If the config changes, the user is prompted to re-trust. Deep-dive: `docs/HOOKS-CONFIG.md`.
+**Trust model:** hooks must be trusted before first execution. `src/core/hooks/trust.ts` computes a SHA-256 hash of the hooks config and stores it in `.splitbrief/hook-trust.json`. If the config changes, the user is prompted to re-trust. Deep-dive: `docs/HOOKS-CONFIG.md`.
 
 ---
 
@@ -24,11 +24,11 @@ Hooks support two kinds: `command` (spawns a subprocess, receives the event as J
 
 `src/engine/snapshots/`
 
-Content-addressed working-tree snapshots stored under `.diptych/sessions/<id>/snapshots/`. The snapshot store handles creation (`src/engine/snapshots/create.ts`), manifest management (`src/engine/snapshots/manifest.ts`), and file collection (`src/engine/snapshots/files.ts`). Restore logic lives in `src/engine/snapshots/restore.ts`. Run-level accept/reject logic lives in `src/engine/snapshots/run/` (`lifecycle.ts`, `ledger.ts`, `rollback.ts`).
+Content-addressed working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/`. The snapshot store handles creation (`src/engine/snapshots/create.ts`), manifest management (`src/engine/snapshots/manifest.ts`), and file collection (`src/engine/snapshots/files.ts`). Restore logic lives in `src/engine/snapshots/restore.ts`. Run-level accept/reject logic lives in `src/engine/snapshots/run/` (`lifecycle.ts`, `ledger.ts`, `rollback.ts`).
 
-The first snapshot creates the **baseline snapshot** -- the "before" state. It stores every tracked file (excluding `.git`, `.diptych`, `node_modules`, `.trees`). Subsequent snapshots store only files whose hash differs from the baseline, with the manifest recording every file's hash. File blobs are stored under hex-encoded path names within each snapshot directory.
+The first snapshot creates the **baseline snapshot** -- the "before" state. It stores every tracked file (excluding `.git`, `.splitbrief`, `node_modules`, `.trees`). Subsequent snapshots store only files whose hash differs from the baseline, with the manifest recording every file's hash. File blobs are stored under hex-encoded path names within each snapshot directory.
 
-Auto-snapshot triggers fire at `preTask`, `postTask`, and `preFinalReview` phases. Manual snapshots are available via `diptych snapshot create`. The run ledger (`run-ledger.json`) tracks which snapshots belong to the current run so that `/accept-run` and `/reject-run confirm` operate on the correct state. Rejection restores baseline files, deletes files that were created during the run, and reports conflicts where the working tree diverged from both baseline and snapshot. Events: `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`.
+Auto-snapshot triggers fire at `preTask`, `postTask`, and `preFinalReview` phases. Manual snapshots are available via `splitbrief snapshot create`. The run ledger (`run-ledger.json`) tracks which snapshots belong to the current run so that `/accept-run` and `/reject-run confirm` operate on the correct state. Rejection restores baseline files, deletes files that were created during the run, and reports conflicts where the working tree diverged from both baseline and snapshot. Events: `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`.
 
 ---
 
@@ -36,11 +36,11 @@ Auto-snapshot triggers fire at `preTask`, `postTask`, and `preFinalReview` phase
 
 `src/engine/ipc/`
 
-`diptych start --detach` spawns a background server process (`src/engine/ipc/spawn-server.ts` -> `src/engine/ipc/server-entry.ts`). The server runs the workflow headlessly and exposes a Unix domain socket at `.diptych/sessions/<id>/ipc.sock`. The IPC protocol (`src/engine/ipc/protocol.ts`) defines `ServerMessage` and `ClientMessage` types over newline-delimited JSON.
+`splitbrief start --detach` spawns a background server process (`src/engine/ipc/spawn-server.ts` -> `src/engine/ipc/server-entry.ts`). The server runs the workflow headlessly and exposes a Unix domain socket at `.splitbrief/sessions/<id>/ipc.sock`. The IPC protocol (`src/engine/ipc/protocol.ts`) defines `ServerMessage` and `ClientMessage` types over newline-delimited JSON.
 
-`diptych attach <session-id>` connects a TUI client to the socket. On connect, the server sends `session_meta`, replays historical events from the session JSONL log (`src/engine/ipc/replay.ts`), then streams live events. The client sends user input and prompt responses back to the server. Only one client can attach at a time -- a second connection enters a control-channel grace window where it can send `{kind:'detach'}` to steal the session, or gets rejected with `already_attached`. When the session is stolen, the server sends the displaced client a terminal `already_attached` error frame before destroying its socket, so the displaced client stops (does not reconnect) instead of treating the close as a transient drop.
+`splitbrief attach <session-id>` connects a TUI client to the socket. On connect, the server sends `session_meta`, replays historical events from the session JSONL log (`src/engine/ipc/replay.ts`), then streams live events. The client sends user input and prompt responses back to the server. Only one client can attach at a time -- a second connection enters a control-channel grace window where it can send `{kind:'detach'}` to steal the session, or gets rejected with `already_attached`. When the session is stolen, the server sends the displaced client a terminal `already_attached` error frame before destroying its socket, so the displaced client stops (does not reconnect) instead of treating the close as a transient drop.
 
-`diptych ps` lists active IPC sockets. `diptych detach` (or sending a `detach` message) disconnects the client without stopping the server. If the server process dies, crash diagnostics are built from the lockfile and server log tail (`src/engine/ipc/crash-diagnostic.ts`), showing a post-mortem with PID, timestamps, exit code, signal, and the last log lines. Events: `ipc_server_started`, `ipc_client_attached`, `ipc_client_detached`.
+`splitbrief ps` lists active IPC sockets. `splitbrief detach` (or sending a `detach` message) disconnects the client without stopping the server. If the server process dies, crash diagnostics are built from the lockfile and server log tail (`src/engine/ipc/crash-diagnostic.ts`), showing a post-mortem with PID, timestamps, exit code, signal, and the last log lines. Events: `ipc_server_started`, `ipc_client_attached`, `ipc_client_detached`.
 
 ---
 
@@ -52,7 +52,7 @@ Token-budgeted codebase summary fed to every planner call. `src/engine/codebase/
 
 The pipeline: discover source files -> parse them with tree-sitter (`src/engine/codebase/parse.ts`, grammars for TypeScript, JavaScript, Python, Go, Rust via `src/engine/codebase/languages.ts`) -> build an import graph from symbols and references (`src/engine/codebase/graph.ts`) -> score with PageRank (`src/engine/codebase/pagerank.ts`, files imported by many others rank higher, explicit focus files get a rank boost) -> trim to fit the token budget (`src/engine/codebase/budget.ts`). Feature text is scanned for mentioned filenames (`src/engine/codebase/extract-mentioned-filenames.ts`) which get added to focus files.
 
-Parse results are cached in SQLite at `.diptych/repomap.sqlite` via `src/engine/codebase/cache.ts`. The `/repomap rebuild` slash command clears the cache. Default budget is 4000 tokens. Deep-dive: `docs/REPOMAP.md`.
+Parse results are cached in SQLite at `.splitbrief/repomap.sqlite` via `src/engine/codebase/cache.ts`. The `/repomap rebuild` slash command clears the cache. Default budget is 4000 tokens. Deep-dive: `docs/REPOMAP.md`.
 
 ---
 
@@ -67,7 +67,7 @@ Export compiled briefs to formats other agents consume. `src/engine/handoff/rend
 - `claude-code` -- `src/engine/handoff/renderers/claude-code.ts`
 - `copilot-issue` -- `src/engine/handoff/renderers/copilot-issue.ts`
 
-Custom renderers are loaded from runtime-loadable `.diptych/handoff-renderers/<target>.ts` or `.js` files via `src/engine/handoff/load-renderer.ts`. A handoff manifest with metadata (session ID, brief hash, source commit, task IDs, artifact paths) is written alongside the pack (`src/engine/handoff/manifest.ts`). Custom targets are supported by the `diptych handoff <target>` CLI; `/handoff` currently validates against built-in `HANDOFF_TARGETS`.
+Custom renderers are loaded from runtime-loadable `.splitbrief/handoff-renderers/<target>.ts` or `.js` files via `src/engine/handoff/load-renderer.ts`. A handoff manifest with metadata (session ID, brief hash, source commit, task IDs, artifact paths) is written alongside the pack (`src/engine/handoff/manifest.ts`). Custom targets are supported by the `splitbrief handoff <target>` CLI; `/handoff` currently validates against built-in `HANDOFF_TARGETS`.
 
 ---
 
@@ -75,11 +75,11 @@ Custom renderers are loaded from runtime-loadable `.diptych/handoff-renderers/<t
 
 `src/engine/mcp/`
 
-Exposes session artifacts as MCP resources for external clients. Started via `diptych mcp serve`. The HTTP server (`src/engine/mcp/server.ts`) implements Streamable HTTP MCP (protocol version `2025-11-25`), with bearer token auth and local-origin CORS enforcement.
+Exposes session artifacts as MCP resources for external clients. Started via `splitbrief mcp serve`. The HTTP server (`src/engine/mcp/server.ts`) implements Streamable HTTP MCP (protocol version `2025-11-25`), with bearer token auth and local-origin CORS enforcement.
 
-The resolver (`src/engine/mcp/resolver.ts`) serves the sessions index at `mcp://diptych/sessions` and per-session resources under `mcp://diptych/sessions/<id>/`: manifest, spec, plan, tasks (list and individual briefs), evidence ledger, drift report, workflow state, and summary. All resources are read from the session directory on disk.
+The resolver (`src/engine/mcp/resolver.ts`) serves the sessions index at `mcp://splitbrief/sessions` and per-session resources under `mcp://splitbrief/sessions/<id>/`: manifest, spec, plan, tasks (list and individual briefs), evidence ledger, drift report, workflow state, and summary. All resources are read from the session directory on disk.
 
-The server optionally exposes MCP tools when a tool handler is provided (`src/engine/mcp/tool/`). The tools mutate the evidence ledger: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. Input validation uses Zod schemas (`src/engine/mcp/tool/schemas.ts`). These tools let external agents report work back into a diptych session.
+The server optionally exposes MCP tools when a tool handler is provided (`src/engine/mcp/tool/`). The tools mutate the evidence ledger: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. Input validation uses Zod schemas (`src/engine/mcp/tool/schemas.ts`). These tools let external agents report work back into a SPLITBRIEF session.
 
 ---
 
@@ -87,9 +87,9 @@ The server optionally exposes MCP tools when a tool handler is provided (`src/en
 
 `src/engine/worktree/{create,status,remove,detect,path,cleanliness,errors}.ts` + `src/cli/commands/worktree.ts`
 
-`diptych worktree list | switch | remove` manages isolated working directories under `.trees/<name>/`. `diptych start --worktree "feature"` creates a worktree on branch `diptych/<name>` and runs the session inside it. Each worktree gets its own `.diptych/` directory and therefore its own session lock, enabling parallel workflows on the same repo.
+`splitbrief worktree list | switch | remove` manages isolated working directories under `.trees/<name>/`. `splitbrief start --worktree "feature"` creates a worktree on branch `splitbrief/<name>` and runs the session inside it. Each worktree gets its own `.splitbrief/` directory and therefore its own session lock, enabling parallel workflows on the same repo.
 
-Worktree names are validated against a strict whitelist (`[A-Za-z0-9_][A-Za-z0-9._-]{0,63}`). Creation refuses to proceed if the source working tree is dirty. Removal checks for live sessions and uncommitted changes, requiring `--force` to bypass. The optional `--delete-branch` flag removes the `diptych/<name>` branch after worktree removal. `detectWorktree()` determines whether the current project directory is inside a diptych-managed worktree by comparing `git rev-parse --git-dir` and `--git-common-dir`.
+Worktree names are validated against a strict whitelist (`[A-Za-z0-9_][A-Za-z0-9._-]{0,63}`). Creation refuses to proceed if the source working tree is dirty. Removal checks for live sessions and uncommitted changes, requiring `--force` to bypass. The optional `--delete-branch` flag removes the `splitbrief/<name>` branch after worktree removal. `detectWorktree()` determines whether the current project directory is inside a SPLITBRIEF-managed worktree by comparing `git rev-parse --git-dir` and `--git-common-dir`.
 
 ---
 
@@ -109,7 +109,7 @@ Dispatch (`src/core/runtime/commands/dispatch.ts`): parse the raw input, split n
 
 `src/engine/export/`
 
-Export a session's outcomes as a self-contained HTML report. Triggered via `/export` slash command or `diptych export` CLI.
+Export a session's outcomes as a self-contained HTML report. Triggered via `/export` slash command or `splitbrief export` CLI.
 
 `src/engine/export/collect.ts` gathers export data from the session directory: summary, evidence ledger, drift report, and brief quality report. `src/engine/export/html-renderer.ts` renders this into a single HTML file with inline CSS -- dark-theme, monospace, no external dependencies. The report includes: header with feature name and session ID, cost savings breakdown, metadata (planner, implementer, mode, total time), task summary with outcome badges, evidence and drift scores, and phase timing bars. Output goes to `<session-dir>/report.html`.
 
@@ -121,7 +121,7 @@ Export a session's outcomes as a self-contained HTML report. Triggered via `/exp
 
 Auto-detect available planner and implementer tools on startup. `src/engine/detection/detect.ts` probes CLI tools (claude-code, codex, aider, copilot, opencode, kilo-code) by spawning them and checking `isAvailable()` + `getVersion()`, checks API providers for valid keys or reachable endpoints, and always includes the `shell` planner as available.
 
-Results are cached in `.diptych/detection-cache.json` with a 5-minute TTL (`src/engine/detection/cache.ts`). The detection service (`src/engine/detection/service.ts`) coordinates cache loading, persistence, and refresh. It also fetches the models-dev catalog (provider model lists) and discovers CLI tool model capabilities in parallel.
+Results are cached in `.splitbrief/detection-cache.json` with a 5-minute TTL (`src/engine/detection/cache.ts`). The detection service (`src/engine/detection/service.ts`) coordinates cache loading, persistence, and refresh. It also fetches the models-dev catalog (provider model lists) and discovers CLI tool model capabilities in parallel.
 
 The `/refresh` slash command invalidates the cache and re-runs detection. Detection results feed the planner picker and implementer picker overlays in the TUI.
 
@@ -143,7 +143,7 @@ Compaction summarizes older turns in `session.jsonl` without deleting them. A su
 
 `src/core/evidence/{ledger-state,ledger-storage}.ts`, `src/engine/orchestrator/evidence/{approval,persistence,reporting,retry-counts,task}.ts`, `src/core/schemas/evidence.ts`
 
-The evidence ledger records what happened during implementation -- approval decisions, validation outcomes, task completions, skip reasons, escalation results, and rejection reasons. One ledger per session, persisted as `evidence.json` inside the session directory (`.diptych/sessions/<id>/evidence.json`).
+The evidence ledger records what happened during implementation -- approval decisions, validation outcomes, task completions, skip reasons, escalation results, and rejection reasons. One ledger per session, persisted as `evidence.json` inside the session directory (`.splitbrief/sessions/<id>/evidence.json`).
 
 The ledger schema (`EvidenceLedgerSchema`, version 1) contains: `sessionId`, `feature`, `mode`, `generatedAt`, a `tasks` array, a `validationSummary` rollup, and optional `approvals`, `rejections`, and `finalReview` fields. Each task entry tracks: `id`, `title`, `file`, `status`, `retries`, `durationMs`, `changedFiles`, a `validation` array (stage + passed + optional error summary and retry state), `expectedEvidence` (from the brief's Evidence and Tests sections), `observedEvidence` (accumulated at runtime -- "typecheck passed", "diff written for X", "task reached done"), `escalated` flag, and `briefHash`.
 
@@ -155,7 +155,7 @@ The ledger is consumed during the final review phase indirectly: `analyzeBriefDr
 
 `src/cli/rpc/`
 
-Activated via `diptych start --rpc`. The workflow runs headlessly with a machine-readable command interface over stdin/stdout. Both directions use newline-delimited JSON -- one object per line.
+Activated via `splitbrief start --rpc`. The workflow runs headlessly with a machine-readable command interface over stdin/stdout. Both directions use newline-delimited JSON -- one object per line.
 
 **Client commands** (stdin). Validated against `RpcCommandSchema` in `src/cli/rpc/types.ts`. The command types:
 

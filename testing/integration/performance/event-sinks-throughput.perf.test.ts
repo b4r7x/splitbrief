@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { sessionDir } from '../../../src/core/paths.js';
-import { ensureDiptychDir, ensureSessionDir } from '../../../src/core/paths-io.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../../src/core/paths-io.js';
 import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../../src/engine/events/sinks/stdout-json.js';
@@ -15,7 +15,7 @@ const sentinel = 'sink-private-sentinel-74126';
 function withTempProject<T>(prefix: string, run: (projectDir: string) => T): T {
   const projectDir = mkdtempSync(join(tmpdir(), prefix));
   try {
-    ensureDiptychDir(projectDir);
+    ensureSplitbriefDir(projectDir);
     ensureSessionDir(projectDir, sessionId);
     return run(projectDir);
   } finally {
@@ -162,9 +162,9 @@ function protectedTreeEvents(cycles: number): EngineEvent[] {
   return events;
 }
 
-describe.skipIf(process.env.DIPTYCH_PERF !== '1')('event sinks throughput perf', () => {
+describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('event sinks throughput perf', () => {
   it('writes protected JSONL events without retaining raw transcript fields', () => {
-    withTempProject('diptych-jsonl-perf-', (projectDir) => {
+    withTempProject('splitbrief-jsonl-perf-', (projectDir) => {
       const sink = createJsonlSink({ projectDir, sessionId, persistTranscript: false });
       const events = protectedPublicEvents(700);
 
@@ -208,7 +208,7 @@ describe.skipIf(process.env.DIPTYCH_PERF !== '1')('event sinks throughput perf',
   });
 
   it('records protected session-tree runner lifecycle throughput', () => {
-    withTempProject('diptych-tree-perf-', (projectDir) => {
+    withTempProject('splitbrief-tree-perf-', (projectDir) => {
       const sink = createTreeRecorderSink({ projectDir, sessionId, persistTranscript: false });
       const events = protectedTreeEvents(240);
 

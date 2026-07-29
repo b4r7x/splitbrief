@@ -5,7 +5,7 @@ screen used its current `tui-shots` frame as the edit target.
 
 ## Shared prompt
 
-> Improve the existing `120x40` diptych terminal screen through hierarchy, spacing, alignment,
+> Improve the existing `120x40` SPLITBRIEF terminal screen through hierarchy, spacing, alignment,
 > density, and clearer grouping only. Preserve the product, state, information, terminal
 > proportions, keyboard behavior, and existing color semantics. Render only the terminal viewport
 > on its default near-black background. Use crisp monospaced typography, a strict cell grid, sparse
@@ -18,7 +18,8 @@ screen used its current `tui-shots` frame as the edit target.
 
 > Keep a smaller centered ASCII wordmark and one centered content width. Put the current planner,
 > implementer, and mode on one aligned line. Give `Recent sessions` one quiet rule and a clear empty
-> row. Place shortcuts directly above a full-width composer with `Describe your feature…`.
+> row. Place shortcuts directly above a full-width composer with
+> `Describe your feature…`.
 
 ## Planning
 

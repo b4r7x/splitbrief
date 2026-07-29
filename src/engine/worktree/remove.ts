@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 import type { GitClient } from '../../lib/git/client.js';
 import { worktreeError } from './errors.js';
 import {
-  gitignoreDiffersOnlyByDiptychBookkeeping,
+  gitignoreDiffersOnlyBySplitbriefBookkeeping,
   shouldIgnoreWorktreeUncommittedPath,
 } from './cleanliness.js';
 import { resolveConfinedWorktreePath } from './path.js';
@@ -19,7 +20,7 @@ export type RemoveWorktreeOptions = {
 export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void> {
   const { projectDir, slug, git, force = false, deleteBranch = false } = opts;
   const wtPath = resolveConfinedWorktreePath(projectDir, slug);
-  const branch = `diptych/${slug}`;
+  const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${slug}`;
 
   if (!existsSync(wtPath)) {
     const branches = await git.branch();
@@ -53,7 +54,7 @@ export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void>
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => line.slice(line.indexOf(' ') + 1).trim());
-  const gitignoreOnlyBookkeeping = await gitignoreDiffersOnlyByDiptychBookkeeping(wtPath);
+  const gitignoreOnlyBookkeeping = await gitignoreDiffersOnlyBySplitbriefBookkeeping(wtPath);
   const uncommittedPaths = porcelainPaths.filter(
     (path) => !shouldIgnoreWorktreeUncommittedPath(path, gitignoreOnlyBookkeeping),
   );

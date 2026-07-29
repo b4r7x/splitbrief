@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../theme.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
-import { getScrollbarThumb, scrollbarCell } from '../scrollbar.js';
+import { getScrollbarThumb, hasScrollbarOverflow, scrollbarCell } from '../scrollbar.js';
 import { windowSlice } from './scroll-window.js';
 import { RowZone, ROW_ZONE_Z_OVERLAY } from './row-zone.js';
 
@@ -47,14 +47,16 @@ export function SingleColumnPicker<T>({
 }: SingleColumnPickerProps<T>) {
   const t = useTheme();
 
-  const {
-    scrollOffset,
-    visibleSlice: slice,
-    showScrollUp,
-    showScrollDown,
-  } = windowSlice({ items, selectedIndex, windowSize: visibleRows });
+  const { scrollOffset, visibleSlice: slice } = windowSlice({
+    items,
+    selectedIndex,
+    windowSize: visibleRows,
+  });
 
-  const overflow = showScrollUp || showScrollDown;
+  const overflow = hasScrollbarOverflow({
+    lineCount: items.length,
+    visibleHeight: slice.length,
+  });
   const thumb = getScrollbarThumb({
     offset: scrollOffset,
     lineCount: items.length,

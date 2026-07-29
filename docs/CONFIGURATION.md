@@ -1,6 +1,6 @@
-# diptych Configuration Reference
+# SPLITBRIEF Configuration Reference
 
-Complete reference for `.diptych/config.yaml` — the single declarative file that wires diptych to your planner, implementer, validation tools, workflow gates, hooks, snapshots, and observability.
+Complete reference for `.splitbrief/config.yaml` — the single declarative file that wires SPLITBRIEF to your planner, implementer, validation tools, workflow gates, hooks, snapshots, and observability.
 
 This document is a field-by-field reference. For end-user mode semantics see [WORKFLOW.md](./WORKFLOW.md); for hook plumbing see [HOOKS-CONFIG.md](./HOOKS-CONFIG.md); for repo-map tuning see [REPOMAP.md](./REPOMAP.md); for OpenTelemetry export see [OTEL.md](./OTEL.md).
 
@@ -9,14 +9,14 @@ This document is a field-by-field reference. For end-user mode semantics see [WO
 ## 1. File location, format, and lifecycle
 
 ```
-<project-root>/.diptych/config.yaml
+<project-root>/.splitbrief/config.yaml
 ```
 
-- The file is created on first `diptych init` (or implicitly on first `diptych start`). Missing file → diptych runs with `createDefaultConfig()` (`src/core/config/load/io.ts`).
-- **Schema version:** `version: 3` (current). `version: 2` and older supported config shapes are upgraded in memory through `migrateV1ToV2 → migrateV2ToV3` at load time. `diptych migrate` is for legacy session layout migration, not config rewriting.
+- The file is created on first `splitbrief init` (or implicitly on first `splitbrief start`). Missing file → SPLITBRIEF runs with `createDefaultConfig()` (`src/core/config/load/io.ts`).
+- **Schema version:** `version: 3` (current). `version: 2` and older supported config shapes are upgraded in memory through `migrateV1ToV2 → migrateV2ToV3` at load time. `splitbrief migrate` is for legacy session layout migration, not config rewriting.
 - **Key style:** the loader transforms `snake_case` YAML into `camelCase` before validation (`src/core/config/load/transform.ts`), so both styles work. This document uses `camelCase`.
 - **Permissions:** Configuration files with group- or other-writable bits (mode & 0o022) trigger a security warning. On POSIX, the loader emits this via `warnStderr` when `checkConfigPermissions` fails (`src/lib/fs.ts`). `init` writes the file at `0600` via `writeSecureFile`.
-- **`.gitignore`:** `init` appends `.diptych/` to your `.gitignore` so secrets and per-machine state stay out of source control.
+- **`.gitignore`:** `init` appends `.splitbrief/` to your `.gitignore` so secrets and per-machine state stay out of source control.
 
 Top-level shape:
 
@@ -80,7 +80,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 | `timeout` | ms (≤ 600000) | unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
 | `idleKillMs` | ms (≤ 3600000) | `1800000` | Inactivity watchdog kill threshold: at this much output silence the runner's process group is terminated (SIGTERM, then SIGKILL after a grace window; the in-process `agent-sdk` stream is aborted instead) and the call is marked failed. For planner calls a retry prompt is offered; a failed implementer call feeds the task's retry/escalation ladder instead, whose retry prompts rebuild the full Task Brief per attempt. |
-| `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option (the levels match diptych's enum); other providers and runner kinds may ignore it. |
+| `effort` | `low\|medium\|high\|xhigh` | unset | For the `api` kind (planner and implementer) maps to Anthropic `thinking.budget_tokens` (2k / 8k / 24k / 48k). The `agent-sdk` kind passes it through as the Agent SDK's first-class `effort` option (the levels match SPLITBRIEF's enum); other providers and runner kinds may ignore it. |
 
 `idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, `agent`, and `agent-sdk` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields. The planner's optional estimate-review call is the one exception to the retry prompt above: an idle-kill there degrades gracefully to an unavailable review instead of parking one.
 
@@ -115,14 +115,14 @@ planner:
   kind: cli
   tool: claude-code
   model: opus
-  args: ["--mcp-config", ".diptych/mcp.json"]
+  args: ["--mcp-config", ".splitbrief/mcp.json"]
   outputFormat: stream-json
   contextLength: 1000000
   timeout: 600000
   effort: high
 ```
 
-**When to use:** you already pay for a Claude Code / Codex / Copilot / Aider subscription and want diptych to drive it as a planner without separate API billing.
+**When to use:** you already pay for a Claude Code / Codex / Copilot / Aider subscription and want SPLITBRIEF to drive it as a planner without separate API billing.
 
 ### `kind: api`
 
@@ -164,11 +164,11 @@ planner:
 
 ### `kind: shell`
 
-Arbitrary `stdin → stdout` command. Diptych writes the prompt to stdin and parses what comes out of stdout, using `outputFormat` to pick a parser. No shell or network sandbox is applied; the command runs as a normal child process under the current user.
+Arbitrary `stdin → stdout` command. SPLITBRIEF writes the prompt to stdin and parses what comes out of stdout, using `outputFormat` to pick a parser. No shell or network sandbox is applied; the command runs as a normal child process under the current user.
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `command` | non-empty string | yes | Executable path (relative to project or absolute). Availability is an existence/executability check (`fs.access` with `X_OK`, or a `$PATH` lookup for bare names) — diptych never runs your command with `--version`, so the script is not invoked until planning starts. |
+| `command` | non-empty string | yes | Executable path (relative to project or absolute). Availability is an existence/executability check (`fs.access` with `X_OK`, or a `$PATH` lookup for bare names) — SPLITBRIEF never runs your command with `--version`, so the script is not invoked until planning starts. |
 | `args` | string[] | no | Argv |
 | `outputFormat` | enum | no | Same values as `cli` |
 | `capabilities` | partial object | no | **Planner only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsHintEscalation`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners — the command-based adapter has no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api`/`agent-sdk` planner instead). Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
@@ -187,11 +187,11 @@ planner:
 
 Set `supportsSelfSummarisation: true` only for planner wrappers that can summarize an existing transcript through `planner.summarize()`. It enables `/compact-transcript`; unsupported planners report a clear message and leave the session log untouched.
 
-**When to use:** wrapping a tool diptych doesn't ship adapters for, or piping through your own pre/post-processing layer.
+**When to use:** wrapping a tool SPLITBRIEF doesn't ship adapters for, or piping through your own pre/post-processing layer.
 
 ### `kind: agent`
 
-Same shape as `shell`, but the contract is different: the subprocess **writes files directly to the working tree** and we don't extract anything from stdout. Diptych reads the dirty filesystem after the call returns. It runs as a normal child process too; diptych does not sandbox its shell or network access.
+Same shape as `shell`, but the contract is different: the subprocess **writes files directly to the working tree** and we don't extract anything from stdout. SPLITBRIEF reads the dirty filesystem after the call returns. It runs as a normal child process too; SPLITBRIEF does not sandbox its shell or network access.
 
 ```yaml
 implementer:
@@ -240,7 +240,7 @@ Source: `src/core/providers/catalog.ts`.
 
 **See also:** §3 `implementer`, §11 environment variables, [API-KEYS.md](./API-KEYS.md).
 
-Custom OpenAI-compatible API providers are allowed when `apiBase` is set. Because diptych cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly unless a future auth configuration declares otherwise.
+Custom OpenAI-compatible API providers are allowed when `apiBase` is set. Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly unless a future auth configuration declares otherwise.
 
 ---
 
@@ -271,7 +271,7 @@ implementer:
   timeout: 240000
 ```
 
-`contextLength` is diptych's assumed input context window, used to size the prompt budget. It does **not** change a provider's real model context. For Ollama, configure the model/server `num_ctx` first; use `contextLength` or `DIPTYCH_CONTEXT_LENGTH` only to match or override diptych's detection. It is also **not** the per-response output cap — diptych clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
+`contextLength` is SPLITBRIEF's assumed input context window, used to size the prompt budget. It does **not** change a provider's real model context. For Ollama, configure the model/server `num_ctx` first; use `contextLength` or `SPLITBRIEF_CONTEXT_LENGTH` only to match or override SPLITBRIEF's detection. It is also **not** the per-response output cap — SPLITBRIEF clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
 
 **When to use:**
 - *Cheap local* — Ollama or LM Studio for cost-free iteration on small tasks.
@@ -284,7 +284,7 @@ implementer:
 
 `implementer` remains required for backwards compatibility and existing configs do not need to change. New configs may also define named implementer profiles so task routing can choose a cheap capable worker per Task Brief.
 
-An implementer pool is still one product role: diptych selects one capable profile per Task Brief. Same-directory parallel writes are out of scope unless a future worktree-isolated design explicitly adds them.
+An implementer pool is still one product role: SPLITBRIEF selects one capable profile per Task Brief. Same-directory parallel writes are out of scope unless a future worktree-isolated design explicitly adds them.
 
 Profile names must be stable event-safe identifiers: lowercase letters, numbers, and hyphens, starting with a letter, up to 64 characters.
 
@@ -328,9 +328,9 @@ implementerProfiles:
 | `costTier` | `local\|cheap\|standard\|frontier\|unknown` | Optional routing hint. Defaults to `unknown` in accessors when omitted. |
 | `capabilities.writesFiles` | `extracted-code\|direct` | Optional routing metadata. Defaults from runner kind: `api`/`shell` extract one file from stdout; `cli`/`agent`/`agent-sdk` write directly. Explicit values must match the runner kind. |
 
-If `implementerProfiles.default` is omitted, diptych resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
+If `implementerProfiles.default` is omitted, SPLITBRIEF resolves the default profile deterministically from the first profile name in sorted order. If `default` is set, it must name an existing profile.
 
-Task-start rows show the concrete routing reason when a worker is selected, and cost drilldown / `diptych explain` include richer routing and context data for post-run inspection.
+Task-start rows show the concrete routing reason when a worker is selected, and cost drilldown / `splitbrief explain` include richer routing and context data for post-run inspection.
 
 When recovery offers `route-bigger-worker`, the issue names a target profile from this pool. Selecting that action resets only the current task and reruns it once with the named profile instead of the cheapest-capable routing choice.
 
@@ -361,7 +361,7 @@ validation: {
 | `typecheck` | boolean | `true` | Master switch for the type-checking stage |
 | `lint` | boolean | `true` | Master switch for the linting stage |
 | `test` | boolean | `true` | Master switch for the test stage |
-| `testCommand` | string | — | Argv-style override for the test command. When set, it runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, diptych resolves a command from discovered/heuristic project metadata, falling back to the built-in `npm test`; only that built-in fallback is scoped to the affected test (`npm test -- <test-file>`). |
+| `testCommand` | string | — | Argv-style override for the test command. When set, it runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, SPLITBRIEF resolves a command from discovered/heuristic project metadata, falling back to the built-in `npm test`; only that built-in fallback is scoped to the affected test (`npm test -- <test-file>`). |
 | `typecheckCommand` | string | — | Optional override for the type-checking command (e.g. `cargo check`, `go vet ./...`, `mypy src/`) |
 | `lintCommand` | string | — | Optional override for the linting command (e.g. `cargo clippy --no-deps`, `ruff check`) |
 | `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Defaults to TypeScript patterns (`*.test.ts`, `*.test.tsx`) |
@@ -391,11 +391,11 @@ validation:
 
 ### How commands are resolved
 
-Diptych resolves each validation stage through 4 layers, in priority order:
+SPLITBRIEF resolves each validation stage through 4 layers, in priority order:
 
 1. **Project config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
 2. **Planner-discovered** — during the research phase, the planner reads config files and reports the project's validation toolchain. This is persisted to `WorkflowState.discoveredValidation` and used if no project command override exists.
-3. **Heuristic fallback** — if no config or discovery exists, diptych looks at marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer the language and default commands.
+3. **Heuristic fallback** — if no config or discovery exists, SPLITBRIEF looks at marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer the language and default commands.
 4. **Built-in defaults / graceful skip** — typecheck falls back to `npx tsc --noEmit` only on TypeScript projects (a `tsconfig.json` exists or `typescript` is a dependency) and skips otherwise, tests fall back to `npm test`, and lint skips when unresolved. A stage with no resolved command is recorded as skipped, and a run where every enabled stage is skipped emits a warning.
 
 Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `lint: false` skips lint regardless of whether a command is available.
@@ -463,8 +463,8 @@ workflow: {
 | `autoApprovePlan` | boolean | `false` | **Deprecated v2** — read by legacy code paths only. Use `approve`. |
 | `maxRetries` | int >= 0 | `3` | Per-task local retries before escalation kicks in |
 | `commitStrategy` | enum | — | **Deprecated v2** — use `git.commitStrategy`. |
-| `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `diptych/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
-| `git.createBranch` | boolean | `false` | Auto-create `diptych/<slug>` branch at workflow start. |
+| `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `splitbrief/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
+| `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
 | `briefReview` | enum | `simple` | `simple` review. `rich` is deprecated, accepted for compatibility, and treated as `simple`. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
 | `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), stops at the hard cap, and pauses when paid usage has unknown pricing instead of treating it as `$0`. |
@@ -491,7 +491,7 @@ workflow: {
 
 ### Transcript persistence policy
 
-`persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, MCP session metadata and `state.json` reads, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, `resume` / `continue` / `status` CLI console output, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. A bare `diptych start --worktree` also uses an opaque `session-<hex>` worktree/branch slug instead of the feature slug. Per-task git commit subjects use task ids and control metadata only.
+`persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, MCP session metadata and `state.json` reads, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, `resume` / `continue` / `status` CLI console output, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. A bare `splitbrief start --worktree` also uses an opaque `session-<hex>` worktree/branch slug instead of the feature slug. Per-task git commit subjects use task ids and control metadata only.
 
 The UI and machine consumers still receive safe control data: phase, task ids/status, queue depth, cost/usage numbers, allowed recovery actions, approval tiers, runner/model identifiers, safe runner activity labels, compact runner status, and bounded operational warnings/errors. Runner-call warning/error text, approval or revision comments, retry errors, task titles/reasons, task-review prose, queued-message text, and cost-prediction task prose are replaced with `[transcript omitted]` or removed. Raw runner expansion is disabled: protected runner activity forces `rawAvailable:false` and omits `expandId`, so `raw` markers disappear instead of pointing at hidden payloads.
 
@@ -538,13 +538,13 @@ workflow:
 ```
 
 **When to use what:**
-- `git.createBranch: true` — when running diptych in CI or against `main` and you don't want the changes landing on the current branch.
-- `git.commitStrategy: none` — the default and recommended setting for manual review; diptych leaves changes unstaged so you can review and commit them yourself.
+- `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
+- `git.commitStrategy: none` — the default and recommended setting for manual review; SPLITBRIEF leaves changes unstaged so you can review and commit them yourself.
 - `maxBudget` — always set this for API-billed runs. It's your stop-loss.
 - `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling. Unknown paid pricing pauses regardless of the threshold because the runtime cannot prove spend against the cap.
 - `briefReview: simple` — the supported brief review mode. Legacy `briefReview: rich` configs are accepted but mapped to `simple`. Use `Ctrl+E`, `e`, `edit`, `E`, or `edit-file` to edit the persisted Task Brief in the external editor.
 - `persistTranscript: true` — keep this enabled if you want stateless resume reconstruction and manual transcript compaction. `/compact-transcript` appends a summary entry and keeps recent turns verbatim; it does not delete old log lines.
-- `persistTranscript: false` — use when logs, machine-readable output, attach/RPC replay, summaries, telemetry, diptych input history, session names, generated commit messages, and raw runner expansion targets must not expose prompt or answer text. Pending queue state is still stored in `state.json`, but queued-message text is stripped from protected consumers and stateless resume cannot rebuild transcript context if native session resume is unavailable.
+- `persistTranscript: false` — use when logs, machine-readable output, attach/RPC replay, summaries, telemetry, SPLITBRIEF input history, session names, generated commit messages, and raw runner expansion targets must not expose prompt or answer text. Pending queue state is still stored in `state.json`, but queued-message text is stripped from protected consumers and stateless resume cannot rebuild transcript context if native session resume is unavailable.
 
 **See also:** [WORKFLOW.md](./WORKFLOW.md), [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) (`/mode`, `/effort` runtime overrides). Workflow approval level is set with `--approve` or `workflow.approve`.
 
@@ -552,7 +552,7 @@ workflow:
 
 ## 6. `escalation`
 
-When a task fails locally past `maxRetries`, diptych escalates through a tier ladder: **tier 0** retries with the "intermediate" mid-tier model configured here, then **tier 1** has the planner write a hint, then **tier 2** hands the task to the planner ("full escalation"). The intermediate tier runs only when `intermediateProvider` is set.
+When a task fails locally past `maxRetries`, SPLITBRIEF escalates through a tier ladder: **tier 0** retries with the "intermediate" mid-tier model configured here, then **tier 1** has the planner write a hint, then **tier 2** hands the task to the planner ("full escalation"). The intermediate tier runs only when `intermediateProvider` is set.
 
 ### Schema
 
@@ -592,7 +592,7 @@ Repo-map context block injected into planner prompts. Detailed semantics: [REPOM
 codebase: {
   enabled:     boolean;            // default true
   tokenBudget: int 1..50000;       // default 4000
-  cacheDir:    string;             // default ".diptych"
+  cacheDir:    string;             // default ".splitbrief"
   include?:    string[];           // glob patterns
   exclude?:    string[];           // regex strings
 }
@@ -604,7 +604,7 @@ codebase: {
 |---|---|---|---|
 | `enabled` | boolean | `true` | Emit `<repo-map>` block to planner |
 | `tokenBudget` | int 1..50000 | `4000` | Tokens reserved for the block. PageRank picks the top N symbols that fit. |
-| `cacheDir` | string | `.diptych` | Where to put `repomap.sqlite` |
+| `cacheDir` | string | `.splitbrief` | Where to put `repomap.sqlite` |
 | `include` | string[] | walks `.ts`/`.tsx` | Glob patterns relative to project root |
 | `exclude` | string[] | test files + `dist/` + `node_modules/` | **Regex strings** (note: not globs) |
 
@@ -614,7 +614,7 @@ YAML:
 codebase:
   enabled: true
   tokenBudget: 6000
-  cacheDir: .diptych
+  cacheDir: .splitbrief
   include:
     - "src/**/*.ts"
     - "src/**/*.tsx"
@@ -711,31 +711,31 @@ OpenTelemetry span sink. Full details: [OTEL.md](./OTEL.md).
 ```ts
 otel: {
   enabled:     boolean; // default false
-  serviceName: string;  // default "diptych"
+  serviceName: string;  // default "splitbrief"
 }
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `false` | Install the OTel span sink. Requires bootstrapping an exporter (see env vars). |
-| `serviceName` | string | `diptych` | Tracer/instrumentation scope name used when creating spans |
+| `serviceName` | string | `splitbrief` | Tracer/instrumentation scope name used when creating spans |
 
 YAML:
 
 ```yaml
 otel:
   enabled: true
-  serviceName: diptych-prod
+  serviceName: splitbrief-prod
 ```
 
 Exporter selection — set **one** of:
 - `OTEL_TRACES_EXPORTER=console` — built-in console span exporter (debugging).
-- `DIPTYCH_OTEL_EXPORTER=console` — alias for the same.
+- `SPLITBRIEF_OTEL_EXPORTER=console` — alias for the same.
 - `--otel-exporter console` — CLI flag, same effect.
 
 For OTLP HTTP/gRPC exporters, provide your own in-process provider bootstrap or add support to `src/lib/otel.ts`; only `console` is built in.
 
-**When to use:** wire diptych into your existing observability stack to track per-task duration, planner vs implementer cost, escalation rates.
+**When to use:** wire SPLITBRIEF into your existing observability stack to track per-task duration, planner vs implementer cost, escalation rates.
 
 **See also:** [OTEL.md](./OTEL.md).
 
@@ -773,7 +773,7 @@ snapshots:
     preFinalReview: false
 ```
 
-Manual snapshots are always available via `diptych snapshot create`.
+Manual snapshots are always available via `splitbrief snapshot create`.
 
 **When to use:** running unattended jobs where you want a rollback point at every checkpoint, independent of `git.commitStrategy`.
 
@@ -793,7 +793,7 @@ trust: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `customRenderers` | boolean | `false` | Allow `diptych handoff <custom-target>` to import `.diptych/handoff-renderers/<target>.ts` or `.js`. |
+| `customRenderers` | boolean | `false` | Allow `splitbrief handoff <custom-target>` to import `.splitbrief/handoff-renderers/<target>.ts` or `.js`. |
 
 YAML:
 
@@ -802,7 +802,7 @@ trust:
   customRenderers: true
 ```
 
-Leave this off unless you trust the repository. `diptych handoff --list` can discover custom targets without this setting. Executing a custom target requires either this setting or the per-command `--allow-custom-renderer` flag.
+Leave this off unless you trust the repository. `splitbrief handoff --list` can discover custom targets without this setting. Executing a custom target requires either this setting or the per-command `--allow-custom-renderer` flag.
 
 ---
 
@@ -910,7 +910,7 @@ palette:
       command: /handoff claude-code
 ```
 
-**When to use:** surfacing project-specific runbook actions inside diptych's TUI without leaving the session.
+**When to use:** surfacing project-specific runbook actions inside SPLITBRIEF's TUI without leaving the session.
 
 **See also:** [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
 
@@ -923,7 +923,7 @@ These are top-level fields (siblings of `workflow`, not nested under it).
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `theme` | enum | `terminal` | `terminal` (uses your terminal's color scheme) \| `mono` (no color) |
-| `sessions.scope` | enum | `project` | Accepted by the schema for future session backends. Current workflow commands write session state under `<projectDir>/.diptych`. |
+| `sessions.scope` | enum | `project` | Accepted by the schema for future session backends. Current workflow commands write session state under `<projectDir>/.splitbrief`. |
 | `plannerEstimateReview` | boolean | `false` | Spend one extra planner call to sanity-check the deterministic per-task prompt-input estimate before implementation. The planner classifies it (`ok` / `split-suggested` / `risk` / `needs-user-decision`), flags affected task ids, and the verdict is surfaced in the cost-prediction chrome. Skipped on resume; requires a deterministic estimate. |
 | `autoSplitOverflow` | boolean | `false` | After the cost gate, automatically split tasks that overflow the implementer's context budget (or that the planner review flags as too large) into smaller child tasks before implementation. Splits that would drop acceptance criteria, dependencies, or produce too many children are skipped with a warning. |
 
@@ -959,16 +959,16 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 
 | Variable | Purpose |
 |---|---|
-| `DIPTYCH_CONTEXT_LENGTH` | Override diptych's detected implementer context length (`src/engine/providers/capabilities.ts`). This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
-| `DIPTYCH_QUIET` | Suppress legacy-mode deprecation notice (set to `1`) (`src/cli/init-stores.ts`). |
+| `SPLITBRIEF_CONTEXT_LENGTH` | Override SPLITBRIEF's detected implementer context length (`src/engine/providers/capabilities.ts`). This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
+| `SPLITBRIEF_QUIET` | Suppress legacy-mode deprecation notice (set to `1`) (`src/cli/init-stores.ts`). |
 
 ### Observability
 
 | Variable | Purpose |
 |---|---|
 | `OTEL_TRACES_EXPORTER` | Standard OTel — set to `console` to bootstrap the built-in `ConsoleSpanExporter`. |
-| `DIPTYCH_OTEL_EXPORTER` | Alias for the above (same values). |
-| Other `OTEL_*` | Read by your own OTel bootstrap/provider; diptych's built-in bootstrap only handles console exporter selection. |
+| `SPLITBRIEF_OTEL_EXPORTER` | Alias for the above (same values). |
+| Other `OTEL_*` | Read by your own OTel bootstrap/provider; SPLITBRIEF's built-in bootstrap only handles console exporter selection. |
 
 ### TUI / process
 
@@ -977,8 +977,8 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 | `CI` | If truthy, suppress fullscreen/alternate-screen rendering. Use `--json` or `--rpc` when stdout must be machine-readable. |
 | `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn/progress.ts`). |
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
-| `FORCE_HYPERLINK` | `1` (or any non-empty value other than `0`/`false`) forces OSC 8 hyperlink emission for markdown links; `0`/`false` forces plain styled labels; otherwise diptych sniffs `TERM_PROGRAM`/`VTE_VERSION`/`KITTY_WINDOW_ID`/`WT_SESSION`/`TERM` (Apple Terminal is excluded from auto-detection). The only configuration-surface change of the file-link feature — no YAML key (`src/lib/terminal/hyperlinks.ts`). |
-| `DIPTYCH_REDUCE_MOTION` / `REDUCE_MOTION` | Set to `1` to pin TUI spinner frames and slow status ticks to 1s (`src/features/workflow/display/reduce-motion.ts`). |
+| `FORCE_HYPERLINK` | `1` (or any non-empty value other than `0`/`false`) forces OSC 8 hyperlink emission for markdown links; `0`/`false` forces plain styled labels; otherwise SPLITBRIEF sniffs `TERM_PROGRAM`/`VTE_VERSION`/`KITTY_WINDOW_ID`/`WT_SESSION`/`TERM` (Apple Terminal is excluded from auto-detection). The only configuration-surface change of the file-link feature — no YAML key (`src/lib/terminal/hyperlinks.ts`). |
+| `SPLITBRIEF_REDUCE_MOTION` / `REDUCE_MOTION` | Set to `1` to pin TUI spinner frames and slow status ticks to 1s (`src/features/workflow/display/reduce-motion.ts`). |
 | `VISUAL` | Explicit external editor for spec/plan/brief review. Takes precedence over every other editor source, including detected GUI editors. |
 | `EDITOR` | External editor fallback when `VISUAL` is unset or empty. Non-terminal values are used before auto-detected GUI editors; terminal editors such as `vim` or `nano` are used only after GUI detection and macOS `open -W -t` fail. Implicit GUI detection probes only safe absolute `PATH` segments and honors Windows `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. |
 
@@ -1051,7 +1051,7 @@ Unknown top-level keys are tolerated; unknown nested keys in `.strict()` blocks 
 
 Config migration happens during load: supported older shapes are normalized in memory by `migrateV1ToV2 → migrateV2ToV3` (`src/core/config/load/migrate.ts`). Subsequent config writes use the current v3 shape.
 
-`diptych migrate -p <dir>` is separate: it migrates pre-v3 `.diptych/current/` session state into the session-folder layout.
+`splitbrief migrate -p <dir>` is separate: it migrates pre-v3 `.splitbrief/current/` session state into the session-folder layout.
 
 **v2 → v3 changes:**
 - `version: 2` → `version: 3`.
@@ -1128,7 +1128,7 @@ escalation:
 codebase:
   enabled: true
   tokenBudget: 6000
-  cacheDir: .diptych
+  cacheDir: .splitbrief
   include:
     - "src/**/*.ts"
     - "src/**/*.tsx"
@@ -1170,7 +1170,7 @@ snapshots:
 # ---------- OpenTelemetry span sink ----------
 otel:
   enabled: true
-  serviceName: diptych-prod
+  serviceName: splitbrief-prod
 
 # ---------- Tiered approval: prompt on out-of-scope/control-plane writes ----------
 approval:
@@ -1207,7 +1207,7 @@ Required env vars to make this run:
 Then:
 
 ```bash
-diptych start --allow-hooks "your feature description"
+splitbrief start --allow-hooks "your feature description"
 ```
 
 ---

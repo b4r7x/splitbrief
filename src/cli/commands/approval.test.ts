@@ -5,19 +5,19 @@ import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { registerApprovalCommand } from './approval.js';
 import { isCliError } from '../errors.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import type { ApprovalsStore } from '../../core/schemas/approval-store.js';
 
 let tmp: string;
 
 function seedApprovals(projectDir: string, store: ApprovalsStore): void {
-  const diptychDir = join(projectDir, DIPTYCH_DIR);
-  mkdirSync(diptychDir, { recursive: true });
-  writeFileSync(join(diptychDir, 'approvals.json'), JSON.stringify(store));
+  const splitbriefDir = join(projectDir, SPLITBRIEF_DIR);
+  mkdirSync(splitbriefDir, { recursive: true });
+  writeFileSync(join(splitbriefDir, 'approvals.json'), JSON.stringify(store));
 }
 
 function readApprovals(projectDir: string): ApprovalsStore {
-  return JSON.parse(readFileSync(join(projectDir, DIPTYCH_DIR, 'approvals.json'), 'utf-8'));
+  return JSON.parse(readFileSync(join(projectDir, SPLITBRIEF_DIR, 'approvals.json'), 'utf-8'));
 }
 
 async function runApproval(args: string[]): Promise<string[]> {
@@ -28,7 +28,7 @@ async function runApproval(args: string[]): Promise<string[]> {
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
   registerApprovalCommand(program);
-  await program.parseAsync(['node', 'diptych', 'approval', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'approval', ...args]);
   return logs;
 }
 
@@ -138,7 +138,7 @@ describe('approval clear', () => {
   it('reclaims a stale lock left by a dead process and clears anyway', async () => {
     seedApprovals(tmp, filledStore);
     writeFileSync(
-      join(tmp, DIPTYCH_DIR, 'approvals.json.lock'),
+      join(tmp, SPLITBRIEF_DIR, 'approvals.json.lock'),
       JSON.stringify({ pid: DEAD_PID, acquiredAt: Date.now() }),
     );
 
@@ -146,7 +146,7 @@ describe('approval clear', () => {
 
     expect(logs.some((l) => l.includes('Cleared 2 approval grant(s)'))).toBe(true);
     expect(readApprovals(tmp).grants).toHaveLength(0);
-    const files = readdirSync(join(tmp, DIPTYCH_DIR));
+    const files = readdirSync(join(tmp, SPLITBRIEF_DIR));
     expect(files.some((file) => file.endsWith('.lock'))).toBe(false);
   });
 });

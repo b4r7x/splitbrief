@@ -15,7 +15,7 @@ import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { registerStartCommand } from '../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../src/cli/commands/start/types.js';
-import { CONFIG_FILE, DIPTYCH_DIR, LOCKFILE, STATE_FILE } from '../../src/core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR, LOCKFILE, STATE_FILE } from '../../src/core/paths.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../src/engine/ipc/spawn-server.js';
 import { buildServerArgs } from '../../src/engine/ipc/spawn-server.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
@@ -78,18 +78,18 @@ export async function runStart(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   registerStartCommand(program, fakeDeps);
-  await program.parseAsync(['node', 'diptych', 'start', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'start', ...args]);
 }
 
 export function writeLiveSession(projectDir: string, sessionId: string): void {
-  const sDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  const sDir = join(projectDir, SPLITBRIEF_DIR, 'sessions', sessionId);
   mkdirSync(sDir, { recursive: true });
   writeFileSync(
     join(sDir, STATE_FILE),
     JSON.stringify({ feature: 'test', phase: 'implementing', tasks: [], currentTaskIndex: 0 }),
   );
-  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
-  writeFileSync(join(projectDir, DIPTYCH_DIR, 'active'), sessionId + '\n');
+  mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
+  writeFileSync(join(projectDir, SPLITBRIEF_DIR, 'active'), sessionId + '\n');
 }
 
 export function writeSessionLockfile(
@@ -97,7 +97,7 @@ export function writeSessionLockfile(
   sessionId: string,
   overrides: Parameters<typeof makeSessionLockfile>[1] = {},
 ): void {
-  const sDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  const sDir = join(projectDir, SPLITBRIEF_DIR, 'sessions', sessionId);
   mkdirSync(sDir, { recursive: true });
   writeFileSync(
     join(sDir, LOCKFILE),
@@ -111,9 +111,9 @@ export function writeSessionLockfile(
 }
 
 export function writeConfigMarker(projectDir: string): void {
-  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+  mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
   writeFileSync(
-    join(projectDir, DIPTYCH_DIR, CONFIG_FILE),
+    join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE),
     [
       'version: 3',
       'planner:',
@@ -141,9 +141,9 @@ export function writeReadyReadinessFixtures(
   projectDir: string,
   options: { validation?: boolean; codebase?: boolean; persistTranscript?: boolean } = {},
 ): void {
-  mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
-  writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.diptych/\npackage.json\n');
-  const configFilePath = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
+  mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
+  writeFileSync(join(projectDir, '.git', 'info', 'exclude'), '.splitbrief/\npackage.json\n');
+  const configFilePath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
   const validation = options.validation ?? true;
   const lines = [
     'version: 3',
@@ -190,7 +190,7 @@ export function writeReadyReadinessFixtures(
 }
 
 export function readSingleSessionArtifact(projectDir: string, artifact: string): unknown {
-  const sessionsDir = join(projectDir, DIPTYCH_DIR, 'sessions');
+  const sessionsDir = join(projectDir, SPLITBRIEF_DIR, 'sessions');
   const sessionIds = readdirSync(sessionsDir);
   if (sessionIds.length !== 1) {
     throw new Error(`expected exactly one session, found ${sessionIds.length}`);

@@ -9,7 +9,7 @@ import { registerWorktreeCommand } from '../../../src/cli/commands/worktree.js';
 import { createGitClient } from '../../../src/lib/git/client.js';
 import {
   ACTIVE_FILE,
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   SESSIONS_DIR,
   STATE_FILE,
   TREES_DIR,
@@ -40,7 +40,7 @@ async function runWorktree(args: string[]): Promise<void> {
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
   registerWorktreeCommand(program);
-  await program.parseAsync(['node', 'diptych', 'worktree', ...args, '--project', tmp]);
+  await program.parseAsync(['node', 'splitbrief', 'worktree', ...args, '--project', tmp]);
 }
 
 describe('worktree remove — real command', () => {
@@ -61,9 +61,9 @@ describe('worktree remove — real command', () => {
     await createWorktree({ projectDir: tmp, slug: 'feat-force', git });
     const wtPath = join(tmp, TREES_DIR, 'feat-force');
     const sessionId = 'live-session-force';
-    const sessionDir = join(wtPath, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    const sessionDir = join(wtPath, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
     mkdirSync(sessionDir, { recursive: true });
-    writeFileSync(join(wtPath, DIPTYCH_DIR, ACTIVE_FILE), `${sessionId}\n`);
+    writeFileSync(join(wtPath, SPLITBRIEF_DIR, ACTIVE_FILE), `${sessionId}\n`);
     writeFileSync(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
     writeFileSync(join(wtPath, 'dirty.txt'), 'uncommitted change');
 
@@ -76,17 +76,17 @@ describe('worktree remove — real command', () => {
     expect(captureOutput()).toContain('Removed worktree ".trees/feat-force".');
   });
 
-  it('deletes the diptych branch when --delete-branch is set', async () => {
+  it('deletes the splitbrief branch when --delete-branch is set', async () => {
     const git = createGitClient(tmp);
     await createWorktree({ projectDir: tmp, slug: 'feat-branch', git });
-    expect((await git.branch()).all).toContain('diptych/feat-branch');
+    expect((await git.branch()).all).toContain('splitbrief/feat-branch');
 
     await runWorktree(['remove', 'feat-branch', '--delete-branch']);
 
     expect(existsSync(join(tmp, TREES_DIR, 'feat-branch'))).toBe(false);
-    expect((await git.branch()).all).not.toContain('diptych/feat-branch');
+    expect((await git.branch()).all).not.toContain('splitbrief/feat-branch');
     const out = captureOutput();
     expect(out).toContain('Removed worktree ".trees/feat-branch".');
-    expect(out).toContain('Deleted branch diptych/feat-branch.');
+    expect(out).toContain('Deleted branch splitbrief/feat-branch.');
   });
 });

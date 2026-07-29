@@ -28,7 +28,7 @@ function runningStatus(sessionId: string): ServerStatus {
 }
 
 function writeLockfile(sessionId: string, startTimeMs: number): void {
-  const sessDir = join(testDir, '.diptych', 'sessions', sessionId);
+  const sessDir = join(testDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   writeFileSync(
     join(sessDir, 'lockfile.json'),
@@ -133,7 +133,7 @@ describe('detachCommand', () => {
   it('sends detach to a running session socket', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
-    const sessDir = join(testDir, '.diptych', 'sessions', 'alive-session');
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'alive-session');
     mkdirSync(sessDir, { recursive: true });
     await listen(join(sessDir, 'ipc.sock'));
 
@@ -162,7 +162,7 @@ describe('detachCommand', () => {
 
     writeLockfile('older-session', 1000);
     writeLockfile('newer-session', 2000);
-    const sessDir = join(testDir, '.diptych', 'sessions', 'newer-session');
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'newer-session');
     await listen(join(sessDir, 'ipc.sock'));
 
     const logs: string[] = [];
@@ -184,7 +184,7 @@ describe('detachCommand', () => {
   it('reassembles a multibyte server error message split across socket frames', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
-    const sessDir = join(testDir, '.diptych', 'sessions', 'alive-session');
+    const sessDir = join(testDir, '.splitbrief', 'sessions', 'alive-session');
     mkdirSync(sessDir, { recursive: true });
     const message = 'セッションはすでに接続されています';
     await listenSplitError(join(sessDir, 'ipc.sock'), message);

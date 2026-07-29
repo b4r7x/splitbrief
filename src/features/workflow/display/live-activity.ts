@@ -10,8 +10,7 @@ import {
 } from '../layout/chrome-rows.js';
 import type { ConversationRowTone } from '../conversation-rows/types.js';
 
-// The review/gate phases where the workflow pauses for approval: the live status row drops
-// because the transcript is about to swap out for the review view.
+// Review gates use the waiting byline while their document replaces the transcript.
 const RAIL_GATE_PHASES: ReadonlySet<Phase> = new Set([
   'reviewing-spec',
   'reviewing-plan',
@@ -80,8 +79,6 @@ export interface LiveStatus {
   tone: ConversationRowTone;
 }
 
-// The single source of truth for "is a stage live and what does its status row say". Null unless a
-// stage is genuinely running: lifecycle status is 'running', not cancelled, not a review gate, not idle/complete.
 export function deriveLiveStatus(input: {
   phase: Phase;
   status: LifecycleState['status'];

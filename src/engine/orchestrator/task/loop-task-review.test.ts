@@ -142,7 +142,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     );
 
     const log = readFileSync(
-      join(projectDir, '.diptych', 'sessions', sessionId, 'session.jsonl'),
+      join(projectDir, '.splitbrief', 'sessions', sessionId, 'session.jsonl'),
       'utf-8',
     );
     expect(log).toContain('"kind":"message"');

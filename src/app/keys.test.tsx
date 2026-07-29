@@ -565,7 +565,7 @@ describe('useAppKeys: keystroke binding', () => {
     routerStore.navigate({
       to: 'workflow',
       feature: 'attached feature',
-      attach: { sockPath: '/tmp/diptych.sock', authToken: 'tok' },
+      attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'tok' },
     });
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);

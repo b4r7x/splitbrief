@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DIPTYCH_DIR, STATE_FILE } from '../../src/core/paths.js';
+import { SPLITBRIEF_DIR, STATE_FILE } from '../../src/core/paths.js';
 import { createInitialState, CURRENT_STATE_VERSION } from '../../src/core/state/machine.js';
 import type { Task } from '../../src/core/schemas/task.js';
 import { makeTask } from './factories/task.js';
@@ -48,7 +48,7 @@ export const handoffWriterTasks: Task[] = [
 ];
 
 export function writeHandoffWriterSessionState(projectDir: string, sessionId: string): void {
-  const sessionDir = join(projectDir, DIPTYCH_DIR, 'sessions', sessionId);
+  const sessionDir = join(projectDir, SPLITBRIEF_DIR, 'sessions', sessionId);
   mkdirSync(sessionDir, { recursive: true });
   const state = {
     ...createInitialState('Authentication System'),

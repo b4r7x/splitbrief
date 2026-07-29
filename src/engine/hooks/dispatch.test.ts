@@ -56,7 +56,7 @@ async function withTempModule<T>(
   source: string,
   run: (moduleProjectDir: string, modulePath: string) => Promise<T>,
 ): Promise<T> {
-  const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-module-'));
+  const tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-hook-module-'));
   const modulePath = 'hook.mjs';
   try {
     await writeFile(join(tempDir, modulePath), source);
@@ -73,7 +73,7 @@ async function withTempScript<T>(
   source: string,
   run: (scriptPath: string) => Promise<T>,
 ): Promise<T> {
-  const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-script-'));
+  const tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-hook-script-'));
   const scriptPath = join(tempDir, 'hook.mjs');
   try {
     await writeFile(scriptPath, source);

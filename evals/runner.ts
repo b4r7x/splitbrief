@@ -36,7 +36,7 @@ export function copyScenarioFixture(
   scenario: Pick<EvalScenario, 'fixtureDir' | 'id'>,
   mode: EvalMode,
 ): EvalProjectCopy {
-  const tmpDir = mkdtempSync(join(tmpdir(), `diptych-eval-${scenario.id}-${mode}-`));
+  const tmpDir = mkdtempSync(join(tmpdir(), `splitbrief-eval-${scenario.id}-${mode}-`));
   const projectDir = join(tmpDir, basename(scenario.fixtureDir));
   cpSync(scenario.fixtureDir, projectDir, { recursive: true });
   return { tmpDir, projectDir };

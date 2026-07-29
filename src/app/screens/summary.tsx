@@ -28,6 +28,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { clamp } from '../../utils/math.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 
 interface SummaryScreenProps {
   commands: RuntimeCommandDef[];
@@ -124,7 +125,7 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
         <Box justifyContent="center" width="100%">
           <Text wrap="truncate-end">
             {heading.marker ? <Text color={theme.success}>{glyph('check')} </Text> : null}
-            <Text color={theme.textDim}>diptych </Text>
+            <Text color={theme.textDim}>{SPLITBRIEF_IDENTITY.displayName} </Text>
             <Text color={heading.color}>{heading.word}</Text>
             {isSmall && routeSummary ? <Text color={theme.textDim}> {routeSummary}</Text> : null}
           </Text>

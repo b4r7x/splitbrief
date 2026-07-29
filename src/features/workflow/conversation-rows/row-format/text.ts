@@ -1,8 +1,9 @@
 import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
 import { wrapHard } from '../../../../utils/wrap.js';
+import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 
 const MIN_ROW_WIDTH = 1;
-const LINE_BREAK_PLACEHOLDER_PREFIX = '\ue000diptych-line-break';
+const LINE_BREAK_PLACEHOLDER_PREFIX = `\ue000${SPLITBRIEF_IDENTITY.slug}-line-break`;
 
 export function sanitizeRowDisplayText(text: string): string {
   if (!text.includes('\n')) return sanitizeTerminalDisplayText(text);

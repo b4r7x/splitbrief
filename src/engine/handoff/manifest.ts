@@ -10,7 +10,7 @@ import { nowIso } from '../../utils/format-time.js';
 
 export type BuildManifestOptions = {
   sessionId: string;
-  diptychVersion: string;
+  splitbriefVersion: string;
   target: HandoffTarget | string;
   mode: WorkflowMode;
   tasks: Task[];
@@ -36,7 +36,7 @@ export function buildManifest(options: BuildManifestOptions): HandoffManifest {
 
   const manifest = {
     packVersion: '1' as const,
-    diptychVersion: options.diptychVersion,
+    splitbriefVersion: options.splitbriefVersion,
     generatedAt: nowIso(),
     sessionId: options.sessionId,
     briefHash,

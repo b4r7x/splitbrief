@@ -11,7 +11,7 @@ import type { StartDeps } from './start/types.js';
 import { initStores } from '../init-stores.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
 import { buildServerArgs } from '../../engine/ipc/spawn-server.js';
 import { writeReadyReadinessFixtures, writeConfigMarker } from '#testing/helpers/start-command.js';
@@ -74,7 +74,7 @@ describe('start command — shorthand invocation', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, fakeDeps);
-    await program.parseAsync(['node', 'diptych', 'implement auth flow', '--project', tmp]);
+    await program.parseAsync(['node', 'splitbrief', 'implement auth flow', '--project', tmp]);
 
     expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement auth flow' });
   });
@@ -93,7 +93,7 @@ describe('start command — shorthand invocation', () => {
     registerStartCommand(program, deps);
     await program.parseAsync([
       'node',
-      'diptych',
+      'splitbrief',
       '--mode',
       'quick',
       'build feature X',
@@ -122,9 +122,16 @@ describe('start command — detached', () => {
     const program = new Command();
     program.exitOverride();
     registerStartCommand(program, fakeDeps);
-    await program.parseAsync(['node', 'diptych', '--project', spaced, '--detach', 'implement X']);
+    await program.parseAsync([
+      'node',
+      'splitbrief',
+      '--project',
+      spaced,
+      '--detach',
+      'implement X',
+    ]);
 
-    const sessionIds = readdirSync(join(spaced, DIPTYCH_DIR, 'sessions'));
+    const sessionIds = readdirSync(join(spaced, SPLITBRIEF_DIR, 'sessions'));
     expect(sessionIds).toHaveLength(1);
     const sessionId = sessionIds[0] ?? '';
 

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeHandoffWriterSessionState } from '#testing/helpers/handoff-writer-fixture.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { writeHandoffPack } from './write.js';
 
 let tmp: string;
@@ -73,11 +73,11 @@ describe('writeHandoffPack — overwrite confinement', () => {
     ).rejects.toThrow(/refusing to overwrite/);
   });
 
-  it('allows overwrite inside .diptych/', async () => {
+  it('allows overwrite inside .splitbrief/', async () => {
     const sessionId = 'test-session';
     writeHandoffWriterSessionState(tmp, sessionId);
 
-    const outDir = join(tmp, DIPTYCH_DIR, 'handoffs', 'test-target');
+    const outDir = join(tmp, SPLITBRIEF_DIR, 'handoffs', 'test-target');
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, 'old-file.md'), 'stale');
 
@@ -93,7 +93,7 @@ describe('writeHandoffPack — overwrite confinement', () => {
     expect(result.files.length).toBeGreaterThan(0);
   });
 
-  it('rejects overwrite when manifest.json is not from diptych (e.g. Chrome extension)', async () => {
+  it('rejects overwrite when manifest.json is not from splitbrief (e.g. Chrome extension)', async () => {
     const sessionId = 'test-session';
     writeHandoffWriterSessionState(tmp, sessionId);
 
@@ -121,7 +121,7 @@ describe('writeHandoffPack — overwrite confinement', () => {
 
     const outDir = join(tmp, 'custom-handoff-dir');
     mkdirSync(outDir, { recursive: true });
-    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ diptychVersion: '0.1.0' }));
+    writeFileSync(join(outDir, 'manifest.json'), JSON.stringify({ splitbriefVersion: '0.1.0' }));
 
     const result = await writeHandoffPack({
       projectDir: tmp,
@@ -137,7 +137,7 @@ describe('writeHandoffPack — overwrite confinement', () => {
 
 describe('writeHandoffPack — renderer path confinement', () => {
   function writeCustomRenderer(projectDir: string, maliciousPath: string): void {
-    const renderersDir = join(projectDir, '.diptych', 'handoff-renderers');
+    const renderersDir = join(projectDir, '.splitbrief', 'handoff-renderers');
     mkdirSync(renderersDir, { recursive: true });
     writeFileSync(
       join(renderersDir, 'malicious.js'),
@@ -186,9 +186,9 @@ describe('writeHandoffPack — renderer path confinement', () => {
     // so writing the (lexically confined) path would escape via the symlink.
     writeCustomRenderer(tmp, 'evil/escape.md');
 
-    const outDir = join(tmp, DIPTYCH_DIR, 'handoffs', 'symlink-parent');
+    const outDir = join(tmp, SPLITBRIEF_DIR, 'handoffs', 'symlink-parent');
     mkdirSync(outDir, { recursive: true });
-    const outside = mkdtempSync(join(tmpdir(), 'diptych-handoff-outside-'));
+    const outside = mkdtempSync(join(tmpdir(), 'splitbrief-handoff-outside-'));
     try {
       symlinkSync(outside, join(outDir, 'evil'));
 

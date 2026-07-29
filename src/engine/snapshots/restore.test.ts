@@ -11,7 +11,7 @@ import { resolveSnapshot, restoreSnapshot } from './restore.js';
 let tmp: string;
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'diptych-restore-'));
+  tmp = await mkdtemp(join(tmpdir(), 'splitbrief-restore-'));
 });
 
 afterEach(async () => {
@@ -399,7 +399,7 @@ describe('restoreSnapshot — event emission', () => {
     await writeFile(join(tmp, 'foo.ts'), 'original-content');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    await writeFile(join(tmp, 'foo.ts'), 'modified-by-diptych');
+    await writeFile(join(tmp, 'foo.ts'), 'modified-by-splitbrief');
     const snap = await createSnapshot({
       projectDir: tmp,
       sessionId: 'sess-01',

@@ -1,4 +1,4 @@
-import { getDiptychPath } from '../paths.js';
+import { getSplitbriefPath } from '../paths.js';
 import { StatsSchema, emptyStats, type Stats } from '../schemas/stats.js';
 import { writeSecureFile, readValidatedJsonResult } from '../../lib/fs.js';
 import { lockSibling, withFileLock } from '../../lib/file-lock.js';
@@ -11,7 +11,7 @@ import { accumulateProviderCosts } from './provider-costs.js';
 const STATS_FILE = 'stats.json';
 
 function statsPath(projectDir: string): string {
-  return getDiptychPath(projectDir, STATS_FILE);
+  return getSplitbriefPath(projectDir, STATS_FILE);
 }
 
 const statsError = {
@@ -36,7 +36,7 @@ export function readStats(projectDir: string): Stats {
   if (result.kind === 'value') return result.value;
   if (result.kind === 'unreadable') {
     warnError(
-      `stats: unreadable ${STATS_FILE}; run 'diptych stats --rebuild' to heal it`,
+      `stats: unreadable ${STATS_FILE}; run 'splitbrief stats --rebuild' to heal it`,
       result.cause,
     );
   }
@@ -93,7 +93,7 @@ export function updateStats(projectDir: string, input: StatsUpdateInput): void {
     const existing = readValidatedJsonResult(statsPath(projectDir), parseStats);
     if (existing.kind === 'unreadable') {
       warnError(
-        `stats: skipping update; existing ${STATS_FILE} is unreadable and lifetime totals would be lost. Run 'diptych stats --rebuild' to heal it`,
+        `stats: skipping update; existing ${STATS_FILE} is unreadable and lifetime totals would be lost. Run 'splitbrief stats --rebuild' to heal it`,
         existing.cause,
       );
       return;

@@ -17,7 +17,7 @@ describe('readiness formatting', () => {
       }),
       configLoad: {
         state: 'loaded',
-        path: '/tmp/project/.diptych/config.yaml',
+        path: '/tmp/project/.splitbrief/config.yaml',
         warnings: [],
       },
       packageScripts: {
@@ -53,7 +53,7 @@ describe('readiness formatting', () => {
       projectDir: '/tmp/project',
       configLoad: {
         state: 'invalid',
-        path: '/tmp/project/.diptych/config.yaml',
+        path: '/tmp/project/.splitbrief/config.yaml',
         warnings: [],
         error: 'bad config',
       },
@@ -79,7 +79,7 @@ describe('readiness formatting', () => {
       projectDir: '/tmp/project',
       configLoad: {
         state: 'invalid',
-        path: '/tmp/project/.diptych/config.yaml',
+        path: '/tmp/project/.splitbrief/config.yaml',
         warnings: [],
         error: 'bad config',
       },
@@ -110,7 +110,7 @@ describe('readiness formatting', () => {
       projectDir: '/tmp/project',
       configLoad: {
         state: 'invalid',
-        path: '/tmp/project/.diptych/config.yaml',
+        path: '/tmp/project/.splitbrief/config.yaml',
         warnings: [],
         error: 'bad config',
       },

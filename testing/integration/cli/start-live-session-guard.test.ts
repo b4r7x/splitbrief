@@ -8,7 +8,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
-import { DIPTYCH_DIR, LOCKFILE, sessionDir } from '../../../src/core/paths.js';
+import { SPLITBRIEF_DIR, LOCKFILE, sessionDir } from '../../../src/core/paths.js';
 
 let tmp: string;
 let stdinWasTty: boolean | undefined;
@@ -41,7 +41,7 @@ describe('CLI integration: start with a live session', { timeout: 90_000 }, () =
         currentTaskIndex: 0,
       },
     );
-    writeFileSync(join(tmp, DIPTYCH_DIR, 'active'), `${existingId}\n`);
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), `${existingId}\n`);
     writeFileSync(
       join(sessDir, LOCKFILE),
       JSON.stringify(
@@ -56,8 +56,8 @@ describe('CLI integration: start with a live session', { timeout: 90_000 }, () =
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("session '2026-04-18-live' is still active");
-    expect(readFileSync(join(tmp, DIPTYCH_DIR, 'active'), 'utf-8').trim()).toBe(existingId);
-    const sessionsRoot = join(tmp, DIPTYCH_DIR, 'sessions');
+    expect(readFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), 'utf-8').trim()).toBe(existingId);
+    const sessionsRoot = join(tmp, SPLITBRIEF_DIR, 'sessions');
     const otherSessions = existsSync(sessionsRoot) ? readdirSync(sessionsRoot) : [];
     expect(otherSessions).toEqual([existingId]);
   });

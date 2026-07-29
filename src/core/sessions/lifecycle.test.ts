@@ -12,7 +12,7 @@ import {
   featureForTranscriptPolicy,
   TRANSCRIPT_OMITTED_FEATURE,
 } from './lifecycle.js';
-import { DIPTYCH_DIR, LOCKFILE } from '../paths.js';
+import { SPLITBRIEF_DIR, LOCKFILE } from '../paths.js';
 import { sessionDir } from '../paths.js';
 import { STATE_FILE } from '../paths.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -51,14 +51,14 @@ function writeLockfile(
 describe('writeActive / readActive round-trip', () => {
   it('writes and reads a newline-terminated active session ID', () => {
     const dir = makeTmp();
-    mkdirSync(join(dir, '.diptych'), { recursive: true });
+    mkdirSync(join(dir, '.splitbrief'), { recursive: true });
     writeActive({ projectDir: dir, sessionId: '2026-04-14-my-feature' });
     expect(readActive(dir)).toBe('2026-04-14-my-feature');
   });
 
   it('rejects invalid session ids', () => {
     const dir = makeTmp();
-    mkdirSync(join(dir, '.diptych'), { recursive: true });
+    mkdirSync(join(dir, '.splitbrief'), { recursive: true });
     expect(() => writeActive({ projectDir: dir, sessionId: '../outside' })).toThrow(
       'Invalid session id',
     );
@@ -73,8 +73,8 @@ describe('readActive', () => {
 
   it('returns null for empty file', () => {
     const dir = makeTmp();
-    mkdirSync(join(dir, '.diptych'), { recursive: true });
-    writeFileSync(join(dir, '.diptych', 'active'), '');
+    mkdirSync(join(dir, '.splitbrief'), { recursive: true });
+    writeFileSync(join(dir, '.splitbrief', 'active'), '');
     expect(readActive(dir)).toBeNull();
   });
 });
@@ -82,7 +82,7 @@ describe('readActive', () => {
 describe('clearActive', () => {
   it('deletes the active file when the pointer names the given session', () => {
     const dir = makeTmp();
-    mkdirSync(join(dir, '.diptych'), { recursive: true });
+    mkdirSync(join(dir, '.splitbrief'), { recursive: true });
     writeActive({ projectDir: dir, sessionId: '2026-04-14-feature' });
     clearActive({ projectDir: dir, sessionId: '2026-04-14-feature' });
     expect(readActive(dir)).toBeNull();
@@ -95,7 +95,7 @@ describe('clearActive', () => {
 
   it('preserves the pointer when it names a different session (compare-and-clear ownership)', () => {
     const dir = makeTmp();
-    mkdirSync(join(dir, '.diptych'), { recursive: true });
+    mkdirSync(join(dir, '.splitbrief'), { recursive: true });
     writeActive({ projectDir: dir, sessionId: '2026-04-14-session-b' });
 
     // A stale cleanup from session A must not delete a pointer now owned by session B.
@@ -215,7 +215,7 @@ describe('isSessionLive', () => {
 });
 
 function mkSessionDir(projectDir: string, id: string): void {
-  mkdirSync(join(projectDir, DIPTYCH_DIR, 'sessions', id), { recursive: true });
+  mkdirSync(join(projectDir, SPLITBRIEF_DIR, 'sessions', id), { recursive: true });
 }
 
 describe('generateSessionId', () => {

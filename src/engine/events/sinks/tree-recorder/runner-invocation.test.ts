@@ -7,7 +7,7 @@ import { reconstructTree, treeJsonlPath } from '../../../../core/sessions/tree/i
 import { normalizeRunnerCallWarning } from '../../../calls/warnings.js';
 
 function makeSessionDir(projectDir: string, sessionId: string): void {
-  mkdirSync(join(projectDir, '.diptych', 'sessions', sessionId), { recursive: true });
+  mkdirSync(join(projectDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
 }
 
 describe('tree-recorder runner invocation', () => {
@@ -135,7 +135,7 @@ describe('tree-recorder runner invocation', () => {
       nativeSessionId: `native-${sentinel}`,
     });
 
-    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+    const sDir = join(tmpDir, '.splitbrief', 'sessions', sessionId);
     const tree = reconstructTree(sDir);
     expect(tree).not.toBeNull();
     const invocations = [...tree!.entries.values()].filter(
@@ -230,7 +230,7 @@ describe('tree-recorder runner invocation', () => {
       nativeSessionId: null,
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     const invocations = [...tree!.entries.values()].filter(
       (entry) => entry.type === 'agent-invocation',
@@ -273,7 +273,7 @@ describe('tree-recorder runner invocation', () => {
       }),
     });
 
-    const sDir = join(tmpDir, '.diptych', 'sessions', sessionId);
+    const sDir = join(tmpDir, '.splitbrief', 'sessions', sessionId);
     const jsonlPath = treeJsonlPath(sDir);
     chmodSync(jsonlPath, 0o400);
     sink({
@@ -370,7 +370,7 @@ describe('tree-recorder runner invocation', () => {
       nativeSessionId: null,
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     const invocations = [...tree!.entries.values()].filter(
       (entry) => entry.type === 'agent-invocation',

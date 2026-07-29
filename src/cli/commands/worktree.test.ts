@@ -21,7 +21,7 @@ const fakeDeps: WorktreeDeps = {
 const makeWorktree = (overrides: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
   name: 'my-feature',
   path: '/project/.trees/my-feature',
-  branch: 'diptych/my-feature',
+  branch: 'splitbrief/my-feature',
   status: 'none',
   sessionId: null,
   phase: null,
@@ -51,14 +51,14 @@ async function runWorktree(args: string[]): Promise<void> {
   program.exitOverride();
   program.configureOutput({ writeErr: () => {}, writeOut: () => {} });
   registerWorktreeCommand(program, fakeDeps);
-  await program.parseAsync(['node', 'diptych', 'worktree', ...args, '--project', tmp]);
+  await program.parseAsync(['node', 'splitbrief', 'worktree', ...args, '--project', tmp]);
 }
 
 describe('worktree list — empty', () => {
   it('prints "no worktrees" message when listWorktrees returns []', async () => {
     mockListWorktrees.mockResolvedValue([]);
     await runWorktree(['list']);
-    expect(captureOutput()).toContain('No diptych-managed worktrees found.');
+    expect(captureOutput()).toContain('No SPLITBRIEF worktrees found.');
   });
 });
 
@@ -67,19 +67,19 @@ describe('worktree list — with entries', () => {
     mockListWorktrees.mockResolvedValue([
       makeWorktree({
         name: 'my-feature',
-        branch: 'diptych/my-feature',
+        branch: 'splitbrief/my-feature',
         status: 'none',
         sessionId: null,
       }),
       makeWorktree({
         name: 'quick-fix',
-        branch: 'diptych/quick-fix',
+        branch: 'splitbrief/quick-fix',
         status: 'none',
         sessionId: null,
       }),
       makeWorktree({
         name: 'active-wt',
-        branch: 'diptych/active-wt',
+        branch: 'splitbrief/active-wt',
         status: 'active',
         sessionId: 'dip-abc123',
         phase: 'implementing',
@@ -87,7 +87,7 @@ describe('worktree list — with entries', () => {
       }),
       makeWorktree({
         name: 'idle-wt',
-        branch: 'diptych/idle-wt',
+        branch: 'splitbrief/idle-wt',
         status: 'idle',
         sessionId: 'dip-def456',
       }),
@@ -107,8 +107,8 @@ describe('worktree list — with entries', () => {
       'my-feature',
       'quick-fix',
       '/project/.trees/my-feature',
-      'diptych/my-feature',
-      'diptych/quick-fix',
+      'splitbrief/my-feature',
+      'splitbrief/quick-fix',
       'active',
       'dip-abc123',
       'implementing',
@@ -131,7 +131,7 @@ describe('worktree switch', () => {
     const out = captureOutput();
     expect(out).toContain('To switch to worktree "my-feature"');
     expect(out).toContain('cd .trees/my-feature');
-    expect(out).toContain('diptych-switch()');
+    expect(out).toContain('splitbrief-switch()');
   });
 });
 

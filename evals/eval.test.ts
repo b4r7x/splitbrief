@@ -51,18 +51,18 @@ describe('eval harness', () => {
     await withTempDir((dir) => {
       const fixtureDir = join(dir, 'fixture');
       const originalConfig = 'version: 3\n';
-      mkdirSync(join(fixtureDir, '.diptych'), { recursive: true });
+      mkdirSync(join(fixtureDir, '.splitbrief'), { recursive: true });
       writeFileSync(join(fixtureDir, 'package.json'), '{"type":"module"}\n');
-      writeFileSync(join(fixtureDir, '.diptych/config.yaml'), originalConfig);
+      writeFileSync(join(fixtureDir, '.splitbrief/config.yaml'), originalConfig);
 
       const copied = copyScenarioFixture({ id: 'fake', fixtureDir }, 'baseline');
       try {
-        writeFileSync(join(copied.projectDir, '.diptych/config.yaml'), 'changed: true\n');
+        writeFileSync(join(copied.projectDir, '.splitbrief/config.yaml'), 'changed: true\n');
 
-        expect(readFileSync(join(fixtureDir, '.diptych/config.yaml'), 'utf-8')).toBe(
+        expect(readFileSync(join(fixtureDir, '.splitbrief/config.yaml'), 'utf-8')).toBe(
           originalConfig,
         );
-        expect(readFileSync(join(copied.projectDir, '.diptych/config.yaml'), 'utf-8')).toBe(
+        expect(readFileSync(join(copied.projectDir, '.splitbrief/config.yaml'), 'utf-8')).toBe(
           'changed: true\n',
         );
       } finally {
@@ -161,7 +161,7 @@ function makeReport(): EvalReport {
 }
 
 async function withTempDir(fn: (dir: string) => void | Promise<void>): Promise<void> {
-  const dir = mkdtempSync(join(tmpdir(), 'diptych-eval-test-'));
+  const dir = mkdtempSync(join(tmpdir(), 'splitbrief-eval-test-'));
   try {
     await fn(dir);
   } finally {

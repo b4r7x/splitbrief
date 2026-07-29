@@ -122,7 +122,7 @@ describe('runWorkflowLoop detached retry', () => {
     tmpDirs.push(projectDir);
     ensureSessionDir(projectDir, SESSION_ID);
 
-    const sessionDir = `${projectDir}/.diptych/sessions/${SESSION_ID}`;
+    const sessionDir = `${projectDir}/.splitbrief/sessions/${SESSION_ID}`;
     const bus = createEventBus();
     const ipcBridge = createIpcWorkflowBridge(bus);
     const srv = await startIpcServer({
@@ -184,7 +184,7 @@ describe('runWorkflowLoop detached retry', () => {
     tmpDirs.push(projectDir);
     ensureSessionDir(projectDir, SESSION_ID);
 
-    const sessionDir = `${projectDir}/.diptych/sessions/${SESSION_ID}`;
+    const sessionDir = `${projectDir}/.splitbrief/sessions/${SESSION_ID}`;
     const bus = createEventBus();
     const ipcBridge = createIpcWorkflowBridge(bus);
     const srv = await startIpcServer({
@@ -242,7 +242,7 @@ describe('runWorkflowLoop detached retry', () => {
     tmpDirs.push(projectDir);
     ensureSessionDir(projectDir, SESSION_ID);
 
-    const sessionDir = `${projectDir}/.diptych/sessions/${SESSION_ID}`;
+    const sessionDir = `${projectDir}/.splitbrief/sessions/${SESSION_ID}`;
     const bus = createEventBus();
     const ipcBridge = createIpcWorkflowBridge(bus);
     const srv = await startIpcServer({
@@ -282,7 +282,7 @@ describe('runWorkflowLoop detached retry', () => {
     tmpDirs.push(projectDir);
     ensureSessionDir(projectDir, SESSION_ID);
 
-    const sessionDir = `${projectDir}/.diptych/sessions/${SESSION_ID}`;
+    const sessionDir = `${projectDir}/.splitbrief/sessions/${SESSION_ID}`;
     const bus = createEventBus();
     const ipcBridge = createIpcWorkflowBridge(bus);
     const srv = await startIpcServer({

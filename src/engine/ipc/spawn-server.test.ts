@@ -190,13 +190,13 @@ describe('spawnServer', () => {
 
 // The parent's `--otel-exporter` flag lives only in its argv, so the detached host sees it only
 // because spawnServer passes `env: buildServerEnv()` to spawn(), and buildServerEnv translates
-// readOtelExporterFromArgv(process.argv) into the child's DIPTYCH_OTEL_EXPORTER. This probe drives
+// readOtelExporterFromArgv(process.argv) into the child's SPLITBRIEF_OTEL_EXPORTER. This probe drives
 // the real buildServerEnv() with the flag in argv, boots OTel from the env it produces (the exact
 // channel the spawned child inherits), and reports whether that forwarded exporter recorded a span.
 function runArgvForwardingProbe(parentExporterFlag: string[]): string {
   const env = { ...process.env };
   delete env['OTEL_TRACES_EXPORTER'];
-  delete env['DIPTYCH_OTEL_EXPORTER'];
+  delete env['SPLITBRIEF_OTEL_EXPORTER'];
 
   const script = `
     import { trace } from '@opentelemetry/api';
@@ -209,9 +209,9 @@ function runArgvForwardingProbe(parentExporterFlag: string[]): string {
     // through the env buildServerEnv() forwards. Drop the flag so the env channel is the sole input.
     process.argv = [process.argv[0], process.argv[1]];
     delete process.env.OTEL_TRACES_EXPORTER;
-    delete process.env.DIPTYCH_OTEL_EXPORTER;
-    if (childEnv.DIPTYCH_OTEL_EXPORTER !== undefined) {
-      process.env.DIPTYCH_OTEL_EXPORTER = childEnv.DIPTYCH_OTEL_EXPORTER;
+    delete process.env.SPLITBRIEF_OTEL_EXPORTER;
+    if (childEnv.SPLITBRIEF_OTEL_EXPORTER !== undefined) {
+      process.env.SPLITBRIEF_OTEL_EXPORTER = childEnv.SPLITBRIEF_OTEL_EXPORTER;
     }
 
     console.dir = (value) => {
@@ -291,7 +291,7 @@ describe('server args launch contract', () => {
       projectDir: '/repo',
       feature: 'implement from @file\n\nsecret context',
       mode: 'standard',
-      configPath: '/repo/.diptych/config.yaml',
+      configPath: '/repo/.splitbrief/config.yaml',
       overrides: { budget: 4 },
     });
 
@@ -311,12 +311,12 @@ describe('server args launch contract', () => {
 
 describe('buildServerArgs transcript policy', () => {
   const base: SpawnServerOptions = {
-    sessionDir: '/repo/.diptych/sessions/s',
+    sessionDir: '/repo/.splitbrief/sessions/s',
     sessionId: 's',
     projectDir: '/repo',
     feature: 'add secret oauth login',
     mode: 'standard',
-    configPath: '/repo/.diptych/config.yaml',
+    configPath: '/repo/.splitbrief/config.yaml',
   };
 
   it('keeps the raw feature under persistTranscript:false so the detached planner gets the real input', () => {

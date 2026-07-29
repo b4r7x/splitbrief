@@ -15,7 +15,7 @@ import { createSnapshot } from './create.js';
 let tmp: string;
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'diptych-snapshot-'));
+  tmp = await mkdtemp(join(tmpdir(), 'splitbrief-snapshot-'));
 });
 
 afterEach(async () => {
@@ -50,7 +50,7 @@ describe('writeManifest / readManifest', () => {
   });
 
   it('throws for invalid JSON (Zod parse failure)', async () => {
-    const dir = join(tmp, '.diptych', 'sessions', 'sess-01', 'snapshots', 'bad-snap');
+    const dir = join(tmp, '.splitbrief', 'sessions', 'sess-01', 'snapshots', 'bad-snap');
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, 'manifest.json'), '{"version":99,"id":"bad-snap"}');
     await expect(readManifest(tmp, 'sess-01', 'bad-snap')).rejects.toThrow();
@@ -112,7 +112,7 @@ describe('listSnapshots', () => {
     await writeFile(join(tmp, 'g.ts'), 'g');
     await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    const corruptDir = join(tmp, '.diptych', 'sessions', 'sess-01', 'snapshots', '0000-corrupt');
+    const corruptDir = join(tmp, '.splitbrief', 'sessions', 'sess-01', 'snapshots', '0000-corrupt');
     await mkdir(corruptDir, { recursive: true });
     await writeFile(join(corruptDir, 'manifest.json'), '{"invalid": true}');
 

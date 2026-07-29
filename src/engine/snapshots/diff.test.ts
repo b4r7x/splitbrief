@@ -12,7 +12,7 @@ import { encodeSnapshotPath } from './path-codec.js';
 let tmp: string;
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'diptych-diff-'));
+  tmp = await mkdtemp(join(tmpdir(), 'splitbrief-diff-'));
 });
 
 afterEach(async () => {
@@ -149,7 +149,7 @@ describe('computeSnapshotDiff', () => {
       name: 'snap1',
     });
 
-    const outside = await mkdtemp(join(tmpdir(), 'diptych-diff-outside-'));
+    const outside = await mkdtemp(join(tmpdir(), 'splitbrief-diff-outside-'));
     await writeFile(join(outside, 'file.ts'), 'SECRET OUTSIDE CONTENT');
     try {
       await rm(join(tmp, 'sub', 'file.ts'));

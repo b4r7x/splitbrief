@@ -27,8 +27,7 @@ describe('readCheckpoints', () => {
     });
     expect(checkpoints.safety.excludedPaths).toEqual([
       '.git/',
-      '.diptych/',
-      '.diptych-sandbox/',
+      '.splitbrief/',
       'node_modules/',
       '.trees/',
     ]);
@@ -37,6 +36,6 @@ describe('readCheckpoints', () => {
     expect(checkpoints.safety.text.forceOverwritesConflicts).toContain('--force is destructive');
     expect(checkpoints.safety.text.forceOverwritesConflicts).toContain('overwrites conflicts');
     expect(checkpoints.safety.text.partialRestoreExpected).toContain('Partial restore is expected');
-    expect(checkpoints.safety.text.excludedPaths).toContain('.diptych/');
+    expect(checkpoints.safety.text.excludedPaths).toContain('.splitbrief/');
   });
 });

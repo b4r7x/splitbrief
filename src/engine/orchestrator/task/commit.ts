@@ -22,8 +22,9 @@ import {
 } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
-export const RUN_COMMIT_MESSAGE_PREFIX = 'feat(diptych):';
+export const RUN_COMMIT_MESSAGE_PREFIX = `feat(${SPLITBRIEF_IDENTITY.slug}):`;
 
 type GitOps = {
   stageFiles: typeof stageFiles;
@@ -208,8 +209,8 @@ export async function validateCommitAndAdvance(
     try {
       const tag = await gitOps.createTaggedStash(
         projectDir,
-        `diptych checkpoint: ${task.id}`,
-        `diptych/${sessionId}/${task.id}`,
+        `${SPLITBRIEF_IDENTITY.slug} checkpoint: ${task.id}`,
+        `${SPLITBRIEF_IDENTITY.branchPrefix}${sessionId}/${task.id}`,
       );
       if (tag) {
         publishGitCheckpoint({ bus: bus, phase: state.phase }, task.id, tag);

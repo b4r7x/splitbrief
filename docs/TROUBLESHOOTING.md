@@ -10,7 +10,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: `SyntaxError: Unexpected token` or `engine "node" is incompatible` on `npm install` / `npm run dev`
 
-**Likely cause:** Node version below the required 22.x. diptych is ESM-only and uses `node:` built-ins, top-level `await`, and runtime features that older Node releases do not ship.
+**Likely cause:** Node version below the required 22.x. SPLITBRIEF is ESM-only and uses `node:` built-ins, top-level `await`, and runtime features that older Node releases do not ship.
 
 **Fix:**
 1. Run `node --version` and confirm output starts with `v22.` or higher.
@@ -26,7 +26,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: `Cannot find module '...'` or `ERR_MODULE_NOT_FOUND` for an internal import
 
-**Likely cause:** Either dependencies were never installed, or you wrote an import without the mandatory `.js` extension. diptych is ESM-only — Node refuses to resolve extensionless internal imports at runtime.
+**Likely cause:** Either dependencies were never installed, or you wrote an import without the mandatory `.js` extension. SPLITBRIEF is ESM-only — Node refuses to resolve extensionless internal imports at runtime.
 
 **Fix:**
 1. Run `npm install` if `node_modules/` is missing or `package-lock.json` changed.
@@ -39,35 +39,35 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ---
 
-### Symptom: `EACCES: permission denied, open '.diptych/...'` or config writes silently fail
+### Symptom: `EACCES: permission denied, open '.splitbrief/...'` or config writes silently fail
 
-**Likely cause:** The `.diptych/` directory was created by another user (often `root` after a `sudo` invocation), or sits on a filesystem mounted read-only. diptych writes session state, snapshots, and configuration there continuously.
+**Likely cause:** The `.splitbrief/` directory was created by another user (often `root` after a `sudo` invocation), or sits on a filesystem mounted read-only. SPLITBRIEF writes session state, snapshots, and configuration there continuously.
 
 **Fix:**
-1. Inspect ownership: `ls -la .diptych`.
-2. If owned by `root` or another account, reclaim it: `sudo chown -R "$USER":"$(id -gn)" .diptych`.
-3. Confirm the directory is writable: `touch .diptych/.write-test && rm .diptych/.write-test`.
-4. If the filesystem itself is read-only (CI sandbox, Docker volume), run diptych from a writable working directory or fix the mounted workspace permissions.
+1. Inspect ownership: `ls -la .splitbrief`.
+2. If owned by `root` or another account, reclaim it: `sudo chown -R "$USER":"$(id -gn)" .splitbrief`.
+3. Confirm the directory is writable: `touch .splitbrief/.write-test && rm .splitbrief/.write-test`.
+4. If the filesystem itself is read-only (CI sandbox, Docker volume), run SPLITBRIEF from a writable working directory or fix the mounted workspace permissions.
 
-**Prevention:** Never run diptych under `sudo`. If you accidentally do, immediately `chown` the resulting directory back. CI containers should mount the workspace with read-write permissions for the running user.
+**Prevention:** Never run SPLITBRIEF under `sudo`. If you accidentally do, immediately `chown` the resulting directory back. CI containers should mount the workspace with read-write permissions for the running user.
 
 **See also:** [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
-### Symptom: `diptych doctor` or `diptych start` says Run Readiness is `blocked`
+### Symptom: `splitbrief doctor` or `splitbrief start` says Run Readiness is `blocked`
 
-**Likely cause:** A hard local precondition failed before model calls: invalid or unwritable `.diptych/config.yaml`, not a git repository, an in-progress git operation (merge, rebase, etc.), or a live `.diptych/active` session in the same checkout. `diptych doctor` can also report a missing config because it does not bootstrap setup files.
+**Likely cause:** A hard local precondition failed before model calls: invalid or unwritable `.splitbrief/config.yaml`, not a git repository, an in-progress git operation (merge, rebase, etc.), or a live `.splitbrief/active` session in the same checkout. `splitbrief doctor` can also report a missing config because it does not bootstrap setup files.
 
 **Fix:**
-1. Read the `Next action` line. It points to `diptych init`, config repair, or cleaning/isolating the repo.
-2. For doctor-only missing config warnings, run `diptych init` or `diptych init --reconfigure`.
-3. For invalid config, fix `.diptych/config.yaml` and re-run `diptych doctor --json` to verify.
-4. For active-session blockers, run `diptych status`, then `diptych resume` or `diptych attach <session-id>` if the run is still live.
+1. Read the `Next action` line. It points to `splitbrief init`, config repair, or cleaning/isolating the repo.
+2. For doctor-only missing config warnings, run `splitbrief init` or `splitbrief init --reconfigure`.
+3. For invalid config, fix `.splitbrief/config.yaml` and re-run `splitbrief doctor --json` to verify.
+4. For active-session blockers, run `splitbrief status`, then `splitbrief resume` or `splitbrief attach <session-id>` if the run is still live.
 
-**Prevention:** Run `diptych doctor` after changing runner config or before CI starts a headless run.
+**Prevention:** Run `splitbrief doctor` after changing runner config or before CI starts a headless run.
 
-**See also:** [CLI-REFERENCE.md](./CLI-REFERENCE.md#diptych-doctor), [CONFIGURATION.md](./CONFIGURATION.md).
+**See also:** [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor), [CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -77,7 +77,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Fix:**
 1. If checks are disabled intentionally, continue and run your validation manually.
-2. If `testCommand` references a missing npm script, add the script or update `.diptych/config.yaml`.
+2. If `testCommand` references a missing npm script, add the script or update `.splitbrief/config.yaml`.
 3. To verify the project now, run your real commands directly, such as `npm run typecheck`, `npm run lint`, and `npm test`.
 
 **Prevention:** Keep validation commands cheap and reliable so warnings remain rare.
@@ -93,11 +93,11 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Run `git status` and decide whether the local edits should be part of this run.
 2. Continue if the edits are intentional and unlikely to overlap.
-3. Use `diptych start --worktree <name> "..."` from a clean source checkout when you want isolation.
+3. Use `splitbrief start --worktree <name> "..."` from a clean source checkout when you want isolation.
 
 **Prevention:** Start substantial runs from a clean checkout or a dedicated worktree.
 
-**See also:** [FEATURES.md](./FEATURES.md#diptych-start---worktree-name), [WORKFLOW.md](./WORKFLOW.md).
+**See also:** [FEATURES.md](./FEATURES.md#splitbrief-start---worktree-name), [WORKFLOW.md](./WORKFLOW.md).
 
 ---
 
@@ -108,13 +108,13 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** The planner is configured with an expensive model (commonly Opus) and the implementer uses the same model. Standard and speckit modes call the planner 4 and 6–7 times respectively per task; multiplying that by Opus pricing escalates fast.
 
 **Fix:**
-1. Open `.diptych/config.yaml` and inspect `planner.kind` and `planner.model`.
+1. Open `.splitbrief/config.yaml` and inspect `planner.kind` and `planner.model`.
 2. Keep Opus for the planner only when you genuinely need its planning quality; for most work Sonnet 4.6 is the better cost/quality point.
 3. Switch the implementer to a cheap or local runner: an `api` runner pointed at Ollama / LM Studio, or `cli` with a Haiku-class model.
-4. Run `diptych status` to confirm the resolved configuration matches your intent.
+4. Run `splitbrief status` to confirm the resolved configuration matches your intent.
 5. Set `workflow.maxBudget` so the next runaway is bounded.
 
-**Prevention:** Decouple planner and implementer cost tiers — that asymmetry is the entire point of diptych. Always set `workflow.maxBudget` for production usage.
+**Prevention:** Decouple planner and implementer cost tiers — that asymmetry is the entire point of SPLITBRIEF. Always set `workflow.maxBudget` for production usage.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/ARCHITECTURE.md](./ARCHITECTURE.md), [docs/VISION.md](./VISION.md).
 
@@ -125,7 +125,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** `workflow.budgetPauseThreshold` (a fraction of `maxBudget`) is set too low for the task at hand, or `maxBudget` is too tight. The orchestrator's budget guard fires whenever the rolling spend crosses the threshold.
 
 **Fix:**
-1. Inspect `workflow.maxBudget` and `workflow.budgetPauseThreshold` in `.diptych/config.yaml`.
+1. Inspect `workflow.maxBudget` and `workflow.budgetPauseThreshold` in `.splitbrief/config.yaml`.
 2. Either raise `maxBudget` (if the task legitimately needs more headroom) or lower `budgetPauseThreshold` (if you want the warning earlier and resume manually each time).
 3. If you simply want to silence the pause for one run, pass `--budget <usd>` on the CLI.
 4. Inspect `summary.json` after the run for the actual spend distribution and right-size the limits.
@@ -141,7 +141,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** The active runner does not surface `cache_read_input_tokens`. CLI runners (`claude-code`, `codex`, `aider`, etc.) often emit aggregate token counts only, with no cache breakdown; the orchestrator reports what it receives.
 
 **Fix:**
-1. Confirm runner kind via `diptych status` or `.diptych/config.yaml`.
+1. Confirm runner kind via `splitbrief status` or `.splitbrief/config.yaml`.
 2. If you require cache visibility, switch the planner / implementer to `kind: api` with Anthropic or to `kind: agent-sdk`. Both expose cache token counts in usage payloads.
 3. For CLI runners, accept that the cache % will be `0` (or `n/a`) and rely on the absolute token totals instead.
 
@@ -153,7 +153,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: Pricing column shows `n/a` and totals do not include a USD figure
 
-**Likely cause:** The model identifier returned by the runner is not in the bundled pricing catalog (`src/core/providers/known-models.ts`). diptych refuses to invent prices, so any unknown model defaults to `n/a`.
+**Likely cause:** The model identifier returned by the runner is not in the bundled pricing catalog (`src/core/providers/known-models.ts`). SPLITBRIEF refuses to invent prices, so any unknown model defaults to `n/a`.
 
 **Fix:**
 1. Check the exact model string in `summary.json` under `runs[].model`.
@@ -190,7 +190,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Fix:**
 1. Warm the model before the run so the first token arrives within 60s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
-2. Set `planner.timeout` (milliseconds) in `.diptych/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
+2. Set `planner.timeout` (milliseconds) in `.splitbrief/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
 3. Use `--detach` so the planner runs in the background and the TUI re-attaches when it completes — useful for long invocations.
 4. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run.
 5. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
@@ -206,7 +206,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** The codebase context shipped to the planner is truncated below the relevant file, or `codebase.exclude` patterns are filtering it out.
 
 **Fix:**
-1. Inspect the repo-map produced for the run (`.diptych/sessions/<session>/planner-input.json` or equivalent under the session directory).
+1. Inspect the repo-map produced for the run (`.splitbrief/sessions/<session>/planner-input.json` or equivalent under the session directory).
 2. Increase `codebase.tokenBudget` so the relevant tree is included.
 3. Trim `codebase.exclude` if a glob is hiding the directory you need (common: `dist/`, `**/*.test.ts`).
 4. Use `codebase.include` to pin specific paths that must always appear regardless of token budget.
@@ -240,9 +240,9 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** The model wandered. Drift detection should flag it during the final-review phase, but if you see drift only after merging it means the report was ignored or the brief scope strings were too broad or too short.
 
 **Fix:**
-1. Inspect `.diptych/sessions/<id>/drift-report.json` for in-bounds and out-of-bounds touched paths.
+1. Inspect `.splitbrief/sessions/<id>/drift-report.json` for in-bounds and out-of-bounds touched paths.
 2. If the changes are legitimate (the brief was incomplete), add the paths to `scope.approvedOutOfBounds` in the brief and re-run the final review.
-3. If the changes are wrong, revert via the snapshot system: `diptych snapshot restore <snapshot-id>`.
+3. If the changes are wrong, revert via the snapshot system: `splitbrief snapshot restore <snapshot-id>`.
 4. For repeat offenders, raise the implementer model or tighten the brief's scope language.
 
 **Prevention:** Always check the drift report before accepting a task or making any manual commit. Treat unexpected out-of-bounds files as a planning bug, not implementation noise.
@@ -289,7 +289,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Open `evidence.json` for the task; the `validation` section lists the exact failing command and stderr.
 2. If the failure is a real implementation bug, retry the task — the implementer sees the previous failure as feedback.
-3. If validation is misconfigured (wrong command, missing dependency), fix the `validation` block in `.diptych/config.yaml` (`validation.typecheck`, `validation.lint`, `validation.test`, `validation.testCommand`) and re-run.
+3. If validation is misconfigured (wrong command, missing dependency), fix the `validation` block in `.splitbrief/config.yaml` (`validation.typecheck`, `validation.lint`, `validation.test`, `validation.testCommand`) and re-run.
 4. As a last resort, set `validation.typecheck: false` / `validation.lint: false` / `validation.test: false` in config to disable the failing check while you debug — you are then responsible for running the check manually.
 
 **Prevention:** Keep `validation.testCommand` minimal but reliable: at least `npm run typecheck`. Slow test suites should not block per-task validation; move them to CI.
@@ -302,15 +302,15 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: a session is reported active but nothing is running
 
-**Likely cause:** Each session writes a per-session lockfile at `.diptych/sessions/<id>/lockfile.json` that records the PID, heartbeat, and exit marker. If `.diptych/active` still points at a non-terminal `state.json`, older versions could treat that pointer as live even when the lockfile already had `exitedAt`.
+**Likely cause:** Each session writes a per-session lockfile at `.splitbrief/sessions/<id>/lockfile.json` that records the PID, heartbeat, and exit marker. If `.splitbrief/active` still points at a non-terminal `state.json`, older versions could treat that pointer as live even when the lockfile already had `exitedAt`.
 
 **Fix:**
-1. Run `diptych ps` to list known sessions; it reads each lockfile, checks whether the PID is alive, and marks stale entries as `crashed` or exited.
-2. Run `diptych start ...` again. Current versions clear `.diptych/active` automatically when the active lockfile has exited or the PID is gone.
-3. If you want to resume that interrupted session instead of starting fresh, run `diptych continue <session-id>`.
+1. Run `splitbrief ps` to list known sessions; it reads each lockfile, checks whether the PID is alive, and marks stale entries as `crashed` or exited.
+2. Run `splitbrief start ...` again. Current versions clear `.splitbrief/active` automatically when the active lockfile has exited or the PID is gone.
+3. If you want to resume that interrupted session instead of starting fresh, run `splitbrief continue <session-id>`.
 4. If the lock is fresh and a real process is alive, you have a genuine concurrent session. Attach to that one rather than starting another.
 
-**Prevention:** Prefer clean TUI cancellation or `diptych continue` for interrupted work. For long-running jobs, use `--detach` so the server survives terminal closure and exits cleanly.
+**Prevention:** Prefer clean TUI cancellation or `splitbrief continue` for interrupted work. For long-running jobs, use `--detach` so the server survives terminal closure and exits cleanly.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
 
@@ -322,7 +322,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Fix:**
 1. In the TUI, focus the composer (Tab if focus is elsewhere) and submit `approve` / `comment ...` / `reject`.
-2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; file-write tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Use `--rpc` from the start when a client needs to answer approvals programmatically, or resume with `diptych continue --rpc <session-id>` when the session is resumable. For unattended runs, use `--mode quick` or configure approval tiers so file writes do not prompt.
+2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; file-write tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Use `--rpc` from the start when a client needs to answer approvals programmatically, or resume with `splitbrief continue --rpc <session-id>` when the session is resumable. For unattended runs, use `--mode quick` or configure approval tiers so file writes do not prompt.
 3. Check `workflow.approve` in config; `workflow.approve: none` skips the spec and plan approval gates but not the standard/speckit brief-review gate, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For file-write tiered approval, see the `approval.tiers` config block.
 
 **Prevention:** Decide up front whether a run is interactive, `--json`, or `--rpc`; configure approval policy to match.
@@ -354,8 +354,8 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** A `--json` run hit a file-write tiered approval that has no reply channel; an RPC client did not answer the prompt; or an interactive run has `approval.headless: true` set, which forces fail-closed on any tier that would ordinarily prompt.
 
 **Fix:**
-1. If the session is resumable, continue it with an interactive TUI (`diptych continue <session-id>`) or RPC (`diptych continue --rpc <session-id>`).
-2. Or set the offending file-write tier to `auto` in `.diptych/config.yaml` under `approval.tiers.<class>: auto`.
+1. If the session is resumable, continue it with an interactive TUI (`splitbrief continue <session-id>`) or RPC (`splitbrief continue --rpc <session-id>`).
+2. Or set the offending file-write tier to `auto` in `.splitbrief/config.yaml` under `approval.tiers.<class>: auto`.
 3. For CI runs that should never prompt, make sure every tier is set to `auto` (or remove the `approval` block entirely for fully non-interactive runs). Set `approval.headless: true` only when you want fail-closed behaviour on unexpected prompts.
 
 **Prevention:** Audit `approval.tiers` before running `--json` or unattended RPC. Any tier left at `sticky` or `confirm` can require an approval response.
@@ -383,15 +383,15 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ### Symptom: `snapshot create` fails with "lock held"
 
-**Likely cause:** Another diptych process — or a previous run that crashed — is holding the snapshot lock. The lock is considered stale after 60 seconds.
+**Likely cause:** Another SPLITBRIEF process — or a previous run that crashed — is holding the snapshot lock. The lock is considered stale after 60 seconds.
 
 **Fix:**
 1. Wait 60 seconds and retry; stale locks expire automatically.
-2. If a real concurrent operation is running, finish it first (or attach with `diptych attach` to see what it is doing).
-3. If no other process exists and the lock is older than 60s, remove it manually: `rm .diptych/sessions/<session-id>/snapshots/.lock`.
+2. If a real concurrent operation is running, finish it first (or attach with `splitbrief attach` to see what it is doing).
+3. If no other process exists and the lock is older than 60s, remove it manually: `rm .splitbrief/sessions/<session-id>/snapshots/.lock`.
 4. Re-run the snapshot operation.
 
-**Prevention:** Avoid running multiple `diptych start` invocations against the same workspace simultaneously — use worktrees instead.
+**Prevention:** Avoid running multiple `splitbrief start` invocations against the same workspace simultaneously — use worktrees instead.
 
 **See also:** [docs/WORKTREES.md](./WORKTREES.md), `src/engine/snapshots/` (lock implementation).
 
@@ -413,13 +413,13 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ---
 
-### Symptom: `.diptych/snapshots/` directory grows to many gigabytes
+### Symptom: `.splitbrief/snapshots/` directory grows to many gigabytes
 
 **Likely cause:** The baseline + delta snapshot scheme keeps a full baseline plus per-task deltas; long sessions touching large files (build outputs, lockfiles, generated assets) accumulate quickly.
 
 **Fix:**
-1. The snapshot system always excludes `.git`, `.diptych`, `node_modules`, and `.trees`; for additional paths, add them to `.gitignore` so the snapshot walker skips them automatically.
-2. For terminal cleanup, archive the session and delete its snapshot directory: `rm -rf .diptych/sessions/<session-id>/snapshots`.
+1. The snapshot system always excludes `.git`, `.splitbrief`, `node_modules`, and `.trees`; for additional paths, add them to `.gitignore` so the snapshot walker skips them automatically.
+2. For terminal cleanup, archive the session and delete its snapshot directory: `rm -rf .splitbrief/sessions/<session-id>/snapshots`.
 
 **Prevention:** Keep build outputs and lockfiles in `.gitignore` — the snapshot walker respects it. Delete old session snapshot directories after you no longer need restore points.
 
@@ -434,7 +434,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** Drift matching uses substring comparison against the brief's declared paths; loose globs and short tokens produce false positives.
 
 **Fix:**
-1. Inspect `.diptych/sessions/<id>/drift-report.json` and confirm whether the file was actually modified (run `git diff` against the pre-task snapshot).
+1. Inspect `.splitbrief/sessions/<id>/drift-report.json` and confirm whether the file was actually modified (run `git diff` against the pre-task snapshot).
 2. If the match is spurious, tighten the brief's scope strings (use full paths, not bare filenames).
 3. If the file is intentionally out of scope, add it to `scope.approvedOutOfBounds` in the brief.
 4. For repeat offenders, tighten future brief scope strings or add intentional shared files to `approvedOutOfBounds`.
@@ -450,7 +450,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** `workflow.driftChainThreshold` is set too low for your codebase — small overlaps in touched files trip the chain heuristic. If unset, the chain threshold defaults to `0.6`; there is no config-level off switch.
 
 **Fix:**
-1. Inspect `.diptych/sessions/<id>/drift-chains.json`; `summary.json.chainDriftSummary` is only the aggregate/top emitted chain summary.
+1. Inspect `.splitbrief/sessions/<id>/drift-chains.json`; `summary.json.chainDriftSummary` is only the aggregate/top emitted chain summary.
 2. Raise `workflow.driftChainThreshold` in config (try 0.75 or 0.85) until only meaningful chains trip it.
 3. Set it to `1.0` to make emissions least likely, or add a real disable flag before documenting off semantics.
 
@@ -486,7 +486,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 1. Inspect the command error output, selected output path, renderer path safety checks, and renderer load result.
 2. Re-run the planner pass that produces brief 04.
 3. If you wrote a custom renderer, verify it reads from the brief-hash-versioning output rather than older artifacts.
-4. Re-run handoff: `diptych handoff <target>`.
+4. Re-run handoff: `splitbrief handoff <target>`.
 
 **Prevention:** Treat handoff renderers as downstream consumers — never run handoff before all prerequisite briefs have completed.
 
@@ -501,8 +501,8 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. For `.js`, ensure the file exports `export default function render(input) { ... }` (or async).
 2. For `.ts`, type the function with `RendererFunction` or annotate `input` and return; `.ts` also needs runtime loader support.
-3. Place the file at `.diptych/handoff-renderers/<target>.ts` (or `.js`). The loader scans that directory automatically — there is no `handoff.renderersDir` config field.
-4. Re-run `diptych handoff <target> --allow-custom-renderer`, or set `trust.customRenderers: true` in `.diptych/config.yaml`. Loader errors report the import or default-export failure reason. Unknown-target errors include the target name.
+3. Place the file at `.splitbrief/handoff-renderers/<target>.ts` (or `.js`). The loader scans that directory automatically — there is no `handoff.renderersDir` config field.
+4. Re-run `splitbrief handoff <target> --allow-custom-renderer`, or set `trust.customRenderers: true` in `.splitbrief/config.yaml`. Loader errors report the import or default-export failure reason. Unknown-target errors include the target name.
 
 **Prevention:** Copy from a known-good renderer template when starting a new one rather than writing from scratch.
 
@@ -515,10 +515,10 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Likely cause:** The target is neither in the built-in `HANDOFF_TARGETS` list nor mapped to a custom renderer.
 
 **Fix:**
-1. Run `diptych handoff --list` to enumerate known targets.
+1. Run `splitbrief handoff --list` to enumerate known targets.
 2. If the name is a typo, correct it.
-3. If you want a new target, add a runtime-loadable custom renderer at `.diptych/handoff-renderers/<target>.ts` or `.js` — `diptych handoff --list` can discover it without trusting it.
-4. Execute it with `diptych handoff <target> --allow-custom-renderer`, or set `trust.customRenderers: true` in config.
+3. If you want a new target, add a runtime-loadable custom renderer at `.splitbrief/handoff-renderers/<target>.ts` or `.js` — `splitbrief handoff --list` can discover it without trusting it.
+4. Execute it with `splitbrief handoff <target> --allow-custom-renderer`, or set `trust.customRenderers: true` in config.
 
 **Prevention:** Define custom renderers as soon as you adopt a new downstream consumer, and document the available targets in your team handbook.
 
@@ -528,17 +528,17 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 ## MCP server
 
-Diptych MCP exposes read-only session resources and five constrained evidence tools. The tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions/tasks; they do not write project files, run shells, or dispatch implementers. General tool calls remain inside the configured planner or implementer runner.
+SPLITBRIEF MCP exposes read-only session resources and five constrained evidence tools. The tools only update `.splitbrief/sessions/<id>/evidence.json` for existing sessions/tasks; they do not write project files, run shells, or dispatch implementers. General tool calls remain inside the configured planner or implementer runner.
 
-### Symptom: `diptych mcp serve` exits immediately or refuses to bind
+### Symptom: `splitbrief mcp serve` exits immediately or refuses to bind
 
 **Likely cause:** The default port is in use, or there is no active session for the server to attach to.
 
 **Fix:**
-1. Pass `--port <n>` with a free port (default may be occupied by another diptych or unrelated service).
-2. Pass `--session <id>` explicitly — `diptych mcp serve` attaches to a specific session, not "the current workspace".
-3. Confirm the session exists with `diptych ps`.
-4. Check that no other `diptych mcp serve` is running for the same session: `pgrep -fa 'diptych mcp serve'`.
+1. Pass `--port <n>` with a free port (default may be occupied by another SPLITBRIEF or unrelated service).
+2. Pass `--session <id>` explicitly — `splitbrief mcp serve` attaches to a specific session, not "the current workspace".
+3. Confirm the session exists with `splitbrief ps`.
+4. Check that no other `splitbrief mcp serve` is running for the same session: `pgrep -fa 'splitbrief mcp serve'`.
 
 **Prevention:** Always pass `--port` and `--session` explicitly in scripts; never rely on defaults for production usage.
 
@@ -548,12 +548,12 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: MCP client reports "auth token rejected"
 
-**Likely cause:** The token is mistyped or stale. `diptych mcp serve` prints a fresh token on startup; clients must use that exact value.
+**Likely cause:** The token is mistyped or stale. `splitbrief mcp serve` prints a fresh token on startup; clients must use that exact value.
 
 **Fix:**
 1. Re-read the startup banner — the token is printed once at server start.
 2. Copy it verbatim (no surrounding whitespace, no quotes) into your client config.
-3. If you lost the banner, restart the server: `diptych mcp serve --port <p> --session <s>` and capture the new token.
+3. If you lost the banner, restart the server: `splitbrief mcp serve --port <p> --session <s>` and capture the new token.
 4. Update the client config with the new bearer token.
 
 **Prevention:** Start MCP from a wrapper script that captures the startup banner and writes the generated token into your client config. The token is generated in memory for each server run and is not pinned by environment variable.
@@ -567,10 +567,10 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** Resources are synthesized from the served session artifacts. `resources/list` omits missing concrete artifacts; reading a missing concrete resource returns resource-not-found. The virtual `tasks` resource returns an empty JSON array when `tasks.md` is absent. MCP evidence tools can update the evidence ledger, but no MCP tool can create missing planning artifacts.
 
 **Fix:**
-1. Confirm session status with `diptych ps`.
+1. Confirm session status with `splitbrief ps`.
 2. If the session is still planning, wait for the artifacts to materialize.
-3. Use `diptych explain --session <id>` or inspect `.diptych/sessions/<id>/` directly to confirm what exists.
-4. If artifacts exist but the MCP server does not expose them, restart `diptych mcp serve` to re-scan.
+3. Use `splitbrief explain --session <id>` or inspect `.splitbrief/sessions/<id>/` directly to confirm what exists.
+4. If artifacts exist but the MCP server does not expose them, restart `splitbrief mcp serve` to re-scan.
 
 **Prevention:** Start MCP after the session has produced at least its first brief.
 
@@ -583,9 +583,9 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** The resource URI references a session ID or artifact that the running MCP server is not serving. This happens when the session was started after the server, or you referenced the wrong session ID.
 
 **Fix:**
-1. Confirm the session ID exists: `diptych ps`.
-2. If the session was created after the server started, restart `diptych mcp serve` — the server does not hot-reload new sessions.
-3. To serve all sessions known at server startup, use `diptych mcp serve --all-sessions --port 4321`; restart the server to include sessions created later.
+1. Confirm the session ID exists: `splitbrief ps`.
+2. If the session was created after the server started, restart `splitbrief mcp serve` — the server does not hot-reload new sessions.
+3. To serve all sessions known at server startup, use `splitbrief mcp serve --all-sessions --port 4321`; restart the server to include sessions created later.
 
 **Prevention:** Start or restart the MCP server after all relevant sessions exist.
 
@@ -598,22 +598,22 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** The token printed in the server startup banner is generated once per server invocation and kept in memory only. It rotates on every restart. A stale token from a previous run will always be rejected.
 
 **Fix:**
-1. Re-read the token from the server startup banner: `diptych mcp serve --port 4321` prints `Token: <value>` on start.
+1. Re-read the token from the server startup banner: `splitbrief mcp serve --port 4321` prints `Token: <value>` on start.
 2. Copy the token exactly — no surrounding quotes or whitespace.
 3. Update your MCP client config with the new token value.
 
-**Prevention:** Keep the terminal that started `diptych mcp serve` visible, or have a wrapper script tee the startup banner to a file before handing the token to your client config.
+**Prevention:** Keep the terminal that started `splitbrief mcp serve` visible, or have a wrapper script tee the startup banner to a file before handing the token to your client config.
 
 **See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
-### Symptom: `Port 4321 already in use` (starting `diptych mcp serve`)
+### Symptom: `Port 4321 already in use` (starting `splitbrief mcp serve`)
 
-**Likely cause:** Another process (a previous `diptych mcp serve`, or an unrelated service) is already bound to port 4321, which is the MCP server's default port.
+**Likely cause:** Another process (a previous `splitbrief mcp serve`, or an unrelated service) is already bound to port 4321, which is the MCP server's default port.
 
 **Fix:**
-1. Pass a different port: `diptych mcp serve --port 4444`.
+1. Pass a different port: `splitbrief mcp serve --port 4444`.
 2. Or find and stop the conflicting process: `lsof -ti:4321 | xargs kill` (macOS/Linux).
 
 **Prevention:** Always pass `--port` explicitly in scripts; do not rely on the default when running multiple MCP servers.
@@ -645,7 +645,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 **Fix:**
 1. Run `git status` inside the worktree and decide whether to keep the work.
-2. If the changes matter, commit (manually — diptych does not commit for you) or `git stash` them.
+2. If the changes matter, commit (manually — SPLITBRIEF does not commit for you) or `git stash` them.
 3. If the changes are scratch and safe to drop, remove with `--force`: `git worktree remove --force <path>`.
 4. Run `git worktree prune` to clean dangling metadata.
 
@@ -670,15 +670,15 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ---
 
-### Symptom: `Branch diptych/<slug> already exists.`
+### Symptom: `Branch splitbrief/<slug> already exists.`
 
-**Likely cause:** A previous diptych run created that branch and it was never deleted. diptych refuses to overwrite an existing branch when creating a worktree.
+**Likely cause:** A previous SPLITBRIEF run created that branch and it was never deleted. SPLITBRIEF refuses to overwrite an existing branch when creating a worktree.
 
 **Fix:**
-1. If the branch contains work you still want: `git branch -D diptych/<slug>` (or rename it first).
-2. Alternatively, pass a different slug: `diptych start --worktree <other-name> "..."`.
+1. If the branch contains work you still want: `git branch -D splitbrief/<slug>` (or rename it first).
+2. Alternatively, pass a different slug: `splitbrief start --worktree <other-name> "..."`.
 
-**Prevention:** Run `diptych worktree list` and clean up idle branches with `diptych worktree remove <slug> --delete-branch` after merging or abandoning work.
+**Prevention:** Run `splitbrief worktree list` and clean up idle branches with `splitbrief worktree remove <slug> --delete-branch` after merging or abandoning work.
 
 **See also:** [docs/WORKTREES.md](./WORKTREES.md).
 
@@ -686,13 +686,13 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: `Worktree ".trees/<slug>" has a live session <id>.`
 
-**Likely cause:** You tried to remove a worktree that still has an active diptych session.
+**Likely cause:** You tried to remove a worktree that still has an active SPLITBRIEF session.
 
 **Fix:**
-1. Attach to the running session and stop it: `diptych attach <id>` then Ctrl-C.
-2. Or force-remove once you're certain the session can be discarded: `diptych worktree remove <slug> --force`.
+1. Attach to the running session and stop it: `splitbrief attach <id>` then Ctrl-C.
+2. Or force-remove once you're certain the session can be discarded: `splitbrief worktree remove <slug> --force`.
 
-**Prevention:** Always run `diptych ps` before removing a worktree to confirm no session is active inside it.
+**Prevention:** Always run `splitbrief ps` before removing a worktree to confirm no session is active inside it.
 
 **See also:** [docs/WORKTREES.md](./WORKTREES.md).
 
@@ -700,11 +700,11 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: `Worktree ".trees/<slug>" has uncommitted changes.`
 
-**Likely cause:** The worktree has local modifications; `diptych worktree remove` refuses by default to avoid accidental data loss.
+**Likely cause:** The worktree has local modifications; `splitbrief worktree remove` refuses by default to avoid accidental data loss.
 
 **Fix:**
 1. `cd .trees/<slug>` and either commit or `git stash` your changes.
-2. If the changes are disposable: `diptych worktree remove <slug> --force`.
+2. If the changes are disposable: `splitbrief worktree remove <slug> --force`.
 
 **Prevention:** Treat worktrees as ephemeral; merge or discard changes before removal.
 
@@ -714,14 +714,14 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ## Server-client and detach
 
-### Symptom: `diptych attach` exits with "connection refused" or "no such session"
+### Symptom: `splitbrief attach` exits with "connection refused" or "no such session"
 
 **Likely cause:** The server process died (OOM, terminal closed without `--detach`, host reboot) and the session metadata is now stale.
 
 **Fix:**
-1. Run `diptych ps` and confirm the session's PID is alive.
+1. Run `splitbrief ps` and confirm the session's PID is alive.
 2. If the PID is dead, the run is over; archive the session and start fresh.
-3. If the PID is alive but the socket is gone, the IPC layer crashed — continue from saved state with `diptych continue <session>`.
+3. If the PID is alive but the socket is gone, the IPC layer crashed — continue from saved state with `splitbrief continue <session>`.
 4. Check OS logs for OOM kills if this happens repeatedly.
 
 **Prevention:** Use `--detach` for any long-running session so the server lives independently of the terminal.
@@ -736,7 +736,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 **Fix:**
 1. Detach all but one client.
-2. For multi-viewer setups, use `diptych status`, `diptych ps`, and the session artifacts instead of extra interactive attach clients.
+2. For multi-viewer setups, use `splitbrief status`, `splitbrief ps`, and the session artifacts instead of extra interactive attach clients.
 3. If you need to hand off control between people, the current writer must `detach` before the next one attaches as writer.
 
 **Prevention:** Establish a convention: only one teammate is the active writer per session at any time.
@@ -750,7 +750,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** The session's `session.jsonl` has grown large; the client replays from the start to reconstruct UI state.
 
 **Fix:**
-1. Use `diptych status` or `diptych ps` to confirm you are attaching to the intended session.
+1. Use `splitbrief status` or `splitbrief ps` to confirm you are attaching to the intended session.
 2. For very long sessions, detach and resume from a checkpoint when the workflow reaches a stable boundary.
 3. Keep the existing session directory intact; `attach` only accepts `--project` plus the optional session id.
 
@@ -765,11 +765,11 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** The background server process failed to write its lockfile within the expected window (3 seconds). This can happen if the process itself crashed immediately, if the disk is full, or if there is a port conflict on the IPC socket.
 
 **Fix:**
-1. Check `.diptych/sessions/<id>/server.log` for the crash reason.
-2. Confirm no port or socket conflict: another `diptych` process may already be using the same IPC socket.
-3. Retry `diptych start --detach "..."` — transient startup failures are rare.
+1. Check `.splitbrief/sessions/<id>/server.log` for the crash reason.
+2. Confirm no port or socket conflict: another `splitbrief` process may already be using the same IPC socket.
+3. Retry `splitbrief start --detach "..."` — transient startup failures are rare.
 
-**Prevention:** Use `--detach` for long jobs on reliable infrastructure; avoid running multiple diptych instances against the same session directory simultaneously.
+**Prevention:** Use `--detach` for long jobs on reliable infrastructure; avoid running multiple SPLITBRIEF instances against the same session directory simultaneously.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
 
@@ -780,7 +780,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** The IPC client lost its connection to the server and is retrying with exponential backoff (up to 5 attempts). If all attempts fail, an `ipc_reconnect_failed` event fires and the TUI shows the session as disconnected.
 
 **Fix:**
-1. If `ipc_reconnect_failed` fires, the server process has most likely crashed — run `diptych attach <id>` to see the post-mortem from `server.log`.
+1. If `ipc_reconnect_failed` fires, the server process has most likely crashed — run `splitbrief attach <id>` to see the post-mortem from `server.log`.
 2. If you see reconnect attempts but eventual success, the server hiccuped (GC pause, brief overload) — no action needed.
 3. Check OS-level OOM logs if crashes repeat: `dmesg | grep -i kill` (Linux) or Console.app (macOS).
 
@@ -794,14 +794,14 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: TUI layout is broken — overlapping panes, truncated text
 
-**Likely cause:** Terminal width below 60 columns. Ink can render but diptych's layout assumes a minimum width.
+**Likely cause:** Terminal width below 60 columns. Ink can render but SPLITBRIEF's layout assumes a minimum width.
 
 **Fix:**
 1. Resize the terminal to at least 80 columns (120 recommended).
-2. If you are on a tiny window, run without the TUI instead: `diptych start --json "..."` for NDJSON output, or `diptych start --rpc "..."` for an interactive NDJSON protocol.
+2. If you are on a tiny window, run without the TUI instead: `splitbrief start --json "..."` for NDJSON output, or `splitbrief start --rpc "..."` for an interactive NDJSON protocol.
 3. For tmux/screen users, increase the pane width or detach from the multiplexer.
 
-**Prevention:** Default to a wide terminal for diptych sessions, or use `--json`/`--rpc` when working in narrow contexts.
+**Prevention:** Default to a wide terminal for SPLITBRIEF sessions, or use `--json`/`--rpc` when working in narrow contexts.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -848,10 +848,10 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 **Fix:**
 1. Confirm the resolved editor command is installed and on `PATH`. Check `VISUAL` first, then `EDITOR`, then common GUI CLIs such as `cursor` or `code`; implicit GUI discovery skips empty, `.`, and relative `PATH` entries.
-2. For an explicit GUI editor, use the blocking flag so diptych waits for you to save and close: `export VISUAL='code --wait'`.
-3. For a one-off run with a known terminal editor: `VISUAL=vi diptych start "..."`.
+2. For an explicit GUI editor, use the blocking flag so SPLITBRIEF waits for you to save and close: `export VISUAL='code --wait'`.
+3. For a one-off run with a known terminal editor: `VISUAL=vi splitbrief start "..."`.
 
-**Prevention:** Point `VISUAL` at the editor you want, for example `cursor --wait` or `code --wait`. If `VISUAL` is empty and `EDITOR` is a terminal editor (`vi`, `vim`, `nano`), diptych will try safely detected GUI editors first so Task Brief editing does not stay inside the TUI terminal when a GUI editor is available.
+**Prevention:** Point `VISUAL` at the editor you want, for example `cursor --wait` or `code --wait`. If `VISUAL` is empty and `EDITOR` is a terminal editor (`vi`, `vim`, `nano`), SPLITBRIEF will try safely detected GUI editors first so Task Brief editing does not stay inside the TUI terminal when a GUI editor is available.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §Review gates.
 
@@ -862,7 +862,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** The active runner does not emit `cost_update` events; the TUI displays nothing rather than fabricating values.
 
 **Fix:**
-1. Confirm the runner kind via `diptych status`. CLI runners often skip cost events.
+1. Confirm the runner kind via `splitbrief status`. CLI runners often skip cost events.
 2. Switch to `kind: api` for USD pricing when the provider/model is priced. `agent-sdk` can report token usage, but it remains unpriced because it is a meta/subscription runner.
 3. If you must use a CLI runner and want approximate costs, post-process `summary.json` after the run rather than relying on the live status.
 
@@ -876,7 +876,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: A user-declared hook fails the workflow
 
-**Likely cause:** The hook command exited non-zero. diptych treats non-zero hook exits as failures and halts the workflow at the hook's gate.
+**Likely cause:** The hook command exited non-zero. SPLITBRIEF treats non-zero hook exits as failures and halts the workflow at the hook's gate.
 
 **Fix:**
 1. Open `evidence.json` for the affected task; the hook section captures stdout, stderr, and exit code.
@@ -907,15 +907,15 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ## Git operations
 
-### Symptom: `git commit` is blocked when running under diptych
+### Symptom: `git commit` is blocked when running under SPLITBRIEF
 
 **Likely cause:** This repository's agent workflow blocks staging and commits so the human owner reviews the final diff manually. Product-level `commitStrategy` settings may create checkpoints in user projects, but agents working in this repo must not stage or commit. A pre-tool-use hook (`.claude/hooks/block-git-commits.sh`) enforces the repo rule.
 
 **Fix:**
-1. Exit the diptych session.
+1. Exit the SPLITBRIEF session.
 2. Review the changes (`git status`, `git diff`).
 3. If you are the human owner, stage and commit yourself (`git add ...`, `git commit -m "..."`). Agents working in this repository must not stage or commit.
-4. If you need diptych to coexist with auto-commit tooling, run the auto-commit step outside this repository's agent session.
+4. If you need SPLITBRIEF to coexist with auto-commit tooling, run the auto-commit step outside this repository's agent session.
 
 **Prevention:** Treat the post-session commit step as a manual review checkpoint, not a chore to automate away.
 
@@ -929,7 +929,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 **Fix:**
 1. Use the task ID from the brief as a commit prefix: `git commit -m "T03: rename foo to bar"`.
-2. Adjust to your project's convention if you prefer (Conventional Commits, ticket IDs, etc.) — diptych does not enforce a format.
+2. Adjust to your project's convention if you prefer (Conventional Commits, ticket IDs, etc.) — SPLITBRIEF does not enforce a format.
 3. Document the convention in your CONTRIBUTING.md so future contributors follow it.
 
 **Prevention:** Agree on a commit convention up front and apply it consistently.
@@ -943,7 +943,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** Per-task validation is mandatory by design — it is the contract that makes briefs trustworthy. Skipping it weakens the entire workflow.
 
 **Fix:**
-1. The closest escape hatch is to set specific validation toggles to `false` in `.diptych/config.yaml` — e.g. `validation.test: false` to drop slow tests, or `validation.lint: false` to skip the linter. There is no `--no-validate` CLI flag.
+1. The closest escape hatch is to set specific validation toggles to `false` in `.splitbrief/config.yaml` — e.g. `validation.test: false` to drop slow tests, or `validation.lint: false` to skip the linter. There is no `--no-validate` CLI flag.
 2. Better: fix the underlying validation failure rather than bypassing it.
 3. Better still: relax `validation.testCommand` (e.g. drop slow tests from the per-task check, leave them for CI).
 
@@ -955,12 +955,12 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ## CI and headless
 
-### Symptom: `diptych start --json` output is interleaved with logs
+### Symptom: `splitbrief start --json` output is interleaved with logs
 
-**Likely cause:** Logs go to stderr, JSON goes to stdout. If you captured both streams together, they interleave. Console OTel (`OTEL_TRACES_EXPORTER=console`, `DIPTYCH_OTEL_EXPORTER=console`, or `--otel-exporter console`) also writes spans to stdout and can interleave with `--json`.
+**Likely cause:** Logs go to stderr, JSON goes to stdout. If you captured both streams together, they interleave. Console OTel (`OTEL_TRACES_EXPORTER=console`, `SPLITBRIEF_OTEL_EXPORTER=console`, or `--otel-exporter console`) also writes spans to stdout and can interleave with `--json`.
 
 **Fix:**
-1. Redirect stderr separately: `diptych start --json "feature" 2>diptych.log >diptych.json`.
+1. Redirect stderr separately: `splitbrief start --json "feature" 2>splitbrief.log >splitbrief.json`.
 2. Or, parse line-by-line and reject any line that does not begin with `{`.
 3. Do not combine console OTel with NDJSON output; use a non-console provider bootstrap or disable OTel for JSON automation.
 
@@ -979,7 +979,7 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 2. To gate CI on drift, post-process `summary.json` and exit non-zero from your wrapper script when drift exceeds your threshold.
 3. Use `driftSummary.score`, `driftSummary.errorCount`, or `driftSummary.warningCount` as the numeric signal; use `chainDriftSummary.score` only when gating repeated cross-task drift chains.
 
-**Prevention:** Wire drift checks into your CI script explicitly; do not assume diptych will fail the build for you.
+**Prevention:** Wire drift checks into your CI script explicitly; do not assume SPLITBRIEF will fail the build for you.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/final-review.ts`.
 
@@ -990,10 +990,10 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 **Likely cause:** No built-in flag enforces a drift threshold; you wire it yourself.
 
 **Fix:**
-1. In your CI script, after `diptych start --json ...`, resolve the session id from readiness/session output, `.diptych/active`, or wrapper state, then parse `.diptych/sessions/<id>/summary.json`.
+1. In your CI script, after `splitbrief start --json ...`, resolve the session id from readiness/session output, `.splitbrief/active`, or wrapper state, then parse `.splitbrief/sessions/<id>/summary.json`.
 2. Read `driftSummary.score`, `driftSummary.errorCount`, or `driftSummary.warningCount`; use `chainDriftSummary.score` only for chain-drift gating.
 3. Exit non-zero from the wrapper if the score exceeds your threshold:
-   `node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1])); process.exit((s.driftSummary?.score ?? 0) > 0.7 ? 1 : 0)" .diptych/sessions/<id>/summary.json`.
+   `node -e "const s=JSON.parse(require('fs').readFileSync(process.argv[1])); process.exit((s.driftSummary?.score ?? 0) > 0.7 ? 1 : 0)" .splitbrief/sessions/<id>/summary.json`.
 4. Tune the threshold against representative runs.
 
 **Prevention:** Bake the drift gate into your CI workflow definition so it is uniform across branches.
@@ -1006,15 +1006,15 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: Config rejected with a Zod schema error mentioning `version`
 
-**Likely cause:** Your `.diptych/config.yaml` has an unsupported `version` or an old field shape that cannot be migrated in memory.
+**Likely cause:** Your `.splitbrief/config.yaml` has an unsupported `version` or an old field shape that cannot be migrated in memory.
 
 **Fix:**
 1. Read the error — it states the expected `version` and the field that broke.
-2. For supported older shapes, start diptych normally; the loader migrates them in memory and later config writes use the current shape.
-3. If the version is unsupported, regenerate from scratch (`diptych init --reconfigure`) and merge your customizations back manually.
+2. For supported older shapes, start SPLITBRIEF normally; the loader migrates them in memory and later config writes use the current shape.
+3. If the version is unsupported, regenerate from scratch (`splitbrief init --reconfigure`) and merge your customizations back manually.
 4. Keep a copy of the old config under version control in case you need to diff.
 
-**Prevention:** After a version bump, run `diptych doctor` and follow any config warning it reports.
+**Prevention:** After a version bump, run `splitbrief doctor` and follow any config warning it reports.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/MIGRATION.md](./MIGRATION.md).
 
@@ -1022,13 +1022,13 @@ Diptych MCP exposes read-only session resources and five constrained evidence to
 
 ### Symptom: A config override (CLI flag, env var) does not take effect
 
-**Likely cause:** Only specific startup options are overrideable. Diptych loads project `.diptych/config.yaml`, applies explicit CLI runner/workflow flags for that invocation, and reads documented environment variables for provider keys, context length, OTel, terminal behavior, and editor selection. It does not load a global config file.
+**Likely cause:** Only specific startup options are overrideable. SPLITBRIEF loads project `.splitbrief/config.yaml`, applies explicit CLI runner/workflow flags for that invocation, and reads documented environment variables for provider keys, context length, OTel, terminal behavior, and editor selection. It does not load a global config file.
 
 **Fix:**
-1. Inspect `.diptych/config.yaml` for persistent values.
+1. Inspect `.splitbrief/config.yaml` for persistent values.
 2. Check the command line for one-shot overrides such as `--planner`, `--implementer`, `--model`, or `--mode`.
-3. Check the documented environment variables in `docs/CONFIGURATION.md`, especially provider API keys and `DIPTYCH_CONTEXT_LENGTH`.
+3. Check the documented environment variables in `docs/CONFIGURATION.md`, especially provider API keys and `SPLITBRIEF_CONTEXT_LENGTH`.
 
-**Prevention:** Put durable settings in `.diptych/config.yaml`. Keep CLI flags for one-off runs and environment variables for secrets or process-level behavior.
+**Prevention:** Put durable settings in `.splitbrief/config.yaml`. Keep CLI flags for one-off runs and environment variables for secrets or process-level behavior.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md).

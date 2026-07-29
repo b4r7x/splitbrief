@@ -24,7 +24,7 @@ const tempDirs: string[] = [];
 const unmounts: Array<() => void> = [];
 
 function tempDir(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'diptych-raw-editor-')));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'splitbrief-raw-editor-')));
   tempDirs.push(dir);
   return dir;
 }

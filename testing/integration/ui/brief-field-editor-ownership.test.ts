@@ -57,7 +57,7 @@ function view() {
 }
 
 function tempDir(): string {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'diptych-editor-')));
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'splitbrief-editor-')));
   tempDirs.push(dir);
   return dir;
 }
@@ -126,7 +126,7 @@ describe('BriefFieldEditor multi-field editing and save gate', () => {
   const sessionTempDirs: string[] = [];
 
   function tempSessionRef(): SpecFileRef {
-    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'diptych-brief-field-')));
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'splitbrief-brief-field-')));
     sessionTempDirs.push(dir);
     return { projectDir: dir, sessionId: 's1' };
   }

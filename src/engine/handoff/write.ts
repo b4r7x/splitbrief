@@ -11,11 +11,11 @@ import { HandoffManifestSchema } from '../../core/schemas/handoff-manifest.js';
 import { renderHandoffWithCustom } from './render.js';
 import { buildManifest, writeManifest } from './manifest.js';
 import { loadState } from '../../core/state/persistence.js';
-import { readSpecFile, getDiptychVersion } from '../../core/paths-io.js';
+import { readSpecFile, getSplitbriefVersion } from '../../core/paths-io.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import { hashTaskBrief } from '../brief-hash.js';
 import {
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   SESSIONS_DIR,
   SPEC_FILE,
   PLAN_FILE,
@@ -68,7 +68,7 @@ export const handoffWriteError = {
     error(
       'handoff-unsafe-overwrite-target',
       `refusing to overwrite "${outDir}": directory is not a recognized handoff output. ` +
-        `Overwrite is only allowed for directories inside ${DIPTYCH_DIR}/ or containing a manifest.json from a previous handoff.`,
+        `Overwrite is only allowed for directories inside ${SPLITBRIEF_DIR}/ or containing a manifest.json from a previous handoff.`,
       { outDir },
     ),
   isUnsafeOverwriteTarget: matches('handoff-unsafe-overwrite-target'),
@@ -83,9 +83,9 @@ export const handoffWriteError = {
   isAppendBriefHashMismatch: matches('handoff-append-brief-hash-mismatch'),
 } as const;
 
-function isInsideDiptychDir(outDir: string, projectDir: string): boolean {
-  const absDiptych = resolve(join(projectDir, DIPTYCH_DIR));
-  return isPathConfined(relative(absDiptych, resolve(outDir)), absDiptych);
+function isInsideSplitbriefDir(outDir: string, projectDir: string): boolean {
+  const absSplitbrief = resolve(join(projectDir, SPLITBRIEF_DIR));
+  return isPathConfined(relative(absSplitbrief, resolve(outDir)), absSplitbrief);
 }
 
 function isPreviousHandoffOutput(outDir: string): boolean {
@@ -93,14 +93,14 @@ function isPreviousHandoffOutput(outDir: string): boolean {
   if (!existsSync(manifestPath)) return false;
   try {
     const raw = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-    return typeof raw === 'object' && raw !== null && typeof raw.diptychVersion === 'string';
+    return typeof raw === 'object' && raw !== null && typeof raw.splitbriefVersion === 'string';
   } catch {
     return false;
   }
 }
 
 function assertSafeOverwriteTarget(outDir: string, projectDir: string): void {
-  if (isInsideDiptychDir(outDir, projectDir)) return;
+  if (isInsideSplitbriefDir(outDir, projectDir)) return;
   if (isPreviousHandoffOutput(outDir)) return;
   throw handoffWriteError.unsafeOverwriteTarget(outDir);
 }
@@ -163,7 +163,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
 
   let summaryMode: WorkflowMode | undefined;
   try {
-    const summaryRelativePath = join(DIPTYCH_DIR, SESSIONS_DIR, sessionId, SUMMARY_FILE);
+    const summaryRelativePath = join(SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, SUMMARY_FILE);
     if (confinedExists(projectDir, summaryRelativePath)) {
       const raw = await confinedReadFileAsync(projectDir, summaryRelativePath);
       if (raw !== null) {
@@ -276,7 +276,7 @@ export async function writeHandoffPack(options: WriteHandoffOptions): Promise<Wr
   const sourceCommit = await tryReadGitHead(projectDir);
   const manifest = buildManifest({
     sessionId,
-    diptychVersion: getDiptychVersion(),
+    splitbriefVersion: getSplitbriefVersion(),
     target,
     mode: resolvedMode,
     tasks: filteredTasks,

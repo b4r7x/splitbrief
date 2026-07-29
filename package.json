@@ -1,14 +1,14 @@
 {
-  "name": "diptych",
+  "name": "splitbrief",
   "version": "0.1.0",
-  "description": "Cost-optimized AI coding orchestrator - uses expensive AI for planning, cheap/local AI for implementation",
+  "description": "SPLITBRIEF — cost-optimized AI coding orchestrator using expensive planning and cheap/local implementation",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/b4r7x/tiny-spec.git"
+    "url": "git+https://github.com/b4r7x/splitbrief.git"
   },
-  "homepage": "https://github.com/b4r7x/tiny-spec#readme",
+  "homepage": "https://github.com/b4r7x/splitbrief#readme",
   "bugs": {
-    "url": "https://github.com/b4r7x/tiny-spec/issues"
+    "url": "https://github.com/b4r7x/splitbrief/issues"
   },
   "type": "module",
   "engines": {
@@ -22,7 +22,7 @@
     "LICENSE"
   ],
   "bin": {
-    "diptych": "./dist/cli.js"
+    "splitbrief": "./dist/cli.js"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",
@@ -38,9 +38,9 @@
     "test:watch": "vitest",
     "test:coverage": "tsx scripts/coverage-run.ts",
     "test:e2e": "vitest run --config testing/e2e/vitest.e2e.config.ts",
-    "test:e2e:record": "DIPTYCH_E2E_RECORD=1 vitest run --config testing/e2e/vitest.e2e.config.ts",
+    "test:e2e:record": "SPLITBRIEF_E2E_RECORD=1 vitest run --config testing/e2e/vitest.e2e.config.ts",
     "tui-shots": "tsx scripts/tui-shots.ts",
-    "tui-shots:pty": "tsx testing/visual/pty/smoke/cli.ts",
+    "tui-shots:pty": "tsx testing/integration/cli/pty/cli.ts",
     "eval": "tsx evals/cli.ts",
     "eval:record": "tsx evals/cli.ts --record",
     "eval:replay": "tsx evals/cli.ts --replay",

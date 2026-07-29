@@ -24,7 +24,7 @@ function textDeltaBytes(events: readonly RunnerCallEvent[], channel: 'stderr' | 
   return bytes;
 }
 
-describe.skipIf(process.env.DIPTYCH_PERF !== '1')('runner large output perf', () => {
+describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('runner large output perf', () => {
   it('keeps a large stdout line without newline bounded through spawn collection', async () => {
     const events: RunnerCallEvent[] = [];
     const script = [

@@ -1,6 +1,6 @@
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { RuntimeCommandDef } from '../../../../core/runtime/commands/types.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { CommandCompletionMenu } from './menu.js';
@@ -107,11 +107,15 @@ function commandLines(lines: string[]): string[] {
 
 function rowContaining(rows: string[], text: string): string {
   const row = rows.find((line) => line.includes(text));
-  expect(row).toBeDefined();
-  return row ?? '';
+  if (row === undefined) throw new Error(`Missing completion row: ${text}`);
+  return row;
 }
 
 describe('CommandCompletionMenu', () => {
+  afterEach(() => {
+    terminalSizeStore.reset();
+  });
+
   it('keeps command shortcuts visible as a de-badged dim key when descriptions overflow', () => {
     const ui = render(
       <Box width={46}>
@@ -245,6 +249,5 @@ describe('CommandCompletionMenu', () => {
     expect(frame).not.toContain('select');
     expect(frame).not.toContain('tab fill');
     ui.unmount();
-    terminalSizeStore.__testReset({ cols: 80 });
   });
 });

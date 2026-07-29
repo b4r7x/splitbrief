@@ -1,8 +1,8 @@
-# diptych Cookbook — Usage Examples
+# SPLITBRIEF Cookbook — Usage Examples
 
 A task-oriented reference for "how do I do X?". Every recipe is copy-paste ready against the current CLI surface and slash-command catalog. Where a recipe references a config field, the field name matches the zod schema in `src/core/schemas/config.ts`.
 
-If you're new to diptych, read this in order: recipes 1–5 cover the basic workflow, 6–9 cover cost, 10–15 cover safety, then jump to whatever you need.
+If you're new to SPLITBRIEF, read this in order: recipes 1–5 cover the basic workflow, 6–9 cover cost, 10–15 cover safety, then jump to whatever you need.
 
 > **Conventions.** Commands assume you're in the project root. Long YAML examples elide unrelated config; the loader fills in defaults. The TUI snippets below ("You'll see") use the same line shapes the workflow renders today; exact spacing and color may vary by terminal.
 
@@ -12,37 +12,37 @@ If you're new to diptych, read this in order: recipes 1–5 cover the basic work
 
 ### 1. First time setup
 
-**When:** the project doesn't have a `.diptych/` directory yet.
+**When:** the project doesn't have a `.splitbrief/` directory yet.
 
 **Run:**
 
 ```bash
 # Not yet published on npm. Install from source:
-git clone https://github.com/b4r7x/tiny-spec.git
-cd tiny-spec
+git clone https://github.com/b4r7x/splitbrief.git
+cd splitbrief
 npm install
 npm run build
 npm link
 
 cd your-project
-diptych init                        # interactive wizard
-diptych start "add a hello-world endpoint"
+splitbrief init                        # interactive wizard
+splitbrief start "add a hello-world endpoint"
 ```
 
 **You'll see:**
 
 ```
-diptych init
+splitbrief init
   Detected: claude-code, codex, ollama
   Planner [claude-code] >  ↵
   Implementer [ollama qwen2.5-coder:7b] >  ↵
   Mode [standard] >  ↵
-  Wrote .diptych/config.yaml
+  Wrote .splitbrief/config.yaml
 ```
 
-`init` writes `.diptych/config.yaml` (`version: 3`) and creates `.diptych/`. The first `diptych start` then creates `.diptych/sessions/<session-id>/` and writes `.diptych/active`.
+`init` writes `.splitbrief/config.yaml` (`version: 3`) and creates `.splitbrief/`. The first `splitbrief start` then creates `.splitbrief/sessions/<session-id>/` and writes `.splitbrief/active`.
 
-**Variations:** `diptych init --reconfigure` overwrites an existing config. To initialize another project, run `diptych init` from that project directory.
+**Variations:** `splitbrief init --reconfigure` overwrites an existing config. To initialize another project, run `splitbrief init` from that project directory.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/API-KEYS.md](./API-KEYS.md).
 
@@ -55,7 +55,7 @@ diptych init
 **Run:**
 
 ```bash
-diptych start --mode instant "rename function calcualteTax to calculateTax in src/billing/tax.ts"
+splitbrief start --mode instant "rename function calcualteTax to calculateTax in src/billing/tax.ts"
 ```
 
 **You'll see:**
@@ -73,7 +73,7 @@ workflow_complete
 
 `instant` mode does one planner call, parses `tasks.md` directly, and goes straight into the task loop — no `spec.md`, no `plan.md`, no approval gates.
 
-**Variations:** `diptych start --mode quick "..."` if you want a brief generated but no approval gate. Set `workflow.mode: instant` in config to default new runs to instant.
+**Variations:** `splitbrief start --mode quick "..."` if you want a brief generated but no approval gate. Set `workflow.mode: instant` in config to default new runs to instant.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.3.1, recipe 3.
 
@@ -86,7 +86,7 @@ workflow_complete
 **Run:**
 
 ```bash
-diptych start --mode quick "add an isAdult helper that returns true when age >= 18"
+splitbrief start --mode quick "add an isAdult helper that returns true when age >= 18"
 ```
 
 **You'll see:**
@@ -115,7 +115,7 @@ workflow_complete
 **Run:**
 
 ```bash
-diptych start "extract the duplicated date-formatting logic into a shared util"
+splitbrief start "extract the duplicated date-formatting logic into a shared util"
 ```
 
 **You'll see:**
@@ -136,7 +136,7 @@ phase: final-review    → review.md
 workflow_complete
 ```
 
-`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or press `Ctrl+E` / type `edit` / `e` to open the external editor for the review file. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims.
+`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or press `Ctrl+E` / type `edit` / `e` to open the external editor for the review file. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims.
 
 **Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
 
@@ -151,7 +151,7 @@ workflow_complete
 **Run:**
 
 ```bash
-diptych start --mode speckit "add JWT bearer auth to the public REST API"
+splitbrief start --mode speckit "add JWT bearer auth to the public REST API"
 ```
 
 **You'll see:**
@@ -188,7 +188,7 @@ Speckit runs 6–7 planner calls and writes `research.md`, `spec.md`, `clarifica
 
 **When:** you want the workflow to warn at 80% and pause at a configurable threshold of a dollar ceiling.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 workflow:
@@ -199,7 +199,7 @@ workflow:
 **Run:**
 
 ```bash
-diptych start "refactor the payments module"
+splitbrief start "refactor the payments module"
 ```
 
 **You'll see (status line):**
@@ -222,7 +222,7 @@ Three events fire as spend grows: `budget_warning` at 80%, `budget_paused` at th
 
 **When:** you want an expensive planner (Claude / GPT) to compile briefs but a free local model to execute them.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 version: 3
@@ -242,7 +242,7 @@ implementer:
 
 ```bash
 lms server start              # start LM Studio API
-diptych start "add a CSV exporter"
+splitbrief start "add a CSV exporter"
 ```
 
 **You'll see:**
@@ -253,7 +253,7 @@ implementer: lm-studio · qwen2.5-coder-7b-instruct (local)
 cost_update: planner $0.41 · implementer local
 ```
 
-The footer renders `local` instead of a dollar amount when the implementer is unpriced — diptych never invents fake savings.
+The footer renders `local` instead of a dollar amount when the implementer is unpriced — SPLITBRIEF never invents fake savings.
 
 **Variations:** Swap `lm-studio` for `ollama` (`apiBase: http://localhost:11434/v1`) for an Ollama backend. Use Sonnet or Opus on the planner via `kind: api, provider: anthropic, model: claude-sonnet-4-6`.
 
@@ -270,8 +270,8 @@ The footer renders `local` instead of a dollar amount when the implementer is un
 In the TUI, press `$` to open the cost drilldown. Or post-hoc:
 
 ```bash
-jq 'select(.type == "cost_update")' .diptych/sessions/<id>/session.jsonl | tail -20
-diptych status --history
+jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl | tail -20
+splitbrief status --history
 ```
 
 **You'll see:**
@@ -290,7 +290,7 @@ Cost breakdown
   total                      $0.90
 ```
 
-CLI `diptych status --history`:
+CLI `splitbrief status --history`:
 
 ```
 Cost History (3 sessions)
@@ -305,7 +305,7 @@ Cost History (3 sessions)
 
 The drilldown reads from `summary.json` (final spend) plus per-event `cost_update` records in `session.jsonl`. Bars at the top of each row scale to the largest line item.
 
-**Variations:** `diptych status` prints the active workflow phase, task, and provider status. `diptych status --history` walks every `summary.json` under `.diptych/sessions/`.
+**Variations:** `splitbrief status` prints the active workflow phase, task, and provider status. `splitbrief status --history` walks every `summary.json` under `.splitbrief/sessions/`.
 
 **See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, recipe 36.
 
@@ -315,7 +315,7 @@ The drilldown reads from `summary.json` (final spend) plus per-event `cost_updat
 
 **When:** you have a Claude Pro / Max subscription and don't want to pay per-token through the API.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 planner:
@@ -331,7 +331,7 @@ implementer:
 **Run:**
 
 ```bash
-diptych start "add input validation to the signup form"
+splitbrief start "add input validation to the signup form"
 ```
 
 **You'll see:**
@@ -340,9 +340,9 @@ diptych start "add input validation to the signup form"
 planner: claude-code (cli)  · subscription, no API spend tracked
 ```
 
-`kind: cli` spawns `claude` as a subprocess with the brief on stdin. Spend goes through your subscription, so diptych shows `local` for planner cost too.
+`kind: cli` spawns `claude` as a subprocess with the brief on stdin. Spend goes through your subscription, so SPLITBRIEF shows `local` for planner cost too.
 
-**Variations:** Other CLI tools: `tool: codex`, `opencode`, `aider`, `copilot`, `kilo-code`. Each is auto-detected by `diptych init`.
+**Variations:** Other CLI tools: `tool: codex`, `opencode`, `aider`, `copilot`, `kilo-code`. Each is auto-detected by `splitbrief init`.
 
 **See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §7 Runner abstraction.
 
@@ -357,7 +357,7 @@ planner: claude-code (cli)  · subscription, no API spend tracked
 **Run:**
 
 ```bash
-diptych snapshot create --name "before-refactor"
+splitbrief snapshot create --name "before-refactor"
 ```
 
 **You'll see:**
@@ -366,10 +366,10 @@ diptych snapshot create --name "before-refactor"
 Snapshot created: 2026-04-26T14-30-00-000Z
   Name: before-refactor
   Files: 412
-  Location: .diptych/sessions/<id>/snapshots/2026-04-26T14-30-00-000Z
+  Location: .splitbrief/sessions/<id>/snapshots/2026-04-26T14-30-00-000Z
 ```
 
-Snapshots use a baseline + delta layout under `.diptych/sessions/<id>/snapshots/`. The first snapshot copies every tracked file (honouring `.gitignore` plus the always-excluded set `.git`, `.diptych`, `node_modules`, `.trees`); later snapshots only store changed files.
+Snapshots use a baseline + delta layout under `.splitbrief/sessions/<id>/snapshots/`. The first snapshot copies every tracked file (honouring `.gitignore` plus the always-excluded set `.git`, `.splitbrief`, `node_modules`, `.trees`); later snapshots only store changed files.
 
 **Variations:** Omit `--name` to get an unnamed snapshot keyed only by ISO timestamp. `--session <id>` snapshots a specific session (default: active).
 
@@ -384,8 +384,8 @@ Snapshots use a baseline + delta layout under `.diptych/sessions/<id>/snapshots/
 **Run:**
 
 ```bash
-diptych snapshot list
-diptych snapshot restore before-refactor
+splitbrief snapshot list
+splitbrief snapshot restore before-refactor
 ```
 
 **You'll see:**
@@ -415,7 +415,7 @@ Run with --force to overwrite.
 **Run:**
 
 ```bash
-diptych snapshot diff before-refactor
+splitbrief snapshot diff before-refactor
 ```
 
 **You'll see:**
@@ -439,7 +439,7 @@ Exit code is non-zero when there are changes — useful in scripts that want to 
 
 **When:** you want a per-task safety net so a single bad implementation can't lose work.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 snapshots:
@@ -452,7 +452,7 @@ snapshots:
 **Run:**
 
 ```bash
-diptych start "rewrite the auth flow"
+splitbrief start "rewrite the auth flow"
 ```
 
 **You'll see:**
@@ -475,9 +475,9 @@ snapshot_created · phase=implementing taskIndex=1  (auto preTask)
 
 ### 14. Approve risky declared file writes explicitly
 
-**When:** you want diptych to confirm before the implementer writes control-plane paths, package manifests/lockfiles, or files outside the task's declared scope.
+**When:** you want SPLITBRIEF to confirm before the implementer writes control-plane paths, package manifests/lockfiles, or files outside the task's declared scope.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 approval:
@@ -494,7 +494,7 @@ approval:
 **Run:**
 
 ```bash
-diptych start "consolidate the test fixtures"
+splitbrief start "consolidate the test fixtures"
 ```
 
 **You'll see (when an out-of-scope write triggers):**
@@ -509,7 +509,7 @@ approval_prompted
 approval_sticky_recorded
 ```
 
-Sticky grants persist to `.diptych/approvals.json`; revoke with `diptych approval clear`.
+Sticky grants persist to `.splitbrief/approvals.json`; revoke with `splitbrief approval clear`.
 
 **Variations:** Set every produced file-write class to `auto` for legacy YOLO behavior, or to `confirm` for paranoid mode. `approval.headless: true` fails closed in CI when a `confirm` would have prompted.
 
@@ -521,7 +521,7 @@ Sticky grants persist to `.diptych/approvals.json`; revoke with `diptych approva
 
 **When:** you suspect the implementer is editing files outside the brief's scope across multiple tasks.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 workflow:
@@ -531,8 +531,8 @@ workflow:
 **Run:**
 
 ```bash
-diptych start "tidy up the UI"
-diptych status     # after a few tasks
+splitbrief start "tidy up the UI"
+splitbrief status     # after a few tasks
 ```
 
 **You'll see:**
@@ -547,7 +547,7 @@ drift_chain_detected
 
 The drift chain detector tracks out-of-bounds files across tasks. A high score indicates the implementer is repeatedly straying into the same off-scope area — usually a sign the brief was wrong about scope.
 
-**Variations:** Inspect the final deterministic report directly: `cat .diptych/sessions/<id>/drift-report.json | jq`. Inspect `drift-chains.json` for cross-task chain state. The summary screen shows a `Drift` row with the latest score.
+**Variations:** Inspect the final deterministic report directly: `cat .splitbrief/sessions/<id>/drift-report.json | jq`. Inspect `drift-chains.json` for cross-task chain state. The summary screen shows a `Drift` row with the latest score.
 
 **See also:** [docs/TASK-CONTRACT.md](./TASK-CONTRACT.md) §Drift detection rules.
 
@@ -572,7 +572,7 @@ phase: reviewing-briefs
 > Ctrl+E
 ```
 
-`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` all point to the external editor path for the brief markdown. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` all point to the external editor path for the brief markdown. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **You'll see:**
 
@@ -624,7 +624,7 @@ A non-empty `comment <text>` regenerates. `reject` ends the workflow.
 
 **When:** an older project config still sets `workflow.briefReview: rich`.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 workflow:
@@ -634,7 +634,7 @@ workflow:
 **Run:**
 
 ```bash
-diptych start "add login form"
+splitbrief start "add login form"
 # opens the simple review gate when the run reaches reviewing-briefs
 ```
 
@@ -649,7 +649,7 @@ phase: reviewing-briefs
   approve | Ctrl+E/e/edit | E/edit-file | comment <text> revises | reject
 ```
 
-`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open `.diptych/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise diptych uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; diptych re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open `.splitbrief/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **Variations:** Leaving `briefReview: rich` in a legacy config is safe, but it no longer opens an inline plan editor. Prefer changing it to `simple` so the config matches the runtime behavior.
 
@@ -663,17 +663,17 @@ phase: reviewing-briefs
 
 **Run:**
 
-The cleanest way is a `pre_task` hook that returns `decision: deny`. Add to `.diptych/config.yaml`:
+The cleanest way is a `pre_task` hook that returns `decision: deny`. Add to `.splitbrief/config.yaml`:
 
 ```yaml
 hooks:
   pre_task:
     - kind: module
-      path: ./.diptych/hooks/skip-by-id.js
+      path: ./.splitbrief/hooks/skip-by-id.js
       on_failure: block
 ```
 
-`./.diptych/hooks/skip-by-id.js`:
+`./.splitbrief/hooks/skip-by-id.js`:
 
 ```js
 export default async function (event, ctx) {
@@ -742,7 +742,7 @@ task_completed T003
 **You'll see:**
 
 ```
-Mode set to 'quick'. Saved to .diptych/config.yaml.
+Mode set to 'quick'. Saved to .splitbrief/config.yaml.
 ```
 
 `/mode <name>` accepts `instant`, `quick`, `standard`, or `speckit` and persists the value to config. `/mode` with no argument opens the mode-selector overlay.
@@ -760,7 +760,7 @@ Mode set to 'quick'. Saved to .diptych/config.yaml.
 **Run:**
 
 - **Ctrl-C once** during a live phase: aborts the current planner / implementer call. Partial output preserved with `interrupted: true` in `session.jsonl`. Workflow enters `awaitingContinue: true`. Press Enter to continue, or type a message and Enter to inject context on resume.
-- **Ctrl-C twice within 2 seconds:** exits the process after state is saved. Continue later with `diptych continue <session-id>` if the saved state is resumable.
+- **Ctrl-C twice within 2 seconds:** exits the process after state is saved. Continue later with `splitbrief continue <session-id>` if the saved state is resumable.
 
 **You'll see:**
 
@@ -773,7 +773,7 @@ phase: planning  ← resumes with the message folded in
 
 `Esc` closes overlays first. On the workflow screen, it follows the same guarded interruption flow: press once to arm the interrupt/cancel action shown in the footer, then press again to fire it.
 
-**Variations:** `diptych resume` re-enters the active saved phase. Use `diptych continue <session-id>` when the active pointer is absent but you know the session id. Safe resume covers saved `planning`, `implementing`, and `final-review` phases; earlier phases (`researching`, `specifying`) refuse resume with a clear error.
+**Variations:** `splitbrief resume` re-enters the active saved phase. Use `splitbrief continue <session-id>` when the active pointer is absent but you know the session id. Safe resume covers saved `planning`, `implementing`, and `final-review` phases; earlier phases (`researching`, `specifying`) refuse resume with a clear error.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
 
@@ -783,21 +783,21 @@ phase: planning  ← resumes with the message folded in
 
 ### 23. Export brief to Claude Code
 
-**When:** you used diptych to compile the brief but want Claude Code to do the actual coding.
+**When:** you used SPLITBRIEF to compile the brief but want Claude Code to do the actual coding.
 
 **Run:**
 
 ```bash
-diptych spec "add JWT auth"            # plan only, no implementation
-diptych handoff claude-code
-cd .diptych/handoffs/claude-code
+splitbrief spec "add JWT auth"            # plan only, no implementation
+splitbrief handoff claude-code
+cd .splitbrief/handoffs/claude-code
 claude                                  # opens Claude Code in a primed dir
 ```
 
 **You'll see:**
 
 ```
-Handoff written to: .diptych/handoffs/claude-code
+Handoff written to: .splitbrief/handoffs/claude-code
   manifest.json
   README.md
   spec.md
@@ -822,16 +822,16 @@ The Claude Code renderer drops a `CLAUDE.md` and per-task `.md` files structured
 **Run:**
 
 ```bash
-diptych handoff copilot-issue --out .diptych/handoffs/issue
+splitbrief handoff copilot-issue --out .splitbrief/handoffs/issue
 gh issue create \
   --title "Add JWT auth" \
-  --body-file .diptych/handoffs/issue/issue.md
+  --body-file .splitbrief/handoffs/issue/issue.md
 ```
 
 **You'll see:**
 
 ```
-Handoff written to: .diptych/handoffs/issue
+Handoff written to: .splitbrief/handoffs/issue
   manifest.json
   issue.md
 ```
@@ -851,7 +851,7 @@ The `copilot-issue` renderer writes one Markdown issue body. It embeds selected 
 **Run:**
 
 ```bash
-diptych handoff spec-kit
+splitbrief handoff spec-kit
 ```
 
 **You'll see:**
@@ -866,7 +866,7 @@ Handoff written to: handoff/spec-kit
   tasks/T002.md
 ```
 
-`spec-kit` is the default target (`diptych handoff` with no argument). The manifest carries `briefHash` so downstream tools can detect drift.
+`spec-kit` is the default target (`splitbrief handoff` with no argument). The manifest carries `briefHash` so downstream tools can detect drift.
 When `.specify/memory/constitution.md` exists, the pack also includes it as `constitution.md`, matching the constitution Speckit enforces during planning.
 
 **Variations:** `agents-md` produces an `AGENTS.md` instead — the emerging cross-tool agent context standard.
@@ -882,7 +882,7 @@ When `.specify/memory/constitution.md` exists, the pack also includes it as `con
 **Run:**
 
 ```bash
-diptych handoff claude-code --task T003 --out handoff/T003
+splitbrief handoff claude-code --task T003 --out handoff/T003
 ```
 
 Or inline during a session:
@@ -912,7 +912,7 @@ The pack contains only the requested task, but the supporting spec / plan are st
 
 **When:** none of the four built-in targets fit and you want a Linear ticket / Jira issue / Slack post format.
 
-**Setup:** create `.diptych/handoff-renderers/linear-ticket.js`:
+**Setup:** create `.splitbrief/handoff-renderers/linear-ticket.js`:
 
 ```js
 export default function render(input) {
@@ -932,8 +932,8 @@ export default function render(input) {
 **Run:**
 
 ```bash
-diptych handoff --list                  # confirm the custom target appears
-diptych handoff linear-ticket --allow-custom-renderer --out handoff/linear
+splitbrief handoff --list                  # confirm the custom target appears
+splitbrief handoff linear-ticket --allow-custom-renderer --out handoff/linear
 ```
 
 **You'll see:**
@@ -951,7 +951,7 @@ Handoff written to: handoff/linear
   ticket.md
 ```
 
-Custom renderers are dynamically imported from `.diptych/handoff-renderers/` only after trust is enabled for that command or through `trust.customRenderers: true`. They can be sync or async; TypeScript renderers must be loadable by the current Node runtime or an already-registered loader.
+Custom renderers are dynamically imported from `.splitbrief/handoff-renderers/` only after trust is enabled for that command or through `trust.customRenderers: true`. They can be sync or async; TypeScript renderers must be loadable by the current Node runtime or an already-registered loader.
 
 **See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §8 `engine/handoff/load-renderer.ts`.
 
@@ -966,13 +966,13 @@ Custom renderers are dynamically imported from `.diptych/handoff-renderers/` onl
 **Run:**
 
 ```bash
-diptych mcp serve --port 4321
+splitbrief mcp serve --port 4321
 ```
 
 **You'll see:**
 
 ```
-diptych MCP server ready
+splitbrief MCP server ready
 
   URL:    http://127.0.0.1:4321/mcp
   Token:  3b9a8c…
@@ -981,7 +981,7 @@ diptych MCP server ready
 To configure in Claude Code (.claude/settings.json):
   {
     "mcpServers": {
-      "diptych": {
+      "splitbrief": {
         "type": "http",
         "url": "http://127.0.0.1:4321/mcp",
         "headers": { "Authorization": "Bearer 3b9a8c…" }
@@ -994,7 +994,7 @@ Press Ctrl+C to stop.
 
 The bearer token is generated per invocation and only printed once. Restart the server to rotate.
 
-This endpoint exposes read-only session resources plus constrained evidence tools (`report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, `report_error`). The tools only update `.diptych/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shell commands, write project files, or execute tasks.
+This endpoint exposes read-only session resources plus constrained evidence tools (`report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, `report_error`). The tools only update `.splitbrief/sessions/<id>/evidence.json` for existing sessions and tasks; they do not run shell commands, write project files, or execute tasks.
 
 **Variations:** `--session <id>` serves a specific session (otherwise the active session). Default port is 4321; choose a concrete port with `--port <number>` when 4321 is unavailable.
 
@@ -1009,13 +1009,13 @@ This endpoint exposes read-only session resources plus constrained evidence tool
 **Run:**
 
 ```bash
-diptych mcp serve --all-sessions --port 4321
+splitbrief mcp serve --all-sessions --port 4321
 ```
 
 **You'll see:**
 
 ```
-diptych MCP server ready
+splitbrief MCP server ready
   Sessions: all
 ```
 
@@ -1036,19 +1036,19 @@ The MCP resource list now includes `state.json`, `summary.json`, `tasks`, indivi
 **Run:**
 
 ```bash
-diptych start --worktree my-feature "experiment with a streaming parser"
+splitbrief start --worktree my-feature "experiment with a streaming parser"
 ```
 
 **You'll see:**
 
 ```
-Starting session in worktree .trees/my-feature (branch diptych/my-feature)
+Starting session in worktree .trees/my-feature (branch splitbrief/my-feature)
 mode resolved: standard
 phase: researching
 …
 ```
 
-The worktree lives at `.trees/my-feature/`, on branch `diptych/my-feature`. Each worktree has its own `.diptych/` directory and own session lockfile, so two parallel runs cannot collide.
+The worktree lives at `.trees/my-feature/`, on branch `splitbrief/my-feature`. Each worktree has its own `.splitbrief/` directory and own session lockfile, so two parallel runs cannot collide.
 
 **Variations:** `--worktree` (no value) auto-slugifies the feature description. Worktrees do not isolate dev-server ports or `node_modules` — see [docs/WORKTREES.md](./WORKTREES.md) for mitigations.
 
@@ -1061,24 +1061,24 @@ The worktree lives at `.trees/my-feature/`, on branch `diptych/my-feature`. Each
 **Run:**
 
 ```bash
-diptych worktree list
-diptych worktree remove my-feature --delete-branch
+splitbrief worktree list
+splitbrief worktree remove my-feature --delete-branch
 ```
 
 **You'll see:**
 
 ```
 NAME              BRANCH                       STATUS
-my-feature        diptych/my-feature           idle
-old-experiment    diptych/old-experiment       running  (2026-04-25-…)
+my-feature        splitbrief/my-feature           idle
+old-experiment    splitbrief/old-experiment       running  (2026-04-25-…)
 
 Removed worktree ".trees/my-feature".
-Deleted branch diptych/my-feature.
+Deleted branch splitbrief/my-feature.
 ```
 
 Remove refuses to delete a worktree with a live session or uncommitted changes; `--force` overrides both guards.
 
-**Variations:** `diptych worktree switch <name>` prints the `cd` command (worktree switching can't actually change the parent shell's CWD).
+**Variations:** `splitbrief worktree switch <name>` prints the `cd` command (worktree switching can't actually change the parent shell's CWD).
 
 **See also:** [docs/WORKTREES.md](./WORKTREES.md).
 
@@ -1093,19 +1093,19 @@ Remove refuses to delete a worktree with a live session or uncommitted changes; 
 **Run:**
 
 ```bash
-diptych start --detach "rewrite the billing pipeline"
+splitbrief start --detach "rewrite the billing pipeline"
 ```
 
 **You'll see:**
 
 ```
 Session 2026-04-26-rewrite-billing started (pid 38291).
-Run: diptych attach 2026-04-26-rewrite-billing
+Run: splitbrief attach 2026-04-26-rewrite-billing
 ```
 
-`--detach` spawns the workflow as a background server with its own IPC socket at `.diptych/sessions/<id>/ipc.sock`. Logs go to `.diptych/sessions/<id>/server.log`. The lockfile records pid + heartbeat for `diptych ps`.
+`--detach` spawns the workflow as a background server with its own IPC socket at `.splitbrief/sessions/<id>/ipc.sock`. Logs go to `.splitbrief/sessions/<id>/server.log`. The lockfile records pid + heartbeat for `splitbrief ps`.
 
-**Variations:** `diptych ps` lists every running, exited, and crashed session in the project. `--detach` cannot be combined with `--json` or `--rpc`.
+**Variations:** `splitbrief ps` lists every running, exited, and crashed session in the project. `--detach` cannot be combined with `--json` or `--rpc`.
 
 **See also:** recipe 33, [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 IPC server.
 
@@ -1118,7 +1118,7 @@ Run: diptych attach 2026-04-26-rewrite-billing
 **Run:**
 
 ```bash
-diptych ps
+splitbrief ps
 ```
 
 **You'll see:**
@@ -1130,9 +1130,9 @@ SESSION-ID                              STATUS    PID    MODE       ELAPSED   FE
 2026-04-25-flaky-experiment             crashed   -      standard   00:08:05  try a streaming parser
 ```
 
-A `crashed` row means the server died without writing a clean exit. `diptych attach <id>` on a crashed session prints a post-mortem from `server.log`.
+A `crashed` row means the server died without writing a clean exit. `splitbrief attach <id>` on a crashed session prints a post-mortem from `server.log`.
 
-**Variations:** `diptych ps` is read-only and does not acquire the active-session lock.
+**Variations:** `splitbrief ps` is read-only and does not acquire the active-session lock.
 
 **See also:** recipe 34, [docs/DEBUGGING.md](./DEBUGGING.md).
 
@@ -1140,12 +1140,12 @@ A `crashed` row means the server died without writing a clean exit. `diptych att
 
 ### 34. Recover from a crashed session
 
-**When:** `diptych ps` shows `crashed` and you want to know what happened.
+**When:** `splitbrief ps` shows `crashed` and you want to know what happened.
 
 **Run:**
 
 ```bash
-diptych attach 2026-04-25-flaky-experiment
+splitbrief attach 2026-04-25-flaky-experiment
 ```
 
 **You'll see:**
@@ -1161,9 +1161,9 @@ Crash diagnostic
     [orchestrator] uncaught error: …
 ```
 
-Once you've inspected the diagnostic, re-run with `diptych resume` (if the phase is resumable) or start fresh.
+Once you've inspected the diagnostic, re-run with `splitbrief resume` (if the phase is resumable) or start fresh.
 
-**Variations:** `cat .diptych/sessions/<id>/server.log` for the full server log; `cat .diptych/sessions/<id>/session.jsonl | jq '.type'` for the event stream up to the crash.
+**Variations:** `cat .splitbrief/sessions/<id>/server.log` for the full server log; `cat .splitbrief/sessions/<id>/session.jsonl | jq '.type'` for the event stream up to the crash.
 
 **See also:** [docs/DEBUGGING.md](./DEBUGGING.md), recipe 36.
 
@@ -1173,12 +1173,12 @@ Once you've inspected the diagnostic, re-run with `diptych resume` (if the phase
 
 ### 35. Run in CI without TUI
 
-**When:** you want diptych to run unattended in GitHub Actions or another CI runner.
+**When:** you want SPLITBRIEF to run unattended in GitHub Actions or another CI runner.
 
 **Run:**
 
 ```bash
-diptych start --json --allow-hooks "regenerate API client from openapi.yaml" \
+splitbrief start --json --allow-hooks "regenerate API client from openapi.yaml" \
   | tee events.ndjson
 ```
 
@@ -1208,7 +1208,7 @@ diptych start --json --allow-hooks "regenerate API client from openapi.yaml" \
 **Run:**
 
 ```bash
-diptych start --rpc --allow-hooks "add auth audit logging"
+splitbrief start --rpc --allow-hooks "add auth audit logging"
 ```
 
 **Send commands on stdin (NDJSON):**
@@ -1227,7 +1227,7 @@ diptych start --rpc --allow-hooks "add auth audit logging"
 ```json
 {"type":"status","data":{"type":"readiness_report","report":{"status":"ready"}}}
 {"type":"event","data":{"type":"workflow_started","ts":1745692800000,"phase":"researching","feature":"add auth audit logging"}}
-{"type":"status","data":{"pending":"approval","approvalType":"spec","filePath":"/repo/.diptych/sessions/.../spec.md"}}
+{"type":"status","data":{"pending":"approval","approvalType":"spec","filePath":"/repo/.splitbrief/sessions/.../spec.md"}}
 {"type":"ack","command":"approve"}
 ```
 
@@ -1242,7 +1242,7 @@ diptych start --rpc --allow-hooks "add auth audit logging"
 **Run:**
 
 ```bash
-diptych start --json "..." 2>/dev/null > events.ndjson
+splitbrief start --json "..." 2>/dev/null > events.ndjson
 
 # Total spend at end of run
 jq -s 'map(select(.type == "cost_update")) | last | {planner: .plannerCost, implementer: .implementerCost, total: .totalCost}' \
@@ -1260,7 +1260,7 @@ jq 'select(.type == "task_tokens") | {task: .taskId, method: .method, cost: .cos
 {"task":"T002","method":"escalation","cost":0.04}
 ```
 
-The same data lives in `.diptych/sessions/<id>/summary.json` once the run finishes.
+The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run finishes.
 
 **Variations:** Filter for failures: `jq 'select(.type == "task_full_fail" or .type == "error")' events.ndjson`.
 
@@ -1272,7 +1272,7 @@ The same data lives in `.diptych/sessions/<id>/summary.json` once the run finish
 
 **When:** you want CI to bail when spend exceeds the configured ceiling.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 workflow:
@@ -1282,11 +1282,11 @@ workflow:
 **CI script:**
 
 ```bash
-diptych start --json --allow-hooks --approve none "..." | tee events.ndjson
+splitbrief start --json --allow-hooks --approve none "..." | tee events.ndjson
 status=$?
 
 if jq -e 'select(.type == "budget_exceeded")' events.ndjson > /dev/null; then
-  echo "::error::diptych budget exceeded; failing build"
+  echo "::error::splitbrief budget exceeded; failing build"
   exit 1
 fi
 
@@ -1298,7 +1298,7 @@ exit $status
 ```
 {"type":"budget_warning","ts":...,"spent":1.20,"budget":1.50}
 {"type":"budget_exceeded","ts":...,"spent":1.51,"budget":1.50}
-::error::diptych budget exceeded; failing build
+::error::splitbrief budget exceeded; failing build
 ```
 
 `--json` exit code is 0 on `workflow_complete`, non-zero on workflow errors. The grep above adds an extra gate on the soft budget signal.
@@ -1334,7 +1334,7 @@ Re-export-only `index.ts` files are forbidden under `src/`.
 **Run:**
 
 ```bash
-diptych start --mode speckit "add a new HTTP client"
+splitbrief start --mode speckit "add a new HTTP client"
 ```
 
 **You'll see:**
@@ -1357,7 +1357,7 @@ A hard violation (`severity: hard`) aborts the run with a `warning` event explai
 
 **When:** you want to format with Prettier and run Biome after every task without modifying the validation pipeline.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 hooks:
@@ -1370,7 +1370,7 @@ hooks:
       timeout_ms: 10000
       on_failure: warn
   pre_commit:
-    - command: ".diptych/hooks/scan.sh"
+    - command: ".splitbrief/hooks/scan.sh"
       args: ["${event.file}"]
       on_failure: block
 ```
@@ -1378,7 +1378,7 @@ hooks:
 **Run:**
 
 ```bash
-diptych start --allow-hooks "add the User model"
+splitbrief start --allow-hooks "add the User model"
 ```
 
 **You'll see (first run only):**
@@ -1386,7 +1386,7 @@ diptych start --allow-hooks "add the User model"
 ```
 Trust these hooks for this project? [y/N]
 > y
-hooks trusted (sha256 stored in .diptych/hook-trust.json)
+hooks trusted (sha256 stored in .splitbrief/hook-trust.json)
 ```
 
 `--allow-hooks` skips the prompt in non-TTY (CI). Editing the hooks block or a module hook file invalidates trust and re-prompts on the next run.
@@ -1401,21 +1401,21 @@ hooks trusted (sha256 stored in .diptych/hook-trust.json)
 
 **When:** you want span-level visibility (workflow → phase → task → validation) in Honeycomb, Tempo, or any OTLP-compatible backend.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 otel:
   enabled: true
-  serviceName: diptych
+  serviceName: splitbrief
 ```
 
 **Quick local check (console exporter):**
 
 ```bash
-OTEL_TRACES_EXPORTER=console diptych start --json --mode quick "smoke test"
+OTEL_TRACES_EXPORTER=console splitbrief start --json --mode quick "smoke test"
 ```
 
-**Real OTLP setup:** diptych uses the global TracerProvider, so register one in a wrapper script before invoking diptych:
+**Real OTLP setup:** SPLITBRIEF uses the global TracerProvider, so register one in a wrapper script before invoking SPLITBRIEF:
 
 ```ts
 // otel-bootstrap.mjs
@@ -1432,28 +1432,28 @@ const provider = new NodeTracerProvider({
 trace.setGlobalTracerProvider(provider);
 ```
 
-Node's `--import` flag ensures the bootstrap runs before the main script, so the TracerProvider is registered before diptych starts.
+Node's `--import` flag ensures the bootstrap runs before the main script, so the TracerProvider is registered before SPLITBRIEF starts.
 
 **Run:**
 
 ```bash
 OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io \
 OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=$HONEYCOMB_KEY" \
-node --import ./otel-bootstrap.mjs ./node_modules/.bin/diptych start "..."
+node --import ./otel-bootstrap.mjs ./node_modules/.bin/splitbrief start "..."
 ```
 
 **You'll see (in your OTLP backend):**
 
 ```
-diptych.workflow                6m12s   diptych.mode=standard
-├─ diptych.phase.researching    0m38s
-├─ diptych.phase.specifying     1m02s
-├─ diptych.phase.planning       0m51s
-├─ diptych.phase.implementing   3m14s
-│  ├─ diptych.task              0m58s   diptych.task.id=T001  diptych.task.method=local
-│  ├─ diptych.task              1m21s   diptych.task.id=T002  diptych.task.method=escalation
-│  └─ diptych.task              0m55s   diptych.task.id=T003  diptych.task.method=local
-└─ diptych.phase.final-review   0m27s
+splitbrief.workflow                6m12s   splitbrief.mode=standard
+├─ splitbrief.phase.researching    0m38s
+├─ splitbrief.phase.specifying     1m02s
+├─ splitbrief.phase.planning       0m51s
+├─ splitbrief.phase.implementing   3m14s
+│  ├─ splitbrief.task              0m58s   splitbrief.task.id=T001  splitbrief.task.method=local
+│  ├─ splitbrief.task              1m21s   splitbrief.task.id=T002  splitbrief.task.method=escalation
+│  └─ splitbrief.task              0m55s   splitbrief.task.id=T003  splitbrief.task.method=local
+└─ splitbrief.phase.final-review   0m27s
 ```
 
 The sink (`src/engine/events/sinks/otel.ts`) maps engine events to spans; registration is gated by `otel.enabled: true`.
@@ -1500,13 +1500,13 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 
 ### 43. Confirm a destructive file write (confirm tier)
 
-**When:** a declared file write is classified as `destructive` (for example, a control-plane path under `.diptych/**`) and `approval.tiers.destructive` is set to `confirm`.
+**When:** a declared file write is classified as `destructive` (for example, a control-plane path under `.splitbrief/**`) and `approval.tiers.destructive` is set to `confirm`.
 
 **You'll see:**
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ [!] Control-plane file write: .diptych/session state    │
+│ [!] Control-plane file write: .splitbrief/session state    │
 │     Type "I confirm" to proceed, or press Escape to     │
 │     cancel.                                             │
 │     Phrase: _                                           │
@@ -1530,7 +1530,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 - Escape at either step → action denied (`user_cancelled`).
 
 **Notes:**
-- Confirm-tier approvals are one-shot and are NOT persisted to `.diptych/approvals.json`.
+- Confirm-tier approvals are one-shot and are NOT persisted to `.splitbrief/approvals.json`.
 - Only `sticky`-tier grants are saved to `approvals.json`.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers, recipe 14.
@@ -1541,7 +1541,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 
 **When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run.
 
-**Setup (`.diptych/config.yaml`):**
+**Setup (`.splitbrief/config.yaml`):**
 
 ```yaml
 approval:

@@ -1,19 +1,20 @@
 import { join } from 'node:path';
 import { fsError } from '../lib/fs.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
+import { SPLITBRIEF_IDENTITY } from './identity.js';
 
-export const DIPTYCH_DIR = '.diptych';
-export const SANDBOX_DIR = '.diptych-sandbox';
+export const SPLITBRIEF_DIR = SPLITBRIEF_IDENTITY.stateDir;
+export const SANDBOX_DIR = `${SPLITBRIEF_IDENTITY.stateDir}/sandbox`;
 export const CODEX_DIR = '.codex';
 export const SKILLS_DIR = 'skills';
 export const SESSIONS_DIR = 'sessions';
 export const ACTIVE_FILE = 'active';
 
 export const activeFile = (projectDir: string): string =>
-  join(projectDir, DIPTYCH_DIR, ACTIVE_FILE);
+  join(projectDir, SPLITBRIEF_DIR, ACTIVE_FILE);
 
 export const sessionsRoot = (projectDir: string): string =>
-  join(projectDir, DIPTYCH_DIR, SESSIONS_DIR);
+  join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR);
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -42,7 +43,7 @@ export function isValidSessionId(sessionId: string): boolean {
 
 export function sessionDir(projectDir: string, sessionId: string): string {
   validateSessionId(sessionId);
-  return join(projectDir, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+  return join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
 }
 
 export const reviewPacketJsonPath = (projectDir: string, sessionId: string): string =>
@@ -51,13 +52,13 @@ export const reviewPacketJsonPath = (projectDir: string, sessionId: string): str
 export const reviewPacketMarkdownPath = (projectDir: string, sessionId: string): string =>
   join(sessionDir(projectDir, sessionId), REVIEW_PACKET_MARKDOWN_FILE);
 
-export const getDiptychPath = (projectDir: string, ...parts: string[]): string =>
-  join(projectDir, DIPTYCH_DIR, ...parts);
+export const getSplitbriefPath = (projectDir: string, ...parts: string[]): string =>
+  join(projectDir, SPLITBRIEF_DIR, ...parts);
 
 const APPROVALS_FILE = 'approvals.json';
 
 export const approvalsFile = (projectDir: string): string =>
-  join(projectDir, DIPTYCH_DIR, APPROVALS_FILE);
+  join(projectDir, SPLITBRIEF_DIR, APPROVALS_FILE);
 
 export const SPEC_FILE = 'spec.md';
 export const PLAN_FILE = 'plan.md';
@@ -96,9 +97,9 @@ export function ipcSockPath(sessionDirPath: string): string {
 
 export const TREES_DIR = '.trees';
 
-export const INTERNAL_SKIP_DIRS = ['.git', DIPTYCH_DIR, SANDBOX_DIR, 'node_modules', TREES_DIR];
+export const INTERNAL_SKIP_DIRS = ['.git', SPLITBRIEF_DIR, 'node_modules', TREES_DIR];
 
-const GIT_STATUS_INTERNAL_DIRS = [DIPTYCH_DIR, SANDBOX_DIR, TREES_DIR];
+const GIT_STATUS_INTERNAL_DIRS = [SPLITBRIEF_DIR, TREES_DIR];
 
 export function isInternalGitStatusPath(file: string): boolean {
   const normalized = file.replaceAll('\\', '/');

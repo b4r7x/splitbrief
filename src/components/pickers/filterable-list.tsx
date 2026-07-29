@@ -50,23 +50,25 @@ export function FilterableList<T>({
   section,
 }: FilterableListProps<T>) {
   const rows = terminalSizeStore.use((s) => s.rows);
-  const viewportRows = availableRows({ rows, chromeRows, floor: listFloor });
-  const pageSize =
-    maxVisibleProp === undefined ? viewportRows : Math.min(viewportRows, maxVisibleProp);
+  const available = availableRows({ rows, chromeRows, floor: listFloor });
+  const rowBudget =
+    maxVisibleProp === undefined
+      ? available
+      : Math.max(0, Math.min(available, Math.floor(maxVisibleProp)));
 
   const list = useFilterableList<T>({
     items,
+    getKey,
     filterFn,
     onSelect: (item) => onConfirm?.(item),
+    ...(onActivate ? { onItemAction: onActivate } : {}),
     onClose: () => overlayStore.close(),
-    pageSize,
+    pageSize: rowBudget,
     ...(shouldAppendChar && { shouldAppendChar }),
     ...(customKeys && { customKeys }),
   });
 
   const { filter, filtered, selectedIndex } = list;
-
-  const onRowActivate = onActivate ?? onConfirm;
 
   return (
     <OverlayPanel title={title} hint={hint} maxWidth={width}>
@@ -81,18 +83,20 @@ export function FilterableList<T>({
         selectedIndex={selectedIndex}
         getKey={getKey}
         renderItem={renderItem}
-        rows={rows}
-        chromeRows={chromeRows}
-        listFloor={listFloor}
-        {...(onRowActivate
+        rowBudget={rowBudget}
+        {...(onActivate || onConfirm
           ? {
               onRowActivate: (index: number) => {
                 const item = filtered[index];
-                if (item !== undefined) onRowActivate(item);
+                if (item === undefined) return;
+                if (onActivate) {
+                  list.runItemAction(item);
+                } else {
+                  list.selectItem(item);
+                }
               },
             }
           : {})}
-        {...(maxVisibleProp !== undefined ? { maxVisible: maxVisibleProp } : {})}
         {...(placeholder !== undefined ? { placeholder } : {})}
         {...(section !== undefined ? { section } : {})}
       />

@@ -5,7 +5,7 @@ import {
   writeSpecFile,
   readSpecFile,
   buildSpecFrontmatter,
-  getDiptychVersion,
+  getSplitbriefVersion,
   type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -33,7 +33,7 @@ describe('buildSpecFrontmatter', () => {
 
   it('includes all fields when provided', () => {
     const fm = buildSpecFrontmatter(fullMeta);
-    expect(fm).toContain('generated_by: diptych v');
+    expect(fm).toContain('generated_by: splitbrief v');
     expect(fm).toContain('planner: claude-code (opus-4)');
     expect(fm).toContain('implementer: ollama (qwen3:32b)');
     expect(fm).toContain('mode: standard');
@@ -67,13 +67,13 @@ describe('buildSpecFrontmatter', () => {
   });
 });
 
-describe('getDiptychVersion', () => {
+describe('getSplitbriefVersion', () => {
   it('returns the version from the real package.json, not the 0.0.0 fallback', () => {
     const pkg = JSON.parse(
       readFileSync(join(import.meta.dirname, '../../package.json'), 'utf-8'),
     ) as { version: string };
-    expect(getDiptychVersion()).toBe(pkg.version);
-    expect(getDiptychVersion()).not.toBe('0.0.0');
+    expect(getSplitbriefVersion()).toBe(pkg.version);
+    expect(getSplitbriefVersion()).not.toBe('0.0.0');
   });
 });
 
@@ -90,7 +90,7 @@ describe('writeSpecFile with metadata', () => {
     const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md');
     if (content === null) throw new Error('expected spec file to be present');
     expect(content).toMatch(/^---\n/);
-    expect(content).toContain('generated_by: diptych v');
+    expect(content).toContain('generated_by: splitbrief v');
     expect(content).toContain('# My Spec');
   });
 
@@ -104,7 +104,7 @@ describe('writeSpecFile with metadata', () => {
 
   it('does not double-prepend when content already has frontmatter', () => {
     const dir = makeTmp();
-    const existing = '---\ngenerated_by: diptych v0.1.0\n---\n# Spec with clarifications';
+    const existing = '---\ngenerated_by: splitbrief v0.1.0\n---\n# Spec with clarifications';
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', existing, meta);
     const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md');
     if (content === null) throw new Error('expected spec file to be present');

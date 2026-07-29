@@ -31,6 +31,8 @@ import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import { ReviewPacketSchema } from '../../core/schemas/review-packet.js';
 import { readRunSnapshotLedger } from '../snapshots/run/ledger.js';
+import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 
 let dirs: string[] = [];
 
@@ -294,7 +296,6 @@ describe('runFinalReviewPhase', () => {
     const message = errorEvent && 'message' in errorEvent ? errorEvent.message : '';
     expect(message.length).toBeGreaterThan(0);
 
-    // review.md was NOT written (the review failed before reaching persistence).
     const reviewPath = join(sessionDir(projectDir, sessionId), REVIEW_FILE);
     expect(existsSync(reviewPath)).toBe(false);
 
@@ -410,6 +411,128 @@ describe('runFinalReviewPhase', () => {
     expect(drift.findings).toEqual([]);
   });
 
+  it('uses the legacy drift fallback when persisted baseline state has no run-start paths', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/feature.ts'), 'export const feature = true;\n');
+    writeFileSync(join(projectDir, 'src/legacy.ts'), 'export const legacy = true;\n');
+
+    const task = makeTask({
+      id: 'T001',
+      file: 'src/feature.ts',
+      status: 'done',
+      scope: { outOfBounds: ['docs/**'] },
+    });
+    const ledger = withUpdatedTask(
+      createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
+      task.id,
+      (entry) => ({ ...entry, changedFiles: [task.file] }),
+    );
+    writeEvidenceLedger({ projectDir, sessionId }, ledger);
+    const state: WorkflowState = {
+      ...allTasksDoneState([task]),
+      changedFilesBaseline: {
+        head: null,
+        fingerprints: {
+          'src/feature.ts': 'feature-hash',
+          'src/legacy.ts': 'legacy-hash',
+        },
+      },
+    };
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state,
+        planner,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    const drift = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
+    );
+    expect(
+      drift.findings.find((finding: { file?: string }) => finding.file === 'src/legacy.ts'),
+    ).toMatchObject({
+      code: 'out_of_scope_file',
+      severity: 'info',
+    });
+    expect(drift.passed).toBe(true);
+    expect(loadState({ projectDir, sessionId })?.changedFilesBaseline?.runStartChangedFiles).toBe(
+      undefined,
+    );
+  });
+
+  it('fails drift for a rolling-only out-of-scope path absent at run start', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/feature.ts'), 'export const feature = true;\n');
+    writeFileSync(join(projectDir, 'src/hook-output.ts'), 'export const hookOutput = true;\n');
+
+    const task = makeTask({
+      id: 'T001',
+      file: 'src/feature.ts',
+      status: 'done',
+      scope: { outOfBounds: ['docs/**'] },
+    });
+    const ledger = withUpdatedTask(
+      createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
+      task.id,
+      (entry) => ({ ...entry, changedFiles: [task.file] }),
+    );
+    writeEvidenceLedger({ projectDir, sessionId }, ledger);
+    const state: WorkflowState = {
+      ...allTasksDoneState([task]),
+      changedFilesBaseline: {
+        head: null,
+        fingerprints: {
+          'src/feature.ts': 'feature-hash',
+          'src/hook-output.ts': 'hook-output-hash',
+        },
+        runStartChangedFiles: [],
+      },
+    };
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state,
+        planner,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    const drift = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
+    );
+    expect(
+      drift.findings.find((finding: { file?: string }) => finding.file === 'src/hook-output.ts'),
+    ).toMatchObject({
+      code: 'out_of_scope_file',
+      severity: 'error',
+    });
+    expect(drift.passed).toBe(false);
+  });
+
   it('includes untracked created-file content in the review prompt diff', async () => {
     const { projectDir, sessionId } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
@@ -459,7 +582,7 @@ describe('runFinalReviewPhase', () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/feature.ts'), `export const y = "${committedMarker}";\n`);
     execSync('git add src/feature.ts', { cwd: projectDir, stdio: 'pipe' });
-    execSync('git commit -m "feat(diptych): T001 - add feature"', {
+    execSync('git commit -m "feat(splitbrief): T001 - add feature"', {
       cwd: projectDir,
       stdio: 'pipe',
     });
@@ -490,18 +613,192 @@ describe('runFinalReviewPhase', () => {
       [],
     );
 
-    // The committed change reaches the paid review prompt diff.
     expect(reviewPrompts[0]).toContain(committedMarker);
 
     const drift = JSON.parse(
       readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
     );
     expect(drift.changedFiles).toContain('src/feature.ts');
-    // No false missing_expected_file: the committed file IS in the run universe.
     expect(drift.findings.some((f: { code: string }) => f.code === 'missing_expected_file')).toBe(
       false,
     );
     expect(drift.findings).toEqual([]);
+  });
+
+  it('uses captured run-start provenance regardless of commit subjects', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+
+    const preRunMarker = 'PRE_RUN_MISLEADING_SUBJECT_MARKER';
+    writeFileSync(join(projectDir, 'src/pre-run.ts'), `export const value = "${preRunMarker}";\n`);
+    execSync('git add src/pre-run.ts', { cwd: projectDir, stdio: 'pipe' });
+    execSync('git commit -m "feat(splitbrief): misleading pre-run subject"', {
+      cwd: projectDir,
+      stdio: 'pipe',
+    });
+    const runStartHead = execSync('git rev-parse HEAD', {
+      cwd: projectDir,
+      encoding: 'utf8',
+    }).trim();
+
+    const postRunMarker = 'POST_RUN_ARBITRARY_SUBJECT_MARKER';
+    writeFileSync(
+      join(projectDir, 'src/post-run.ts'),
+      `export const value = "${postRunMarker}";\n`,
+    );
+    execSync('git add src/post-run.ts', { cwd: projectDir, stdio: 'pipe' });
+    execSync('git commit -m "chore: arbitrary post-run subject"', {
+      cwd: projectDir,
+      stdio: 'pipe',
+    });
+
+    const reviewPrompts: string[] = [];
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: 'ok', usage: null };
+      },
+    });
+    const task = makeTask({ id: 'T001', file: 'src/post-run.ts', status: 'done' });
+    const state: WorkflowState = {
+      ...allTasksDoneState([task]),
+      changedFilesBaseline: {
+        head: runStartHead,
+        fingerprints: {},
+        runStartChangedFiles: [],
+      },
+    };
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state,
+        planner,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    expect(reviewPrompts[0]).toContain(postRunMarker);
+    expect(reviewPrompts[0]).not.toContain(preRunMarker);
+    const drift = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
+    );
+    expect(drift.changedFiles).toEqual(['src/post-run.ts']);
+  });
+
+  it('treats captured null as an unborn run boundary after commits appear', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const marker = 'CAPTURED_NULL_POST_RUN_COMMIT_MARKER';
+    writeFileSync(join(projectDir, 'src/from-unborn.ts'), `export const value = "${marker}";\n`);
+    execSync('git add src/from-unborn.ts', { cwd: projectDir, stdio: 'pipe' });
+    execSync('git commit -m "docs: subject is irrelevant"', {
+      cwd: projectDir,
+      stdio: 'pipe',
+    });
+
+    const reviewPrompts: string[] = [];
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: 'ok', usage: null };
+      },
+    });
+    const task = makeTask({ id: 'T001', file: 'src/from-unborn.ts', status: 'done' });
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: {
+          ...allTasksDoneState([task]),
+          changedFilesBaseline: {
+            head: null,
+            fingerprints: {},
+            runStartChangedFiles: [],
+          },
+        },
+        planner,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    expect(reviewPrompts[0]).toContain(marker);
+    const drift = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
+    );
+    expect(drift.changedFiles).toContain('src/from-unborn.ts');
+  });
+
+  it('keeps the complete diff for drift while bounding the planner prompt at 100,000 characters', async () => {
+    const { projectDir, sessionId } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const prohibitedMarker = 'PROHIBITED_AFTER_PROMPT_BOUNDARY';
+    writeFileSync(
+      join(projectDir, 'src/large.ts'),
+      `${'x'.repeat(101_000)}\n${prohibitedMarker}\n`,
+    );
+
+    const reviewPrompts: string[] = [];
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: 'ok', usage: null };
+      },
+    });
+    const task = makeTask({
+      id: 'T001',
+      file: 'src/large.ts',
+      status: 'done',
+      scope: { outOfBounds: [prohibitedMarker] },
+    });
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState([task]),
+        planner,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    const drift = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
+    );
+    expect(drift.findings).toContainEqual(
+      expect.objectContaining({
+        code: 'out_of_bounds_text_match',
+        message: expect.stringContaining(prohibitedMarker),
+      }),
+    );
+    const promptDiff = reviewPrompts[0]
+      ?.split('## Implementation Diff\n')[1]
+      ?.split('\n## Deterministic Drift Report')[0];
+    expect(promptDiff).not.toContain(prohibitedMarker);
+    expect(promptDiff).toContain('diff truncated');
   });
 
   it('records the real pre-final-review auto snapshot in the run ledger', async () => {

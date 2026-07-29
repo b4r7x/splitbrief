@@ -2,7 +2,7 @@ import { relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import { z } from 'zod';
-import { getDiptychVersion } from '../src/core/paths-io.js';
+import { getSplitbriefVersion } from '../src/core/paths-io.js';
 import { getCurrentCommitSha } from '../src/lib/git/refs.js';
 import { listVisualScenarios, VISUAL_CATALOG_VERSION } from '../testing/visual/catalog.js';
 import { formatViewport } from '../testing/visual/contracts/geometry.js';
@@ -81,7 +81,7 @@ export async function runTuiShots(
     const result = await capture({
       outputRoot: request.outputRoot,
       projectRoot: cwd,
-      toolVersion: dependencies.toolVersion ?? getDiptychVersion(),
+      toolVersion: dependencies.toolVersion ?? getSplitbriefVersion(),
       gitRevision: await (dependencies.gitRevision ?? (() => readGitRevision(cwd)))(),
       selection: request.selection,
     });
@@ -98,7 +98,7 @@ function parseArguments(args: readonly string[], io: TuiShotsIo): CliOptions | n
   const collect = (value: string, previous: string[]): string[] => [...previous, value];
   const program = new Command()
     .name('tui-shots')
-    .description('Capture deterministic visual artifacts from the production diptych TUI')
+    .description('Capture deterministic visual artifacts from the production splitbrief TUI')
     .option('-s, --scenario <id>', 'scenario ID to capture (repeatable)', collect, [])
     .option(
       '-v, --viewport <cols>x<rows>',

@@ -1,9 +1,16 @@
+function normalizeCount(value: number): number {
+  return Math.max(0, Math.floor(value));
+}
+
 export function availableRows(opts: {
   rows: number;
   chromeRows: number;
   floor?: number | undefined;
 }): number {
-  return Math.max(opts.rows - opts.chromeRows, opts.floor ?? 0);
+  return Math.max(
+    normalizeCount(opts.rows) - normalizeCount(opts.chromeRows),
+    normalizeCount(opts.floor ?? 0),
+  );
 }
 
 export function computeScrollOffset(opts: {
@@ -11,14 +18,25 @@ export function computeScrollOffset(opts: {
   windowSize: number;
   totalItems: number;
 }): number {
-  const { index, windowSize, totalItems } = opts;
+  const totalItems = normalizeCount(opts.totalItems);
+  const windowSize = normalizeCount(opts.windowSize);
+  if (windowSize === 0) return 0;
   if (totalItems <= windowSize) return 0;
   const half = Math.floor(windowSize / 2);
-  return Math.max(0, Math.min(index - half, totalItems - windowSize));
+  return Math.max(0, Math.min(Math.floor(opts.index) - half, totalItems - windowSize));
 }
 
 export function windowSlice<T>(opts: { items: T[]; selectedIndex: number; windowSize: number }) {
-  const { items, selectedIndex, windowSize } = opts;
+  const { items, selectedIndex } = opts;
+  const windowSize = normalizeCount(opts.windowSize);
+  if (windowSize === 0) {
+    return {
+      scrollOffset: 0,
+      visibleSlice: [],
+      showScrollUp: false,
+      showScrollDown: false,
+    };
+  }
   const scrollOffset = computeScrollOffset({
     index: selectedIndex,
     windowSize,
@@ -56,7 +74,7 @@ interface ListDisplayWindowInput<T> {
 
 function clampWindowSize(windowSize: number, totalItems: number): number {
   if (totalItems <= 0) return 0;
-  return Math.max(1, Math.min(windowSize, totalItems));
+  return Math.max(1, Math.min(normalizeCount(windowSize), totalItems));
 }
 
 function buildListDisplaySlots<T>(
@@ -87,7 +105,7 @@ function buildListDisplaySlots<T>(
 }
 
 function resolveRowBudget<T>(opts: ListDisplayWindowInput<T>): number {
-  if (opts.rowBudget !== undefined) return Math.max(0, Math.floor(opts.rowBudget));
+  if (opts.rowBudget !== undefined) return normalizeCount(opts.rowBudget);
 
   const terminalRows = opts.terminalRows ?? 0;
   const chromeRows = opts.chromeRows ?? 0;
@@ -96,7 +114,9 @@ function resolveRowBudget<T>(opts: ListDisplayWindowInput<T>): number {
     chromeRows,
     floor: opts.listFloor ?? 0,
   });
-  return opts.maxVisible === undefined ? available : Math.min(available, opts.maxVisible);
+  return opts.maxVisible === undefined
+    ? available
+    : Math.min(available, normalizeCount(opts.maxVisible));
 }
 
 function selectedDisplaySlotIndex<T>(slots: ListDisplaySlot<T>[], selectedIndex: number): number {

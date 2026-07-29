@@ -60,6 +60,51 @@ describe('SingleColumnPicker row zones', () => {
     ui.unmount();
   });
 
+  it('clears registered zones when the row budget reaches zero', async () => {
+    const items = Array.from({ length: 6 }, (_, i) => `item-${i}`);
+    const onRowActivate = () => undefined;
+    const ui = renderFeature(
+      <SingleColumnPicker
+        label="items"
+        items={items}
+        filter=""
+        selectedIndex={5}
+        isActive
+        height={6}
+        visibleRows={2}
+        getKey={(item) => item}
+        contentMaxWidth={20}
+        rowZonePrefix="sc"
+        onRowActivate={onRowActivate}
+        renderRow={(item) => <Text>{item}</Text>}
+      />,
+    );
+    await tick();
+
+    expect(collectClickableZones({ cols: 60, rows: 40 }).size).toBe(2);
+
+    ui.rerender(
+      <SingleColumnPicker
+        label="items"
+        items={items}
+        filter=""
+        selectedIndex={5}
+        isActive
+        height={6}
+        visibleRows={0}
+        getKey={(item) => item}
+        contentMaxWidth={20}
+        rowZonePrefix="sc"
+        onRowActivate={onRowActivate}
+        renderRow={(item) => <Text>{item}</Text>}
+      />,
+    );
+    await tick();
+
+    expect(collectClickableZones({ cols: 60, rows: 40 }).size).toBe(0);
+    ui.unmount();
+  });
+
   it('reserves a 2-cell scrollbar gutter so metadata keeps its last character', async () => {
     const ui = renderFeature(
       <SingleColumnPicker

@@ -8,7 +8,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { loadConfig } from '../../../core/config/load/io.js';
-import { DIPTYCH_DIR } from '../../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { processError } from '../../../lib/process/errors.js';
 import {
   makeConfig,
@@ -95,7 +95,7 @@ describe('layer priority', () => {
   });
 
   it('runs the heuristic cargo test when the loaded config sets no test_command', async () => {
-    const configDir = join(tempDir, DIPTYCH_DIR);
+    const configDir = join(tempDir, SPLITBRIEF_DIR);
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, 'config.yaml'),

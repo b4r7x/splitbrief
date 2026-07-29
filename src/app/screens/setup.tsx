@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
 import { useTheme } from '../../components/theme.js';
@@ -21,10 +21,16 @@ import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
 import { formatCopyResult } from '../../core/runtime/commands/types.js';
 import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import type { Config } from '../../core/schemas/config.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 
 type Step = 'no-planners' | 'planner' | 'implementer';
 
-const INSTALL_COMMANDS = ['npm i -g @anthropic-ai/claude-code', 'npm i -g @openai/codex'];
+const INSTALL_ACTIONS = [
+  { id: 'claude-code', command: 'npm i -g @anthropic-ai/claude-code' },
+  { id: 'codex', command: 'npm i -g @openai/codex' },
+] as const;
+
+type InstallActionId = (typeof INSTALL_ACTIONS)[number]['id'];
 
 const SETUP_NO_PLANNER_TITLE_ROWS = 2;
 const SETUP_NO_PLANNER_STATUS_ROWS = 1;
@@ -49,7 +55,7 @@ function visibleInstallCommandCount(terminalRows: number): number {
     terminalRows,
     outerChromeRows: setupNoPlannerChromeRows(),
   });
-  return Math.min(INSTALL_COMMANDS.length, Math.max(0, rowBudget));
+  return Math.min(INSTALL_ACTIONS.length, Math.max(0, rowBudget));
 }
 
 export interface SetupToolPickerArgs {
@@ -86,19 +92,22 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
       ? 'no-planners'
       : 'planner',
   );
-  const [focusIndex, setFocusIndex] = useState(0);
+  const [focusedInstallId, setFocusedInstallId] = useState<InstallActionId>('claude-code');
   const visibleInstallCount =
-    step === 'no-planners' ? visibleInstallCommandCount(rows) : INSTALL_COMMANDS.length;
-  const clampedFocusIndex =
-    visibleInstallCount > 0 ? Math.min(focusIndex, visibleInstallCount - 1) : 0;
+    step === 'no-planners' ? visibleInstallCommandCount(rows) : INSTALL_ACTIONS.length;
+  const visibleInstallActions = INSTALL_ACTIONS.slice(0, visibleInstallCount);
+  const focusedInstallIndex = visibleInstallActions.findIndex(
+    (action) => action.id === focusedInstallId,
+  );
+  const clampedFocusIndex = focusedInstallIndex >= 0 ? focusedInstallIndex : 0;
+  const focusedInstallAction = visibleInstallActions[clampedFocusIndex];
 
-  const copyCommand = (index: number) => {
-    if (visibleInstallCount <= 0 || index >= visibleInstallCount) return;
-    const command = INSTALL_COMMANDS[index];
-    if (!command) return;
+  const copyCommand = (id: InstallActionId) => {
+    const action = visibleInstallActions.find((candidate) => candidate.id === id);
+    if (!action) return;
     void (async () => {
       try {
-        const result = await copyToClipboard(command);
+        const result = await copyToClipboard(action.command);
         if (result === 'unavailable') {
           feedbackStore.setError('Could not copy: no clipboard available over this connection');
         } else {
@@ -117,18 +126,17 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
         return;
       }
       if (key.upArrow) {
-        if (visibleInstallCount <= 0) return;
-        setFocusIndex((i) => Math.max(0, Math.min(i, visibleInstallCount - 1) - 1));
+        const action = visibleInstallActions[Math.max(0, clampedFocusIndex - 1)];
+        if (action) setFocusedInstallId(action.id);
         return;
       }
       if (key.downArrow) {
-        if (visibleInstallCount <= 0) return;
-        setFocusIndex((i) => Math.min(visibleInstallCount - 1, i + 1));
+        const action =
+          visibleInstallActions[Math.min(visibleInstallCount - 1, clampedFocusIndex + 1)];
+        if (action) setFocusedInstallId(action.id);
         return;
       }
-      if (input === 'y') {
-        copyCommand(clampedFocusIndex);
-      }
+      if (input === 'y' && focusedInstallAction) copyCommand(focusedInstallAction.id);
     },
     { isActive: step === 'no-planners' && !hasOverlay },
   );
@@ -159,25 +167,25 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
         <Text color={t.textDim}>{`${glyph('statusPending')} No planner detected`}</Text>
         <Box height={1} />
         <Text color={t.textDim}>
-          Diptych compiles task briefs with a planner. Install one, then re-run init:
+          {`${SPLITBRIEF_IDENTITY.displayName} compiles task briefs with a planner. Install one, then re-run init:`}
         </Text>
         <Box height={1} />
-        {INSTALL_COMMANDS.slice(0, visibleInstallCount).map((command, i) => {
+        {visibleInstallActions.map((action, i) => {
           const active = i === clampedFocusIndex;
           return (
-            <Box key={command} width="100%">
+            <Box key={action.id} width="100%">
               <RowZone
-                zoneId={`setup-install:${i}`}
+                zoneId={`setup-install:${action.id}`}
                 z={ROW_ZONE_Z_SCREEN}
-                onActivate={() => setFocusIndex(i)}
+                onActivate={() => setFocusedInstallId(action.id)}
               >
-                <ListRow label={command} state={active ? 'active' : 'default'} />
+                <ListRow label={action.command} state={active ? 'active' : 'default'} />
               </RowZone>
-              {active && visibleInstallCount > 0 ? (
+              {active ? (
                 <RowZone
                   zoneId="setup-copy"
                   z={ROW_ZONE_Z_SCREEN}
-                  onActivate={() => copyCommand(i)}
+                  onActivate={() => copyCommand(action.id)}
                 >
                   <Text color={t.textDim}> y copy</Text>
                 </RowZone>
@@ -197,25 +205,33 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   }
 
   if (step === 'planner') {
-    return renderToolPicker({
-      role: 'planner',
-      stepLabel: `Choose planner${SOFT_SEP}1 of 2`,
-      onConfirm: (updated) => {
-        const result = configStore.save(updated);
-        if (result.ok) {
-          setStep('implementer');
-        } else if (result.error) {
-          feedbackStore.setError(`Failed to save config: ${result.error.message}`);
-        }
-      },
-      onCancel: exit,
-    });
+    return (
+      <Fragment key="planner">
+        {renderToolPicker({
+          role: 'planner',
+          stepLabel: `Choose planner${SOFT_SEP}1 of 2`,
+          onConfirm: (updated) => {
+            const result = configStore.save(updated);
+            if (result.ok) {
+              setStep('implementer');
+            } else if (result.error) {
+              feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+            }
+          },
+          onCancel: exit,
+        })}
+      </Fragment>
+    );
   }
 
-  return renderToolPicker({
-    role: 'implementer',
-    stepLabel: `Choose model${SOFT_SEP}2 of 2`,
-    onConfirm: finalize,
-    onCancel: () => setStep('planner'),
-  });
+  return (
+    <Fragment key="implementer">
+      {renderToolPicker({
+        role: 'implementer',
+        stepLabel: `Choose model${SOFT_SEP}2 of 2`,
+        onConfirm: finalize,
+        onCancel: () => setStep('planner'),
+      })}
+    </Fragment>
+  );
 }

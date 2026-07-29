@@ -15,10 +15,25 @@ describe('deriveLiveStatus', () => {
     expect(deriveLiveStatus({ ...base, phase: 'complete' })).toBeNull();
     expect(deriveLiveStatus({ ...base, phase: 'researching', cancelled: true })).toBeNull();
     expect(deriveLiveStatus({ ...base, phase: 'reviewing-spec' })).toBeNull();
+    expect(deriveLiveStatus({ ...base, phase: 'reviewing-plan' })).toBeNull();
+    expect(deriveLiveStatus({ ...base, phase: 'reviewing-briefs' })).toBeNull();
   });
 
   it('deriveLiveStatus returns null unless the lifecycle is running', () => {
     expect(deriveLiveStatus({ ...base, phase: 'researching', status: 'interrupted' })).toBeNull();
+  });
+
+  it.each([
+    ['specifying', 'planner'],
+    ['clarifying', 'planner'],
+    ['constitution-check', 'planner'],
+    ['planning', 'planner'],
+    ['analyzing', 'planner'],
+    ['validating-task', 'implementer'],
+    ['escalating', 'implementer'],
+    ['final-review', 'validator'],
+  ] as const)('derives %s with the live %s byline tone', (phase, tone) => {
+    expect(deriveLiveStatus({ ...base, phase })).toMatchObject({ tone });
   });
 
   it('carries the verb, the stage start, and the role tone for a live planner stage', () => {

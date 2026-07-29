@@ -2,13 +2,13 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 export interface Gate {
-  id: string;
-  description: string;
-  command: string;
-  expected: number;
+  readonly id: string;
+  readonly description: string;
+  readonly command: string;
+  readonly expected: number;
 }
 
-const gates: Gate[] = [
+const gates: readonly Gate[] = [
   {
     id: '1',
     description: 'No barrel index.ts files',
@@ -184,9 +184,9 @@ const gates: Gate[] = [
   {
     id: '21',
     description:
-      'No present tracked runtime artifacts under .diptych/, .tiny-spec/, or .nuke/ (excluding intentional fixtures)',
+      'No present tracked runtime artifacts under .splitbrief/ or .nuke/ (excluding intentional fixtures)',
     command:
-      '{ git ls-files -z .diptych/ .tiny-spec/ .nuke/ | while IFS= read -r -d \'\' path; do [ -e "$path" ] && printf \'%s\\n\' "$path"; done || true; } | wc -l',
+      '{ git ls-files -z .splitbrief/ .nuke/ | while IFS= read -r -d \'\' path; do [ -e "$path" ] && printf \'%s\\n\' "$path"; done || true; } | wc -l',
     expected: 0,
   },
   {
@@ -218,10 +218,20 @@ const gates: Gate[] = [
       "{ rg -n \"Ctrl\\+|Shift\\+|\\bESC\\b|\\bEsc\\b|⌃|PgUp|PgDn\" src/app src/features src/components src/core/keybindings src/core/settings src/core/runtime/commands -g '!**/*.test.*' | rg -v ':\\s*(//|\\*|/\\*)' | rg -v '^src/core/keybindings/normalize\\.ts:' || true; } | wc -l",
     expected: 0,
   },
+  {
+    id: '27',
+    description: 'Maintained tree uses only canonical SPLITBRIEF identity',
+    command: "tsx scripts/check-brand.ts >/dev/null && printf '0\\n'",
+    expected: 0,
+  },
 ];
 
 type ExecGateCommand = (command: string) => string;
 type LogLine = (line?: string) => void;
+
+export function getInvariantGates(id: string): readonly Gate[] {
+  return gates.filter((gate) => gate.id === id).map((gate) => ({ ...gate }));
+}
 
 function execGateCommand(command: string): string {
   const result = spawnSync('/bin/bash', ['-o', 'pipefail', '-c', command], {

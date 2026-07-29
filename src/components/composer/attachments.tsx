@@ -100,10 +100,6 @@ export function expandPastes(text: string, pastes: PasteMarker[]): string {
   return expanded.length === 0 ? trailing.join('\n\n') : [expanded, ...trailing].join('\n\n');
 }
 
-// How many terminal rows AttachmentChips paints above the input box, derived deterministically so
-// the composer can reserve that budget in inputHeightStore. Must track the component's render: the
-// narrow form caps to NARROW_CHIP_CAP rows plus a "+N more" tail; the wide form greedily wraps each
-// chip (label + its marginRight) inside the paddingX-1 container.
 export function attachmentChipRows(
   pastes: PasteMarker[],
   pending: readonly { path: string }[],

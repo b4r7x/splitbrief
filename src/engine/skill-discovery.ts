@@ -7,7 +7,7 @@ import type { PlannerToolId } from '../core/schemas/enums.js';
 import type { SkillMeta } from '../core/skills/types.js';
 import { parseSimpleYamlFrontmatter, extractFrontmatter } from '../utils/frontmatter.js';
 
-import { DIPTYCH_DIR, CODEX_DIR, SKILLS_DIR, getDiptychPath } from '../core/paths.js';
+import { SPLITBRIEF_DIR, CODEX_DIR, SKILLS_DIR, getSplitbriefPath } from '../core/paths.js';
 import { isENOENT } from '../lib/process/errors.js';
 import { warnError } from '../lib/warn.js';
 import { readProjectFileConfined } from '../lib/fs.js';
@@ -181,13 +181,13 @@ function mergeSkills(global: SkillMeta[], project: SkillMeta[]): SkillMeta[] {
 function getGlobalDir(tool: PlannerToolId): string {
   return tool === 'claude-code'
     ? join(homedir(), '.claude', 'skills')
-    : join(homedir(), DIPTYCH_DIR, SKILLS_DIR);
+    : join(homedir(), SPLITBRIEF_DIR, SKILLS_DIR);
 }
 
 function getProjectDir(tool: PlannerToolId, projectDir: string): string {
   return tool === 'claude-code'
     ? join(projectDir, '.claude', 'skills')
-    : getDiptychPath(projectDir, SKILLS_DIR);
+    : getSplitbriefPath(projectDir, SKILLS_DIR);
 }
 
 export async function discoverSkills(

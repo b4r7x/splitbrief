@@ -8,10 +8,10 @@ import type { CliToolId, EffortLevel } from '../../core/schemas/enums.js';
 import { CLI_TOOL_TRUST, type RunnerRoleTrustMetadata } from '../../core/schemas/runner-fields.js';
 import type { InvokeResult } from './types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 
 const MAX_ARGV_PROMPT_BYTES = 120_000;
-const TRUNCATION_NOTICE =
-  '\n\n[diptych: prompt truncated to fit the OS argv limit — earlier context above is complete; trailing content was dropped]';
+const TRUNCATION_NOTICE = `\n\n[${SPLITBRIEF_IDENTITY.displayName}: prompt truncated to fit the OS argv limit — earlier context above is complete; trailing content was dropped]`;
 
 function clampPromptForArgv(prompt: string): string {
   if (Buffer.byteLength(prompt, 'utf8') <= MAX_ARGV_PROMPT_BYTES) return prompt;

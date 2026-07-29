@@ -30,7 +30,7 @@ async function runExplain(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   registerExplainCommand(program);
-  await program.parseAsync(['node', 'diptych', 'explain', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'explain', ...args]);
 }
 
 function writeSession(projectDir: string): void {
@@ -104,7 +104,7 @@ describe('explain command', () => {
     const output = logs.join('\n');
     expect(output).toContain('Run explain');
     expect(output).toContain('T001 -> local-small');
-    expect(output).toContain(`.diptych/sessions/${SESSION_ID}/summary.json`);
+    expect(output).toContain(`.splitbrief/sessions/${SESSION_ID}/summary.json`);
   });
 
   it('fails when neither --session nor active session is available', async () => {

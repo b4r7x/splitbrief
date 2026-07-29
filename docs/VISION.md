@@ -1,6 +1,6 @@
-# diptych — Vision & Strategic Direction
+# SPLITBRIEF — Vision & Strategic Direction
 
-## What diptych IS
+## What SPLITBRIEF IS
 
 Cost-aware task compiler for AI coding work. Splits work between:
 
@@ -9,7 +9,7 @@ Cost-aware task compiler for AI coding work. Splits work between:
 
 Core value: **same planning quality, lower execution cost** by offloading mechanical coding to cheap models while keeping validation and escalation explicit.
 
-## What diptych is NOT
+## What SPLITBRIEF is NOT
 
 - **NOT a universal AI connector** — we don't "connect any AI to any AI"
 - **NOT Claude Squad / Overstory** — we don't manage multiple parallel agent sessions
@@ -18,13 +18,13 @@ Core value: **same planning quality, lower execution cost** by offloading mechan
 - **NOT a generic orchestration framework** — opinionated workflow centered on Task Briefs, with specs only when the work needs more structure
 - **NOT a kanban board or project-management system** — no boards, tickets, or cross-team task tracking
 - **NOT a plan archive** — sessions are execution records scoped to one workflow each, not a long-lived store of past plans
-- **NOT a cross-plan dependency tracker** — diptych reasons about one workflow at a time, not dependencies across plans
+- **NOT a cross-plan dependency tracker** — SPLITBRIEF reasons about one workflow at a time, not dependencies across plans
 
 An implementer pool, when enabled, is profile selection inside the single implementer role. It chooses the cheapest capable worker for a Task Brief; it is not dynamic agent count, agent racing, or same-checkout parallel writing.
 
 ## USP — Why This Exists
 
-| Tool | What it does | Why diptych is different |
+| Tool | What it does | Why SPLITBRIEF is different |
 |------|-------------|--------------------------|
 | Claude Squad | Manages multiple Claude Code/Codex/Aider instances in parallel | Doesn't split planning from implementation. Same expensive model for everything. |
 | Agent Orchestrator (Composio) | Parallel coding agents with git worktrees | Multi-agent coordination, not cost optimization. |
@@ -53,7 +53,7 @@ Small models (7B-27B) are less reliable at producing strict tool-call payloads. 
 
 ### 5. Don't wrap agents in agents
 
-If the implementer IS a file-writing coding agent, there's a conflict of control. diptych owns the task boundary, validation, retry, escalation, evidence, and checkpoint policy. The implementer executes only the current Task Brief.
+If the implementer IS a file-writing coding agent, there's a conflict of control. SPLITBRIEF owns the task boundary, validation, retry, escalation, evidence, and checkpoint policy. The implementer executes only the current Task Brief.
 
 ### 6. OpenCode-inspired TUI (v0.5 — 2026-03-31)
 

@@ -78,8 +78,17 @@ export function ControlledMultilineInput({
     highlight?.start ?? -1,
     highlight?.end ?? -1,
     measureColumns ?? 0,
+    tabSize,
   ].join('|');
-  const markerMeasureKey = `${cursorIndex}|${focus ? 1 : 0}|${showCursor ? 1 : 0}|${measureColumns ?? 0}`;
+  const markerMeasureKey = [
+    value,
+    cursorIndex,
+    focus ? 1 : 0,
+    showCursor ? 1 : 0,
+    mask ?? '',
+    measureColumns ?? 0,
+    tabSize,
+  ].join('|');
 
   useEffect(() => {
     onVisibleRowsChange?.(effectiveVisibleRows);

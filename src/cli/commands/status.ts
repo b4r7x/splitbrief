@@ -76,7 +76,7 @@ export function registerStatusCommand(program: Command): void {
       if (!state) {
         console.log('No active workflow.');
         if (!opts.history) {
-          console.log(ansis.dim('  Run `diptych status --history` to see past sessions.'));
+          console.log(ansis.dim('  Run `splitbrief status --history` to see past sessions.'));
         }
       } else {
         console.log(

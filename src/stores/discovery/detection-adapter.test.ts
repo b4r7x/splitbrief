@@ -63,7 +63,7 @@ describe('loadDetectionIntoStores', () => {
   });
 
   it('forwards projectDir and applies the service result to stores', async () => {
-    const projectDir = await mkdtemp(join(tmpdir(), 'diptych-detection-adapter-forward-'));
+    const projectDir = await mkdtemp(join(tmpdir(), 'splitbrief-detection-adapter-forward-'));
     const catalog = {
       anthropic: {
         id: 'anthropic',
@@ -114,7 +114,7 @@ describe('refreshDetectionStores', () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), 'diptych-refresh-detection-test-'));
+    tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-refresh-detection-test-'));
     service = createDetectionService();
     detectionStore.reset();
     modelCacheStore.reset();

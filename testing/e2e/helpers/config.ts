@@ -2,9 +2,11 @@ import type { Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
 
 const e2eApiKey =
-  process.env.DIPTYCH_E2E_RECORD === '1' ? process.env.DIPTYCH_E2E_API_KEY : 'e2e-placeholder';
+  process.env.SPLITBRIEF_E2E_RECORD === '1'
+    ? process.env.SPLITBRIEF_E2E_API_KEY
+    : 'e2e-placeholder';
 
-const e2eApiBase = process.env.DIPTYCH_E2E_API_BASE ?? 'http://localhost:11434/v1';
+const e2eApiBase = process.env.SPLITBRIEF_E2E_API_BASE ?? 'http://localhost:11434/v1';
 
 export const e2ePlanner = {
   kind: 'api',

@@ -31,7 +31,7 @@ import {
   clearAllHandlers,
 } from '../handlers.js';
 import { writeActive } from '../../../core/sessions/lifecycle.js';
-import { ensureDiptychDir, ensureSessionDir } from '../../../core/paths-io.js';
+import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
 import { saveSummary } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -74,7 +74,7 @@ function Harness({
 }: HarnessProps) {
   const inputMode = useInputMode();
   const config = makeConfig({
-    planner: planner ?? { kind: 'agent', command: 'diptych-non-existent-planner-x7q9' },
+    planner: planner ?? { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
     ...(workflow !== undefined && { workflow }),
   });
   const runner = useWorkflowRunner({
@@ -106,7 +106,7 @@ let projectDir: string;
 beforeEach(() => {
   projectDir = createTempDir('workflow-runner-test');
   createTestGitRepo(projectDir);
-  ensureDiptychDir(projectDir);
+  ensureSplitbriefDir(projectDir);
   resetWorkflow();
   controlsStore.reset();
   feedbackStore.reset();
@@ -309,7 +309,7 @@ describe('useWorkflowRunner', () => {
     await flush();
 
     // The paused issue is carried, not resolved: the host never resumes the run,
-    // so the recovery stays on disk for an explicit `diptych resume` later.
+    // so the recovery stays on disk for an explicit `splitbrief resume` later.
     const persisted = loadState({ projectDir, sessionId });
     if (!persisted) throw new Error('expected persisted state on disk');
     expect(persisted.pendingRecovery?.status).toBe('paused');
@@ -404,7 +404,7 @@ describe('useWorkflowRunner', () => {
       />,
     );
     await flush();
-    // No `.diptych/active` pointer is hand-written. The rewind handler must use the
+    // No `.splitbrief/active` pointer is hand-written. The rewind handler must use the
     // in-scope sessionId prop (F-317), so the rewind still lands even though the bogus
     // planner has finished and saveFinalSession cleared the active marker.
 
@@ -453,7 +453,7 @@ describe('useWorkflowRunner', () => {
     inst.unmount();
   });
 
-  it('rewinds the in-scope session even when .diptych/active names a different session', async () => {
+  it('rewinds the in-scope session even when .splitbrief/active names a different session', async () => {
     // pointer=A (a foreign interrupted session) while the screen is scoped to sessionId=B.
     // Per F-317/F-329 the rewind handler must use the in-scope id (B) and never touch A.
     const foreignSessionId = '2024-01-01-foreign';
@@ -496,7 +496,7 @@ describe('useWorkflowRunner', () => {
     expect(scopedLog).toContain('rewind_to_spec');
     expect(scopedLog).toContain('scope-correct rewind');
 
-    // ...and the foreign session named by .diptych/active was never written to.
+    // ...and the foreign session named by .splitbrief/active was never written to.
     expect(existsSync(join(sessionDir(projectDir, foreignSessionId), 'session.jsonl'))).toBe(false);
 
     inst.unmount();

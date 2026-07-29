@@ -23,9 +23,9 @@ describe('initialDriftChainState', () => {
 });
 
 describe('driftChainsPath', () => {
-  it('returns expected path under .diptych/sessions/<id>/drift-chains.json', () => {
+  it('returns expected path under .splitbrief/sessions/<id>/drift-chains.json', () => {
     const path = driftChainsPath({ projectDir: '/project', sessionId: 'sess-abc' });
-    expect(path).toBe('/project/.diptych/sessions/sess-abc/drift-chains.json');
+    expect(path).toBe('/project/.splitbrief/sessions/sess-abc/drift-chains.json');
   });
 });
 
@@ -43,14 +43,14 @@ describe('readDriftChainState', () => {
   });
 
   it('returns null when file contains invalid JSON', () => {
-    const sessionPath = join(dir, '.diptych', 'sessions', 's1');
+    const sessionPath = join(dir, '.splitbrief', 'sessions', 's1');
     mkdirSync(sessionPath, { recursive: true });
     writeFileSync(driftChainsPath({ projectDir: dir, sessionId: 's1' }), '{not valid json');
     expect(readDriftChainState({ projectDir: dir, sessionId: 's1' })).toBeNull();
   });
 
   it('returns null when file contains JSON that fails schema validation', () => {
-    const sessionPath = join(dir, '.diptych', 'sessions', 's1');
+    const sessionPath = join(dir, '.splitbrief', 'sessions', 's1');
     mkdirSync(sessionPath, { recursive: true });
     writeFileSync(
       driftChainsPath({ projectDir: dir, sessionId: 's1' }),

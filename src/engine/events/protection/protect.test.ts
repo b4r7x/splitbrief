@@ -558,7 +558,7 @@ describe('protectEngineEventForConsumer', () => {
         stages: [{ stage: 'test', passed: false, errorSummary: `failed ${sentinel}` }],
       },
       evidence: {
-        path: `.diptych/${sentinel}.md`,
+        path: `.splitbrief/${sentinel}.md`,
         summary: `evidence ${sentinel}`,
         expected: [`expected ${sentinel}`],
         observed: [`observed ${sentinel}`],

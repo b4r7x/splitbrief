@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  ensureDiptychDir,
+  ensureSplitbriefDir,
   ensureSessionDir,
   writeSpecFile,
   readSpecFile,
@@ -10,7 +10,7 @@ import {
   validateFilename,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { DIPTYCH_DIR, SESSIONS_DIR, sessionDir } from './paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR, sessionDir } from './paths.js';
 
 let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
@@ -25,13 +25,13 @@ afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
 });
 
-describe('ensureDiptychDir', () => {
+describe('ensureSplitbriefDir', () => {
   it('creates the directory and is idempotent', () => {
     const dir = makeTmp();
-    ensureDiptychDir(dir);
-    expect(existsSync(join(dir, DIPTYCH_DIR))).toBe(true);
-    ensureDiptychDir(dir);
-    expect(existsSync(join(dir, DIPTYCH_DIR))).toBe(true);
+    ensureSplitbriefDir(dir);
+    expect(existsSync(join(dir, SPLITBRIEF_DIR))).toBe(true);
+    ensureSplitbriefDir(dir);
+    expect(existsSync(join(dir, SPLITBRIEF_DIR))).toBe(true);
   });
 });
 
@@ -39,9 +39,9 @@ describe('ensureSessionDir', () => {
   it('creates the directory and is idempotent', () => {
     const dir = makeTmp();
     ensureSessionDir(dir, SESSION_ID);
-    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
+    expect(existsSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
     ensureSessionDir(dir, SESSION_ID);
-    expect(existsSync(join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
+    expect(existsSync(join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID))).toBe(true);
   });
 
   it('rejects session ids with path traversal', () => {
@@ -70,10 +70,10 @@ describe('sessionDir', () => {
 });
 
 describe('writeSpecFile', () => {
-  it('writes content to .diptych/sessions/<id>/<filename>', () => {
+  it('writes content to .splitbrief/sessions/<id>/<filename>', () => {
     const dir = makeTmp();
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md', '# Spec');
-    const written = join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'spec.md');
+    const written = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'spec.md');
     expect(existsSync(written)).toBe(true);
     expect(readFileSync(written, 'utf8')).toBe('# Spec');
   });
@@ -87,7 +87,7 @@ describe('writeSpecFile', () => {
 });
 
 describe('readSpecFile', () => {
-  it('reads content from .diptych/sessions/<id>/<filename>', () => {
+  it('reads content from .splitbrief/sessions/<id>/<filename>', () => {
     const dir = makeTmp();
     writeSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'tasks.md', '- task 1');
     expect(readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'tasks.md')).toBe('- task 1');
@@ -114,7 +114,7 @@ describe('readSpecFile', () => {
       writeFileSync(join(outside, 'secret.md'), 'outside spec');
       symlinkSync(
         join(outside, 'secret.md'),
-        join(dir, DIPTYCH_DIR, SESSIONS_DIR, SESSION_ID, 'spec.md'),
+        join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID, 'spec.md'),
       );
 
       expect(() => readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, 'spec.md')).toThrow(

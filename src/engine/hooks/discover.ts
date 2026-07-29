@@ -7,7 +7,7 @@ import {
   type HookModuleEntry,
   type HooksConfig,
 } from '../../core/schemas/hooks.js';
-import { DIPTYCH_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
 
 const HOOK_EVENT_BY_FILE_NAME = new Map<string, HookEvent>(
   HOOK_EVENTS.map((event) => [event.replaceAll('_', '-'), event]),
@@ -19,7 +19,7 @@ export interface DiscoveredHook {
 }
 
 export async function discoverHookModules(projectDir: string): Promise<DiscoveredHook[]> {
-  const hooksDir = join(projectDir, DIPTYCH_DIR, 'hooks');
+  const hooksDir = join(projectDir, SPLITBRIEF_DIR, 'hooks');
   let entries: string[];
   try {
     entries = await readdir(hooksDir);
@@ -35,7 +35,7 @@ export async function discoverHookModules(projectDir: string): Promise<Discovere
     const event = HOOK_EVENT_BY_FILE_NAME.get(basename(entry, ext));
     if (!event) continue;
 
-    hooks.push({ event, path: join(DIPTYCH_DIR, 'hooks', entry) });
+    hooks.push({ event, path: join(SPLITBRIEF_DIR, 'hooks', entry) });
   }
   return hooks;
 }

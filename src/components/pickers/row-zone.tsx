@@ -56,6 +56,6 @@ export function RowZone({ zoneId, z, onActivate, children }: RowZoneProps) {
     const rect = measureRowSgr(node);
     if (!rect) return;
     return registerMouseZone({ id: zoneId, ...rowZoneRect(rect), z, onClick: onActivate });
-  }, [zoneId, z, onActivate]);
+  });
   return <Box ref={ref}>{children}</Box>;
 }

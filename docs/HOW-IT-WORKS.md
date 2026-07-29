@@ -1,18 +1,18 @@
-# diptych — How it works
+# SPLITBRIEF — How it works
 
-This is the data flow from CLI entry to workflow completion. You've read the [mental model](./MENTAL-MODEL.md) and know what diptych does. This page shows you where it happens — file paths, function names, the actual call chain. Read this when you want to trace through the code.
+This is the data flow from CLI entry to workflow completion. You've read the [mental model](./MENTAL-MODEL.md) and know what SPLITBRIEF does. This page shows you where it happens — file paths, function names, the actual call chain. Read this when you want to trace through the code.
 
 ---
 
 ## CLI entry
 
-The user types `diptych start "add email validation"`. Execution begins in `src/cli.ts`, which creates a Commander program and registers subcommands. `start` is registered by `registerStartCommand()` in `src/cli/commands/start/register.ts` and is the default command — bare `diptych "feature"` hits the same path.
+The user types `splitbrief start "add email validation"`. Execution begins in `src/cli.ts`, which creates a Commander program and registers subcommands. `start` is registered by `registerStartCommand()` in `src/cli/commands/start/register.ts` and is the default command — bare `splitbrief "feature"` hits the same path.
 
 The handler validates flag combinations first — `--json` and `--rpc` are mutually exclusive, `--detach` requires a feature argument. If the user provided `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) reads them, inlines text files into `<user-context>`, and queues image files in the attachments store. Then the handler branches into one of four paths:
 
 ```mermaid
 graph TD
-    CLI["diptych start 'feature'"] --> Validate[Validate flags + parse @files]
+    CLI["splitbrief start 'feature'"] --> Validate[Validate flags + parse @files]
     Validate --> Detach{"--detach?"}
     Detach -->|yes| SpawnServer["spawnServer() → background process, exit"]
     Detach -->|no| JSON{"--json?"}
@@ -22,11 +22,11 @@ graph TD
     RPC -->|no| Interactive["setupWorkflow() → initStores() → renderApp()"]
 ```
 
-**`--detach`** spawns a background server via `spawnServer()` (`src/engine/ipc/spawn-server.ts`), prints the session ID and PID, then exits. The user attaches later with `diptych attach`.
+**`--detach`** spawns a background server via `spawnServer()` (`src/engine/ipc/spawn-server.ts`), prints the session ID and PID, then exits. The user attaches later with `splitbrief attach`.
 
 **`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. Workflow review gates are auto-approved; file-write tiered sticky/confirm approvals fail closed unless their tiers allow the write.
 
-**`--rpc`** runs via `runRpc()` (`src/cli/rpc/run/host.ts`). Bidirectional NDJSON — the caller sends gate responses, diptych sends events back. Gates are interactive.
+**`--rpc`** runs via `runRpc()` (`src/cli/rpc/run/host.ts`). Bidirectional NDJSON — the caller sends gate responses, SPLITBRIEF sends events back. Gates are interactive.
 
 **Interactive** (the default) is the path most users take. It calls `setupWorkflow()` (`src/cli/setup.ts`) to resolve the project directory, check for a git repo, and create a default config if none exists. If no config exists and no CLI overrides were provided, it returns `needsSetup: true` and the router opens the setup screen instead of the workflow.
 
@@ -40,11 +40,11 @@ After setup, the handler calls `initStores()` and then `renderApp()`.
 
 **`initUIChrome()`** subscribes the terminal-size store to resize events so layout reflows when the window changes.
 
-**`loadProjectState()`** loads configuration from `.diptych/config.yaml` via `configStore.load()`, loads session history via `sessionsStore.load()`, and installs history persistence. If the user specified `--mode full`, it warns that `full` is a deprecated alias for `speckit`. Config must load before sessions — session display depends on config state.
+**`loadProjectState()`** loads configuration from `.splitbrief/config.yaml` via `configStore.load()`, loads session history via `sessionsStore.load()`, and installs history persistence. If the user specified `--mode full`, it warns that `full` is a deprecated alias for `speckit`. Config must load before sessions — session display depends on config state.
 
 **`ensureHooksTrusted()`** (`src/cli/hook-trust-prompt.ts`) checks whether the project's configured hooks have been approved. If not, it prompts the user before continuing. This runs after config is loaded (hooks come from config) but before discovery (discovery shouldn't run under untrusted hooks).
 
-**`loadDiscovery()`** runs last because it's async and independent of config/session state. It does three things in parallel: discovers planner skills via `discoverSkills()` (`src/engine/skill-discovery.ts`), detects provider capabilities via `detectCapabilities()` (`src/engine/providers/capabilities.ts`), and detects available CLI tools and models via `loadDetectionIntoStores()`. Skill sources depend on the planner: `.claude/skills/`, `.diptych/skills/`, global tool skill dirs, `AGENTS.md`, or `CONVENTIONS.md`.
+**`loadDiscovery()`** runs last because it's async and independent of config/session state. It does three things in parallel: discovers planner skills via `discoverSkills()` (`src/engine/skill-discovery.ts`), detects provider capabilities via `detectCapabilities()` (`src/engine/providers/capabilities.ts`), and detects available CLI tools and models via `loadDetectionIntoStores()`. Skill sources depend on the planner: `.claude/skills/`, `.splitbrief/skills/`, global tool skill dirs, `AGENTS.md`, or `CONVENTIONS.md`.
 
 ---
 
@@ -123,7 +123,7 @@ The loop iterates tasks in order (tasks are already topologically sorted by `dep
 
 **Dependency check** — if any task in this task's `dependsOn` list has failed or been skipped, the task enters recovery. The user is prompted to decide what to do.
 
-**User edit detection** — `checkUserEditConflicts()` checks whether the user modified files outside diptych while the workflow was running. If there's a conflict with the current task's target file, recovery is triggered.
+**User edit detection** — `checkUserEditConflicts()` checks whether the user modified files outside SPLITBRIEF while the workflow was running. If there's a conflict with the current task's target file, recovery is triggered.
 
 **Implementer profile routing** — `routeTaskToImplementerProfile()` (`src/engine/orchestrator/context-routing/route.ts`) estimates the task's token requirements and selects the best implementer profile. If no profile can handle the task (context overflow), the task enters recovery.
 
@@ -176,7 +176,7 @@ React components subscribe to individual store slices via `store.use(selector)`.
 
 ## Persistence
 
-Every workflow run produces files on disk under `.diptych/sessions/<id>/`:
+Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`state.json`** — the source of truth for resume. Overwritten on every phase transition via `transitionAndSave()` (`src/engine/orchestrator/state-ops.ts`), which calls `saveState()` (`src/core/state/persistence.ts`). Contains the current phase, task list with statuses, token usage, message queue, and any pending recovery state.
 
@@ -184,11 +184,11 @@ Every workflow run produces files on disk under `.diptych/sessions/<id>/`:
 
 **`research.md`, `spec.md`, `plan.md`, `tasks.md`** — planning artifacts, written once at the end of each planning phase when the selected mode produces them. The user reviews applicable artifacts during approval gates.
 
-**`summary.json`** — final cost, timing, task outcomes. Written once at workflow end by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also updates cumulative stats and clears the `.diptych/active` lock file.
+**`summary.json`** — final cost, timing, task outcomes. Written once at workflow end by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also updates cumulative stats and clears the `.splitbrief/active` lock file.
 
 **`snapshots/`** — content-addressed working-tree snapshots for undo, created at configurable points (pre-task, post-task, pre-final-review).
 
-**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.diptych/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `diptych continue <session-id>` when the saved state is resumable.
+**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.splitbrief/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
 
 ---
 
@@ -200,7 +200,7 @@ The function transitions state to `ALL_DONE`, optionally takes a pre-final-revie
 
 Evidence recording happens throughout: the evidence ledger tracks approvals, rejections, validation outcomes, and the final review status. After the review, a review packet is written — a structured summary of all evidence for the session.
 
-The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the final summary, and calls `callbacks.onComplete(summary)`. Back in `runWorkflow()`, `saveFinalSession()` writes `summary.json`, updates cumulative project stats, and clears `.diptych/active`.
+The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the final summary, and calls `callbacks.onComplete(summary)`. Back in `runWorkflow()`, `saveFinalSession()` writes `summary.json`, updates cumulative project stats, and clears `.splitbrief/active`.
 
 In the TUI, `onComplete` causes the router to navigate to the summary screen, where the user sees cost breakdown, task outcomes, and the planner's review.
 
@@ -208,9 +208,9 @@ In the TUI, `onComplete` causes the router to navigate to the summary screen, wh
 
 ## Resume
 
-`diptych resume` (`src/cli/commands/resume.ts`) picks up an interrupted workflow.
+`splitbrief resume` (`src/cli/commands/resume.ts`) picks up an interrupted workflow.
 
-The CLI reads `.diptych/active` to find the session ID, loads `state.json` via `loadState()` (`src/core/state/persistence.ts`), and runs three guards:
+The CLI reads `.splitbrief/active` to find the session ID, loads `state.json` via `loadState()` (`src/core/state/persistence.ts`), and runs three guards:
 
 1. **Version check** -- `stateVersion` must equal `CURRENT_STATE_VERSION` (currently 3). Older versions refuse with an error.
 2. **Phase check** -- `isResumable(state)` (`src/core/phases.ts`) returns true for the `RESUMABLE_PHASES` set (`planning`, `implementing`, `final-review`) and for any phase with `awaitingContinue: true`. Every other phase -- including the review/gate phases, `analyzing`, `validating-task`, and `escalating` -- is resumable only through that override; terminal phases (`idle`, `complete`) never are.
@@ -228,9 +228,9 @@ The orchestrator then publishes `workflow_resumed` and picks up from the saved p
 
 ### Related commands
 
-**`diptych spec <feature>`** (`src/cli/commands/spec.ts`) -- runs planning phases only (research, spec, plan, tasks) and exits without implementation. Produces the same planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) as a full run.
+**`splitbrief spec <feature>`** (`src/cli/commands/spec.ts`) -- runs planning phases only (research, spec, plan, tasks) and exits without implementation. Produces the same planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) as a full run.
 
-**`diptych continue [alias]`** (registered in `src/cli/commands/continue/register.ts`) -- continues a session by numeric alias from `diptych ps`, by session ID, or by active/single-running discovery. It attaches when the target is running and resumes saved state otherwise.
+**`splitbrief continue [alias]`** (registered in `src/cli/commands/continue/register.ts`) -- continues a session by numeric alias from `splitbrief ps`, by session ID, or by active/single-running discovery. It attaches when the target is running and resumes saved state otherwise.
 
 ---
 

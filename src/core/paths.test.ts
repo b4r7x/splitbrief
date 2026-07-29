@@ -3,8 +3,8 @@ import { isInternalGitStatusPath } from './paths.js';
 
 describe('isInternalGitStatusPath', () => {
   it('matches the internal artifact directories at the top level', () => {
-    expect(isInternalGitStatusPath('.diptych/state.json')).toBe(true);
-    expect(isInternalGitStatusPath('.diptych-sandbox/x')).toBe(true);
+    expect(isInternalGitStatusPath('.splitbrief/state.json')).toBe(true);
+    expect(isInternalGitStatusPath('.splitbrief/sandbox/x')).toBe(true);
     expect(isInternalGitStatusPath('.trees/feat/src/a.ts')).toBe(true);
   });
 
@@ -15,7 +15,7 @@ describe('isInternalGitStatusPath', () => {
 
   it('matches an internal directory nested under a subdirectory', () => {
     expect(isInternalGitStatusPath('sub/.trees/feat/a.ts')).toBe(true);
-    expect(isInternalGitStatusPath('packages/app/.diptych/config.yaml')).toBe(true);
+    expect(isInternalGitStatusPath('packages/app/.splitbrief/config.yaml')).toBe(true);
   });
 
   it('does not match ordinary project files', () => {

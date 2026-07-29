@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs';
 import { cp, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { DIPTYCH_DIR, CONFIG_FILE } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../core/paths.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 import { ensureConfigGitignore } from '../../core/config/load/io.js';
 import type { GitClient } from '../../lib/git/client.js';
 import { worktreeError } from './errors.js';
 import {
-  gitignoreDiffersOnlyByDiptychBookkeeping,
+  gitignoreDiffersOnlyBySplitbriefBookkeeping,
   shouldIgnoreSourceDirtyPath,
 } from './cleanliness.js';
 import { resolveConfinedWorktreePath } from './path.js';
@@ -19,16 +20,16 @@ export type CreateWorktreeOptions = {
   git: GitClient;
 };
 
-async function propagateDiptychState(projectDir: string, wtPath: string): Promise<void> {
-  const baseConfig = join(projectDir, DIPTYCH_DIR, CONFIG_FILE);
+async function propagateSplitbriefState(projectDir: string, wtPath: string): Promise<void> {
+  const baseConfig = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
   if (existsSync(baseConfig)) {
     ensureConfigGitignore(wtPath);
-    await mkdir(join(wtPath, DIPTYCH_DIR), { recursive: true });
-    await cp(baseConfig, join(wtPath, DIPTYCH_DIR, CONFIG_FILE));
+    await mkdir(join(wtPath, SPLITBRIEF_DIR), { recursive: true });
+    await cp(baseConfig, join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE));
   }
-  const baseHooks = join(projectDir, DIPTYCH_DIR, HOOKS_DIR);
+  const baseHooks = join(projectDir, SPLITBRIEF_DIR, HOOKS_DIR);
   if (existsSync(baseHooks)) {
-    await cp(baseHooks, join(wtPath, DIPTYCH_DIR, HOOKS_DIR), { recursive: true });
+    await cp(baseHooks, join(wtPath, SPLITBRIEF_DIR, HOOKS_DIR), { recursive: true });
   }
 }
 
@@ -44,10 +45,10 @@ async function initWorktreeSubmodules(
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
   const { projectDir, slug, git } = opts;
   const wtPath = resolveConfinedWorktreePath(projectDir, slug);
-  const branch = `diptych/${slug}`;
+  const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${slug}`;
 
   const status = await git.status();
-  const gitignoreOnlyBookkeeping = await gitignoreDiffersOnlyByDiptychBookkeeping(projectDir);
+  const gitignoreOnlyBookkeeping = await gitignoreDiffersOnlyBySplitbriefBookkeeping(projectDir);
   const dirtyFiles = status.files.filter((file) => {
     return !shouldIgnoreSourceDirtyPath(file.path, gitignoreOnlyBookkeeping);
   });
@@ -62,6 +63,6 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<strin
 
   await git.raw(['worktree', 'add', wtPath, '-b', branch]);
   await initWorktreeSubmodules(projectDir, wtPath, git);
-  await propagateDiptychState(projectDir, wtPath);
+  await propagateSplitbriefState(projectDir, wtPath);
   return wtPath;
 }

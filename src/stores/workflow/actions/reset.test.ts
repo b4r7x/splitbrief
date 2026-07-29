@@ -133,6 +133,7 @@ describe('resetWorkflow', () => {
       ['T003', 'pending'],
     ]);
     expect(tasksStore.get().taskMap.get('T002')?.status).toBe('done');
+    expect(tasksStore.get().taskMap.get('T002')?.route).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toEqual({
       plannerInput: 0,
       plannerOutput: 0,

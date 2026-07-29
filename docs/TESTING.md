@@ -51,28 +51,29 @@ The flowchart covers `src/**` source. Three trees outside it also hold tests: `s
 | Multi-phase orchestrator flow (`runWorkflow()` + fakes) | `testing/integration/orchestrator/` | `.test.ts` |
 | Multi-store UI flow (Ink screen + engine events via stores) | `testing/integration/ui/` | `.test.tsx` |
 | End-to-end scenario (real planner/implementer or recorded cassette) | `testing/e2e/scenarios/` (cassettes in `testing/e2e/cassettes/`) | `.test.ts` — isolated by `testing/e2e/vitest.e2e.config.ts`, not by suffix |
-| Deterministic TUI visual gallery and PTY parity | `testing/visual/` | `.test.ts` / `.test.tsx` |
+| Deterministic TUI visual gallery | `testing/visual/` | `.test.ts` / `.test.tsx` |
+| PTY terminal-boundary behavior | `testing/integration/cli/` | `.test.ts` |
 | Shared factories (pure TS constructors) | `testing/helpers/factories/<domain>.ts` — ≥ 2 consumers | n/a |
 | Shared test helpers (fakes, renderers, resetters) | `testing/helpers/*.ts` — ≥ 2 consumers, no `expect()` | n/a |
 | Static fixtures (YAML, JSON, recorded HTTP bodies, migration snapshots) | `testing/fixtures/<domain>/` | n/a |
 
 ## Performance harnesses
 
-Performance tests live under `testing/integration/performance/` and are skipped unless `DIPTYCH_PERF=1` is set. Use `node --expose-gc` for these harnesses so tests can force collection around memory-sensitive measurements when they need it.
+Performance tests live under `testing/integration/performance/` and are skipped unless `SPLITBRIEF_PERF=1` is set. Use `node --expose-gc` for these harnesses so tests can force collection around memory-sensitive measurements when they need it.
 
 Current harnesses:
 
 ```bash
-DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/conversation-flow-large-log.perf.test.ts
-DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/runner-large-output.perf.test.ts
-DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/events-store-cap.perf.test.ts
-DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/conversation-flow-hover.perf.test.tsx
-DIPTYCH_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/event-sinks-throughput.perf.test.ts
+SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/conversation-flow-large-log.perf.test.ts
+SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/runner-large-output.perf.test.ts
+SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/events-store-cap.perf.test.ts
+SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/conversation-flow-hover.perf.test.tsx
+SPLITBRIEF_PERF=1 node --expose-gc ./node_modules/vitest/vitest.mjs run testing/integration/performance/event-sinks-throughput.perf.test.ts
 ```
 
 `conversation-flow-large-log.perf.test.ts` covers the Phase 5 row projection path: 10k event projection reuse, visible-window materialization, markdown suffix append reuse, and cache-cap behavior. Keep thresholds as regression guards for the reference machine; do not treat them as portable benchmarks.
 
-`conversation-flow-hover.perf.test.tsx` covers hover-only re-renders on a large real-store transcript: repeated `hoverStore` updates must stay bounded and must not change transcript text apart from the focus glyph. Run it only with `DIPTYCH_PERF=1` as above.
+`conversation-flow-hover.perf.test.tsx` covers hover-only re-renders on a large real-store transcript: repeated `hoverStore` updates must stay bounded and must not change transcript text apart from the focus glyph. Run it only with `SPLITBRIEF_PERF=1` as above.
 
 `runner-large-output.perf.test.ts` covers large runner stdout without a trailing newline and multi-megabyte stderr flood behavior through the real subprocess collector. `events-store-cap.perf.test.ts` covers capped workflow event ingestion and retained merged-text size after multi-megabyte planner text input. `event-sinks-throughput.perf.test.ts` covers protected JSONL, stdout JSON, and session-tree sink throughput. There is no automated fullscreen-vs-inline replay perf harness yet; use the manual TUI smoke checklist below for fullscreen replay behavior until a stable local harness exists.
 
@@ -107,7 +108,7 @@ Cost-aware implementer routing, user-edit conflict handling, and the brief revie
 
 **Brief field editor CAS.** Rendered ownership, save gate, stdin suppression, multi-field save, and submit-in-flight behavior belong in `testing/integration/ui/brief-field-editor-ownership.test.ts` (`.test.ts` with `createElement`, not a colocated `.tsx` owner). Pure `editorStore` transitions (scroll, layout reflow, token capture) stay in `src/stores/ui/editor.test.ts`. `readSessionFileConfined` cases at the editor read boundary live in `src/core/sessions/confinement.test.ts`. The `useFieldSessionOwned` hook contract stays in `src/features/editor/use-field-session-owned.test.tsx`.
 
-**Input history persistence.** Debounced `~/.diptych/history` writes, teardown, and transcript-off prompt redaction at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`. Cross-artifact transcript-off privacy (`runWorkflow()` with `persistTranscript: false` — session ids, lockfile, summaries, HTML export, `ps`, branch names) belongs in `testing/integration/orchestrator/transcript-off-session-artifacts.test.ts`.
+**Input history persistence.** Debounced `~/.splitbrief/history` writes, teardown, and transcript-off prompt redaction at the composer persistence boundary stay in `src/stores/ui/persistence.test.ts`. Cross-artifact transcript-off privacy (`runWorkflow()` with `persistTranscript: false` — session ids, lockfile, summaries, HTML export, `ps`, branch names) belongs in `testing/integration/orchestrator/transcript-off-session-artifacts.test.ts`.
 
 **Hooks and wrappers.** No new `renderHook` tests for trivial wrappers, selector hooks, or `useState` / `useEffect` plumbing. Extract behavior-bearing logic into a public pure helper and test that helper, or cover the hook through the feature/component that uses it. Thin wrappers that only call an already-tested helper should not receive dedicated tests.
 
@@ -161,7 +162,12 @@ import { runCommand } from '#testing/helpers/commander.js';
 it('start writes state.json and exits 0', async () => {
   await withTempDir(async (dir) => {
     // seed config
-    const { stdout, exitCode } = await runCommand(['start', 'add endpoint'], { cwd: dir });
+    const { stdout, exitCode } = await runCommand([
+      'start',
+      '--project',
+      dir,
+      'add endpoint',
+    ]);
     expect(exitCode).toBe(0);
     // assert on files in dir, not on stdout wording
   });
@@ -205,7 +211,13 @@ it('quick mode completes one task via local implementer', async () => {
 it('start --json emits NDJSON and exits 0', async () => {
   await withTempDir(async (dir) => {
     // seed config + fakes
-    const { stdout, exitCode } = await runCommand(['start', '--json', 'add endpoint'], { cwd: dir });
+    const { stdout, exitCode } = await runCommand([
+      'start',
+      '--project',
+      dir,
+      '--json',
+      'add endpoint',
+    ]);
     expect(exitCode).toBe(0);
     const events = stdout.trim().split('\n').map((l) => JSON.parse(l));
     expect(events[0]).toMatchObject({ type: 'readiness_report' });
@@ -214,7 +226,7 @@ it('start --json emits NDJSON and exits 0', async () => {
   });
 });
 ```
-The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `diptych start --json` end-to-end and assert on the event sequence plus exit code. Tiered approvals still use approval config and fail closed when headless sticky/confirm has no grant. No Ink mount, no TTY detection.
+The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `splitbrief start --json` end-to-end and assert on the event sequence plus exit code. Tiered approvals still use approval config and fail closed when headless sticky/confirm has no grant. No Ink mount, no TTY detection.
 
 **UI flow — render a feature + drive engine events through stores** (`testing/helpers/ink.ts`):
 
@@ -352,7 +364,7 @@ L1 faux (`planner.ts`, `implementer.ts`) is the default for new orchestrator tes
 
 **Component / feature tests.** Use `ink-testing-library`. Render with real stores (reset in `beforeEach`). Drive by setting store state or simulating input. Assert on `lastFrame()` text or observable store state. Never mock `ink`, `FilterableList`, or any internal component.
 
-**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.diptych/` contents (pattern: `src/cli/commands/status.test.ts`; config-migration logic itself is unit-tested in `src/core/config/load/migrate.test.ts`). Config load/write roundtrip (default shape, optional sections, snake_case migration) belongs in `src/core/config/load/io-roundtrip.test.ts`, not a CLI integration file. `init` without a TTY fails before any config write — `testing/integration/cli/init-non-tty.test.ts`. Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
+**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.splitbrief/` contents (pattern: `src/cli/commands/status.test.ts`; config-migration logic itself is unit-tested in `src/core/config/load/migrate.test.ts`). Config load/write roundtrip (default shape, optional sections, snake_case migration) belongs in `src/core/config/load/io-roundtrip.test.ts`, not a CLI integration file. `init` without a TTY fails before any config write — `testing/integration/cli/init-non-tty.test.ts`. Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
 
 ## Forbidden patterns
 
@@ -590,21 +602,23 @@ The fixtures still use the production app composition. They reset stores, seed b
 
 The real CLI E2E suite under `testing/e2e/` has a different purpose. It checks planner and implementer protocol flows with real tools or recorded cassettes. It does not enumerate the visual catalog, render every viewport, resolve semantic crops, or publish visual artifact bundles. Passing E2E tests is not evidence that the gallery is complete, and a gallery pass is not evidence that a provider workflow works.
 
-### Optional PTY parity smoke
+### PTY behavior contract
 
-The in-process gallery is the main visual tool. The PTY smoke is a narrow, opt-in check of the terminal boundary:
+The terminal-boundary behavior harness lives under `testing/integration/cli/pty/`, with its tests in `testing/integration/cli/`. Run it without arguments:
 
 ```bash
-npm run tui-shots:pty -- --viewport 80x24
+npm run tui-shots:pty
 ```
 
-It starts only the synthetic `home-empty` route through the production `start` command. It uses fixed argument arrays, an allowlisted environment, a temporary git/config project, a bounded marker wait, a resize round trip, and the supported Ctrl+Q exit. It captures raw PTY I/O in memory to confirm the app reached a TTY and restored the alternate buffer and cursor. Timeout or interruption sends `SIGTERM`, then `SIGKILL` to the child process group if needed. Exit handlers remove temporary directories and listeners.
+The harness spawns at fixed `100x30` dimensions and mounts the production `App` through `renderApp` in an active `reviewing-spec` state. It types the approval prefix, invokes a one-shot real editor child through `VISUAL`, returns to the review, completes `approve`, and submits the real approval callback before sending Ctrl+Q. It checks terminal restoration, child exit, and process-group reaping. The isolated child environment uses an allowlist and temporary home and project roots; it does not contact a provider.
 
-The smoke does not contact a provider and does not replace full-screen manual testing. It covers one route at `80x24`; it does not prove parity for every screen, overlay, terminal emulator, or resize sequence.
+PTY teardown awaits child reaping before listeners, timers, and temporary roots are disposed.
 
-`node-pty@1.1.0` is a tooling-only optional dependency in `optionalDependencies`. An ordinary `npm install` or `npm ci` may attempt to install its native binary. Use `npm ci --omit=optional` when that native tool is not wanted. The gallery and its ANSI, TXT, cells, SVG, and PNG output do not depend on `node-pty`.
+`node-pty@1.1.0` is a tooling-only optional dependency in `optionalDependencies`. An ordinary `npm install` or `npm ci` may attempt to install its native binary. Use `npm ci --omit=optional` when that native tool is not wanted.
 
-The PTY command loads `node-pty` dynamically. If the package, native binary, or platform PTY support is unavailable, it prints `PTY smoke SKIP` with a reason and exits `0`. A passing run reports successful marker detection, viewport, resize, clean exit, and terminal restoration. Node 22 is required. Some platforms may also need a working native toolchain or a compatible prebuilt `node-pty` binary.
+The command loads `node-pty` dynamically. In optional mode, only setup failures (`module-unavailable`, pre-spawn `api-incompatible`, or `spawn-failed`) print `PTY behavior SKIP` and exit `0`. Once a process boundary exists, every failure is fatal. A complete run prints `PTY behavior PASS`; fatal failures print `PTY behavior failed` and exit nonzero. Node 22 is required. Some platforms may also need a working native toolchain or a compatible prebuilt `node-pty` binary.
+
+With `SPLITBRIEF_REQUIRE_PTY=1`, unavailable, incompatible, or spawn-failed PTY setup exits nonzero, and the command passes only after active review, editor return, approval, terminal restoration, and cleanup complete.
 
 ### Handing artifacts to Codex
 
@@ -623,8 +637,8 @@ Ink needs a real TTY; the agent test runner cannot drive it. Manual steps:
 ```bash
 mkdir /tmp/smoke-tui && cd /tmp/smoke-tui
 git init && git config user.email x@x.com && git config user.name X
-# Seed .diptych/config.yaml with a shell planner + shell implementer
-#   (same shape as evals/fixtures/*/.diptych/config.yaml)
+# Seed .splitbrief/config.yaml with a shell planner + shell implementer
+#   (same shape as evals/fixtures/*/.splitbrief/config.yaml)
 npm run dev -- --project /tmp/smoke-tui start "smoke tui test"
 ```
 
@@ -633,14 +647,14 @@ Verify: the fullscreen Ink TUI renders, phases progress visually, and the workfl
 If a terminal does not deliver a key as expected, rerun the smoke with key logging enabled:
 
 ```bash
-DIPTYCH_DEBUG_KEYS=1 npm run dev -- --project /tmp/smoke-tui start "smoke tui keys"
+SPLITBRIEF_DEBUG_KEYS=1 npm run dev -- --project /tmp/smoke-tui start "smoke tui keys"
 ```
 
-The log is written under `.diptych/debug/keys-*.log` in the smoke project and records both raw bytes and parsed Ink key flags.
+The log is written under `.splitbrief/debug/keys-*.log` in the smoke project and records both raw bytes and parsed Ink key flags.
 
 ### M2. Headless `--json` mode
 
-From any project with a valid `.diptych/config.yaml`:
+From any project with a valid `.splitbrief/config.yaml`:
 
 ```bash
 node dist/cli.js start --json --mode quick "smoke feature"
@@ -660,11 +674,11 @@ Verify: a `warning` event with `pre_commit blocked ... AWS access key` fires, no
 
 ### M4. OTel activation
 
-Any of the three paths below should emit `diptych.workflow`, `diptych.phase.*`, and `diptych.task` spans on stdout:
+Any of the three paths below should emit `splitbrief.workflow`, `splitbrief.phase.*`, and `splitbrief.task` spans on stdout:
 
 ```bash
 OTEL_TRACES_EXPORTER=console   node dist/cli.js start --json --mode quick "otel test"
-DIPTYCH_OTEL_EXPORTER=console  node dist/cli.js start --json --mode quick "otel test"
+SPLITBRIEF_OTEL_EXPORTER=console  node dist/cli.js start --json --mode quick "otel test"
 node dist/cli.js start --otel-exporter=console --json --mode quick "otel test"
 ```
 
@@ -673,8 +687,8 @@ See [`OTEL.md` §Design decisions](./OTEL.md) for why the bootstrap has to run b
 ### M5. Fresh checkout + install
 
 ```bash
-rsync -a --exclude=node_modules --exclude=dist --exclude=.git . /tmp/diptych-fresh/
-cd /tmp/diptych-fresh
+rsync -a --exclude=node_modules --exclude=dist --exclude=.git . /tmp/splitbrief-fresh/
+cd /tmp/splitbrief-fresh
 npm ci && npm run test-ci
 ```
 

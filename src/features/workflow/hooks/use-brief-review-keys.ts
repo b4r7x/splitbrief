@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { useInput } from 'ink';
+import { isTextEntryInput, isUnmodifiedYInput } from '../../../lib/terminal/text-entry.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { getVisibleBriefWindow, reviewStore } from '../../../stores/workflow/review.js';
@@ -21,9 +22,22 @@ const emptyCopyTarget: CopyTargetFn = () => Promise.resolve('empty');
 function yankFocused(copyTarget: CopyTargetFn) {
   const focus = focusStore.get();
   if (!focus) return;
+  const reviewOwnerToken = reviewStore.get().ownerToken;
   void copyTarget('brief')
-    .then((result) => feedbackStore.setMessage(formatCopyResult(result)))
-    .catch((err) => feedbackStore.setError(`Could not copy: ${toErrorMessage(err)}`));
+    .then((result) => {
+      if (focusStore.get() !== focus || reviewStore.get().ownerToken !== reviewOwnerToken) {
+        return;
+      }
+      feedbackStore.setMessage(formatCopyResult(result));
+      const copied = result === 'native' || result === 'tmux-buffer' || result === 'osc52';
+      if (copied) focusStore.clear();
+    })
+    .catch((err) => {
+      if (focusStore.get() !== focus || reviewStore.get().ownerToken !== reviewOwnerToken) {
+        return;
+      }
+      feedbackStore.setError(`Could not copy: ${toErrorMessage(err)}`);
+    });
 }
 
 interface UseBriefReviewKeysOptions {
@@ -32,11 +46,13 @@ interface UseBriefReviewKeysOptions {
   canCopyFocused?: ((focus: Focus | null) => boolean) | undefined;
 }
 
+export type BriefReviewNavigate = (direction: 'up' | 'down') => boolean;
+
 export function useBriefReviewKeys({
   isActive,
   copyTarget = emptyCopyTarget,
   canCopyFocused = () => false,
-}: UseBriefReviewKeysOptions) {
+}: UseBriefReviewKeysOptions): BriefReviewNavigate {
   const [overlay, approval, cost, completion] = useStores(
     overlayStore,
     approvalPromptStore,
@@ -45,11 +61,21 @@ export function useBriefReviewKeys({
   );
   const focus = focusStore.use((f) => f);
   const focusResolvable = canCopyFocused(focus);
-  const briefReviewActive = reviewStore.use((s) => {
-    if (s.filePath === null || s.briefSources.length === 0) return false;
-    return getVisibleBriefWindow(s).count > 0;
-  });
+  const review = reviewStore.use((state) => state);
+  const visibleWindow = getVisibleBriefWindow(review);
+  const briefCount = Math.min(review.briefSources.length, review.renderedLineCount);
+  const visibleBriefCount = Math.min(
+    visibleWindow.count,
+    Math.max(0, briefCount - visibleWindow.start),
+  );
+  const briefReviewActive = review.filePath !== null && briefCount > 0 && visibleBriefCount > 0;
   const inReviewMode = controlsStore.use((c) => c.inputMode === 'review');
+  const focusedBriefValid =
+    focus?.region === 'brief' &&
+    focus.index >= 0 &&
+    focus.index < briefCount &&
+    briefReviewActive &&
+    inReviewMode;
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
   const promptPending = approval.status === 'pending' || cost.status === 'pending';
@@ -61,49 +87,105 @@ export function useBriefReviewKeys({
     return () => focusStore.clear();
   }, []);
 
+  useLayoutEffect(() => {
+    if (focus?.region === 'brief' && !focusedBriefValid) {
+      focusStore.clear();
+      return;
+    }
+    if (!briefReviewActive) return;
+
+    let nextOffset = visibleWindow.start;
+
+    if (focus !== null && focus.region === 'brief') {
+      const selectedIndex = Math.min(Math.max(focus.index, 0), briefCount - 1);
+      if (selectedIndex < visibleWindow.start) {
+        nextOffset = selectedIndex;
+      } else if (selectedIndex >= visibleWindow.start + visibleBriefCount) {
+        nextOffset = selectedIndex - visibleBriefCount + 1;
+      }
+      if (selectedIndex !== focus.index) focusStore.set('brief', selectedIndex);
+    }
+
+    if (review.scrollOffset !== nextOffset) reviewStore.setScrollOffset(nextOffset);
+  }, [
+    briefCount,
+    briefReviewActive,
+    focus,
+    focusedBriefValid,
+    inReviewMode,
+    review.scrollOffset,
+    visibleBriefCount,
+    visibleWindow.start,
+  ]);
+
+  const navigate: BriefReviewNavigate = (direction) => {
+    if (
+      !isActive ||
+      !briefReviewActive ||
+      !inReviewMode ||
+      isOpen ||
+      overlayExclusive ||
+      promptPending ||
+      completionOpen
+    ) {
+      return false;
+    }
+    const currentReview = reviewStore.get();
+    const currentBriefCount = Math.min(
+      currentReview.briefSources.length,
+      currentReview.renderedLineCount,
+    );
+    const { start, count } = getVisibleBriefWindow(currentReview);
+    const visibleCount = Math.min(count, Math.max(0, currentBriefCount - start));
+    if (currentBriefCount === 0 || visibleCount === 0) return false;
+    const currentFocus = focusStore.get();
+    if (currentFocus === null) {
+      focusStore.set('brief', start);
+      if (currentReview.scrollOffset !== start) reviewStore.setScrollOffset(start);
+      return true;
+    }
+    const delta = direction === 'down' ? 1 : -1;
+    const next = Math.min(Math.max(currentFocus.index + delta, 0), currentBriefCount - 1);
+    const nextOffset =
+      next < start ? next : next >= start + visibleCount ? next - visibleCount + 1 : start;
+    focusStore.set('brief', next);
+    if (currentReview.scrollOffset !== nextOffset) reviewStore.setScrollOffset(nextOffset);
+    return true;
+  };
+
   useInput(
     (_input, key) => {
-      if (!key.upArrow && !key.downArrow) return;
-      const { briefSources } = reviewStore.get();
-      const { start, count } = getVisibleBriefWindow();
-      if (briefSources.length === 0 || count <= 0) return;
-      const windowEnd = start + count - 1;
-      const focus = focusStore.get();
-      if (focus === null) {
-        focusStore.set('brief', start);
-        reviewStore.setScrollOffset(start);
-        return;
+      if (key.shift || key.ctrl || key.meta || key.super || key.hyper) return;
+      if (key.upArrow) {
+        navigate('up');
+      } else if (key.downArrow) {
+        navigate('down');
       }
-      const next = key.downArrow
-        ? Math.min(focus.index + 1, windowEnd)
-        : Math.max(focus.index - 1, start);
-      focusStore.set('brief', next);
-      reviewStore.setScrollOffset(next);
     },
     {
-      isActive:
-        isActive &&
-        briefReviewActive &&
-        inReviewMode &&
-        !isOpen &&
-        !overlayExclusive &&
-        !promptPending &&
-        !completionOpen,
+      isActive: focusedBriefValid && isActive && !keysBlocked,
     },
   );
 
   useInput(
     (input, key) => {
-      if (input === 'y' && !key.ctrl && !key.meta) {
+      if (isUnmodifiedYInput(input, key) && focusResolvable && focusedBriefValid) {
         yankFocused(copyTarget);
-        focusStore.clear();
         return;
       }
-      if (key.upArrow || key.downArrow) return;
+      if (key.upArrow || key.downArrow) {
+        if (!focusedBriefValid) focusStore.clear();
+        return;
+      }
+      if (key.escape || key.pageUp || key.pageDown || key.home || key.end) return;
+      if (isTextEntryInput(input, key)) return;
+      if (key.ctrl || key.meta || key.super || key.hyper) return;
       focusStore.clear();
     },
     {
-      isActive: focusResolvable && isActive && !keysBlocked,
+      isActive: focus?.region === 'brief' && isActive && !keysBlocked,
     },
   );
+
+  return navigate;
 }

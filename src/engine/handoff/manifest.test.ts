@@ -11,7 +11,7 @@ const task2 = makeTask({ id: 'T002', title: 'Add user model', dependsOn: ['T001'
 
 const baseOptions = {
   sessionId: 'test-session',
-  diptychVersion: '1.0.0',
+  splitbriefVersion: '1.0.0',
   target: 'spec-kit' as const,
   mode: 'standard' as const,
   tasks: [task1, task2],

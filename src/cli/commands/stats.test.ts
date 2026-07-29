@@ -24,7 +24,7 @@ async function runStats(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   registerStatsCommand(program);
-  await program.parseAsync(['node', 'diptych', 'stats', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'stats', ...args]);
 }
 
 function captureStdout(): string[] {
@@ -182,9 +182,9 @@ describe('stats command', () => {
     const breakdown = makeBreakdown({ hypotheticalCost: 1, savingsAmount: 0.75 });
     saveSummary({ projectDir, sessionId: 'sess-1' }, completeSession('sess-1', breakdown));
 
-    mkdirSync(join(projectDir, '.diptych'), { recursive: true });
+    mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
     writeFileSync(
-      join(projectDir, '.diptych', 'stats.json'),
+      join(projectDir, '.splitbrief', 'stats.json'),
       JSON.stringify({
         version: 1,
         updatedAt: new Date().toISOString(),

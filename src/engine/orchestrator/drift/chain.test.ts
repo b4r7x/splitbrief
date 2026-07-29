@@ -16,6 +16,79 @@ function makeState(overrides?: Partial<DriftChainState>): DriftChainState {
 }
 
 describe('computePerTaskOutOfBounds', () => {
+  it.each([
+    {
+      label: 'exact primary',
+      task: makeTask({ file: 'src/primary.ts' }),
+      changedFile: 'src/primary.ts',
+      dependsOnFiles: [],
+      accepted: true,
+    },
+    {
+      label: 'glob primary',
+      task: makeTask({ file: 'src/primary/*.ts' }),
+      changedFile: 'src/primary/matched.ts',
+      dependsOnFiles: [],
+      accepted: true,
+    },
+    {
+      label: 'exact in-bounds',
+      task: makeTask({ file: 'src/primary.ts', scope: { inBounds: ['src/in-bounds.ts'] } }),
+      changedFile: 'src/in-bounds.ts',
+      dependsOnFiles: [],
+      accepted: true,
+    },
+    {
+      label: 'glob in-bounds',
+      task: makeTask({ file: 'src/primary.ts', scope: { inBounds: ['src/in-bounds/**'] } }),
+      changedFile: 'src/in-bounds/matched.ts',
+      dependsOnFiles: [],
+      accepted: true,
+    },
+    {
+      label: 'exact approved',
+      task: makeTask({
+        file: 'src/primary.ts',
+        scope: { approvedOutOfBounds: ['generated/exact.ts'] },
+      }),
+      changedFile: 'generated/exact.ts',
+      dependsOnFiles: [],
+      accepted: true,
+    },
+    {
+      label: 'glob approved',
+      task: makeTask({
+        file: 'src/primary.ts',
+        scope: { approvedOutOfBounds: ['generated/**'] },
+      }),
+      changedFile: 'generated/matched.ts',
+      dependsOnFiles: [],
+      accepted: true,
+    },
+    {
+      label: 'dependency allowance',
+      task: makeTask({ file: 'src/primary.ts', dependsOn: ['T000'] }),
+      changedFile: 'src/dependency.ts',
+      dependsOnFiles: ['src/dependency.ts'],
+      accepted: true,
+    },
+    {
+      label: 'truly untargeted',
+      task: makeTask({ file: 'src/primary.ts' }),
+      changedFile: 'unrelated/extra.ts',
+      dependsOnFiles: [],
+      accepted: false,
+    },
+  ])('classifies $label paths with attribution parity', ({
+    task,
+    changedFile,
+    dependsOnFiles,
+    accepted,
+  }) => {
+    const result = computePerTaskOutOfBounds(task, [changedFile], dependsOnFiles);
+    expect(result.has(changedFile)).toBe(!accepted);
+  });
+
   it('own file only → empty set', () => {
     const task = makeTask({ file: 'src/a.ts' });
     const result = computePerTaskOutOfBounds(task, ['src/a.ts']);
@@ -68,6 +141,17 @@ describe('computePerTaskOutOfBounds', () => {
     const task = makeTask({ file: 'src/a.ts' });
     const result = computePerTaskOutOfBounds(task, []);
     expect(result.size).toBe(0);
+  });
+
+  it('returns deduplicated out-of-bounds files in deterministic order', () => {
+    const task = makeTask({ file: 'src/primary.ts' });
+    const result = computePerTaskOutOfBounds(task, [
+      'src/z.ts',
+      'src/a.ts',
+      'src/z.ts',
+      'src/m.ts',
+    ]);
+    expect([...result]).toEqual(['src/a.ts', 'src/m.ts', 'src/z.ts']);
   });
 });
 
@@ -163,6 +247,41 @@ describe('analyzeDriftChain — start new chain', () => {
     const expected = (1 / 5) * 0.3 + (1 / 10) * 0.2;
     expect(chain.score).toBeCloseTo(expected, 10);
   });
+
+  it('sorts active and emitted file lists regardless of set insertion order', () => {
+    const update = analyzeDriftChain(
+      makeState(),
+      taskId('T001'),
+      new Set(['src/z.ts', 'src/a.ts', 'src/m.ts']),
+      0,
+    );
+
+    expect(update.state.activeChain.entries[0]?.outOfBoundsFiles).toEqual([
+      'src/a.ts',
+      'src/m.ts',
+      'src/z.ts',
+    ]);
+    expect(update.state.activeChain.uniqueFiles).toEqual(['src/a.ts', 'src/m.ts', 'src/z.ts']);
+    expect(update.emitted?.uniqueOutOfBoundsFiles).toEqual(['src/a.ts', 'src/m.ts', 'src/z.ts']);
+  });
+
+  it('globally sorts an earlier-alphabetic file added while extending a chain', () => {
+    const first = analyzeDriftChain(
+      makeState(),
+      taskId('T001'),
+      new Set(['src/z.ts', 'src/m.ts']),
+      1,
+    );
+    const update = analyzeDriftChain(
+      first.state,
+      taskId('T002'),
+      new Set(['src/m.ts', 'src/a.ts']),
+      0,
+    );
+
+    expect(update.state.activeChain.uniqueFiles).toEqual(['src/a.ts', 'src/m.ts', 'src/z.ts']);
+    expect(update.emitted?.uniqueOutOfBoundsFiles).toEqual(['src/a.ts', 'src/m.ts', 'src/z.ts']);
+  });
 });
 
 describe('analyzeDriftChain — score formula (deterministic)', () => {
@@ -175,9 +294,9 @@ describe('analyzeDriftChain — score formula (deterministic)', () => {
     expect(score).toBeCloseTo(0.66, 10);
   });
 
-  it('length 3, 80% overlap (4/5 files), 3 unique files: approximate score', () => {
+  it('length 3, 4/6 overlap, 6 unique files: approximate score', () => {
     // We need: T001: {a,b,c,d,e}, T002: {a,b,c,d,e} full overlap chain len 2
-    // T003: {a,b,c,d,f} — 4/5 with T002 (a,b,c,d common, e not in T003, f new)
+    // T003: {a,b,c,d,f} — 4/6 union overlap with T002
     // overlap T002∩T003 = {a,b,c,d} = 4; union T002∪T003 = {a,b,c,d,e,f} = 6
     // overlapTerm = 4/6 * 0.5 = 0.3333
     // lengthTerm = 3/5 * 0.3 = 0.18
@@ -209,17 +328,13 @@ describe('analyzeDriftChain — emit behavior', () => {
   it('calling twice with same taskId does NOT produce duplicate emitted entries', () => {
     let state = makeState();
     const files = new Set(['src/x.ts', 'src/y.ts', 'src/z.ts']);
-    // Use a high threshold so only the final task crosses it
     state = analyzeDriftChain(state, taskId('T001'), files, 0.9).state;
     state = analyzeDriftChain(state, taskId('T002'), files, 0.9).state;
-    // First call with T003 — should emit (score ~0.74 but threshold 0.9: need longer chain)
-    // Use threshold 0.0 to force emit on T003
     const r3 = analyzeDriftChain(state, taskId('T003'), files, 0.0);
     expect(r3.emitted).toBeDefined();
     const emittedCountAfterFirstCall = r3.state.emittedChains.length;
     state = r3.state;
 
-    // Second call with same T003 — should NOT emit again, no new entry
     const r3b = analyzeDriftChain(state, taskId('T003'), files, 0.0);
     expect(r3b.emitted).toBeUndefined();
     expect(r3b.state.emittedChains).toHaveLength(emittedCountAfterFirstCall);

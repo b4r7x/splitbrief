@@ -105,7 +105,7 @@ describe('runner pid ledger', () => {
     recordRunnerPid(ref, 111, 1000);
     const ledgerPath = join(sessionDir(tmp, ref.sessionId), 'runner-pids.jsonl');
 
-    const outside = mkdtempSync(join(tmpdir(), 'diptych-runner-pids-outside-'));
+    const outside = mkdtempSync(join(tmpdir(), 'splitbrief-runner-pids-outside-'));
     try {
       const outsideLedger = join(outside, 'runner-pids.jsonl');
       writeFileSync(outsideLedger, '{"pid":999,"startTimeMs":5000}\n');

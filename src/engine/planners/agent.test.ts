@@ -11,7 +11,7 @@ import type { RunnerCallEvent } from '../calls/types.js';
 let projectDir: string;
 
 function setupMockFiles(projectDir: string, sessionId: string, files: Record<string, string>) {
-  const sessionDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  const sessionDir = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessionDir, { recursive: true });
 
   for (const [filename, content] of Object.entries(files)) {

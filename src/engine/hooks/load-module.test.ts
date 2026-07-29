@@ -30,7 +30,7 @@ describe('loadHookModule', () => {
   });
 
   it('returns ok:false when default export is not a function', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-module-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-hook-module-'));
     const modulePath = 'default-string.mjs';
     try {
       await writeFile(join(tempDir, modulePath), 'export default "not a function";');
@@ -47,7 +47,7 @@ describe('loadHookModule', () => {
   });
 
   it('rejects absolute module paths', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-module-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-hook-module-'));
     const modulePath = join(tempDir, 'hook.mjs');
     try {
       await writeFile(modulePath, 'export default () => ({ kind: "allow" });');
@@ -66,8 +66,8 @@ describe('loadHookModule', () => {
   });
 
   it('rejects symlinks that resolve outside the project root', async () => {
-    const tempDir = await mkdtemp(join(tmpdir(), 'diptych-hook-module-'));
-    const outsideDir = await mkdtemp(join(tmpdir(), 'diptych-hook-outside-'));
+    const tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-hook-module-'));
+    const outsideDir = await mkdtemp(join(tmpdir(), 'splitbrief-hook-outside-'));
     try {
       await mkdir(join(tempDir, 'hooks'));
       await writeFile(join(outsideDir, 'hook.mjs'), 'export default () => ({ kind: "allow" });');

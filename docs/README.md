@@ -1,17 +1,17 @@
-# diptych docs
+# SPLITBRIEF docs
 
 > **New here?** Read in this order:
-> 1. [MENTAL-MODEL.md](./MENTAL-MODEL.md) — what diptych is and how it thinks
+> 1. [MENTAL-MODEL.md](./MENTAL-MODEL.md) — what SPLITBRIEF is and how it thinks
 > 2. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) — the complete data flow with file paths
 > 3. [WORKFLOW.md](./WORKFLOW.md) — the state machine, phases, modes
 
-**diptych** is a cost-aware task compiler for AI coding agents. An expensive planner compiles Task Briefs; a cheaper implementer executes them. Two roles, one job.
+**SPLITBRIEF** is a cost-aware task compiler for AI coding agents. An expensive planner compiles Task Briefs; a cheaper implementer executes them. Two roles, one job.
 
 ---
 
 ## Understanding the system
 
-Read these to learn how diptych works. Each doc builds on the previous one.
+Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 
 | Doc | What it covers |
 |-----|---------------|
@@ -30,11 +30,11 @@ Read these to learn how diptych works. Each doc builds on the previous one.
 
 | You want to… | Go to |
 |---|---|
-| Get diptych running | [GETTING-STARTED.md](./GETTING-STARTED.md) |
+| Get SPLITBRIEF running | [GETTING-STARTED.md](./GETTING-STARTED.md) |
 | Add a command, event, store, or backend | [EXTENDING.md](./EXTENDING.md) |
 | Look up a CLI command or flag | [CLI-REFERENCE.md](./CLI-REFERENCE.md) |
 | Look up a slash command | [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) |
-| Configure diptych | [CONFIGURATION.md](./CONFIGURATION.md) |
+| Configure SPLITBRIEF | [CONFIGURATION.md](./CONFIGURATION.md) |
 | Fix something | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | See recipes and examples | [USAGE-EXAMPLES.md](./USAGE-EXAMPLES.md) |
 | Write or run tests | [TESTING.md](./TESTING.md) |

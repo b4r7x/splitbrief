@@ -66,19 +66,27 @@ export function hitTranscriptRow(input: {
   });
 }
 
-export function hitBriefTaskRow(input: {
-  rect: WorkflowContentRect;
-  sgrX: number;
-  sgrY: number;
-  hasLoadError: boolean;
-  visibleCount: number;
-  previousCount: number;
-}): number | null {
+export function hitBriefTaskRow(
+  input: {
+    rect: WorkflowContentRect;
+    sgrX: number;
+    sgrY: number;
+    visibleCount: number;
+    previousCount: number;
+  } & (
+    | { hasLoadError: boolean; taskTopOffset?: never }
+    | { taskTopOffset: number; hasLoadError?: never }
+  ),
+): number | null {
+  const taskTopOffset =
+    'taskTopOffset' in input && input.taskTopOffset !== undefined
+      ? input.taskTopOffset
+      : briefListTopOffset({ hasLoadError: input.hasLoadError });
   return hitRowIndex({
     rect: input.rect,
     sgrX: input.sgrX,
     sgrY: input.sgrY,
-    listTop: input.rect.top + briefListTopOffset({ hasLoadError: input.hasLoadError }),
+    listTop: input.rect.top + taskTopOffset,
     rowHeight: SIMPLE_TASK_ROW_HEIGHT,
     visibleCount: input.visibleCount,
     offset: input.previousCount,

@@ -3,24 +3,33 @@ import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { useInputMode, type UseInputModeResult } from './use-input-mode.js';
 
 function Harness({ capture }: { capture: { current: UseInputModeResult | null } }) {
   const inputMode = useInputMode();
+  const viewport = terminalSizeStore.use((state) => `${state.cols}x${state.rows}`);
   useEffect(() => {
     capture.current = inputMode;
   });
-  return <Text>{`${inputMode.mode}:${inputMode.hint}`}</Text>;
+  return (
+    <Text>
+      {`${viewport}:${inputMode.mode}:${inputMode.hint}:question-${inputMode.questionEpoch}`}
+    </Text>
+  );
 }
 
 async function waitForMode(
   capture: { current: UseInputModeResult | null },
   mode: UseInputModeResult['mode'],
+  hint?: string,
 ) {
   for (let i = 0; i < 5; i += 1) {
     await tick();
-    if (capture.current?.mode === mode) return;
+    if (capture.current?.mode === mode && (hint === undefined || capture.current.hint === hint)) {
+      return;
+    }
   }
 }
 
@@ -28,34 +37,49 @@ describe('useInputMode', () => {
   beforeEach(() => {
     controlsStore.reset();
     questionPromptStore.reset();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
   });
 
-  it('resolves a superseded question before installing the next question resolver', async () => {
+  it('preserves the current question resolver and epoch through viewport rerenders', async () => {
     const capture: { current: UseInputModeResult | null } = { current: null };
     const ui = renderFeature(<Harness capture={capture} />);
     await tick();
 
     const first = capture.current?.setQuestionMode('first question');
     if (!first) throw new Error('expected first question promise');
+    await waitForMode(capture, 'question');
+
+    expect(ui.lastFrame()).toContain('120x40:question:first question:question-1');
+
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
     await tick();
+    expect(ui.lastFrame()).toContain('80x24:question:first question:question-1');
 
     const second = capture.current?.setQuestionMode('second question');
     if (!second) throw new Error('expected second question promise');
     await expect(first).resolves.toBe('');
-    await waitForMode(capture, 'question');
+    await waitForMode(capture, 'question', 'second question');
 
     expect(capture.current?.mode).toBe('question');
     expect(capture.current?.hint).toBe('second question');
+    expect(capture.current?.questionEpoch).toBe(2);
     expect(controlsStore.get().inputMode).toBe('question');
     expect(questionPromptStore.get().hint).toBe('second question');
 
-    capture.current?.resolve('answer');
+    const resolveAtCompact = requireRef(capture).resolve;
+    terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    await tick();
+    expect(ui.lastFrame()).toContain('60x18:question:second question:question-2');
+
+    resolveAtCompact('answer');
     await expect(second).resolves.toBe('answer');
     await waitForMode(capture, 'normal');
 
     expect(capture.current?.mode).toBe('normal');
+    expect(capture.current?.questionEpoch).toBe(2);
     expect(controlsStore.get().inputMode).toBe('normal');
     expect(questionPromptStore.get().hint).toBeNull();
+    expect(ui.lastFrame()).toContain('60x18:normal::question-2');
     ui.unmount();
   });
 
@@ -73,7 +97,7 @@ describe('useInputMode', () => {
     await expect(review).resolves.toEqual({ approved: false });
     await waitForMode(capture, 'question');
 
-    expect(ui.lastFrame()).toBe('question:question prompt');
+    expect(ui.lastFrame()).toContain('question:question prompt');
 
     capture.current?.resolve('answer');
     await expect(question).resolves.toBe('answer');
@@ -117,6 +141,7 @@ describe('useInputMode — mode transitions', () => {
   beforeEach(() => {
     controlsStore.reset();
     questionPromptStore.reset();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
   });
 
   afterEach(() => {
@@ -138,7 +163,15 @@ describe('useInputMode — mode transitions', () => {
     expect(controlsStore.get().inputMode).toBe('review');
     expect(ui.lastFrame()).toContain('approve / quit?');
 
-    requireRef(ref).resolve({ approved: true });
+    const resolveAtWide = requireRef(ref).resolve;
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    await tick();
+    expect(ui.lastFrame()).toContain('80x24:review:approve / quit?');
+    terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    await tick();
+    expect(ui.lastFrame()).toContain('60x18:review:approve / quit?');
+
+    resolveAtWide({ approved: true });
     await pending;
 
     expect(approvalResult).toEqual({ approved: true });

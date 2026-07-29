@@ -26,9 +26,10 @@ import type {
   MetadataCandidate,
 } from './types.js';
 import { createMarkdownRowsCacheEntryFromChunks } from './window.js';
+import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 
 const MAX_LIST_LINES_PER_CHUNK = 64;
-const CONTINUATION_SENTINEL = '# diptych-continuation-sentinel';
+const CONTINUATION_SENTINEL = `# ${SPLITBRIEF_IDENTITY.slug}-continuation-sentinel`;
 
 export function appendMarkdownRowsCacheEntry(input: {
   cached: MarkdownRowsCacheEntry;

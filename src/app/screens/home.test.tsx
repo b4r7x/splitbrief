@@ -115,8 +115,7 @@ describe('HomeScreen', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('__|_||_|');
-    expect(frame.includes('── diptych ──')).toBe(false);
+    expect(frame).toContain('|___/ .__/');
     expect(frame).toContain('standard');
     expect(frame).toContain('No recent sessions');
     ui.unmount();
@@ -221,14 +220,14 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('renders full ASCII logo on large terminals', async () => {
+  it('renders the full ASCII wordmark on large terminals', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('__| (_)');
+    expect(frame).toContain('|____/| .__/');
     const renderedLogoLines = getLogo('full')
       .split('\n')
       .filter((line) => frame.includes(line.trim()));
@@ -236,15 +235,14 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('renders ASCII art on small terminals', async () => {
+  it('renders compact ASCII art on small terminals', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
 
     const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('__|_||_|');
-    expect(frame.includes('── diptych ──')).toBe(false);
+    expect(frame).toContain('|___/ .__/');
     ui.unmount();
   });
 
@@ -294,7 +292,7 @@ describe('HomeScreen', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(frame).toContain('__| (_)');
+    expect(frame).toContain('|____/| .__/');
     expect(frame).toContain('gap test feature');
     expect(frame).toContain(HOME_HINT);
     ui.unmount();
@@ -349,6 +347,61 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain(FOCUS_BAR);
     expect(frame).toContain(RECENT_SESSIONS_HINT);
+    ui.unmount();
+  });
+
+  it('preserves the composer draft and selected session across viable resize changes', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    seedSessions(3);
+    const target = {
+      id: 'focus-session-1',
+      feature: 'focus feature 1',
+    };
+    saveState(
+      { projectDir, sessionId: target.id },
+      {
+        ...createInitialState(target.feature),
+        phase: 'implementing',
+      },
+    );
+    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    await flushEffects();
+
+    ui.stdin.write('preserved draft');
+    await flushEffects();
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
+    }, SESSION_FILTER_WAIT_MS);
+    ui.stdin.write(ARROW_DOWN);
+    await vi.waitFor(() => {
+      expectLineContains(ui.lastFrame() ?? '', target.feature, FOCUS_BAR);
+    }, SESSION_FILTER_WAIT_MS);
+
+    for (const viewport of [
+      { cols: 80, rows: 24, isSmall: true },
+      { cols: 120, rows: 40, isSmall: false },
+    ]) {
+      terminalSizeStore.__testReset(viewport);
+      await flushEffects();
+
+      const frame = ui.lastFrame() ?? '';
+      expect(frame, `${viewport.cols}x${viewport.rows}`).toContain('preserved draft');
+      expectLineContains(frame, target.feature, FOCUS_BAR);
+      expect(frame.split('\n').length, `${viewport.cols}x${viewport.rows}`).toBeLessThanOrEqual(
+        viewport.rows,
+      );
+    }
+
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => {
+      expect(routerStore.get().screen).toBe('workflow');
+    }, SESSION_FILTER_WAIT_MS);
+    expect(routerStore.get()).toMatchObject({
+      screen: 'workflow',
+      feature: target.feature,
+      sessionId: target.id,
+    });
     ui.unmount();
   });
 

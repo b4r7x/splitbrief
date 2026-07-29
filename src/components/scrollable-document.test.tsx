@@ -110,6 +110,41 @@ describe('ScrollableDocument', () => {
     ui.unmount();
   });
 
+  it('keeps controlled offsets independent from local document state', async () => {
+    const offsets: number[] = [];
+    const ui = renderFeature(
+      <ScrollableDocument
+        rows={makeRows(8)}
+        height={3}
+        scrollOffset={0}
+        onScrollOffsetChange={(offset) => offsets.push(offset)}
+      />,
+    );
+    await tick(20);
+
+    ui.stdin.write(PAGE_DOWN);
+    await tick(20);
+    expect(offsets.at(-1)).toBe(3);
+    expect(ui.lastFrame() ?? '').toContain('line-0');
+
+    ui.rerender(
+      <ScrollableDocument
+        rows={makeRows(8)}
+        height={3}
+        scrollOffset={3}
+        onScrollOffsetChange={(offset) => offsets.push(offset)}
+      />,
+    );
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain('line-3');
+
+    ui.rerender(<ScrollableDocument rows={makeRows(8)} height={3} />);
+    await tick(20);
+    expect(ui.lastFrame() ?? '').toContain('line-0');
+
+    ui.unmount();
+  });
+
   it('scrolls one line at a time in line-and-page mode', async () => {
     const ui = renderFeature(
       <ScrollableDocument rows={makeRows(6)} height={3} keyboardMode="line-and-page" />,

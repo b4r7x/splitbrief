@@ -104,7 +104,7 @@ describe('classifyAction — control plane', () => {
   it.each([
     { taskFile: '.git/config', desc: 'create .git/config' },
     { taskFile: '.git/hooks/pre-commit', desc: 'write .git/hooks/pre-commit' },
-    { taskFile: '.diptych/config.yaml', desc: 'modify .diptych/config.yaml' },
+    { taskFile: '.splitbrief/config.yaml', desc: 'modify .splitbrief/config.yaml' },
   ])('$taskFile → destructive/confirm, never write_in_scope/auto', ({ taskFile, desc }) => {
     const result = classifyAction(make(desc, { taskFile, taskInBounds: [taskFile] }));
     expect(result).toEqual({ actionClass: 'destructive', tier: 'confirm' });

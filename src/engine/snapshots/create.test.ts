@@ -10,7 +10,7 @@ import { restoreSnapshot } from './restore.js';
 let tmp: string;
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'diptych-snapshot-'));
+  tmp = await mkdtemp(join(tmpdir(), 'splitbrief-snapshot-'));
 });
 
 afterEach(async () => {
@@ -80,13 +80,13 @@ describe('createSnapshot — first call (baseline)', () => {
     expect(result.manifest.taskIndex).toBe(3);
   });
 
-  it('excludes .diptych/ from tracked files (regression guard)', async () => {
+  it('excludes .splitbrief/ from tracked files (regression guard)', async () => {
     await writeFile(join(tmp, 'src.ts'), 'export {}');
 
     const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
-    expect(result.manifest.fileEntries.every((e) => !e.path.startsWith('.diptych/'))).toBe(true);
-    expect(result.manifest.fileHashes).not.toHaveProperty('.diptych/active');
+    expect(result.manifest.fileEntries.every((e) => !e.path.startsWith('.splitbrief/'))).toBe(true);
+    expect(result.manifest.fileHashes).not.toHaveProperty('.splitbrief/active');
   });
 
   it('excludes .trees/ from tracked files so worktree clones never end up inside their parent snapshot', async () => {

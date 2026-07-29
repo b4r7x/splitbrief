@@ -50,7 +50,7 @@ function firstEventOfType<TType extends EngineEvent['type']>(
   return event;
 }
 
-describe.skipIf(process.env.DIPTYCH_PERF !== '1')('events store cap perf', () => {
+describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('events store cap perf', () => {
   beforeEach(() => resetWorkflow());
 
   it('ingests past MAX_EVENTS while preserving structural transcript events', () => {

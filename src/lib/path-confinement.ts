@@ -2,7 +2,7 @@ import { realpathSync, lstatSync } from 'node:fs';
 import { resolve, isAbsolute, sep, win32, relative, dirname } from 'node:path';
 import { error, matches } from '../utils/error.js';
 
-const CONTROL_PLANE_SEGMENTS = new Set(['.git', '.diptych']);
+const CONTROL_PLANE_SEGMENTS = new Set(['.git', '.splitbrief']);
 
 export const pathConfinementError = {
   absolutePath: (relativePath: string) =>
@@ -16,7 +16,7 @@ export const pathConfinementError = {
   controlPlane: (relativePath: string) =>
     error(
       'path-confined-control-plane',
-      `unsafe path: refusing to write into control plane (.git/.diptych): ${relativePath}`,
+      `unsafe path: refusing to write into control plane (.git/.splitbrief): ${relativePath}`,
       { relativePath },
     ),
   hardlink: (relativePath: string) =>
@@ -129,10 +129,10 @@ export function assertWritablePathConfined(relativePath: string, rootDir: string
 
 /**
  * Stricter guard for paths whose name comes from the model (`task.file`).
- * In addition to confinement, rejects writes that reach diptych's control plane
- * (`.git`/`.diptych`) — lexically, through an in-repo symlink whose realpath
+ * In addition to confinement, rejects writes that reach splitbrief's control plane
+ * (`.git`/`.splitbrief`) — lexically, through an in-repo symlink whose realpath
  * resolves into the control plane, or through a hardlink to a control-plane file.
- * diptych's own writes into `.diptych/` use `assertWritablePathConfined` directly
+ * splitbrief's own writes into `.splitbrief/` use `assertWritablePathConfined` directly
  * and are not subject to this control-plane rejection.
  */
 export function assertModelWritablePathConfined(relativePath: string, rootDir: string): void {

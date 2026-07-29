@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { listProjectFiles } from '../../lib/file-listing.js';
-import { DIPTYCH_DIR, SESSIONS_DIR } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, SESSIONS_DIR } from '../../core/paths.js';
 import { projectFilesStore } from '../../stores/ui/project-files.js';
 
-const SESSIONS_REL_DIR = `${DIPTYCH_DIR}/${SESSIONS_DIR}`;
+const SESSIONS_REL_DIR = `${SPLITBRIEF_DIR}/${SESSIONS_DIR}`;
 const SESSIONS_EXCLUDE = new RegExp(`(?:^|/)${SESSIONS_REL_DIR.replace(/[.]/g, '\\$&')}/`);
 
 async function readProjectFiles(projectDir: string): Promise<string[]> {

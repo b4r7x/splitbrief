@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   DRIFT_REPORT_FILE,
   EVIDENCE_FILE,
   READINESS_FILE,
@@ -51,7 +51,7 @@ const ARTIFACT_FILES = [
 ] as const;
 
 export function artifactPath(sessionId: string, file: string): string {
-  return `${DIPTYCH_DIR}/${SESSIONS_DIR}/${sessionId}/${file}`;
+  return `${SPLITBRIEF_DIR}/${SESSIONS_DIR}/${sessionId}/${file}`;
 }
 
 export async function assertSessionDirectory(projectDir: string, sessionId: string): Promise<void> {

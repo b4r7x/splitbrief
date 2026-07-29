@@ -9,7 +9,7 @@ import { initConfig } from '../../core/config/load/io.js';
 import { createWorktree } from './create.js';
 import { removeWorktree } from './remove.js';
 import {
-  DIPTYCH_DIR,
+  SPLITBRIEF_DIR,
   ACTIVE_FILE,
   STATE_FILE,
   SESSIONS_DIR,
@@ -59,23 +59,23 @@ describe('removeWorktree', () => {
     rmSync(wtPath, { recursive: true, force: true });
     const before = await git.raw(['worktree', 'list', '--porcelain']);
     expect(before).toContain('feat-gone');
-    expect((await git.branch()).all).toContain('diptych/feat-gone');
+    expect((await git.branch()).all).toContain('splitbrief/feat-gone');
 
     await removeWorktree({ projectDir: repoDir, slug: 'feat-gone', git, deleteBranch: true });
 
     const after = await git.raw(['worktree', 'list', '--porcelain']);
     expect(after).not.toContain('feat-gone');
-    expect((await git.branch()).all).not.toContain('diptych/feat-gone');
+    expect((await git.branch()).all).not.toContain('splitbrief/feat-gone');
   });
 
   it('refuses when a live session exists (without force)', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-i', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-i');
-    const diptychDir = join(wtPath, DIPTYCH_DIR);
+    const splitbriefDir = join(wtPath, SPLITBRIEF_DIR);
     const sessionId = 'live-session-001';
-    const sessionDir = join(diptychDir, SESSIONS_DIR, sessionId);
+    const sessionDir = join(splitbriefDir, SESSIONS_DIR, sessionId);
     await mkdir(sessionDir, { recursive: true });
-    await writeFile(join(diptychDir, ACTIVE_FILE), sessionId + '\n');
+    await writeFile(join(splitbriefDir, ACTIVE_FILE), sessionId + '\n');
     await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
 
     await expect(removeWorktree({ projectDir: repoDir, slug: 'feat-i', git })).rejects.toThrow(
@@ -83,11 +83,11 @@ describe('removeWorktree', () => {
     );
   });
 
-  it('refuses a non-terminal session with no .diptych/active pointer (TUI run)', async () => {
+  it('refuses a non-terminal session with no .splitbrief/active pointer (TUI run)', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-tui-rm', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-tui-rm');
     const sessionId = 'tui-session-rm';
-    const sessionDir = join(wtPath, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    const sessionDir = join(wtPath, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
     await mkdir(sessionDir, { recursive: true });
     await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
 
@@ -100,9 +100,9 @@ describe('removeWorktree', () => {
   it('allows removal when a non-terminal session has an exited server lockfile', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-dead', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-dead');
-    await writeFile(join(wtPath, '.gitignore'), '.diptych/\n.trees/\n');
+    await writeFile(join(wtPath, '.gitignore'), '.splitbrief/\n.trees/\n');
     const sessionId = 'feat-dead';
-    const sessionDir = join(wtPath, DIPTYCH_DIR, SESSIONS_DIR, sessionId);
+    const sessionDir = join(wtPath, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId);
     await mkdir(sessionDir, { recursive: true });
     await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
     await writeFile(
@@ -145,11 +145,11 @@ describe('removeWorktree', () => {
   it('proceeds with force=true and logs both bypassed guards to stderr', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-k', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-k');
-    const diptychDir = join(wtPath, DIPTYCH_DIR);
+    const splitbriefDir = join(wtPath, SPLITBRIEF_DIR);
     const sessionId = 'live-session-force';
-    const sessionDir = join(diptychDir, SESSIONS_DIR, sessionId);
+    const sessionDir = join(splitbriefDir, SESSIONS_DIR, sessionId);
     await mkdir(sessionDir, { recursive: true });
-    await writeFile(join(diptychDir, ACTIVE_FILE), sessionId + '\n');
+    await writeFile(join(splitbriefDir, ACTIVE_FILE), sessionId + '\n');
     await writeFile(join(sessionDir, STATE_FILE), JSON.stringify({ phase: 'implementing' }));
     await writeFile(join(wtPath, 'dirty.txt'), 'uncommitted change');
 
@@ -168,11 +168,11 @@ describe('removeWorktree', () => {
   it('deletes the branch when deleteBranch=true', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-l', git });
     const branchesBefore = await git.branch();
-    expect(branchesBefore.all).toContain('diptych/feat-l');
+    expect(branchesBefore.all).toContain('splitbrief/feat-l');
 
     await removeWorktree({ projectDir: repoDir, slug: 'feat-l', git, deleteBranch: true });
 
     const branchesAfter = await git.branch();
-    expect(branchesAfter.all).not.toContain('diptych/feat-l');
+    expect(branchesAfter.all).not.toContain('splitbrief/feat-l');
   });
 });

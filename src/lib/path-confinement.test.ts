@@ -70,8 +70,8 @@ describe('assertModelWritablePathConfined — control plane', () => {
   it.each([
     ['.git/config', '.git/config'],
     ['nested .git path', '.git/hooks/pre-commit'],
-    ['.diptych/config.yaml', '.diptych/config.yaml'],
-    ['nested .diptych path', '.diptych/sessions/s/state.json'],
+    ['.splitbrief/config.yaml', '.splitbrief/config.yaml'],
+    ['nested .splitbrief path', '.splitbrief/sessions/s/state.json'],
   ])('rejects model-named write to %s', (_label, path) => {
     const root = createTempDir('path-conf-cp-root');
     tmpDirs.push(root);

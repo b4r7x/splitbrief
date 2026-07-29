@@ -21,7 +21,7 @@ let teardown: (() => void) | null = null;
 beforeEach(() => {
   vi.useFakeTimers();
   tmpHome = createTempDir('input-history-persist');
-  historyFile = join(tmpHome, '.diptych', 'history');
+  historyFile = join(tmpHome, '.splitbrief', 'history');
   originalHome = process.env['HOME'];
   process.env['HOME'] = tmpHome;
   vi.resetModules();
@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 function seedHistoryFile(content: string): void {
-  mkdirSync(join(tmpHome, '.diptych'), { recursive: true });
+  mkdirSync(join(tmpHome, '.splitbrief'), { recursive: true });
   writeFileSync(historyFile, content);
 }
 

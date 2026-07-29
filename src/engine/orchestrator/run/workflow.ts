@@ -26,6 +26,7 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { checkServerStatus, writeLockfile, markExited } from '../../ipc/lockfile.js';
 import { startHeartbeat } from '../../ipc/heartbeat.js';
 import { warnError } from '../../../lib/warn.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
 import type {
   Planner,
@@ -63,7 +64,7 @@ const workflowLivenessError = {
   sessionAlreadyLive: (sessionId: string, pid: number) =>
     error(
       'workflow-session-already-live',
-      `session '${sessionId}' is already running (pid ${pid}). Use 'diptych continue ${sessionId}' to attach or resume it.`,
+      `session '${sessionId}' is already running (pid ${pid}). Use '${SPLITBRIEF_IDENTITY.executable} continue ${sessionId}' to attach or resume it.`,
       { sessionId, pid },
     ),
 };

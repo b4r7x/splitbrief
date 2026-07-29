@@ -25,7 +25,7 @@ function installRecordingShim(): { envMarkerFile: string } {
   const shimPath = join(shimDir, 'claude');
   const script = [
     '#!/bin/bash',
-    `printf '%s\\n' "$DIPTYCH_SANDBOX_MARKER" > '${envMarkerFile}'`,
+    `printf '%s\\n' "$SPLITBRIEF_SANDBOX_MARKER" > '${envMarkerFile}'`,
     `printf '%s\\n' '{"type":"result","result":"\`\`\`ts\\nexport const x = 1;\\n\`\`\`"}'`,
   ].join('\n');
   writeFileSync(shimPath, `${script}\n`, 'utf8');
@@ -60,7 +60,7 @@ describe('createClaudeCodePlanner escalation', () => {
       callbacks: { onOutput: () => {} },
       sandboxEnv: {
         PATH: `${shimDir}:${originalPath ?? ''}`,
-        DIPTYCH_SANDBOX_MARKER: 'forwarded',
+        SPLITBRIEF_SANDBOX_MARKER: 'forwarded',
       },
     });
 

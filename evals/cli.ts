@@ -20,8 +20,8 @@ async function main(): Promise<void> {
   const plannerModel = getArg(args, '--planner-model') ?? 'gpt-4o';
   const baselineModel = getArg(args, '--baseline-model') ?? plannerModel;
   const routedModel = getArg(args, '--routed-model') ?? 'gpt-4o-mini';
-  const baseUrl = getArg(args, '--base-url') ?? process.env['DIPTYCH_EVAL_API_BASE'] ?? '';
-  const apiKey = getArg(args, '--api-key') ?? process.env['DIPTYCH_EVAL_API_KEY'] ?? '';
+  const baseUrl = getArg(args, '--base-url') ?? process.env['SPLITBRIEF_EVAL_API_BASE'] ?? '';
+  const apiKey = getArg(args, '--api-key') ?? process.env['SPLITBRIEF_EVAL_API_KEY'] ?? '';
   const provider = getArg(args, '--provider') ?? 'openai';
   const scenarioFilter = getArg(args, '--scenario');
   const record = args.includes('--record');
@@ -33,12 +33,12 @@ async function main(): Promise<void> {
   }
 
   if (!apiKey && !replay) {
-    console.error('Error: --api-key or DIPTYCH_EVAL_API_KEY required unless --replay is used');
+    console.error('Error: --api-key or SPLITBRIEF_EVAL_API_KEY required unless --replay is used');
     process.exit(1);
   }
 
   if (!baseUrl && !replay) {
-    console.error('Error: --base-url or DIPTYCH_EVAL_API_BASE required unless --replay is used');
+    console.error('Error: --base-url or SPLITBRIEF_EVAL_API_BASE required unless --replay is used');
     process.exit(1);
   }
 

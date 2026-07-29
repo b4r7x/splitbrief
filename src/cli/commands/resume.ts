@@ -41,7 +41,7 @@ export async function resumeCommand(
   const status = await deps.checkServerStatus(sessionDir(projectDir, sessionId));
   if (status.alive) {
     throw cliError(
-      `session '${sessionId}' is running — use \`diptych attach\` to view it or \`diptych continue\` to attach/resume.`,
+      `session '${sessionId}' is running — use \`splitbrief attach\` to view it or \`splitbrief continue\` to attach/resume.`,
       1,
     );
   }
@@ -57,7 +57,7 @@ export async function resumeCommand(
 
   if (!state) {
     throw cliError(
-      `session '${sessionId}' has no usable state.json — cannot resume. Start a new workflow with \`diptych start\`.`,
+      `session '${sessionId}' has no usable state.json — cannot resume. Start a new workflow with \`splitbrief start\`.`,
     );
   }
 

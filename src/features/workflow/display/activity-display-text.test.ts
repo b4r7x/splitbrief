@@ -23,7 +23,7 @@ describe('fitCompactActivityDisplayLine', () => {
     const rowCells = 42;
     const line = fitCompactActivityDisplayLine({
       label: 'read',
-      value: '/Users/dev/Projects/tiny-spec/src/features/workflow/display/package.json',
+      value: '/Users/dev/Projects/splitbrief/src/features/workflow/display/package.json',
       rowCells,
       prefixCells: getTerminalCellWidth('| '),
     });

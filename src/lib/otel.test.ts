@@ -18,7 +18,7 @@ type ProbeOptions = {
 function runSpanExportProbe(options: ProbeOptions = {}): string {
   const env = { ...process.env };
   delete env['OTEL_TRACES_EXPORTER'];
-  delete env['DIPTYCH_OTEL_EXPORTER'];
+  delete env['SPLITBRIEF_OTEL_EXPORTER'];
 
   for (const [key, value] of Object.entries(options.env ?? {})) {
     if (value === undefined) {
@@ -61,7 +61,7 @@ describe('bootstrapOtel', () => {
     expect(runSpanExportProbe({ env: { OTEL_TRACES_EXPORTER: 'console' } })).toBe(
       'exported:probe-span',
     );
-    expect(runSpanExportProbe({ env: { DIPTYCH_OTEL_EXPORTER: 'console' } })).toBe(
+    expect(runSpanExportProbe({ env: { SPLITBRIEF_OTEL_EXPORTER: 'console' } })).toBe(
       'exported:probe-span',
     );
     expect(runSpanExportProbe({ argv: ['--otel-exporter=console'] })).toBe('exported:probe-span');
@@ -76,7 +76,7 @@ describe('bootstrapOtel', () => {
     ).toBe('');
     expect(
       runSpanExportProbe({
-        env: { DIPTYCH_OTEL_EXPORTER: 'console' },
+        env: { SPLITBRIEF_OTEL_EXPORTER: 'console' },
         argv: ['start', '--rpc'],
       }),
     ).toBe('');

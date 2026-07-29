@@ -1,5 +1,10 @@
 import { getChromeHeight, getRailActiveIndex, selectRailForm } from './chrome-rows.js';
-import { getRailStageZones, resolveRailFraction, type RailStageZone } from './hit-test.js';
+import {
+  briefListTopOffset,
+  getRailStageZones,
+  resolveRailFraction,
+  type RailStageZone,
+} from './hit-test.js';
 import { clamp } from '../../../utils/math.js';
 import {
   getReviewColumnWidth,
@@ -57,10 +62,11 @@ interface ConversationLayoutSnapshot {
 }
 
 function readWorkflowPromptRows(): number {
+  const controls = controlsStore.get();
   return getWorkflowPromptRows({
     approvalState: approvalPromptStore.get(),
     costApprovalState: costApprovalStore.get(),
-    questionHint: questionPromptStore.get().hint,
+    questionHint: controls.inputMode === 'question' ? questionPromptStore.get().hint : null,
     cols: terminalSizeStore.get().cols,
   });
 }
@@ -124,6 +130,7 @@ export interface BriefListSnapshot {
   previousCount: number;
   visibleCount: number;
   hasLoadError: boolean;
+  taskTopOffset: number;
 }
 
 export function readBriefListSnapshot(): BriefListSnapshot | null {
@@ -161,7 +168,13 @@ export function readBriefListSnapshot(): BriefListSnapshot | null {
     getSimpleBriefVisibleTaskCount({ rowBudget, taskCount }),
     taskCount - previousCount,
   );
-  return { rect, previousCount, visibleCount, hasLoadError };
+  return {
+    rect,
+    previousCount,
+    visibleCount,
+    hasLoadError,
+    taskTopOffset: briefListTopOffset({ hasLoadError }),
+  };
 }
 
 function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {

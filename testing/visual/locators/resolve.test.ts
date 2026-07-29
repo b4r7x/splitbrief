@@ -102,17 +102,23 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       WIDE_VIEWPORT,
       workflow.checkpoints[0]?.marker ?? '',
     );
-    const sidebar = resolveElementLocator({
-      scenario: workflow,
-      checkpoint: requireCheckpoint(workflow),
-      grid: workflowGrid,
-      elementId: 'sidebar',
-    });
     const composer = resolveElementLocator({
       scenario: workflow,
       checkpoint: requireCheckpoint(workflow),
       grid: workflowGrid,
       elementId: 'composer',
+    });
+    const implementation = requireScenario('workflow-implementation');
+    const implementationGrid = await createGrid(
+      implementation,
+      WIDE_VIEWPORT,
+      requireCheckpoint(implementation).marker,
+    );
+    const sidebar = resolveElementLocator({
+      scenario: implementation,
+      checkpoint: requireCheckpoint(implementation),
+      grid: implementationGrid,
+      elementId: 'sidebar',
     });
 
     const review = requireScenario('workflow-review');
@@ -168,7 +174,9 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
               ? summary.id
               : locator === approval
                 ? review.id
-                : workflow.id,
+                : locator === sidebar
+                  ? implementation.id
+                  : workflow.id,
         fixtureVersion: 1,
       });
       expect(locator.provenance.sourceFrameKey).toContain(':frame');

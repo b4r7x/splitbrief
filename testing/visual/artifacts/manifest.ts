@@ -62,7 +62,7 @@ export function buildManifest(options: BuildManifestOptions): Manifest {
     catalogVersion: CATALOG_SCHEMA_VERSION,
     cellSchemaVersion: CELL_GRID_SCHEMA_VERSION,
     tool: {
-      name: 'diptych-tui-shots',
+      name: 'splitbrief-tui-shots',
       version: options.toolVersion,
     },
     gitRevision: options.gitRevision,

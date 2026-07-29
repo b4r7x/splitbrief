@@ -8,7 +8,7 @@ describe('extractMentionedFilenames', () => {
   let projectDir: string;
 
   beforeEach(() => {
-    projectDir = createTempDir('diptych-emf');
+    projectDir = createTempDir('splitbrief-emf');
   });
 
   afterEach(() => {

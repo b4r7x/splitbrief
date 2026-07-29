@@ -1,6 +1,6 @@
-# Contributing to diptych
+# Contributing to SPLITBRIEF
 
-Thanks for considering a contribution. diptych is a small, opinionated codebase — reading before writing saves time for everyone.
+Thanks for considering a contribution. SPLITBRIEF is a small, opinionated codebase — reading before writing saves time for everyone.
 
 ## Before you start
 
@@ -19,7 +19,7 @@ Requires **Node.js 22+**. The project is TypeScript 6.x, ESM only.
 
 ```bash
 git clone <repo>
-cd tiny-spec
+cd splitbrief
 npm ci
 npm run dev -- start "your feature"   # verify local runs
 ```
@@ -110,4 +110,4 @@ Version lives in [`package.json`](./package.json); notable changes are recorded 
 ## Getting help
 
 - [docs/DEBUGGING.md](./docs/DEBUGGING.md) for common issues and diagnostic flags.
-- When opening an issue, include the session id and, if possible, `.diptych/sessions/<id>/session.jsonl`.
+- When opening an issue, include the session id and, if possible, `.splitbrief/sessions/<id>/session.jsonl`.

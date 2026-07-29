@@ -1,4 +1,4 @@
-# diptych — Concepts & Glossary
+# SPLITBRIEF — Concepts & Glossary
 
 Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms here are used throughout `src/` and the other docs in this folder.
 
@@ -6,7 +6,7 @@ Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms
 
 ## Core idea
 
-diptych is a CLI that splits AI coding work across two roles:
+SPLITBRIEF is a CLI that splits AI coding work across two roles:
 
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
 - An **implementer** — a cheap or local model (Ollama, LM Studio, DeepSeek, …) does the *typing*: turns each task from the list into code, one task at a time.
@@ -38,7 +38,7 @@ The "typing" side. Responsibilities:
 
 1. Receive a self-contained task prompt (signature, types, tests, constraints, implementation steps, code context).
 2. Produce code: either whole-file write or search/replace markers.
-3. Return code to the orchestrator for extraction-based runners, or write files directly for `agent` / `agent-sdk`; diptych inspects filesystem changes afterward.
+3. Return code to the orchestrator for extraction-based runners, or write files directly for `agent` / `agent-sdk`; SPLITBRIEF inspects filesystem changes afterward.
 
 The implementer is *stateless per task*. No conversation is maintained between tasks. This is deliberate: atomic tasks keep the context small enough to fit in an 8K model.
 
@@ -194,19 +194,19 @@ Since spec 008, clarification answers also route through the same queue as user-
 
 ## Skills
 
-Optional markdown files that provide extra context to the planner (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` discovers Claude Code skills from `.claude/skills/` and `~/.claude/skills/`, default runner skills from `.diptych/skills/` and `~/.diptych/skills/`, Codex instructions from `AGENTS.md` plus `~/.codex/skills/`, and Aider conventions from `CONVENTIONS.md`. User picks which skills to include for a given run; selected skills are concatenated into a `skills_context` block and passed to the planner alongside the feature prompt.
+Optional markdown files that provide extra context to the planner (coding standards, domain knowledge, architectural notes). `src/engine/skill-discovery.ts` discovers Claude Code skills from `.claude/skills/` and `~/.claude/skills/`, default runner skills from `.splitbrief/skills/` and `~/.splitbrief/skills/`, Codex instructions from `AGENTS.md` plus `~/.codex/skills/`, and Aider conventions from `CONVENTIONS.md`. User picks which skills to include for a given run; selected skills are concatenated into a `skills_context` block and passed to the planner alongside the feature prompt.
 
 Skills are planner-only. The implementer never sees them — its prompts are derived from the resolved Task Brief transport and any supporting artifacts.
 
 ---
 
-## Sessions (diptych sessions, not planner sessions)
+## Sessions (SPLITBRIEF sessions, not planner sessions)
 
-A **diptych session** is one self-contained piece of work from initial feature prompt to final summary. Every session lives in its own folder under `.diptych/sessions/<session-id>/`, where `<session-id>` has the form `<ISO-date>-<slug>` (e.g. `2026-04-14-add-email-validator`). Same-day slug collisions get a `-N` suffix (`2026-04-14-add-email-validator-2`).
+A **SPLITBRIEF session** is one self-contained piece of work from initial feature prompt to final summary. Every session lives in its own folder under `.splitbrief/sessions/<session-id>/`, where `<session-id>` has the form `<ISO-date>-<slug>` (e.g. `2026-04-14-add-email-validator`). Same-day slug collisions get a `-N` suffix (`2026-04-14-add-email-validator-2`).
 
-Foreground sessions are pointed to by `.diptych/active`, a plain text file containing the session-id. Only **one foreground session can be active at a time** in a given project directory — `diptych start` fails if `.diptych/active` already points at a live session. Detached sessions use lockfiles instead. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.diptych/` per working directory.
+Foreground sessions are pointed to by `.splitbrief/active`, a plain text file containing the session-id. Only **one foreground session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session. Detached sessions use lockfiles instead. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
 
-This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One diptych session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened on resume).
+This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened on resume).
 
 ## Queue & Interjection
 
@@ -265,19 +265,19 @@ Gating callbacks (`onApprovalNeeded`, `onQuestionAsked`, `onContinuationNeeded`,
 
 ## Headless mode
 
-`diptych start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, clarifications and continuations answer empty, and budget pause/exceeded recovery exits non-zero. File-write tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
+`splitbrief start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: review gates approve, clarifications and continuations answer empty, and budget pause/exceeded recovery exits non-zero. File-write tiered approvals are not auto-approved and can fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
 
 ## Hooks (workflow)
 
-Workflow lifecycle hooks let users run custom commands or in-process modules at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.diptych/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
+Workflow lifecycle hooks let users run custom commands or in-process modules at well-known moments (pre/post task, pre/post commit, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
 
 - **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_commit' | 'post_commit' | 'pre_escalation' | 'pre_compact' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
 - **HookEntry** — one configured hook: discriminated on `kind: 'command' | 'module'`. `command` entries carry `{ command, args, timeout_ms, on_failure }`; `module` entries carry `{ path, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
-- **HooksConfig** — the `hooks:` section of `.diptych/config.yaml`: a map from `HookEvent` to `HookEntry[]`, plus an optional `builtin: Record<string, boolean>` toggles block for shipped hooks (e.g. `prettier-on-change`, `block-secrets`).
+- **HooksConfig** — the `hooks:` section of `.splitbrief/config.yaml`: a map from `HookEvent` to `HookEntry[]`, plus an optional `builtin: Record<string, boolean>` toggles block for shipped hooks (e.g. `prettier-on-change`, `block-secrets`).
 
 ## Hook trust
 
-First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes a hash from the hook section plus module hook file digests; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time (`Trust these hooks for this project? [y/N]`) and stores the accepted hash in `.diptych/hook-trust.json`. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise diptych refuses to start. This prevents silent RCE via a config or hook-file edit.
+First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes a hash from the hook section plus module hook file digests; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time (`Trust these hooks for this project? [y/N]`) and stores the accepted hash in `.splitbrief/hook-trust.json`. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config or hook-file edit.
 
 ## Repo-map
 
@@ -289,10 +289,10 @@ Token-budgeted codebase summary injected into the planner prompt at workflow sta
 
 ## Artifacts on disk
 
-All workflow state lives under `.diptych/` in the target project. Each session gets its own self-contained folder.
+All workflow state lives under `.splitbrief/` in the target project. Each session gets its own self-contained folder.
 
 ```
-.diptych/
+.splitbrief/
 ├── config.yaml                             # user config (version: 3)
 ├── active                                  # plain text: session-id of the currently-active run (or absent)
 └── sessions/
@@ -314,11 +314,11 @@ All workflow state lives under `.diptych/` in the target project. Each session g
 Key rules:
 
 - One session = one folder. The folder name is the session-id.
-- `state.json` is what `diptych resume` reads to rebuild the in-memory `WorkflowState`. It is overwritten on every phase transition.
+- `state.json` is what `splitbrief resume` reads to rebuild the in-memory `WorkflowState`. It is overwritten on every phase transition.
 - `summary.json` is written exactly once, at end-of-run.
 - `session.jsonl` is append-only and the single source of truth for history (see "Events & messages" below).
 - `tasks.md` is the human-readable Task Brief transport. `research.md`, `spec.md`, `plan.md`, and speckit artifacts are supporting artifacts written when the corresponding planner phase produces them. They are **always** written when produced, regardless of `workflow.persistTranscript`.
-- `.diptych/active` holds the session-id for foreground sessions that should block another same-directory `diptych start`. Detached sessions use lockfiles instead.
+- `.splitbrief/active` holds the session-id for foreground sessions that should block another same-directory `splitbrief start`. Detached sessions use lockfiles instead.
 
 ---
 
@@ -350,7 +350,7 @@ Typed event schema: `src/engine/events/schema.ts` (`EngineEventSchema`; the `Eng
 
 ## Two-layer config
 
-`.diptych/config.yaml` has **`version: 3`** in current configs. `version: 2` is accepted and migrated for backwards compatibility, but new examples should use v3. Two top-level role blocks matter:
+`.splitbrief/config.yaml` has **`version: 3`** in current configs. `version: 2` is accepted and migrated for backwards compatibility, but new examples should use v3. Two top-level role blocks matter:
 
 ```yaml
 version: 3

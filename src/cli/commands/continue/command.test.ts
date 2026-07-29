@@ -12,11 +12,11 @@ import { skillsStore } from '../../../stores/project/skills.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
-import { CONFIG_FILE, DIPTYCH_DIR } from '../../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
 
 const LEGACY_FIXTURE_DIR = join(
   import.meta.dirname,
-  '../../../../testing/fixtures/legacy-diptych-current',
+  '../../../../testing/fixtures/legacy-splitbrief-current',
 );
 const EXPECTED_LEGACY_SESSION_ID = '2026-03-15-add-email-validator';
 
@@ -44,7 +44,7 @@ function makeTmpProject(): string {
 }
 
 function makeSessionDir(projectDir: string, sessionId: string): string {
-  const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  const sessDir = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   return sessDir;
 }
@@ -103,7 +103,7 @@ function writeState(sessDir: string, phase: string, extra: Record<string, unknow
 }
 
 function writeLegacyCurrent(projectDir: string): void {
-  const legacyDir = join(projectDir, DIPTYCH_DIR, 'current');
+  const legacyDir = join(projectDir, SPLITBRIEF_DIR, 'current');
   mkdirSync(legacyDir, { recursive: true });
   for (const name of ['state.json', 'events.jsonl', 'spec.md']) {
     writeFileSync(join(legacyDir, name), readFileSync(join(LEGACY_FIXTURE_DIR, name)));
@@ -209,10 +209,10 @@ describe('continueCommand', () => {
 
     expect(
       existsSync(
-        join(projectDir, DIPTYCH_DIR, 'sessions', EXPECTED_LEGACY_SESSION_ID, 'state.json'),
+        join(projectDir, SPLITBRIEF_DIR, 'sessions', EXPECTED_LEGACY_SESSION_ID, 'state.json'),
       ),
     ).toBe(true);
-    expect(readFileSync(join(projectDir, DIPTYCH_DIR, 'active'), 'utf-8').trim()).toBe(
+    expect(readFileSync(join(projectDir, SPLITBRIEF_DIR, 'active'), 'utf-8').trim()).toBe(
       EXPECTED_LEGACY_SESSION_ID,
     );
   });
@@ -291,7 +291,7 @@ describe('continueCommand', () => {
       feature: 'live feature',
       sessionId: '2025-04-01-live',
       attach: {
-        sockPath: join(projectDir, '.diptych', 'sessions', '2025-04-01-live', 'ipc.sock'),
+        sockPath: join(projectDir, '.splitbrief', 'sessions', '2025-04-01-live', 'ipc.sock'),
       },
     });
   });
@@ -341,7 +341,7 @@ describe('continueCommand', () => {
 
     await expect(
       continueCommand('2025-04-01-wt', { projectDir, worktree: 'feature-x' }, deps),
-    ).rejects.toThrow(/--worktree is only supported by `diptych start`/);
+    ).rejects.toThrow(/--worktree is only supported by `splitbrief start`/);
     expect(renderRuns).toHaveLength(0);
     expect(rpcRuns).toHaveLength(0);
   });
@@ -553,9 +553,9 @@ describe('continueCommand', () => {
 
   it('omits the feature on the resume status line when persistTranscript is false', async () => {
     const projectDir = makeTmpProject();
-    mkdirSync(join(projectDir, DIPTYCH_DIR), { recursive: true });
+    mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
     writeFileSync(
-      join(projectDir, DIPTYCH_DIR, CONFIG_FILE),
+      join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE),
       [
         'version: 3',
         'planner:',

@@ -1,12 +1,11 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer } from '../../implementers/types.js';
 import type { WorkflowContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
-import type { ChangedFilesSnapshot } from '../approval/file-snapshots/types.js';
 import type { StagedProjectRunnerRole } from '../approval/staged-project.js';
 import type { ValidationResult } from '../validation/result.js';
 

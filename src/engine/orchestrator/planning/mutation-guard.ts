@@ -3,7 +3,7 @@ import {
   changedFilesSinceBaseline,
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
-import { DIPTYCH_DIR } from '../../../core/paths.js';
+import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { error, matches } from '../../../utils/error.js';
 
 export const planningMutationError = {
@@ -17,7 +17,7 @@ export const planningMutationError = {
 } as const;
 
 export function isAllowedPlanningMutation(file: string, sessionId: string): boolean {
-  return file.startsWith(`${DIPTYCH_DIR}/sessions/${sessionId}/`);
+  return file.startsWith(`${SPLITBRIEF_DIR}/sessions/${sessionId}/`);
 }
 
 export async function capturePlanningMutationBaseline(

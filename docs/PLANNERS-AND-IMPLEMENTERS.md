@@ -209,8 +209,8 @@ type ImplementerCapabilities = {
 }
 ```
 
-- `extracted-code` -- the implementer returns code in its response text. diptych extracts it from markdown fences and writes it to disk. Used by `api` and `shell`.
-- `direct` -- the implementer writes files to disk itself. diptych detects changes via `git diff`. Used by `cli`, `agent`, and `agent-sdk`.
+- `extracted-code` -- the implementer returns code in its response text. SPLITBRIEF extracts it from markdown fences and writes it to disk. Used by `api` and `shell`.
+- `direct` -- the implementer writes files to disk itself. SPLITBRIEF detects changes via `git diff`. Used by `cli`, `agent`, and `agent-sdk`.
 
 ---
 
@@ -349,7 +349,7 @@ Step by step:
 
 3. **Create the implementer module** at `src/engine/implementers/<name>.ts`. Export a `create<Name>Implementer()` function that calls `createImplementerBase()` with:
    - `invoke` -- your backend-specific call
-   - `extractsCode` -- true if diptych should extract code from response, false if your backend writes files directly
+   - `extractsCode` -- true if SPLITBRIEF should extract code from response, false if your backend writes files directly
    - `detectChanges` -- required when `extractsCode` is false
 
 4. **Add lazy imports and factory cases** in `src/engine/runners/factory.ts`. Add a `const load<Name>Planner = lazy(...)` and `const load<Name>Implementer = lazy(...)` at the top, then add `case '<name>':` branches in both `loadPlanner()` and `createImplementer()`.

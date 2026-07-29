@@ -10,7 +10,7 @@ import { collectTrackedFiles, hashFile } from './files.js';
 let tmp: string;
 
 beforeEach(async () => {
-  tmp = await mkdtemp(join(tmpdir(), 'diptych-snapshot-'));
+  tmp = await mkdtemp(join(tmpdir(), 'splitbrief-snapshot-'));
 });
 
 afterEach(async () => {
@@ -38,18 +38,18 @@ describe('hashFile', () => {
 });
 
 describe('collectTrackedFiles', () => {
-  it('excludes .git/, .diptych/, and node_modules/', async () => {
+  it('excludes .git/, .splitbrief/, and node_modules/', async () => {
     await mkdir(join(tmp, '.git'), { recursive: true });
-    await mkdir(join(tmp, '.diptych'), { recursive: true });
+    await mkdir(join(tmp, '.splitbrief'), { recursive: true });
     await mkdir(join(tmp, 'node_modules', 'foo'), { recursive: true });
     await writeFile(join(tmp, '.git', 'HEAD'), 'ref: refs/heads/main\n');
-    await writeFile(join(tmp, '.diptych', 'state.json'), '{}');
+    await writeFile(join(tmp, '.splitbrief', 'state.json'), '{}');
     await writeFile(join(tmp, 'node_modules', 'foo', 'index.js'), '');
     await writeFile(join(tmp, 'src.ts'), 'export {}');
 
     const files = await collectTrackedFiles(tmp);
     expect(files.some((f) => f.startsWith('.git/'))).toBe(false);
-    expect(files.some((f) => f.startsWith('.diptych/'))).toBe(false);
+    expect(files.some((f) => f.startsWith('.splitbrief/'))).toBe(false);
     expect(files.some((f) => f.startsWith('node_modules/'))).toBe(false);
     expect(files).toContain('src.ts');
   });
@@ -86,7 +86,7 @@ describe('collectTrackedFiles', () => {
   });
 
   it('skips symlinked files during capture', async () => {
-    const outside = await mkdtemp(join(tmpdir(), 'diptych-outside-'));
+    const outside = await mkdtemp(join(tmpdir(), 'splitbrief-outside-'));
     try {
       writeFileSync(join(outside, 'secret.txt'), 'sensitive data');
       await writeFile(join(tmp, 'real.ts'), 'safe content');
@@ -101,7 +101,7 @@ describe('collectTrackedFiles', () => {
   });
 
   it('skips symlinked directories during capture', async () => {
-    const outside = await mkdtemp(join(tmpdir(), 'diptych-outside-'));
+    const outside = await mkdtemp(join(tmpdir(), 'splitbrief-outside-'));
     try {
       mkdirSync(join(outside, 'secrets'), { recursive: true });
       writeFileSync(join(outside, 'secrets', 'key.pem'), 'private key');

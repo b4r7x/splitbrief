@@ -1,5 +1,5 @@
 import { useApp, useInput } from 'ink';
-import { isConfiguredKeyDebugEnabled, logDiptychParsedKey } from '../core/key-debug.js';
+import { isConfiguredKeyDebugEnabled, logSplitbriefParsedKey } from '../core/key-debug.js';
 import { AppProvider } from './provider.js';
 import { Router } from './router.js';
 import { useAppKeys } from './keys.js';
@@ -29,7 +29,7 @@ export function App({ workflowDeps }: AppProps = {}) {
   });
   useAppKeys({ exit, interruptWorkflow: interruptTurn, cancelWorkflow: requestCancel });
   useAppMouse();
-  useInput((input, key) => logDiptychParsedKey(input, key), {
+  useInput((input, key) => logSplitbriefParsedKey(input, key), {
     isActive: isConfiguredKeyDebugEnabled(),
   });
 

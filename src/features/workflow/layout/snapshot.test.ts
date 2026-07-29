@@ -151,7 +151,12 @@ describe('readConversationScrollSnapshot', () => {
     const hint = 'Question 1/1: Which API style should the implementation use?';
 
     questionPromptStore.setHint(hint);
+    const staleHintConversation = readConversationScrollSnapshot();
+    const staleHintReview = readReviewContentHeight();
+    expect(staleHintConversation.viewportHeight).toBe(withoutPrompt.viewportHeight);
+    expect(staleHintReview).toBe(reviewWithoutPrompt);
 
+    controlsStore.setInputMode('question');
     const withPrompt = readConversationScrollSnapshot();
     const reviewWithPrompt = readReviewContentHeight();
     const questionRows = getQuestionPromptRows(hint, 80);

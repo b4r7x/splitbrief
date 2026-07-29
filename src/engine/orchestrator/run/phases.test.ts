@@ -34,7 +34,7 @@ function denyPrePlanningConfig(): Config {
       pre_planning: [
         {
           kind: 'module',
-          path: '.diptych/hooks/pre-planning.ts',
+          path: '.splitbrief/hooks/pre-planning.ts',
           timeout_ms: 30_000,
           on_failure: 'warn',
         },
@@ -1478,7 +1478,7 @@ describe('runPlanningPhases', () => {
     const { projectDir, sessionId } = setupGitSessionProject({
       prefix: 'run-planning-deny-test',
       sessionId: 'sess-planning',
-      files: { '.diptych/hooks/pre-planning.ts': DENY_HOOK_MODULE },
+      files: { '.splitbrief/hooks/pre-planning.ts': DENY_HOOK_MODULE },
     });
     dirs.push(projectDir);
     return { projectDir, sessionId };

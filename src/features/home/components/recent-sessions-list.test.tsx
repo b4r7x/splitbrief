@@ -10,8 +10,10 @@ import { Box } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
+import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { Session } from '../../../core/schemas/session.js';
+import { _resetMouseZones } from '../../../lib/terminal/mouse-zones.js';
 import { RecentSessionsList } from './recent-sessions-list.js';
 
 const originalPlatform = process.platform;
@@ -21,6 +23,10 @@ const ARROW_UP = '\u001b[A';
 const ESC = '\u001b';
 const ENTER = '\r';
 const FOCUS_BAR = '▌';
+const VIEWPORT = { cols: 80, rows: 24 };
+const CLIPBOARD_TEST_TIMEOUT_MS = CLIPBOARD_EXEC_WAIT_MS + 5_000;
+const KITTY_SUPER_Y = '\u001b[121;9u';
+const KITTY_HYPER_Y = '\u001b[121;17u';
 
 function lineIndexContaining(frame: string, text: string): number {
   const index = frame.split('\n').findIndex((line) => line.includes(text));
@@ -34,10 +40,6 @@ function makeSessions(labels: string[]): Session[] {
   );
 }
 
-function renderWithOutdentRoom(element: Parameters<typeof renderFeature>[0]) {
-  return renderFeature(<Box marginLeft={2}>{element}</Box>);
-}
-
 describe('RecentSessionsList', () => {
   let selected: Session | null;
   let closed: number;
@@ -45,6 +47,7 @@ describe('RecentSessionsList', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
     resetAllStores();
+    _resetMouseZones();
     installClipboardExecFixture();
     resetClipboardExecFixture();
     Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
@@ -64,17 +67,30 @@ describe('RecentSessionsList', () => {
   const onClose = () => {
     closed += 1;
   };
+  const view = (
+    sessions: Session[],
+    options: {
+      hasOverlay?: boolean | undefined;
+      maxVisible?: number | undefined;
+      onSelect?: ((session: Session) => void) | undefined;
+    } = {},
+  ) => (
+    <Box marginLeft={2}>
+      <RecentSessionsList
+        sessions={sessions}
+        hasOverlay={options.hasOverlay ?? false}
+        onSelect={options.onSelect ?? onSelect}
+        onClose={onClose}
+        maxVisible={options.maxVisible}
+      />
+    </Box>
+  );
+  const renderList = (sessions: Session[], options?: Parameters<typeof view>[1]) =>
+    renderFeature(view(sessions, options));
 
   it('renders the header, all rows, the hint line, and seats the cursor on row 0', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
+    const ui = renderList(sessions);
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -123,14 +139,7 @@ describe('RecentSessionsList', () => {
 
   it('Up at index 0 calls onClose, does not call onSelect, and does not wrap to the last row', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
+    const ui = renderList(sessions);
     await flushEffects();
 
     const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
@@ -144,72 +153,178 @@ describe('RecentSessionsList', () => {
     ui.unmount();
   });
 
-  it('y copies the focused session feature and leaves the filter unchanged', async () => {
+  it('keeps the selected session ID through prepend and reorder, then opens that session', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
-    await flushEffects();
-
-    // The copy runs the clipboard tool under the production 2s kill window, so a badly starved
-    // box can lose an attempt outright; press again while nothing has recorded yet.
-    await vi.waitFor(
-      () => {
-        if (readClipboardExecCalls().length === 0) ui.stdin.write('y');
-        expect(readClipboardExecCalls().at(-1)?.stdin).toBe('alpha');
-      },
-      { timeout: CLIPBOARD_EXEC_WAIT_MS, interval: 500 },
-    );
-    expect(selected).toBeNull();
-    expect(closed).toBe(0);
-    const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('alpha');
-    expect(frame).toContain('bravo');
-    expect(frame).toContain('charlie');
-    expect(frame).not.toContain('No matching sessions');
-    ui.unmount();
-  }, 20_000);
-
-  it('y copies the currently highlighted session, not always the first', async () => {
-    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
+    const ui = renderFeature(view(sessions));
     await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
     await flushEffects();
 
-    await vi.waitFor(
-      () => {
-        if (readClipboardExecCalls().length === 0) ui.stdin.write('y');
-        expect(readClipboardExecCalls().at(-1)?.stdin).toBe('bravo');
-      },
-      { timeout: CLIPBOARD_EXEC_WAIT_MS, interval: 500 },
-    );
+    const prepended = makeSession({
+      id: 'sess-new',
+      feature: 'delta',
+      startedAt: 1_700_000_100,
+    });
+    const refreshed = [prepended, ...sessions.slice().reverse()].map((session) => ({
+      ...session,
+      feature: `${session.feature}-refreshed`,
+    }));
+    ui.rerender(view(refreshed));
+    await flushEffects();
+
+    ui.stdin.write(ENTER);
+    await flushEffects();
+
+    expect(selected?.id).toBe('sess-1');
+    expect(selected?.feature).toBe('bravo-refreshed');
     ui.unmount();
-  }, 20_000);
+  });
+
+  it('resets to the first match after a filter edit and keeps that ID through reorder', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const ui = renderFeature(view(sessions));
+    await flushEffects();
+
+    ui.stdin.write(ARROW_DOWN);
+    await flushEffects();
+    ui.stdin.write('a');
+    await flushEffects();
+
+    ui.rerender(
+      view(
+        sessions
+          .slice()
+          .reverse()
+          .map((session) => ({ ...session })),
+      ),
+    );
+    await flushEffects();
+
+    ui.stdin.write(ENTER);
+    await flushEffects();
+
+    expect(selected?.id).toBe('sess-0');
+    ui.unmount();
+  });
+
+  it('applies queued Down before Enter and selects once', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const selections: Session[] = [];
+    const ui = renderList(sessions, {
+      onSelect: (session) => selections.push(session),
+    });
+    await flushEffects();
+
+    ui.stdin.write(ARROW_DOWN);
+    ui.stdin.write(ENTER);
+    await flushEffects();
+
+    expect(selections.map(({ id }) => id)).toEqual(['sess-1']);
+    ui.unmount();
+  });
+
+  it('applies a queued filter before Enter and selects its first match once', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const selections: Session[] = [];
+    const ui = renderList(sessions, {
+      onSelect: (session) => selections.push(session),
+    });
+    await flushEffects();
+
+    ui.stdin.write('char');
+    ui.stdin.write(ENTER);
+    await flushEffects();
+
+    expect(selections.map(({ id }) => id)).toEqual(['sess-2']);
+    ui.unmount();
+  });
+
+  it(
+    'y copies the highlighted session once and leaves the filter unchanged',
+    async () => {
+      const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+      const ui = renderList(sessions);
+      await flushEffects();
+
+      ui.stdin.write(ARROW_DOWN);
+      await flushEffects();
+      ui.stdin.write('y');
+      await vi.waitFor(
+        () => {
+          expect(readClipboardExecCalls().at(-1)?.stdin).toBe('bravo');
+        },
+        { timeout: CLIPBOARD_EXEC_WAIT_MS },
+      );
+
+      expect(readClipboardExecCalls()).toHaveLength(1);
+      expect(selected).toBeNull();
+      expect(closed).toBe(0);
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('alpha');
+      expect(frame).toContain('bravo');
+      expect(frame).toContain('charlie');
+      expect(frame).not.toContain('No matching sessions');
+      ui.unmount();
+    },
+    CLIPBOARD_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'commits queued copy then select exactly once each',
+    async () => {
+      const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+      const selections: Session[] = [];
+      const ui = renderList(sessions, {
+        onSelect: (session) => selections.push(session),
+      });
+      await flushEffects();
+
+      ui.stdin.write('y');
+      ui.stdin.write(ENTER);
+      await vi.waitFor(
+        () => {
+          expect(readClipboardExecCalls().map(({ stdin }) => stdin)).toEqual(['alpha']);
+          expect(selections.map(({ id }) => id)).toEqual(['sess-0']);
+        },
+        { timeout: CLIPBOARD_EXEC_WAIT_MS },
+      );
+
+      expect(closed).toBe(0);
+      ui.unmount();
+    },
+    CLIPBOARD_TEST_TIMEOUT_MS,
+  );
+
+  it(
+    'commits queued copy then Escape close exactly once each',
+    async () => {
+      const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+      const selections: Session[] = [];
+      const ui = renderList(sessions, {
+        onSelect: (session) => selections.push(session),
+      });
+      await flushEffects();
+
+      ui.stdin.write('y');
+      ui.stdin.write(ESC);
+      await vi.waitFor(
+        () => {
+          expect(readClipboardExecCalls().map(({ stdin }) => stdin)).toEqual(['alpha']);
+          expect(closed).toBe(1);
+        },
+        { timeout: CLIPBOARD_EXEC_WAIT_MS },
+      );
+
+      expect(selections).toHaveLength(0);
+      ui.unmount();
+    },
+    CLIPBOARD_TEST_TIMEOUT_MS,
+  );
 
   it('keeps the focused row clean with no per-row "y copy" affordance', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
+    const ui = renderList(sessions);
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -220,17 +335,26 @@ describe('RecentSessionsList', () => {
     ui.unmount();
   });
 
+  it('opens the clicked session by logical row key', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const ui = renderList(sessions);
+    await flushEffects();
+
+    await vi.waitFor(() => {
+      expect(collectClickableZones(VIEWPORT).has('recent-session:sess-1')).toBe(true);
+    });
+    collectClickableZones(VIEWPORT).get('recent-session:sess-1')?.();
+    await flushEffects();
+
+    expect(selected?.id).toBe('sess-1');
+    expect(selected?.feature).toBe('bravo');
+    expect(closed).toBe(0);
+    ui.unmount();
+  });
+
   it('y does not copy when no session row is visible in the list budget', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={false}
-        onSelect={onSelect}
-        onClose={onClose}
-        maxVisible={0}
-      />,
-    );
+    const ui = renderList(sessions, { maxVisible: 0 });
     await flushEffects();
 
     ui.stdin.write('y');
@@ -240,16 +364,26 @@ describe('RecentSessionsList', () => {
     ui.unmount();
   });
 
+  it('does not copy or filter on modified y input', async () => {
+    const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
+    const ui = renderList(sessions);
+    await flushEffects();
+
+    ui.stdin.write(KITTY_SUPER_Y);
+    ui.stdin.write(KITTY_HYPER_Y);
+    await flushEffects();
+
+    expect(readClipboardExecCalls()).toHaveLength(0);
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('alpha');
+    expect(frame).toContain('bravo');
+    expect(frame).toContain('charlie');
+    ui.unmount();
+  });
+
   it('with hasOverlay=true, Down/Enter/Esc are no-ops', async () => {
     const sessions = makeSessions(['alpha', 'bravo', 'charlie']);
-    const ui = renderWithOutdentRoom(
-      <RecentSessionsList
-        sessions={sessions}
-        hasOverlay={true}
-        onSelect={onSelect}
-        onClose={onClose}
-      />,
-    );
+    const ui = renderList(sessions, { hasOverlay: true });
     await flushEffects();
 
     const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);

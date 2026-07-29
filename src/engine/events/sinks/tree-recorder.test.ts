@@ -8,7 +8,7 @@ import type { EngineEvent } from '../types.js';
 import { taskId } from '../../../core/schemas/task.js';
 
 function makeSessionDir(projectDir: string, sessionId: string): void {
-  mkdirSync(join(projectDir, '.diptych', 'sessions', sessionId), { recursive: true });
+  mkdirSync(join(projectDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
 }
 
 describe('createTreeRecorderSink', () => {
@@ -39,7 +39,7 @@ describe('createTreeRecorderSink', () => {
       action: 'create',
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     expect(tree!.meta.entryCount).toBe(2);
     const entries = [...tree!.entries.values()];
@@ -74,7 +74,7 @@ describe('createTreeRecorderSink', () => {
       tool: 'claude-code',
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     const entries = [...tree!.entries.values()];
     const invocation = entries.find((e) => e.type === 'agent-invocation');
@@ -120,7 +120,7 @@ describe('createTreeRecorderSink', () => {
       duration: 3000,
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     const entries = [...tree!.entries.values()];
     const invocation = entries.find((e) => e.type === 'agent-invocation');
     const payload = invocation!.payload as { tokensUsed: number };
@@ -148,7 +148,7 @@ describe('createTreeRecorderSink', () => {
       taskId: taskId('T001'),
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     const entries = [...tree!.entries.values()];
     const invocation = entries.find((e) => e.type === 'agent-invocation');
     expect(invocation).toBeDefined();
@@ -169,7 +169,7 @@ describe('createTreeRecorderSink', () => {
       action: 'skip-current-task',
     } as EngineEvent);
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     const entries = [...tree!.entries.values()];
     const recovery = entries.find((e) => e.type === 'recovery-decision');
     expect(recovery).toBeDefined();
@@ -199,7 +199,7 @@ describe('createTreeRecorderSink', () => {
       action: 'retry-same-worker',
     } as EngineEvent);
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree!.meta.branchCount).toBe(1);
   });
 
@@ -220,7 +220,7 @@ describe('createTreeRecorderSink', () => {
       },
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     const entries = [...tree!.entries.values()];
     const cost = entries.find((e) => e.type === 'cost-checkpoint');
     expect(cost).toBeDefined();
@@ -288,7 +288,7 @@ describe('createTreeRecorderSink', () => {
       duration: 3000,
     });
 
-    const tree = reconstructTree(join(tmpDir, '.diptych', 'sessions', sessionId));
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
     expect(tree).not.toBeNull();
     expect(tree!.meta.entryCount).toBe(6);
   });

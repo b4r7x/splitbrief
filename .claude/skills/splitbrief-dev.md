@@ -1,6 +1,6 @@
 ---
-name: diptych-dev
-description: diptych project conventions entry point for agent sessions.
+name: splitbrief-dev
+description: SPLITBRIEF project conventions entry point for agent sessions.
 ---
 
 Read `CLAUDE.md` before editing this repository. Follow its documentation map for subsystem-specific rules.

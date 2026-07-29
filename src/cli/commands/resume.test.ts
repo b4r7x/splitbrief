@@ -10,7 +10,7 @@ import { currentProcessStartTimeMs } from '../../lib/process/start-time.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
-import { CONFIG_FILE, DIPTYCH_DIR } from '../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 
 let tmp: string;
 
@@ -18,11 +18,11 @@ async function runResume(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
   registerResumeCommand(program);
-  await program.parseAsync(['node', 'diptych', 'resume', ...args]);
+  await program.parseAsync(['node', 'splitbrief', 'resume', ...args]);
 }
 
 function makeSessionDir(projectDir: string, sessionId: string): string {
-  const sessDir = join(projectDir, '.diptych', 'sessions', sessionId);
+  const sessDir = join(projectDir, '.splitbrief', 'sessions', sessionId);
   mkdirSync(sessDir, { recursive: true });
   return sessDir;
 }
@@ -99,7 +99,7 @@ describe('resume command', () => {
 
   it('rejects --worktree as a start-only flag instead of silently ignoring it', async () => {
     await expect(runResume(['--worktree', 'feature-x'])).rejects.toThrow(
-      /--worktree is only supported by `diptych start`/,
+      /--worktree is only supported by `splitbrief start`/,
     );
   });
 
@@ -128,9 +128,9 @@ describe('resume command', () => {
   it('omits the feature on the resume status line when persistTranscript is false', async () => {
     tmp = createTempDir('resume-transcript-omitted');
     const sessionId = '2026-04-18-private';
-    mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
+    mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
     writeFileSync(
-      join(tmp, DIPTYCH_DIR, CONFIG_FILE),
+      join(tmp, SPLITBRIEF_DIR, CONFIG_FILE),
       ['version: 3', 'workflow:', '  persistTranscript: false', '  mode: standard'].join('\n'),
     );
     const sessDir = makeSessionDir(tmp, sessionId);

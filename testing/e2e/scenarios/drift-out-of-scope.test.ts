@@ -17,9 +17,9 @@ describe('e2e: drift out-of-scope detection', () => {
   const ctx = setupE2eScenario(scenario);
 
   function installDriftHook(): void {
-    mkdirSync(join(ctx.projectDir, '.diptych/hooks'), { recursive: true });
+    mkdirSync(join(ctx.projectDir, '.splitbrief/hooks'), { recursive: true });
     writeFileSync(
-      join(ctx.projectDir, '.diptych/hooks/pre-validation.js'),
+      join(ctx.projectDir, '.splitbrief/hooks/pre-validation.js'),
       [
         "import { mkdirSync, writeFileSync } from 'node:fs';",
         "import { join } from 'node:path';",
@@ -41,12 +41,12 @@ describe('e2e: drift out-of-scope detection', () => {
     const parserPath = join(ctx.projectDir, 'src/config-parser.ts');
 
     expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
-    expect(evaluateTsArtifact(parserPath, "mod.parseConfig('name=diptych; enabled=true')")).toEqual(
-      {
-        name: 'diptych',
-        enabled: true,
-      },
-    );
+    expect(
+      evaluateTsArtifact(parserPath, "mod.parseConfig('name=splitbrief; enabled=true')"),
+    ).toEqual({
+      name: 'splitbrief',
+      enabled: true,
+    });
     expect(driftReport).toBeDefined();
     expect(driftReport?.passed).toBe(false);
     expect(driftReport?.errorCount).toBeGreaterThan(0);

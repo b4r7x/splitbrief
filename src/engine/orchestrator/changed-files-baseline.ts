@@ -1,21 +1,44 @@
+import { lstatSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { getCommittedFilesSince } from '../../lib/git/diff.js';
 import { getCurrentChangedFiles } from '../../lib/git/files.js';
-import { getCurrentCommitSha } from '../../lib/git/refs.js';
+import { getCurrentCommitSha, resolveRunStartBase } from '../../lib/git/refs.js';
 import { hasCommits } from '../../lib/git/repository.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
-import { confinedExists, confinedReadFileAsync } from '../../lib/confined-fs.js';
-import { assertPathConfined } from '../../lib/path-confinement.js';
+import { isENOENT } from '../../lib/process/errors.js';
+import {
+  assertExistingPathConfined,
+  assertPathConfined,
+  pathConfinementError,
+} from '../../lib/path-confinement.js';
+import { error, matches } from '../../utils/error.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { matchesActionPattern } from './approval/action-classifier.js';
-import type { ChangedFilesSnapshot } from './approval/file-snapshots/types.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { PersistedChangedFilesBaseline } from '../../core/schemas/workflow.js';
+import type {
+  ChangedFilesSnapshot,
+  PersistedChangedFilesBaseline,
+} from '../../core/schemas/workflow.js';
 
 export type ChangedFilesBaseline = {
   head: string | null;
   fingerprints: Map<string, string>;
+  runStartChangedFiles?: ReadonlySet<string> | undefined;
   activeTaskSnapshot?: ChangedFilesSnapshot | undefined;
 };
+
+export const changedFilesBaselineError = {
+  fingerprintRead: (file: string, cause: unknown) =>
+    error(
+      'changed-file-fingerprint-read',
+      `failed to fingerprint changed file: ${file}`,
+      { file },
+      cause,
+    ),
+} as const;
+
+const isPathConfinementEscape = matches('path-confined-escape');
 
 export function serializeChangedFilesBaseline(
   baseline: ChangedFilesBaseline,
@@ -23,6 +46,9 @@ export function serializeChangedFilesBaseline(
   return {
     head: baseline.head,
     fingerprints: Object.fromEntries(baseline.fingerprints),
+    ...(baseline.runStartChangedFiles !== undefined && {
+      runStartChangedFiles: [...baseline.runStartChangedFiles],
+    }),
     ...(baseline.activeTaskSnapshot !== undefined && {
       activeTaskSnapshot: baseline.activeTaskSnapshot,
     }),
@@ -35,6 +61,9 @@ export function deserializeChangedFilesBaseline(
   return {
     head: persisted.head,
     fingerprints: new Map(Object.entries(persisted.fingerprints)),
+    ...(persisted.runStartChangedFiles !== undefined && {
+      runStartChangedFiles: new Set(persisted.runStartChangedFiles),
+    }),
     activeTaskSnapshot: persisted.activeTaskSnapshot,
   };
 }
@@ -46,12 +75,8 @@ export function withActiveTaskSnapshot(
   return { ...baseline, activeTaskSnapshot };
 }
 
-function isInternalDiptychArtifact(file: string): boolean {
-  return isInternalGitStatusPath(file);
-}
-
 export function userVisibleChangedFiles(files: string[]): string[] {
-  return files.filter((file) => !isInternalDiptychArtifact(file));
+  return files.filter((file) => !isInternalGitStatusPath(file));
 }
 
 async function captureHead(projectDir: string): Promise<string | null> {
@@ -59,21 +84,30 @@ async function captureHead(projectDir: string): Promise<string | null> {
 }
 
 async function candidateChangedFiles(projectDir: string, head: string | null): Promise<string[]> {
+  const base = await resolveRunStartBase({
+    projectDir,
+    provenance: { kind: 'captured', head },
+  });
   const working = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
   const committed =
-    head === null ? [] : userVisibleChangedFiles(await getCommittedFilesSince(projectDir, head));
-  return [...new Set([...working, ...committed])];
+    base.kind === 'working-tree-only'
+      ? []
+      : userVisibleChangedFiles(await getCommittedFilesSince(projectDir, base.ref));
+  return [...new Set([...working, ...committed])].sort();
 }
 
 async function fingerprintChangedFile(projectDir: string, file: string): Promise<string> {
+  assertPathConfined(file, projectDir);
+  const filePath = resolve(projectDir, file);
   try {
-    assertPathConfined(file, projectDir);
-    if (!confinedExists(projectDir, file)) return 'missing';
-    const content = await confinedReadFileAsync(projectDir, file);
-    if (content === null) return 'missing';
-    return sha256Hex(content);
-  } catch {
-    return 'missing';
+    const stat = lstatSync(filePath);
+    if (stat.isSymbolicLink()) throw pathConfinementError.symlinkRead(filePath);
+    assertExistingPathConfined(file, projectDir);
+    return sha256Hex(await readFile(filePath, 'utf-8'));
+  } catch (cause) {
+    if (isENOENT(cause)) return 'missing';
+    if (isPathConfinementEscape(cause) || pathConfinementError.isSymlinkRead(cause)) throw cause;
+    throw changedFilesBaselineError.fingerprintRead(file, cause);
   }
 }
 
@@ -93,16 +127,21 @@ export async function captureChangedFilesBaseline(
     files !== undefined
       ? userVisibleChangedFiles(files)
       : await candidateChangedFiles(projectDir, head);
-  return { head, fingerprints: await fingerprintFiles(projectDir, changedFiles) };
+  return {
+    head,
+    fingerprints: await fingerprintFiles(projectDir, changedFiles),
+    runStartChangedFiles: new Set(changedFiles),
+  };
 }
 
 export async function changedFilesSinceBaseline(
   projectDir: string,
   baseline: ChangedFilesBaseline,
 ): Promise<string[]> {
-  const currentFiles = await candidateChangedFiles(projectDir, baseline.head);
-  const current = await fingerprintFiles(projectDir, currentFiles);
-  return currentFiles.filter((file) => baseline.fingerprints.get(file) !== current.get(file));
+  const candidates = await candidateChangedFiles(projectDir, baseline.head);
+  const files = [...new Set([...candidates, ...baseline.fingerprints.keys()])].sort();
+  const current = await fingerprintFiles(projectDir, files);
+  return files.filter((file) => baseline.fingerprints.get(file) !== current.get(file));
 }
 
 export async function refreshChangedFilesBaseline(opts: {
@@ -110,11 +149,14 @@ export async function refreshChangedFilesBaseline(opts: {
   baseline: ChangedFilesBaseline;
   absorbedFiles: Set<string>;
 }): Promise<ChangedFilesBaseline> {
-  const currentFiles = await candidateChangedFiles(opts.projectDir, opts.baseline.head);
-  const current = await fingerprintFiles(opts.projectDir, currentFiles);
+  const candidates = await candidateChangedFiles(opts.projectDir, opts.baseline.head);
+  const files = [
+    ...new Set([...candidates, ...opts.baseline.fingerprints.keys(), ...opts.absorbedFiles]),
+  ].sort();
+  const current = await fingerprintFiles(opts.projectDir, files);
   const next = new Map<string, string>();
 
-  for (const file of currentFiles) {
+  for (const file of files) {
     if (opts.absorbedFiles.has(file)) {
       const fingerprint = current.get(file);
       if (fingerprint !== undefined) next.set(file, fingerprint);
@@ -124,7 +166,13 @@ export async function refreshChangedFilesBaseline(opts: {
     }
   }
 
-  return { head: opts.baseline.head, fingerprints: next };
+  return {
+    head: opts.baseline.head,
+    fingerprints: next,
+    ...(opts.baseline.runStartChangedFiles !== undefined && {
+      runStartChangedFiles: opts.baseline.runStartChangedFiles,
+    }),
+  };
 }
 
 export async function inferTaskAcceptedChangedFiles(

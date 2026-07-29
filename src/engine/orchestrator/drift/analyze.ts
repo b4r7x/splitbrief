@@ -4,6 +4,7 @@ import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { DriftFinding, DriftReport } from '../../../core/schemas/drift.js';
 import { uniqueInOrder } from '../../../utils/collections.js';
 import { clamp01 } from '../../../utils/math.js';
+import { matchesActionPattern } from '../approval/action-classifier.js';
 
 export type AnalyzeBriefDriftInput = {
   tasks: Task[];
@@ -20,36 +21,35 @@ function isFailedOrSkipped(status: Task['status']): boolean {
 
 export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   const findings: DriftFinding[] = [];
-  const expectedFiles = uniqueInOrder(input.tasks.map((t) => t.file).filter(Boolean));
-  const expectedSet = new Set(expectedFiles);
-  const changedFiles = uniqueInOrder(input.changedFiles);
-  const changedSet = new Set(changedFiles);
+  const expectedFiles = uniqueInOrder(input.tasks.map((task) => task.file).filter(Boolean)).sort();
+  const acceptedPatterns = input.tasks.flatMap((task) => [
+    task.file,
+    ...(task.scope?.inBounds ?? []),
+    ...(task.scope?.approvedOutOfBounds ?? []),
+  ]);
+  const changedFiles = uniqueInOrder(input.changedFiles).sort();
 
-  // Files this run actually touched, per the evidence ledger. A changed file
-  // that is neither expected nor run-attributed was dirty before the run began
-  // (pre-run-dirty under the `none` commit strategy) and must not be attributed
-  // to this run. When no ledger is present the run-attributed set is unknown, so
-  // out-of-scope detection falls back to the expected-file comparison alone.
+  // Files attributed to task execution by the evidence ledger. Legacy states
+  // without a run-start baseline use this as their only provenance signal.
   const runAttributed = new Set<string>();
   if (input.ledger) {
     for (const entry of input.ledger.tasks) {
       for (const file of entry.changedFiles) runAttributed.add(file);
     }
   }
-  const hasRunAttribution = input.ledger != null;
-
   // Files already dirty at run-start (the run-start status baseline). Under the
   // `none` commit strategy the working-tree universe over-includes these, so a
   // pre-run-dirty file the run never touched must be annotated "pre-existing"
-  // rather than attributed to this run. The ledger (when present) overrides:
-  // a baseline file the run did touch stays in scope.
+  // rather than attributed to this run. The ledger overrides a baseline file
+  // the run did touch. Legacy states without a baseline fall back to treating
+  // files absent from the ledger as pre-existing.
   const preRunBaseline = new Set(input.preRunChangedFiles ?? []);
+  const hasPreRunBaseline = input.preRunChangedFiles != null;
   const isPreExisting = (file: string): boolean => {
     if (runAttributed.has(file)) return false;
-    return preRunBaseline.has(file) || hasRunAttribution;
+    return hasPreRunBaseline ? preRunBaseline.has(file) : input.ledger != null;
   };
 
-  // Collect explicit out-of-bounds patterns from any task scope
   const outOfBoundsPatterns: string[] = [];
   for (const task of input.tasks) {
     for (const p of task.scope?.outOfBounds ?? []) {
@@ -58,7 +58,6 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   }
   const hasExplicitOutOfBounds = outOfBoundsPatterns.length > 0;
 
-  // Out-of-bounds file path or quoted symbol matches anywhere in changed files / diff
   for (const pattern of outOfBoundsPatterns) {
     const fileHit = changedFiles.find((f) => f.includes(pattern));
     if (fileHit) {
@@ -79,9 +78,8 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     }
   }
 
-  // Extra changed file not targeted by any task
   for (const file of changedFiles) {
-    if (expectedSet.has(file)) continue;
+    if (acceptedPatterns.some((pattern) => matchesActionPattern(file, pattern))) continue;
     if (isPreExisting(file)) {
       findings.push({
         severity: 'info',
@@ -99,9 +97,12 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     });
   }
 
-  // Done/escalated task target file absent
   for (const task of input.tasks) {
-    if (isTaskCompleted(task.status) && task.file && !changedSet.has(task.file)) {
+    if (
+      isTaskCompleted(task.status) &&
+      task.file &&
+      !changedFiles.some((file) => matchesActionPattern(file, task.file))
+    ) {
       findings.push({
         severity: 'warning',
         code: 'missing_expected_file',
@@ -112,9 +113,12 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     }
   }
 
-  // Failed task with changed file
   for (const task of input.tasks) {
-    if (task.status === 'failed' && task.file && changedSet.has(task.file)) {
+    if (
+      task.status === 'failed' &&
+      task.file &&
+      changedFiles.some((file) => matchesActionPattern(file, task.file))
+    ) {
       findings.push({
         severity: 'error',
         code: 'failed_task_with_diff',
@@ -125,9 +129,8 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     }
   }
 
-  // Diff exists while all tasks are failed/skipped -> orphan diff. Pre-existing
-  // (pre-run-dirty) files were not produced by this run, so they cannot be an
-  // orphan diff and are excluded from the count.
+  // Pre-run-dirty files were not produced by this run, so they cannot be an
+  // orphan diff.
   const runProducedFiles = changedFiles.filter((file) => !isPreExisting(file));
   if (
     runProducedFiles.length > 0 &&
@@ -141,7 +144,6 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
     });
   }
 
-  // Missing expected evidence (when ledger present)
   if (input.ledger) {
     for (const entry of input.ledger.tasks) {
       if (!isTaskCompleted(entry.status)) continue;

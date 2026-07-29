@@ -38,13 +38,13 @@ describe('detectCapabilities', () => {
     let savedEnv: string | undefined;
 
     beforeEach(() => {
-      savedEnv = process.env.DIPTYCH_CONTEXT_LENGTH;
-      delete process.env.DIPTYCH_CONTEXT_LENGTH;
+      savedEnv = process.env.SPLITBRIEF_CONTEXT_LENGTH;
+      delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
     });
 
     afterEach(() => {
-      if (savedEnv === undefined) delete process.env.DIPTYCH_CONTEXT_LENGTH;
-      else process.env.DIPTYCH_CONTEXT_LENGTH = savedEnv;
+      if (savedEnv === undefined) delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
+      else process.env.SPLITBRIEF_CONTEXT_LENGTH = savedEnv;
     });
 
     function ollamaConfig(contextLength?: number): Config {
@@ -80,8 +80,8 @@ describe('detectCapabilities', () => {
       return config;
     }
 
-    it('env DIPTYCH_CONTEXT_LENGTH wins over provider detection', async () => {
-      process.env.DIPTYCH_CONTEXT_LENGTH = '4096';
+    it('env SPLITBRIEF_CONTEXT_LENGTH wins over provider detection', async () => {
+      process.env.SPLITBRIEF_CONTEXT_LENGTH = '4096';
       mockDetectedContext(131072);
 
       const result = await detectCapabilities(ollamaConfig());

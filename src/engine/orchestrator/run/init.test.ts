@@ -21,8 +21,8 @@ import { initializeWorkflow } from './init.js';
 
 describe('initializeWorkflow', () => {
   it('registers discovered pre-task modules when config has no hooks', async () => {
-    await withTempDir('diptych-init-hooks', async (projectDir) => {
-      const hooksDir = join(projectDir, '.diptych', 'hooks');
+    await withTempDir('splitbrief-init-hooks', async (projectDir) => {
+      const hooksDir = join(projectDir, '.splitbrief', 'hooks');
       await mkdir(hooksDir, { recursive: true });
       await writeFile(
         join(hooksDir, 'pre-task.ts'),
@@ -35,7 +35,7 @@ describe('initializeWorkflow', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
         approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
       const { callbacks } = makeCallbacks();
       const summaryBase: SummaryBase = {
@@ -104,14 +104,14 @@ describe('initializeWorkflow', () => {
   });
 
   it('persists the selected skill ids in the initial workflow state on a fresh run', async () => {
-    await withTempDir('diptych-init-skills', async (projectDir) => {
+    await withTempDir('splitbrief-init-skills', async (projectDir) => {
       const feature = 'feature needing skills';
       const sessionId = 'session-init-skills';
       const config = makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
         approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
       const { callbacks } = makeCallbacks();
       const summaryBase: SummaryBase = {
@@ -173,7 +173,7 @@ describe('initializeWorkflow', () => {
   });
 
   it('surfaces the api provider cause when an api planner is unavailable', async () => {
-    await withTempDir('diptych-init-api-unavailable', async (projectDir) => {
+    await withTempDir('splitbrief-init-api-unavailable', async (projectDir) => {
       const feature = 'needs a reachable provider';
       const sessionId = 'session-init-api-unavailable';
       const config = makeConfig({
@@ -187,7 +187,7 @@ describe('initializeWorkflow', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
         approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
       const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
@@ -239,14 +239,14 @@ describe('initializeWorkflow', () => {
   });
 
   it('does not publish a planner_status fallback when resuming an implementer phase', async () => {
-    await withTempDir('diptych-init-resume-implementing', async (projectDir) => {
+    await withTempDir('splitbrief-init-resume-implementing', async (projectDir) => {
       const feature = 'resume implementation';
       const sessionId = 'session-init-resume-implementing';
       const config = makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
         approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
       const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
@@ -298,7 +298,7 @@ describe('initializeWorkflow', () => {
   });
 
   it('cli planner without a reason keeps the install hint', async () => {
-    await withTempDir('diptych-init-cli-unavailable', async (projectDir) => {
+    await withTempDir('splitbrief-init-cli-unavailable', async (projectDir) => {
       const feature = 'needs an installed cli';
       const sessionId = 'session-init-cli-unavailable';
       const config = makeConfig({
@@ -306,7 +306,7 @@ describe('initializeWorkflow', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
         approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
       const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
@@ -355,7 +355,7 @@ describe('initializeWorkflow', () => {
   });
 
   it('cli planner unavailability message includes the probe reason when present', async () => {
-    await withTempDir('diptych-init-cli-unavailable-reason', async (projectDir) => {
+    await withTempDir('splitbrief-init-cli-unavailable-reason', async (projectDir) => {
       const feature = 'needs an installed cli';
       const sessionId = 'session-init-cli-unavailable-reason';
       const config = makeConfig({
@@ -363,7 +363,7 @@ describe('initializeWorkflow', () => {
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
         approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
       const { callbacks } = makeCallbacks();
       const events: EngineEvent[] = [];
@@ -415,7 +415,7 @@ describe('initializeWorkflow', () => {
   });
 
   it('builds a validator that captures the run-start baseline so pre-existing failures are relabeled', async () => {
-    await withTempDir('diptych-init-baseline', async (projectDir) => {
+    await withTempDir('splitbrief-init-baseline', async (projectDir) => {
       const feature = 'red-at-start project';
       const sessionId = 'session-init-baseline';
       const config = makeConfig({
@@ -427,7 +427,7 @@ describe('initializeWorkflow', () => {
         },
         workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
         approval: { enabled: false, feedRejectionsToPlanner: true },
-        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.diptych' },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
       const { callbacks } = makeCallbacks();
       const summaryBase: SummaryBase = {

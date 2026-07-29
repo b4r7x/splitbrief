@@ -1,12 +1,12 @@
-# diptych — Mental model
+# SPLITBRIEF — Mental model
 
-Read this first. It explains what diptych does, how it thinks, and why it's built the way it is. No code, no file paths — just the concept. Everything else in these docs builds on this page.
+Read this first. It explains what SPLITBRIEF does, how it thinks, and why it's built the way it is. No code, no file paths — just the concept. Everything else in these docs builds on this page.
 
 ---
 
 ## The core idea
 
-diptych splits AI coding work into two roles:
+SPLITBRIEF splits AI coding work into two roles:
 
 **Planner** — an expensive, capable model (Claude, GPT-4, Codex CLI, etc.) that understands the feature request, explores the codebase, and writes a detailed plan broken into single-file tasks.
 
@@ -37,13 +37,13 @@ Task Briefs are the durable contract. The spec and plan are supporting documents
 
 A typical run, step by step:
 
-1. User types `diptych start "add email validation"`
+1. User types `splitbrief start "add email validation"`
 2. Planner researches the codebase — reads files, maps imports, understands patterns
 3. Planner writes a specification — what the feature should do, how it fits
 4. User reviews and approves the spec (or comments, or rejects)
 5. Planner writes Task Briefs — one per file, ordered by dependency
 6. User reviews the briefs
-7. For each task: implementer writes code, diptych validates (typecheck → lint → test)
+7. For each task: implementer writes code, SPLITBRIEF validates (typecheck → lint → test)
 8. If validation fails: retry up to 3 times, then escalate to bigger models
 9. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, abort)
 10. Planner reviews the final result against the spec
@@ -57,7 +57,7 @@ The user can interrupt live model calls with Ctrl-C, queue messages while the pl
 
 The code is organized in four layers with strict import boundaries:
 
-**CLI** — Parses arguments, boots stores, starts the TUI or runs headless. When you type `diptych start`, this layer handles everything before the workflow engine takes over.
+**CLI** — Parses arguments, boots stores, starts the TUI or runs headless. When you type `splitbrief start`, this layer handles everything before the workflow engine takes over.
 
 **Stores** — Module-scoped singletons holding UI and application state. React components subscribe through `store.use(selector)` and non-React CLI/TUI wiring can read with `store.get()`. Stores have no external dependencies — no React, no engine imports.
 
@@ -91,7 +91,7 @@ All four modes produce the same output: a list of Task Briefs. The difference is
 
 ## Sessions and persistence
 
-Every workflow run is a session. A session is a folder on disk under `.diptych/sessions/<id>/`. It contains:
+Every workflow run is a session. A session is a folder on disk under `.splitbrief/sessions/<id>/`. It contains:
 
 - **state.json** — Current phase, task progress. Overwritten on every phase transition. This is the source of truth for resume.
 - **session.jsonl** — Every event and message, append-only. The full audit log.
@@ -99,9 +99,9 @@ Every workflow run is a session. A session is a folder on disk under `.diptych/s
 - **summary.json** — Final cost, timing, outcomes. Written once at the end.
 - **snapshots/** — Content-addressed working-tree snapshots for undo.
 
-One foreground active session at a time per project directory. `.diptych/active` contains the current foreground session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Detached sessions use lockfiles. Isolated parallel sessions require git worktrees, which give each worktree its own `.diptych/`.
+One foreground active session at a time per project directory. `.splitbrief/active` contains the current foreground session ID when the active pointer is present, while the per-session lockfile/heartbeat proves whether a process is still alive. Detached sessions use lockfiles. Isolated parallel sessions require git worktrees, which give each worktree its own `.splitbrief/`.
 
-`diptych resume` picks up the active interrupted workflow. If the active pointer is absent, use `diptych continue <session-id>` for a known resumable session. If the backend supports session persistence (Claude Code, Agent SDK), it reconnects. Otherwise, it rebuilds context from the JSONL log.
+`splitbrief resume` picks up the active interrupted workflow. If the active pointer is absent, use `splitbrief continue <session-id>` for a known resumable session. If the backend supports session persistence (Claude Code, Agent SDK), it reconnects. Otherwise, it rebuilds context from the JSONL log.
 
 ---
 
@@ -125,7 +125,7 @@ The orchestrator never branches on backend type. It calls `planner.plan()` and `
 
 ## Validation and escalation
 
-After the implementer writes code for a task, diptych runs validation: typecheck → lint → test. The pipeline stops on the first failure.
+After the implementer writes code for a task, SPLITBRIEF runs validation: typecheck → lint → test. The pipeline stops on the first failure.
 
 If validation fails, the implementer retries with the error message (up to 3 attempts by default). If those local retries are exhausted, escalation kicks in:
 

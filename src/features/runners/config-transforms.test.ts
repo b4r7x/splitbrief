@@ -29,7 +29,7 @@ function makeConfigWithOptionalSections(): Config {
     codebase: {
       enabled: true,
       tokenBudget: 1234,
-      cacheDir: '.diptych-cache',
+      cacheDir: '.splitbrief-cache',
       include: ['src/**'],
       exclude: ['dist/**'],
     },
@@ -38,7 +38,7 @@ function makeConfigWithOptionalSections(): Config {
     },
     otel: {
       enabled: true,
-      serviceName: 'diptych-test',
+      serviceName: 'splitbrief-test',
     },
     snapshots: {
       auto: {

@@ -4,7 +4,12 @@ import { Box, Text, useInput } from 'ink';
 import { resolveScrollKey, type ScrollKeyAction } from '../core/keybindings/scroll.js';
 import { clamp } from '../utils/math.js';
 import { glyph } from '../lib/glyphs.js';
-import { getScrollbarThumb, getScrollViewportContentWidth, scrollbarCell } from './scrollbar.js';
+import {
+  getScrollbarThumb,
+  getScrollViewportContentWidth,
+  hasScrollbarOverflow,
+  scrollbarCell,
+} from './scrollbar.js';
 import { useTheme } from './theme.js';
 import { ScrollIndicator } from './scroll-indicator.js';
 
@@ -185,12 +190,15 @@ export function ScrollableDocument({
     { isActive },
   );
 
+  const hasOverflow = hasScrollbarOverflow({
+    lineCount: windowState.lineCount,
+    visibleHeight: windowState.visibleHeight,
+  });
+  const showGutter = showScrollbar && hasOverflow;
   const contentWidth =
     showScrollbar && width !== undefined
       ? Math.max(1, getScrollViewportContentWidth(width))
       : undefined;
-  const hasOverflow = windowState.lineCount > windowState.visibleHeight;
-  const showGutter = showScrollbar && hasOverflow;
   const thumb = getScrollbarThumb({
     offset: windowState.offset,
     lineCount: windowState.lineCount,

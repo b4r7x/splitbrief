@@ -14,7 +14,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { runCommand } from '#testing/helpers/commander.js';
-import { CONFIG_FILE, DIPTYCH_DIR, SPEC_FILE } from '../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR, SPEC_FILE } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../../engine/planners/types.js';
 import { registerSpecCommand } from './spec.js';
@@ -48,12 +48,12 @@ afterEach(() => {
 });
 
 function sessionsRoot(): string {
-  return join(tmp, DIPTYCH_DIR, 'sessions');
+  return join(tmp, SPLITBRIEF_DIR, 'sessions');
 }
 
 function writeConfig(config: Config): void {
-  mkdirSync(join(tmp, DIPTYCH_DIR), { recursive: true });
-  writeFileSync(join(tmp, DIPTYCH_DIR, CONFIG_FILE), JSON.stringify(config, null, 2));
+  mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
+  writeFileSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE), JSON.stringify(config, null, 2));
 }
 
 describe('spec command', () => {
@@ -77,7 +77,7 @@ describe('spec command', () => {
 
     await program.parseAsync([
       'node',
-      'diptych',
+      'splitbrief',
       'spec',
       '--project',
       tmp,
@@ -105,7 +105,7 @@ describe('spec command', () => {
     await expect(
       program.parseAsync([
         'node',
-        'diptych',
+        'splitbrief',
         'spec',
         '--project',
         tmp,
@@ -130,7 +130,7 @@ describe('spec command', () => {
 
     await program.parseAsync([
       'node',
-      'diptych',
+      'splitbrief',
       'spec',
       '--project',
       tmp,
@@ -174,7 +174,7 @@ describe('spec command', () => {
 
       await program.parseAsync([
         'node',
-        'diptych',
+        'splitbrief',
         'spec',
         '--project',
         tmp,

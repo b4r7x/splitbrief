@@ -24,9 +24,9 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    const workflow = spans.find((s) => s.name === 'diptych.workflow');
+    const workflow = spans.find((s) => s.name === 'splitbrief.workflow');
     expect(workflow).toBeDefined();
-    expect(workflow?.attributes['diptych.feature']).toBe('add x');
+    expect(workflow?.attributes['splitbrief.feature']).toBe('add x');
     expect(workflow?.status.code).toBe(SpanStatusCode.OK);
   });
 
@@ -40,11 +40,11 @@ describe('createOtelSink', () => {
     });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'diptych.workflow');
-    expect(workflow?.attributes['diptych.feature']).not.toContain(
+    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.workflow');
+    expect(workflow?.attributes['splitbrief.feature']).not.toContain(
       'sk-ant-aaaaaaaaaaaaaaaaaaaaaaaa',
     );
-    expect(workflow?.attributes['diptych.feature']).toContain('***REDACTED***');
+    expect(workflow?.attributes['splitbrief.feature']).toContain('***REDACTED***');
   });
 
   it('replaces the feature span attribute when transcript persistence is disabled', () => {
@@ -57,8 +57,8 @@ describe('createOtelSink', () => {
     });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'diptych.workflow');
-    expect(workflow?.attributes['diptych.feature']).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.workflow');
+    expect(workflow?.attributes['splitbrief.feature']).toBe(TRANSCRIPT_OMITTED_MESSAGE);
     expect(JSON.stringify(workflow?.attributes)).not.toContain('secret feature prompt');
   });
 
@@ -77,12 +77,12 @@ describe('createOtelSink', () => {
     });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'diptych.workflow');
-    expect(workflow?.attributes['diptych.mode']).toBe('standard');
-    expect(workflow?.attributes['diptych.planner.tool']).toBe('claude-code');
-    expect(workflow?.attributes['diptych.planner.model']).toBe('opus');
-    expect(workflow?.attributes['diptych.implementer.tool']).toBe('ollama');
-    expect(workflow?.attributes['diptych.implementer.model']).toBe('llama3');
+    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.workflow');
+    expect(workflow?.attributes['splitbrief.mode']).toBe('standard');
+    expect(workflow?.attributes['splitbrief.planner.tool']).toBe('claude-code');
+    expect(workflow?.attributes['splitbrief.planner.model']).toBe('opus');
+    expect(workflow?.attributes['splitbrief.implementer.tool']).toBe('ollama');
+    expect(workflow?.attributes['splitbrief.implementer.model']).toBe('llama3');
   });
 
   it('opens the researching phase span on a fresh run with duration when workflow_started precedes planner_status running and done', () => {
@@ -93,10 +93,10 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    const phase = spans.find((s) => s.name === 'diptych.phase.researching');
-    const workflow = spans.find((s) => s.name === 'diptych.workflow');
+    const phase = spans.find((s) => s.name === 'splitbrief.phase.researching');
+    const workflow = spans.find((s) => s.name === 'splitbrief.workflow');
     expect(phase).toBeDefined();
-    expect(phase?.attributes['diptych.phase.duration_ms']).toBe(48);
+    expect(phase?.attributes['splitbrief.phase.duration_ms']).toBe(48);
     expect(phase?.parentSpanContext?.spanId).toBe(workflow?.spanContext().spanId);
   });
 
@@ -107,7 +107,7 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    expect(spans.find((s) => s.name === 'diptych.phase.researching')).toBeUndefined();
+    expect(spans.find((s) => s.name === 'splitbrief.phase.researching')).toBeUndefined();
   });
 
   it('transitions phase spans when a new phase begins', () => {
@@ -118,8 +118,8 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    expect(spans.find((s) => s.name === 'diptych.phase.researching')).toBeDefined();
-    expect(spans.find((s) => s.name === 'diptych.phase.specifying')).toBeDefined();
+    expect(spans.find((s) => s.name === 'splitbrief.phase.researching')).toBeDefined();
+    expect(spans.find((s) => s.name === 'splitbrief.phase.specifying')).toBeDefined();
   });
 
   it('opens the implementing phase span in instant mode so the task parents under it, not researching', () => {
@@ -151,9 +151,9 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    const implementing = spans.find((s) => s.name === 'diptych.phase.implementing');
-    const researching = spans.find((s) => s.name === 'diptych.phase.researching');
-    const task = spans.find((s) => s.name === 'diptych.task');
+    const implementing = spans.find((s) => s.name === 'splitbrief.phase.implementing');
+    const researching = spans.find((s) => s.name === 'splitbrief.phase.researching');
+    const task = spans.find((s) => s.name === 'splitbrief.task');
     expect(implementing).toBeDefined();
     expect(task?.parentSpanContext?.spanId).toBe(implementing?.spanContext().spanId);
     expect(task?.parentSpanContext?.spanId).not.toBe(researching?.spanContext().spanId);
@@ -187,16 +187,16 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    const task = spans.find((s) => s.name === 'diptych.task');
-    const phase = spans.find((s) => s.name === 'diptych.phase.implementing');
+    const task = spans.find((s) => s.name === 'splitbrief.task');
+    const phase = spans.find((s) => s.name === 'splitbrief.phase.implementing');
     expect(task).toBeDefined();
-    expect(task?.attributes['diptych.task.id']).toBe('T001');
-    expect(task?.attributes['diptych.task.title']).toBe('Add foo');
-    expect(task?.attributes['diptych.task.file']).toBe('a.ts');
-    expect(task?.attributes['diptych.task.action']).toBe('create');
-    expect(task?.attributes['diptych.task.method']).toBe('local');
-    expect(task?.attributes['diptych.task.retries']).toBe(0);
-    expect(task?.attributes['diptych.task.duration_ms']).toBe(40);
+    expect(task?.attributes['splitbrief.task.id']).toBe('T001');
+    expect(task?.attributes['splitbrief.task.title']).toBe('Add foo');
+    expect(task?.attributes['splitbrief.task.file']).toBe('a.ts');
+    expect(task?.attributes['splitbrief.task.action']).toBe('create');
+    expect(task?.attributes['splitbrief.task.method']).toBe('local');
+    expect(task?.attributes['splitbrief.task.retries']).toBe(0);
+    expect(task?.attributes['splitbrief.task.duration_ms']).toBe(40);
     expect(task?.status.code).toBe(SpanStatusCode.OK);
     expect(task?.parentSpanContext?.spanId).toBe(phase?.spanContext().spanId);
   });
@@ -218,7 +218,7 @@ describe('createOtelSink', () => {
     sink({ type: 'task_full_fail', ts: 50, phase: 'implementing', taskId: taskId('T002') });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const task = exporter.getFinishedSpans().find((s) => s.name === 'diptych.task');
+    const task = exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.task');
     expect(task?.status.code).toBe(SpanStatusCode.ERROR);
   });
 
@@ -246,8 +246,8 @@ describe('createOtelSink', () => {
     });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const task = exporter.getFinishedSpans().find((s) => s.name === 'diptych.task');
-    expect(task?.attributes['diptych.task.skip_reason']).toBe('already done');
+    const task = exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.task');
+    expect(task?.attributes['splitbrief.task.skip_reason']).toBe('already done');
   });
 
   it('omits task prose attributes when transcript persistence is disabled', () => {
@@ -276,14 +276,14 @@ describe('createOtelSink', () => {
     });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const task = exporter.getFinishedSpans().find((s) => s.name === 'diptych.task');
-    expect(task?.attributes['diptych.task.id']).toBe('T303');
-    expect(task?.attributes['diptych.task.index']).toBe(0);
-    expect(task?.attributes['diptych.task.total']).toBe(1);
-    expect(task?.attributes['diptych.task.title']).toBeUndefined();
-    expect(task?.attributes['diptych.task.file']).toBeUndefined();
-    expect(task?.attributes['diptych.task.action']).toBeUndefined();
-    expect(task?.attributes['diptych.task.skip_reason']).toBeUndefined();
+    const task = exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.task');
+    expect(task?.attributes['splitbrief.task.id']).toBe('T303');
+    expect(task?.attributes['splitbrief.task.index']).toBe(0);
+    expect(task?.attributes['splitbrief.task.total']).toBe(1);
+    expect(task?.attributes['splitbrief.task.title']).toBeUndefined();
+    expect(task?.attributes['splitbrief.task.file']).toBeUndefined();
+    expect(task?.attributes['splitbrief.task.action']).toBeUndefined();
+    expect(task?.attributes['splitbrief.task.skip_reason']).toBeUndefined();
     expect(JSON.stringify(task?.attributes)).not.toContain(sentinel);
   });
 
@@ -305,8 +305,8 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_cancelled', ts: 50, phase: 'implementing' });
 
     const spans = exporter.getFinishedSpans();
-    const workflow = spans.find((s) => s.name === 'diptych.workflow');
-    const task = spans.find((s) => s.name === 'diptych.task');
+    const workflow = spans.find((s) => s.name === 'splitbrief.workflow');
+    const task = spans.find((s) => s.name === 'splitbrief.task');
     expect(workflow?.status.code).toBe(SpanStatusCode.ERROR);
     expect(task?.status.code).toBe(SpanStatusCode.ERROR);
   });
@@ -329,9 +329,9 @@ describe('createOtelSink', () => {
     });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'diptych.workflow');
-    expect(workflow?.attributes['diptych.cost.input_tokens']).toBe(310);
-    expect(workflow?.attributes['diptych.cost.output_tokens']).toBe(135);
+    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.workflow');
+    expect(workflow?.attributes['splitbrief.cost.input_tokens']).toBe(310);
+    expect(workflow?.attributes['splitbrief.cost.output_tokens']).toBe(135);
   });
 
   it('adds validate span event on validate done', () => {
@@ -349,10 +349,12 @@ describe('createOtelSink', () => {
     });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const phase = exporter.getFinishedSpans().find((s) => s.name === 'diptych.phase.implementing');
-    const validateEvent = phase?.events.find((e) => e.name === 'diptych.validate');
+    const phase = exporter
+      .getFinishedSpans()
+      .find((s) => s.name === 'splitbrief.phase.implementing');
+    const validateEvent = phase?.events.find((e) => e.name === 'splitbrief.validate');
     expect(validateEvent).toBeDefined();
-    expect(validateEvent?.attributes?.['diptych.validate.passed']).toBe(true);
+    expect(validateEvent?.attributes?.['splitbrief.validate.passed']).toBe(true);
   });
 
   it('force-closes the workflow span and open children with ERROR on an error event without a trailing workflow_complete', () => {
@@ -373,9 +375,9 @@ describe('createOtelSink', () => {
     sink({ type: 'error', ts: 20, phase: 'implementing', message: 'something broke' });
 
     const spans = exporter.getFinishedSpans();
-    const workflow = spans.find((s) => s.name === 'diptych.workflow');
-    const phase = spans.find((s) => s.name === 'diptych.phase.implementing');
-    const task = spans.find((s) => s.name === 'diptych.task');
+    const workflow = spans.find((s) => s.name === 'splitbrief.workflow');
+    const phase = spans.find((s) => s.name === 'splitbrief.phase.implementing');
+    const task = spans.find((s) => s.name === 'splitbrief.task');
     expect(workflow).toBeDefined();
     expect(workflow?.events.some((e) => e.name === 'exception')).toBe(true);
     expect(workflow?.status.code).toBe(SpanStatusCode.ERROR);
@@ -389,7 +391,7 @@ describe('createOtelSink', () => {
     sink({ type: 'error', ts: 10, phase: 'idle', message: 'boom' });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const workflows = exporter.getFinishedSpans().filter((s) => s.name === 'diptych.workflow');
+    const workflows = exporter.getFinishedSpans().filter((s) => s.name === 'splitbrief.workflow');
     expect(workflows).toHaveLength(1);
     expect(workflows[0]?.status.code).toBe(SpanStatusCode.ERROR);
   });
@@ -400,8 +402,8 @@ describe('createOtelSink', () => {
     sink({ type: 'warning', ts: 10, phase: 'idle', message: 'watch out' });
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
-    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'diptych.workflow');
-    expect(workflow?.events.some((e) => e.name === 'diptych.warning')).toBe(true);
+    const workflow = exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.workflow');
+    expect(workflow?.events.some((e) => e.name === 'splitbrief.warning')).toBe(true);
   });
 
   it('is a no-op before workflow_started', () => {
@@ -450,9 +452,9 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    const workflow = spans.find((s) => s.name === 'diptych.workflow');
-    const phase = spans.find((s) => s.name === 'diptych.phase.implementing');
-    const task = spans.find((s) => s.name === 'diptych.task');
+    const workflow = spans.find((s) => s.name === 'splitbrief.workflow');
+    const phase = spans.find((s) => s.name === 'splitbrief.phase.implementing');
+    const task = spans.find((s) => s.name === 'splitbrief.task');
     expect(workflow).toBeDefined();
     expect(phase?.parentSpanContext?.spanId).toBe(workflow?.spanContext().spanId);
     expect(task?.parentSpanContext?.spanId).toBe(phase?.spanContext().spanId);
@@ -465,7 +467,7 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    expect(spans.find((s) => s.name === 'diptych.workflow')).toBeDefined();
+    expect(spans.find((s) => s.name === 'splitbrief.workflow')).toBeDefined();
   });
 
   it('is a no-op when planner_status running fires before any workflow_started or workflow_resumed', () => {
@@ -504,9 +506,9 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    const implementing = spans.find((s) => s.name === 'diptych.phase.implementing');
-    const task = spans.find((s) => s.name === 'diptych.task');
-    expect(spans.find((s) => s.name === 'diptych.phase.escalating')).toBeUndefined();
+    const implementing = spans.find((s) => s.name === 'splitbrief.phase.implementing');
+    const task = spans.find((s) => s.name === 'splitbrief.task');
+    expect(spans.find((s) => s.name === 'splitbrief.phase.escalating')).toBeUndefined();
     expect(task?.parentSpanContext?.spanId).toBe(implementing?.spanContext().spanId);
   });
 
@@ -528,7 +530,7 @@ describe('createOtelSink', () => {
     sink({ type: 'planner_status', ts: 12, phase: 'escalating', status: 'running' });
 
     expect(
-      exporter.getFinishedSpans().find((s) => s.name === 'diptych.phase.implementing'),
+      exporter.getFinishedSpans().find((s) => s.name === 'splitbrief.phase.implementing'),
     ).toBeUndefined();
 
     sink({
@@ -565,10 +567,10 @@ describe('createOtelSink', () => {
     sink({ type: 'workflow_complete', ts: 100, phase: 'complete' });
 
     const spans = exporter.getFinishedSpans();
-    const implementing = spans.find((s) => s.name === 'diptych.phase.implementing');
-    const tasks = spans.filter((s) => s.name === 'diptych.task');
-    const second = tasks.find((s) => s.attributes['diptych.task.id'] === 'T002');
-    expect(spans.find((s) => s.name === 'diptych.phase.escalating')).toBeUndefined();
+    const implementing = spans.find((s) => s.name === 'splitbrief.phase.implementing');
+    const tasks = spans.filter((s) => s.name === 'splitbrief.task');
+    const second = tasks.find((s) => s.attributes['splitbrief.task.id'] === 'T002');
+    expect(spans.find((s) => s.name === 'splitbrief.phase.escalating')).toBeUndefined();
     expect(second?.parentSpanContext?.spanId).toBe(implementing?.spanContext().spanId);
   });
 });

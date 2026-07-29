@@ -18,7 +18,7 @@ Dependency task.
 describe('parseTasks with file-level frontmatter', () => {
   it('strips file-level frontmatter before parsing task blocks', () => {
     const input = `---
-generated_by: diptych v0.1.0
+generated_by: splitbrief v0.1.0
 planner: claude-code
 implementer: ollama
 mode: standard
@@ -51,7 +51,7 @@ Set up the initial project directory structure.
   it('strips file-level frontmatter with CRLF line endings before parsing task blocks', () => {
     const input =
       '---\r\n' +
-      'generated_by: diptych v0.1.0\r\n' +
+      'generated_by: splitbrief v0.1.0\r\n' +
       'planner: claude-code\r\n' +
       '---\r\n' +
       '---\r\n' +

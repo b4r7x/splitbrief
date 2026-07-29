@@ -1,4 +1,4 @@
-# diptych — Extending
+# SPLITBRIEF — Extending
 
 How to add things. Each section is a recipe: what you're adding, what files to touch, in what order. Read [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) for the system flow and [ENGINE.md](./ENGINE.md) for the EventBus before writing engine code.
 

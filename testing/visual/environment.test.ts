@@ -12,7 +12,7 @@ const ENV_KEYS = [
   'FORCE_COLOR',
   'FORCE_HYPERLINK',
   'NO_COLOR',
-  'DIPTYCH_VISUAL_MOTION',
+  'SPLITBRIEF_VISUAL_MOTION',
 ] as const;
 
 function environmentSnapshot(): Record<string, string | undefined> {

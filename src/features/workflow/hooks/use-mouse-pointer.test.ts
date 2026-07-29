@@ -7,9 +7,11 @@ import {
 import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { focusStore } from '../../../stores/ui/focus.js';
 import { hoverStore } from '../../../stores/ui/hover.js';
+import { completionStore } from '../../../stores/ui/completion.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -22,7 +24,6 @@ import {
   readConversationScrollSnapshot,
   readRailSnapshot,
 } from '../layout/snapshot.js';
-import { briefListTopOffset } from '../layout/hit-test.js';
 import { SIMPLE_TASK_ROW_HEIGHT } from '../layout/brief-review.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
@@ -81,8 +82,6 @@ function seedDiff(): void {
   });
 }
 
-// A transcript that overflows the viewport with an activity disclosure sitting a few rows above a
-// trailing non-activity block, exercised while a stage is live.
 function seedLiveDisclosureTranscript(): void {
   eventsStore.__testReset({
     events: [
@@ -144,6 +143,7 @@ function pointerEvent(type: MouseEvent['type'], x: number, y: number): MouseEven
 function openBriefReview(taskCount: number) {
   routerStore.init({ screen: 'workflow', feature: 'feat' });
   lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+  controlsStore.setInputMode('review');
   reviewStore.setReviewFile('briefs.md', taskCount);
   const snapshot = readBriefListSnapshot();
   if (snapshot === null) throw new Error('expected a brief-list snapshot');
@@ -154,10 +154,12 @@ describe('workflow pointer handling', () => {
   beforeEach(() => {
     routerStore.reset();
     overlayStore.reset();
+    controlsStore.reset();
     reviewStore.reset();
     focusStore.clear();
     hoverStore.clear();
-    terminalSizeStore.__testReset({ rows: 30, cols: 80, isSmall: false });
+    completionStore.reset();
+    terminalSizeStore.__testReset({ rows: 30, cols: 80 });
     conversationScrollStore.reset();
     resetWorkflow();
     inputHeightStore.reset();
@@ -172,7 +174,7 @@ describe('workflow pointer handling', () => {
     expect(snapshot.visibleCount).toBeGreaterThan(windowIndex);
 
     const sgrX = snapshot.rect.left;
-    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
     dispatchWorkflowPointer(
       pointerEvent('press', sgrX, listTop + windowIndex * SIMPLE_TASK_ROW_HEIGHT),
     );
@@ -181,8 +183,63 @@ describe('workflow pointer handling', () => {
       region: 'brief',
       index: snapshot.previousCount + windowIndex,
     });
-    // The clicked row is already on screen, so focusing it must not snap the viewport.
     expect(reviewStore.get().scrollOffset).toBe(0);
+  });
+
+  it('uses the absolute brief index after the visible window has scrolled', () => {
+    openBriefReview(30);
+    reviewStore.setScrollOffset(5);
+    const snapshot = readBriefListSnapshot();
+    if (snapshot === null) throw new Error('expected a brief-list snapshot');
+    expect(snapshot.previousCount).toBe(5);
+    expect(snapshot.visibleCount).toBeGreaterThan(2);
+    const windowIndex = 2;
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
+
+    dispatchWorkflowPointer(
+      pointerEvent('move', snapshot.rect.right, listTop + windowIndex * SIMPLE_TASK_ROW_HEIGHT),
+    );
+    dispatchWorkflowPointer(
+      pointerEvent('press', snapshot.rect.right, listTop + windowIndex * SIMPLE_TASK_ROW_HEIGHT),
+    );
+
+    const absoluteIndex = snapshot.previousCount + windowIndex;
+    expect(hoverStore.get()).toEqual({ surface: 'brief', index: absoluteIndex });
+    expect(focusStore.get()).toEqual({ region: 'brief', index: absoluteIndex });
+    expect(reviewStore.get().scrollOffset).toBe(5);
+  });
+
+  it.each([
+    { cols: 120, rows: 40 },
+    { cols: 80, rows: 24 },
+    { cols: 60, rows: 18 },
+  ])('maps the first and last rendered brief rows at $cols×$rows', ({ cols, rows }) => {
+    terminalSizeStore.__testReset({ cols, rows });
+    openBriefReview(30);
+    reviewStore.setScrollOffset(5);
+    const snapshot = readBriefListSnapshot();
+    if (snapshot === null) throw new Error('expected a brief-list snapshot');
+    expect(snapshot.visibleCount).toBeGreaterThan(0);
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
+    const listBottom = listTop + (snapshot.visibleCount - 1) * SIMPLE_TASK_ROW_HEIGHT;
+
+    dispatchWorkflowPointer(pointerEvent('press', snapshot.rect.left, listTop));
+    expect(focusStore.get()).toEqual({
+      region: 'brief',
+      index: snapshot.previousCount,
+    });
+
+    focusStore.clear();
+    dispatchWorkflowPointer(pointerEvent('press', snapshot.rect.right, listBottom));
+    expect(focusStore.get()).toEqual({
+      region: 'brief',
+      index: snapshot.previousCount + snapshot.visibleCount - 1,
+    });
+
+    focusStore.clear();
+    dispatchWorkflowPointer(pointerEvent('press', snapshot.rect.left, listTop - 1));
+    dispatchWorkflowPointer(pointerEvent('press', snapshot.rect.right, listBottom + 1));
+    expect(focusStore.get()).toBeNull();
   });
 
   it('ignores a click outside any zone or row', () => {
@@ -218,6 +275,28 @@ describe('workflow pointer handling', () => {
     expect(overlayStore.get().active).toBe('cost-drilldown');
   });
 
+  it('blocks hover, transcript actions, and row zones behind an open completion menu', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    seedDiff();
+    const snapshot = readConversationScrollSnapshot();
+    const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
+    expect(windowIndex).toBeGreaterThanOrEqual(0);
+    const x = snapshot.conversationRect.left;
+    const y = snapshot.conversationRect.top + windowIndex;
+    const onClick = vi.fn();
+    registerMouseZone({ id: 'covered', left: x, right: x, top: y, bottom: y, z: 5, onClick });
+    hoverStore.set('conversation', windowIndex);
+    completionStore.setOpen(true);
+
+    dispatchWorkflowPointer(pointerEvent('move', x, y));
+    dispatchWorkflowPointer(pointerEvent('press', x, y));
+
+    expect(hoverStore.get()).toBeNull();
+    expect(conversationScrollStore.get().expandedDiffs.size).toBe(0);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
   it('ignores a release event so X10 button-3 releases do not click a zone', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
     const onClick = vi.fn();
@@ -232,7 +311,6 @@ describe('workflow pointer handling', () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     seedTallTranscript();
     const snapshot = readConversationScrollSnapshot();
-    // Pre-scroll up so snapping back to the bottom is an observable state change, not a silent no-op.
     conversationScrollStore.__testReset({
       scrollOffset: 5,
       renderableCountAtScroll: 1,
@@ -250,11 +328,10 @@ describe('workflow pointer handling', () => {
 
   it('routes distinct rail stages to distinct transcript scroll destinations', () => {
     routerStore.init({ screen: 'workflow', feature: 'feat' });
-    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
     lifecycleStore.__testReset({ phase: 'analyzing', status: 'running', startedAt: 0 });
     seedTallTranscript();
     const maxOffset = readConversationScrollSnapshot().maxOffset;
-    // The full vertical rail must expose every stage as its own hotspot for the routing to differ.
     expect(maxOffset).toBeGreaterThanOrEqual(2);
     const zones = readRailSnapshot().zones;
     const zoneFor = (index: number) => {
@@ -285,7 +362,7 @@ describe('workflow pointer handling', () => {
 
   it('sets the hover store on a move over a brief row', () => {
     const snapshot = openBriefReview(12);
-    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
     dispatchWorkflowPointer(pointerEvent('move', snapshot.rect.left, listTop));
 
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
@@ -296,7 +373,6 @@ describe('workflow pointer handling', () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const railZone = readRailSnapshot().zones[0];
     if (!railZone) throw new Error('expected a rail zone');
-    // Seed a stale tint so the assertion proves the rail move actively clears it.
     hoverStore.set('conversation', 5);
     dispatchWorkflowPointer(pointerEvent('move', railZone.left, railZone.top));
 
@@ -322,15 +398,56 @@ describe('workflow pointer handling', () => {
     expect(hoverStore.get()).toEqual({ surface: 'conversation', index: 0 });
   });
 
+  it('clears stale transcript hover and blocks transcript actions when review owns the body without a file', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+    seedDiff();
+    const snapshot = readConversationScrollSnapshot();
+    const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
+    expect(windowIndex).toBeGreaterThanOrEqual(0);
+    const x = snapshot.conversationRect.left;
+    const y = snapshot.conversationRect.top + windowIndex;
+    hoverStore.set('conversation', windowIndex);
+
+    controlsStore.setInputMode('review');
+    expect(reviewStore.get().filePath).toBeNull();
+    dispatchWorkflowPointer(pointerEvent('move', x, y));
+    dispatchWorkflowPointer(pointerEvent('press', x, y));
+
+    expect(hoverStore.get()).toBeNull();
+    expect(conversationScrollStore.get().expandedDiffs.size).toBe(0);
+    expect(focusStore.get()).toBeNull();
+  });
+
+  it('routes hover and press to the visible transcript in normal mode despite stale brief review state', () => {
+    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
+    reviewStore.setReviewFile('briefs.md', 12);
+    controlsStore.setInputMode('normal');
+    seedDiff();
+    const snapshot = readConversationScrollSnapshot();
+    const windowIndex = transcriptRows().findIndex((row) => rowText(row).includes('ctrl+d'));
+    expect(windowIndex).toBeGreaterThanOrEqual(0);
+    const x = snapshot.conversationRect.left;
+    const y = snapshot.conversationRect.top + windowIndex;
+
+    dispatchWorkflowPointer(pointerEvent('move', x, y));
+    dispatchWorkflowPointer(pointerEvent('press', x, y));
+
+    expect(hoverStore.get()).toEqual({ surface: 'conversation', index: windowIndex });
+    expect(conversationScrollStore.get().expandedDiffs.has('implementer_generate_done:0')).toBe(
+      true,
+    );
+    expect(focusStore.get()).toBeNull();
+  });
+
   it('clears hover on an invalid move even inside the throttle window', () => {
     const snapshot = openBriefReview(12);
-    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
     dispatchWorkflowPointer(pointerEvent('move', snapshot.rect.left, listTop));
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
 
-    // A second move arriving within HOVER_THROTTLE_MS lands on empty space. Clearing is never
-    // throttled, so the stale tint must not survive the invalid move.
-    dispatchWorkflowPointer(pointerEvent('move', 1, 1));
+    dispatchWorkflowPointer(pointerEvent('move', snapshot.rect.left, listTop - 1));
     expect(hoverStore.get()).toBeNull();
   });
 
@@ -445,13 +562,11 @@ describe('workflow pointer handling', () => {
 
   it('throttles a redundant valid hover update arriving within the window', () => {
     const snapshot = openBriefReview(12);
-    const listTop = snapshot.rect.top + briefListTopOffset({ hasLoadError: false });
+    const listTop = snapshot.rect.top + snapshot.taskTopOffset;
     expect(snapshot.visibleCount).toBeGreaterThan(1);
     dispatchWorkflowPointer(pointerEvent('move', snapshot.rect.left, listTop));
     expect(hoverStore.get()).toEqual({ surface: 'brief', index: snapshot.previousCount });
 
-    // A second valid move to the next row within the throttle window is dropped, so the hover stays
-    // on the first row rather than re-running on every high-frequency move event.
     dispatchWorkflowPointer(
       pointerEvent('move', snapshot.rect.left, listTop + SIMPLE_TASK_ROW_HEIGHT),
     );

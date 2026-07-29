@@ -311,8 +311,8 @@ describe('applyCode', () => {
   it.each([
     ['.git/config', 'create'],
     ['.git/config', 'modify'],
-    ['.diptych/sessions/x/state.json', 'create'],
-    ['.diptych/sessions/x/state.json', 'modify'],
+    ['.splitbrief/sessions/x/state.json', 'create'],
+    ['.splitbrief/sessions/x/state.json', 'modify'],
   ] as const)('refuses to write model output into the control plane (%s, %s)', async (file, action) => {
     tempDir = createTempDir('impl-test');
     const task = makeTask({ action, file });

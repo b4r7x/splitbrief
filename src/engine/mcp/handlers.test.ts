@@ -14,11 +14,11 @@ import type { McpToolHandler } from './types.js';
 const SERVER_VERSION = '1.2.3';
 
 const stubResources: McpResourceDescriptor[] = [
-  { uri: 'mcp://diptych/sessions', name: 'Sessions list', mimeType: 'application/json' },
+  { uri: 'mcp://splitbrief/sessions', name: 'Sessions list', mimeType: 'application/json' },
 ];
 
 const stubContent: McpResourceContent = {
-  uri: 'mcp://diptych/sessions',
+  uri: 'mcp://splitbrief/sessions',
   mimeType: 'application/json',
   text: '[]',
 };
@@ -62,7 +62,7 @@ describe('handleMessage', () => {
     expect(result.body.result).toEqual({
       protocolVersion: MCP_PROTOCOL_VERSION,
       capabilities: { resources: {} },
-      serverInfo: { name: 'diptych', version: SERVER_VERSION },
+      serverInfo: { name: 'splitbrief', version: SERVER_VERSION },
     });
   });
 
@@ -82,7 +82,7 @@ describe('handleMessage', () => {
     expect(result.body.id).toBeNull();
     expect(result.body.result).toMatchObject({
       protocolVersion: MCP_PROTOCOL_VERSION,
-      serverInfo: { name: 'diptych', version: SERVER_VERSION },
+      serverInfo: { name: 'splitbrief', version: SERVER_VERSION },
     });
   });
 
@@ -129,7 +129,7 @@ describe('handleMessage', () => {
         jsonrpc: '2.0',
         id: 4,
         method: 'resources/read',
-        params: { uri: 'mcp://diptych/unknown' },
+        params: { uri: 'mcp://splitbrief/unknown' },
       }),
       makeResolver(),
       SERVER_VERSION,
@@ -270,7 +270,7 @@ describe('handleMessage', () => {
         jsonrpc: '2.0',
         id: 9,
         method: 'resources/subscribe',
-        params: { uri: 'mcp://diptych/sessions' },
+        params: { uri: 'mcp://splitbrief/sessions' },
       }),
       makeResolver(),
       SERVER_VERSION,
