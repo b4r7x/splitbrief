@@ -1,0 +1,174 @@
+.interlock-section__rack {
+  display: grid;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  border: var(--edge);
+  border-radius: var(--radius-frame);
+  background-color: var(--surface-2);
+  box-shadow: var(--edge-highlight);
+}
+
+.interlock-section__phase-bank {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(1.25rem, 4vw, 3rem);
+  border-block-end: 1px solid var(--grid-functional);
+  background-color: var(--surface-1);
+}
+
+.interlock-section__calibration {
+  margin: 0 0 1rem;
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: var(--text-label);
+  font-stretch: expanded;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.interlock-section__phase-rail {
+  display: flex;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 1rem 0;
+  border-block: 1px solid var(--grid-functional);
+  font-family: var(--mono);
+  font-size: clamp(0.6875rem, 3vw, 0.875rem);
+  line-height: 1.25;
+  list-style: none;
+  white-space: nowrap;
+}
+
+.interlock-section__phase {
+  display: flex;
+  max-inline-size: none;
+}
+
+.interlock-section__phase--planner {
+  color: var(--planner-text);
+}
+
+.interlock-section__phase--implementer {
+  color: var(--implementer);
+}
+
+.interlock-section__phase--validator {
+  color: var(--fg);
+}
+
+.interlock-section__connector {
+  color: var(--dim);
+  margin-inline: 0.25ch;
+}
+
+.interlock-section__connector--handoff {
+  color: var(--fg);
+}
+
+.interlock-section__connector--crossing {
+  position: relative;
+}
+
+.interlock-section__crossing-pin {
+  position: absolute;
+  inset-block-end: -0.4375rem;
+  inset-inline-start: 50%;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background-color: var(--pin);
+  transform: translateX(-50%);
+}
+
+.interlock-section__controls {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.interlock-section__controls li {
+  display: grid;
+  grid-template-columns: 5rem minmax(0, 1fr);
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+  align-items: baseline;
+  max-inline-size: none;
+  padding: clamp(0.875rem, 2vw, 1.25rem) clamp(1rem, 3vw, 2rem);
+  border-block-end: 1px solid var(--grid-functional);
+}
+
+.interlock-section__controls li:last-child {
+  border-block-end: 0;
+}
+
+.interlock-section__channel {
+  font-family: var(--display);
+  font-size: var(--text-label);
+  font-stretch: expanded;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.interlock-section__channel--gate,
+.interlock-section__channel--fault {
+  color: var(--planner-text);
+}
+
+.interlock-section__channel--check,
+.interlock-section__channel--state {
+  color: var(--implementer);
+}
+
+@media (min-width: 900px) {
+  .interlock-section__phase-bank {
+    flex-direction: row;
+    gap: 2.5rem;
+    align-items: center;
+    justify-content: space-between;
+    padding-block: 1.75rem;
+  }
+
+  .interlock-section__calibration {
+    margin: 0;
+    white-space: nowrap;
+  }
+
+  .interlock-section__phase-rail {
+    flex: 1;
+    justify-content: space-between;
+    max-inline-size: 46rem;
+    padding-block: 0.875rem;
+    padding-inline: 1.25rem;
+    border-inline: 1px solid var(--grid-functional);
+    font-size: clamp(0.8125rem, 1.2vw, 1rem);
+  }
+
+  .interlock-section__connector {
+    margin-inline: 0.75ch;
+  }
+
+  .interlock-section__controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .interlock-section__controls li:nth-child(odd) {
+    border-inline-end: 1px solid var(--grid-functional);
+  }
+
+  .interlock-section__controls li:nth-child(n + 3) {
+    border-block-end: 0;
+  }
+}
+
+@media (max-width: 449px) {
+  .interlock-section__controls li {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+}

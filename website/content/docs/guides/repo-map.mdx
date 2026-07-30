@@ -1,0 +1,137 @@
+---
+title: Repo-map
+description: Give the planner a ranked, token-budgeted structural view of your codebase.
+---
+
+## Why
+
+Without a repo-map, a planner can miss existing helpers and propose duplicates. It can also spend context reading files that can be summarized first. The repo-map uses a configurable context budget to give the planner structure before research begins.
+
+The approach is inspired by [Aider's repo-map](https://aider.chat/docs/repomap.html), then tuned for a planner that compiles Task Briefs and decides when more code context is necessary.
+
+## What it contains
+
+For example, the map can contain file blocks sorted by [PageRank](#ranking) over the import graph:
+
+```text
+src/engine/orchestrator/run/workflow.ts:
+  export const WORKFLOW_REWIND_ABORT_REASON = 'workflow-rewind';
+  export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary>
+
+src/core/state/machine.ts:
+  export const CURRENT_STATE_VERSION = 3;
+  export function createInitialState(feature: string, now: Date = new Date()): WorkflowState
+```
+
+Only top-level declarations are selected. Signature extraction truncates a declaration at its first literal `{`, which elides brace-delimited bodies. Python function and class nodes have no structural brace, so the current parser normally retains the entire declaration, including its indented body; a literal `{` anywhere in that node's text still triggers truncation. SPLITBRIEF always includes the highest-ranked file block, then omits later declaration blocks that do not fit the remaining budget.
+
+## Configuration
+
+```yaml
+# .splitbrief/config.yaml — defaults plus an optional source scope
+codebase:
+  enabled: true              # set to false to disable
+  tokenBudget: 4000          # soft estimated-token ceiling for map blocks
+  cacheDir: ".splitbrief"    # where the SQLite cache lives
+  include: ["src/**/*"]      # optional glob; omit to walk known language extensions
+  exclude:                   # optional regex strings, added to built-in exclusions
+    - "\\.generated\\.tsx?$"
+```
+
+The schema accepts a positive integer `tokenBudget` up to 50,000. The budget uses an estimate of four characters per token and is a soft ceiling: the highest-ranked file block is always emitted even when it exceeds the budget, and the later `<repo-map>` wrapper is not counted. `include` entries are relative to the project root and use SPLITBRIEF's limited path-pattern matcher: it supports `*`, `**`, and `?`, not the full syntax of a general-purpose glob library. `exclude` entries are regular-expression strings.
+
+Schema: `src/core/schemas/codebase.ts`.
+
+## Ranking
+
+Files are ranked by [PageRank](https://en.wikipedia.org/wiki/PageRank) over the file-to-file import graph, with a damping factor of `0.85` and at most 100 iterations. Edges are directed from importer to imported. Each resolved relative import creates an edge; repeated imports between the same two files collapse to one edge.
+
+Import extraction is deliberately limited. TypeScript and JavaScript recognize static `import` statements, Python recognizes `import` and `from` syntax, and Go and Rust currently extract no imports. Only relative specifiers that resolve to a discovered file become graph edges.
+
+### Personalization vector
+
+A personalization vector biases the walk toward files the user already cares about:
+
+- Discovered graph nodes named in `RepoMapOptions.focusFiles` receive the personalized prior; entries outside the graph are ignored.
+- The feature request is scanned for file mentions such as `auth.ts` or `validation.ts`. A discovered match joins the focus set. When a basename-only mention matches more than one discovered path, the first path in discovery order is selected.
+
+The focus mass is divided evenly across surviving focus files. Other files can still receive rank through the import graph and dangling-node redistribution.
+
+Mentioned-file extraction lives in `src/engine/codebase/extract-mentioned-filenames.ts`. The PageRank implementation is in `src/engine/codebase/pagerank.ts`; the ranking calculation itself has no native dependency.
+
+## Cache
+
+Parsed symbols and imports are cached in SQLite at `${projectDir}/.splitbrief/repomap.sqlite` by default. One row is stored per file.
+
+### Schema
+
+```sql
+CREATE TABLE files (
+  path TEXT PRIMARY KEY,
+  mtime_ms INTEGER NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  symbols_json TEXT NOT NULL,
+  imports_json TEXT NOT NULL,
+  parse_version INTEGER NOT NULL
+);
+```
+
+### Invalidation
+
+On read, the cache compares the row's `(mtime_ms, size_bytes, parse_version)` values with the file on disk and the manually maintained parser version:
+
+- **Hit:** the modified time, size, and parser version match, so SPLITBRIEF deserializes the cached symbols and imports.
+- **Miss (file changed):** the modified time or size differs, so SPLITBRIEF parses the file and replaces the row.
+- **Miss (parser changed):** the `PARSE_VERSION` constant differs, so SPLITBRIEF treats the row as stale and rebuilds it on demand.
+
+Grammar or extraction changes must bump `PARSE_VERSION` to invalidate existing rows. For a forced rebuild after an unversioned change or unexplained behavior, enter `/repomap rebuild` in the TUI. It removes the SQLite cache files; the next planning phase parses from scratch.
+
+Modified-time invalidation can miss the rare case where content changes without a modified-time or size change. `/repomap rebuild` is the escape hatch.
+
+## Opt out
+
+```yaml
+# .splitbrief/config.yaml
+codebase:
+  enabled: false
+```
+
+The planner runs without the `<repo-map>` block.
+
+Use this when you want a tightly scoped planner prompt and prefer to rely on explicit file reads instead.
+
+## Implementation
+
+The `src/engine/codebase/` module forms a four-step pipeline:
+
+1. **Parse** — `src/engine/codebase/parse.ts` wraps `web-tree-sitter` and loads language-specific WASM grammars lazily. It extracts top-level functions, classes, types, and other supported declarations according to each language's node types. Discovery recognizes TypeScript, JavaScript, Python, Go, and Rust extensions. When a grammar for a recognized language is unavailable, the file remains in the map with no extracted declarations or imports. Output is `FileNode { path, symbols, imports, sizeBytes, mtimeMs }`. The cache fronts file parsing, so files are parsed only on cache misses.
+2. **Graph build** — `src/engine/codebase/graph.ts` turns resolved relative imports into a directed file-to-file graph. External and unresolved imports are dropped.
+3. **PageRank** — `src/engine/codebase/pagerank.ts` ranks that graph with a personalization vector built from explicit focus files and filenames found in the feature request.
+4. **Budget-aware emit** — `src/engine/codebase/format.ts` and `src/engine/codebase/budget.ts` walk files in descending rank order, emit a block of declaration lines for each file, and use a character-based token estimate as a soft ceiling for blocks after the first. The highest-ranked file is always included, even when its block exceeds `tokenBudget`.
+
+Other files:
+
+- `src/engine/codebase/cache.ts` — SQLite-backed parse cache
+- `src/engine/codebase/types.ts` — `SymbolRef` and `FileNode`
+- `src/engine/codebase/extract-mentioned-filenames.ts` — filename extraction for personalization
+- `src/engine/codebase/repomap.ts` — `buildRepoMap(projectDir, opts)`, the entry point used by planning
+
+## Integration
+
+Each entry into the planning phase builds the repo-map once before dispatching the selected mode. That includes fresh runs and full planning reruns in `instant`, `quick`, `standard`, and `speckit`. The feature request supplies mentioned filenames, while `config.codebase` supplies the token budget, cache directory, and include or exclude patterns.
+
+When the map is non-empty, SPLITBRIEF wraps it in `<repo-map>...</repo-map>` and prepends it to the first prompt for that planning run. Targeted regeneration inside a `standard` or `speckit` run—such as regenerating a spec, plan, or selected Task Briefs at a review gate—does not receive the repo-map again. The implementer receives a `Task` object, not the repo-map text; `tasks.md` is the persisted, reviewable Task Brief record at the planning-to-orchestration boundary.
+
+Setting `codebase.enabled: false` skips the repo-map before parsing. If map generation fails, SPLITBRIEF emits a warning and continues planning without the block.
+
+## Design decisions
+
+Alternatives considered and rejected:
+
+- **TypeScript Compiler API (`ts-morph` or `typescript`).** It brings semantic machinery that declaration extraction does not need and would make the runtime larger. **Rejected.**
+- **[Aider's repo-map](https://aider.chat/docs/repomap.html) via subprocess.** It would require Python in the user's environment, add cross-process serialization, and break the single-runtime installation model. **Rejected.**
+- **Embedding-based retrieval.** It can add semantic retrieval, but requires a network service, a provider dependency, and index synchronization. Local-only users would not benefit. **Rejected for now.**
+- **Parse every run without caching.** It removes SQLite but repeats unchanged parsing at every workflow start. **Rejected.**
+- **TypeScript language server over LSP.** It requires a long-running subprocess with a more complex lifecycle, significant startup work, and TypeScript-only coverage. **Rejected.**
+
+Accepted trade-offs: the repo-map adds `web-tree-sitter`, language grammar WASM packages, and `better-sqlite3`, including a native module with prebuilt binaries for macOS and Linux.

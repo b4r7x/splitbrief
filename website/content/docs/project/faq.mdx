@@ -1,0 +1,76 @@
+---
+title: FAQ
+description: Answers about installation, supported workflows, readiness checks, automation, and current limitations.
+---
+
+## Is SPLITBRIEF published on npm?
+
+Not yet. Install it from source:
+
+```bash
+git clone https://github.com/b4r7x/splitbrief.git
+cd splitbrief
+npm install
+npm run build
+npm link
+```
+
+The installed binary needs a fresh `npm run build` after you pull new source. See [Installation](/docs/getting-started/installation) for the complete setup.
+
+## What does SPLITBRIEF require?
+
+SPLITBRIEF requires Node.js 22 or newer and git in the project. Its primary development stack is TypeScript and JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.
+
+## Does it support Windows?
+
+Windows is not currently tested. Subprocess control uses POSIX signal behavior, and active-session locking has different guarantees across platforms. Windows CI and compatibility testing are roadmap work; see [Roadmap](/docs/project/roadmap).
+
+## Does SPLITBRIEF guarantee a lower bill?
+
+No. It keeps planning, review, and escalation with the planner while allowing routine implementation to run on a local or lower-cost model. Actual cost depends on provider pricing, subscription limits, task size, model quality, validation coverage, and escalation frequency.
+
+## Is SPLITBRIEF a universal AI connector or agent swarm?
+
+No. It uses exactly two roles: planner and implementer. It does not promise arbitrary tool compatibility, dynamic agent counts, agent racing, same-checkout parallel writing, boards, cross-team tracking, or dependencies across separate plans. See [Why SPLITBRIEF / comparison](/docs/project/why-splitbrief-comparison).
+
+## Why does Run Readiness say the run is blocked?
+
+A hard local precondition failed before model calls. Common causes are an invalid or unwritable config, a directory that is not a git repository, an in-progress merge or rebase, or a live session in the same checkout.
+
+Read the reported next action. Use `splitbrief init` or `splitbrief init --reconfigure` for a missing or invalid config, and `splitbrief status` before resuming or attaching to an existing session.
+
+## Why does Run Readiness warn about validation without running tests?
+
+Readiness checks configuration posture; it does not execute typechecking, linting, or tests. It inspects the validation toggles, the configured test command, and obvious package-script availability. Run the project's validation commands directly when you need proof that the current tree passes.
+
+## Why are Task Briefs vague or missing file references?
+
+`instant` and `quick` skip refinement passes, the planner may not have enough capacity for the codebase, or the repo-map may omit relevant files. Use `standard` for ordinary work or `speckit` for larger and riskier work, leave a concrete review comment, and check `codebase.tokenBudget`, include rules, and exclude rules.
+
+## What happens when the implementer repeatedly fails a task?
+
+The orchestrator retries up to the configured limit and then escalates. Inspect the task evidence to see whether typechecking, linting, tests, or the brief itself is failing. A contradictory or oversized brief may need a narrower scope or smaller tasks.
+
+## Why does `--json` stop with `APPROVAL_REQUIRED`?
+
+`--json` has no reply channel. Workflow review gates are auto-approved, but file-write tiers configured as `sticky` or `confirm` fail closed when they need a response. Continue the session in the TUI or with `--rpc`, or configure unattended approval tiers before the run.
+
+## How do I keep `--json` output parseable?
+
+Capture stdout and stderr separately:
+
+```bash
+splitbrief start --json "feature" 2>splitbrief.log >splitbrief.json
+```
+
+Console OpenTelemetry also writes to stdout, so do not combine its console exporter with NDJSON automation. The public stream begins with a readiness report, then wraps workflow events as `{ type: 'event', data: EngineEvent }`. See [Headless & CI](/docs/guides/headless-and-ci).
+
+## Does a drift finding make a headless run fail?
+
+No. Drift is reported rather than enforced, so the process exit code reflects fatal workflow failures. CI that must gate on drift should read the session summary and apply its own threshold.
+
+## Can I skip per-task validation?
+
+There is no `--no-validate` flag. Individual validation stages can be disabled in configuration, but then you are responsible for running those checks elsewhere. Prefer correcting the command or moving only unsuitable long-running checks to CI.
+
+For symptom-by-symptom diagnosis, use [Troubleshooting](/docs/reference/troubleshooting).

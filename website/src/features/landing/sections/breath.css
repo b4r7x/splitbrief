@@ -1,0 +1,19 @@
+.breath {
+  position: relative;
+  padding-block: var(--space-breath);
+  padding-inline: var(--rail-x);
+}
+
+.breath__statement {
+  margin: 0;
+  max-inline-size: 24ch;
+  color: var(--fg);
+  font-family: var(--display);
+  font-size: var(--text-statement);
+  font-stretch: expanded;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: var(--track-display);
+  text-transform: uppercase;
+  text-wrap: balance;
+}

@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.source/
+src/routeTree.gen.ts
+.lighthouseci/
+.test-artifacts/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+*.log
+.env
+.env.*
+.DS_Store
+
+# Playwright *-snapshots/ directories are reviewable baselines and stay tracked.
+
+.design-shots/

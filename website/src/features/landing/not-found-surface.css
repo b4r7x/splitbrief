@@ -1,0 +1,197 @@
+.metadata-face-rail,
+.metadata-face-footer {
+  display: grid;
+  align-items: center;
+  min-block-size: 3.5rem;
+  padding-inline: clamp(1rem, 4vw, 4rem);
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.metadata-face-rail {
+  grid-template-columns: auto minmax(2rem, 1fr) auto;
+  gap: 1rem;
+  border-block-end: 1px solid var(--grid-functional);
+}
+
+.metadata-face-rail__rule {
+  block-size: 1px;
+  background-color: var(--grid-functional);
+}
+
+.metadata-face-footer {
+  grid-template-columns: 1fr auto 1fr;
+  gap: 1rem;
+  border-block-start: 1px solid var(--grid-functional);
+}
+
+.metadata-face-footer span:nth-child(2) {
+  color: var(--fg);
+}
+
+.metadata-face-footer span:last-child {
+  color: var(--implementer);
+  text-align: end;
+}
+
+.metadata-face-footer span:first-child {
+  color: var(--planner-text);
+}
+
+.metadata-not-found__face {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-block-size: 100svh;
+  border-inline: 1px solid var(--grid-functional);
+  background-color: var(--surface-1);
+}
+
+.metadata-not-found__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(15rem, 0.36fr);
+  gap: clamp(2rem, 7vw, 7rem);
+  align-items: center;
+  padding: clamp(2rem, 7vw, 7rem) clamp(1rem, 6vw, 6rem);
+}
+
+.metadata-not-found__copy {
+  min-inline-size: 0;
+}
+
+.metadata-not-found__copy .wordmark {
+  margin-block-end: clamp(2rem, 6vw, 5rem);
+}
+
+.metadata-not-found__copy h1 {
+  max-inline-size: 11ch;
+  margin-block-start: 1rem;
+  font-size: clamp(3rem, 8vw, 8rem);
+  letter-spacing: -0.035em;
+  line-height: 0.9;
+}
+
+.metadata-not-found__description {
+  max-inline-size: 42ch;
+  margin-block: clamp(1.25rem, 3vw, 2rem) 0;
+  color: var(--dim);
+  font-size: clamp(1rem, 1.5vw, 1.125rem);
+}
+
+.metadata-not-found__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.5rem;
+  margin-block-start: 1.25rem;
+  font-family: var(--mono);
+  font-size: var(--text-mono);
+}
+
+.metadata-not-found__links a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.75rem;
+  color: var(--fg);
+}
+
+.metadata-open-circuit {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(2rem, 1fr) 1.5rem minmax(2rem, 1fr) 2.75rem;
+  grid-template-rows: auto 2.75rem;
+  align-items: center;
+  min-inline-size: 0;
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  border-block: 1px solid var(--grid-functional);
+  background-color: var(--surface-2);
+}
+
+.metadata-open-circuit__label {
+  grid-row: 1;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.metadata-open-circuit__label--planner {
+  grid-column: 1 / 3;
+  color: var(--planner-text);
+}
+
+.metadata-open-circuit__label--implementer {
+  grid-column: 4 / 6;
+  color: var(--implementer);
+  text-align: end;
+}
+
+.metadata-open-circuit__jack {
+  z-index: 1;
+  grid-row: 2;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  border-radius: 50%;
+  background-color: var(--surface-2);
+}
+
+.metadata-open-circuit__jack--planner {
+  grid-column: 1;
+  border: 2px solid var(--planner);
+}
+
+.metadata-open-circuit__jack--implementer {
+  grid-column: 5;
+  border: 2px solid var(--implementer);
+}
+
+.metadata-open-circuit__lead {
+  grid-row: 2;
+  block-size: 2px;
+}
+
+.metadata-open-circuit__lead--planner {
+  grid-column: 1 / 3;
+  background-color: var(--planner);
+}
+
+.metadata-open-circuit__lead--implementer {
+  grid-column: 4 / 6;
+  background-color: var(--implementer);
+}
+
+.metadata-open-circuit__gap {
+  grid-row: 2;
+  grid-column: 3;
+  inline-size: 100%;
+  block-size: 1rem;
+  border-inline: 1px solid var(--grid-functional);
+}
+
+@media (max-width: 699px) {
+  .metadata-face-rail,
+  .metadata-face-footer {
+    padding-inline: 1rem;
+  }
+
+  .metadata-not-found__body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2rem;
+    align-content: center;
+    padding-block: 2rem;
+  }
+
+  .metadata-not-found__copy .wordmark {
+    margin-block-end: 2rem;
+    font-size: clamp(0.34rem, 1.7vw, 0.42rem);
+  }
+
+  .metadata-not-found__copy h1 {
+    font-size: clamp(2.75rem, 12vw, 3.25rem);
+  }
+
+  .metadata-open-circuit {
+    padding: 1rem;
+  }
+}

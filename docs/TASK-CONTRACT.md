@@ -162,32 +162,70 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 
 ## Example task entry
 
-```json
-{
-  "id": "T003",
-  "title": "Add email validation to SignupForm",
-  "file": "src/features/auth/SignupForm.tsx",
-  "action": "modify",
-  "description": "Validate the email field in the signup form before submission.",
-  "dependsOn": [],
-  "tests": [
-    "trims whitespace before validation",
-    "rejects missing @ sign",
-    "rejects more than one @ sign"
-  ],
-  "constraints": [
-    "must not introduce a new dependency",
-    "existing tests must continue to pass"
-  ],
-  "implementationSteps": [
-    "Add a validateEmail helper in src/utils/validate.ts",
-    "Call it from SignupForm's onSubmit handler",
-    "Display an inline error message on failure"
-  ],
-  "typeDefs": "function validateEmail(value: string): string | null",
-  "status": "done"
+This is canonical `tasks.md` transport output from `formatTasks`. It strict-parses without
+loss and passes the brief quality gate with score `1`.
+
+````markdown
+---
+id: T003
+title: Add email validation to SignupForm
+action: modify
+file: src/features/auth/signup-form.tsx
+depends_on: []
+---
+
+### Description
+Validate the email field in src/features/auth/signup-form.tsx before submission so malformed values are rejected inline.
+
+### Implementation Steps
+1. Add a local validateEmail helper that trims the value and returns an error for a missing or repeated @ sign.
+2. Call validateEmail from the form submit handler before the existing submission branch.
+3. Render the returned message beside the email field and preserve the current successful-submit behavior.
+
+### Tests
+- Submitting a whitespace-padded valid address continues to the existing successful-submit branch.
+- Submitting personexample.com renders Enter a valid email address and does not submit.
+- Submitting person@@example.com renders Enter a valid email address and does not submit.
+
+### Constraints
+- Do not add a dependency.
+- Preserve the existing successful-submit behavior and form accessibility.
+
+### Signature
+```
+function validateEmail(value: string): string | null
+```
+
+### Current Code
+```
+function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  onSubmit({ email });
 }
 ```
+
+### Type Definitions
+```
+type SignupFormProps = { onSubmit: (input: { email: string }) => void };
+```
+
+### Scope
+**In bounds:**
+- Email normalization, validation, and inline error rendering in the target component.
+
+**Out of bounds:**
+- Shared validation utilities and server-side validation.
+
+### Escalation
+- Stop if product requirements differ on accepted email syntax or the component has no established inline-error pattern.
+
+### Evidence
+- Focused form tests show whitespace normalization, single-@ validation, and submission blocking.
+- Typecheck and the existing auth form tests pass.
+````
+
+`tasks.md` does not carry runtime status. `parseTasksStrict` initializes this entry as
+`status: 'pending'`; state transitions then persist status in `state.json`.
 
 ## Verifying against a real session
 
@@ -197,7 +235,8 @@ session=$(ls -t .splitbrief/sessions/ | head -1)
 cat .splitbrief/sessions/$session/state.json | jq '.tasks[0]'
 ```
 
-The output must match the shape above.
+The output must match the `Task` shape above. The JSON field is `dependsOn`; only the
+markdown frontmatter uses `depends_on`.
 
 ## See also
 
@@ -221,7 +260,7 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 | `multi_file_task` | description/steps mention ≥ 2 distinct file paths |
 | `missing_code_context` | `action === 'modify'` with no `currentCode`, `signature`, or `pattern` |
 | `missing_escalation` | description/steps contain risk keywords (auth, token, secret, …) and `escalation` is absent |
-| `missing_scope` | `task.scope` absent or empty |
+| `missing_scope` | `task.scope` absent, or both `scope.inBounds` and `scope.outOfBounds` empty |
 | `missing_evidence` | `task.evidence` absent or empty |
 
 ### Warnings (reported but do not block)
@@ -230,7 +269,8 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 |---|---|
 | `missing_type_definitions` | `task.typeDefs` is empty |
 
-`multi_file_task` only fires when the brief names 2+ distinct project-relative file paths. Count literal path mentions in prose, bullets, code fences, and examples; repeating the same path does not count.
+`multi_file_task` examines literal path mentions in `task.description` and
+`task.implementationSteps` only. Repeating the same path does not count.
 
 ### Artifact
 
@@ -240,9 +280,14 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 {
   "version": 1,
   "passed": true,
-  "score": 0.85,
+  "score": 0.95,
   "issues": [
-    { "taskId": "T001", "severity": "warning", "code": "missing_scope", "message": "..." }
+    {
+      "taskId": "T001",
+      "severity": "warning",
+      "code": "missing_type_definitions",
+      "message": "Task T001 has no type definitions"
+    }
   ]
 }
 ```

@@ -1,0 +1,236 @@
+.hero {
+  position: relative;
+  padding-block-end: clamp(3rem, 6vh, 4.5rem);
+  background: radial-gradient(120% 90% at 50% 0%, #121216 0%, var(--ground) 60%);
+}
+
+.hero__atmosphere {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.hero__floor {
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(45% 50% at 62% 72%, rgb(224 64 154 / 10%), transparent 70%),
+    radial-gradient(38% 45% at 22% 18%, rgb(63 210 224 / 6%), transparent 70%);
+  filter: blur(100px);
+}
+
+.hero__grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Entry stub of the signal path: same x as the section motif line below. */
+.hero::after {
+  position: absolute;
+  z-index: 0;
+  inset-block-end: 0;
+  inset-inline-start: calc(var(--rail-x) - 16px);
+  inline-size: 1px;
+  block-size: 22vh;
+  background: linear-gradient(to top, var(--grid-decorative), transparent);
+  content: "";
+}
+
+.hero__nav-row {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  min-block-size: 3.5rem;
+  padding-inline: var(--rail-x);
+  border-block-end: 1px solid var(--grid-decorative);
+}
+
+.hero__brand {
+  color: var(--fg);
+  font-family: var(--display);
+  font-size: 0.8125rem;
+  font-stretch: expanded;
+  font-weight: 600;
+  letter-spacing: var(--track-legend);
+  text-transform: uppercase;
+}
+
+.hero__nav {
+  display: flex;
+  gap: 0.25rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.hero__nav a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 2.75rem;
+  padding-inline: 0.5rem;
+  color: var(--dim);
+  text-decoration: none;
+}
+
+.hero__nav a:is(:hover, :focus-visible) {
+  color: var(--fg);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+.hero__head {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 1.75rem;
+  padding-block-start: clamp(2rem, 4.5vh, 3rem);
+  padding-inline: var(--rail-x);
+}
+
+.hero__copy {
+  min-inline-size: 0;
+}
+
+/* Wordmark lock: fixed cell grid (px font and line-height, pre), engraved-legend ink. */
+.hero__wordmark {
+  margin-block-end: 1.25rem;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 12px;
+  inline-size: 37ch;
+  block-size: calc(5 * 12px);
+}
+
+.hero__headline {
+  color: var(--fg);
+  font-size: clamp(2.4rem, 4vw, 3.75rem);
+  line-height: 1.04;
+}
+
+.hero__accent-planner {
+  color: var(--planner-text);
+}
+
+.hero__accent-implementer {
+  color: var(--implementer);
+}
+
+.hero__aside {
+  min-inline-size: 0;
+}
+
+.hero__sub {
+  max-inline-size: 34ch;
+  margin: 0;
+  color: var(--dim);
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.hero__meta {
+  max-inline-size: none;
+  margin: 1rem 0 0;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.hero__cta {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+  min-block-size: 2.75rem;
+  margin-block-start: 1.25rem;
+  padding-inline: 1.25rem;
+  border: var(--edge);
+  border-radius: var(--radius-control);
+  background-color: var(--surface-2);
+  box-shadow: var(--edge-highlight);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  text-decoration: none;
+  transition:
+    background-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.hero__cta:hover {
+  background-color: #26262a;
+}
+
+.hero__cta:active {
+  transform: translateY(1px);
+}
+
+.hero__cta-glyph {
+  color: var(--dim);
+}
+
+.hero__cta:is(:hover, :focus-visible) .hero__cta-glyph {
+  color: var(--fg);
+}
+
+.hero__field {
+  position: relative;
+  z-index: 1;
+  min-inline-size: 0;
+  margin-block-start: clamp(2.25rem, 5vh, 3.5rem);
+  padding-inline: var(--rail-x);
+}
+
+.hero__field-lead {
+  margin: 0 0 clamp(1rem, 2vw, 1.5rem);
+  color: var(--dim);
+  font-size: 1.0625rem;
+}
+
+@media (min-width: 1024px) {
+  .hero__head {
+    grid-template-columns: minmax(0, 7fr) minmax(17rem, 3fr);
+    column-gap: 3rem;
+    align-items: end;
+  }
+
+  .hero__aside {
+    justify-self: end;
+    padding-block-end: 0.25rem;
+    text-align: end;
+  }
+
+  .hero__sub {
+    margin-inline-start: auto;
+  }
+}
+
+@media (max-width: 699px) {
+  .hero__nav-row {
+    min-block-size: 3rem;
+  }
+
+  .hero__wordmark {
+    font-size: 9px;
+    line-height: 9px;
+    block-size: calc(5 * 9px);
+    margin-block-end: 1rem;
+  }
+
+  .hero__headline {
+    font-size: clamp(1.9rem, 8.6vw, 2.4rem);
+  }
+
+  .hero__sub {
+    font-size: 1rem;
+  }
+
+  .hero::after {
+    display: none;
+  }
+}

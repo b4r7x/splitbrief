@@ -1,0 +1,103 @@
+---
+title: Migration
+description: Upgrade engine integrations for the 2026-04-20 EventBus release and use the current headless JSON record format.
+---
+
+For changes and amendments after the 2026-04-20 release, see the [changelog](/docs/reference/changelog).
+
+## TL;DR
+
+If you're a **user** of SPLITBRIEF (running `splitbrief start ...` from the CLI), no action needed. Existing config and session files work unchanged.
+
+If you're an **integrator** (building on the engine API):
+- `OrchestratorCallbacks.onEvent` is gone. Create an EventBus, subscribe your sink, and pass that bus through `eventBus`.
+- `Planner` interface methods accept new optional `codebaseContext` parameter.
+- Legacy `appendEvent` removed; use `appendEngineEvent`.
+
+## Config schema additions
+
+All optional. Add only if you want the feature.
+
+### Hooks
+```yaml
+hooks:
+  builtin:
+    prettier-on-change: true
+    block-secrets: true
+  pre_task:
+    - command: "npx"
+      args: ["prettier", "--check", "${event.file}"]
+```
+
+First run with hooks defined will prompt for trust. CI: pass `--allow-hooks`.
+
+### Repo-map (default ON)
+```yaml
+codebase:
+  enabled: true
+  tokenBudget: 4000
+```
+
+To disable: set `enabled: false`. To force a cache rebuild: type `/repomap rebuild` in the TUI.
+
+### OpenTelemetry
+```yaml
+otel:
+  enabled: true
+  serviceName: splitbrief
+```
+
+For the built-in console exporter, use `OTEL_TRACES_EXPORTER=console`, `SPLITBRIEF_OTEL_EXPORTER=console`, or `--otel-exporter console`. For OTLP or custom exporters, register a `TracerProvider` before invoking `splitbrief`. See [Observability (OTel)](/docs/guides/observability-otel).
+
+## CLI flag additions
+
+- `--json` (start, resume, continue, last) — headless public NDJSON mode
+- `--allow-hooks` (start, resume, continue, last, spec) — trust hooks without prompting
+
+## Breaking changes for integrators
+
+If you wrap SPLITBRIEF programmatically (not as CLI):
+
+- **Event subscription replaced `callbacks.onEvent(event)`.** There are two supported paths:
+  1. Create a bus with `createEventBus()`, subscribe your `(event: EngineEvent) => void` sink, and pass it as `eventBus` in `runWorkflow` options. Keep the unsubscribe function and call it when the integration is done.
+  2. Add a custom sink module under `src/engine/events/sinks/` alongside `jsonl.ts`, `stdout-json.ts`, `tree-recorder.ts`, and `otel.ts`, then wire it from `orchestrator/run/init.ts`. UI-facing sinks belong outside `engine/`; the shipped TUI sink is `src/features/workflow/tui-sink.ts`.
+  The existing on-disk append remains available via `sinks/jsonl.ts` and `core/sessions/log-writer.ts` (`appendEngineEvent(ref, event)`). The JSONL sink is unchanged by the 2026-04-20 release.
+- **`TuiEvent` and `OrchestratorEvent` are removed.** Import the `EngineEvent` alias from `src/engine/events/types.ts`; its discriminated-union schema (`EngineEventSchema`, the single source of truth) lives in `src/engine/events/schema.ts`. Workflow sub-stores consume `EngineEvent` directly; the workflow-TUI sink (`tuiSink`) is a pass-through, not a mapper.
+- Update `Planner` adapter signatures to accept the new `codebaseContext` parameter.
+- `EngineEvent` variant names are snake_case (e.g. `task_started`, not `task-start`).
+
+If you query session JSONL files programmatically:
+- Event `type` strings are now snake_case throughout (was already snake_case in JSONL — no change).
+
+## New CLI surface
+
+- `splitbrief start --json "..."` runs the workflow without the Ink TUI and streams public NDJSON records on stdout. The first record is a readiness report; each subsequent workflow event is wrapped:
+
+  ```ts
+  { type: 'readiness_report', report: ReadinessReport }
+  { type: 'event', data: EngineEvent }
+  ```
+
+  `resume`, `continue`, and `last` support the same headless mode for interrupted sessions. Driver: `src/cli/headless.ts`.
+- `--allow-hooks` bypasses the interactive hook-trust prompt — required in CI / non-TTY.
+
+## Headless mode (--json flag)
+
+New `--json` flag on workflow commands. Disables the Ink TUI, emits a public NDJSON record stream on stdout (one JSON document per line, parseable by `jq` or any NDJSON consumer), starts with `{ type: 'readiness_report', report: ReadinessReport }`, then wraps each workflow event as `{ type: 'event', data: EngineEvent }`. It auto-approves workflow review gates, answers clarifications with an empty string, keeps file-write tiered approvals under approval config, and emits recovery before exiting non-zero on budget pauses or budget exceedance.
+
+Exit behavior:
+- recovery-required, final-review-failed, and failed-session paths currently throw with exit code `1`
+- a SIGINT/SIGTERM interruption currently saves the interrupted session and returns normally rather than assigning a distinct non-zero code
+- the driver does not expose distinct terminal-event exit codes; CI integrations should inspect the public NDJSON records and persisted summary instead of inferring a reason from the numeric code alone
+
+Use case: CI integration, logging pipelines, headless servers, agent-to-agent handoff.
+
+Example:
+
+```bash
+splitbrief start --json "feature-name" | jq .
+splitbrief start --json --allow-hooks "feature-name" > run.ndjson
+splitbrief resume --json
+```
+
+Driver: `src/cli/headless.ts`. NDJSON sink: `src/engine/events/sinks/stdout-json.ts`.

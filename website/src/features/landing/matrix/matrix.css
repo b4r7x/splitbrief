@@ -1,0 +1,147 @@
+@import "./grid.css";
+@import "./crosshair.css";
+@import "./picker.css";
+@import "./config-output.css";
+@import "./patch-pulse.css";
+
+.matrix {
+  container-name: pairing-matrix;
+  container-type: inline-size;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.matrix__controls {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  padding: 1.5rem;
+  border: var(--edge);
+  border-radius: var(--radius-frame);
+  background: radial-gradient(120% 100% at 50% 0%, #232327 0%, #1e1e21 55%);
+  box-shadow: var(--edge-highlight);
+}
+
+.matrix__desktop {
+  max-inline-size: 100%;
+  padding: 4px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-color: var(--grid-functional) var(--surface-1);
+}
+
+.matrix__mobile {
+  display: none;
+}
+
+.visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (max-width: 699px) {
+  .matrix__desktop {
+    display: none;
+  }
+
+  .matrix__mobile {
+    display: block;
+  }
+}
+
+@media (min-width: 700px) {
+  .matrix-grid__corner,
+  .matrix-grid__row-header {
+    inline-size: 6.75rem;
+  }
+
+  .matrix-grid__row-header {
+    padding-inline: 0.625rem;
+    font-size: 0.65625rem;
+    letter-spacing: 0.06em;
+  }
+
+  .matrix-grid__column-header {
+    padding-inline: 0.25rem;
+    font-size: 0.625rem;
+    letter-spacing: 0.05em;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .matrix-grid__column-header[data-implementer="together"] {
+    font-size: 0.5625rem;
+    font-stretch: 112%;
+    letter-spacing: 0;
+  }
+
+  .matrix-grid__column-header > span:last-child {
+    display: block;
+    max-inline-size: 100%;
+    white-space: normal;
+  }
+}
+
+@media (min-width: 1024px) {
+  .matrix {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 24rem);
+    column-gap: clamp(1rem, 2vw, 1.5rem);
+    align-items: start;
+  }
+
+  .matrix__controls,
+  .matrix__prerender {
+    min-inline-size: 0;
+  }
+
+  .matrix-grid {
+    min-inline-size: 24rem;
+  }
+
+  .config-output {
+    margin-block-start: 3rem;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1199px) {
+  .matrix {
+    grid-template-columns: minmax(0, 1fr) 16rem;
+  }
+}
+
+@container pairing-matrix (min-width: 62rem) {
+  .matrix-grid__corner,
+  .matrix-grid__row-header {
+    inline-size: 8.5rem;
+  }
+
+  .matrix-grid__row-header {
+    padding-inline: 0.875rem;
+    font-size: var(--text-label);
+    letter-spacing: 0.12em;
+  }
+
+  .matrix-grid__row-header[data-planner="anthropic"] {
+    letter-spacing: 0.06em;
+  }
+
+  .matrix-grid__column-header {
+    padding-inline: 0.5rem;
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+  }
+
+  .matrix-grid__column-header[data-implementer="together"] {
+    font-size: 0.625rem;
+    font-stretch: expanded;
+    letter-spacing: 0.06em;
+  }
+}

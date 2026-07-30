@@ -1,0 +1,89 @@
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--fg);
+  --color-dim: var(--dim);
+  --color-grid-decorative: var(--grid-decorative);
+  --color-grid-functional: var(--grid-functional);
+  --color-planner: var(--planner);
+  --color-planner-text: var(--planner-text);
+  --color-implementer: var(--implementer);
+  --color-pin: var(--pin);
+  --color-focus: var(--focus);
+  --font-display: var(--display);
+  --font-sans: var(--body);
+  --font-mono: var(--mono);
+}
+
+:root,
+[data-theme="dark"],
+.landing-shell {
+  color-scheme: dark;
+  --ground: #0b0b0d;
+  --surface-1: #141416;
+  --surface-2: #1e1e21;
+  --fg: #e8e6e1;
+  --dim: #a8a6a1;
+  --grid-decorative: #2a2a2e;
+  --grid-functional: #6e6e76;
+  --planner: #e0409a;
+  --planner-text: #e85fa8;
+  --implementer: #3fd2e0;
+  --pin: #c9a26b;
+  --focus: #e8e6e1;
+  --wash-planner: rgb(224 64 154 / 8%);
+  --wash-implementer: rgb(63 210 224 / 8%);
+}
+
+:root {
+  --display: "Archivo", "Arial Narrow", sans-serif;
+  --body: "Instrument Sans", system-ui, sans-serif;
+  --mono: "Fragment Mono", ui-monospace, monospace;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  --text-measure: 68ch;
+  --text-display: clamp(2.6rem, 4.6vw, 4.25rem);
+  --text-statement: clamp(1.75rem, 3.4vw, 3rem);
+  --text-heading: clamp(1.5rem, 3vw, 2.5rem);
+  --text-subheading: clamp(1.125rem, 2vw, 1.5rem);
+  --text-legend: 0.8125rem;
+  --text-body: 1rem;
+  --text-mono: 0.875rem;
+  --text-label: 0.75rem;
+  --track-display: -0.03em;
+  --track-legend: 0.14em;
+  --edge: 1px solid rgb(255 255 255 / 9%);
+  --edge-highlight: inset 0 1px 0 rgb(255 255 255 / 7%);
+  --radius-frame: 8px;
+  --radius-control: 4px;
+  --space-section: clamp(6rem, 10vh, 8rem);
+  --space-breath: clamp(10rem, 22vh, 15rem);
+  --rail-x: max(24px, calc((100vw - 1160px) / 2));
+}
+
+@media (max-width: 699px) {
+  :root {
+    --rail-x: 16px;
+  }
+}
+
+:where([data-theme="light"] .docs-shell, .docs-shell[data-theme="light"]) {
+  color-scheme: light;
+  --ground: #e8e6e1;
+  --surface-1: #dddbd6;
+  --surface-2: #d2d0cb;
+  --fg: #1a1a1c;
+  --dim: #55554f;
+  --grid-decorative: #d2d0cb;
+  --grid-functional: #6e6e68;
+  --planner: #b01d72;
+  --planner-text: #a01a67;
+  --implementer: #0b5e66;
+  --pin: #7a5f33;
+  --focus: #1a1a1c;
+  --wash-planner: rgb(176 29 114 / 8%);
+  --wash-implementer: rgb(11 94 102 / 8%);
+  --edge: 1px solid rgb(0 0 0 / 12%);
+  --edge-highlight: none;
+}

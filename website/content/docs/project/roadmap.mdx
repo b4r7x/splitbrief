@@ -1,0 +1,93 @@
+---
+title: Roadmap
+description: Open work that is deliberately deferred from the current SPLITBRIEF release.
+---
+
+These items have been discussed and given a concrete shape, but they are not part of the current release. Priority labels are directional rather than contractual:
+
+| Label | Meaning |
+|---|---|
+| Must | A core gap |
+| Should | High value for the next major cycle |
+| Could | Useful, but lower priority |
+| Won't | Deferred to a later cycle |
+
+## Full message-level rewind
+
+**Priority: Could**
+
+A full rewind would let a user choose an earlier user message, mark later history as rewound, restore workflow state and artifacts to that point, and continue from a forked planner session or rebuilt stateless history.
+
+The current workflow already provides coarse rewind through approval rejection and `/revise-spec`, `/revise-plan`, and `/redo-task`. A message-level version would also require artifact versioning, a picker and change preview, confirmation, and careful handling when task commits have already been pushed.
+
+## Git-backed per-run snapshot undo
+
+**Priority: Could**
+
+File-level run acceptance and rejection already use hash-guarded snapshots. A future git-backed variant could manage optional workflow commits when the project owner explicitly enables them: rejection could remove the run's commits after file-level safety checks, while acceptance would keep the branch history.
+
+The design must refuse unsafe history changes after commits have been pushed. It must also preserve evidence, diffs, and Task Brief artifacts when commit strategy is `none`, and account for projects that may not use git in the future.
+
+## Token-aware transcript compaction
+
+**Priority: Could**
+
+Manual compaction is available through `/compact-transcript`. Resume-time auto-compaction is also available when `workflow.compactionThreshold` is configured. Both paths summarize older turns and rebuild context from the latest summary plus recent messages.
+
+Open work:
+
+- Base thresholds on each backend's context window rather than message count.
+- Add a separate setting for how many recent messages to retain.
+- Show feedback when resume-time auto-compaction runs.
+
+The current mechanisms cover deliberate cleanup. Token-based thresholds still need backend-specific limits, and compaction must run only at safe boundaries.
+
+## Session browser
+
+**Priority: Could**
+
+The `/sessions` command already opens an in-TUI picker for filtering, resuming, and viewing past sessions. The home screen also shows recent sessions, and each session directory includes a summary.
+
+Open work:
+
+- A standalone `splitbrief sessions` CLI command.
+- A read-only replay mode for the session event log.
+- A confirmed `splitbrief sessions delete <id>` command.
+
+The existing picker covers inspection and resume. Replay needs a read-only event renderer, while deletion needs a confirmation flow.
+
+## Windows support
+
+**Priority: Could**
+
+SPLITBRIEF has not been tested on Windows. Its subprocess handling uses POSIX signal semantics, and the active-session file does not provide the same concurrency guarantees as a platform file lock.
+
+Windows CI and compatibility tests come before behavioral fixes.
+
+## Mid-stream injection UX
+
+**Priority: Could**
+
+When a queued message is injected into a live planner session, the response may arrive while the previous turn is still streaming. A future conversation treatment would separate the user's interjection from the planner's continued output.
+
+The interaction semantics are known, but the visual treatment needs real usage data because response timing is nondeterministic and backend-dependent.
+
+## EventBus and OpenTelemetry evolution
+
+- **Should — subprocess context propagation.** Planner and implementer subprocesses do not receive a `traceparent`, so their work appears as an opaque window inside the parent phase span. A future propagator would pass W3C trace context through environment variables for command-based runners and request headers for API runners.
+- **Should — CLI bootstrap UX.** External wrapper registration can be defeated when ESM resolves separate instances of the OpenTelemetry API. A CLI flag or environment variable could register the provider in the same resolution context as the sink.
+- **Could — retry span semantics.** A task with retries currently produces one span. It remains undecided whether attempts should become sibling spans or stay on one task span with a retry attribute.
+- **Could — error status propagation.** A full task failure marks the task span as an error, while its parent phase and workflow remain successful. Different observability backends handle parent status differently, so this needs calibration.
+- **Won't — OpenTelemetry logs.** Structured log records with trace correlation are outside the current scope.
+- **Could — metrics.** Counters, phase-duration histograms, and budget gauges can often be derived from spans. Native metrics remain deferred until derived metrics prove insufficient.
+
+## Hook system v2
+
+**Priority: Could**
+
+Hooks currently run sequentially in declaration order because order matters for patches that modify data. A future `parallel: true` option could fan out events where ordering is irrelevant, with timeout aggregation.
+
+## Repo-map v2
+
+- **Won't — embeddings-based retrieval.** A pluggable embeddings provider could improve semantic retrieval, but per-call cost, index synchronization, and the local cost-and-latency profile keep the symbol graph as the default.
+- **Should — grammar version bumps.** Grammar changes need a defined cache-version procedure so parser upgrades can trigger a clean rebuild instead of relying on a manual per-project rebuild.

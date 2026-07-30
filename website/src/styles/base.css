@@ -1,0 +1,139 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  min-block-size: 100%;
+  background-color: var(--ground);
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 100%;
+  line-height: 1.6;
+  text-size-adjust: 100%;
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+}
+
+body {
+  min-block-size: 100svh;
+  margin: 0;
+  background-color: var(--ground);
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: var(--text-body);
+}
+
+.landing-shell,
+.docs-shell {
+  min-block-size: 100svh;
+  background-color: var(--ground);
+  color: var(--fg);
+}
+
+:where(button, input, select, textarea) {
+  color: inherit;
+  font: inherit;
+}
+
+:where(img, picture, svg, video, canvas) {
+  display: block;
+  max-inline-size: 100%;
+}
+
+:where(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 600;
+  font-stretch: expanded;
+  line-height: 1.05;
+  letter-spacing: var(--track-display);
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--text-display);
+}
+
+h2 {
+  font-size: var(--text-heading);
+}
+
+h3 {
+  font-size: var(--text-subheading);
+}
+
+:where(p, li, dd, blockquote, figcaption) {
+  max-inline-size: var(--text-measure);
+}
+
+:where(p) {
+  text-wrap: pretty;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+:where(code, kbd, samp, pre) {
+  font-family: var(--mono);
+  font-size: var(--text-mono);
+  line-height: 1.5;
+}
+
+pre {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+:where(strong, b) {
+  font-weight: 500;
+}
+
+:where(p, li, dd, blockquote, figcaption) a:any-link,
+.inline-link:any-link {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-thickness: max(1px, 0.08em);
+  text-underline-offset: 0.2em;
+}
+
+:where(p, li, dd, blockquote, figcaption) a:any-link:is(:hover, :focus, :active, :visited),
+.inline-link:any-link:is(:hover, :focus, :active, :visited) {
+  text-decoration-line: underline;
+}
+
+:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+::selection {
+  background-color: rgb(232 230 225 / 25%);
+}
+
+:where([data-theme="light"] .docs-shell, .docs-shell[data-theme="light"]) ::selection {
+  background-color: rgb(26 26 28 / 18%);
+}
+
+.shiki {
+  color: var(--shiki-dark);
+  background-color: var(--shiki-dark-bg);
+}
+
+.shiki span {
+  color: var(--shiki-dark);
+}
+
+:where([data-theme="light"] .docs-shell, .docs-shell[data-theme="light"]) .shiki {
+  color: var(--shiki-light);
+  background-color: var(--shiki-light-bg);
+}
+
+:where([data-theme="light"] .docs-shell, .docs-shell[data-theme="light"]) .shiki span {
+  color: var(--shiki-light);
+}

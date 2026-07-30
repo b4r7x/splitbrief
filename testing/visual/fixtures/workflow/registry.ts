@@ -19,9 +19,11 @@ function includesAll(...markers: readonly string[]): CheckpointPredicate {
 const checkpointPredicates = [
   [checkpointId('idle'), includesAll(WORKFLOW_FIXTURE_TEXT.idle)],
   [checkpointId('planning'), includesAll(WORKFLOW_FIXTURE_TEXT.planning)],
+  // Small viewports scroll the transcript to its tail, so the predicate pins content that
+  // survives every viewport: the activity block and the in-flight task's file.
   [
     checkpointId('implementation'),
-    includesAll(WORKFLOW_FIXTURE_TEXT.implementation, WORKFLOW_FIXTURE_TEXT.implementationTask),
+    includesAll('Implementer activity', 'src/engine/detection/service.ts'),
   ],
   [checkpointId('review'), includesAll('Approval', WORKFLOW_FIXTURE_TEXT.review)],
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],

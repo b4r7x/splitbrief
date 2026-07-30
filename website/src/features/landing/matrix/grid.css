@@ -1,0 +1,187 @@
+.matrix-grid {
+  inline-size: 100%;
+  min-inline-size: 40.5rem;
+  border-block-start: 1px solid var(--grid-functional);
+  border-inline-start: 1px solid var(--grid-functional);
+  border-collapse: separate;
+  border-spacing: 0;
+  background-color: var(--surface-2);
+  table-layout: fixed;
+}
+
+.matrix-grid :where(th, td) {
+  position: relative;
+  border-block-end: 1px solid var(--grid-functional);
+  border-inline-end: 1px solid var(--grid-functional);
+  background-clip: padding-box;
+}
+
+.matrix-grid__corner,
+.matrix-grid__row-header {
+  inline-size: clamp(7.5rem, 18vw, 10.5rem);
+}
+
+.matrix-grid__corner {
+  block-size: 5.75rem;
+  background-color: var(--surface-1);
+}
+
+.matrix-grid__corner::before,
+.matrix-grid__corner::after {
+  position: absolute;
+  border-radius: 50%;
+  content: "";
+}
+
+.matrix-grid__corner::before {
+  inset-block-end: 0.875rem;
+  inset-inline-start: 0.875rem;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  background-color: var(--planner);
+}
+
+.matrix-grid__corner::after {
+  inset-block-start: 0.875rem;
+  inset-inline-end: 0.875rem;
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border: 2px solid var(--implementer);
+  background-color: transparent;
+}
+
+.matrix-grid__column-header,
+.matrix-grid__row-header {
+  background-color: var(--surface-1);
+  font-family: var(--display);
+  font-size: var(--text-label);
+  font-stretch: expanded;
+  font-weight: 500;
+  letter-spacing: var(--track-legend);
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.matrix-grid__column-header::before,
+.matrix-grid__row-header::before {
+  position: absolute;
+  z-index: 0;
+  inset: 3px;
+  background-color: transparent;
+  pointer-events: none;
+  content: "";
+}
+
+.matrix-grid__column-header > span,
+.matrix-grid__row-header > span {
+  position: relative;
+  z-index: 1;
+}
+
+.matrix-grid__column-header {
+  block-size: 5.75rem;
+  padding: 0.75rem 0.375rem;
+  color: var(--dim);
+  text-align: center;
+  vertical-align: bottom;
+}
+
+.matrix-grid__row-header {
+  min-block-size: 3.5rem;
+  padding: 0.625rem 0.875rem;
+  color: var(--dim);
+  text-align: start;
+}
+
+.matrix-grid__jack {
+  position: relative;
+  z-index: 1;
+  display: block;
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin-inline: auto;
+  border: 2px solid var(--grid-functional);
+  border-radius: 50%;
+  background-color: var(--ground);
+}
+
+.matrix-grid__column-header > .matrix-grid__jack {
+  margin-block-end: 0.625rem;
+  border-color: var(--implementer);
+  background-color: transparent;
+}
+
+.matrix-grid__row-header > .matrix-grid__jack {
+  display: inline-block;
+  margin-inline: 0 0.625rem;
+  border-width: 1px;
+  border-color: var(--planner);
+  background-color: var(--planner);
+  vertical-align: -0.1875rem;
+}
+
+.matrix-grid__cell {
+  position: relative;
+  z-index: 0;
+  block-size: clamp(3.5rem, 6vw, 4.75rem);
+  min-inline-size: 2.75rem;
+  padding: 3px;
+  background-color: var(--surface-2);
+  cursor: pointer;
+  text-align: center;
+  touch-action: manipulation;
+}
+
+.matrix-grid__cell::before,
+.matrix-grid__cell::after {
+  position: absolute;
+  pointer-events: none;
+  content: "";
+}
+
+.matrix-grid__cell::before {
+  z-index: 0;
+  inset: 3px;
+  background-color: transparent;
+}
+
+.matrix-grid__cell::after {
+  z-index: 2;
+  inset: 1px;
+  border: 1px solid transparent;
+}
+
+.matrix-grid__cell:focus-visible {
+  z-index: 3;
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.matrix-grid__cell[aria-selected="true"] .matrix-grid__jack {
+  border-color: var(--pin);
+}
+
+.matrix-grid__pin {
+  position: absolute;
+  z-index: 3;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  display: block;
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  border: 3px solid var(--surface-2);
+  border-radius: 50%;
+  background-color: var(--pin);
+  transform: translate(-50%, -50%);
+}
+
+.matrix-grid__pin::after {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  inline-size: 0.4375rem;
+  block-size: 1px;
+  background-color: var(--ground);
+  content: "";
+  transform: translate(-50%, -50%) rotate(-28deg);
+}

@@ -1,0 +1,91 @@
+---
+title: Choosing models
+description: Select planner and implementer models by capability, context, execution contract, and deployment needs.
+---
+
+## Choose for the role
+
+The planner and implementer solve different problems:
+
+- Choose a planner that can inspect an unfamiliar repository, resolve ambiguity, and produce precise Task Briefs.
+- Choose an implementer that reliably follows bounded instructions, edits the requested files, and responds usefully to validation errors.
+
+Evaluate the pairing on representative work from your own repository. Model size, benchmark rank, and provider labels do not replace a successful run through your actual validation pipeline.
+
+## Start with the current default
+
+A new configuration pairs the `claude-code` CLI planner with an Ollama implementer using `qwen3-coder:30b`:
+
+```yaml
+planner:
+  kind: cli
+  tool: claude-code
+
+implementer:
+  kind: api
+  provider: ollama
+  apiBase: http://localhost:11434/v1
+  model: qwen3-coder:30b
+```
+
+Pull that model with `ollama pull qwen3-coder:30b` before selecting it. The default is a starting point, not a hardware recommendation; choose a model your environment can run reliably.
+
+## Size local models against available memory
+
+Ollama currently lists these artifacts and maximum context windows:
+
+| Model | Download | Listed context |
+|---|---:|---:|
+| [`qwen2.5-coder:7b-instruct`](https://ollama.com/library/qwen2.5-coder:7b-instruct) | 4.7 GB | 32K |
+| [`qwen3-coder:30b`](https://ollama.com/library/qwen3-coder:30b) | 19 GB | 256K |
+
+The download size is not an exact VRAM requirement. Runtime memory also holds the KV cache and other inference overhead, and increasing context raises that memory use.
+
+Ollama's [context-length defaults](https://docs.ollama.com/context-length) depend on available VRAM: 4K below 24 GiB, 32K from 24 to 48 GiB, and 256K at 48 GiB or more. Repository-scale coding may benefit from at least 64K when memory permits, but the listed maximum is not a target you must reach. Run `ollama ps` during a representative task to check the effective context and whether the model is fully on the GPU or partly offloaded.
+
+## Match the runner to the deployment
+
+Both roles support `cli`, `api`, `shell`, `agent`, and `agent-sdk` runners.
+
+| Need | Consider |
+|---|---|
+| Use an existing coding-agent login or subscription | A supported `cli` runner |
+| Keep model execution on your machine | Ollama or LM Studio through an `api` runner |
+| Use a managed model endpoint | A built-in API provider or another OpenAI-compatible endpoint |
+| Integrate a command with stdin/stdout | A `shell` runner |
+| Let an external process write files directly | An `agent` runner |
+| Use Anthropic Agent SDK session persistence | An `agent-sdk` runner |
+
+`shell` and `agent` commands run with normal user permissions. SPLITBRIEF does not add a shell or network sandbox around them.
+
+## Treat context as a runtime constraint
+
+The provider controls the model's real context window. SPLITBRIEF uses detected model metadata to budget prompts and reserves part of that window for output.
+
+For Ollama or LM Studio, configure the real context window in the model or server first. Set `contextLength` or `SPLITBRIEF_CONTEXT_LENGTH` only when SPLITBRIEF's detected value does not match the runtime. The override changes prompt budgeting; it does not enlarge the provider's window or set the response output cap.
+
+Smaller contexts can still work for bounded Task Briefs. Test the largest files and briefs you expect to use, then keep the smallest model that passes those tests consistently.
+
+## Understand model discovery
+
+SPLITBRIEF builds the picker from several sources:
+
+1. Cached [models.dev](https://models.dev) metadata when available.
+2. Models discovered from running providers and installed CLI tools.
+3. A bundled catalog as the offline fallback.
+
+For runner-managed selections, `model: auto` asks the adapter to use its default when supported. For OpenCode and Kilo Code, configure the actual default in the tool before launching SPLITBRIEF.
+
+Built-in API provider metadata covers Ollama, LM Studio, Anthropic, OpenAI, Groq, Together, DeepSeek, and OpenRouter. A custom OpenAI-compatible provider needs its `provider`, `apiBase`, `apiKey`, and `model` configured explicitly.
+
+## Verify before scaling up
+
+Start with a small, reviewable task and check:
+
+- Did the planner identify the right files and constraints?
+- Did the implementer stay within the brief?
+- Did validation pass without repeated correction?
+- Did the configured context fit the brief and relevant code?
+- Did the final review catch out-of-scope changes?
+
+Change one side of the pairing at a time so failures remain attributable. See [Planners & implementers](/docs/guides/planners-and-implementers) for runner contracts, [Configuration](/docs/reference/configuration) for all model fields, and [API key security](/docs/guides/api-key-security) for credential handling.

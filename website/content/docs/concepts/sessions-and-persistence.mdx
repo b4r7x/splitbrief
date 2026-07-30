@@ -1,0 +1,142 @@
+---
+title: Sessions & persistence
+description: Understand session identity, resumable state, on-disk artifacts, and JSON event records.
+---
+
+## One run, one session
+
+A SPLITBRIEF session covers one piece of work from the initial feature prompt to the final summary.
+
+Each session lives at:
+
+```text
+.splitbrief/sessions/<session-id>/
+```
+
+With the default transcript persistence, session IDs use an ISO date and a prompt-derived slug, for example `2026-04-14-add-email-validator`. A same-day collision adds a numeric suffix such as `-2`. With `workflow.persistTranscript: false`, the ID uses an opaque `date-session-<random>` form so the prompt is not written into the directory name.
+
+`.splitbrief/active` contains the ID of the foreground session. Only one foreground session can be active in a project directory, so another `splitbrief start` fails while that pointer names a live run. Detached sessions use their own lockfiles.
+
+For parallel workflows, use separate Git worktrees. Each working directory then has its own `.splitbrief/` state. See [Worktrees & parallel sessions](/docs/guides/worktrees-and-parallel-sessions).
+
+## SPLITBRIEF sessions and planner sessions
+
+A SPLITBRIEF session is not the same as a planner backend's conversation session.
+
+| Session | Scope |
+| --- | --- |
+| **SPLITBRIEF session** | The complete workflow, artifacts, task state, evidence, and summary |
+| **Planner session** | A backend-specific conversation handle used for native continuation or resume |
+
+Planner session IDs are stored in `state.json`. One SPLITBRIEF session can use more than one planner session ID if a backend session expires and a later resume opens another.
+
+## Awaiting continue
+
+Pressing Ctrl-C once during a live model call aborts that turn without discarding the workflow. SPLITBRIEF enters the `awaitingContinue` sub-state:
+
+- the current phase stays unchanged
+- partial model output is preserved in `session.jsonl` with `interrupted: true` when transcript persistence is enabled
+- the runner is idle while SPLITBRIEF waits for input
+- text followed by Enter steers the next call
+- Enter on an empty input explicitly continues
+
+For a backend with native sessions, continuation becomes another turn in that session. For a stateless backend with transcript persistence enabled, SPLITBRIEF rebuilds context from the original prompt, preserved partial response, and the continue instruction.
+
+There is no timeout. `awaitingContinue` is saved in `state.json`, so you can close the terminal and continue later.
+
+With `workflow.persistTranscript: false`, messages and partial responses are not written to `session.jsonl`. Workflow state and project artifacts still persist. A planner with a valid native session can continue from that backend session after a cold resume. A stateless planner, or a planner whose native session has expired, cannot reconstruct the omitted conversation and reports that the transcript is unavailable.
+
+## Artifacts on disk
+
+The project-level state starts with:
+
+```text
+.splitbrief/
+├── config.yaml
+├── approvals.json                 # persistent sticky grants, when granted
+├── active                         # foreground session ID, when active
+└── sessions/
+    └── <session-id>/
+```
+
+A session directory can contain:
+
+```text
+<session-id>/
+├── readiness.json                 # pre-run readiness result
+├── state.json                     # current phase, tasks, queue, recovery, usage
+├── session.jsonl                  # append-only events, messages, and summaries
+├── research.md                    # research notes, when the mode produces them
+├── spec.md                        # supporting specification, when produced
+├── plan.md                        # supporting plan, when produced
+├── tasks.md                       # Task Brief transport
+├── clarifications.md              # speckit clarification artifact
+├── constitution-check.json        # speckit constitution result
+├── analyze.json                   # speckit analysis result
+├── brief-quality.json             # Task Brief quality report
+├── evidence.json                  # observed task evidence
+├── drift-report.json              # final brief-to-diff analysis
+├── drift-chains.json              # cross-task drift telemetry, when detected
+├── review.md                      # final planner review
+├── review-packet.json             # structured review evidence
+├── review-packet.md               # human-readable review evidence
+├── summary.json                   # final run summary
+├── snapshots/                     # baseline, checkpoints, and restore data
+├── lockfile.json                  # detached-session ownership
+├── ipc.sock                       # detached-session IPC endpoint
+└── server.log                     # detached-session server log
+```
+
+Not every mode produces every artifact. The durable rules are:
+
+- `state.json` is the resume source and is replaced as workflow state changes.
+- `session.jsonl` is append-only.
+- `summary.json` is written once at the end of the run.
+- `tasks.md` carries the Task Briefs people review.
+- Supporting planning, quality, evidence, drift, review, and snapshot artifacts are written when their phases or controls produce them.
+- `workflow.persistTranscript: false` omits message records and protects transcript-bearing event data. Safe structural events remain in the log; transcript-bearing event types can be dropped, and sensitive fields in retained events can be redacted.
+- Transcript persistence does not control project artifacts such as `spec.md`, `tasks.md`, or evidence files.
+
+## Events, messages, and summaries
+
+`session.jsonl` is one chronological stream with three record kinds:
+
+```jsonl
+{"ts":"2026-04-14T10:32:00.123Z","kind":"event","type":"workflow_started","phase":"idle","data":{"feature":"add email validator"}}
+{"ts":"2026-04-14T10:32:05.200Z","kind":"message","role":"assistant","phase":"researching","text":"I’ll inspect the validation path."}
+{"ts":"2026-04-14T10:35:45.000Z","kind":"summary","text":"The planner selected the existing validation pattern.","summarizedUpTo":"2026-04-14T10:35:30.200Z","tokenEstimate":128}
+```
+
+| Kind | Purpose | Persistence |
+| --- | --- | --- |
+| `event` | Workflow transitions, validation, escalation, approvals, artifacts, and errors | Safe structural records remain; transcript-bearing events can be omitted or redacted when transcript persistence is off |
+| `message` | User and planner conversation content | Logged by default; omitted when `workflow.persistTranscript` is `false` |
+| `summary` | Transcript compaction output used to rebuild context | Written when compaction runs with transcript persistence enabled |
+
+Keeping these records together preserves ordering for live display, replay, resume, and debugging. Consumers filter by `kind` when they need only messages or events.
+
+## Public JSON is a different envelope
+
+The local `session.jsonl` format is not the same as `splitbrief start --json` output.
+
+Headless output is NDJSON. Its first record is the readiness report. The complete report includes `generatedAt`, `projectDir`, `status`, `counts`, `nextAction`, `sections`, and `metadata`; this abridged record shows the public envelope:
+
+```json
+{"type":"readiness_report","report":{"status":"ready"}}
+```
+
+Live workflow events follow in a stable public wrapper:
+
+```json
+{"type":"event","data":{"type":"workflow_started","ts":1785407520123,"phase":"idle","feature":"add email validator"}}
+```
+
+In other words, event records use:
+
+```ts
+{ type: 'event', data: EngineEvent }
+```
+
+Recovery, final-review failure, warning, and error records use their own named top-level types. Public records are bounded and secret-redacted before output.
+
+See [Headless & CI](/docs/guides/headless-and-ci) for machine-consumer behavior.

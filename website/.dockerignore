@@ -1,0 +1,16 @@
+node_modules
+dist
+.source
+src/routeTree.gen.ts
+.lighthouseci
+.test-artifacts
+coverage
+playwright-report
+test-results
+*-snapshots
+.git
+*.tsbuildinfo
+.env
+.env.*
+.DS_Store
+*.log

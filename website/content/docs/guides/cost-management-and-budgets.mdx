@@ -1,0 +1,91 @@
+---
+title: Cost management & budgets
+description: Read live cost telemetry, review estimates, and stop a run at explicit budget boundaries.
+---
+
+## Know which numbers are known
+
+SPLITBRIEF combines token usage with pricing for the configured provider and model. Runtime model discovery can supply pricing; the bundled catalog is the fallback for priced API providers.
+
+Local runners, CLI subscriptions, and other unpriced backends do not receive invented dollar values. The interface labels the pricing state as local, unpriced, mixed, or `n/a` as appropriate. Comparisons and savings appear only when enough priced data exists to compute them.
+
+## Read cost during a run
+
+On layouts with the workflow sidebar, it shows the current mode, planner-to-implementer route, local completion rate, and known spend. A priced run shows the accumulated dollar amount. Mixed pricing is qualified with `+ unpriced`; a fully local or unknown route is labeled instead of treated as `$0`.
+
+Press `Ctrl+G` from the workflow to open `Cost · breakdown`. The overlay separates:
+
+- planner and implementer usage by phase, including input/output token splits, known cost, and cache data;
+- implementation usage by task and attempt, including runner and model metadata when available.
+
+When a backend does not expose cache-read data, SPLITBRIEF reports `cache n/a`.
+
+## Set a budget boundary
+
+Configure a maximum spend and, optionally, the point at which the workflow should pause:
+
+```yaml
+workflow:
+  maxBudget: 5.00
+  budgetPauseThreshold: 0.85
+```
+
+`budgetPauseThreshold` accepts a value from `0` to `1` and defaults to `0.85`.
+
+The task loop applies three boundaries:
+
+| Boundary | Behavior |
+| --- | --- |
+| 80% of `maxBudget` | Emits a `budget_warning` and continues. |
+| Pause threshold | Persists a `budget-paused` recovery issue and asks for a decision. |
+| 100% of `maxBudget` | Persists `budget-exceeded`; ordinary continue is unavailable. |
+
+Below the maximum, the recovery prompt can offer continue, pause, or abort as applicable. At or above the maximum, it offers pause or abort. In headless `--json` mode, SPLITBRIEF emits `recovery_required` with the available actions and exits non-zero instead of waiting for terminal input.
+
+Budget checks use known priced spend. If paid usage has unknown pricing, SPLITBRIEF pauses budget tracking and asks for a recovery decision rather than assuming zero. You can configure pricing or explicitly continue while acknowledging the unknown spend.
+
+## Review the estimate before implementation
+
+Standard and speckit workflows can show a cost approval gate after Task Brief generation. The deterministic estimate compares the selected planner/implementer route with an all-planner baseline. With priced data, the prompt uses rows like:
+
+```text
+12 tasks
+est  $0.14
+all-planner  ~$1.20
+saving  $1.06 · 88%
+```
+
+When only prompt input can be estimated, the labels say `prompt input`, `all-planner prompt`, and `prompt saving`; output, retries, validation reruns, and escalation remain runtime costs. Set `workflow.costGate: false` to skip this gate.
+
+An estimate is a decision aid, not a promise. The final cost depends on actual output, retries, routing, and escalation.
+
+## Read the completed-run comparison
+
+When both actual spend and the comparison baseline are known and the calculated saving is positive, the summary shows a result such as:
+
+```text
+$0.12 actual vs $0.95 baseline · 87% saved
+saved $0.83 by routing 75% locally
+```
+
+Small terminals use the compact form `saved $0.83 (87%)`. If pricing is incomplete or the route did not save money, SPLITBRIEF omits the savings hero instead of presenting a misleading percentage.
+
+## Inspect cumulative stats
+
+Completed session summaries with cost data roll into `.splitbrief/stats.json`.
+
+```bash
+splitbrief stats
+splitbrief stats --json
+splitbrief stats --rebuild
+```
+
+The default view reports completed sessions, actual spend, the all-planner estimate, aggregate savings, completed tasks, and provider totals. `--json` emits a machine-readable envelope with `type: "stats"` and the stats object. `--rebuild` reconstructs the file from completed session history after deletion, corruption, or a project copy.
+
+## Keep long calls legible
+
+Cost information is more useful when a slow call does not look stalled. Planner calls begin emitting heartbeat data after five seconds, including elapsed time, the latest token count, and a phase hint when available. Implementer output feeds a bounded streaming preview in the active task card for any runner that emits text callbacks.
+
+These are progress signals. They do not change budget enforcement or imply that a call will finish successfully.
+
+See [Planners & implementers](/docs/guides/planners-and-implementers) for runner pricing boundaries and [Safety: snapshots, drift, approval](/docs/guides/safety-snapshots-drift-approval) for recovery actions.

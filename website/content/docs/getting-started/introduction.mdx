@@ -1,0 +1,83 @@
+---
+title: Introduction
+description: Pair a supported planner with a supported implementer, with Task Briefs as the contract between them.
+---
+
+## Pair two roles
+
+SPLITBRIEF separates AI coding work into two roles:
+
+- A **planner** explores the codebase, interprets the request, and compiles the work into Task Briefs.
+- An **implementer** executes one brief at a time and writes the requested change.
+
+Both roles can use any of the five supported runner kinds: `cli`, `api`, `shell`, `agent`, or `agent-sdk`. You choose each side independently. SPLITBRIEF supplies the contract and runs the workflow between them.
+
+The planner thinks. The implementer types.
+
+## Connect either role
+
+The same runner kinds work on both sides:
+
+| Kind | Contract |
+|---|---|
+| `cli` | Run a supported coding-agent CLI such as Claude Code, Codex, OpenCode, Aider, Copilot, or Kilo Code. |
+| `api` | Call a configured HTTP model endpoint, including Ollama, LM Studio, OpenRouter, DeepSeek, Groq, Together, or Anthropic. |
+| `shell` | Pipe prompts and responses through an arbitrary command. The command runs with normal user permissions; SPLITBRIEF does not add a shell or network sandbox. |
+| `agent` | Run a subprocess that writes files directly instead of returning code for extraction. The same sandbox limitation applies. |
+| `agent-sdk` | Call the Anthropic Agent SDK. Its native session can continue across calls made by the same running SPLITBRIEF process. Planner session handles can also support a later resume; implementer session handles are not saved for a cold resume. |
+
+SPLITBRIEF works through planner and implementer capabilities rather than hard-coding one pairing.
+
+## Work moves through Task Briefs
+
+A [Task Brief](/docs/concepts/task-briefs) is a self-contained, single-file work order. It records the intent, scope, code context, implementation steps, validation, constraints, escalation conditions, and expected evidence for one change.
+
+The implementer receives its own brief, not the full planning transcript or sibling tasks. This keeps the execution context bounded while preserving the decisions the planner already made.
+
+Task Briefs are durable. Supporting specifications and plans help people review the approach; the briefs are what drive implementation.
+
+## Follow one controlled workflow
+
+A run follows the same basic path:
+
+1. You describe the change.
+2. The planner explores the repository and produces the planning artifacts required by the selected mode.
+3. SPLITBRIEF parses the Task Briefs and checks their quality before implementation.
+4. You review the artifacts at the approval gates enabled for the run.
+5. The implementer executes each brief in dependency order.
+6. SPLITBRIEF validates each task with the resolved `typecheck → lint → test` pipeline.
+7. Failed validation can retry, escalate through configured tiers, or enter recovery for a human decision.
+8. The final diff is checked against the briefs before the session summary is written.
+
+You can interrupt a live runner call, queue a message for the planner, rewind planning, skip a task, or resume an interrupted session.
+
+## Choose the planning depth
+
+Every mode ends with Task Briefs. The difference is how much planning happens before they are written.
+
+| Mode | Planning path | Use it for |
+|---|---|---|
+| `instant` | Tasks directly, with no document approval gates | Trivial, one-step edits |
+| `quick` | Tasks directly, without supporting planning documents | Small, well-understood changes |
+| `standard` | Research, specification, plan, then tasks | Most feature work; this is the default |
+| `speckit` | Clarification, specification, constitution check, plan, tasks, and analysis | Large, risky, or externally visible work |
+
+Select a mode with `--mode`, `workflow.mode`, or `/mode` during a run.
+
+## Keep control at the boundaries
+
+Approval gates pause the workflow where a decision matters:
+
+- Review supporting specifications and plans when the mode enables those gates.
+- Review `tasks.md` before implementation when the run produces reviewable briefs.
+- Confirm file writes according to the configured approval tier.
+- Confirm continuing before tasks begin when the projected run exceeds a configured budget.
+- Choose a recovery action when retries and escalation do not resolve a failure.
+
+Validation and approval are separate. Validation checks the work; approval keeps the decision with you.
+
+## Resume from durable state
+
+Every run is a session under `.splitbrief/sessions/<id>/`. It keeps resumable state, an append-only event log, the planning artifacts produced by the selected mode, the final summary, and any safety snapshots.
+
+`splitbrief resume` continues the active interrupted workflow. `splitbrief continue <session-id>` resumes a known session when there is no active pointer.

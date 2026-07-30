@@ -1,0 +1,125 @@
+.pairing-picker {
+  display: none;
+  min-inline-size: 0;
+  border-block-start: 1px solid var(--grid-functional);
+  border-inline-start: 1px solid var(--grid-functional);
+  background-color: var(--surface-1);
+}
+
+.pairing-picker__group {
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pairing-picker__legend {
+  inline-size: 100%;
+  max-inline-size: none;
+  min-block-size: 2.75rem;
+  margin: 0;
+  padding: 0.75rem 0.875rem;
+  border-block-end: 1px solid var(--grid-functional);
+  border-inline-end: 1px solid var(--grid-functional);
+  font-family: var(--display);
+  font-size: var(--text-legend);
+  font-stretch: expanded;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.pairing-picker__group:first-child .pairing-picker__legend {
+  color: var(--planner-text);
+}
+
+.pairing-picker__group:last-child .pairing-picker__legend {
+  color: var(--implementer);
+}
+
+.pairing-picker__options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pairing-picker__option {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr);
+  gap: 0.625rem;
+  align-items: center;
+  min-inline-size: 0;
+  min-block-size: 2.75rem;
+  padding: 0.625rem 0.75rem;
+  border-block-end: 1px solid var(--grid-functional);
+  border-inline-end: 1px solid var(--grid-functional);
+  background-color: var(--surface-2);
+  color: var(--dim);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  line-height: 1.3;
+  touch-action: manipulation;
+}
+
+.pairing-picker__option:has(.pairing-picker__input:focus-visible) {
+  z-index: 2;
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.pairing-picker__option[data-selected="true"] {
+  color: var(--fg);
+}
+
+.pairing-picker__group:first-child .pairing-picker__option[data-selected="true"] {
+  border-inline-start: 2px solid var(--planner);
+}
+
+.pairing-picker__group:last-child .pairing-picker__option[data-selected="true"] {
+  border-inline-start: 2px solid var(--implementer);
+}
+
+.pairing-picker__input {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  inline-size: calc(100% + 1px);
+  block-size: calc(100% + 1px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.pairing-picker__pin {
+  display: block;
+  inline-size: 0.75rem;
+  block-size: 0.75rem;
+  border: 2px solid var(--grid-functional);
+  border-radius: 50%;
+  background-color: transparent;
+}
+
+.pairing-picker__option[data-selected="true"] .pairing-picker__pin {
+  border-color: var(--pin);
+  background-color: var(--pin);
+}
+
+.pairing-picker__label {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 699px) {
+  .pairing-picker {
+    display: block;
+  }
+
+  .pairing-picker__group + .pairing-picker__group {
+    margin-block-start: 0.75rem;
+    border-block-start: 1px solid var(--grid-functional);
+  }
+}

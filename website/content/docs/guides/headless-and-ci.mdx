@@ -1,0 +1,106 @@
+---
+title: Headless & CI
+description: Run SPLITBRIEF without the TUI using public NDJSON streams for CI jobs and external controllers.
+---
+
+## Choose a non-interactive mode
+
+SPLITBRIEF has two modes for running without Ink:
+
+| Mode | Data flow | Use it when |
+| --- | --- | --- |
+| `--json` | NDJSON records on stdout | Automation needs to observe a run without answering prompts |
+| `--rpc` | NDJSON commands on stdin and responses on stdout | An IDE, editor extension, service, or test needs to control the run |
+
+Both modes skip the TUI and still use the configured planner, implementer, validation pipeline, session state, and append-only `session.jsonl` log.
+
+For a new run, both modes require a feature argument. They are mutually exclusive, and neither can be combined with `--detach`.
+
+## Stream a run with `--json`
+
+```bash
+splitbrief start --json --allow-hooks --mode quick \
+  "add lint rule for empty catch" > events.ndjson
+```
+
+`--allow-hooks` trusts the configured hooks without opening a prompt, which is useful for CI over a trusted project. If the project config uses repo-local `shell` or `agent` runner commands, pass `--allow-repo-runners` only when the repository is trusted.
+
+### Public stream contract
+
+Stdout contains one JSON record per line. The readiness report is always first:
+
+```ts
+{ type: 'readiness_report', report: ReadinessReport }
+{ type: 'event', data: EngineEvent }
+{ type: 'event', data: EngineEvent }
+```
+
+Every live workflow event is wrapped as `{ type: 'event', data: EngineEvent }`; consumers should not expect a bare engine event. Other public records use named top-level types such as `warning`, `error`, `recovery_required`, and `final_review_failed`.
+
+Records are bounded and secret-redacted before they reach stdout. Parse the stream line by line rather than reading it as one JSON document.
+
+Run Readiness inspects the validation configuration and package-script posture before model-backed work begins. It also executes the available baseline command for each enabled validation stage: the configured or detected typecheck, a configured lint command, and the configured or detected test command. These probes identify failures that already exist in the working tree; they do not make model calls or dedicated network probes. Blockers stop the run, while baseline validation failures and other non-blocking findings appear as warnings. The compact report is also written to `.splitbrief/sessions/<id>/readiness.json`.
+
+### Non-interactive decisions
+
+Headless mode cannot wait for terminal input:
+
+- workflow review gates approve by default
+- questions resolve non-interactively
+- budget pauses and recovery requests exit non-zero instead of blocking
+- continuation retry prompts cannot remain parked
+- sticky and confirm-tier file-write approvals fail closed without a grant
+- failed sessions exit non-zero
+
+The default budget pause threshold is 85%. Reaching it in headless mode produces a machine-readable error and a non-zero exit.
+
+The TUI is never started, so `--no-fullscreen`, `--no-mouse`, and `--hover` have no effect.
+
+## Drive a run with `--rpc`
+
+```bash
+splitbrief start --rpc --allow-hooks "add lint rule for empty catch"
+```
+
+RPC also runs without Ink, but it keeps stdin open. Send one JSON command per line. Supported command types are:
+
+- `approve`
+- `reject`
+- `regenerate`
+- `brief_review`
+- `message`
+- `recovery`
+- `status`
+- `abort`
+- `slash`
+
+Stdout returns records with `ack`, `error`, `status`, or `event` types. Workflow events use the same public envelope as `--json`:
+
+```ts
+{ type: 'event', data: EngineEvent }
+```
+
+RPC readiness arrives as status data:
+
+```ts
+{
+  type: 'status',
+  data: { type: 'readiness_report', report: ReadinessReport }
+}
+```
+
+Unlike `--json`, RPC keeps approval, question, continuation, cost, recovery, and task-review gates open until the controller sends the matching command. `brief_review` applies only to the active Task Brief prompt. Optional `id` and `operationId` values are echoed in acknowledgement, error, or status data so a controller can correlate responses.
+
+RPC is available for new starts, resumes, and interrupted resumable sessions. A live `continue` or `last` target rejects `--rpc` instead of attaching to the existing TUI session.
+
+## CI checklist
+
+1. Pass a feature argument.
+2. Use `--json` unless the caller must answer workflow gates.
+3. Trust hooks and repo-local runners explicitly; do not enable either flag for an untrusted checkout.
+4. Read and validate the first `readiness_report` record before processing workflow events.
+5. Match event records through `record.type === "event"` and read the event from `record.data`.
+6. Treat a non-zero process exit as a failed run.
+7. Preserve the session directory as a CI artifact when you need `readiness.json`, `state.json`, `session.jsonl`, evidence, or the final summary.
+
+See the [CLI reference](/docs/reference/cli) for the complete option and exit-code tables.

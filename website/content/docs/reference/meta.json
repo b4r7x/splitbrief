@@ -1,0 +1,12 @@
+{
+  "title": "Reference",
+  "pages": [
+    "cli",
+    "slash-commands-and-keys",
+    "configuration",
+    "task-brief-format",
+    "troubleshooting",
+    "migration",
+    "changelog"
+  ]
+}

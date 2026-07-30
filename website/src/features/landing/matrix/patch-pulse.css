@@ -1,0 +1,135 @@
+.matrix {
+  --matrix-pulse-duration: 140ms;
+  --matrix-pulse-easing: cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.matrix__controls[data-pulse="active"][data-pulse-variant="a"] {
+  --matrix-pulse-name: matrix-pulse-a;
+}
+
+.matrix__controls[data-pulse="active"][data-pulse-variant="b"] {
+  --matrix-pulse-name: matrix-pulse-b;
+}
+
+.matrix__controls[data-pulse="active"]
+  .matrix-grid__row:has(.matrix-grid__cell[aria-selected="true"])
+  > :is(.matrix-grid__row-header, .matrix-grid__cell),
+.matrix__controls[data-pulse="active"] .matrix-grid__cell[aria-selected="true"] .matrix-grid__pin {
+  animation-name: var(--matrix-pulse-name);
+  animation-duration: var(--matrix-pulse-duration);
+  animation-timing-function: var(--matrix-pulse-easing);
+  animation-iteration-count: 1;
+}
+
+.matrix__controls[data-pulse="active"] .matrix-grid__cell[aria-selected="true"] .matrix-grid__pin {
+  animation-delay: 130ms;
+}
+
+.matrix__controls[data-pulse="active"][data-active-column-index="0"]
+  .matrix-grid
+  :is(
+    .matrix-grid__column-header[data-column-index="0"],
+    .matrix-grid__cell[data-column-index="0"]
+  ),
+.matrix__controls[data-pulse="active"][data-active-column-index="1"]
+  .matrix-grid
+  :is(
+    .matrix-grid__column-header[data-column-index="1"],
+    .matrix-grid__cell[data-column-index="1"]
+  ),
+.matrix__controls[data-pulse="active"][data-active-column-index="2"]
+  .matrix-grid
+  :is(
+    .matrix-grid__column-header[data-column-index="2"],
+    .matrix-grid__cell[data-column-index="2"]
+  ),
+.matrix__controls[data-pulse="active"][data-active-column-index="3"]
+  .matrix-grid
+  :is(
+    .matrix-grid__column-header[data-column-index="3"],
+    .matrix-grid__cell[data-column-index="3"]
+  ),
+.matrix__controls[data-pulse="active"][data-active-column-index="4"]
+  .matrix-grid
+  :is(
+    .matrix-grid__column-header[data-column-index="4"],
+    .matrix-grid__cell[data-column-index="4"]
+  ),
+.matrix__controls[data-pulse="active"][data-active-column-index="5"]
+  .matrix-grid
+  :is(
+    .matrix-grid__column-header[data-column-index="5"],
+    .matrix-grid__cell[data-column-index="5"]
+  ) {
+  animation-name: var(--matrix-pulse-name);
+  animation-duration: var(--matrix-pulse-duration);
+  animation-delay: 260ms;
+  animation-timing-function: var(--matrix-pulse-easing);
+  animation-iteration-count: 1;
+}
+
+.matrix__controls[data-pulse="active"]
+  .pairing-picker__group:first-child
+  .pairing-picker__option[data-selected="true"]
+  .pairing-picker__label,
+.matrix__controls[data-pulse="active"]
+  .pairing-picker__option[data-selected="true"]
+  .pairing-picker__pin,
+.matrix__controls[data-pulse="active"]
+  .pairing-picker__group:last-child
+  .pairing-picker__option[data-selected="true"]
+  .pairing-picker__label {
+  animation-name: var(--matrix-pulse-name);
+  animation-duration: var(--matrix-pulse-duration);
+  animation-timing-function: var(--matrix-pulse-easing);
+  animation-iteration-count: 1;
+}
+
+.matrix__controls[data-pulse="active"]
+  .pairing-picker__option[data-selected="true"]
+  .pairing-picker__pin {
+  animation-delay: 130ms;
+}
+
+.matrix__controls[data-pulse="active"]
+  .pairing-picker__group:last-child
+  .pairing-picker__option[data-selected="true"]
+  .pairing-picker__label {
+  animation-delay: 260ms;
+}
+
+@keyframes matrix-pulse-a {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.42;
+  }
+}
+
+@keyframes matrix-pulse-b {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.42;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .matrix__controls[data-pulse="active"]
+    :where(
+      .matrix-grid__column-header,
+      .matrix-grid__row-header,
+      .matrix-grid__cell,
+      .matrix-grid__pin,
+      .pairing-picker__label,
+      .pairing-picker__pin
+    ) {
+    animation: none;
+  }
+}

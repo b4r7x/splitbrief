@@ -1,0 +1,125 @@
+---
+title: Planners & implementers
+description: Compose supported runner kinds on either side of the Task Brief contract.
+---
+
+## Two roles, one contract
+
+SPLITBRIEF separates planning from implementation:
+
+- The **planner** explores the repository, interprets the request, and compiles the work into [Task Briefs](/docs/concepts/task-briefs).
+- The **implementer** executes one brief at a time and writes the requested change.
+
+You configure the two roles independently. Either side can use any of the five runner kinds: `cli`, `api`, `shell`, `agent`, or `agent-sdk`. The Task Brief carries the planner's decisions across the handoff; the orchestrator owns approval, validation, retries, escalation, and recovery around both runners.
+
+The planner thinks. The implementer types.
+
+## What the planner produces
+
+In the standard workflow, the planner moves through research, specification, plan, and Task Brief generation. Quick and instant workflows collapse planning into a single call. A planner also supports regeneration after review comments, escalation when an implementer cannot complete a task, and the final review.
+
+The Task Briefs are the durable execution contract. Supporting specifications and plans exist for human review and can be absent in the shorter modes. The implementer receives its own brief, not the supporting plan or sibling tasks.
+
+### Planner capabilities
+
+Planner integrations declare capabilities instead of making the workflow infer behavior from a tool name.
+
+| Capability | What it enables |
+| --- | --- |
+| Conversational planning | Inline clarification questions while planning |
+| Session resume | Reuse of a runner session instead of rebuilding context |
+| Effort control | Delivery of supported reasoning or effort hints |
+| Images | Image attachments in the first planning phase |
+| Self-summarisation | Backend-assisted transcript compaction |
+| Hint escalation | A short planner hint before full planner takeover |
+
+Missing capabilities have explicit fallbacks. SPLITBRIEF can rebuild context from the session log, run planning without inline questions, omit unsupported attachments, or skip hint escalation and continue through the configured escalation path.
+
+## What the implementer receives
+
+Each implementer call handles one Task Brief. SPLITBRIEF formats the brief, adds the applicable project conventions, invokes the configured runner, and then processes the result in one of two ways:
+
+| Write mode | Runner kinds | Result handling |
+| --- | --- | --- |
+| Extracted code | `api`, `shell` | SPLITBRIEF extracts code from the response, passes the write through approval, and applies it. |
+| Direct files | `cli`, `agent`, `agent-sdk` | The runner writes in the working tree; SPLITBRIEF detects the resulting diff. |
+
+Validation runs after the write. A failed task can retry and then move through escalation. Safety decisions remain with the orchestrator, independently of which runner produced the change.
+
+Implementer prompts reserve part of the model context for output. When a target file will not fit in the remaining budget, SPLITBRIEF narrows the code context from the whole file to the target function, then to a head-and-tail excerpt, and finally to no current-code excerpt. The brief still carries the task's intent, scope, constraints, and validation.
+
+## Five runner kinds
+
+Every displayed pairing is a composition of these same five contracts.
+
+| `kind` | Configuration identity | How it runs |
+| --- | --- | --- |
+| `cli` | `tool` | Starts a supported coding CLI as a subprocess. |
+| `api` | `provider`, `apiBase`, `model` | Calls an HTTP model endpoint. OpenAI-compatible APIs and Anthropic's native streaming protocol are supported. |
+| `shell` | `command`, optional `args` and `outputFormat` | Pipes the prompt to an arbitrary command and reads stdout. |
+| `agent` | `command`, optional `args` and `outputFormat` | Starts an arbitrary command that writes files directly. |
+| `agent-sdk` | optional `apiKey`, optional planner `model` | Uses the Anthropic Agent SDK library. The package is an optional peer dependency. |
+
+`shell` and `agent` commands run with your normal user permissions. SPLITBRIEF does not add a shell or network sandbox around them.
+
+### Supported CLI tools
+
+The `cli` runner recognizes the same tools on either side:
+
+| `tool` | Command |
+| --- | --- |
+| `claude-code` | `claude` |
+| `codex` | `codex` |
+| `opencode` | `opencode` |
+| `aider` | `aider` |
+| `copilot` | `copilot` |
+| `kilo-code` | `kilo` |
+
+CLI integrations differ in conversation, resume, image, and effort support. SPLITBRIEF detects availability before a run and reports a major-version compatibility mismatch when an installed CLI has moved beyond the integration's tested major version.
+
+### Built-in API providers
+
+The API runner supplies defaults for these providers:
+
+| Provider | Default API base | API key |
+| --- | --- | --- |
+| `ollama` | `http://localhost:11434/v1` | Not required |
+| `lm-studio` | `http://localhost:1234/v1` | Not required |
+| `anthropic` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
+| `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
+| `groq` | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `together` | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` |
+| `deepseek` | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
+| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+
+For a built-in provider, an explicit `apiKey` overrides its environment variable. A custom provider must set `apiBase` and `apiKey`.
+
+## A complete pairing
+
+This configuration pairs the default Claude Code planner with the current bundled Ollama default:
+
+```yaml
+version: 3
+planner:
+  kind: cli
+  tool: claude-code
+implementer:
+  kind: api
+  provider: ollama
+  apiBase: http://localhost:11434/v1
+  model: qwen3-coder:30b
+validation:
+  typecheck: true
+  lint: true
+  test: true
+workflow:
+  mode: standard
+  approve: default
+  maxRetries: 3
+  git:
+    commitStrategy: none
+```
+
+The `kind` field is always the discriminant. CLI runners use `tool`; API runners use `provider` and `apiBase`. Implementers always declare a model, while planners may let a supported CLI choose its own.
+
+See [Configuration](/docs/reference/configuration) for every field, [Choosing models](/docs/getting-started/choosing-models) for model selection, and [Cost management & budgets](/docs/guides/cost-management-and-budgets) for pricing behavior.

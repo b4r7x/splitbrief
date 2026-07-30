@@ -20,3 +20,42 @@ jobs:
       - run: npm ci
       - run: npm run test-ci
       - run: npm run tui-shots -- --scenario home-empty --viewport 80x24 --output .test-artifacts/ui/ci-smoke
+
+  website-origin-independent:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run verify:origin
+
+  website-production:
+    if: ${{ vars.SITE_URL != '' }}
+    needs: website-origin-independent
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: website
+    env:
+      SITE_URL: ${{ vars.SITE_URL }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Expose Playwright Chromium to Lighthouse
+        run: |
+          chrome_path=$(node -e "process.stdout.write(require('@playwright/test').chromium.executablePath())")
+          echo "CHROME_PATH=$chrome_path" >> "$GITHUB_ENV"
+      - run: npm run verify:production

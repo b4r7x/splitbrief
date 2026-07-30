@@ -1,0 +1,121 @@
+.docs-header {
+  border-block-end: 1px solid var(--grid-functional);
+  background-color: var(--surface-1);
+}
+
+.docs-header__inner {
+  display: grid;
+  grid-template-columns: auto auto minmax(2rem, 1fr) auto;
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+  align-items: center;
+  inline-size: min(100%, 100rem);
+  min-block-size: 4rem;
+  margin-inline: auto;
+  padding-inline: clamp(1rem, 3vw, 2rem);
+}
+
+.docs-header__motif {
+  position: relative;
+  inline-size: 1px;
+  block-size: 16px;
+  background-color: var(--grid-functional);
+}
+
+.docs-header__motif::after {
+  position: absolute;
+  inset-block-start: -3px;
+  inset-inline-start: -3px;
+  inline-size: 7px;
+  block-size: 7px;
+  border: 1px solid var(--grid-functional);
+  border-radius: 50%;
+  background-color: var(--ground);
+  content: "";
+}
+
+.docs-header__brand {
+  display: flex;
+  gap: 0.625rem;
+  align-items: center;
+  min-block-size: 2.75rem;
+  color: var(--fg);
+  font-family: var(--display);
+  font-size: var(--text-label);
+  font-stretch: expanded;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.docs-header__edition {
+  color: var(--dim);
+}
+
+.docs-header__rule {
+  block-size: 1px;
+  background-color: var(--grid-functional);
+}
+
+.docs-header__actions {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.docs-header__source {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.75rem;
+  padding-inline: 0.75rem;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+@media (max-width: 699px) {
+  .docs-header__inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-block-size: 3.5rem;
+  }
+
+  .docs-header__brand {
+    gap: 0.5rem;
+    min-inline-size: 0;
+  }
+
+  .docs-header__division,
+  .docs-header__edition,
+  .docs-header__brand .jack-bullet--implementer,
+  .docs-header__rule {
+    display: none;
+  }
+
+  .docs-header__actions {
+    justify-content: flex-end;
+  }
+
+  .docs-header__source {
+    display: none;
+  }
+}
+
+@media (max-width: 479px) {
+  .docs-header__inner {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+    padding-block: 0.5rem;
+  }
+
+  .docs-header__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .docs-search__trigger {
+    inline-size: 100%;
+  }
+}

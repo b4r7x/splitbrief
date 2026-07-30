@@ -22,7 +22,7 @@ import type {
   FixtureRegistry,
 } from './common.js';
 
-export const VISUAL_FIXTURE_PROJECT_DIR = '.test-artifacts/ui-fixture-project';
+export const VISUAL_FIXTURE_PROJECT_DIR = '.test-artifacts/projects/splitbrief';
 
 const FIXED_GENERATED_AT = '2025-01-01T12:00:00.000Z';
 
@@ -31,7 +31,7 @@ function visualConfig() {
     planner: {
       kind: 'cli',
       tool: 'claude-code',
-      model: 'claude-sonnet-4',
+      model: 'claude-sonnet-4-6',
     },
     implementer: {
       kind: 'api',
@@ -91,7 +91,11 @@ function readyReadiness(): ReadinessReport {
     projectDir: VISUAL_FIXTURE_PROJECT_DIR,
     status: 'ready',
     counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
-    nextAction: { kind: 'continue', label: 'Continue', reason: 'Synthetic fixture is ready' },
+    nextAction: {
+      kind: 'continue',
+      label: 'Continue',
+      reason: 'Planner and implementer are ready',
+    },
     sections: [],
     metadata: { mode: 'standard', configExists: true },
   };
@@ -113,7 +117,7 @@ export const createHomeFixture: FixtureFactory = () =>
 export const createWorkflowBaseFixture: FixtureFactory = () =>
   createRouteFixture(() => ({
     screen: 'workflow',
-    feature: 'Refine terminal navigation',
+    feature: 'Add Ollama model discovery',
     sessionId: 'visual-workflow',
     readiness: readyReadiness(),
   }));
@@ -124,7 +128,7 @@ export const createSummaryFixture: FixtureFactory = () =>
     sessionId: 'visual-summary',
     status: 'complete',
     summary: makeSummary({
-      feature: 'Visual fixture workflow complete',
+      feature: 'Ollama model discovery complete',
       totalTasks: 4,
       completedByLocal: 3,
       escalatedToPlanner: 1,
@@ -132,7 +136,7 @@ export const createSummaryFixture: FixtureFactory = () =>
       estimatedCostSavings: '$4.80',
       escalationRate: 0.25,
       plannerTool: 'claude-code',
-      plannerModel: 'claude-sonnet-4',
+      plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'ollama',
       implementerModel: 'qwen2.5-coder:7b',
       mode: 'standard',

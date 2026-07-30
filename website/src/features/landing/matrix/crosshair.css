@@ -1,0 +1,105 @@
+/* Pointer hover owns the crosshair; grid.css keeps the keyboard focus ring visible. */
+.matrix-grid__cell:hover::after,
+.matrix-grid:not(:has(.matrix-grid__cell:hover)) .matrix-grid__cell:focus-visible::after {
+  border-block-color: var(--planner) var(--implementer);
+  border-inline-color: var(--planner) var(--implementer);
+}
+
+.matrix-grid__row:has(.matrix-grid__cell:hover) > :is(.matrix-grid__row-header, .matrix-grid__cell),
+.matrix-grid:not(:has(.matrix-grid__cell:hover))
+  .matrix-grid__row:has(.matrix-grid__cell:focus-visible)
+  > :is(.matrix-grid__row-header, .matrix-grid__cell) {
+  border-block-end-color: var(--planner);
+}
+
+.matrix-grid__row:has(.matrix-grid__cell:hover) > .matrix-grid__row-header,
+.matrix-grid:not(:has(.matrix-grid__cell:hover))
+  .matrix-grid__row:has(.matrix-grid__cell:focus-visible)
+  > .matrix-grid__row-header {
+  color: var(--planner-text);
+}
+
+.matrix-grid__row:has(.matrix-grid__cell:hover) > .matrix-grid__row-header::before,
+.matrix-grid:not(:has(.matrix-grid__cell:hover))
+  .matrix-grid__row:has(.matrix-grid__cell:focus-visible)
+  > .matrix-grid__row-header::before {
+  background-color: var(--wash-planner);
+}
+
+.matrix-grid__row:has(.matrix-grid__cell:hover) > .matrix-grid__cell,
+.matrix-grid:not(:has(.matrix-grid__cell:hover))
+  .matrix-grid__row:has(.matrix-grid__cell:focus-visible)
+  > .matrix-grid__cell {
+  background-clip: content-box;
+  background-color: var(--wash-planner);
+}
+
+.matrix-grid:is(
+    :has(.matrix-grid__cell[data-column-index="0"]:hover),
+    :not(:has(.matrix-grid__cell:hover)):has(
+      .matrix-grid__cell[data-column-index="0"]:focus-visible
+    )
+  )
+  :is(
+    .matrix-grid__column-header[data-column-index="0"],
+    .matrix-grid__cell[data-column-index="0"]
+  ),
+.matrix-grid:is(
+    :has(.matrix-grid__cell[data-column-index="1"]:hover),
+    :not(:has(.matrix-grid__cell:hover)):has(
+      .matrix-grid__cell[data-column-index="1"]:focus-visible
+    )
+  )
+  :is(
+    .matrix-grid__column-header[data-column-index="1"],
+    .matrix-grid__cell[data-column-index="1"]
+  ),
+.matrix-grid:is(
+    :has(.matrix-grid__cell[data-column-index="2"]:hover),
+    :not(:has(.matrix-grid__cell:hover)):has(
+      .matrix-grid__cell[data-column-index="2"]:focus-visible
+    )
+  )
+  :is(
+    .matrix-grid__column-header[data-column-index="2"],
+    .matrix-grid__cell[data-column-index="2"]
+  ),
+.matrix-grid:is(
+    :has(.matrix-grid__cell[data-column-index="3"]:hover),
+    :not(:has(.matrix-grid__cell:hover)):has(
+      .matrix-grid__cell[data-column-index="3"]:focus-visible
+    )
+  )
+  :is(
+    .matrix-grid__column-header[data-column-index="3"],
+    .matrix-grid__cell[data-column-index="3"]
+  ),
+.matrix-grid:is(
+    :has(.matrix-grid__cell[data-column-index="4"]:hover),
+    :not(:has(.matrix-grid__cell:hover)):has(
+      .matrix-grid__cell[data-column-index="4"]:focus-visible
+    )
+  )
+  :is(
+    .matrix-grid__column-header[data-column-index="4"],
+    .matrix-grid__cell[data-column-index="4"]
+  ),
+.matrix-grid:is(
+    :has(.matrix-grid__cell[data-column-index="5"]:hover),
+    :not(:has(.matrix-grid__cell:hover)):has(
+      .matrix-grid__cell[data-column-index="5"]:focus-visible
+    )
+  )
+  :is(
+    .matrix-grid__column-header[data-column-index="5"],
+    .matrix-grid__cell[data-column-index="5"]
+  ) {
+  --matrix-column-wash: var(--wash-implementer);
+
+  border-inline-end-color: var(--implementer);
+  color: var(--implementer);
+}
+
+.matrix-grid :is(.matrix-grid__column-header, .matrix-grid__cell)::before {
+  background-color: var(--matrix-column-wash, transparent);
+}

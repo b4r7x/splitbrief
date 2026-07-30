@@ -1,0 +1,150 @@
+---
+title: MCP & handoff packs
+description: Export Task Briefs for external tools or expose session resources and evidence tools over local MCP.
+---
+
+## Choose copied or live handoff
+
+SPLITBRIEF supports two paths for working with an external agent:
+
+| Path | What crosses the boundary | Use it when |
+| --- | --- | --- |
+| Handoff Pack | A self-contained folder of compiled artifacts | The external tool should work from a copied, reviewable bundle |
+| MCP server | Live session resources plus constrained evidence tools | An MCP client needs to inspect current state and report results |
+
+Neither path starts an external agent. The configured planner and implementer remain SPLITBRIEF's primary execution path.
+
+## Export a Handoff Pack
+
+A Handoff Pack renders the compiled [Task Briefs](/docs/concepts/task-briefs) and their supporting artifacts for another tool.
+
+### Built-in targets
+
+| Target | Intended consumer |
+| --- | --- |
+| `spec-kit` | GitHub Spec Kit folder convention |
+| `agents-md` | AGENTS.md, Cursor, and opencode |
+| `claude-code` | Claude Code CLI prompt and commands |
+| `copilot-issue` | A single GitHub issue body in `issue.md` |
+
+List available targets or export a pack:
+
+```bash
+splitbrief handoff --list
+splitbrief handoff spec-kit
+splitbrief handoff claude-code --task T003
+splitbrief handoff agents-md --out ./my-handoff
+```
+
+The CLI defaults to `spec-kit` and writes to `.splitbrief/handoffs/<target>/` unless `--out` is set. During an active TUI run, `/handoff <target> [task-id]` writes beneath the session at `.splitbrief/sessions/<id>/handoffs/<target>/`.
+
+Most built-in targets contain:
+
+- `manifest.json`, including the compiled brief's `briefHash`
+- `spec.md`
+- `plan.md`
+- `constitution.md` when `.specify/memory/constitution.md` exists
+- one file per selected task, such as `tasks/T001.md`
+- `README.md`
+
+`copilot-issue` is intentionally different: it writes `manifest.json` and one self-contained `issue.md` with the selected tasks embedded.
+
+The result is inert. Review it, copy it, or give it to the target tool; SPLITBRIEF does not execute anything in the pack.
+
+## Add a custom renderer
+
+Place a `.js` or runtime-loadable `.ts` module at:
+
+```text
+.splitbrief/handoff-renderers/<name>.<ext>
+```
+
+The module exports one default async function:
+
+```js
+export default async function render(input) {
+  return { files: [{ path: 'JIRA.md', content: '...' }] };
+}
+```
+
+Discovery is read-only:
+
+```bash
+splitbrief handoff --list
+```
+
+Running repository code requires an explicit trust decision:
+
+```bash
+splitbrief handoff jira --allow-custom-renderer
+```
+
+You can grant the same permission through `trust.customRenderers: true` in configuration. Use a custom renderer when the destination needs a pack shape that SPLITBRIEF does not ship.
+
+## Serve session state over MCP
+
+```bash
+splitbrief mcp serve
+session_id='<session-id>'
+splitbrief mcp serve --port 4321 --session "$session_id"
+splitbrief mcp serve --all-sessions
+```
+
+With no session option, the server exposes the active session on port `4321`. It binds only to `127.0.0.1`. At startup it prints:
+
+- the `http://127.0.0.1:<port>/mcp` URL
+- a fresh Bearer token
+- the exposed session IDs
+- a ready-to-paste MCP client configuration block
+
+The token exists only in memory and is never persisted. Configure the external MCP client with the printed URL and token. The process runs until SIGINT or SIGTERM.
+
+### Resources
+
+Clients use standard `resources/list` and `resources/read` operations. Depending on what the session has produced, the server can expose:
+
+- the sessions index
+- `manifest.json`
+- `summary.json` and `state.json`
+- `spec.md` and `plan.md`
+- the task collection and individual `tasks/<id>` resources
+- `evidence.json`
+- `drift-report.json`
+
+A manifest is advertised only when canonical `summary.json` and `state.json` artifacts exist. Reading a missing concrete resource returns a resource-not-found error. Every exposed manifest includes `briefHash`.
+
+Resource URIs follow the Handoff Pack path layout, keeping copied and live access aligned.
+
+When `workflow.persistTranscript` is `false`, the sessions index and `state.json` replace transcript-sensitive feature, task, queued-message, and queued-question text rather than exposing it.
+
+### Evidence tools
+
+The MCP server exposes five constrained tools:
+
+| Tool | Purpose |
+| --- | --- |
+| `report_evidence` | Add observed evidence and changed-file information |
+| `report_progress` | Record a progress update |
+| `mark_task_done` | Mark an existing task complete with its evidence |
+| `report_validation_result` | Record a validation result |
+| `report_error` | Record an error against a task |
+
+These tools update only `.splitbrief/sessions/<id>/evidence.json`, and only for sessions and tasks that already exist. They cannot run shell commands, write project files, or dispatch implementation work. General tool calls still belong to the configured planner or implementer runner.
+
+### Transport and request rules
+
+The current server advertises MCP protocol version `2025-11-25` and uses Streamable HTTP request handling:
+
+- requests and notifications use `POST /mcp`
+- requests return `200` with a JSON-RPC response body
+- notifications return `202` with no body
+- `GET /mcp` returns `405 Method Not Allowed` with `Allow: POST, OPTIONS`; SSE is not implemented
+- non-local browser `Origin` headers are rejected with `403`
+- a supplied `MCP-Protocol-Version: 2025-11-25` header is accepted and echoed
+- an unsupported protocol version returns `400` with a JSON-RPC error
+
+There is one known conformance delta in version negotiation. The MCP specification requires a missing `MCP-Protocol-Version` header to default to `2025-03-26` for backward compatibility. SPLITBRIEF currently defaults a missing header to `2025-11-25` instead. Until that implementation is corrected, clients should send `MCP-Protocol-Version: 2025-11-25` explicitly. The selected version is echoed in the response header.
+
+Use MCP when an external agent needs current, read-only session context and a narrow way to report evidence back. Use a Handoff Pack when a copied artifact is the clearer boundary.
+
+See the [CLI reference](/docs/reference/cli) for all Handoff Pack and MCP flags.

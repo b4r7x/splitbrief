@@ -1,0 +1,77 @@
+---
+title: The two-role model
+description: See how planner and implementer runners divide work through Task Briefs.
+---
+
+## One hierarchy, two roles
+
+SPLITBRIEF separates AI coding work into two deliberately different roles:
+
+| Role | Responsibility |
+| --- | --- |
+| **Planner** | Research the repository, resolve ambiguity, compile the request into Task Briefs, and review the final diff. |
+| **Implementer** | Execute one self-contained Task Brief at a time and produce the requested code change. |
+
+The planner thinks. The implementer types.
+
+This is a hierarchy, not a peer network. The planner decides what should change and records those decisions. The implementer works from that bounded contract instead of rediscovering the plan.
+
+## The orchestrator holds the boundary
+
+SPLITBRIEF itself is not a third AI role. It is the orchestrator between the configured runners:
+
+```text
+your request
+    ↓
+planner
+    ↓
+tasks.md
+    ↓
+SPLITBRIEF
+    ↓
+implementer
+    ↓
+validation and final review
+```
+
+The orchestrator persists the brief, applies approval gates, resolves and runs validation, manages retries and escalation, records evidence, and checks the final diff for drift. A runner can change without moving those controls into the model.
+
+## Choose each side independently
+
+Both roles support the same five runner kinds:
+
+| Runner kind | Contract |
+| --- | --- |
+| `cli` | A supported coding-tool subprocess |
+| `api` | An OpenAI-compatible HTTP endpoint |
+| `shell` | A configured command that reads stdin and writes stdout |
+| `agent` | A subprocess that writes files directly |
+| `agent-sdk` | An Anthropic Agent SDK library call |
+
+Built-in tool and provider IDs cover supported CLIs and APIs. Custom runners use explicit `shell`, `agent`, or `agent-sdk` contracts. The planner and implementer do not need to use the same kind or provider.
+
+See [Planners & implementers](/docs/guides/planners-and-implementers) for the available backends and their configuration.
+
+## What SPLITBRIEF is
+
+SPLITBRIEF is a cost-aware task compiler for one coding workflow. It preserves high-capability planning while allowing implementation to run on another supported runner, including local models.
+
+The central artifact is the [Task Brief](/docs/concepts/task-briefs): a reviewable contract that carries the planner's decisions into implementation. Validation, retry, escalation, and evidence surround that handoff.
+
+## What it is not
+
+SPLITBRIEF is not:
+
+- a swarm or generic multi-agent coordinator
+- a universal connector for arbitrary AI tools
+- a framework for racing agents over the same checkout
+- a kanban board or cross-team project-management system
+- a long-lived plan archive or cross-plan dependency tracker
+
+An implementer pool, when configured, still represents one implementer role. It selects one capable worker for a Task Brief; it does not create competing agents or permit parallel writes to the same checkout.
+
+## The differentiator
+
+Multi-agent managers primarily coordinate concurrent sessions. General coding agents often combine planning and implementation in one context. SPLITBRIEF instead compiles the plan into a durable, self-contained contract, hands that contract to a separately configured implementer, and verifies the result against it.
+
+The distinction is structural: planner judgment, bounded implementation, deterministic validation, and a final review tied back to the brief.

@@ -1,0 +1,40 @@
+---
+title: Why SPLITBRIEF / comparison
+description: The two-role model, its boundaries, and how it differs from multi-agent coordination tools.
+---
+
+SPLITBRIEF is a cost-aware task compiler for AI coding work. It assigns planning and implementation to two explicit roles:
+
+| Role | Responsibility |
+|---|---|
+| Planner | Research the codebase, compile Task Briefs, decide when supporting specification is useful, escalate, and review |
+| Implementer | Execute precise Task Briefs one task at a time |
+
+The Task Brief is the contract between those roles. Validation, retries, escalation, and evidence stay explicit around the handoff.
+
+## What SPLITBRIEF is not
+
+- It is not a universal connector that claims to connect any AI to any AI.
+- It is not Claude Squad or Overstory. It does not manage multiple parallel agent sessions.
+- It is not a multi-agent coordinator. The workflow has exactly two roles with a clear hierarchy.
+- It is not a swarm manager. There is no dynamic agent count, agent racing, or same-checkout parallel writing.
+- It is not a generic orchestration framework. The workflow is centered on Task Briefs, with supporting specifications only when the work needs more structure.
+- It is not a kanban board or project-management system. It has no boards, tickets, or cross-team task tracking.
+- It is not a plan archive. Sessions are execution records for one workflow, not a long-lived store of past plans.
+- It is not a cross-plan dependency tracker. SPLITBRIEF reasons about one workflow at a time.
+
+An implementer pool, when enabled, selects a profile inside the single implementer role. It does not add dynamic agent count, agent racing, or same-checkout parallel writing.
+
+## Comparison
+
+| Tool | What it does | How SPLITBRIEF differs |
+|---|---|---|
+| Claude Squad | Manages Claude Code, Codex, and Aider instances in parallel workspaces | SPLITBRIEF separates planning from implementation through a Task Brief |
+| Agent Orchestrator | Runs parallel coding agents with git worktrees and swappable backends | SPLITBRIEF defines two hierarchical roles rather than coordinating a parallel agent set |
+| [Overstory](https://github.com/jayminwest/overstory) | Archived by its owner on May 28, 2026 and no longer maintained; coordinated isolated agent worktrees, with headless workers by default and tmux as an option | SPLITBRIEF uses a planner-to-implementer handoff without a parallel-agent coordination layer |
+| Claude Code native teams | Coordinates multiple Claude Code sessions | SPLITBRIEF centers the workflow on planner and implementer roles |
+| Ruflo | Runs multi-agent swarms for Claude Code | SPLITBRIEF does not manage swarms |
+| OpenCode | Provides a polished terminal interface built with OpenTUI | SPLITBRIEF is centered on compiling and executing Task Briefs |
+| Plain [Claude Code](https://docs.anthropic.com/en/docs/claude-code/cli-usage) or [Aider](https://aider.chat/docs/) | Runs an interactive coding session against a repository | SPLITBRIEF adds a planner-to-implementer Task Brief, validation, retry, and escalation workflow around the configured tools |
+
+The distinction is the workflow: a planner compiles the work, an implementer executes the bounded brief, and the orchestrator validates the result before advancing.

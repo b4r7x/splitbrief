@@ -1,0 +1,106 @@
+.docs-shell {
+  min-inline-size: 0;
+}
+
+.docs-skip-link {
+  position: fixed;
+  z-index: 20;
+  inset-block-start: 0.75rem;
+  inset-inline-start: 0.75rem;
+  min-block-size: 2.75rem;
+  padding: 0.625rem 0.875rem;
+  border: 1px solid var(--grid-functional);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+  transform: translateY(calc(-100% - 1rem));
+}
+
+.docs-skip-link:focus {
+  transform: translateY(0);
+}
+
+.docs-layout {
+  display: grid;
+  grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+  align-items: start;
+  inline-size: min(100%, 100rem);
+  margin-inline: auto;
+  padding: clamp(1.5rem, 4vw, 3rem) clamp(1rem, 3vw, 2rem) 5rem;
+}
+
+.docs-main {
+  display: grid;
+  grid-template-columns: minmax(0, var(--text-measure));
+  min-inline-size: 0;
+}
+
+.docs-page-header {
+  min-inline-size: 0;
+  padding-block-end: clamp(1.5rem, 3vw, 2.5rem);
+  border-block-end: 1px solid var(--grid-functional);
+}
+
+.docs-page-header__signal {
+  margin: 0 0 1rem;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.docs-page-header h1 {
+  max-inline-size: 18ch;
+  overflow-wrap: anywhere;
+}
+
+.docs-page-header__description {
+  margin: 1rem 0 0;
+  color: var(--dim);
+  font-size: 1.125rem;
+  line-height: 1.5;
+}
+
+.docs-content {
+  min-inline-size: 0;
+  max-inline-size: var(--text-measure);
+  padding-block-start: clamp(1.5rem, 3vw, 2.5rem);
+}
+
+@media (min-width: 1200px) {
+  .docs-layout {
+    grid-template-columns: minmax(13rem, 15rem) minmax(0, var(--text-measure)) minmax(12rem, 15rem);
+  }
+
+  .docs-main {
+    grid-column: 2 / 4;
+    grid-template-columns: minmax(0, var(--text-measure)) minmax(12rem, 15rem);
+    column-gap: clamp(2rem, 4vw, 4rem);
+  }
+
+  .docs-page-header,
+  .docs-content,
+  .docs-prev-next {
+    grid-column: 1;
+  }
+
+  .docs-toc--desktop {
+    grid-row: 1 / 4;
+    grid-column: 2;
+  }
+}
+
+@media (max-width: 699px) {
+  .docs-layout {
+    display: block;
+    padding-block-start: 1rem;
+  }
+
+  .docs-page-header h1 {
+    max-inline-size: 14ch;
+  }
+}

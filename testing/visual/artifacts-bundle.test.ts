@@ -140,7 +140,7 @@ async function createBundleFixture() {
     id: 'success',
     title: 'Successful summary',
     kind: 'success',
-    marker: 'Visual fixture workflow complete',
+    marker: 'Ollama model discovery complete',
     timeoutMs: 5_000,
   });
   const scenario = ScenarioDefinitionSchema.parse({
@@ -167,7 +167,7 @@ async function createBundleFixture() {
     parentFrameKey: null,
   });
   const grid = await parseTerminalFrame({
-    ansi: '\u001b[1;36mVisual fixture workflow complete\u001b[0m\nBounded details',
+    ansi: '\u001b[1;36mOllama model discovery complete\u001b[0m\n1 task completed',
     identity,
     projectRoot: process.cwd(),
   });

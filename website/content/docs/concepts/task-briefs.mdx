@@ -1,0 +1,107 @@
+---
+title: Task Briefs
+description: Understand the stable nine-section contract that carries work from planner to implementer.
+---
+
+## The contract
+
+A Task Brief is the durable contract between the planner and the implementer. The planner writes it. SPLITBRIEF checks it. You review it before implementation in modes with a briefs approval gate. The implementer then executes that brief without needing the supporting specification, plan, or sibling tasks.
+
+Each brief represents one project-relative file operation: create or modify. Keeping the unit of work atomic makes scope, dependencies, validation, and evidence explicit.
+
+## Nine semantic sections
+
+Every Task Brief v1 covers the same nine semantic sections, even when a section is brief:
+
+| Section | What it records |
+| --- | --- |
+| **Identity** | Stable task ID, title, target file, and action |
+| **Intent** | The required change and why it matters |
+| **Scope** | What is in bounds and what is out of bounds |
+| **Code Context** | Existing signatures, types, code, or patterns needed for the change |
+| **Implementation Plan** | Ordered steps for carrying out the change |
+| **Validation** | Concrete checks that define success |
+| **Constraints** | Invariants, dependencies, and refusal conditions |
+| **Escalation** | Conditions that require the implementer to stop and ask |
+| **Evidence** | Reviewable proof preserved after execution |
+
+The names describe meaning, not one required visual layout. SPLITBRIEF can render a brief as markdown or as an implementer prompt without changing the contract.
+
+## Stable meaning, flexible transport
+
+The Task Brief v1 semantic contract is stable. A renderer may reformat a brief, but it must preserve the same identity, intent, scope, context, plan, validation, constraints, escalation conditions, and evidence.
+
+`tasks.md` is the human-reviewable transport used between planning and implementation. Each task starts with YAML frontmatter for identity and dependencies, followed by `###` headings for its content. Its markdown layout can evolve, so integrations should not treat that layout as a stable external API.
+
+## Canonical `tasks.md` transport
+
+This is canonical `tasks.md` transport output. It strict-parses without loss and passes the brief quality gate with score `1`.
+
+````markdown
+---
+id: T003
+title: Add email validation to SignupForm
+action: modify
+file: src/features/auth/signup-form.tsx
+depends_on: []
+---
+
+### Description
+Validate the email field in src/features/auth/signup-form.tsx before submission so malformed values are rejected inline.
+
+### Implementation Steps
+1. Add a local validateEmail helper that trims the value and returns an error for a missing or repeated @ sign.
+2. Call validateEmail from the form submit handler before the existing submission branch.
+3. Render the returned message beside the email field and preserve the current successful-submit behavior.
+
+### Tests
+- Submitting a whitespace-padded valid address continues to the existing successful-submit branch.
+- Submitting personexample.com renders Enter a valid email address and does not submit.
+- Submitting person@@example.com renders Enter a valid email address and does not submit.
+
+### Constraints
+- Do not add a dependency.
+- Preserve the existing successful-submit behavior and form accessibility.
+
+### Signature
+```
+function validateEmail(value: string): string | null
+```
+
+### Current Code
+```
+function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  onSubmit({ email });
+}
+```
+
+### Type Definitions
+```
+type SignupFormProps = { onSubmit: (input: { email: string }) => void };
+```
+
+### Scope
+**In bounds:**
+- Email normalization, validation, and inline error rendering in the target component.
+
+**Out of bounds:**
+- Shared validation utilities and server-side validation.
+
+### Escalation
+- Stop if product requirements differ on accepted email syntax or the component has no established inline-error pattern.
+
+### Evidence
+- Focused form tests show whitespace normalization, single-@ validation, and submission blocking.
+- Typecheck and the existing auth form tests pass.
+````
+
+The transport does not carry runtime status. `depends_on` records prerequisite task IDs in markdown frontmatter.
+
+## Before implementation
+
+SPLITBRIEF runs a deterministic quality gate after planning and before implementation. It blocks an empty task list and briefs missing concrete validation, implementation steps, required code context, scope, escalation for risky work, or evidence. A modify action must include enough existing code context for the implementer to act without guessing.
+
+Approval and validation are separate. Approval lets you accept or revise the planned work. Validation checks the implementation against the brief after the code changes.
+
+For every transport field and compatibility rule, see the [Task Brief format reference](/docs/reference/task-brief-format).

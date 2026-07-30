@@ -1,0 +1,17 @@
+{
+  "title": "Guides",
+  "pages": [
+    "cookbook",
+    "planners-and-implementers",
+    "cost-management-and-budgets",
+    "safety-snapshots-drift-approval",
+    "hooks",
+    "worktrees-and-parallel-sessions",
+    "headless-and-ci",
+    "mcp-and-handoff-packs",
+    "repo-map",
+    "observability-otel",
+    "api-key-security",
+    "debugging-a-run"
+  ]
+}

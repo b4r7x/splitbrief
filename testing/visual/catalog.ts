@@ -134,7 +134,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'planning',
         title: 'Active planning',
         kind: 'planning',
-        marker: 'Planning deterministic visual fixtures',
+        marker: 'Mapping provider discovery and cache updates',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -150,7 +150,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'implementation',
         title: 'Implementation activity',
         kind: 'implementation',
-        marker: 'Inspecting deterministic fixture contract',
+        marker: 'Implementer activity',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -167,7 +167,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review',
         title: 'Review approval',
         kind: 'review',
-        marker: 'Apply bounded visual fixture patch',
+        marker: 'Approve the Ollama discovery plan',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -184,7 +184,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'question',
         title: 'Clarification question',
         kind: 'question',
-        marker: 'Which fixture answer should be used?',
+        marker: 'Continue if Ollama is unavailable?',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -201,7 +201,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'failure',
         title: 'Terminal failure and cancellation',
         kind: 'failure',
-        marker: 'Synthetic runner failure: bounded fixture',
+        marker: 'Ollama request failed: connection refused',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -219,7 +219,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'success',
         title: 'Successful summary',
         kind: 'success',
-        marker: 'Visual fixture workflow complete',
+        marker: 'Ollama model discovery complete',
       },
       elements: [
         { id: 'header', title: 'Summary header' },

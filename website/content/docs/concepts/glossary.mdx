@@ -1,0 +1,267 @@
+---
+title: Glossary
+description: A concise reference for SPLITBRIEF roles, workflow state, artifacts, events, and configuration.
+---
+
+## Core idea
+
+SPLITBRIEF divides a coding workflow between a planner and an implementer. The planner compiles the request into [Task Briefs](/docs/concepts/task-briefs). The implementer executes one brief at a time. The orchestrator owns validation, approval, retries, escalation, persistence, and final review.
+
+Git behavior is optional. The default commit strategy is `none`, which leaves changes unstaged for manual review.
+
+## Roles
+
+### Planner
+
+The role that researches the project, produces the Task Brief transport and any supporting planning artifacts, answers escalation requests, and reviews the final diff.
+
+### Implementer
+
+The role that receives one self-contained Task Brief and produces its code change. Most implementer backends start a fresh model call for each task, so the brief carries the context needed for that unit of work. The `agent-sdk` implementer can reuse its native session across calls while the same SPLITBRIEF process is running, but that implementer session is not restored after a cold resume.
+
+### Orchestrator
+
+The workflow coordinator between the two roles. It persists state, schedules tasks in dependency order, runs validation, applies approval policy, records evidence, and publishes events.
+
+See [Planners & implementers](/docs/guides/planners-and-implementers) for runner configuration.
+
+## Runner kinds
+
+Both roles support the same five invocation contracts:
+
+| Kind | Contract |
+| --- | --- |
+| `cli` | Invoke a known command-line coding tool |
+| `api` | Call an OpenAI-compatible HTTP endpoint |
+| `shell` | Send a prompt to an arbitrary command and read code from stdout |
+| `agent` | Run a command that writes files directly |
+| `agent-sdk` | Call the Anthropic Agent SDK programmatically |
+
+Built-in IDs cover supported tools and providers. Custom `shell` and `agent` runners must supply their own command contract. The command-based runners are not shell or network sandboxes.
+
+## Workflow modes
+
+`workflow.mode` selects how much planning runs before implementation:
+
+| Mode | Nominal pre-build planner calls | Default document gates |
+| --- | :---: | --- |
+| `instant` | 1 | None |
+| `quick` | 1 | None |
+| `standard` | 4 | Supporting spec and Task Briefs |
+| `speckit` | 5–6 | Supporting spec, plan, and Task Briefs |
+
+Final review adds one planner call to every successful run. Clarification regeneration and other non-happy paths can add calls. `full` is a legacy alias for `speckit`.
+
+See [Workflow modes & phases](/docs/concepts/workflow-modes-and-phases).
+
+## Phases
+
+A phase is the persisted position of the workflow state machine. The complete phase vocabulary is:
+
+| Phase | Meaning |
+| --- | --- |
+| `idle` | No workflow work is active |
+| `researching` | The planner is exploring the project |
+| `specifying` | The planner is producing a supporting specification |
+| `reviewing-spec` | The supporting specification awaits review |
+| `clarifying` | Speckit clarification work is active |
+| `constitution-check` | Speckit checks the feature and specification against project principles before planning |
+| `planning` | The planner is producing the plan or Task Brief transport |
+| `reviewing-plan` | The supporting plan awaits review |
+| `reviewing-briefs` | `tasks.md` awaits review |
+| `analyzing` | Speckit checks the generated planning artifacts |
+| `implementing` | The implementer is working on the current task |
+| `validating-task` | The task validation pipeline is running |
+| `escalating` | Failed work is moving through retry escalation |
+| `final-review` | The planner is reviewing the full diff |
+| `complete` | The workflow has ended successfully |
+
+Modes visit different subsets of these phases. `planning`, `implementing`, and `final-review` are normally resumable. A nonterminal phase is also resumable while it has a saved continuation or pending recovery issue.
+
+## Task Briefs
+
+A Task Brief is the atomic implementation contract for one file operation. It records identity, intent, scope, code context, implementation steps, validation, constraints, escalation rules, and evidence.
+
+`tasks.md` is the human-reviewable transport. `state.json` holds runtime task status. The implementer prompt is a rendered form of the same meaning.
+
+Task status is one of `pending`, `in_progress`, `done`, `escalated`, `failed`, or `skipped`.
+
+## Validation pipeline
+
+Validation runs after an implementer response in this order:
+
+```text
+typecheck → lint → test
+```
+
+Each enabled stage uses an explicit, discovered, or language-aware command. A stage with no resolved command is recorded as skipped, not passed. The pipeline stops at the first failure. If every enabled stage is skipped, SPLITBRIEF warns that nothing was validated.
+
+## Retry and escalation
+
+Local retries return the validation error to the implementer up to `workflow.maxRetries`, which defaults to `3`. After that:
+
+1. an optional intermediate API model can retry
+2. a capable planner can produce a hint for another implementer retry
+3. the planner can take over the full task
+
+Only API implementers receive retry temperature adjustments. A local API retry adds `0.1 × attempt` to the configured or default temperature, capped at `2`. A hint retry keeps the base temperature. Non-API runner kinds cannot pass sampling temperature to their backend and drop the setting with a warning; providers or models that do not accept temperature omit it.
+
+If every escalation route fails, the task enters [recovery](/docs/concepts/approval-escalation-and-recovery#recovery).
+
+## Approval gates
+
+Document approval pauses on supporting specifications, plans, and reviewable Task Briefs according to the selected mode. The available review actions are approve, edit, comment, and reject.
+
+File-write approval is separate. Declared changes are classified into `auto`, `sticky`, or `confirm` tiers from their action class and scope.
+
+See [Approval, escalation & recovery](/docs/concepts/approval-escalation-and-recovery).
+
+## Clarifying questions
+
+Planner question markers can surface in every workflow mode, with a maximum of five questions per run. You can answer, skip one, or stop the question sequence. The markers themselves do not render in the transcript.
+
+In `standard` and `speckit`, answers can regenerate the affected planning artifacts before the run advances. In `quick` and `instant`, answers are persisted and queued for a later planner invocation; they do not add an automatic replanning call.
+
+Clarification answers use the same durable queue as user interjections. A planner with native turn injection can also receive an answer in its live backend session.
+
+## Skills
+
+Skills are optional markdown instructions selected for the planner: coding standards, architecture notes, or domain knowledge. SPLITBRIEF discovers instructions from the conventions used by its supported planner tools.
+
+Skills are planner context. The implementer receives the resolved Task Brief and supporting execution context, not the selected skill files.
+
+## Sessions
+
+A SPLITBRIEF session is one workflow and its artifacts under `.splitbrief/sessions/<session-id>/`. It is distinct from a planner backend's native conversation session. The backend handle is stored in workflow state and can be reused or replaced during resume.
+
+`.splitbrief/active` points to the foreground run. Detached sessions use lockfiles. Separate worktrees isolate state for parallel workflows.
+
+See [Sessions & persistence](/docs/concepts/sessions-and-persistence).
+
+## Queue and interjection
+
+The message queue stores user input submitted while the planner is generating. Messages can be injected into a supported native planner session and are also drained at a safe phase boundary.
+
+The queue is planner-only. It does not perturb an implementer's single-task prompt during implementation.
+
+Each queued message records whether it came from direct user input or a clarification answer so the next planner prompt can preserve its meaning.
+
+## Awaiting continue
+
+`awaitingContinue` is a persisted sub-state entered after a live model turn is interrupted. The workflow keeps its current phase, stores partial output, and waits without a timeout.
+
+Text followed by Enter steers the next call. Empty Enter explicitly continues. Native sessions receive another turn; stateless backends rebuild the turn from stored context.
+
+## Planner capabilities
+
+Each planner declares support for:
+
+- conversational planning
+- hint escalation
+- native session resume
+- reasoning-effort controls
+- image inputs
+- transcript self-summarisation
+
+Native user-turn injection is an optional planner operation rather than a capability flag. The orchestrator checks these capabilities and skips unsupported behavior.
+
+## Event bus, engine events, and sinks
+
+An `EngineEvent` is a timestamped, type-dispatched record of observable workflow activity. Most events include the current phase; a small set of cross-cutting events is phase-less.
+
+The EventBus publishes events synchronously to subscribed sinks in registration order. A sink is any synchronous subscriber: the TUI, session log, tree recorder, headless JSON writer, telemetry exporter, or workflow-hook adapter. A failing sink does not stop fan-out to the remaining sinks, although a slow sink can delay them.
+
+Request-and-response gates are different. Approval, clarification, continuation, cost, conflict, and task-review prompts wait for a host callback; broadcast events do not.
+
+## Headless mode
+
+`splitbrief start --json "feature"` runs without the TUI and writes NDJSON.
+
+The first record is:
+
+```ts
+{ type: 'readiness_report', report: ReadinessReport }
+```
+
+Live events then use:
+
+```ts
+{ type: 'event', data: EngineEvent }
+```
+
+Recovery, final-review failure, warning, and error records have their own top-level types. Review gates approve non-interactively, while sticky and confirm file-write tiers fail closed instead of waiting for input.
+
+See [Headless & CI](/docs/guides/headless-and-ci).
+
+## Workflow hooks
+
+Workflow hooks run configured commands or modules at lifecycle points such as before planning, before or after a task, validation, commit, escalation, compaction, errors, and completion.
+
+Pre-hooks run at the action boundary and can deny the action. Post-hooks and notification hooks run as event subscribers. Hook failure policy is `block`, `warn`, or `ignore`.
+
+See [Hooks](/docs/guides/hooks).
+
+## Hook trust
+
+SPLITBRIEF hashes the configured hooks and module contents. The first run asks whether to trust that hash; any relevant edit invalidates it and asks again.
+
+Non-interactive environments require `--allow-hooks`. Without it, an untrusted hook configuration cannot execute.
+
+## Repo-map
+
+The repo-map is a ranked, token-budgeted structural summary added to planner context. It parses top-level declarations, builds an import graph, ranks files, and emits as much as fits the configured budget.
+
+It is planner-only and can be disabled with `codebase.enabled: false`.
+
+See [Repo-map](/docs/guides/repo-map).
+
+## Artifacts on disk
+
+Project configuration and the active foreground pointer live under `.splitbrief/`. Each session has its own directory that can contain:
+
+| Artifact | Purpose |
+| --- | --- |
+| `readiness.json` | Pre-run checks |
+| `state.json` | Mutable workflow state and resume source |
+| `session.jsonl` | Append-only event, message, and compaction stream |
+| `research.md`, `spec.md`, `plan.md`, `tasks.md` | Mode-dependent planning output and Task Brief transport |
+| `clarifications.md`, `constitution-check.json`, `analyze.json` | Speckit planning artifacts |
+| `brief-quality.json` | Task Brief gate result |
+| `evidence.json` | Observed task evidence |
+| `drift-report.json`, `drift-chains.json` | Final drift report and cross-task drift telemetry |
+| `review.md`, `review-packet.json`, `review-packet.md` | Final review output |
+| `snapshots/` | Baseline, checkpoint, and restore data |
+| `summary.json` | End-of-run summary |
+| `lockfile.json`, `ipc.sock`, `server.log` | Detached-session control files |
+
+Artifacts appear only when the selected mode or control produces them. Disabling transcript persistence does not disable project artifacts.
+
+## Events and messages
+
+`session.jsonl` keeps three local record kinds:
+
+- `event` for operational metadata
+- `message` for user and planner text
+- `summary` for compacted transcript context
+
+Message persistence defaults to on and can be disabled with `workflow.persistTranscript: false`. Events stay logged. The public `--json` stream uses the readiness-first and event-envelope contract described above, not the local session-log shape.
+
+## Two-layer configuration
+
+Current config files use `version: 3`; versions 1 and 2 are accepted and migrated. The two role blocks are `planner` and `implementer`, each discriminated by `kind`.
+
+```yaml
+version: 3
+planner:
+  kind: cli
+  tool: claude-code
+implementer:
+  kind: api
+  provider: ollama
+  model: qwen3-coder:30b
+  apiBase: http://localhost:11434/v1
+```
+
+Named `implementerProfiles` provide alternate implementer routes while preserving the same two-role model.
+
+See [Configuration](/docs/reference/configuration).

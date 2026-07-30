@@ -10,31 +10,31 @@ export const WORKFLOW_FIXTURE_VERSION = 1;
 
 export const WORKFLOW_FIXTURE_BOUNDS = Object.freeze({
   version: WORKFLOW_FIXTURE_VERSION,
-  maxEventsPerFixture: 8,
+  maxEventsPerFixture: 16,
   maxStringLength: 160,
 });
 
 const FIXED_TS = 1_783_958_400_000;
 export const WORKFLOW_FIXTURE_TASK_ID = taskId('T901');
 const FIXED_CALL_ID = 'visual-call-001';
-const FIXED_RUNNER_NAME = 'Synthetic local runner';
-const FIXED_RUNNER_MODEL = 'fixture-model-v1';
-const WORKFLOW_FEATURE = 'Visual fixture workflow';
-export const WORKFLOW_FIXTURE_REVIEW_FILE = 'testing/visual/fixtures/workflow/projections.ts';
+const FIXED_RUNNER_NAME = 'Ollama API';
+const FIXED_RUNNER_MODEL = 'qwen2.5-coder:7b';
+const WORKFLOW_FEATURE = 'Add Ollama model discovery';
+export const WORKFLOW_FIXTURE_REVIEW_FILE = 'src/engine/detection/service.ts';
 export const WORKFLOW_FIXTURE_REVIEW_PANEL_FILE =
-  'testing/visual/fixtures/workflow/review-fixture.md';
+  '.splitbrief/sessions/2026-07-13-add-ollama-model-discovery/plan.md';
 
 export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
   idle: 'no events yet',
-  planning: 'Planning deterministic visual fixtures',
-  implementation: 'Inspecting deterministic fixture contract',
-  implementationTask: 'Project deterministic workflow activity',
-  review: 'Apply bounded visual fixture patch',
-  reviewAnswer: 'Approve once',
-  question: 'Which fixture answer should be used?',
-  questionAnswer: 'Use the bounded synthetic answer.',
-  success: 'Visual fixture workflow complete',
-  failure: 'Synthetic runner failure: bounded fixture',
+  planning: 'Mapping provider discovery and cache updates',
+  implementation: 'Inspecting provider discovery flow',
+  implementationTask: 'Detect available Ollama models',
+  review: 'Approve the Ollama discovery plan',
+  reviewAnswer: 'approve',
+  question: 'Continue if Ollama is unavailable?',
+  questionAnswer: 'Warn and continue with manual model entry.',
+  success: 'Ollama model discovery complete',
+  failure: 'Ollama request failed: connection refused',
 });
 
 export const WORKFLOW_SUCCESS_SUMMARY: Readonly<Summary> = Object.freeze({
@@ -56,7 +56,7 @@ export const WORKFLOW_SUCCESS_SUMMARY: Readonly<Summary> = Object.freeze({
   estimatedCostSavings: '$0.01',
   escalationRate: 0,
   plannerTool: 'claude-code',
-  plannerModel: 'fixture-planner-v1',
+  plannerModel: 'claude-sonnet-4-6',
   implementerTool: 'ollama',
   implementerModel: FIXED_RUNNER_MODEL,
   mode: 'standard',
@@ -133,7 +133,7 @@ const planningProjection: WorkflowFixtureProjection = {
       phase: 'planning',
       status: 'running',
       tool: 'claude-code',
-      model: 'fixture-planner-v1',
+      model: 'claude-sonnet-4-6',
     },
     {
       type: 'planner_text',
@@ -146,6 +146,24 @@ const planningProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// The gallery clock is frozen at 2026-01-01T00:00:00.000Z (gallery/environment.ts). The build
+// stage started 4m05s before it so the footer elapsed reads a working duration, not 0:00.
+const IMPLEMENTATION_STARTED_TS = 1_767_225_600_000 - 245_000;
+
+interface ImplementationActivity {
+  readonly kind: 'read' | 'edit' | 'write' | 'command';
+  readonly label: string;
+  readonly target: string;
+}
+
+const IMPLEMENTATION_ACTIVITIES: readonly ImplementationActivity[] = [
+  { kind: 'read', label: 'Read', target: 'src/core/schemas/detection.ts' },
+  { kind: 'read', label: 'Read', target: WORKFLOW_FIXTURE_REVIEW_FILE },
+  { kind: 'edit', label: 'Edit', target: WORKFLOW_FIXTURE_REVIEW_FILE },
+  { kind: 'write', label: 'Write', target: 'src/engine/detection/service.test.ts' },
+  { kind: 'command', label: 'Run', target: 'npm test -- src/engine/detection/service.test.ts' },
+];
+
 const implementationProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IMPLEMENTATION_ID,
   feature: WORKFLOW_FEATURE,
@@ -154,34 +172,84 @@ const implementationProjection: WorkflowFixtureProjection = {
   events: [
     {
       type: 'workflow_started',
-      ts: FIXED_TS,
+      ts: IMPLEMENTATION_STARTED_TS,
       phase: 'implementing',
       feature: WORKFLOW_FEATURE,
     },
     {
       type: 'task_started',
-      ts: FIXED_TS + 100,
+      ts: IMPLEMENTATION_STARTED_TS + 5_000,
       phase: 'implementing',
-      taskId: WORKFLOW_FIXTURE_TASK_ID,
-      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      taskId: taskId('T899'),
+      title: 'Add the detection result schema',
       index: 0,
-      total: 1,
-      file: WORKFLOW_FIXTURE_REVIEW_FILE,
-      action: 'modify',
+      total: 5,
+      file: 'src/core/schemas/detection.ts',
+      action: 'create',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'task_completed',
+      ts: IMPLEMENTATION_STARTED_TS + 57_000,
+      phase: 'implementing',
+      taskId: taskId('T899'),
+      title: 'Add the detection result schema',
+      method: 'local',
+      retries: 0,
+      duration: 52_000,
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'task_started',
+      ts: IMPLEMENTATION_STARTED_TS + 60_000,
+      phase: 'implementing',
+      taskId: taskId('T900'),
+      title: 'Query the local Ollama model endpoint',
+      index: 1,
+      total: 5,
+      file: 'src/engine/detection/models.ts',
+      action: 'create',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
+      type: 'task_completed',
+      ts: IMPLEMENTATION_STARTED_TS + 121_000,
+      phase: 'implementing',
+      taskId: taskId('T900'),
+      title: 'Query the local Ollama model endpoint',
+      method: 'local',
+      retries: 0,
+      duration: 61_000,
       tool: 'ollama',
       model: FIXED_RUNNER_MODEL,
     },
     {
       type: 'planner_text',
-      ts: FIXED_TS + 150,
+      ts: IMPLEMENTATION_STARTED_TS + 125_000,
       phase: 'implementing',
       role: 'implementer',
       content: 'plain',
       text: WORKFLOW_FIXTURE_TEXT.implementation,
     },
     {
+      type: 'task_started',
+      ts: IMPLEMENTATION_STARTED_TS + 128_000,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      index: 2,
+      total: 5,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      action: 'modify',
+      tool: 'ollama',
+      model: FIXED_RUNNER_MODEL,
+    },
+    {
       type: 'runner_call_started',
-      ts: FIXED_TS + 200,
+      ts: IMPLEMENTATION_STARTED_TS + 130_000,
       phase: 'implementing',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       callId: FIXED_CALL_ID,
@@ -192,29 +260,29 @@ const implementationProjection: WorkflowFixtureProjection = {
       attempt: 1,
       sequence: 0,
     },
-    {
-      type: 'runner_call_activity',
-      ts: FIXED_TS + 300,
-      phase: 'implementing',
+    ...IMPLEMENTATION_ACTIVITIES.map((activity, index) => ({
+      type: 'runner_call_activity' as const,
+      ts: IMPLEMENTATION_STARTED_TS + 140_000 + index * 20_000,
+      phase: 'implementing' as const,
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       callId: FIXED_CALL_ID,
-      role: 'implementer',
-      backendKind: 'api',
+      role: 'implementer' as const,
+      backendKind: 'api' as const,
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
       attempt: 1,
-      sequence: 1,
-      activityId: 'visual-call-001:read:1',
-      stage: 'completed',
-      kind: 'read',
-      label: WORKFLOW_FIXTURE_TEXT.implementation,
-      target: WORKFLOW_FIXTURE_REVIEW_FILE,
+      sequence: index + 1,
+      activityId: `${FIXED_CALL_ID}:${activity.kind}:${index + 1}`,
+      stage: 'completed' as const,
+      kind: activity.kind,
+      label: activity.label,
+      target: activity.target,
       redacted: false,
       rawAvailable: false,
-    },
+    })),
   ],
   streaming: {
-    lines: ['Reading fixture contract', 'Projecting bounded activity'],
+    lines: ['Adding cache-aware model discovery', 'Writing detection service tests'],
   },
 };
 
@@ -236,7 +304,7 @@ const reviewProjection: WorkflowFixtureProjection = {
       phase: 'reviewing-plan',
       role: 'planner',
       content: 'plain',
-      text: 'Review the bounded synthetic projection.',
+      text: 'Review the Ollama discovery plan before implementation.',
     },
   ],
   approval: {
@@ -245,7 +313,8 @@ const reviewProjection: WorkflowFixtureProjection = {
   },
   review: {
     filePath: WORKFLOW_FIXTURE_REVIEW_PANEL_FILE,
-    source: '# Deterministic visual review\n\nApprove the bounded fixture projection.',
+    source:
+      '# Ollama model discovery\n\n1. Query the local Ollama model endpoint.\n2. Cache discovered model metadata.\n3. Continue setup when Ollama is offline.',
   },
 };
 
@@ -340,7 +409,7 @@ const failureProjection: WorkflowFixtureProjection = {
       attempt: 1,
       sequence: 1,
       status: 'failed',
-      error: { code: 'synthetic-failure', message: WORKFLOW_FIXTURE_TEXT.failure },
+      error: { code: 'ECONNREFUSED', message: WORKFLOW_FIXTURE_TEXT.failure },
       partial: false,
       startedAt: FIXED_TS + 200,
       endedAt: FIXED_TS + 700,

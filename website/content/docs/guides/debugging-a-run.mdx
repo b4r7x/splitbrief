@@ -1,0 +1,203 @@
+---
+title: Debugging a run
+description: Inspect event logs, headless output, OpenTelemetry spans, configuration failures, and interrupted sessions.
+---
+
+Common issues, diagnostic tools, and a troubleshooting workflow for SPLITBRIEF. Factual — everything below is backed by code in `src/` or documented configuration.
+
+## Diagnostic modes
+
+### Event log (JSONL sink)
+
+Each run installs a protected JSONL sink at:
+
+```
+.splitbrief/sessions/<session-id>/session.jsonl
+```
+
+The sink writes one protected record per line. It can omit transcript-bearing events when `workflow.persistTranscript` is false, and it can become incomplete if an entry is invalid or oversized or if a confined append fails. A degraded sink publishes one `session_log_degraded` warning on the live event bus, but the failed sink may be unable to persist that warning. Written by `src/engine/events/sinks/jsonl.ts` through the protected session-log appender in `src/core/sessions/log-writer.ts`. See `src/engine/events/schema.ts` (`EngineEventSchema`) for the full event union -- `workflow_*`, `planner_*`, `task_*`, `validate`, `escalate`, `cost_update`, `error`, `warning`, and more.
+
+Inspect with `jq`:
+
+```bash
+session_id='<session-id>'
+
+# All events across sessions
+cat .splitbrief/sessions/*/session.jsonl | jq .
+
+# Only failures
+jq 'select(.type == "task_full_fail" or .type == "error")' \
+  ".splitbrief/sessions/$session_id/session.jsonl"
+
+# Validation outcomes (`taskId` is promoted; event payload is under `data`)
+jq 'select(.type == "validate") | {taskId, passed: .data.passed, stages: .data.stages, error: .data.error}' \
+  ".splitbrief/sessions/$session_id/session.jsonl"
+
+# Cost accumulation
+jq 'select(.type == "cost_update") | {phase, tokenUsage: .data.tokenUsage}' \
+  ".splitbrief/sessions/$session_id/session.jsonl"
+
+# Runner-call warnings with grouping fields
+jq 'select(.type == "runner_call_warning") | {callId: .data.callId, phase, warning: .data.warning}' \
+  ".splitbrief/sessions/$session_id/session.jsonl"
+```
+
+Stderr is diagnostic by default. A `call_stderr_delta` from the raw runner stream is not projected into `session.jsonl` as a `runner_call_warning` and does not create a primary warning row. Actionable warnings appear as `runner_call_warning` and carry `code`, `severity`, `source`, `surface`, `fingerprint`, `message`, and optional `rawRef`. Repeated warnings are grouped in the TUI by fingerprint/code/source/surface; session tree rows keep warning counts and warning codes on runner invocation entries.
+
+When `workflow.persistTranscript: false`, transcript-like events (`planner_text`, `user_message`, clarification text, implementer output, and raw runner text/tool/artifact payloads) are omitted from protected consumers. Safe `runner_call_activity` labels, queue depth, lifecycle, cost, and compact runner status remain visible; prompt-bearing previews, RPC state, MCP `state.json` fields, task prose, comments, retry errors, summary/session feature text, and generated commit messages are stripped or replaced. Runner-call warning/error event structure remains, but backend diagnostic messages are replaced with `[transcript omitted]`. Raw expansion is disabled by forcing `rawAvailable:false` and omitting `expandId`. Product artifacts such as `spec.md`, `plan.md`, `tasks.md`, source changes, validation output, and evidence files remain review artifacts and are not redacted by this setting.
+
+### Session tree
+
+The tree recorder writes protected structured entries under the same session directory, including `session-tree.jsonl` and `tree-meta.json`. It records plan steps, runner invocations, recovery decisions, and cost checkpoints. Tree entries do not contain raw runner text/tool/artifact payloads. Runner invocation entries keep safe control fields such as call id, role, backend kind, runner/model, phase, status, timing, usage, partial, error code, warning count, and warning codes.
+
+### Active session pointer
+
+`.splitbrief/active` stores the active session id. If commands like `splitbrief status` or `splitbrief resume` report "no active session", the pointer is missing or stale — start a new workflow or manually `cat .splitbrief/active`.
+
+### Headless mode (`--json`)
+
+For CI or programmatic inspection, bypass the Ink TUI entirely. A new `start --json` run first emits a `{ "type": "readiness_report", "report": <ReadinessReport> }` record, followed by workflow events wrapped as `{ "type": "event", "data": <EngineEvent> }`:
+
+```bash
+splitbrief start --json "feature description" 2>/dev/null | jq .
+```
+
+Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/engine/events/sinks/stdout-json.ts`) in place of the TUI. The JSONL sink still writes the on-disk session log. With `workflow.persistTranscript: false`, stdout JSON applies the same transcript protection as session logs, IPC, RPC, summaries, and telemetry: transcript events are omitted, queued-message text is stripped, runner payload events are omitted, safe runner activity is kept, and feature prompt metadata is replaced or omitted.
+
+`--json` requires a feature argument on `start`. `resume`, `continue`, and `last` rehydrate interrupted sessions from saved state.
+
+### OpenTelemetry console exporter
+
+For a timeline view with span hierarchy (workflow → phase → task), opt into OTel and use the built-in console exporter:
+
+```bash
+# One of:
+OTEL_TRACES_EXPORTER=console splitbrief start --mode quick "…"
+SPLITBRIEF_OTEL_EXPORTER=console splitbrief start --mode quick "…"
+splitbrief start --otel-exporter console --mode quick "…"
+```
+
+Also set `otel.enabled: true` in `.splitbrief/config.yaml` — the env var / flag only registers the provider; the sink is only installed when config allows. The console exporter writes spans with `console.dir`, so SPLITBRIEF disables the console exporter in machine-readable stdout modes (`--json` and `--rpc`). Full details: [OTEL.md](/docs/guides/observability-otel). Bootstrap source: `src/lib/otel.ts`.
+
+### Debug environment variables
+
+There is no `debug` package / namespace logger in SPLITBRIEF today. The diagnostic surface is:
+
+| Variable | Effect | Source |
+|---|---|---|
+| `OTEL_TRACES_EXPORTER=console` | Bootstrap built-in OTel console exporter | `src/lib/otel.ts` |
+| `SPLITBRIEF_OTEL_EXPORTER=console` | Alias for the above | `src/lib/otel.ts` |
+| `SPLITBRIEF_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
+| `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
+
+For finer-grained traces, use the event log or OTel spans. API-key-bearing env vars (`ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, etc.) are listed in [CONFIGURATION.md](/docs/reference/configuration) — missing keys surface as loud config-validation warnings.
+
+### Terminal diagnostics
+
+Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnError`, process-output errors, and generic CLI error formatting strip ANSI/OSC/control sequences, redact shared secret patterns including JWT-like tokens, and bound diagnostic text before writing to stderr. First-party styling may wrap the sanitized text after that; untrusted subprocess/provider text should not be styled before sanitization.
+
+## Common issues
+
+### "Configuration errors in .splitbrief/config.yaml"
+
+Cause: YAML failed zod validation. The message lists each failing path. Check:
+- `version: 3` is present (2 accepted but deprecated).
+- Top-level `planner` / `implementer` have a valid `kind`.
+- Per-kind required fields are set (e.g. `kind: api` requires `provider` and `apiBase`).
+- No unknown keys in `codebase`, `hooks`, `otel` — those sections are `.strict()`.
+
+See [CONFIGURATION.md](/docs/reference/configuration) for the full schema. The loader throws `ConfigError` (`src/core/config/errors.ts`) and `loadConfigOrExit` in `src/cli/setup.ts` exits with code 1.
+
+### "Hook config is not trusted and no TTY available"
+
+Cause: `.splitbrief/config.yaml` declares `hooks:` but `.splitbrief/hook-trust.json` does not record the current hook config and module-file hash, and stdin is not a TTY (CI).
+
+Fix: run interactively once to trust (`splitbrief start`), or pass `--allow-hooks` on every CI run. See [HOOKS-CONFIG.md](/docs/guides/hooks) §Trust model. Editing the hook config or a module hook file invalidates trust and triggers a re-prompt.
+
+### Planner hangs / implementer times out
+
+Diagnostic path:
+
+1. Inspect `session.jsonl` — the last event tells you which phase was active:
+   ```bash
+   session_id='<session-id>'
+   tail -20 ".splitbrief/sessions/$session_id/session.jsonl" | jq .
+   ```
+2. Check the runner timeout — the `timeout` field in `planner.*` / `implementer.*` (max 600000 ms, schema ceiling).
+3. For API runners, check network reachability to `apiBase`.
+4. For CLI runners, ensure the tool is on `PATH` (planner CLI probe is in `src/engine/planners/cli.ts`).
+5. If `cost_update` events stop arriving, correlate them with `runner_call_*` lifecycle events and sink warnings. The call may not have reported usage yet, its backend may not report usage, the call may be stalled, or the JSONL sink may be degraded; absence alone does not identify a provider outage.
+
+`--budget` / `workflow.maxBudget` caps dollar cost but does not enforce wall-clock timeouts directly.
+
+### OTel spans never appear
+
+Cause (most common): ESM dual-resolution. SPLITBRIEF's sink imports `@opentelemetry/api` as a bare specifier; a pre-registration from an external wrapper script using an absolute path lands in a different module cache entry.
+
+Fix: use the bundled bootstrap (`OTEL_TRACES_EXPORTER=console` / `SPLITBRIEF_OTEL_EXPORTER=console` / `--otel-exporter console`) or register your provider from within the same module-resolution context. See [OTEL.md](/docs/guides/observability-otel) §Quick-start for the full explanation.
+
+Also verify `otel.enabled: true` in config — the bootstrap registers the provider unconditionally, but the sink itself is gated on the config flag (`src/engine/orchestrator/run/init.ts`).
+
+### "Cannot find module" for a relative import
+
+Cause: missing `.js` extension in a relative import. ESM requires explicit `.js` on every intra-project import:
+
+```ts
+// correct
+import { loadConfig } from './core/config/load/io.js';
+// wrong — ERR_MODULE_NOT_FOUND
+import { loadConfig } from './core/config/load/io';
+```
+
+See [PRINCIPLES.md](https://github.com/b4r7x/splitbrief/blob/main/docs/PRINCIPLES.md) — ESM rule.
+
+### "No active workflow" on `resume`
+
+Cause: `.splitbrief/active` is missing, or the pointed-to session has no `state.json`, or `stateVersion` is from a pre-v3 layout.
+
+Fix:
+- Stale pre-v3 state: run `splitbrief migrate` (see `src/cli/commands/migrate.ts`).
+- Unresumable phase (e.g. `complete`): start a fresh workflow with `splitbrief start`.
+- The `resume` command's exact error messages are in `src/cli/commands/resume.ts`.
+
+### Tests pass locally but fail in CI (or vice versa)
+
+Diagnostic checklist:
+- Node version: engines field requires `>=22`. Check `node --version` matches CI.
+- `CI=1` disables fullscreen rendering, not the Ink TUI itself. Interactive commands still require TTY stdin; use `--json` or `--rpc` in non-TTY jobs. Run locally with `CI=1 npm test` to reproduce environment-sensitive tests.
+- Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
+- API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
+- Run the CI pipeline exactly: `npm run test-ci` (format:check → typecheck → lint → test:coverage → invariants).
+
+### API key warning in logs
+
+Cause: an inline key is configured for a known provider at its official endpoint, where SPLITBRIEF can recommend the provider's environment variable. That warning is conditional: known providers using a custom/proxy `apiBase` and unknown providers may require an inline key, so they do not receive the same migration warning. Config load still succeeds. Follow the warning for the effective endpoint; see [API-KEYS.md](/docs/guides/api-key-security) and [CONFIGURATION.md](/docs/reference/configuration) §Environment variables.
+
+### `.splitbrief/config.yaml` permissions warning
+
+Cause: on non-Windows, the config file permissions are looser than `0600`. Source: `src/core/config/load/io.ts`. Fix:
+
+```bash
+chmod 600 .splitbrief/config.yaml
+chmod 700 .splitbrief
+```
+
+## Troubleshooting workflow
+
+1. **Reproduce minimally.** `splitbrief start --json --mode quick "minimal repro"` — the quick mode is one planner call with no approval gates; easiest to script.
+2. **Check the session log.**
+   ```bash
+   cat .splitbrief/active
+   jq . .splitbrief/sessions/$(cat .splitbrief/active)/session.jsonl | less
+   ```
+   The last event before failure usually points at the failing phase/task.
+3. **Run headless.** Decouples TUI from engine logic. `splitbrief start --json …` lets you see events without Ink rendering errors.
+4. **Enable OTel.** For timing and hierarchy, set `otel.enabled: true` and pass `--otel-exporter console`.
+5. **Check invariants.** If the bug looks like an architecture regression (engine importing React, barrels reappearing, etc.), see [INVARIANTS.md](https://github.com/b4r7x/splitbrief/blob/main/docs/INVARIANTS.md) for the pre-merge grep gates — run them.
+
+## Getting help
+
+- [WORKFLOW.md](/docs/concepts/workflow-modes-and-phases) — expected behavior per `mode`.
+- [CHANGELOG.md](/docs/reference/changelog) — recent changes that may have caused regressions.
+- [ARCHITECTURE.md](https://github.com/b4r7x/splitbrief/blob/main/docs/ARCHITECTURE.md) — system diagram, planner/implementer contracts.
+- When opening an issue, include the session id from `.splitbrief/active` and only the smallest relevant, manually reviewed excerpt from `session.jsonl`. Redact prompts, paths, provider output, credentials, and other project data before posting. Describe the relevant config fields separately with secrets removed; do not publish the full session log or config file.

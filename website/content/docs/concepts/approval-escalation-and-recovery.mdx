@@ -1,0 +1,253 @@
+---
+title: Approval, escalation & recovery
+description: See where SPLITBRIEF pauses for review, retries failed work, and returns decisions to you.
+---
+
+Four controls keep a run bounded:
+
+- document gates pause on planning artifacts
+- file-write tiers review the implementer's declared changes
+- retry and escalation tiers handle validation failures
+- recovery returns unresolved decisions to you
+
+Budget checks and drift analysis run alongside them.
+
+## Document approval gates
+
+Document gates pause before implementation so you can inspect the artifacts on disk.
+
+| Gate | When it appears | What you review |
+| --- | --- | --- |
+| **Supporting spec** | After specification | `spec.md` |
+| **Plan** | After planning; enabled by default only in `speckit` mode | `plan.md` |
+| **Task Briefs** | After the brief quality gate in `standard` and `speckit` modes | `tasks.md` |
+
+The review actions are:
+
+- **Approve** — accept the artifact and advance. If a supporting spec or plan changed on disk during review, SPLITBRIEF treats the edit as feedback and regenerates the downstream artifacts.
+- **Edit** — open the artifact in your external editor, then return to the review gate. Edited Task Briefs are parsed and checked again before they can be approved.
+- **Comment** — send feedback to the planner, regenerate the artifact, and return to the gate.
+- **Reject** — end the workflow without advancing.
+
+`workflow.approve` controls the supporting-spec and plan gates:
+
+| Value | Supporting spec | Plan |
+| --- | :---: | :---: |
+| `none` | — | — |
+| `spec` | Gate | — |
+| `plan` | — | Gate |
+| `all` | Gate | Gate |
+| `default` | Follow the selected mode | Follow the selected mode |
+
+The mode defaults are:
+
+| Mode | Default document approval |
+| --- | --- |
+| `instant` | `none` |
+| `quick` | `none` |
+| `standard` | `spec` |
+| `speckit` | `all` |
+
+Task Brief review is separate from `workflow.approve`. `standard` and `speckit` still pause on `tasks.md` when spec and plan gates are disabled with `--approve none`.
+
+See [Workflow modes & phases](/docs/concepts/workflow-modes-and-phases) for the full mode sequence and [Configuration](/docs/reference/configuration) for gate settings.
+
+## File-write approval tiers
+
+Document gates review planning output. File-write tiers review the files the implementer reports changing.
+
+The classifier looks at each declared path and the current Task Brief scope. It does not parse or approve shell commands, and it is not a shell or network sandbox.
+
+| Action class | What it means | Default tier |
+| --- | --- | --- |
+| `read` | No write action was declared | `auto` |
+| `write_in_scope` | The path is the task target or matches an allowed scope pattern | `auto` |
+| `write_out_of_scope` | The path is outside the task's declared scope | `sticky` |
+| `destructive` | The path is under a control-plane area such as `.git` or `.splitbrief` | `confirm` |
+| `package_change` | The path is a package manifest or lockfile | `confirm` |
+
+The `validation` and `network` classes remain configurable in `approval.tiers`, but the declared-file classifier does not produce them.
+
+### Auto
+
+`auto` allows the declared action without a prompt. Reads and ordinary in-scope writes use this tier by default.
+
+### Sticky
+
+`sticky` first looks for a matching grant. Without one, SPLITBRIEF asks whether to allow the action:
+
+- once, for this action
+- for the current session
+- always, persisted in `.splitbrief/approvals.json`
+
+Always grants are checked before session grants. Session grants apply only to the current session ID.
+
+### Confirm
+
+`confirm` always prompts, regardless of earlier grants. Approval requires the literal phrase `I confirm` and a reason. Control-plane and package-file changes use this tier by default.
+
+Configure the class-to-tier map under `approval.tiers`. Set `approval.enabled: false` to disable file-write tier prompts. During a run:
+
+- `/approval list` shows active sticky grants
+- `/approval clear` removes grants
+- `/yolo` toggles file-write prompts for the rest of the session
+
+`/yolo` does not disable document gates or turn SPLITBRIEF into a sandbox.
+
+## Cost and budget gates
+
+Budget enforcement has a prediction step before tasks begin and a tracking step during execution.
+
+### Before tasks start
+
+SPLITBRIEF estimates three scenarios from task count and configured runner pricing:
+
+| Scenario | Assumed escalation rate |
+| --- | ---: |
+| Low | 0% |
+| Expected | 15% |
+| High | 40% |
+
+If the expected cost exceeds `workflow.maxBudget`, the run asks whether to continue despite the estimate or abort.
+
+### During execution
+
+Actual spend is checked at task boundaries:
+
+| Threshold | Result |
+| --- | --- |
+| 80% of budget | Publish an informational warning |
+| `workflow.budgetPauseThreshold` | Pause in recovery; default `0.85` |
+| 100% of budget | Stop at the hard cap |
+
+At the pause threshold, you can continue only while spend remains below the hard cap. At the hard cap, the available choices are pause or abort.
+
+Threshold events stay ordered even when one task crosses more than one boundary. A jump from 70% to 90%, for example, reports the warning before the pause.
+
+## Task Brief quality gate
+
+Every Task Brief is checked before implementation. An empty task list fails immediately.
+
+Any error below blocks the gate:
+
+| Error | Condition |
+| --- | --- |
+| `missing_validation` | The task defines no tests |
+| `vague_validation` | Every test is a generic statement such as “works” or “tests pass” |
+| `missing_implementation_steps` | The task has no implementation steps |
+| `multi_file_task` | The task names concrete paths in two or more files |
+| `missing_code_context` | A modify task provides no current code, signature, or established pattern |
+| `missing_escalation` | Risk-sensitive work defines no escalation condition |
+| `missing_scope` | The task has neither an in-bounds nor an out-of-bounds scope |
+| `missing_evidence` | The task defines no evidence to preserve |
+
+A missing type definition is a warning. Warnings lower the score but do not block the gate.
+
+The score starts at `1`, subtracts `0.2` per error and `0.05` per warning, then clamps to the range `0–1`. Passing requires zero errors. The result is saved as `brief-quality.json`.
+
+## Retry and escalation
+
+When validation fails, SPLITBRIEF tries progressively more capable routes. The first successful route completes the task.
+
+### Local retries
+
+The configured implementer retries with the validation error added to its context. `workflow.maxRetries` controls the limit and defaults to `3`.
+
+### Tier 0: intermediate model
+
+An optional intermediate API model retries the task. This tier runs only when an intermediate provider is configured and escalation is enabled.
+
+### Tier 1: planner hint
+
+When the planner supports hint escalation, it analyzes the error and returns a short hint. The implementer receives that hint with the error context, bounded to 4,000 characters, and retries once.
+
+### Tier 2: planner takeover
+
+The planner receives the Task Brief, prior attempts, and errors, then writes the change itself. If this route also fails, the task enters recovery.
+
+Each retry refreshes the task's code from disk and runs the proposed change in a temporary staged copy. Declared changed files pass through the file-write gate before promotion to the working tree. The promoted work is then validated.
+
+Git commits are optional and off by default. With `workflow.git.commitStrategy: none`, successful changes remain unstaged for your review. Checkpoint safety does not require commits.
+
+## Recovery
+
+Recovery begins when escalation is exhausted or a workflow-level issue needs a decision. The pending issue, available actions, and recommendation are saved with the session so the TUI, RPC clients, and later resumes see the same state. A headless run emits a `recovery_required` JSON record and exits non-zero.
+
+### Reasons and choices
+
+| Reason | When it occurs | Available actions | Recommended |
+| --- | --- | --- | --- |
+| `implementation-error` | The implementer crashed | `retry-same-worker`, `route-bigger-worker`, `skip-current-task`, `pause-run`, `abort-workflow` | `retry-same-worker` |
+| `validation-failed` | Validation failed during escalation | `retry-same-worker`, `route-bigger-worker`, `skip-current-task`, `pause-run`, `abort-workflow` | `retry-same-worker` |
+| `retry-exhausted` | Every escalation route failed | `route-bigger-worker`, `retry-same-worker`, `skip-current-task`, `pause-run`, `abort-workflow` | `route-bigger-worker` |
+| `context-overflow` | The task does not fit any selected profile | `route-bigger-worker`, `pause-run`, `abort-workflow` | `route-bigger-worker` |
+| `user-edit-conflict` | External edits overlap the task or its dependencies | `continue`, `skip-current-task`, `pause-run`, `abort-workflow` | Depends on whether continuation is safe |
+| `approval-promotion-conflict` | Approved staged changes cannot be promoted safely | `skip-current-task`, `pause-run`, `abort-workflow` | `pause-run` |
+| `budget-paused` | Spend reached the configured pause threshold | `continue`, `skip-current-task`, `pause-run`, `abort-workflow` | `pause-run` |
+| `budget-exceeded` | Spend reached the hard cap | `pause-run`, `abort-workflow` | `pause-run` |
+| `dependency-blocked` | An upstream task failed or was skipped | `skip-current-task`, `pause-run`, `abort-workflow` | `pause-run` |
+
+Some actions are conditional:
+
+- retrying the same implementer requires retry budget
+- routing bigger requires a configured, more capable profile
+- continuing after a budget pause requires spend below the hard cap
+- continuing after an edit conflict requires a safe-to-continue finding
+- skipping at a budget pause requires another task
+
+### What the actions do
+
+- **Retry same implementer** resets the current task and starts it again.
+- **Route to a bigger implementer** resets the task and retries with the selected higher-capability profile.
+- **Skip current task** records skip evidence and advances.
+- **Continue** resolves only a safe edit conflict or a budget pause below the hard cap.
+- **Pause run** saves the issue for `splitbrief resume`.
+- **Abort workflow** ends the run.
+
+`planner-split-rebase` is a legacy saved-state action and is not offered by new recovery issues. If an older state still contains it, SPLITBRIEF requires a separate planner proposal and user review before execution can resume.
+
+### Conflicts and failed retries
+
+An aborted run stops before recovery is raised. Otherwise, before blaming a validation failure on the implementer, SPLITBRIEF checks whether an external edit changed a file attributed to the current task or one of its dependencies. A matching edit raises `user-edit-conflict` instead of consuming the normal retry ladder.
+
+When the ladder is exhausted, the failed task's attributed files are restored to their pre-task state. Later tasks do not inherit its leftover edits, and the restored paths are reported as a warning.
+
+A pending recovery issue moves from awaiting user input to applying, then clears when the action succeeds. Pausing preserves the issue in a paused state.
+
+## Drift detection
+
+Before final review, SPLITBRIEF compares the full, untruncated diff, Task Briefs, and evidence ledger. Only the review copy sent to the planner is capped at 100,000 characters.
+
+Each task's primary target remains a required output. The task target, `scope.inBounds`, and `scope.approvedOutOfBounds` are accepted change patterns.
+
+The report checks for:
+
+- **Out-of-scope files** — a changed file belongs to no Task Brief. This is an error when tasks declare explicit out-of-bounds patterns, otherwise a warning.
+- **Out-of-bounds matches** — a forbidden scope pattern appears in a changed path or the diff. Always an error.
+- **Missing expected files** — a completed or escalated task did not change its target. Warning.
+- **Failed task with a diff** — a failed task left changes in its target. Error.
+- **Orphan diff** — files changed even though every task failed or was skipped. Error.
+- **Missing evidence** — a completed task expected evidence that was not observed. Warning.
+
+The drift score starts at `1`, subtracts `0.25` per error and `0.08` per warning, then clamps to `0–1`. A score of `1` is clean; lower is worse. The report passes when it has no errors and is saved as `drift-report.json`.
+
+Drift findings reach the planner during final review, but they do not block the workflow by default.
+
+### Cross-task drift chains
+
+Repeated out-of-bounds changes across consecutive tasks can reveal a systematic scope problem. A file counts as in scope for a task when it is:
+
+- the task's target
+- a dependency task's target
+- matched by `scope.inBounds`
+- matched by `scope.approvedOutOfBounds`
+
+The chain-risk score combines:
+
+- length: `min(chain length, 5) / 5 × 0.3`
+- overlap: `(overlap count / union size) × 0.5`
+- unique files: `min(unique files, 10) / 10 × 0.2`
+
+Unlike the main drift score, a higher chain score means more concerning repeated drift. A clean task resets the chain; overlapping out-of-bounds files extend it; no overlap starts a new chain.
+
+When the configured threshold is reached, SPLITBRIEF records the chain length, score, and most frequently touched out-of-bounds file in `drift-chains.json`. Chain detection is telemetry; it does not add a conversation row or block the run.

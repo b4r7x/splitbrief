@@ -1,0 +1,85 @@
+/* THE SIGNAL PATH — one vertical hairline carrying the brief down the page.
+   Base #2A2A2E (decorative), a 48px bright entry segment + 6px jack node per section.
+   Positioned 16px left of the shared content rail so it never touches text.
+   The hero emits the entry stub (hero::after) at the same x. */
+
+.breath,
+.signal-section,
+.runner-kinds,
+.console-section,
+.interlock-section,
+.modes-panel,
+.install-strip {
+  position: relative;
+}
+
+.breath::before,
+.signal-section::before,
+.runner-kinds::before,
+.console-section::before,
+.interlock-section::before,
+.modes-panel::before,
+.install-strip::before {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: calc(var(--rail-x) - 16px);
+  inline-size: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--grid-functional) 0,
+    var(--grid-functional) 48px,
+    var(--grid-decorative) 48px
+  );
+  content: "";
+  pointer-events: none;
+}
+
+.breath::after,
+.signal-section::after,
+.runner-kinds::after,
+.console-section::after,
+.interlock-section::after,
+.modes-panel::after,
+.install-strip::after {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: -3px;
+  inset-inline-start: calc(var(--rail-x) - 19px);
+  inline-size: 7px;
+  block-size: 7px;
+  border: 1px solid var(--grid-functional);
+  border-radius: 50%;
+  background-color: var(--ground);
+  content: "";
+  pointer-events: none;
+}
+
+/* Seam 8→9: the page began at a prompt and ends at one. */
+.install-strip::after {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inset-block-start: -0.6875rem;
+  inset-inline-start: calc(var(--rail-x) - 21px);
+  inline-size: auto;
+  block-size: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--dim);
+  content: ">";
+  font-family: var(--mono);
+  font-size: 0.875rem;
+}
+
+@media (max-width: 699px) {
+  .breath::before,
+  .signal-section::before,
+  .runner-kinds::before,
+  .console-section::before,
+  .interlock-section::before,
+  .modes-panel::before,
+  .install-strip::before {
+    display: none;
+  }
+}

@@ -1,0 +1,50 @@
+.docs-theme-toggle {
+  display: inline-flex;
+  gap: 0.625rem;
+  align-items: center;
+  min-block-size: 2.75rem;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--grid-functional);
+  background: var(--surface-1);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.docs-theme-toggle:hover {
+  background: var(--surface-2);
+}
+
+.docs-theme-toggle__legend {
+  font-family: var(--display);
+  font-size: var(--text-label);
+  font-stretch: expanded;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.docs-theme-toggle__value {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  text-transform: uppercase;
+}
+
+.docs-theme-toggle__jacks {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.docs-theme-toggle__jack {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 50%;
+}
+
+.docs-theme-toggle__jack--planner {
+  background: var(--planner);
+}
+
+.docs-theme-toggle__jack--implementer {
+  border: 1px solid var(--implementer);
+}

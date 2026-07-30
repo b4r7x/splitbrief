@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://splitbrief.dev/</loc></url>
+  <url><loc>https://splitbrief.dev/docs/concepts/approval-escalation-and-recovery</loc></url>
+  <url><loc>https://splitbrief.dev/docs/concepts/glossary</loc></url>
+  <url><loc>https://splitbrief.dev/docs/concepts/sessions-and-persistence</loc></url>
+  <url><loc>https://splitbrief.dev/docs/concepts/task-briefs</loc></url>
+  <url><loc>https://splitbrief.dev/docs/concepts/the-two-role-model</loc></url>
+  <url><loc>https://splitbrief.dev/docs/concepts/workflow-modes-and-phases</loc></url>
+  <url><loc>https://splitbrief.dev/docs/getting-started/choosing-models</loc></url>
+  <url><loc>https://splitbrief.dev/docs/getting-started/installation</loc></url>
+  <url><loc>https://splitbrief.dev/docs/getting-started/introduction</loc></url>
+  <url><loc>https://splitbrief.dev/docs/getting-started/quickstart</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/api-key-security</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/cookbook</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/cost-management-and-budgets</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/debugging-a-run</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/headless-and-ci</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/hooks</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/mcp-and-handoff-packs</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/observability-otel</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/planners-and-implementers</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/repo-map</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/safety-snapshots-drift-approval</loc></url>
+  <url><loc>https://splitbrief.dev/docs/guides/worktrees-and-parallel-sessions</loc></url>
+  <url><loc>https://splitbrief.dev/docs/project/faq</loc></url>
+  <url><loc>https://splitbrief.dev/docs/project/roadmap</loc></url>
+  <url><loc>https://splitbrief.dev/docs/project/why-splitbrief-comparison</loc></url>
+  <url><loc>https://splitbrief.dev/docs/reference/changelog</loc></url>
+  <url><loc>https://splitbrief.dev/docs/reference/cli</loc></url>
+  <url><loc>https://splitbrief.dev/docs/reference/configuration</loc></url>
+  <url><loc>https://splitbrief.dev/docs/reference/migration</loc></url>
+  <url><loc>https://splitbrief.dev/docs/reference/slash-commands-and-keys</loc></url>
+  <url><loc>https://splitbrief.dev/docs/reference/task-brief-format</loc></url>
+  <url><loc>https://splitbrief.dev/docs/reference/troubleshooting</loc></url>
+</urlset>

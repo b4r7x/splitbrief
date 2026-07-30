@@ -1,0 +1,98 @@
+---
+title: Workflow modes & phases
+description: Choose a planning depth and follow work from specification through final review.
+---
+
+## Choose the planning depth
+
+A workflow mode controls how much planning SPLITBRIEF performs before implementation and which document approval gates are enabled by default.
+
+| Mode | Nominal pre-build planner calls | Default document gates | Best for |
+| --- | :---: | --- | --- |
+| `instant` | 1 | None | Trivial, one-step edits |
+| `quick` | 1 | None | Small changes that still need a Task Brief |
+| `standard` | 4 | Supporting spec and briefs | Ordinary feature work |
+| `speckit` | 5–6 | Supporting spec, plan, and briefs | Large, risky, or externally visible work |
+
+These are nominal calls before the build begins. Every successful mode adds one planner call for final review. Clarification, regeneration, retries, or escalation can add more calls.
+
+Set the mode with `--mode`, `workflow.mode` in configuration, or `/mode` during a run. `full` remains a legacy alias for `speckit`.
+
+## Read the phase rail
+
+The product condenses the workflow into one rail:
+
+```text
+Spec › Plan › Briefs → Build → Verify
+```
+
+The `›` separators keep work on the planner side. The first `→` marks the handoff from the planner's Task Briefs to implementation. The second `→` moves the completed build into final verification.
+
+Modes can skip planning stages, but the handoff stays the same: implementation runs from [Task Briefs](/docs/concepts/task-briefs), and the completed diff is checked against them.
+
+## Phase families
+
+The detailed workflow uses these phase families:
+
+| Family | What happens |
+| --- | --- |
+| **Spec** | The planner researches the repository and writes a supporting specification when the mode requires one. |
+| **Plan** | The planner turns the accepted specification into an implementation plan. `speckit` can add clarification, a constitution check, and a post-planning analysis. |
+| **Briefs** | SPLITBRIEF parses and quality-checks the Task Briefs, then presents the enabled review gate. |
+| **Build** | The implementer executes one brief at a time. SPLITBRIEF validates each result and handles retries, escalation, or recovery. |
+| **Verify** | SPLITBRIEF computes the drift report, the planner reviews the final diff, and the completed session receives its summary. |
+
+`instant` and `quick` enter Build after their single planning call. `standard` visits research, specification, plan, and brief review. `speckit` adds the deeper planning checks before Build.
+
+## Approval gates
+
+`workflow.approve` controls supporting-spec and plan review with `none`, `spec`, `plan`, `all`, or `default`. The `default` value follows the selected mode.
+
+The Task Brief quality gate is separate and runs in every mode before implementation. `standard` and `speckit` also pause at a briefs review so you can inspect or edit `tasks.md`.
+
+See [Approval, escalation & recovery](/docs/concepts/approval-escalation-and-recovery) for document gates and file-write approval tiers.
+
+## Clarifications and mode advice
+
+All four modes can surface up to five clarification questions from the planner. `standard` and `speckit` can use the answers to regenerate affected planning artifacts before proceeding. `instant` and `quick` keep their one-call planning path; answers are preserved as context for the next planner invocation instead of triggering an automatic re-plan.
+
+The mode advisor can suggest a deeper or lighter workflow when the prompt and selected mode do not match. It never switches the mode for you.
+
+## Control a live run
+
+During live planner phases, a message submitted through the composer is queued without discarding the current call. Runners that support native injection may receive it immediately; otherwise SPLITBRIEF includes it at the next safe boundary.
+
+You can also interrupt an active model call and continue from the preserved state. Continuing with text steers the retry; continuing without text retries the interrupted call. Messages are not injected into an implementer mid-task because the Task Brief is that task's fixed context.
+
+To change completed planning work:
+
+- `/revise-spec [comment]` returns to the supporting specification, then regenerates the plan and briefs.
+- `/revise-plan [comment]` returns to the plan, then regenerates the briefs.
+- `/redo-task <id>` resets one task and replays it from its Task Brief.
+
+## Resume from disk
+
+`splitbrief resume` loads the active session from `.splitbrief/active` and its persisted `state.json`. Planning, implementation, and final review are directly resumable. An explicitly interrupted call is also resumable because SPLITBRIEF records that it is awaiting continuation.
+
+If a task was in progress when the process stopped, resume re-attempts it from the Task Brief with refreshed current code and a reset attempt counter.
+
+## Retry, escalate, recover
+
+Each task follows the resolved validation sequence:
+
+```text
+implement → typecheck → lint → test
+```
+
+Validation stops at the first failing stage. SPLITBRIEF retries the implementer up to `workflow.maxRetries`, which defaults to `3`.
+
+After retries are exhausted, configured escalation can move through:
+
+1. an optional intermediate model
+2. a planner hint followed by another implementation attempt
+3. full escalation, where the planner writes the change
+4. recovery, where the workflow pauses for your decision
+
+Recovery can retry the same worker, route to a larger configured worker, skip the current task, pause the run, or abort the workflow. Budget limits, conflicting edits, dependency failures, and exhausted validation can also enter recovery.
+
+When all tasks finish, SPLITBRIEF compares the actual diff and recorded evidence with the briefs. The planner then performs the successful run's final review before the session completes.

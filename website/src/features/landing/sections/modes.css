@@ -1,0 +1,127 @@
+.modes-rack {
+  display: grid;
+  overflow: hidden;
+  border: var(--edge);
+  border-radius: var(--radius-frame);
+  background-color: var(--surface-2);
+  box-shadow: var(--edge-highlight);
+}
+
+.modes-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+}
+
+.modes-table :where(th, td) {
+  padding: 0.875rem clamp(0.875rem, 3vw, 1.5rem);
+  border-block-end: 1px solid var(--grid-functional);
+  text-align: start;
+  vertical-align: baseline;
+}
+
+.modes-table thead th {
+  background-color: var(--surface-1);
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: var(--text-label);
+  font-stretch: expanded;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.modes-table :where(th, td) + :where(th, td) {
+  border-inline-start: 1px solid var(--grid-functional);
+}
+
+.modes-table tbody th {
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: var(--text-mono);
+  font-weight: 400;
+}
+
+.modes-table tbody td {
+  font-family: var(--mono);
+  font-size: var(--text-mono);
+}
+
+.modes-table__calls {
+  color: var(--planner-text);
+  font-size: var(--text-subheading);
+  line-height: 1;
+}
+
+.modes-table__approval {
+  color: var(--fg);
+}
+
+.modes-table__artifacts {
+  max-inline-size: 34rem;
+  color: var(--dim);
+}
+
+.modes-note {
+  padding: 1rem clamp(0.875rem, 3vw, 1.5rem);
+  color: var(--dim);
+  font-size: 0.9375rem;
+}
+
+.modes-note p {
+  margin: 0;
+}
+
+.modes-note p + p {
+  margin-block-start: 0.375rem;
+}
+
+@media (min-width: 900px) {
+  .modes-rack {
+    grid-template-columns: minmax(0, 1fr) minmax(16rem, 19rem);
+  }
+
+  .modes-table tbody tr:last-child :where(th, td) {
+    border-block-end: 0;
+  }
+
+  .modes-note {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    justify-content: center;
+    padding: 1.25rem 1.5rem;
+    border-inline-start: 1px solid var(--grid-functional);
+    background-color: var(--surface-1);
+  }
+
+  .modes-note p + p {
+    margin-block-start: 0;
+  }
+}
+
+@media (max-width: 899px) {
+  .modes-table__artifacts,
+  .modes-table__approval {
+    display: none;
+  }
+
+  .modes-table thead th:nth-child(n + 3) {
+    display: none;
+  }
+
+  .modes-table thead th:first-child {
+    inline-size: 38%;
+  }
+}
+
+@media (max-width: 699px) {
+  .modes-table :where(th, td) {
+    padding-inline: 0.75rem;
+  }
+
+  .modes-table thead th {
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+  }
+}

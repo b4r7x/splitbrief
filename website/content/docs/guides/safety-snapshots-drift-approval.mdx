@@ -1,0 +1,118 @@
+---
+title: "Safety: snapshots, drift, approval"
+description: Control file writes, recover known-good states, and compare the final diff with the approved briefs.
+---
+
+## Safety belongs to the orchestrator
+
+Runner choice does not remove SPLITBRIEF's control boundaries. The orchestrator classifies declared writes, pauses for required approval, records evidence, takes configured snapshots, and compares the final diff with the Task Briefs.
+
+These controls layer on top of git. They do not replace version control, and custom `shell` or `agent` runners still execute with normal user permissions.
+
+## Stop at recovery boundaries
+
+When SPLITBRIEF cannot safely continue, it writes a durable `pendingRecovery` issue to the session state and records the event in `session.jsonl`. Recovery can be triggered by context overflow, exhausted retries, blocked dependencies, conflicting user edits, approval-promotion conflicts, a budget pause, or an exceeded budget.
+
+The prompt offers only actions that apply to the current issue:
+
+| Action | Effect |
+| --- | --- |
+| `retry-same-worker` | Reset the current task and retry it in a fresh worker context. |
+| `route-bigger-worker` | Reset the task and use the larger implementer profile named by the issue. |
+| `continue` | Continue only when the issue is safe to acknowledge, such as unrelated edits or a budget pause below the maximum. |
+| `skip-current-task` | Mark the task skipped, record evidence, and let blocked dependents reach their own recovery boundary. |
+| `pause-run` | Leave the active session resumable with the issue intact. |
+| `abort-workflow` | End through the normal intentional shutdown path. |
+
+`splitbrief resume` presents a pending recovery before making another planner or implementer call. Headless JSON runs emit `recovery_required`, include the reason, files, available actions, and recommendation, then exit non-zero.
+
+## Approve writes by risk
+
+Tiered approval classifies a declared implementer action before a write is applied:
+
+| Tier | Behavior |
+| --- | --- |
+| `auto` | Proceed without a prompt. |
+| `sticky` | Ask once for a matching pattern and scope, then persist the grant in `.splitbrief/approvals.json`. |
+| `confirm` | Require the typed confirmation phrase every time. |
+
+The active classifier distinguishes reads, in-scope writes, out-of-scope writes, destructive control-plane writes, and package manifest changes. In-scope writes default to `auto`, out-of-scope writes to `sticky`, and destructive or package changes to `confirm`.
+
+The config schema also retains `validation` and `network` tier keys, but they do not create a shell or network sandbox. Use the [Configuration](/docs/reference/configuration) reference to override approval tiers and allowed paths.
+
+Inspect or remove sticky grants from the CLI:
+
+```bash
+splitbrief approval list
+splitbrief approval clear --scope session
+splitbrief approval clear --scope always
+splitbrief approval clear --scope all
+```
+
+Inside the TUI, use `/approval list` or `/approval clear`. Headless mode fails fast when a sticky or confirm decision would require interaction.
+
+## Create and restore snapshots
+
+Snapshots are content-addressed working-tree checkpoints stored under the active session. The first snapshot establishes a baseline; later snapshots store deltas.
+
+```bash
+splitbrief snapshot create --name "before-refactor"
+splitbrief snapshot list
+snapshot_id='<id-or-name>'
+splitbrief snapshot diff "$snapshot_id"
+splitbrief snapshot restore "$snapshot_id"
+```
+
+`snapshot diff` exits non-zero when it finds changes. Restore is hash-guarded: a file modified after the snapshot is reported as a conflict and skipped. Pass `--force` only when you intend to overwrite conflicting files and remove files created after the snapshot.
+
+Snapshots never include `.git/`, `.splitbrief/`, `node_modules/`, or `.trees/`. They skip symbolic links and honor git-ignored paths.
+
+### Automatic checkpoints
+
+All automatic triggers default to off:
+
+```yaml
+snapshots:
+  auto:
+    preTask: true
+    postTask: true
+    preFinalReview: true
+```
+
+`preTask` runs before each task, `postTask` after a task reaches `done`, and `preFinalReview` before the planner's final review. A failed automatic snapshot emits a warning without aborting the workflow.
+
+Manual snapshots are CLI commands; there is no `/snapshot` runtime command. For the whole run, `/accept-run` accepts the current changes and prevents later run rejection. `/reject-run confirm` restores SPLITBRIEF-written files from the run baseline when work is no longer active. Rejection is hash-guarded and reports conflicting user edits instead of overwriting them.
+
+## Compare the final diff with the briefs
+
+Before final review, SPLITBRIEF generates `.splitbrief/sessions/<id>/drift-report.json`. The deterministic report compares the Task Brief targets and scope with the actual git diff and the evidence ledger.
+
+It checks for:
+
+- edits to files outside a task's declared scope;
+- expected target files missing from the diff;
+- orphan changes when no completed task accounts for them;
+- out-of-bounds text matches;
+- expected evidence with no observed evidence;
+- failed tasks that still left changes.
+
+The report starts at score `1`. Errors subtract `0.25` and warnings subtract `0.08`, with the result clamped from `0` to `1`. A higher final-review drift score is better; the report passes when it contains no error findings. The report and its counts appear in the final review input and session summary.
+
+### Detect drift across tasks
+
+SPLITBRIEF separately tracks consecutive tasks that write overlapping out-of-bounds files. This chain score measures suspicious repetition, so its direction is the opposite of the final-review report: a higher chain score means more evidence of wandering.
+
+```yaml
+workflow:
+  driftChainThreshold: 0.6
+```
+
+The threshold accepts `0` to `1` and defaults to `0.6`. A chain at or above the threshold emits `drift_chain_detected`; chain state is persisted in `drift-chains.json` and summarized with the completed run.
+
+## Audit the evidence ledger
+
+Every session maintains `.splitbrief/sessions/<id>/evidence.json`. Per-task entries combine expected evidence from the brief with observations from validation, retries, escalation, diff detection, task completion, skipping, and final review.
+
+Each entry includes a hash of the brief used for the task, making post-run brief mutation detectable. The summary reports the validated evidence count, while the drift report flags completed tasks that expected evidence but produced none.
+
+For the broader state machine and escalation policy, see [Approval, escalation & recovery](/docs/concepts/approval-escalation-and-recovery).

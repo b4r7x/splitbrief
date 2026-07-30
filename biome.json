@@ -18,6 +18,7 @@
       "scripts/**",
       "src/**",
       "testing/**",
+      "!!website",
       "!!**/dist",
       "!!**/node_modules",
       "!!**/coverage",

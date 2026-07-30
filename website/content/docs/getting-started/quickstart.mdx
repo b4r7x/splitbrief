@@ -1,0 +1,89 @@
+---
+title: Quickstart
+description: Configure a project and run your first SPLITBRIEF workflow.
+---
+
+## Start in a project
+
+Choose a Git repository with a configured or detectable validation pipeline:
+
+```bash
+cd ~/code/my-project
+splitbrief init
+splitbrief start "fix the typo in src/auth.ts"
+```
+
+`splitbrief init` guides you through selecting a planner and an implementer, then writes `.splitbrief/config.yaml`. The default pairing is Claude Code as the planner and local Ollama as the implementer.
+
+`splitbrief start` operates on the repository root. When invoked from a subdirectory, it resolves the Git top-level directory; use `--project <dir>` to target a different repository.
+
+## Follow the first run
+
+For a standard workflow:
+
+1. The planner researches the repository, prepares the supporting planning documents, and writes Task Briefs.
+2. SPLITBRIEF checks each brief for required scope, validation, and implementation detail.
+3. You review the planning artifacts at the active approval gates.
+4. The implementer executes one brief at a time in dependency order.
+5. SPLITBRIEF runs the resolved `typecheck → lint → test` pipeline after each task.
+6. Validation failures retry, then move through configured escalation and recovery.
+7. The planner reviews the final diff against the brief, and SPLITBRIEF writes the session summary.
+
+Exit with `/quit` or `Ctrl-Q`. The session stays on disk; continue the active interrupted workflow later with `splitbrief resume`.
+
+## Choose a mode
+
+Use `--mode` when the default planning depth does not fit the task:
+
+| Mode | What it produces before implementation | Best for |
+|---|---|---|
+| `instant` | Tasks directly, with no document approval gates | Trivial edits |
+| `quick` | Tasks without supporting planning documents | Small, well-understood changes |
+| `standard` | Research, specification, plan, and tasks | Ordinary feature work; this is the default |
+| `speckit` | Clarification, specification, constitution check, plan, tasks, and analysis | Large, risky, or externally visible changes |
+
+```bash
+splitbrief start --mode quick "add a debounce helper to src/timing.ts"
+```
+
+You can also set `workflow.mode` in configuration or use `/mode` during a run. The mode advisor may suggest a better fit, but it does not switch modes for you.
+
+## Start from a minimal config
+
+A minimal configuration for the default pairing is:
+
+```yaml
+version: 3
+
+planner:
+  kind: cli
+  tool: claude-code
+
+implementer:
+  kind: api
+  provider: ollama
+  apiBase: http://localhost:11434/v1
+  model: qwen3-coder:30b
+
+validation:
+  typecheck: true
+  lint: true
+  test: true
+
+workflow:
+  mode: standard
+  approve: default
+  maxRetries: 3
+  git:
+    commitStrategy: none
+```
+
+The default commit strategy leaves changes unstaged for manual review. Configure the model's real context window in the provider first; use SPLITBRIEF's `contextLength` only when detection needs an override.
+
+## Next steps
+
+- Read [Choosing models](/docs/getting-started/choosing-models) before changing either runner.
+- Learn what an implementer receives in [Task Briefs](/docs/concepts/task-briefs).
+- Compare the full paths in [Workflow modes & phases](/docs/concepts/workflow-modes-and-phases).
+- Review every field in [Configuration](/docs/reference/configuration).
+- Use [Troubleshooting](/docs/reference/troubleshooting) when setup or a run is blocked.
