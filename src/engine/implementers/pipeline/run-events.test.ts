@@ -24,7 +24,12 @@ type PublisherEvent =
       file: string;
       duration: number;
     }
-  | { type: 'implementer_generate_failed'; phase: string; taskId: string; model: string };
+  | {
+      type: 'implementer_generate_failed';
+      phase: string;
+      taskId: string;
+      model?: string | undefined;
+    };
 
 let projectDir: string;
 
@@ -118,6 +123,28 @@ describe('createImplementerBase — bus events', () => {
     expect(types.indexOf('implementer_generate_running')).toBeLessThan(
       types.indexOf('implementer_generate_failed'),
     );
+  });
+
+  it('publishes implementer_generate_failed without fabricating a backend-default model', async () => {
+    const invoke = vi.fn().mockRejectedValue(new Error('connection refused'));
+    const task = makeTask({ id: 'T002', file: 'src/fail.ts', action: 'create' });
+    const events: PublisherEvent[] = [];
+    const implementer = createImplementerBase(
+      makeBaseConfig({ invoke, publisher: makePublisher(events) }),
+    );
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+    });
+
+    const failed = events.find((event) => event.type === 'implementer_generate_failed');
+    expect(failed).toBeDefined();
+    expect(failed && 'model' in failed).toBe(false);
   });
 
   it('does not publish implementer_generate_failed when invoke aborts after running', async () => {

@@ -539,13 +539,13 @@ export function publishImplementerGenerateDone(
   ctx.bus.publish(event);
 }
 
-function publishImplementerGenerateFailed(ctx: BusContext, taskId: TaskId, model: string): void {
+function publishImplementerGenerateFailed(ctx: BusContext, taskId: TaskId, model?: string): void {
   ctx.bus.publish({
     type: 'implementer_generate_failed',
     ts: Date.now(),
     phase: ctx.phase,
     taskId,
-    model,
+    ...(model !== undefined && { model }),
   });
 }
 

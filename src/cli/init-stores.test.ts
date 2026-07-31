@@ -4,8 +4,10 @@ import { join } from 'node:path';
 import YAML from 'yaml';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import type { CliToolDetection, ProviderDetection } from '../core/discovery/detection.js';
 import { initStores } from './init-stores.js';
 import { configStore } from '../stores/project/config.js';
+import { detectionStore } from '../stores/project/detection.js';
 import { sessionsStore } from '../stores/project/sessions.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { SPLITBRIEF_DIR } from '../core/paths.js';
@@ -14,7 +16,6 @@ import { createDefaultConfig } from '../core/config/load/io.js';
 import { detectCapabilities } from '../engine/providers/capabilities.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
-import { writeEmptyDetectionCache } from '#testing/helpers/write-empty-detection-cache.js';
 
 // Bootstrap runs real disk reads + provider-detection probes. HTTP probes return
 // empty responses so this file never contacts a live provider.
@@ -29,14 +30,20 @@ function requireConfig() {
   return state.config;
 }
 
-// Seed a fresh detection cache so loadDetection() serves from disk and never
-// spawns the CLI-tool / network provider probes during boot. Each test gets a
-// unique temp projectDir, so without this every initStores() call would re-run
-// the full detection sweep (subprocess spawns + provider HTTP), which starves
-// this file under full-suite parallelism and trips the test timeout.
-function makeProjectDir(): string {
+function makeProjectDir(
+  detection: { providers: ProviderDetection[]; cliTools: CliToolDetection[] } = {
+    providers: [],
+    cliTools: [],
+  },
+): string {
   tmp = createTempDir('init-stores-test');
-  writeEmptyDetectionCache(tmp);
+  const splitbriefDir = join(tmp, SPLITBRIEF_DIR);
+  mkdirSync(splitbriefDir, { recursive: true });
+  writeFileSync(
+    join(splitbriefDir, 'detection-cache.json'),
+    JSON.stringify({ version: 2, timestamp: Date.now(), ...detection }),
+    'utf-8',
+  );
   return tmp;
 }
 
@@ -76,6 +83,44 @@ describe('initStores', () => {
     const config = requireConfig();
     expect(config.planner.kind).toBe('cli');
     expect(config.implementer.kind).toBe('cli');
+  }, 30_000);
+
+  it('projects canonical cached detections into the existing stores during boot', async () => {
+    const providers: ProviderDetection[] = [
+      {
+        provider: 'ollama',
+        available: true,
+        isLocal: true,
+        models: [{ id: 'qwen', pricingTiers: [{ type: 'context', thresholdTokens: 0 }] }],
+      },
+    ];
+    const cliTools: CliToolDetection[] = [
+      {
+        tool: 'claude-code',
+        executable: null,
+        trust: 'trusted',
+        installedVersion: '2.0.0',
+        testedVersion: '2.0.0',
+        compatibility: 'compatible',
+        auth: 'authenticated',
+        diagnostic: { state: 'ready', remediation: null },
+        probedAt: 1_700_000_000_000,
+      },
+    ];
+    const dir = makeProjectDir({ providers, cliTools });
+
+    await initStores(dir);
+
+    expect(detectionStore.get().planners).toEqual([
+      {
+        tool: 'claude-code',
+        type: 'cli',
+        available: true,
+        description: 'Claude Code CLI',
+        version: '2.0.0',
+      },
+    ]);
+    expect(detectionStore.get().implementers).toEqual(providers);
   }, 30_000);
 
   it('falls back to default config when no config file exists on disk', async () => {
@@ -284,7 +329,7 @@ Skill body for bootstrap proof.
     expect(configStore.getDetectedContextLength()).toBeUndefined();
   }, 30_000);
 
-  it('pushes a catalog-origin context length with detected=true', async () => {
+  it('pushes a live-detected context length with detected=true', async () => {
     const dir = makeProjectDir();
     writeConfigYaml(
       dir,
@@ -299,24 +344,28 @@ Skill body for bootstrap proof.
         },
       }),
     );
+    vi.mocked(globalThis.fetch).mockImplementation(
+      async () => new Response(JSON.stringify({ parameters: 'num_ctx 262144' }), { status: 200 }),
+    );
 
     await initStores(dir);
 
     expect(requireConfig().implementer.contextLength).toBe(262_144);
     expect(configStore.getDetectedContextLength()).toBe(262_144);
+    expect(configStore.get().config?.implementer.contextLength).toBe(262_144);
   }, 30_000);
 
-  it("fresh default config with no live provider resolves origin 'catalog' with 262144 from the bundled qwen3-coder:30b entry", async () => {
+  it('fresh default config with no live provider does not claim a static local context limit', async () => {
     const dir = makeProjectDir();
     const caps = await detectCapabilities(createDefaultConfig());
 
-    expect(caps).toEqual({ contextLength: 262_144, origin: 'catalog' });
+    expect(caps).toEqual({ contextLength: 32768, origin: 'fallback' });
 
     await initStores(dir);
 
     expect(requireConfig().implementer.model).toBe('qwen3-coder:30b');
-    expect(requireConfig().implementer.contextLength).toBe(262_144);
-    expect(configStore.getDetectedContextLength()).toBe(262_144);
+    expect(requireConfig().implementer.contextLength).toBeUndefined();
+    expect(configStore.getDetectedContextLength()).toBeUndefined();
   }, 30_000);
 
   it('throws a CLI error when config loading yields no config state', async () => {

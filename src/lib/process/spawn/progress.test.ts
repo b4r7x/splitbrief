@@ -2,6 +2,32 @@ import { describe, it, expect } from 'vitest';
 import { spawnWithTimeout } from './progress.js';
 import { setProcessLedger } from '../registry.js';
 
+function stubbornProcessGroupProgram(): string {
+  const descendantProgram = [
+    'process.on("SIGTERM", () => {});',
+    'process.stdout.write("ready");',
+    'setInterval(() => {}, 1000);',
+  ].join('');
+  return [
+    'const { spawn } = require("node:child_process");',
+    'process.on("SIGTERM", () => {});',
+    `const child = spawn(process.execPath, ["-e", ${JSON.stringify(descendantProgram)}], { stdio: ["ignore", "pipe", "ignore"] });`,
+    'child.stdout.once("data", () => {',
+    '  process.stdout.write(String(process.pid) + " " + String(child.pid) + "\\n");',
+    '});',
+    'setInterval(() => {}, 1000);',
+  ].join('');
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('spawnWithTimeout', () => {
   it('captures stdout and returns exit code 0', async () => {
     const chunks: string[] = [];
@@ -111,6 +137,23 @@ describe('spawnWithTimeout', () => {
     });
 
     expect(result.timedOut).toBe(true);
+  });
+
+  it('returns from timeout only after a stubborn descendant group is absent', async () => {
+    const result = await spawnWithTimeout({
+      command: process.execPath,
+      args: ['-e', stubbornProcessGroupProgram()],
+      cwd: process.cwd(),
+      timeout: 1_000,
+      onProgress: () => {},
+    });
+    const [leaderPid = 0, descendantPid = 0] = result.output.trim().split(/\s+/).map(Number);
+
+    expect(result.timedOut).toBe(true);
+    expect(leaderPid).toBeGreaterThan(1);
+    expect(descendantPid).toBeGreaterThan(1);
+    expect(processExists(-leaderPid)).toBe(false);
+    expect(processExists(descendantPid)).toBe(false);
   });
 
   it('rejects with a process-output error on nonzero exit when not timed out', async () => {

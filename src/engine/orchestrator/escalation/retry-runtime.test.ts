@@ -45,6 +45,8 @@ function configWithProfiles() {
         'cheap-large': {
           kind: 'api' as const,
           provider: 'deepseek',
+          service: 'deepseek',
+          offering: 'payg' as const,
           apiBase: 'https://api.deepseek.com/v1',
           apiKey: 'test-key',
           model: 'deepseek-chat',
@@ -64,6 +66,8 @@ describe('stateForRetryProfile', () => {
       config: {
         kind: 'api' as const,
         provider: 'openai',
+        service: 'openai',
+        offering: 'payg' as const,
         apiBase: 'https://api.openai.com/v1',
         apiKey: 'key',
         model: 'gpt-4',
@@ -86,6 +90,8 @@ describe('stateForRetryProfile', () => {
       config: {
         kind: 'api' as const,
         provider: 'openai',
+        service: 'openai',
+        offering: 'payg' as const,
         apiBase: 'https://api.openai.com/v1',
         apiKey: 'key',
         model: 'qwen',

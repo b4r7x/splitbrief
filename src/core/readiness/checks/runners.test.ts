@@ -1,6 +1,37 @@
 import { describe, it, expect } from 'vitest';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
 import { buildRunnerChecks } from './runners.js';
+import { deriveCliReadiness, type CliReadinessFacts } from '../../schemas/readiness.js';
+
+function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
+  const implementer = overrides.implementer;
+  return makeBaseConfig({
+    ...overrides,
+    implementer:
+      implementer?.kind !== undefined && implementer.kind !== 'api'
+        ? implementer
+        : { service: 'ollama', offering: 'local', ...implementer },
+  });
+}
+
+function cliReadiness(overrides: Partial<CliReadinessFacts> = {}) {
+  return deriveCliReadiness({
+    tool: 'claude-code',
+    enabled: true,
+    installation: 'installed',
+    executable: {
+      path: '/usr/local/bin/claude',
+      fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+    },
+    trust: 'trusted',
+    installedVersion: '2.0.0',
+    testedVersion: '2.0.0',
+    compatibility: 'compatible',
+    auth: 'authenticated',
+    probedAt: 1,
+    ...overrides,
+  });
+}
 
 function availabilityDetails(config: ReturnType<typeof makeConfig>): string[] {
   const check = buildRunnerChecks(config).find((c) => c.id === 'runners.availability');
@@ -8,38 +39,146 @@ function availabilityDetails(config: ReturnType<typeof makeConfig>): string[] {
 }
 
 describe('buildRunnerChecks availability guidance', () => {
-  it('points at the API key, endpoint, and model for an api planner', () => {
+  it('blocks a selected CLI when no canonical probe result is available', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks(config, []).find(
+      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
+    );
+
+    expect(check).toMatchObject({
+      severity: 'blocker',
+      metadata: {
+        tool: 'claude-code',
+        status: 'unverified',
+        trust: 'not-checked',
+        auth: 'not-checked',
+        executablePath: null,
+      },
+    });
+  });
+
+  it('blocks a selected CLI that requires authentication but is unauthenticated', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks(config, [cliReadiness({ auth: 'unauthenticated' })]).find(
+      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
+    );
+
+    expect(check).toMatchObject({
+      severity: 'blocker',
+      metadata: {
+        status: 'unauthenticated',
+        installation: 'installed',
+        trust: 'trusted',
+        compatibility: 'compatible',
+        auth: 'unauthenticated',
+      },
+    });
+    expect(check?.fix).toContain('Authenticate claude-code');
+  });
+
+  it('warns without claiming readiness when selected CLI authentication is unknown', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks(config, [cliReadiness({ auth: 'unknown' })]).find(
+      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
+    );
+
+    expect(check).toMatchObject({
+      severity: 'warning',
+      metadata: { status: 'unverified', auth: 'unknown' },
+    });
+    expect(check?.summary).not.toContain('is installed, trusted, compatible, and authenticated');
+  });
+
+  it('does not claim authentication when the selected CLI does not require it', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks(config, [cliReadiness({ auth: 'not-required' })]).find(
+      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
+    );
+
+    expect(check).toMatchObject({ severity: 'ok', metadata: { auth: 'not-required' } });
+    expect(check?.summary).toContain('does not require authentication');
+  });
+
+  it('redacts trusted executable paths from public readiness metadata', () => {
+    const executablePath = '/Users/private-user/project/bin/claude';
+    const result = cliReadiness({
+      executable: {
+        path: executablePath,
+        fingerprint: { dev: 9, ino: 10, size: 11, mtimeMs: 12 },
+      },
+    });
+    const check = buildRunnerChecks(makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }), [
+      result,
+    ]).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
+
+    expect(check?.metadata?.executablePath).toBe('[redacted executable path]');
+    expect(JSON.stringify(check)).not.toContain(executablePath);
+    expect(result.executable?.path).toBe(executablePath);
+  });
+
+  it('ignores readiness results for CLIs that are not configured', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
         provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
+        apiBase: 'https://openrouter.ai/api/v1',
+        model: 'qwen2.5-coder:7b',
+      },
+    });
+
+    const check = buildRunnerChecks(config, [
+      cliReadiness({ installation: 'unavailable', executable: null }),
+    ]).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
+
+    expect(check).toBeUndefined();
+  });
+
+  it('does not claim provider availability for an API planner', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
         model: 'some-model',
         apiBase: 'https://openrouter.ai/api/v1',
       },
     });
 
     const details = availabilityDetails(config);
-    expect(details.some((d) => d.includes('API key, endpoint, and model'))).toBe(true);
-    expect(details.some((d) => d.includes('runner CLI'))).toBe(false);
+    expect(details).toContain('Readiness makes no provider or network availability claim.');
   });
 
-  it('points at the runner CLI for a cli planner', () => {
+  it('uses the canonical CLI check instead of generic availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const details = availabilityDetails(config);
-    expect(details.some((d) => d.includes('runner CLI'))).toBe(true);
-    expect(details.some((d) => d.includes('API key, endpoint, and model'))).toBe(false);
+    const checks = buildRunnerChecks(config);
+
+    expect(checks.find((check) => check.id === 'runners.availability')?.summary).toBe(
+      'Provider availability was not probed.',
+    );
+    expect(checks.find((check) => check.id === 'runners.cli.claude-code.readiness')?.severity).toBe(
+      'blocker',
+    );
   });
 
   it('warns when a command-capable implementer runs with approval auto mode', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'ollama',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
         model: 'qwen2.5-coder:7b',
-        apiBase: 'http://localhost:11434/v1',
+        apiBase: 'https://openrouter.ai/api/v1',
       },
-      implementer: { kind: 'cli', tool: 'copilot', model: 'auto' },
+      implementer: { kind: 'cli', tool: 'copilot' },
       workflow: { approve: 'none' },
     });
 
@@ -65,11 +204,13 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'ollama',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
         model: 'qwen2.5-coder:7b',
-        apiBase: 'http://localhost:11434/v1',
+        apiBase: 'https://openrouter.ai/api/v1',
       },
-      implementer: { kind: 'cli', tool: 'copilot', model: 'auto' },
+      implementer: { kind: 'cli', tool: 'copilot' },
     });
 
     const check = buildRunnerChecks(config).find(
@@ -93,11 +234,13 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'ollama',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
         model: 'qwen2.5-coder:7b',
-        apiBase: 'http://localhost:11434/v1',
+        apiBase: 'https://openrouter.ai/api/v1',
       },
-      implementer: { kind: 'cli', tool: 'claude-code', model: 'auto' },
+      implementer: { kind: 'cli', tool: 'claude-code' },
       workflow: { approve: 'none' },
     });
 
@@ -113,9 +256,11 @@ describe('buildRunnerChecks availability guidance', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
-        provider: 'ollama',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
         model: 'qwen2.5-coder:7b',
-        apiBase: 'http://localhost:11434/v1',
+        apiBase: 'https://openrouter.ai/api/v1',
       },
       implementer: { kind: 'agent', command: './agent', model: 'agent-default' },
       approval: { enabled: false, feedRejectionsToPlanner: true },
@@ -138,7 +283,6 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: {
         kind: 'cli',
         tool: 'claude-code',
-        model: 'auto',
         timeout,
         idleKillMs,
       },
@@ -159,7 +303,6 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: {
         kind: 'cli',
         tool: 'claude-code',
-        model: 'auto',
         timeout: 400_000,
         idleKillMs: 300_000,
       },

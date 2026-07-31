@@ -4,6 +4,10 @@ import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../../calls/output-limit.js';
 import { RunnerCallEventSchema } from '../../calls/schema.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import {
+  OPENAI_COMPAT_STANDARD_FINISH_REASONS,
+  type OpenAICompatPolicy,
+} from '../openai-compat-policy.js';
+import {
   replayRunnerCallEventsIntoOperations,
   runnerCallErrors,
   runnerCallTerminals,
@@ -16,6 +20,8 @@ interface MockChunk {
   finishReason?: string | null;
   delta?: {
     content?: string | null;
+    reasoning_content?: string | null;
+    reasoning?: string | null;
     function_call?: { name?: string; arguments?: string };
     tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
   };
@@ -94,6 +100,134 @@ describe('streamCompletion', () => {
     vi.unstubAllGlobals();
   });
 
+  it('redacts credential values from streamed text, tool payloads, events, and progress', async () => {
+    const credential = 'opaque-openai-credential-canary-7d93c612';
+    const events: RunnerCallEvent[] = [];
+    const progress: string[] = [];
+    const client = makeMockClient([
+      { content: `answer ${credential}` },
+      {
+        delta: {
+          tool_calls: [
+            {
+              id: `tool-${credential}`,
+              function: { name: 'debug', arguments: `{"credential":"${credential}"}` },
+            },
+          ],
+        },
+      },
+      { finishReason: 'stop' },
+    ]);
+
+    const result = await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+      temperature: 0.2,
+      onProgress: (text) => progress.push(text),
+      onCallEvent: (event) => events.push(event),
+      credentialValues: [credential],
+    });
+
+    const persisted = JSON.stringify({ result, events, progress });
+    expect(persisted).not.toContain(credential);
+    expect(persisted).toContain('***REDACTED***');
+    expect(progress).toEqual(['answer ***REDACTED***']);
+  });
+
+  it('redacts credential values from provider errors and terminal events', async () => {
+    const credential = 'opaque-openai-error-credential-canary-7d93c612';
+    const events: RunnerCallEvent[] = [];
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async () => {
+            throw new Error(`provider rejected request: ${credential}`);
+          },
+        },
+      },
+    };
+
+    await expect(
+      streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        onProgress: () => {},
+        onCallEvent: (event) => events.push(event),
+        credentialValues: [credential],
+      }),
+    ).rejects.toThrow('***REDACTED***');
+
+    const persisted = JSON.stringify(events);
+    expect(persisted).not.toContain(credential);
+    expect(persisted).toContain('***REDACTED***');
+  });
+
+  it('wraps untyped provider errors with a typed redacted error', async () => {
+    const credential = 'opaque-openai-untyped-error-canary-7d93c612';
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async () => {
+            throw new Error(`provider rejected request: ${credential}`);
+          },
+        },
+      },
+    };
+
+    let caught: unknown;
+    try {
+      await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        onProgress: () => {},
+        credentialValues: [credential],
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toMatchObject({ kind: 'openai_stream_error' });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain('***REDACTED***');
+    expect((caught as { cause?: unknown }).cause).toBeUndefined();
+    expect(JSON.stringify(caught)).not.toContain(credential);
+  });
+
+  it('does not retain credential-bearing provider properties when rethrowing', async () => {
+    const credential = 'opaque-openai-thrown-error-canary-7d93c612';
+    const upstreamCause = Object.assign(new Error(`nested cause ${credential}`), {
+      response: { body: credential },
+    });
+    const upstream = Object.assign(new Error(`provider rejected ${credential}`), {
+      status: 502,
+      response: { body: credential },
+      cause: upstreamCause,
+    });
+    const client: MockClient = {
+      chat: {
+        completions: {
+          create: async () => {
+            throw upstream;
+          },
+        },
+      },
+    };
+
+    let caught: unknown;
+    try {
+      await streamCompletion(client, 'test-model', [{ role: 'user', content: 'hi' }], {
+        temperature: 0.2,
+        onProgress: () => {},
+        credentialValues: [credential],
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toMatchObject({ kind: 'stream-http-status' });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).not.toContain(credential);
+    expect(JSON.stringify((caught as { data?: unknown }).data)).not.toContain(credential);
+    expect((caught as { cause?: unknown }).cause).toBeUndefined();
+    expect(JSON.stringify(caught)).not.toContain(credential);
+  });
+
   it('streams progress chunks and returns concatenated text on stop', async () => {
     const client = makeMockClient([
       { content: 'Hello' },
@@ -109,6 +243,93 @@ describe('streamCompletion', () => {
 
     expect(progressCalls).toEqual(['Hello', ' world']);
     expect(result.text).toBe('Hello world');
+  });
+
+  it('uses the supplied policy to accept only declared finish reasons', async () => {
+    const policy: OpenAICompatPolicy = {
+      tokenField: 'max_tokens',
+      streamUsage: false,
+      temperature: 'verbatim',
+      effort: 'omit',
+      reasoning: 'omit',
+      extraBody: undefined,
+      finishReasons: ['stop', 'length'],
+    };
+
+    const accepted = await streamCompletion(
+      makeMockClient([{ content: 'done' }, { finishReason: 'length' }]),
+      'synthetic-model',
+      [{ role: 'user', content: 'hi' }],
+      {
+        temperature: 0.2,
+        onProgress: () => {},
+        policy,
+      },
+    );
+    expect(accepted.status).toBe('truncated');
+
+    const rejected = await streamCompletion(
+      makeMockClient([{ finishReason: 'content_filter' }]),
+      'synthetic-model',
+      [{ role: 'user', content: 'hi' }],
+      {
+        temperature: 0.2,
+        onProgress: () => {},
+        policy,
+      },
+    );
+    expect(rejected).toMatchObject({
+      status: 'failed',
+      error: { code: 'openai_unknown_finish_reason' },
+    });
+  });
+
+  it('fails closed for an unknown finish reason', async () => {
+    const result = await streamCompletion(
+      makeMockClient([{ content: 'partial' }, { finishReason: 'provider-specific' }]),
+      'synthetic-model',
+      [{ role: 'user', content: 'hi' }],
+      { temperature: 0.2, onProgress: () => {} },
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      text: 'partial',
+      partial: true,
+      error: { code: 'openai_unknown_finish_reason' },
+    });
+  });
+
+  it('keeps separate reasoning deltas out of final content', async () => {
+    const policy: OpenAICompatPolicy = {
+      tokenField: 'max_tokens',
+      streamUsage: true,
+      temperature: 'verbatim',
+      effort: 'omit',
+      reasoning: 'omit',
+      extraBody: undefined,
+      finishReasons: OPENAI_COMPAT_STANDARD_FINISH_REASONS,
+    };
+    const events: RunnerCallEvent[] = [];
+    const client = makeMockClient([
+      { delta: { reasoning_content: 'private reasoning', content: 'final answer' } },
+      { finishReason: 'stop' },
+    ]);
+
+    const result = await streamCompletion(
+      client,
+      'synthetic-model',
+      [{ role: 'user', content: 'hi' }],
+      {
+        temperature: 0.2,
+        onProgress: () => {},
+        onCallEvent: (event) => events.push(event),
+        policy,
+      },
+    );
+
+    expect(result.text).toBe('final answer');
+    expect(JSON.stringify(events)).not.toContain('private reasoning');
   });
 
   it('emits a progress update for each streamed chunk', async () => {

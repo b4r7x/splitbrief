@@ -34,6 +34,8 @@ describe('resolveImplementerProfiles', () => {
         'cloud-cheap': {
           kind: 'api',
           provider: 'openrouter',
+          service: 'openrouter',
+          offering: 'payg',
           apiBase: 'https://openrouter.ai/api/v1',
           apiKey: 'sk-or-test',
           model: 'qwen/qwen3-coder',
@@ -44,6 +46,8 @@ describe('resolveImplementerProfiles', () => {
         'local-qwen': {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen2.5-coder:7b',
           contextLength: 32768,
@@ -65,6 +69,8 @@ describe('resolveImplementerProfiles', () => {
     expect(resolved.defaultProfile.config).toEqual({
       kind: 'api',
       provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       apiBase: 'http://localhost:11434/v1',
       model: 'qwen2.5-coder:7b',
       contextLength: 32768,
@@ -77,12 +83,16 @@ describe('resolveImplementerProfiles', () => {
         'z-local': {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'z-model',
         },
         'a-local': {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'a-model',
         },

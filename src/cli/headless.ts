@@ -2,6 +2,7 @@ import type { WorkflowOpts } from '../core/types/config-options.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Planner } from '../engine/planners/types.js';
 import type { Implementer } from '../engine/implementers/types.js';
+import type { CliStartGates } from '../engine/runners/start-gate.js';
 import { loadState } from '../core/state/persistence.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import { configForSessionTranscriptPolicy, readSession } from '../core/sessions/io.js';
@@ -82,6 +83,7 @@ export interface RunHeadlessOptions {
   _planner?: Planner | undefined;
   _implementer?: Implementer | undefined;
   plannerContext?: string | undefined;
+  trustedCliGates?: CliStartGates | undefined;
 }
 
 export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
@@ -94,6 +96,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     _planner,
     _implementer,
     plannerContext,
+    trustedCliGates,
   } = options;
   installTerminalOutputErrorGuard();
   const config = resolveRunConfig({
@@ -134,6 +137,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       signal: abortController.signal,
       _planner,
       _implementer,
+      trustedCliGates,
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onQuestionAsked: async () => '',

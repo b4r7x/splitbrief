@@ -19,6 +19,8 @@ function cacheOnlyResolvableProfile(): ResolvedImplementerProfile {
     config: {
       kind: 'api',
       provider: 'openrouter',
+      service: 'openrouter',
+      offering: 'payg',
       apiBase: 'https://openrouter.ai/api/v1',
       apiKey: 'test-key',
       model: 'runtime-only-model',

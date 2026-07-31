@@ -1,6 +1,6 @@
 import type { Config } from '../../core/schemas/config.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
-import type { Planner } from '../planners/types.js';
+import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
 import { warnStderr } from '../../lib/warn.js';
 import { assertNever } from '../../utils/type-guards.js';
 
@@ -21,13 +21,19 @@ const loadShellImplementer = lazy(() => import('../implementers/shell.js'));
 const loadAgentImplementer = lazy(() => import('../implementers/agent.js'));
 const loadAgentSdkImplementer = lazy(() => import('../implementers/agent-sdk.js'));
 
-async function loadPlanner(config: Config, initialSessionId?: string | null): Promise<Planner> {
+async function loadPlanner(
+  config: Config,
+  initialSessionId?: string | null,
+  options?: PlannerFactoryOptions,
+): Promise<Planner> {
   const kind = config.planner.kind;
   switch (kind) {
     case 'cli': {
       if (config.planner.tool === 'claude-code') {
         const mod = await loadClaudeCodePlanner();
         return mod.createClaudeCodePlanner({
+          authChannel: config.planner.authChannel,
+          trustedCli: options?.trustedCli,
           model: config.planner.model,
           initialSessionId,
           effort: config.planner.effort,
@@ -37,7 +43,7 @@ async function loadPlanner(config: Config, initialSessionId?: string | null): Pr
         });
       }
       const mod = await loadCliPlanner();
-      return mod.createCliPlanner(config, initialSessionId);
+      return mod.createCliPlanner(config, initialSessionId, options);
     }
     case 'api': {
       const mod = await loadApiPlanner();
@@ -71,8 +77,9 @@ async function loadPlanner(config: Config, initialSessionId?: string | null): Pr
 export async function createPlanner(
   config: Config,
   initialSessionId?: string | null,
+  options?: PlannerFactoryOptions,
 ): Promise<Planner> {
-  const planner = await loadPlanner(config, initialSessionId);
+  const planner = await loadPlanner(config, initialSessionId, options);
   if (config.planner.effort && !planner.capabilities.supportsEffort) {
     warnStderr(`planner-effort: dropped (${config.planner.kind} backend has no reasoning control)`);
   }

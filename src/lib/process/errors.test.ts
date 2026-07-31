@@ -190,6 +190,23 @@ describe('processError.exitCode', () => {
   });
 });
 
+describe('processError.platformLimitation', () => {
+  it('preserves the wrapped process failure as the standard error cause', () => {
+    const cause = Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+    const err = processError.platformLimitation(
+      { operation: 'signal', target: 'process-group', signal: 'SIGKILL' },
+      cause,
+    );
+
+    expect(err).toMatchObject({
+      kind: 'platform-limitation',
+      message: 'Unable to send SIGKILL to process-group',
+      data: { operation: 'signal', target: 'process-group', signal: 'SIGKILL' },
+    });
+    expect(err.cause).toBe(cause);
+  });
+});
+
 describe('spawnError', () => {
   it('tags the unavailable-streams failure with a domain kind', () => {
     const err = spawnError.streamsUnavailable();

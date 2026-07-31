@@ -84,7 +84,7 @@ export async function runPreTaskHooksAndPublish(opts: {
       file: task.file,
       action: task.action,
       tool: getRunnerDisplayName(config.implementer),
-      model: config.implementer.model,
+      ...(config.implementer.model !== undefined && { model: config.implementer.model }),
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...buildRoutingEventFields(wctx.routingDecision),
     },

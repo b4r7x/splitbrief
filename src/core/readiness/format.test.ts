@@ -7,9 +7,10 @@ import {
   readinessBlockerMessage,
   readinessBlockerPointer,
 } from './format.js';
+import { deriveCliReadiness } from '../schemas/readiness.js';
 
 describe('readiness formatting', () => {
-  it('formats human output and compact start records without config secrets', () => {
+  it('formats fail-closed human output and compact start records without config secrets', () => {
     const report = buildReadinessReport({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -36,16 +37,70 @@ describe('readiness formatting', () => {
     const record = createStartReadinessRecord(report);
 
     expect(human).toContain('Run readiness:');
-    expect(human).toContain('Advisory:');
+    expect(human).toContain('Required action: Exit');
+    expect(human).not.toContain('Advisory:');
     expect(human).not.toContain('Next action:');
+    expect(human).toContain('runners.cli.claude-code.readiness');
     expect(human).toContain('validation.disabled');
     expect(human).not.toContain('apiKey');
     expect(record).toMatchObject({
       type: 'start-readiness',
-      status: 'ready-with-warnings',
+      status: 'blocked',
+      nextAction: 'exit',
+      blockerCount: 1,
       warningCount: expect.any(Number),
     });
+    expect(record.checks.some((check) => check.id === 'runners.cli.claude-code.readiness')).toBe(
+      true,
+    );
     expect(record.checks.some((check) => check.id === 'validation.disabled')).toBe(true);
+  });
+
+  it('does not publish trusted executable paths in human or JSON diagnostics', () => {
+    const executablePath = '/Users/private-user/project/bin/claude';
+    const report = buildReadinessReport({
+      projectDir: '/tmp/readiness-project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      configLoad: {
+        state: 'loaded',
+        path: '/tmp/readiness-project/.splitbrief/config.yaml',
+        warnings: [],
+      },
+      packageScripts: {
+        packageJsonExists: true,
+        scripts: { test: 'vitest run' },
+      },
+      repo: {
+        isGitRepo: true,
+        hasCommits: true,
+        dirtyFiles: [],
+        untrackedFiles: [],
+      },
+      cliReadiness: [
+        deriveCliReadiness({
+          tool: 'claude-code',
+          enabled: true,
+          installation: 'installed',
+          executable: {
+            path: executablePath,
+            fingerprint: { dev: 9, ino: 10, size: 11, mtimeMs: 12 },
+          },
+          trust: 'trusted',
+          installedVersion: '2.0.0',
+          testedVersion: '2.0.0',
+          compatibility: 'compatible',
+          auth: 'authenticated',
+          probedAt: 1,
+        }),
+      ],
+    });
+
+    const human = formatReadinessReport(report);
+    const json = JSON.stringify({ type: 'readiness_report', report });
+
+    expect(human).not.toContain(executablePath);
+    expect(json).not.toContain(executablePath);
+    expect(json).toContain('[redacted executable path]');
   });
 
   it('summarizes blocker messages for CLI errors', () => {

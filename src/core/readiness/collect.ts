@@ -25,6 +25,7 @@ import {
 } from './status.js';
 import type { Config } from '../schemas/config.js';
 import type { CommitStrategy } from '../schemas/enums.js';
+import type { CliReadinessResult } from '../schemas/readiness.js';
 import type { WorkflowOpts } from '../types/config-options.js';
 import type { BuildReadinessReportInput } from './checks/build.js';
 import type { ConfigReadinessInput } from './checks/config.js';
@@ -35,12 +36,27 @@ import type { ReadinessCheck, ReadinessReport } from './types.js';
 export interface CollectedReadiness {
   report: ReadinessReport;
   config?: Config | undefined;
+  /** Canonical CLI probe results retained for the execution start gate. */
+  cliReadiness?: readonly CliReadinessResult[] | undefined;
 }
 
 export interface CollectReadinessOptions {
   projectDir: string;
   opts?: WorkflowOpts | undefined;
   config?: Config | undefined;
+  cliReadiness?: readonly CliReadinessResult[] | undefined;
+  /**
+   * Optional live CLI probe used by `start`. The callback is deliberately
+   * outside the generic doctor/readiness collector so cached discovery cannot
+   * be mistaken for an execution start-gate identity.
+   */
+  detectCliReadiness?:
+    | ((input: {
+        projectDir: string;
+        config: Config;
+        opts: WorkflowOpts;
+      }) => Promise<readonly CliReadinessResult[]>)
+    | undefined;
   defaultAutoApprove?: boolean | undefined;
   probeValidation?: boolean | undefined;
 }
@@ -56,12 +72,28 @@ export async function collectReadiness(
     options.projectDir,
     loaded.config?.workflow.git?.commitStrategy,
   );
+  let cliReadiness = options.cliReadiness;
+  if (cliReadiness === undefined && loaded.config && options.detectCliReadiness) {
+    try {
+      cliReadiness = await options.detectCliReadiness({
+        projectDir: options.projectDir,
+        config: loaded.config,
+        opts: options.opts ?? {},
+      });
+    } catch {
+      // A missing/failed live probe is represented by an empty result. Runner
+      // readiness then emits its existing blocker, and no start gate can be
+      // created from stale cache or an ambient environment fallback.
+      cliReadiness = [];
+    }
+  }
   const input: BuildReadinessReportInput = {
     projectDir: options.projectDir,
     configLoad: loaded.configLoad,
     packageScripts,
     repo,
     ...(loaded.config !== undefined && { config: loaded.config }),
+    ...(cliReadiness !== undefined && { cliReadiness }),
   };
 
   const report = buildReadinessReport(input);
@@ -75,6 +107,7 @@ export async function collectReadiness(
   return {
     report,
     config: loaded.config,
+    ...(cliReadiness !== undefined && { cliReadiness }),
   };
 }
 

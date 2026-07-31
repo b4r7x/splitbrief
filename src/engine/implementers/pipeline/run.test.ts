@@ -42,9 +42,65 @@ describe('createImplementerBase — language-aware system preamble', () => {
       onOutput: vi.fn(),
     });
 
-    expect(seenSystemPreamble).toContain('Python code generator');
+    expect(seenSystemPreamble).toContain('coding agent for Python');
     expect(seenSystemPreamble).not.toContain('TypeScript');
+    expect(seenSystemPreamble).not.toContain('Output ONLY');
     expect(seenPrompt).toContain(seenSystemPreamble);
+  });
+});
+
+describe('createImplementerBase — prompt write contracts', () => {
+  it('gives direct-write implementers the staged editing and validation contract', async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({ status: 'completed', text: 'done', usage: null });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: false, invoke }));
+    const task = makeTask({ evidence: ['npm test -- src/hello.test.ts'] });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(seenPrompt).toContain(
+      `Edit ${task.file} directly in the staged working directory. Run the validation commands listed in this Task Brief before finishing.`,
+    );
+    expect(seenPrompt).not.toContain('Output ONLY the complete file contents');
+    expect(seenPrompt).not.toContain('Output the complete file contents');
+    expect(seenPrompt).not.toContain('markdown code fences');
+  });
+
+  it('keeps the extracted-code complete-file output contract', async () => {
+    let seenPrompt = '';
+    const invoke = vi.fn().mockImplementation(async (opts) => {
+      seenPrompt = opts.prompt;
+      return makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const greeting = "hello";\n```',
+        usage: null,
+      });
+    });
+    const implementer = createImplementerBase(makeBaseConfig({ extractsCode: true, invoke }));
+    const task = makeTask();
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(seenPrompt).toContain('- Output ONLY the complete file contents');
+    expect(seenPrompt).toContain(
+      `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`,
+    );
+    expect(seenPrompt).not.toContain('staged working directory');
   });
 });
 

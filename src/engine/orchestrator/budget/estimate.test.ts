@@ -135,6 +135,8 @@ describe('estimateDeterministicCost', () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic',
+          offering: 'payg',
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -145,6 +147,8 @@ describe('estimateDeterministicCost', () => {
           'cheap-worker': {
             kind: 'api',
             provider: 'deepseek',
+            service: 'deepseek',
+            offering: 'payg',
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
             model: 'deepseek-chat',
@@ -209,6 +213,8 @@ describe('estimateDeterministicCost', () => {
         planner: {
           kind: 'api',
           provider: 'openai',
+          service: 'openai',
+          offering: 'payg',
           apiBase: 'https://api.openai.com/v1',
           model: 'gpt-5.4',
         },
@@ -219,6 +225,8 @@ describe('estimateDeterministicCost', () => {
           'gpt-worker': {
             kind: 'api',
             provider: 'openai',
+            service: 'openai',
+            offering: 'payg',
             apiBase: 'https://api.openai.com/v1',
             apiKey: 'test-key',
             model: 'gpt-5.4',
@@ -258,6 +266,8 @@ describe('estimateDeterministicCost', () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic',
+          offering: 'payg',
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -268,6 +278,8 @@ describe('estimateDeterministicCost', () => {
           'unknown-worker': {
             kind: 'api',
             provider: 'custom-cloud',
+            service: 'custom-cloud',
+            offering: 'payg',
             apiBase: 'https://models.example/v1',
             apiKey: 'test-key',
             model: 'custom-model',
@@ -307,6 +319,8 @@ describe('estimateDeterministicCost', () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic',
+          offering: 'payg',
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -317,6 +331,8 @@ describe('estimateDeterministicCost', () => {
           'runtime-worker': {
             kind: 'api',
             provider: 'deepseek',
+            service: 'deepseek',
+            offering: 'payg',
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
             model: 'runtime-only',
@@ -405,6 +421,8 @@ describe('estimateDeterministicCost', () => {
         'fallback-worker': {
           kind: 'api',
           provider: 'custom-cloud',
+          service: 'custom-cloud',
+          offering: 'payg',
           apiBase: 'https://models.example/v1',
           apiKey: 'test-key',
           model: 'unknown-model',
@@ -435,6 +453,8 @@ describe('estimateDeterministicCost', () => {
         'tiny-worker': {
           kind: 'api',
           provider: 'deepseek',
+          service: 'deepseek',
+          offering: 'payg',
           apiBase: 'https://api.deepseek.com/v1',
           model: 'deepseek-chat',
           contextLength: 10,
@@ -466,6 +486,8 @@ describe('estimateDeterministicCost', () => {
         'other-worker': {
           kind: 'api',
           provider: 'deepseek',
+          service: 'deepseek',
+          offering: 'payg',
           apiBase: 'https://api.deepseek.com/v1',
           model: 'deepseek-chat',
           contextLength: 20_000,

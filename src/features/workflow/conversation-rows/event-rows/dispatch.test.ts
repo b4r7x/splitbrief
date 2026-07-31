@@ -578,6 +578,25 @@ describe('event row dispatch', () => {
     expect(dimSegments.some((segment) => segment.text.includes(body))).toBe(true);
   });
 
+  it('renders an implementer failure without inventing an absent model', () => {
+    const segments = eventRows({
+      event: {
+        type: 'implementer_generate_failed',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    }).flatMap((rowValue) => rowValue.segments);
+
+    expect(segments.some((segment) => segment.tone === 'error' && segment.text === 'failed')).toBe(
+      true,
+    );
+    expect(segments.some((segment) => segment.tone === 'textDim')).toBe(false);
+  });
+
   it('renders the user prompt with a prompt marker row and message continuations', () => {
     const block = eventRowBlock({
       event: {

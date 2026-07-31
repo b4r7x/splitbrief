@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { registerResumeCommand, resumeCommand, type ResumeDeps } from './resume.js';
@@ -11,6 +11,7 @@ import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
+import { deriveCliReadiness } from '../../core/schemas/readiness.js';
 
 let tmp: string;
 
@@ -155,6 +156,7 @@ describe('resume command', () => {
               useMouse: false,
               useHover: false,
             }),
+            detectCliReadiness: async () => [],
           },
         }),
     };
@@ -170,5 +172,53 @@ describe('resume command', () => {
       expect(resumeLine).not.toContain('secret');
       logSpy.mockRestore();
     }
+  });
+
+  it('passes only live trusted CLI identities into a resumed headless run', async () => {
+    tmp = createTempDir('resume-readiness-gate');
+    const sessionId = '2026-04-18-readiness-gate';
+    const sessDir = makeSessionDir(tmp, sessionId);
+    writeState(sessDir, 'planning');
+
+    const readiness = deriveCliReadiness({
+      tool: 'claude-code',
+      enabled: true,
+      installation: 'installed',
+      executable: {
+        path: '/usr/local/bin/claude',
+        fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+      },
+      trust: 'trusted',
+      installedVersion: '1.2.3',
+      testedVersion: '1.2.0',
+      compatibility: 'compatible',
+      auth: 'not-required',
+      probedAt: Date.now(),
+    });
+    let gatePath: string | undefined;
+
+    await resumeSavedSession({
+      projectDir: tmp,
+      sessionId,
+      state: JSON.parse(readFileSync(join(sessDir, 'state.json'), 'utf8')) as WorkflowState,
+      opts: { json: true },
+      deps: {
+        initStores: async () => {},
+        renderApp: async () => {},
+        runHeadless: async ({ trustedCliGates }) => {
+          gatePath = trustedCliGates?.get('claude-code')?.executable.path;
+        },
+        runRpc: async () => {},
+        setupWorkflow: async () => ({
+          projectDir: tmp,
+          useFullscreen: false,
+          useMouse: false,
+          useHover: false,
+        }),
+        detectCliReadiness: async () => [readiness],
+      },
+    });
+
+    expect(gatePath).toBe('/usr/local/bin/claude');
   });
 });

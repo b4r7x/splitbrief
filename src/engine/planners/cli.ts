@@ -1,20 +1,23 @@
 import { basename, join, relative, resolve } from 'node:path';
 import { confinedExists, confinedReadFile } from '../../lib/confined-fs.js';
 import { isPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
-import { createBoundedOutput } from '../../lib/process/bounded-output.js';
-import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { matches } from '../../utils/error.js';
 
 const isPathEscape = matches('path-confined-escape');
 import type { Config } from '../../core/schemas/config.js';
-import { applyInvokeResultProjection, toTokenDelta } from '../calls/projection.js';
-import type { Planner, PlannerCallbacks } from './types.js';
+import type { Planner, PlannerCallbacks, PlannerFactoryOptions } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
-import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { getLineParser } from '../streaming/output-parsers.js';
-import { CLI_TOOLS } from '../runners/cli-tools.js';
+import {
+  CLI_NO_DEADLINE_MS,
+  CLI_PROMPT_PLACEHOLDER,
+  CLI_TOOLS,
+  createCliPlannerAdapter,
+  invokeCliAdapter,
+  toCliEnvironment,
+} from '../runners/cli-tools.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import {
@@ -36,6 +39,12 @@ import {
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
+import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js';
+import { processError } from '../../lib/process/errors.js';
+import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
+
+const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
@@ -98,8 +107,14 @@ function isRecoverableResumeNoise(event: RunnerCallEvent, resumeId: string): boo
   }
 }
 
-export function createCliPlanner(config: Config, initialSessionId?: string | null): Planner {
+export function createCliPlanner(
+  config: Config,
+  initialSessionId?: string | null,
+  options?: PlannerFactoryOptions,
+): Planner {
   const plannerCfg = assertPlannerKind(config, 'cli');
+  resolveCliRunnerAuth(plannerCfg);
+  const trustedCli: CliStartGate | undefined = options?.trustedCli;
   const resolvedModel = resolveAutoModel(plannerCfg.model, plannerCfg.tool);
   const tool = CLI_TOOLS[plannerCfg.tool];
   if (!tool.planner) throw runnerConfigError.missingToolConfig(plannerCfg.tool, 'planner');
@@ -127,11 +142,8 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<RunnerCallResult> {
     const { prompt, projectDir, callbacks, callContext, mode, resumeId, signal, sandboxEnv } = opts;
-    const stderrOutput = createBoundedOutput({
-      maxBytes: DEFAULT_PROCESS_STDERR_MAX_BYTES,
-      policy: 'tail',
-    });
     let unexpectedResumeSessionId: string | null = null;
+    let stderrOutput = '';
     const callbackBuffer = resumeId === null ? null : createRunnerAttemptCallbackBuffer(callbacks);
     const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
     const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
@@ -145,41 +157,72 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
 
     const effectiveSignal = composeAbortSignal(signal, timeout);
     const onCallEvent = (event: RunnerCallEvent): void => {
+      if (event.type === 'call_stderr_delta') {
+        stderrOutput = `${stderrOutput}${event.text}`.slice(-8_192);
+      }
       if (resumeId && isRecoverableResumeNoise(event, resumeId)) return;
       attemptCallbacks.onCallEvent?.(event);
     };
 
     try {
-      const result = await spawnAndCollect({
-        command: tool.command,
-        args: [...planner.buildArgs(buildOpts), ...extraArgs],
-        cwd: projectDir,
-        env: sandboxEnv,
-        notFoundMessage: tool.notFoundMessage,
+      let executable: Awaited<ReturnType<typeof resolveCliExecutable>>;
+      try {
+        executable = await resolveCliExecutable(
+          tool.command,
+          projectDir,
+          assertCliStartGate(plannerCfg.tool, trustedCli),
+        );
+      } catch (err) {
+        if (isCliExecutableUnavailable(err)) {
+          throw processError.notFound(tool.command, tool.notFoundMessage);
+        }
+        throw err;
+      }
+      const adapter = createCliPlannerAdapter({
+        toolName: plannerCfg.tool,
+        planner,
         parseLine,
-        onText: attemptCallbacks.onOutput,
-        onCallEvent,
+        postProcess: planner.postProcess,
+      });
+      const args = adapter.buildArgs({
+        ...buildOpts,
+        prompt: CLI_PROMPT_PLACEHOLDER,
+        model: resolvedModel,
+        sessionId: resumeId,
+        effort: supportsEffort ? effort : undefined,
+        configuredArgs: extraArgs,
+      });
+      const result = await invokeCliAdapter({
+        adapter,
+        invocation: {
+          executable,
+          args,
+          promptTransport: adapter.promptTransport,
+          environment: toCliEnvironment(
+            sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg)),
+          ),
+          cwd: projectDir,
+          timeoutMs: timeout ?? CLI_NO_DEADLINE_MS,
+          signal: effectiveSignal,
+        },
+        prompt,
         callContext,
-        onStderr: planner.postProcess
-          ? (chunk) => {
-              stderrOutput.append(chunk);
+        onOutput: attemptCallbacks.onOutput,
+        onCallEvent,
+        onSessionId: supportsSessionResume
+          ? (id: string) => {
+              if (resumeId && id !== resumeId) {
+                unexpectedResumeSessionId = id;
+                return;
+              }
+              session.capture(id);
+              attemptCallbacks.onSessionId?.(id);
             }
           : undefined,
-        signal: effectiveSignal,
         idle: {
           warnMs: plannerCfg.idleWarnMs,
           killMs: plannerCfg.idleKillMs,
         },
-        ...(supportsSessionResume && {
-          onSessionId: (id: string) => {
-            if (resumeId && id !== resumeId) {
-              unexpectedResumeSessionId = id;
-              return;
-            }
-            session.capture(id);
-            attemptCallbacks.onSessionId?.(id);
-          },
-        }),
       });
 
       const returnedSessionId = result.nativeSessionId ?? unexpectedResumeSessionId;
@@ -188,20 +231,12 @@ export function createCliPlanner(config: Config, initialSessionId?: string | nul
       }
 
       if (result.status !== 'completed') {
-        if (resumeId && isSessionExpiredError(result.error?.message ?? result.text)) {
-          throw sessionResumeExpiredError(resumeId, result.error?.message ?? result.text);
+        const failureText = `${result.error?.message ?? result.text}\n${stderrOutput}`;
+        if (resumeId && isSessionExpiredError(failureText)) {
+          throw sessionResumeExpiredError(resumeId, failureText);
         }
         callbackBuffer?.flush();
         return result;
-      }
-      const usage = toTokenDelta(result.usage);
-      if (planner.postProcess) {
-        const projected = applyInvokeResultProjection(
-          result,
-          planner.postProcess(result.text, stderrOutput.snapshot().text, usage),
-        );
-        callbackBuffer?.flush();
-        return projected;
       }
       callbackBuffer?.flush();
       return result;

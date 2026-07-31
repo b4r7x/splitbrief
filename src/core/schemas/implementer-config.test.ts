@@ -6,6 +6,8 @@ describe('ImplementerConfigSchema', () => {
     const withoutModel = ImplementerConfigSchema.safeParse({
       kind: 'api',
       provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       apiBase: 'http://localhost:11434/v1',
     });
     expect(withoutModel.success).toBe(false);
@@ -13,6 +15,8 @@ describe('ImplementerConfigSchema', () => {
     const withModel = ImplementerConfigSchema.safeParse({
       kind: 'api',
       provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       apiBase: 'http://localhost:11434/v1',
       model: 'qwen2.5:7b',
     });

@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { CLI_TOOLS } from './cli-tools.js';
+import { tmpdir } from 'node:os';
+import {
+  CLI_PROMPT_PLACEHOLDER,
+  CLI_TOOLS,
+  createCliImplementerAdapter,
+  createCliPlannerAdapter,
+  invokeCliAdapter,
+} from './cli-tools.js';
+import { parseTextLine } from '../streaming/parse-text.js';
+import type { RunnerCallContext } from '../calls/types.js';
 
 type PlannerScenario = {
   tool: keyof typeof CLI_TOOLS;
@@ -204,18 +213,10 @@ describe('CLI_TOOLS trust metadata', () => {
   });
 });
 
-describe('CLI_TOOLS prompt argv clamping (Linux MAX_ARG_STRLEN guard)', () => {
-  const MAX_ARGV_PROMPT_BYTES = 120_000;
-  const TRUNCATION_MARKER = '[SPLITBRIEF: prompt truncated to fit the OS argv limit';
-
+describe('CLI_TOOLS prompt argv transport', () => {
   const longHead = 'HEAD_SENTINEL ';
   const longTail = ' TAIL_SENTINEL';
   const oversizedPrompt = longHead + 'x'.repeat(200_000) + longTail;
-
-  function promptArg(args: string[]): string {
-    const longest = args.reduce((a, b) => (b.length > a.length ? b : a), '');
-    return longest;
-  }
 
   it('passes short prompts through verbatim for every planner', () => {
     for (const tool of Object.keys(CLI_TOOLS) as (keyof typeof CLI_TOOLS)[]) {
@@ -228,7 +229,7 @@ describe('CLI_TOOLS prompt argv clamping (Linux MAX_ARG_STRLEN guard)', () => {
         mode: 'plan',
       });
       expect(args).toContain('compile this brief');
-      expect(args.join('\n')).not.toContain(TRUNCATION_MARKER);
+      expect(args.join('\n')).toContain('compile this brief');
     }
   });
 
@@ -238,11 +239,11 @@ describe('CLI_TOOLS prompt argv clamping (Linux MAX_ARG_STRLEN guard)', () => {
       if (!impl) continue;
       const args = impl.buildArgs({ prompt: 'apply this brief', model: undefined });
       expect(args).toContain('apply this brief');
-      expect(args.join('\n')).not.toContain(TRUNCATION_MARKER);
+      expect(args.join('\n')).toContain('apply this brief');
     }
   });
 
-  it('truncates an oversized planner prompt below the argv cap with a warning marker', () => {
+  it('keeps an oversized planner prompt byte-for-byte for the adapter to reject before spawn', () => {
     for (const tool of Object.keys(CLI_TOOLS) as (keyof typeof CLI_TOOLS)[]) {
       const planner = CLI_TOOLS[tool].planner;
       if (!planner) continue;
@@ -252,24 +253,20 @@ describe('CLI_TOOLS prompt argv clamping (Linux MAX_ARG_STRLEN guard)', () => {
         projectDir: '/tmp',
         mode: 'plan',
       });
-      const arg = promptArg(args);
-      expect(Buffer.byteLength(arg, 'utf8')).toBeLessThanOrEqual(MAX_ARGV_PROMPT_BYTES);
-      expect(arg).toContain(TRUNCATION_MARKER);
-      expect(arg.startsWith(longHead)).toBe(true);
-      expect(arg).not.toContain(longTail);
+      expect(args).toContain(oversizedPrompt);
+      expect(args.find((arg) => arg.includes(longHead))).toBe(oversizedPrompt);
+      expect(args.find((arg) => arg.includes(longTail))).toBe(oversizedPrompt);
     }
   });
 
-  it('truncates an oversized implementer prompt below the argv cap with a warning marker', () => {
+  it('keeps an oversized implementer prompt byte-for-byte for the adapter to reject before spawn', () => {
     for (const tool of Object.keys(CLI_TOOLS) as (keyof typeof CLI_TOOLS)[]) {
       const impl = CLI_TOOLS[tool].implementer;
       if (!impl) continue;
       const args = impl.buildArgs({ prompt: oversizedPrompt, model: undefined });
-      const arg = promptArg(args);
-      expect(Buffer.byteLength(arg, 'utf8')).toBeLessThanOrEqual(MAX_ARGV_PROMPT_BYTES);
-      expect(arg).toContain(TRUNCATION_MARKER);
-      expect(arg.startsWith(longHead)).toBe(true);
-      expect(arg).not.toContain(longTail);
+      expect(args).toContain(oversizedPrompt);
+      expect(args.find((arg) => arg.includes(longHead))).toBe(oversizedPrompt);
+      expect(args.find((arg) => arg.includes(longTail))).toBe(oversizedPrompt);
     }
   });
 });
@@ -289,5 +286,116 @@ describe('CLI_TOOLS availability timeouts', () => {
 
   it('opencode planner has 5000ms availability timeout', () => {
     expect(getPlanner('opencode').isAvailableOpts?.timeout).toBe(5000);
+  });
+});
+
+describe('CLI adapter argument contract', () => {
+  it('keeps configured argument order and rejects protected flags/placeholders', () => {
+    const planner = getPlanner('codex');
+    const adapter = createCliPlannerAdapter({
+      toolName: 'codex',
+      planner,
+      parseLine: planner.parseLine,
+    });
+    const base = adapter.buildArgs({
+      prompt: CLI_PROMPT_PLACEHOLDER,
+      model: undefined,
+      projectDir: '/tmp/project',
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+      configuredArgs: ['--label', 'two words', 'Zażółć 🙂'],
+    });
+
+    expect(adapter.validateArgs(base)).toEqual({ valid: true });
+    expect(adapter.validateArgs([...base, '--model', 'unsafe'])).toEqual({
+      valid: false,
+      conflicts: ['--model'],
+    });
+    expect(adapter.validateArgs([...base, 'prefix-<PROMPT>'])).toEqual({
+      valid: false,
+      conflicts: ['prompt-transport'],
+    });
+    expect(adapter.validateArgs([...base, CLI_PROMPT_PLACEHOLDER])).toEqual({
+      valid: false,
+      conflicts: ['prompt-transport'],
+    });
+    expect(adapter.validateArgs([CLI_PROMPT_PLACEHOLDER, ...base])).toEqual({
+      valid: false,
+      conflicts: ['argument-order', 'prompt-transport'],
+    });
+  });
+
+  it('uses the same lossless argv contract for implementers', () => {
+    const implementer = getImplementer('opencode');
+    const adapter = createCliImplementerAdapter({
+      toolName: 'opencode',
+      implementer,
+      parseLine: implementer.parseLine ?? parseTextLine,
+    });
+    const args = adapter.buildArgs({
+      prompt: CLI_PROMPT_PLACEHOLDER,
+      model: 'claude-sonnet-4-6',
+      projectDir: '/tmp/project',
+      configuredArgs: ['--label', 'Describe --model as data'],
+    });
+
+    expect(adapter.promptTransport).toEqual({ kind: 'argv', maxBytes: 120_000 });
+    expect(args).toEqual([
+      'run',
+      '--model',
+      'claude-sonnet-4-6',
+      '--format',
+      'json',
+      CLI_PROMPT_PLACEHOLDER,
+      '--label',
+      'Describe --model as data',
+    ]);
+    expect(adapter.validateArgs(args)).toEqual({ valid: true });
+  });
+
+  it('rejects an oversized multibyte prompt before executable identity or spawn', async () => {
+    const implementer = getImplementer('opencode');
+    const adapter = createCliImplementerAdapter({
+      toolName: 'opencode',
+      implementer,
+      parseLine: implementer.parseLine ?? parseTextLine,
+    });
+    const args = adapter.buildArgs({
+      prompt: CLI_PROMPT_PLACEHOLDER,
+      model: undefined,
+      projectDir: '/tmp/project',
+      configuredArgs: [],
+    });
+    const callContext = {
+      callId: 'cli-tools-adapter-test',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+    } satisfies RunnerCallContext;
+
+    const result = await invokeCliAdapter({
+      adapter,
+      invocation: {
+        executable: {
+          path: `${tmpdir()}/missing-opencode`,
+          fingerprint: { dev: 0, ino: 0, size: 0, mtimeMs: 0 },
+        },
+        args,
+        promptTransport: adapter.promptTransport,
+        environment: {},
+        cwd: tmpdir(),
+        timeoutMs: 5_000,
+        signal: undefined,
+      },
+      prompt: `${'🙂漢字'.repeat(30_001)}FINAL-SENTINEL-Ω`,
+      callContext,
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'prompt-transport-error' },
+    });
+    expect(result.error?.message).not.toContain('FINAL-SENTINEL-Ω');
   });
 });

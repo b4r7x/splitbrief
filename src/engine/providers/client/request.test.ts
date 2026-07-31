@@ -135,6 +135,42 @@ describe('fetchModelList', () => {
     expect(errors.some((e) => e?.includes('network failure'))).toBe(true);
   });
 
+  it('redacts exact credential and custom-header values from upstream diagnostics', async () => {
+    const canary = 'canary-provider-credential-7f3b';
+    const headerCanary = 'canary-header-value-19ad';
+    vi.mocked(globalThis.fetch).mockRejectedValue(
+      new Error(
+        `upstream request failed: Authorization: Bearer ${canary}; x-provider-token: ${headerCanary}`,
+      ),
+    );
+    const errors: Array<string | undefined> = [];
+
+    await fetchModelList({
+      endpoint: 'https://api.example.com/v1/models',
+      apiKey: canary,
+      headers: { 'x-provider-token': headerCanary },
+      onError: (err: string | undefined) => errors.push(err),
+      extractModels: defaultExtract,
+    });
+
+    const diagnostic = errors.at(-1) ?? '';
+    expect(diagnostic).not.toContain(canary);
+    expect(diagnostic).not.toContain(headerCanary);
+    expect(diagnostic).toContain('***REDACTED***');
+  });
+
+  it('redacts sensitive query values before including an endpoint in HTTP diagnostics', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('bad', { status: 401 }));
+    const canary = 'canary-query-value-53c1';
+
+    await expect(
+      fetchJsonWithTimeout(`https://api.example.com/v1/models?api_key=${canary}`, 1000),
+    ).rejects.toMatchObject({
+      kind: 'provider-http-failure',
+      data: expect.objectContaining({ url: expect.not.stringContaining(canary) }),
+    });
+  });
+
   it('returns [] when body is not a JSON object and reports "Invalid response payload"', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify('a string, not an object'), { status: 200 }),

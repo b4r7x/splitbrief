@@ -162,6 +162,7 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
       useMouse: true,
       useHover: false,
     }),
+    detectCliReadiness: async () => [],
     printCrashDiagnostic: async () => ({
       sessionId: 'test',
       status: 'crashed' as const,
@@ -559,11 +560,8 @@ describe('continueCommand', () => {
       [
         'version: 3',
         'planner:',
-        '  kind: api',
-        '  provider: ollama',
-        '  apiBase: http://localhost:11434/v1',
-        '  model: qwen2.5-coder:7b',
-        '  contextLength: 32768',
+        '  kind: cli',
+        '  tool: claude-code',
         'implementer:',
         '  kind: api',
         '  provider: ollama',

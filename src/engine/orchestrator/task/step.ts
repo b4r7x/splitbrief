@@ -346,7 +346,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       state,
       taskBreakdowns,
       tool: getRunnerDisplayName(config.implementer),
-      model: config.implementer.model,
+      ...(config.implementer.model !== undefined && { model: config.implementer.model }),
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
     });

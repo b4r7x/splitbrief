@@ -30,6 +30,8 @@ const cliPlannerConfig = { kind: 'cli' as const, tool: 'claude-code' as const };
 const apiPlannerConfig = {
   kind: 'api' as const,
   provider: 'ollama' as const,
+  service: 'ollama' as const,
+  offering: 'local' as const,
   apiBase: 'http://localhost:11434/v1',
   model: 'test',
 };

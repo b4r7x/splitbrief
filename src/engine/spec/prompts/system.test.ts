@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildLanguageContext } from './language-context.js';
-import { buildSystemPreamble } from './system.js';
+import { buildImplementerSystemPreamble, buildSystemPreamble } from './system.js';
 
 describe('buildSystemPreamble', () => {
   it('TypeScript preamble keeps TypeScript conventions', () => {
@@ -23,5 +23,27 @@ describe('buildSystemPreamble', () => {
     const prompt = buildSystemPreamble();
     expect(prompt).toContain('project language');
     expect(prompt).not.toMatch(/TypeScript|typescript|PEP 484|\.js extensions/);
+  });
+});
+
+describe('buildImplementerSystemPreamble', () => {
+  it('keeps the direct-writer editing contract', () => {
+    const languageContext = buildLanguageContext('python');
+
+    expect(buildImplementerSystemPreamble(languageContext, 'direct')).toBe(
+      `SYSTEM: You are a coding agent for Python. You write clean, working code directly in the staged working directory.
+Rules:
+- Do NOT add comments unless specified in the task
+- Use Python import statements (from/import)
+- Follow the exact function signatures provided`,
+    );
+  });
+
+  it('reuses the complete-file preamble for extracted-code implementers', () => {
+    const languageContext = buildLanguageContext('typescript');
+
+    expect(buildImplementerSystemPreamble(languageContext, 'extracted-code')).toBe(
+      buildSystemPreamble(languageContext),
+    );
   });
 });

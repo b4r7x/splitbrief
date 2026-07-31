@@ -4,15 +4,16 @@ import { delimiter, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { checkRunnerTrust, rejectUntrustedRunners } from './trust.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import type { Config } from '../../core/schemas/config.js';
 
-function shellConfig(command: string): Partial<Config> {
+type ConfigOverrides = NonNullable<Parameters<typeof makeConfig>[0]>;
+
+function shellConfig(command: string): ConfigOverrides {
   return {
     implementer: {
       kind: 'shell',
       command,
       model: 'test-model',
-    } as Config['implementer'],
+    },
   };
 }
 

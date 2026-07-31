@@ -1,23 +1,37 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors/runner-config.js';
 import { resolveApproveLevel, resolveMode } from '../../config/runtime/resolve.js';
+import { CLI_TOOL_CATALOG, type RunnerTrustMetadata } from '../../runners/cli-tool-catalog.js';
 import type { Config } from '../../schemas/config.js';
-import {
-  getRunnerTrustMeta,
-  RUNNER_IDLE_KILL_MS,
-  type RunnerTrustMetadata,
-} from '../../schemas/runner-fields.js';
+import type { CliToolId } from '../../schemas/enums.js';
+import { cliReadinessCheckId, type CliReadinessResult } from '../../schemas/readiness.js';
+import { getRunnerTrustMeta, RUNNER_IDLE_KILL_MS } from '../../schemas/runner-fields.js';
 import type { ReadinessCheck } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+
+const REDACTED_EXECUTABLE_PATH = '[redacted executable path]';
+
+/**
+ * Readiness keeps the trusted identity for the start gate, but diagnostics are
+ * public output (including `doctor --json`). Never publish the identity path.
+ */
+function diagnosticExecutablePath(result: CliReadinessResult): string | null {
+  return result.executable === null ? null : REDACTED_EXECUTABLE_PATH;
+}
 
 function formatRunner(runner: Config['planner'] | Config['implementer']): string {
   const model = getRunnerModelName(runner);
   return model ? `${getRunnerDisplayName(runner)} (${model})` : getRunnerDisplayName(runner);
 }
 
-export function buildRunnerChecks(config: Config): ReadinessCheck[] {
+export function buildRunnerChecks(
+  config: Config,
+  cliReadiness: readonly CliReadinessResult[] = [],
+): ReadinessCheck[] {
   const checks: ReadinessCheck[] = [];
+  const configuredCliTools = new Set<CliToolId>();
+  if (config.planner.kind === 'cli') configuredCliTools.add(config.planner.tool);
   checks.push(runnerCheck('planner', config.planner));
 
   try {
@@ -42,6 +56,9 @@ export function buildRunnerChecks(config: Config): ReadinessCheck[] {
     checks.push(...buildImplementerProfileMetadataChecks(config, resolved.profiles));
     checks.push(...buildRunnerTrustBoundaryChecks(config, resolved.profiles));
     checks.push(...buildWatchdogTimeoutChecks(config, resolved.profiles));
+    for (const profile of resolved.profiles) {
+      if (profile.config.kind === 'cli') configuredCliTools.add(profile.config.tool);
+    }
   } catch (err) {
     checks.push({
       id: 'runners.implementer.profiles-invalid',
@@ -52,19 +69,81 @@ export function buildRunnerChecks(config: Config): ReadinessCheck[] {
     });
   }
 
-  checks.push({
-    id: 'runners.availability',
-    severity: 'info',
-    summary: 'Runner availability was not probed.',
-    details: [
-      'Readiness does not require network probes or CLI auth checks.',
-      config.planner.kind === 'api'
-        ? 'Verify the API key, endpoint, and model directly if availability is uncertain.'
-        : 'Verify the runner CLI directly if availability is uncertain.',
-    ],
-  });
+  checks.push(availabilityCheck());
+  checks.push(...configuredCliReadinessChecks(configuredCliTools, cliReadiness));
 
   return checks;
+}
+
+function availabilityCheck(): ReadinessCheck {
+  return {
+    id: 'runners.availability',
+    severity: 'info',
+    summary: 'Provider availability was not probed.',
+    details: [
+      'CLI installation, trust, compatibility, and authentication use the selected runner readiness results.',
+      'Readiness makes no provider or network availability claim.',
+    ],
+  };
+}
+
+function configuredCliReadinessChecks(
+  configuredTools: ReadonlySet<CliToolId>,
+  results: readonly CliReadinessResult[],
+): ReadinessCheck[] {
+  const resultsByTool = new Map(results.map((result) => [result.tool, result]));
+  return [...configuredTools].map((tool) => {
+    const result = resultsByTool.get(tool);
+    return result ? cliReadinessCheck(result) : missingCliReadinessCheck(tool);
+  });
+}
+
+function missingCliReadinessCheck(tool: CliToolId): ReadinessCheck {
+  const descriptor = CLI_TOOL_CATALOG[tool];
+  return {
+    id: cliReadinessCheckId(tool),
+    severity: 'blocker',
+    summary: `${descriptor.displayName} has no current readiness probe result.`,
+    fix: `Run runner readiness for ${tool}, then start again.`,
+    metadata: {
+      tool,
+      status: 'unverified',
+      installation: 'not-checked',
+      trust: 'not-checked',
+      compatibility: 'not-checked',
+      auth: 'not-checked',
+      executablePath: null,
+    },
+  };
+}
+
+function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
+  const descriptor = CLI_TOOL_CATALOG[result.tool];
+  const severity =
+    result.status === 'ready' ? 'ok' : result.status === 'unverified' ? 'warning' : 'blocker';
+  return {
+    id: result.checkId,
+    severity,
+    summary:
+      result.status === 'ready'
+        ? result.auth === 'not-required'
+          ? `${descriptor.displayName} is installed, trusted, compatible, and does not require authentication.`
+          : `${descriptor.displayName} is installed, trusted, compatible, and authenticated.`
+        : `${descriptor.displayName} readiness is ${result.status}.`,
+    ...(result.remediation !== null && { fix: result.remediation }),
+    metadata: {
+      tool: result.tool,
+      status: result.status,
+      installation: result.installation,
+      trust: result.trust,
+      installedVersion: result.installedVersion,
+      testedVersion: result.testedVersion,
+      compatibility: result.compatibility,
+      auth: result.auth,
+      executablePath: diagnosticExecutablePath(result),
+      probedAt: result.probedAt,
+    },
+  };
 }
 
 function buildRunnerTrustBoundaryChecks(

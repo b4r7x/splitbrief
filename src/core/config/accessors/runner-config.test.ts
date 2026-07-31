@@ -16,6 +16,8 @@ describe('getPlannerToolId', () => {
     const config: PlannerConfig = {
       kind: 'api',
       provider: 'anthropic',
+      service: 'anthropic',
+      offering: 'payg',
       apiBase: 'https://api.anthropic.com/v1',
       model: 'claude-opus-4-5',
     };
@@ -26,6 +28,8 @@ describe('getPlannerToolId', () => {
     const config: PlannerConfig = {
       kind: 'api',
       provider: 'my-custom',
+      service: 'my-custom',
+      offering: 'payg',
       apiBase: 'http://localhost:9999/v1',
       model: 'my-model',
     };
@@ -58,6 +62,8 @@ describe('getRunnerCatalogDisplayName maps runners to catalog display names', ()
     const config: PlannerConfig = {
       kind: 'api',
       provider: 'anthropic',
+      service: 'anthropic',
+      offering: 'payg',
       apiBase: 'https://api.anthropic.com/v1',
       model: 'claude-opus-4-5',
     };

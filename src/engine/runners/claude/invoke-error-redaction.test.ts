@@ -1,0 +1,86 @@
+import { chmodSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { prependPath } from '#testing/helpers/command-shim.js';
+import { runClaudeOneShot } from './invoke.js';
+import type { RunnerCallEvent } from '../../calls/types.js';
+
+let shimDir: string;
+let projectDir: string;
+let restorePath: () => void;
+
+beforeEach(() => {
+  shimDir = createTempDir('claude-error-redaction-shim');
+  projectDir = createTempDir('claude-error-redaction-project');
+  restorePath = prependPath(shimDir);
+});
+
+afterEach(() => {
+  restorePath();
+  cleanupTempDir(shimDir);
+  cleanupTempDir(projectDir);
+});
+
+function installFailingClaudeShim(): CliExecutableIdentity {
+  const shimPath = join(shimDir, 'claude');
+  const script = [
+    '#!/usr/bin/env node',
+    "process.stderr.write('failure from ' + process.argv[1] + '\\n');",
+    'process.exit(23);',
+    '',
+  ].join('\n');
+  writeFileSync(shimPath, script, 'utf8');
+  chmodSync(shimPath, 0o755);
+  const path = realpathSync(shimPath);
+  const info = statSync(path);
+  return {
+    path,
+    fingerprint: {
+      dev: info.dev,
+      ino: info.ino,
+      size: info.size,
+      mtimeMs: info.mtimeMs,
+    },
+  };
+}
+
+describe('Claude invoke process diagnostics', () => {
+  it('redacts a trusted executable path from nonzero exit errors and call events', async () => {
+    const executable = installFailingClaudeShim();
+    const events: RunnerCallEvent[] = [];
+
+    await expect(
+      runClaudeOneShot({
+        prompt: 'prompt',
+        projectDir,
+        executable,
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toSatisfy((err: unknown) => {
+      if (!(err instanceof Error)) return false;
+      const data = (err as Error & { data?: unknown }).data;
+      return (
+        err.message === 'claude exited with code 23: failure from claude' &&
+        !err.message.includes(executable.path) &&
+        JSON.stringify(data).includes('claude') &&
+        !JSON.stringify(data).includes(executable.path)
+      );
+    });
+
+    expect(JSON.stringify(events)).not.toContain(executable.path);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'call_error',
+          error: expect.objectContaining({
+            code: 'process-output',
+            message: 'claude exited with code 23: failure from claude',
+          }),
+        }),
+      ]),
+    );
+  });
+});

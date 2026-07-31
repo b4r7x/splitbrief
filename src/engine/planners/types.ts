@@ -8,6 +8,12 @@ import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
+import type { CliStartGate } from '../runners/start-gate.js';
+
+export interface PlannerFactoryOptions {
+  /** Canonical CLI identity admitted by the start-readiness gate. */
+  trustedCli?: CliStartGate | undefined;
+}
 
 export type PlannerCapabilities = {
   /** Planner can emit inline clarification questions during planning. */

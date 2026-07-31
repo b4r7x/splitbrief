@@ -110,6 +110,8 @@ describe('ConfigSchema user config contracts', () => {
               'local-qwen': {
                 kind: 'api',
                 provider: 'ollama',
+                service: 'ollama',
+                offering: 'local',
                 apiBase: 'http://localhost:11434/v1',
                 model: 'qwen2.5-coder:7b',
               },
@@ -129,6 +131,8 @@ describe('ConfigSchema user config contracts', () => {
               'Local Qwen': {
                 kind: 'api',
                 provider: 'ollama',
+                service: 'ollama',
+                offering: 'local',
                 apiBase: 'http://localhost:11434/v1',
                 model: 'qwen2.5-coder:7b',
               },

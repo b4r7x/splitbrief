@@ -10,7 +10,9 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 
-function makeConfig(extra?: Partial<Config['implementer']>): Config {
+type AgentConfig = Extract<Config['implementer'], { kind: 'agent' }>;
+
+function makeConfig(extra?: Partial<AgentConfig>): Config {
   return makeBaseConfig({
     implementer: {
       model: 'test',
@@ -153,8 +155,9 @@ describe('agent implementer', () => {
     });
 
     const implementer = createAgentImplementer(config);
+    const task = makeTask({ description: 'test prompt content' });
     const result = await implementer.implement({
-      task: makeTask({ description: 'test prompt content' }),
+      task,
       projectDir: testDir,
       config,
       context: { ...context, dir: testDir },
@@ -164,7 +167,9 @@ describe('agent implementer', () => {
     expect(result.success).toBe(true);
     const prompt = readFileSync(outFile, 'utf-8');
     expect(prompt).toContain('test prompt content');
-    expect(prompt).toContain('Output the complete file contents');
+    expect(prompt).toContain(
+      `Edit ${task.file} directly in the staged working directory. Run the validation commands listed in this Task Brief before finishing.`,
+    );
     expect(prompt).not.toContain('{prompt}');
   });
 

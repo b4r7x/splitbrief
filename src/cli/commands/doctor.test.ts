@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
+import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import { deriveCliReadiness, type CliReadinessResult } from '../../core/schemas/readiness.js';
 import { isCliError } from '../errors.js';
 import { registerDoctorCommand } from './doctor.js';
 
@@ -65,10 +67,32 @@ function validConfigYaml(): string {
   ].join('\n');
 }
 
+function deterministicCliReadiness(): readonly CliReadinessResult[] {
+  return [
+    deriveCliReadiness({
+      tool: 'claude-code',
+      enabled: true,
+      installation: 'installed',
+      executable: {
+        path: '/usr/local/bin/claude',
+        fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
+      },
+      trust: 'trusted',
+      installedVersion: CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion,
+      testedVersion: CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion,
+      compatibility: 'compatible',
+      auth: 'authenticated',
+      probedAt: 1,
+    }),
+  ];
+}
+
 async function runDoctor(args: string[]): Promise<void> {
   const program = new Command();
   program.exitOverride();
-  registerDoctorCommand(program);
+  registerDoctorCommand(program, {
+    detectCliReadiness: async () => deterministicCliReadiness(),
+  });
   await program.parseAsync(['node', 'splitbrief', 'doctor', ...args]);
 }
 

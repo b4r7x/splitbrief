@@ -69,6 +69,10 @@ export async function dispatchStreamCompletion(
     temperature,
     onProgress,
     endpoint: { provider, apiBase },
+    // The OpenAI-compatible transport receives the client separately from
+    // the resolved credential. Thread the actual value into its recorder so
+    // every production dispatch surface applies the same redaction boundary.
+    credentialValues: apiKey.length > 0 ? [apiKey] : [],
     ...(maxTokens !== undefined && { maxTokens }),
     ...(signal !== undefined && { signal }),
     ...(effort !== undefined && { effort }),

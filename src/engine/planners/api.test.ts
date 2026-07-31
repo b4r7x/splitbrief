@@ -17,11 +17,16 @@ let receivedHeaders: http.IncomingHttpHeaders[];
 let projectDir: string;
 
 function makeApiPlannerConfig(provider: string): Config {
+  const service = provider;
+  const offering = provider === 'ollama' ? 'local' : 'payg';
+
   return {
     version: 2,
     planner: {
       kind: 'api',
       provider,
+      service,
+      offering,
       model: 'test-model',
       apiBase: `http://127.0.0.1:${port}/v1`,
       apiKey: 'test-key',
@@ -29,6 +34,8 @@ function makeApiPlannerConfig(provider: string): Config {
     implementer: {
       kind: 'api',
       provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       model: 'test',
       apiBase: 'http://localhost:11434/v1',
       contextLength: 8192,
@@ -336,6 +343,8 @@ describe('createApiPlanner', () => {
       planner: {
         kind: 'api',
         provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
         model: 'test-model',
         apiBase: 'https://openrouter.ai/api/v1',
       },

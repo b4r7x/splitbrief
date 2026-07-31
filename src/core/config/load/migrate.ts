@@ -7,6 +7,7 @@ import {
 } from '../../schemas/enums.js';
 import { getRunnerKindMeta } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
+import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
 import { narrowRecord, includes } from '../../../utils/type-guards.js';
 import { configError } from '../errors.js';
 import { ConfigSchema } from '../../schemas/config.js';
@@ -27,7 +28,7 @@ export function migrateConfig(raw: unknown, warnings?: string[]): unknown {
 
   let v2: Record<string, unknown>;
   if (version === 3) {
-    return reconcileLegacyCommitStrategy(obj);
+    return migrateLegacyApiIdentities(reconcileLegacyCommitStrategy(obj));
   } else if (version === 2) {
     v2 = obj;
     warnings?.push(
@@ -68,6 +69,55 @@ export function migrateV2ToV3(v2: Record<string, unknown>): Record<string, unkno
     }
 
     result.workflow = newWorkflow;
+  }
+
+  return migrateLegacyApiIdentities(result);
+}
+
+const API_PROVIDER_DESCRIPTORS = Object.values(API_PROVIDER_CATALOG);
+
+function migrateLegacyApiIdentity(raw: unknown): unknown {
+  const runner = narrowRecord(raw);
+  if (!runner || runner.kind !== 'api' || typeof runner.provider !== 'string') return raw;
+  if (runner.service !== undefined || runner.offering !== undefined) return raw;
+
+  const exactMatches = API_PROVIDER_DESCRIPTORS.filter(
+    (descriptor) => descriptor.id === runner.provider,
+  );
+  const candidates =
+    exactMatches.length > 0
+      ? exactMatches
+      : API_PROVIDER_DESCRIPTORS.filter((descriptor) => descriptor.service === runner.provider);
+  const first = candidates[0];
+  if (
+    first === undefined ||
+    !candidates.every(
+      (candidate) => candidate.service === first.service && candidate.offering === first.offering,
+    )
+  ) {
+    return raw;
+  }
+
+  return { ...runner, service: first.service, offering: first.offering };
+}
+
+function migrateLegacyApiIdentities(config: Record<string, unknown>): Record<string, unknown> {
+  const result = { ...config };
+  if ('planner' in config) result.planner = migrateLegacyApiIdentity(config.planner);
+  if ('implementer' in config) result.implementer = migrateLegacyApiIdentity(config.implementer);
+
+  const implementerProfiles = narrowRecord(config.implementerProfiles);
+  const profiles = narrowRecord(implementerProfiles?.profiles);
+  if (implementerProfiles && profiles) {
+    result.implementerProfiles = {
+      ...implementerProfiles,
+      profiles: Object.fromEntries(
+        Object.entries(profiles).map(([name, profile]) => [
+          name,
+          migrateLegacyApiIdentity(profile),
+        ]),
+      ),
+    };
   }
 
   return result;

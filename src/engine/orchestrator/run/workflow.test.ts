@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -318,6 +318,88 @@ describe('runWorkflow — smoke', () => {
     groupChild.kill('SIGKILL');
     laterChild.kill('SIGKILL');
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'awaits process shutdown before persisting a failure summary',
+    async () => {
+      const projectDir = setupProject();
+      const sessionId = 'process-shutdown-failure-sid';
+      const summaryPath = join(sessionDir(projectDir, sessionId), 'summary.json');
+      const observedEarlySummaryPath = join(projectDir, 'summary-observed-before-exit');
+      const child = spawn(
+        process.execPath,
+        [
+          '-e',
+          [
+            'const { existsSync, writeFileSync } = require("node:fs");',
+            'const [summaryPath, observationPath] = process.argv.slice(1);',
+            'process.on("SIGTERM", () => {',
+            '  const deadline = Date.now() + 150;',
+            '  const poll = setInterval(() => {',
+            '    if (existsSync(summaryPath)) {',
+            '      writeFileSync(observationPath, "summary existed before process exit");',
+            '      clearInterval(poll);',
+            '      process.exit(0);',
+            '    }',
+            '    if (Date.now() >= deadline) {',
+            '      clearInterval(poll);',
+            '      process.exit(0);',
+            '    }',
+            '  }, 5);',
+            '});',
+            'process.stdout.write("ready");',
+            'setInterval(() => {}, 1000);',
+          ].join('\n'),
+          summaryPath,
+          observedEarlySummaryPath,
+        ],
+        { stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      await new Promise<void>((resolve) => child.stdout?.once('data', () => resolve()));
+
+      const { callbacks } = makeCallbacks({
+        onQuestionAsked: vi.fn(async () => {
+          throw new Error('question handler failed');
+        }),
+      });
+
+      const summary = await runWorkflow({
+        feature: 'process shutdown failure ordering',
+        projectDir,
+        sessionId,
+        config: makeConfig({
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: {
+            autoApproveSpec: true,
+            autoApprovePlan: true,
+            commitStrategy: 'none',
+            mode: 'quick',
+            persistTranscript: false,
+          },
+        }),
+        callbacks,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        _planner: makePlanner({
+          quickPlan: vi.fn().mockImplementation(async (opts: PlanOptions) => {
+            registerProcess(child);
+            opts.callbacks.onQuestion?.([{ id: 'q1', type: 'input', text: 'Continue?' }]);
+            return {
+              spec: '',
+              plan: '',
+              tasks: [makeTask()],
+              usage: { inputTokens: 50, outputTokens: 25 },
+            };
+          }),
+        }),
+        _implementer: makeImplementer(),
+      });
+
+      expect(summary.totalTasks).toBe(0);
+      expect(JSON.parse(readFileSync(summaryPath, 'utf8'))).toMatchObject({ status: 'failed' });
+      expect(child.exitCode).toBe(0);
+      expect(existsSync(observedEarlySummaryPath)).toBe(false);
+    },
+  );
 
   it('refuses to run when the same session already has a live non-detached owner', async () => {
     const projectDir = setupProject();

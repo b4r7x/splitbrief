@@ -76,6 +76,46 @@ describe('createMetadataProvider', () => {
     expect(p.apiKey()).toBe('override-key');
   });
 
+  it('normalizes a known provider endpoint before resolving an env credential', () => {
+    expect(() =>
+      createMetadataProvider(
+        {
+          ...opts,
+          name: 'openai',
+          defaultBaseURL: 'https://api.openai.com/v1',
+        },
+        { apiBase: 'https://lookalike.example/v1', apiKey: 'env:MISSING_ENDPOINT_KEY' },
+      ),
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
+  });
+
+  it('does not let a known provider replace its catalog endpoint policy', () => {
+    expect(() =>
+      createMetadataProvider(
+        {
+          ...opts,
+          name: 'openai',
+          defaultBaseURL: 'https://api.openai.com/v1',
+          endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://candidate.example/v1' },
+        },
+        { apiBase: 'https://candidate.example/v1', apiKey: 'candidate-key' },
+      ),
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
+  });
+
+  it('accepts an explicit unregistered endpoint as its own fixed origin', () => {
+    const p = createMetadataProvider(
+      {
+        ...opts,
+        endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://candidate.example/v1' },
+      },
+      { apiBase: 'https://candidate.example/v1', apiKey: 'candidate-key' },
+    );
+
+    expect(p.baseURL).toBe('https://candidate.example/v1');
+    expect(p.apiKey()).toBe('candidate-key');
+  });
+
   it('uses custom modelsUrl when provided', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ data: [] }), { status: 200 }),
@@ -157,6 +197,44 @@ describe('createMetadataProvider', () => {
     );
     await p.listModels();
     expect(p.getLastError?.()).toBeUndefined();
+  });
+
+  it('persists only redacted provider diagnostics after a credentialed request fails', async () => {
+    const canary = 'canary-metadata-credential-1b8e';
+    process.env['CUSTOM_API_KEY'] = canary;
+    vi.mocked(globalThis.fetch).mockRejectedValue(
+      new Error(`provider response included Authorization: Bearer ${canary}`),
+    );
+
+    const p = createMetadataProvider(opts);
+    await p.listModels();
+
+    const diagnostic = p.getLastError?.() ?? '';
+    expect(diagnostic).not.toContain(canary);
+    expect(diagnostic).toContain('***REDACTED***');
+  });
+
+  it('raises a typed, redacted error when header construction fails', async () => {
+    const canary = 'canary-metadata-header-credential-7c2a';
+    const headerFailure = new Error(`header callback saw Authorization: Bearer ${canary}`);
+    const headerOpts = {
+      ...opts,
+      headers: () => {
+        throw headerFailure;
+      },
+    };
+    const p = createMetadataProvider(headerOpts, { apiKey: canary });
+
+    await expect(p.listModels()).rejects.toMatchObject({
+      kind: 'provider-header-callback-failed',
+      message: expect.stringContaining('***REDACTED***'),
+      data: {
+        provider: 'custom',
+        diagnostic: expect.stringContaining('***REDACTED***'),
+      },
+    });
+    expect(p.getLastError?.()).toContain('***REDACTED***');
+    expect(p.getLastError?.()).not.toContain(canary);
   });
 
   it('detectContextLength returns mapped context for matching model, null otherwise', async () => {

@@ -46,6 +46,8 @@ describe('BriefReviewView', () => {
               [`token=${rawToken}`]: {
                 kind: 'api' as const,
                 provider: 'ollama',
+                service: 'ollama',
+                offering: 'local' as const,
                 apiBase: 'http://localhost:11434/v1',
                 model: 'large',
                 contextLength: 40_000,

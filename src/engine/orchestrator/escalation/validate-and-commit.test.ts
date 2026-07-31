@@ -45,6 +45,8 @@ function configWithProfiles(): Config {
         'local-small': {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen-small',
           costTier: 'local',

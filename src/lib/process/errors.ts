@@ -35,6 +35,20 @@ export interface ExitCodeErrorOptions {
   detail?: string | undefined;
 }
 
+export type ProcessTerminationTarget = 'process' | 'process-group';
+
+export type PlatformLimitationErrorOptions =
+  | {
+      operation: 'signal';
+      target: ProcessTerminationTarget;
+      signal: NodeJS.Signals;
+    }
+  | {
+      operation: 'verify-absence';
+      target: ProcessTerminationTarget;
+      signal: NodeJS.Signals | null;
+    };
+
 export const processError = {
   notFound: (command: string, message?: string) => {
     const safeCommand = sanitizeTerminalDiagnosticText(command);
@@ -94,6 +108,23 @@ export const processError = {
       stderr,
       output,
     });
+  },
+
+  platformLimitation: (opts: PlatformLimitationErrorOptions, cause?: unknown) => {
+    const message =
+      opts.operation === 'signal'
+        ? `Unable to send ${opts.signal} to ${opts.target}`
+        : `${opts.target} absence could not be verified after ${opts.signal ?? 'shutdown'}`;
+    return error(
+      'platform-limitation',
+      message,
+      {
+        operation: opts.operation,
+        target: opts.target,
+        signal: opts.signal,
+      },
+      cause,
+    );
   },
 
   isNotFound: matches('command-not-found'),

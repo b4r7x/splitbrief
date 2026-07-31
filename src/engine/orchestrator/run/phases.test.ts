@@ -152,6 +152,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic' as const,
+          offering: 'payg' as const,
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -163,6 +165,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           'cheap-worker': {
             kind: 'api' as const,
             provider: 'deepseek',
+            service: 'deepseek' as const,
+            offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
             model: 'deepseek-chat',
@@ -246,6 +250,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic' as const,
+          offering: 'payg' as const,
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -257,6 +263,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           'unknown-worker': {
             kind: 'api' as const,
             provider: 'custom-cloud',
+            service: 'custom-cloud' as const,
+            offering: 'payg' as const,
             apiBase: 'https://models.example/v1',
             apiKey: 'test-key',
             model: 'custom-model',
@@ -345,6 +353,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic' as const,
+          offering: 'payg' as const,
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -357,6 +367,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           'cheap-worker': {
             kind: 'api' as const,
             provider: 'deepseek',
+            service: 'deepseek' as const,
+            offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
             model: 'deepseek-chat',
@@ -473,6 +485,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic' as const,
+          offering: 'payg' as const,
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -485,6 +499,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           'cheap-worker': {
             kind: 'api' as const,
             provider: 'deepseek',
+            service: 'deepseek' as const,
+            offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
             model: 'deepseek-chat',
@@ -598,6 +614,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           'tiny-worker': {
             kind: 'api' as const,
             provider: 'deepseek',
+            service: 'deepseek' as const,
+            offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
             model: 'deepseek-chat',
@@ -914,6 +932,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           'tiny-worker': {
             kind: 'api' as const,
             provider: 'deepseek',
+            service: 'deepseek' as const,
+            offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             model: 'deepseek-chat',
             contextLength: 20_000,
@@ -1122,6 +1142,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           tiny: {
             kind: 'api' as const,
             provider: 'ollama',
+            service: 'ollama' as const,
+            offering: 'local' as const,
             apiBase: 'http://localhost:11434/v1',
             model: 'tiny',
             contextLength: 1,
@@ -1273,6 +1295,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic' as const,
+          offering: 'payg' as const,
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -1284,6 +1308,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           'cheap-worker': {
             kind: 'api' as const,
             provider: 'deepseek',
+            service: 'deepseek' as const,
+            offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
             model: 'deepseek-chat',
@@ -1363,6 +1389,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         planner: {
           kind: 'api',
           provider: 'anthropic',
+          service: 'anthropic' as const,
+          offering: 'payg' as const,
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
@@ -1374,6 +1402,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           'cheap-worker': {
             kind: 'api' as const,
             provider: 'deepseek',
+            service: 'deepseek' as const,
+            offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
             model: 'deepseek-chat',

@@ -1,161 +1,329 @@
-import type { Config } from '../../core/schemas/config.js';
-import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
-import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
-import { createDefaultConfig } from '../../core/config/load/io.js';
-import { createPlanner } from '../runners/factory.js';
-import { detectAvailableProviders, KNOWN_PROVIDERS } from '../providers/registry.js';
-import { DETECTION_TIMEOUT_MS } from '../constants.js';
-import { withTimeout } from '../../utils/with-timeout.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import {
+  CLI_TOOL_CATALOG,
+  CLI_TOOL_IDS,
+  selectCliAuthChannel,
+  type CliAuthChannelId,
+  type CliToolId,
+} from '../../core/runners/cli-tool-catalog.js';
+import type { CliReadinessResult } from '../../core/schemas/readiness.js';
+import { cliReadinessCheckId, deriveCliReadiness } from '../../core/schemas/readiness.js';
+import { matches } from '../../utils/error.js';
 import { warnError } from '../../lib/warn.js';
-import { CLI_TOOLS } from '../runners/cli-tools.js';
+import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { parseMajorVersion } from '../availability.js';
-import { hasApiKey, PROVIDER_CATALOG } from '../../core/providers/catalog.js';
-import { isPlannerToolId, type PlannerToolId, type ProviderId } from '../../core/schemas/enums.js';
-import { typedEntries } from '../../utils/type-guards.js';
+import { detectAvailableProviders } from '../providers/registry.js';
+import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { probeCliReadiness } from '../runners/cli-tools/readiness-probe.js';
 
-type PlannerFactory = typeof createPlanner;
+const CLI_PROBE_OUTPUT_MAX_BYTES = 64 * 1024;
 
-function providerDescription(id: ProviderId): string {
-  const info = PROVIDER_CATALOG[id];
-  return info.isLocal ? `${info.displayName} (local)` : `${info.displayName} API`;
+type ResolveCliExecutable = typeof resolveCliExecutable;
+type ProbeCliReadiness = typeof probeCliReadiness;
+
+export interface DetectCliToolsOptions {
+  projectDir?: string | undefined;
+  /** Limit a live probe to the tools selected by a start configuration. */
+  tools?: readonly CliToolId[] | undefined;
+  resolveExecutable?: ResolveCliExecutable | undefined;
+  probeReadiness?: ProbeCliReadiness | undefined;
+  authChannel?: CliAuthChannelId | undefined;
+  authChannels?: Partial<Record<CliToolId, CliAuthChannelId | undefined>> | undefined;
+  now?: (() => number) | undefined;
 }
 
-const CLI_PLANNERS: Array<{ tool: PlannerToolId; description: string; testedVersion: string }> =
-  typedEntries(CLI_TOOLS).map(([tool, meta]) => ({
-    tool,
-    description: meta.description,
-    testedVersion: meta.testedVersion,
-  }));
+function projectReadiness(result: CliReadinessResult): CliToolDetection {
+  const diagnostic =
+    result.remediation === null
+      ? { state: 'ready' as const, remediation: null }
+      : { state: result.status, remediation: result.remediation };
+  return {
+    tool: result.tool,
+    executable: result.executable,
+    trust: result.trust,
+    installedVersion: result.installedVersion,
+    testedVersion: result.testedVersion,
+    compatibility: result.compatibility,
+    auth: result.auth,
+    diagnostic,
+    probedAt: result.probedAt,
+  };
+}
 
-function getCompatibility(
-  version: string,
-  testedVersion: string,
-): PlannerDetection['compatibility'] {
-  const installedMajor = parseMajorVersion(version);
-  const testedMajor = parseMajorVersion(testedVersion);
-  if (installedMajor === null || testedMajor === null || installedMajor === testedMajor) {
-    return undefined;
+interface DetectCliToolDependencies {
+  projectDir: string;
+  resolveExecutable: ResolveCliExecutable;
+  probeReadiness: ProbeCliReadiness;
+  authChannel?: CliAuthChannelId | undefined;
+  now: () => number;
+}
+
+function selectedAuthChannel(
+  options: DetectCliToolsOptions,
+  tool: CliToolId,
+): CliAuthChannelId | undefined {
+  if (options.authChannels && Object.hasOwn(options.authChannels, tool)) {
+    return options.authChannels[tool];
   }
-  return {
-    kind: 'major-version-mismatch',
-    installedVersion: version,
-    testedVersion,
-  };
+  return options.authChannel;
 }
 
-const API_PLANNERS: { tool: PlannerToolId; description: string }[] = [
-  { tool: 'anthropic', description: providerDescription('anthropic') },
-];
-
-const API_PLANNER_TOOLS = new Set(API_PLANNERS.map(({ tool }) => tool));
-
-const PROVIDER_PLANNERS: { tool: PlannerToolId; description: string }[] = Object.keys(
-  KNOWN_PROVIDERS,
-)
-  .filter(isPlannerToolId)
-  .filter((id) => !API_PLANNER_TOOLS.has(id))
-  .map((id) => ({ tool: id, description: providerDescription(id) }));
-
-function minimalConfig(tool: PlannerToolId): Config {
-  const defaults = createDefaultConfig();
-  return {
-    ...defaults,
-    planner: buildRunnerConfig('planner', { tool }),
-  };
+function classifyVersion(input: {
+  installedVersion: string;
+  testedVersion: string;
+}): 'compatible' | 'incompatible' | 'unverified' {
+  const installedMajor = parseMajorVersion(input.installedVersion);
+  const testedMajor = parseMajorVersion(input.testedVersion);
+  if (installedMajor === null || testedMajor === null) return 'unverified';
+  return installedMajor === testedMajor ? 'compatible' : 'incompatible';
 }
 
-function mapProviderDetectionsToPlannerDetections(cached: ProviderDetection[]): PlannerDetection[] {
-  return PROVIDER_PLANNERS.map(({ tool, description }) => {
-    const detected = cached.find((d) => d.provider === tool);
+function unresolvedDetection(
+  tool: CliToolId,
+  probedAt: number,
+  untrusted: boolean,
+): CliToolDetection {
+  const testedVersion = CLI_TOOL_CATALOG[tool].compatibility.testedVersion;
+  if (untrusted) {
     return {
       tool,
-      type: 'api' as const,
-      available: detected?.available ?? false,
-      description,
-      ...(detected?.error ? { error: detected.error } : {}),
+      executable: null,
+      trust: 'untrusted',
+      installedVersion: null,
+      testedVersion,
+      compatibility: 'not-checked',
+      auth: 'not-checked',
+      diagnostic: {
+        state: 'untrusted',
+        remediation: `Trust the exact ${tool} executable identity, then run runner readiness again.`,
+      },
+      probedAt,
     };
+  }
+
+  return projectReadiness(
+    deriveCliReadiness({
+      tool,
+      enabled: true,
+      installation: 'unavailable',
+      executable: null,
+      trust: 'not-checked',
+      installedVersion: null,
+      testedVersion,
+      compatibility: 'not-checked',
+      auth: 'not-checked',
+      probedAt,
+    }),
+  );
+}
+
+function unresolvedReadiness(
+  tool: CliToolId,
+  probedAt: number,
+  untrusted: boolean,
+): CliReadinessResult {
+  const testedVersion = CLI_TOOL_CATALOG[tool].compatibility.testedVersion;
+  if (untrusted) {
+    // The resolver deliberately withholds the candidate path for an untrusted
+    // executable. Preserve that distinction without fabricating an identity:
+    // installation was observed, but no trusted executable can reach the gate.
+    return {
+      tool,
+      enabled: true,
+      installation: 'installed',
+      executable: null,
+      trust: 'untrusted',
+      installedVersion: null,
+      testedVersion,
+      compatibility: 'not-checked',
+      auth: 'not-checked',
+      probedAt,
+      checkId: cliReadinessCheckId(tool),
+      status: 'untrusted',
+      remediation: `Trust the exact ${tool} executable identity, then run runner readiness again.`,
+    };
+  }
+
+  return deriveCliReadiness({
+    tool,
+    enabled: true,
+    installation: 'unavailable',
+    executable: null,
+    trust: 'not-checked',
+    installedVersion: null,
+    testedVersion,
+    compatibility: 'not-checked',
+    auth: 'not-checked',
+    probedAt,
   });
 }
 
-async function probeProviders(): Promise<PlannerDetection[]> {
+type CliReadinessProbeOutcome = Readonly<{
+  readiness: CliReadinessResult;
+  executableResolution: 'unavailable' | 'untrusted' | 'resolved';
+}>;
+
+async function detectCliToolReadiness(
+  tool: CliToolId,
+  options: DetectCliToolDependencies,
+): Promise<CliReadinessProbeOutcome> {
+  const descriptor = CLI_TOOL_CATALOG[tool];
+  let executable: Awaited<ReturnType<ResolveCliExecutable>>;
   try {
-    return mapProviderDetectionsToPlannerDetections(await detectAvailableProviders());
-  } catch (error) {
-    warnError('detectAvailableProviders', error);
-    return mapProviderDetectionsToPlannerDetections([]);
+    executable = await options.resolveExecutable(descriptor.command, options.projectDir);
+  } catch (cause) {
+    const untrusted = matches('cli-executable-untrusted')(cause);
+    const probedAt = options.now();
+    return {
+      executableResolution: untrusted ? 'untrusted' : 'unavailable',
+      readiness: unresolvedReadiness(tool, probedAt, untrusted),
+    };
+  }
+
+  try {
+    const versionProbe = {
+      command: [descriptor.command, '--version'] as const,
+      cwd: 'neutral' as const,
+      timeoutMs: DETECTION_TIMEOUT_MS,
+      maxOutputBytes: CLI_PROBE_OUTPUT_MAX_BYTES,
+    };
+    let detectedCompatibility: 'compatible' | 'incompatible' | 'unverified' | null = null;
+    const result = await options.probeReadiness({
+      tool,
+      executable,
+      probe: {
+        version: versionProbe,
+        auth: versionProbe,
+      },
+      authChannel: options.authChannel,
+      now: options.now,
+      classifyVersion: (input) => {
+        detectedCompatibility = classifyVersion(input);
+        return 'unverified';
+      },
+    });
+    const selectedChannel =
+      options.authChannel === undefined
+        ? undefined
+        : selectCliAuthChannel(tool, { channel: options.authChannel });
+    return {
+      executableResolution: 'resolved',
+      readiness: deriveCliReadiness({
+        tool: result.tool,
+        enabled: result.enabled,
+        installation: result.installation,
+        executable: result.executable,
+        trust: result.trust,
+        installedVersion: result.installedVersion,
+        testedVersion: result.testedVersion,
+        compatibility: detectedCompatibility ?? result.compatibility,
+        auth: selectedChannel === undefined ? 'unknown' : result.auth,
+        probedAt: result.probedAt,
+      }),
+    };
+  } catch (cause) {
+    warnError(`CLI readiness probe (${tool})`, cause);
+    return {
+      executableResolution: 'resolved',
+      readiness: deriveCliReadiness({
+        tool,
+        enabled: true,
+        installation: 'installed',
+        executable,
+        trust: 'trusted',
+        installedVersion: null,
+        testedVersion: descriptor.compatibility.testedVersion,
+        compatibility: 'unverified',
+        auth: 'not-checked',
+        probedAt: options.now(),
+      }),
+    };
   }
 }
 
-interface DetectPlannersOptions {
-  providerResults?: ProviderDetection[];
-  createPlanner?: PlannerFactory | undefined;
+async function detectCliTool(
+  tool: CliToolId,
+  options: DetectCliToolDependencies,
+): Promise<CliToolDetection> {
+  const outcome = await detectCliToolReadiness(tool, options);
+  if (outcome.executableResolution === 'untrusted') {
+    return unresolvedDetection(tool, outcome.readiness.probedAt, true);
+  }
+  return projectReadiness(outcome.readiness);
 }
 
-export async function detectAvailablePlanners(
-  opts: DetectPlannersOptions = {},
-): Promise<PlannerDetection[]> {
-  const plannerFactory = opts.createPlanner ?? createPlanner;
-  const cliResults = await Promise.all(
-    CLI_PLANNERS.map(async ({ tool, description, testedVersion }): Promise<PlannerDetection> => {
-      try {
-        const planner = await plannerFactory(minimalConfig(tool));
-        const available = await withTimeout(planner.isAvailable(), DETECTION_TIMEOUT_MS);
-        let version: string | undefined;
-        let compatibility: PlannerDetection['compatibility'];
-        let error: string | undefined;
-        if (available) {
-          try {
-            version = (await withTimeout(planner.getVersion(), DETECTION_TIMEOUT_MS)) ?? undefined;
-            if (version) compatibility = getCompatibility(version, testedVersion);
-          } catch (err) {
-            error = `Version probe failed: ${toErrorMessage(err)}`;
-            warnError(`planner.getVersion(${tool})`, err);
-          }
-        }
-        return {
-          tool,
-          type: 'cli',
-          available,
-          description,
-          ...(version ? { version } : {}),
-          ...(compatibility ? { compatibility } : {}),
-          ...(error ? { error } : {}),
-        };
-      } catch (err) {
-        return { tool, type: 'cli', available: false, description, error: toErrorMessage(err) };
-      }
+/**
+ * Run the canonical bounded CLI probes and retain their readiness facts for
+ * the start gate. This deliberately bypasses the detection cache: a start
+ * gate must be based on the executable identity and auth state observed for
+ * this invocation, not a stale store snapshot.
+ */
+export async function detectAvailableCliReadiness(
+  options: DetectCliToolsOptions = {},
+): Promise<CliReadinessResult[]> {
+  const dependencies = {
+    projectDir: options.projectDir ?? process.cwd(),
+    resolveExecutable: options.resolveExecutable ?? resolveCliExecutable,
+    probeReadiness: options.probeReadiness ?? probeCliReadiness,
+    authChannel: options.authChannel,
+    now: options.now ?? Date.now,
+  };
+  const tools = options.tools ?? CLI_TOOL_IDS;
+  return Promise.all(
+    tools.map(async (tool) => {
+      const outcome = await detectCliToolReadiness(tool, {
+        ...dependencies,
+        authChannel: selectedAuthChannel(options, tool),
+      });
+      return outcome.readiness;
     }),
   );
+}
 
-  const apiResults: PlannerDetection[] = API_PLANNERS.map(({ tool, description }) => ({
-    tool,
-    type: 'api' as const,
-    available: hasApiKey(tool),
-    description,
-  }));
-
-  const providerResults = opts.providerResults
-    ? mapProviderDetectionsToPlannerDetections(opts.providerResults)
-    : await probeProviders();
-
-  const shellResult: PlannerDetection = {
-    tool: 'shell',
-    type: 'shell',
-    available: true,
-    description: 'Custom command',
+export async function detectAvailableCliTools(
+  options: DetectCliToolsOptions = {},
+): Promise<CliToolDetection[]> {
+  const dependencies = {
+    projectDir: options.projectDir ?? process.cwd(),
+    resolveExecutable: options.resolveExecutable ?? resolveCliExecutable,
+    probeReadiness: options.probeReadiness ?? probeCliReadiness,
+    authChannel: options.authChannel,
+    now: options.now ?? Date.now,
   };
-
-  return [...cliResults, ...apiResults, ...providerResults, shellResult];
+  const tools = options.tools ?? CLI_TOOL_IDS;
+  return Promise.all(
+    tools.map((tool) =>
+      detectCliTool(tool, {
+        ...dependencies,
+        authChannel: selectedAuthChannel(options, tool),
+      }),
+    ),
+  );
 }
 
 export interface DetectAllResult {
-  planners: PlannerDetection[];
-  implementers: ProviderDetection[];
+  providers: ProviderDetection[];
+  cliTools: CliToolDetection[];
 }
 
-export async function detectAll(): Promise<DetectAllResult> {
-  const providerResults = await detectAvailableProviders();
-  const planners = await detectAvailablePlanners({ providerResults });
-  return { planners, implementers: providerResults };
+interface DetectAllOptions {
+  detectProviders?: (() => Promise<ProviderDetection[]>) | undefined;
+  detectCliTools?: (() => Promise<CliToolDetection[]>) | undefined;
+  authChannel?: CliAuthChannelId | undefined;
+  authChannels?: Partial<Record<CliToolId, CliAuthChannelId | undefined>> | undefined;
+}
+
+export async function detectAll(options: DetectAllOptions = {}): Promise<DetectAllResult> {
+  const [providers, cliTools] = await Promise.all([
+    (options.detectProviders ?? detectAvailableProviders)(),
+    (
+      options.detectCliTools ??
+      (() =>
+        detectAvailableCliTools({
+          authChannel: options.authChannel,
+          authChannels: options.authChannels,
+        }))
+    )(),
+  ]);
+  return { providers, cliTools };
 }

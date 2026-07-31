@@ -9,6 +9,8 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { expectApi, expectCli } from '#testing/helpers/config-narrowing.js';
 import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE } from '../../core/paths.js';
 import { createDefaultConfig, loadConfig } from '../../core/config/load/io.js';
+import type { Config } from '../../core/schemas/config.js';
+import { deriveConfigEdits, editsForSave } from './config-persistence.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -207,12 +209,7 @@ describe('configStore.save', () => {
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save(
-      structuredClone({ ...loadedConfig(), theme: 'mono' as const }),
-      {
-        changedPaths: ['theme'],
-      },
-    );
+    const result = configStore.save(structuredClone({ ...loadedConfig(), theme: 'mono' as const }));
 
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.model).toBe('cli-override');
@@ -226,18 +223,13 @@ describe('configStore.save', () => {
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save(
-      {
-        ...loadedConfig(),
-        implementer: {
-          ...loadedConfig().implementer,
-          temperature: 0.7,
-        },
+    const result = configStore.save({
+      ...loadedConfig(),
+      implementer: {
+        ...loadedConfig().implementer,
+        temperature: 0.7,
       },
-      {
-        changedPaths: ['implementer.temperature'],
-      },
-    );
+    });
 
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.model).toBe('cli-override');
@@ -247,27 +239,22 @@ describe('configStore.save', () => {
     expect(diskConfig.implementer.temperature).toBe(0.7);
   });
 
-  it('persists an implementer model override when the model field is explicitly saved', () => {
+  it('does not persist an unchanged implementer model override', () => {
     writeConfigYaml();
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save(
-      {
-        ...loadedConfig(),
-        implementer: {
-          ...loadedConfig().implementer,
-          model: 'cli-override',
-        },
+    const result = configStore.save({
+      ...loadedConfig(),
+      implementer: {
+        ...loadedConfig().implementer,
+        model: 'cli-override',
       },
-      {
-        changedPaths: ['implementer.model'],
-      },
-    );
+    });
 
     expect(result.ok).toBe(true);
     const { config: diskConfig } = loadConfig(tmpDir);
-    expect(diskConfig.implementer.model).toBe('cli-override');
+    expect(diskConfig.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
   it('does not persist runtime context length detection when saving an unrelated setting', () => {
@@ -309,7 +296,7 @@ describe('configStore.save', () => {
       projectDir: '/tmp/\0invalid',
       overrides: loaded.overrides,
     });
-    const result = configStore.save(loadedConfig());
+    const result = configStore.save({ ...loadedConfig(), theme: 'mono' });
     expect(result.ok).toBe(false);
     expect(result.error).toBeInstanceOf(Error);
   });
@@ -324,11 +311,11 @@ describe('configStore.save', () => {
     expect(loadedConfig().implementer.model).toBe('picker-choice');
   });
 
-  it('writes a complete versioned config when saving changed paths with no existing file', () => {
+  it('writes a complete versioned config when saving with no existing file', () => {
     configStore.load(tmpDir);
     const updated = { ...loadedConfig(), theme: 'mono' as const };
 
-    const result = configStore.save(updated, { changedPaths: ['theme'] });
+    const result = configStore.save(updated);
 
     expect(result.ok).toBe(true);
     const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
@@ -338,6 +325,60 @@ describe('configStore.save', () => {
     expect(diskConfig.theme).toBe('mono');
     expect(diskConfig.version).toBe(3);
     expect(warnings.some((w) => w.includes('config.version is missing'))).toBe(false);
+  });
+});
+
+describe('config persistence semantic diff', () => {
+  it('derives simultaneous top-level and nested profile edits without unchanged values', () => {
+    const before: Config = {
+      ...createDefaultConfig(),
+      implementerProfiles: {
+        default: 'fast',
+        profiles: {
+          fast: {
+            kind: 'cli',
+            tool: 'codex',
+            model: 'gpt-5.4-mini',
+            label: 'Fast',
+            costTier: 'standard',
+          },
+        },
+      },
+    };
+    const after: Config = {
+      ...before,
+      theme: 'mono',
+      implementerProfiles: {
+        default: 'fast',
+        profiles: {
+          fast: {
+            kind: 'cli',
+            tool: 'codex',
+            model: 'gpt-5.4-mini',
+            label: 'Fast',
+            costTier: 'cheap',
+          },
+        },
+      },
+    };
+
+    const edits = deriveConfigEdits(before, after);
+
+    expect(edits).toHaveLength(2);
+    expect(edits).toEqual(
+      expect.arrayContaining([
+        { path: ['theme'], value: 'mono' },
+        {
+          path: ['implementer_profiles', 'profiles', 'fast', 'cost_tier'],
+          value: 'cheap',
+        },
+      ]),
+    );
+    expect(edits).not.toContainEqual({
+      path: ['implementer_profiles', 'profiles', 'fast', 'model'],
+      value: 'gpt-5.4-mini',
+    });
+    expect(editsForSave(before, after)).toEqual(edits);
   });
 });
 
@@ -372,13 +413,59 @@ theme: terminal
 my_custom_key: keep-this-too
 `;
 
+  it('semantic diff persists simultaneous top-level and named-profile changes only', () => {
+    const beforeRaw = `# preserve this header exactly
+version: 3
+implementer_profiles:
+  default: fast
+  profiles:
+    fast:
+      kind: cli
+      tool: codex
+      model: "gpt-5.4-mini" # keep quoting and comment
+      label: 'Fast profile'
+      cost_tier: standard
+theme: terminal
+my_custom_key: "keep: this # exactly"
+`;
+    writeRawConfig(beforeRaw);
+    configStore.load(tmpDir);
+
+    const before = loadedConfig();
+    const fastProfile = before.implementerProfiles?.profiles.fast;
+    if (!fastProfile) throw new Error('Expected the fast implementer profile');
+    const updated: Config = {
+      ...before,
+      theme: 'mono',
+      implementerProfiles: {
+        default: 'fast',
+        profiles: {
+          fast: { ...fastProfile, costTier: 'cheap' },
+        },
+      },
+    };
+
+    expect(configStore.save(updated).ok).toBe(true);
+
+    const afterRaw = readRawConfig();
+    expect(
+      afterRaw
+        .replace('cost_tier: cheap', 'cost_tier: standard')
+        .replace('theme: mono', 'theme: terminal'),
+    ).toBe(beforeRaw);
+    const reloaded = loadConfig(tmpDir).config;
+    expect(reloaded.theme).toBe('mono');
+    expect(reloaded.implementerProfiles?.profiles.fast?.costTier).toBe('cheap');
+    expect(reloaded.implementerProfiles?.profiles.fast?.model).toBe('gpt-5.4-mini');
+  });
+
   it('preserves hand-edited document and creates .splitbrief/ and .splitbrief/trees/ gitignore entries once when absent', () => {
     expect(existsSync(join(tmpDir, '.gitignore'))).toBe(false);
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
     const updated = { ...loadedConfig(), theme: 'mono' as const };
-    const result = configStore.save(updated, { changedPaths: ['theme'] });
+    const result = configStore.save(updated);
 
     expect(result.ok).toBe(true);
     const raw = readRawConfig();
@@ -396,7 +483,7 @@ my_custom_key: keep-this-too
     configStore.load(tmpDir);
 
     const updated = { ...loadedConfig(), theme: 'mono' as const };
-    const result = configStore.save(updated, { changedPaths: ['theme'] });
+    const result = configStore.save(updated);
 
     expect(result.ok).toBe(true);
     const raw = readRawConfig();
@@ -411,7 +498,7 @@ my_custom_key: keep-this-too
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
-    configStore.save({ ...loadedConfig(), theme: 'mono' as const }, { changedPaths: ['theme'] });
+    configStore.save({ ...loadedConfig(), theme: 'mono' as const });
 
     const raw = readRawConfig();
     expect(raw).not.toContain('planner:');
@@ -433,7 +520,7 @@ my_custom_key: keep-this-too
       ...before,
       workflow: { ...before.workflow, mode: 'speckit' as const },
     };
-    configStore.save(updated, { changedPaths: ['workflow.mode'] });
+    configStore.save(updated);
 
     const parsed = YAML.parse(readRawConfig()) as Record<string, unknown>;
     expect((parsed.workflow as Record<string, unknown>).mode).toBe('speckit');
@@ -457,14 +544,7 @@ implementer:
       ...before,
       implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'gpt-5.4-mini' },
     };
-    configStore.save(updated, {
-      changedPaths: [
-        'implementer.kind',
-        'implementer.tool',
-        'implementer.provider',
-        'implementer.apiBase',
-      ],
-    });
+    configStore.save(updated);
 
     const implementer = (YAML.parse(readRawConfig()) as Record<string, unknown>)
       .implementer as Record<string, unknown>;

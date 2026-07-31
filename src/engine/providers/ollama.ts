@@ -4,6 +4,12 @@ import { KNOWN_PROVIDER_BASE_URLS } from '../../core/providers/catalog.js';
 import { warnError } from '../../lib/warn.js';
 import { createMetadataProvider } from './client/metadata.js';
 import { stripV1Suffix } from './constants.js';
+import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
+import {
+  endpointPolicyFetch,
+  normalizeProviderEndpoint,
+  type EndpointPolicyFetch,
+} from '../../core/providers/endpoint-policy.js';
 
 const DEFAULT_BASE = KNOWN_PROVIDER_BASE_URLS.ollama;
 
@@ -27,9 +33,13 @@ function extractOllamaModels(data: unknown): OllamaModel[] | null {
   return result.data.models.map((m) => ({ id: m.name }));
 }
 
-async function detectContextLengthFromShow(baseURL: string, model: string): Promise<number | null> {
+async function detectContextLengthFromShow(
+  baseURL: string,
+  model: string,
+  policyFetch: EndpointPolicyFetch,
+): Promise<number | null> {
   try {
-    const res = await fetch(`${stripV1Suffix(baseURL)}/api/show`, {
+    const res = await policyFetch(`${stripV1Suffix(baseURL)}/api/show`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: model }),
@@ -49,6 +59,10 @@ async function detectContextLengthFromShow(baseURL: string, model: string): Prom
 }
 
 export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDefWithMetadata {
+  const apiBase = normalizeProviderEndpoint(
+    API_PROVIDER_CATALOG.ollama.endpointPolicy,
+    overrides?.apiBase ?? DEFAULT_BASE,
+  );
   const provider = createMetadataProvider<OllamaModel>(
     {
       name: 'ollama',
@@ -61,11 +75,12 @@ export function createOllamaProvider(overrides?: ProviderOverrides): ProviderDef
       modelsUrl: ollamaTagsUrl,
       extractModels: extractOllamaModels,
     },
-    overrides,
+    { ...overrides, apiBase },
   );
 
   return {
     ...provider,
-    detectContextLength: (model: string) => detectContextLengthFromShow(provider.baseURL, model),
+    detectContextLength: (model: string) =>
+      detectContextLengthFromShow(provider.baseURL, model, provider[endpointPolicyFetch]),
   };
 }

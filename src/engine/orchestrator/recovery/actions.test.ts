@@ -78,6 +78,8 @@ function configWithProfiles(): Config {
       'cloud-capable': {
         kind: 'api',
         provider: 'anthropic',
+        service: 'anthropic',
+        offering: 'payg',
         apiBase: 'https://api.anthropic.com/v1',
         model: 'claude-sonnet',
         costTier: 'standard',
@@ -85,6 +87,8 @@ function configWithProfiles(): Config {
       'local-fast': {
         kind: 'api',
         provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
         apiBase: 'http://localhost:11434/v1',
         model: 'qwen2.5-coder:7b',
         costTier: 'local',

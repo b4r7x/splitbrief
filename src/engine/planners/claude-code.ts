@@ -20,8 +20,17 @@ import {
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
+import type { CliAuthChannelId } from '../../core/runners/cli-tool-catalog.js';
+import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
+
+type ClaudeStartGate = Readonly<{ executable: CliExecutableIdentity }>;
+
+const CLAUDE_TOOL = 'claude-code' as const;
 
 export function createClaudeCodePlanner(opts: {
+  authChannel: CliAuthChannelId | undefined;
+  trustedCli?: ClaudeStartGate | undefined;
   model?: string | undefined;
   initialSessionId?: string | null | undefined;
   effort?: EffortLevel | undefined;
@@ -29,7 +38,18 @@ export function createClaudeCodePlanner(opts: {
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
 }): Planner {
-  const { model, initialSessionId, effort, timeout, idleWarnMs, idleKillMs } = opts;
+  const {
+    authChannel,
+    trustedCli,
+    model,
+    initialSessionId,
+    effort,
+    timeout,
+    idleWarnMs,
+    idleKillMs,
+  } = opts;
+  const runnerConfig = { kind: 'cli' as const, tool: CLAUDE_TOOL, authChannel };
+  resolveCliRunnerAuth(runnerConfig);
   const resolvedModel = resolveAutoModel(model, 'claude-code');
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
@@ -57,6 +77,7 @@ export function createClaudeCodePlanner(opts: {
           resumeId === undefined ? null : createRunnerAttemptCallbackBuffer(callbacks);
         const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
         try {
+          const env = await createRunnerSandboxEnv(projectDir, runnerConfig);
           const result = await runClaudePlannerStream({
             prompt,
             projectDir,
@@ -67,6 +88,9 @@ export function createClaudeCodePlanner(opts: {
             onCallEvent: attemptCallbacks.onCallEvent,
             callContext: createSessionAttemptCallContext(callContext, attempt),
             model: resolvedModel,
+            authChannel,
+            env,
+            ...(trustedCli !== undefined && { executable: trustedCli.executable }),
             ...(effort !== undefined && { effort }),
             ...(images && images.length > 0 ? { images } : {}),
             ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
@@ -113,16 +137,19 @@ export function createClaudeCodePlanner(opts: {
 
     async invokeEscalate({ prompt, projectDir, callbacks, callContext, signal, sandboxEnv }) {
       const effectiveSignal = composeAbortSignal(signal, timeout);
+      const env = sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, runnerConfig));
       return runClaudeOneShot({
         prompt,
         projectDir,
         onOutput: callbacks.onOutput,
         onCallEvent: callbacks.onCallEvent,
         callContext,
+        authChannel,
         model: resolvedModel,
+        ...(trustedCli !== undefined && { executable: trustedCli.executable }),
         ...(effort !== undefined && { effort }),
         ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
-        ...(sandboxEnv !== undefined && { env: sandboxEnv }),
+        env,
         ...(idleWarnMs !== undefined && { idleWarnMs }),
         ...(idleKillMs !== undefined && { idleKillMs }),
       });
@@ -142,6 +169,7 @@ export function createClaudeCodePlanner(opts: {
       });
       let flushCallbacks = true;
       try {
+        const env = await createRunnerSandboxEnv(injection.projectDir, runnerConfig);
         const result = await runClaudePlannerStream({
           prompt: injection.text,
           projectDir: injection.projectDir,
@@ -149,7 +177,10 @@ export function createClaudeCodePlanner(opts: {
           onOutput: callbackBuffer.callbacks.onOutput,
           onCallEvent: callbackBuffer.callbacks.onCallEvent,
           ...(injection.callContext !== undefined && { callContext: injection.callContext }),
+          authChannel,
+          env,
           model: resolvedModel,
+          ...(trustedCli !== undefined && { executable: trustedCli.executable }),
           ...(effort !== undefined && { effort }),
           ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
           ...(idleWarnMs !== undefined && { idleWarnMs }),

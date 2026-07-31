@@ -1,8 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
 import { buildReadinessReport } from './build.js';
 import type { BuildReadinessReportInput } from './build.js';
 import type { Config } from '../../schemas/config.js';
+import { deriveCliReadiness } from '../../schemas/readiness.js';
+
+function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
+  const implementer = overrides.implementer;
+  return makeBaseConfig({
+    ...overrides,
+    implementer:
+      implementer?.kind !== undefined && implementer.kind !== 'api'
+        ? implementer
+        : { service: 'ollama', offering: 'local', ...implementer },
+  });
+}
+
+function cliReadiness(auth: 'authenticated' | 'unauthenticated' = 'authenticated') {
+  return deriveCliReadiness({
+    tool: 'claude-code',
+    enabled: true,
+    installation: 'installed',
+    executable: {
+      path: '/usr/local/bin/claude',
+      fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+    },
+    trust: 'trusted',
+    installedVersion: '2.0.0',
+    testedVersion: '2.0.0',
+    compatibility: 'compatible',
+    auth,
+    probedAt: 1,
+  });
+}
 
 function baseInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildReadinessReportInput {
   return {
@@ -23,6 +53,7 @@ function baseInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRea
       dirtyFiles: [],
       untrackedFiles: [],
     },
+    cliReadiness: [cliReadiness()],
     ...overrides,
   };
 }
@@ -38,10 +69,12 @@ function readyInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRe
     config: makeConfig({
       planner: {
         kind: 'api',
-        provider: 'ollama',
-        apiBase: 'http://localhost:11434/v1',
-        model: 'qwen2.5-coder:7b',
-        contextLength: 32768,
+        provider: 'openai',
+        service: 'openai',
+        offering: 'payg',
+        apiBase: 'https://api.openai.com/v1',
+        model: 'gpt-5',
+        contextLength: 128_000,
       },
     }),
     ...overrides,
@@ -49,6 +82,43 @@ function readyInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRe
 }
 
 describe('readiness checks', () => {
+  it('blocks start when a configured CLI has no probe result', () => {
+    const report = buildReadinessReport(
+      baseInput({
+        config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+        cliReadiness: [],
+      }),
+    );
+
+    expect(report.status).toBe('blocked');
+    expect(
+      report.sections
+        .flatMap((section) => section.checks)
+        .find((check) => check.id === 'runners.cli.claude-code.readiness'),
+    ).toMatchObject({
+      severity: 'blocker',
+      metadata: { status: 'unverified', executablePath: null },
+    });
+  });
+
+  it('blocks start when a configured CLI probe reports missing required authentication', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+    const report = buildReadinessReport(
+      baseInput({
+        config,
+        cliReadiness: [cliReadiness('unauthenticated')],
+      }),
+    );
+
+    expect(report.status).toBe('blocked');
+    expect(report.nextAction.kind).toBe('exit');
+    expect(
+      report.sections
+        .flatMap((section) => section.checks)
+        .find((check) => check.id === 'runners.cli.claude-code.readiness'),
+    ).toMatchObject({ severity: 'blocker', metadata: { auth: 'unauthenticated' } });
+  });
+
   it('reports ready for a clean project with valid config, context, and npm test script', () => {
     const report = buildReadinessReport(readyInput());
     const availability = report.sections
@@ -104,10 +174,12 @@ describe('readiness checks', () => {
       ...makeConfig({
         planner: {
           kind: 'api',
-          provider: 'ollama',
-          apiBase: 'http://localhost:11434/v1',
-          model: 'qwen2.5-coder:7b',
-          contextLength: 32768,
+          provider: 'openai',
+          service: 'openai',
+          offering: 'payg',
+          apiBase: 'https://api.openai.com/v1',
+          model: 'gpt-5',
+          contextLength: 128_000,
         },
       }),
       implementerProfiles: {
@@ -116,6 +188,8 @@ describe('readiness checks', () => {
           'local-qwen': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             model: 'qwen2.5-coder:7b',
             apiBase: 'http://localhost:11434/v1',
             contextLength: 32768,
@@ -147,6 +221,8 @@ describe('readiness checks', () => {
       planner: {
         kind: 'api',
         provider: 'openai',
+        service: 'openai',
+        offering: 'payg',
         apiBase: 'https://api.openai.com/v1',
         model: 'gpt-5',
         contextLength: 128_000,
@@ -219,6 +295,8 @@ describe('readiness checks', () => {
         'local-qwen': {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           model: 'qwen2.5-coder:7b',
           apiBase: 'http://localhost:11434/v1',
           contextLength: 32768,

@@ -10,17 +10,22 @@ import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
 import { createAnthropicProvider } from './anthropic/adapter.js';
 import { createOpenAICompatProvider } from './openai-compat.js';
-import { PROVIDER_CATALOG, isSameOrigin } from '../../core/providers/catalog.js';
-import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
+import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
+import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import {
+  endpointPolicyError,
+  normalizeProviderEndpoint,
+  type EndpointPolicy,
+} from '../../core/providers/endpoint-policy.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
 import { error } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact.js';
+import { sanitizeProviderDiagnostic } from './client/request.js';
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
 
-const BESPOKE_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
+const BESPOKE_PROVIDERS: Partial<Record<ApiProviderId, ProviderFactory>> = {
   anthropic: createAnthropicProvider,
   ollama: createOllamaProvider,
   'lm-studio': createLmStudioProvider,
@@ -29,40 +34,56 @@ const BESPOKE_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
   together: createTogetherProvider,
 };
 
-function buildOpenAICompatFactories(): Partial<Record<ProviderId, ProviderFactory>> {
-  const out: Partial<Record<ProviderId, ProviderFactory>> = {};
-  for (const info of Object.values(PROVIDER_CATALOG)) {
+function buildOpenAICompatFactories(): Partial<Record<ApiProviderId, ProviderFactory>> {
+  const out: Partial<Record<ApiProviderId, ProviderFactory>> = {};
+  for (const info of Object.values(API_PROVIDER_CATALOG)) {
     if (BESPOKE_PROVIDERS[info.id]) continue;
-    if (!info.baseURL || !info.apiKeyEnv) continue;
-    const { id, baseURL, apiKeyEnv } = info;
+    if (info.endpointPolicy.kind !== 'fixed-origin' || !info.credentialEnv) continue;
+    const { id, credentialEnv } = info;
+    const baseURL = info.endpointPolicy.baseURL;
     out[id] = (overrides?: ProviderOverrides) =>
       createOpenAICompatProvider({
         name: id,
         defaultBaseURL: baseURL,
-        envKeyName: apiKeyEnv,
+        envKeyName: credentialEnv,
         overrides,
       });
   }
   return out;
 }
 
-export const KNOWN_PROVIDERS: Partial<Record<ProviderId, ProviderFactory>> = {
+export const KNOWN_PROVIDERS: Partial<Record<ApiProviderId, ProviderFactory>> = {
   ...BESPOKE_PROVIDERS,
   ...buildOpenAICompatFactories(),
 };
 
-export function getProvider(name: string, overrides?: ProviderOverrides): ProviderDef {
-  if (overrides?.apiBase) {
-    validateProviderBaseURL(overrides.apiBase);
+function getApiDescriptor(name: string) {
+  return Object.values(API_PROVIDER_CATALOG).find((descriptor) => descriptor.id === name);
+}
+
+function defaultEndpointForPolicy(policy: EndpointPolicy): string | undefined {
+  switch (policy.kind) {
+    case 'fixed-origin':
+      return policy.baseURL;
+    case 'loopback':
+      return policy.defaultBaseURL;
+    case 'allowed-https':
+      return undefined;
   }
-  const factory = isProviderId(name) ? KNOWN_PROVIDERS[name] : undefined;
-  if (factory) {
-    if (overrides?.apiBase) {
-      rejectApiBaseExfiltration(name, overrides);
-    }
-    return factory(overrides);
+}
+
+export function getProvider(name: string, overrides?: ProviderOverrides): ProviderDef {
+  const descriptor = getApiDescriptor(name);
+  if (descriptor) {
+    const factory = KNOWN_PROVIDERS[descriptor.id];
+    if (!factory) throw endpointPolicyError.unsupported();
+    const endpoint = overrides?.apiBase ?? defaultEndpointForPolicy(descriptor.endpointPolicy);
+    if (!endpoint) throw endpointPolicyError.unsupported();
+    const apiBase = normalizeProviderEndpoint(descriptor.endpointPolicy, endpoint);
+    return factory({ ...overrides, apiBase });
   }
   if (!overrides?.apiBase) throw providerError.unknownNeedsApiBase(name);
+  validateProviderBaseURL(overrides.apiBase);
   if (!overrides.apiKey) throw providerError.unknownNeedsApiKey(name);
   rejectUnknownProviderEnvApiKeyReference(name, overrides);
   return createOpenAICompatProvider({
@@ -86,20 +107,10 @@ function rejectUnknownProviderEnvApiKeyReference(name: string, overrides: Provid
   );
 }
 
-function rejectApiBaseExfiltration(name: string, overrides: ProviderOverrides): void {
-  if (!isProviderId(name)) return;
-  const info = PROVIDER_CATALOG[name];
-  if (!info.apiKeyEnv) return;
-  if (info.baseURL && overrides.apiBase && isSameOrigin(overrides.apiBase, info.baseURL)) return;
-  const envRef = apiKeyEnvReference(overrides.apiKey);
-  if (overrides.apiKey && !envRef) return;
-  const envVar = envRef ?? info.apiKeyEnv;
-  const envKey = process.env[envVar];
-  if (!envKey) return;
-  throw providerError.apiBaseExfiltration(name, envVar);
-}
-
-async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<ProviderDetection> {
+async function detectOne(
+  name: ApiProviderId,
+  factory: ProviderFactory,
+): Promise<ProviderDetection> {
   const provider = factory();
   const apiKey = provider.apiKey();
   if (!provider.isLocal && apiKey.length === 0) {
@@ -120,7 +131,13 @@ async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<Pr
       isLocal: provider.isLocal,
       ...(models.length > 0 ? { models } : {}),
       ...(!provider.isLocal ? { hasKey: apiKey.length > 0 } : {}),
-      ...(lastError ? { error: lastError } : {}),
+      ...(lastError
+        ? {
+            error: sanitizeProviderDiagnostic(lastError, {
+              credentialValues: apiKey ? [apiKey] : undefined,
+            }),
+          }
+        : {}),
     };
   } catch (error) {
     return {
@@ -128,17 +145,19 @@ async function detectOne(name: ProviderId, factory: ProviderFactory): Promise<Pr
       available: false,
       isLocal: provider.isLocal,
       ...(!provider.isLocal ? { hasKey: apiKey.length > 0 } : {}),
-      error: toErrorMessage(error),
+      error: sanitizeProviderDiagnostic(error, {
+        credentialValues: apiKey ? [apiKey] : undefined,
+      }),
     };
   }
 }
 
 export async function detectAvailableProviders(): Promise<ProviderDetection[]> {
   const results: Promise<ProviderDetection>[] = [];
-  for (const [name, factory] of Object.entries(KNOWN_PROVIDERS)) {
+  for (const descriptor of Object.values(API_PROVIDER_CATALOG)) {
+    const factory = KNOWN_PROVIDERS[descriptor.id];
     if (!factory) continue;
-    if (!isProviderId(name)) continue;
-    results.push(detectOne(name, factory));
+    results.push(detectOne(descriptor.id, factory));
   }
   return Promise.all(results);
 }

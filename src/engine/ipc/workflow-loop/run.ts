@@ -68,6 +68,7 @@ export async function runWorkflowLoop(
       ...(stateForRun !== undefined && { savedState: stateForRun }),
       ...(retryProfileOverride !== undefined && { retryProfileOverride }),
       ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
+      trustedCliGates: ctx.trustedCliGates,
     });
     retryProfileOverride = undefined;
     retryProfileOverrideTaskId = undefined;

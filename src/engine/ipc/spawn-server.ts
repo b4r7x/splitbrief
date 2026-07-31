@@ -11,6 +11,7 @@ import { writeIpcServerArgsFile, type IpcServerArgs } from './server-args.js';
 import { readOtelExporterFromArgv } from '../../lib/otel.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
+import type { CliStartGates } from '../runners/start-gate.js';
 
 export type SpawnServerOptions = {
   sessionDir: string;
@@ -25,6 +26,7 @@ export type SpawnServerOptions = {
   plannerContext?: string;
   attachments?: Array<{ id: string; path: string; mimeType: string }>;
   persistTranscript?: boolean;
+  trustedCliGates?: CliStartGates | undefined;
 };
 
 export type SpawnServerResult =
@@ -83,6 +85,9 @@ export function buildServerArgs(opts: SpawnServerOptions): IpcServerArgs {
     ...(opts.allowRepoRunners !== undefined && { allowRepoRunners: opts.allowRepoRunners }),
     ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
     ...(opts.attachments !== undefined && { attachments: opts.attachments }),
+    ...(opts.trustedCliGates !== undefined && {
+      trustedCliGates: [...opts.trustedCliGates.values()],
+    }),
   };
 }
 

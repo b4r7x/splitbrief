@@ -6,6 +6,7 @@ import type { Config } from '../../../schemas/config.js';
 import type { PlannerConfig } from '../../../schemas/planner-config.js';
 import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
 import type { EffortLevel } from '../../../schemas/enums.js';
+import type { CliAuthChannelId } from '../../../runners/cli-tool-catalog.js';
 import {
   mergeImplementerProfileMetadata,
   pickDefaultProfileName,
@@ -14,32 +15,56 @@ import {
 import type { RunnerOverrides } from './schema.js';
 
 export function existingToOpts(existing: PlannerConfig | ImplementerConfig): BuildRunnerOpts {
+  const common: BuildRunnerOpts = {
+    ...(existing.model !== undefined && { model: existing.model }),
+    ...(existing.timeout !== undefined && { timeout: existing.timeout }),
+    ...(existing.customModels !== undefined && { customModels: existing.customModels }),
+    ...(existing.effort !== undefined && { effort: existing.effort }),
+    ...('idleWarnMs' in existing &&
+      existing.idleWarnMs !== undefined && { idleWarnMs: existing.idleWarnMs }),
+    ...('idleKillMs' in existing &&
+      existing.idleKillMs !== undefined && { idleKillMs: existing.idleKillMs }),
+  };
+
   if (existing.kind === 'cli') {
     return {
+      ...common,
       kind: 'cli',
       tool: existing.tool,
+      ...(existing.authChannel !== undefined && {
+        authChannel: existing.authChannel satisfies CliAuthChannelId,
+      }),
       ...('args' in existing && { args: existing.args }),
       ...('outputFormat' in existing && { outputFormat: existing.outputFormat }),
     };
   }
   if (existing.kind === 'api') {
     return {
+      ...common,
       kind: 'api',
       tool: existing.provider,
+      service: existing.service,
+      offering: existing.offering,
       apiBase: existing.apiBase,
       ...('apiKey' in existing && { apiKey: existing.apiKey }),
     };
   }
   if (existing.kind === 'shell' || existing.kind === 'agent') {
     return {
+      ...common,
       kind: existing.kind,
       command: existing.command,
       ...('args' in existing && { args: existing.args }),
       ...('outputFormat' in existing && { outputFormat: existing.outputFormat }),
+      ...('capabilities' in existing && { capabilities: existing.capabilities }),
     };
   }
   if (existing.kind === 'agent-sdk') {
-    return { kind: 'agent-sdk', ...('apiKey' in existing && { apiKey: existing.apiKey }) };
+    return {
+      ...common,
+      kind: 'agent-sdk',
+      ...('apiKey' in existing && { apiKey: existing.apiKey }),
+    };
   }
   return assertNever(existing);
 }

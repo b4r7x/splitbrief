@@ -151,6 +151,69 @@ describe('createRunnerCallRecorder', () => {
     expect(JSON.stringify(events)).not.toContain(secret);
   });
 
+  it('redacts exact credential values from every diagnostic recorder surface', () => {
+    const credential = 'opaque-cli-credential-canary-7d93c612';
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 5,
+      credentialValues: [credential],
+      onEvent: (event) => events.push(event),
+    });
+
+    recorder.text({ channel: 'assistant', text: `answer ${credential}`, ts: 6 });
+    recorder.stderr({ text: `fatal debug ${credential}`, ts: 7 });
+    recorder.toolUseDelta({
+      toolUseId: `tool-${credential}`,
+      name: 'Debug',
+      inputDelta: `{"credential":"${credential}"}`,
+      ts: 8,
+    });
+    recorder.toolUseDone({
+      toolUse: {
+        id: 'tool-done',
+        name: 'Inspect',
+        input: { credential, nested: [credential] },
+        output: { diagnostic: credential },
+      },
+      ts: 9,
+    });
+    recorder.sessionId({ nativeSessionId: credential, ts: 10 });
+    recorder.artifact({
+      artifact: {
+        id: 'artifact-1',
+        source: 'stream',
+        name: 'debug.txt',
+        path: `/tmp/${credential}`,
+        mimeType: 'text/plain',
+        text: credential,
+      },
+      ts: 11,
+    });
+    recorder.warning({
+      warning: { code: 'debug_warning', surface: 'debug', message: credential },
+      ts: 12,
+    });
+    recorder.unknownUpstream({
+      rawPreview: `debug=${credential}`,
+      backendMetadata: { backendKind: 'api', source: credential },
+      ts: 13,
+    });
+    const result = recorder.finishFailed({
+      status: 'failed',
+      error: { code: 'provider-error', message: credential },
+      nativeSessionId: credential,
+      endedAt: 20,
+    });
+
+    const persisted = JSON.stringify({ events, result });
+    expect(persisted).not.toContain(credential);
+    expect(persisted).toContain('***REDACTED***');
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({ code: 'debug_warning', redacted: true }),
+    );
+  });
+
   it('truncates direct recorder text and returns a truncated terminal status', () => {
     const events: RunnerCallEvent[] = [];
     const recorder = createRunnerCallRecorder({

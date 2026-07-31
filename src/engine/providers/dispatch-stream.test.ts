@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { matches } from '../../utils/error.js';
 import { dispatchStreamCompletion } from './dispatch-stream.js';
 import type { StreamClient } from './openai-stream/request.js';
+import type { RunnerCallEvent } from '../calls/types.js';
 
 function makeOpenAIClient(
   chunks: Array<{ content?: string; finishReason?: string | null }>,
@@ -69,6 +70,34 @@ describe('dispatchStreamCompletion', () => {
     expect(progress).toEqual(['Hi ', 'there']);
   });
 
+  it('threads the resolved API credential into OpenAI-compatible stream redaction', async () => {
+    const credential = 'dispatch-openai-credential-canary-4c3e';
+    const client = makeOpenAIClient([
+      { content: `answer ${credential}` },
+      { finishReason: 'stop' },
+    ]);
+    const progress: string[] = [];
+    const events: RunnerCallEvent[] = [];
+
+    const result = await dispatchStreamCompletion({
+      provider: 'openrouter',
+      client,
+      apiKey: credential,
+      apiBase: 'https://openrouter.ai/api/v1',
+      model: 'some-model',
+      messages: [{ role: 'user', content: 'hello' }],
+      temperature: 0.2,
+      onProgress: (text) => progress.push(text),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    const persisted = JSON.stringify({ result, progress, events });
+    expect(result.text).toBe('answer ***REDACTED***');
+    expect(progress).toEqual(['answer ***REDACTED***']);
+    expect(persisted).not.toContain(credential);
+    expect(persisted).toContain('***REDACTED***');
+  });
+
   it('throws expectedOpenAIClient when a non-anthropic provider has no client', async () => {
     await expect(
       dispatchStreamCompletion({
@@ -115,6 +144,37 @@ describe('dispatchStreamCompletion', () => {
       });
 
       expect(result.text).toBe('hi');
+    });
+
+    it('keeps the Anthropic dispatch path credential-redacted', async () => {
+      const credential = 'dispatch-anthropic-credential-canary-4c3e';
+      vi.mocked(globalThis.fetch).mockResolvedValue(
+        makeAnthropicSseResponse([
+          'event: message_start\ndata: {"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":0}}}\n\n',
+          `event: content_block_delta\ndata: {"type":"content_block_delta","delta":{"type":"text_delta","text":"answer ${credential}"}}\n\n`,
+          'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+        ]),
+      );
+      const progress: string[] = [];
+      const events: RunnerCallEvent[] = [];
+
+      const result = await dispatchStreamCompletion({
+        provider: 'anthropic',
+        client: null,
+        apiKey: credential,
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        onProgress: (text) => progress.push(text),
+        onCallEvent: (event) => events.push(event),
+      });
+
+      const persisted = JSON.stringify({ result, progress, events });
+      expect(result.text).toBe('answer ***REDACTED***');
+      expect(progress).toEqual(['answer ***REDACTED***']);
+      expect(persisted).not.toContain(credential);
+      expect(persisted).toContain('***REDACTED***');
     });
   });
 });

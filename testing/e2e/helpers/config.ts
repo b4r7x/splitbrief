@@ -11,6 +11,8 @@ const e2eApiBase = process.env.SPLITBRIEF_E2E_API_BASE ?? 'http://localhost:1143
 export const e2ePlanner = {
   kind: 'api',
   provider: 'anthropic',
+  service: 'anthropic',
+  offering: 'payg',
   apiBase: e2eApiBase,
   ...(e2eApiKey ? { apiKey: e2eApiKey } : {}),
   model: 'claude-sonnet-4-6',
@@ -19,6 +21,8 @@ export const e2ePlanner = {
 export const e2eImplementer = {
   kind: 'api',
   provider: 'anthropic',
+  service: 'anthropic',
+  offering: 'payg',
   apiBase: e2eApiBase,
   ...(e2eApiKey ? { apiKey: e2eApiKey } : {}),
   model: 'claude-haiku-4-5-20251001',

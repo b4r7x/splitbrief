@@ -5,10 +5,12 @@ import { reconcileFinalText } from '../../streaming/final-text.js';
 import { createQuestionAccumulator } from '../../parsers/question.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
 import {
+  createRunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
   runnerCallIdleTimeoutError,
   runnerCallInterruptedStatus,
 } from '../../calls/status.js';
+import type { RunnerCallCredentialRedactor } from '../../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
 import {
   createRunnerCallDeltaLimiter,
@@ -19,7 +21,9 @@ import {
 import { processError } from '../../../lib/process/errors.js';
 import type { SpawnIdleOptions } from '../../../lib/process/spawn/lifecycle.js';
 import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../../core/schemas/runner-fields.js';
+import { error } from '../../../utils/error.js';
 import { isRecord } from '../../../utils/type-guards.js';
+import { redactSecrets } from '../../../utils/redact.js';
 
 interface StreamHandlerState {
   text: string;
@@ -29,6 +33,8 @@ interface StreamHandlerState {
   sawResult: boolean;
   isError: boolean;
   recorder: RunnerCallRecorder;
+  credentialValues: readonly string[];
+  redactCredential: RunnerCallCredentialRedactor;
   activeToolUse: ContentBlockTool | null;
   contentBlockTools: Map<number, ContentBlockTool>;
 }
@@ -38,6 +44,7 @@ interface StreamHandlerCallbacks {
   onSessionId?: ((id: string) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  credentialValues?: readonly string[] | undefined;
   context: RunnerCallContext;
 }
 
@@ -49,8 +56,12 @@ interface ContentBlockTool {
 export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   const recorder = createRunnerCallRecorder({
     context: callbacks.context,
+    credentialValues: callbacks.credentialValues,
     onEvent: callbacks.onCallEvent,
   });
+  const credentialValues = callbacks.credentialValues ?? [];
+  const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
+  const redactCredential = (value: string): string => redactSecrets(explicitRedactor(value));
   const state: StreamHandlerState = {
     text: '',
     sessionId: null,
@@ -59,6 +70,8 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     sawResult: false,
     isError: false,
     recorder,
+    credentialValues,
+    redactCredential,
     activeToolUse: null,
     contentBlockTools: new Map(),
   };
@@ -69,10 +82,11 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   });
 
   function emitAssistantOutput(text: string): void {
-    callbacks.onOutput(text);
+    const safeText = redactCredential(text);
+    callbacks.onOutput(safeText);
 
     if (callbacks.onQuestion && questionAccumulator) {
-      const newQuestions = questionAccumulator.addChunk(text);
+      const newQuestions = questionAccumulator.addChunk(safeText);
       if (newQuestions.length > 0) {
         callbacks.onQuestion(newQuestions);
       }
@@ -80,7 +94,8 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   }
 
   function acceptTextDelta(text: string): RunnerCallDeltaLimitResult {
-    return textLimiter.accept(text);
+    const accepted = textLimiter.accept(text);
+    return { ...accepted, text: redactCredential(accepted.text) };
   }
 
   function finishLimitIfNeeded(result: RunnerCallDeltaLimitResult): boolean {
@@ -105,8 +120,9 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
   }
 
   function applyResultText(text: string): boolean {
-    state.resultText = text;
-    const reconciliation = reconcileFinalText(state.text, text);
+    const safeText = redactCredential(text);
+    state.resultText = safeText;
+    const reconciliation = reconcileFinalText(state.text, safeText);
     if (reconciliation.kind === 'none') return false;
 
     const accepted = acceptTextDelta(reconciliation.text);
@@ -142,9 +158,10 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     const parsed = parseStreamLine(line);
 
     if (parsed.sessionId) {
-      state.sessionId = parsed.sessionId;
-      callbacks.onSessionId?.(parsed.sessionId);
-      state.recorder.sessionId({ nativeSessionId: parsed.sessionId });
+      const sessionId = redactCredential(parsed.sessionId);
+      state.sessionId = sessionId;
+      callbacks.onSessionId?.(sessionId);
+      state.recorder.sessionId({ nativeSessionId: sessionId });
     }
 
     if (parsed.toolUse) {
@@ -333,7 +350,10 @@ export function markInterruptedClaudeStream(
     status: runnerCallInterruptedStatus(signal),
     error: {
       code: 'runner_interrupted',
-      message: signal.reason instanceof Error ? signal.reason.message : 'Claude stream interrupted',
+      message:
+        signal.reason instanceof Error
+          ? state.redactCredential(signal.reason.message)
+          : 'Claude stream interrupted',
     },
     nativeSessionId: state.sessionId,
   });
@@ -348,15 +368,27 @@ export function markFailedClaudeStream(state: ClaudeStreamState, err: unknown): 
     // (calls/status.ts), matching every other backend; runnerCallErrorFromUnknown
     // would leak the raw 'command-idle-timeout' kind as the event code.
     error: processError.isIdleTimeout(err)
-      ? runnerCallIdleTimeoutError(err)
-      : runnerCallErrorFromUnknown(err, 'claude_process_error'),
+      ? runnerCallIdleTimeoutError(err, state.credentialValues)
+      : runnerCallErrorFromUnknown(err, 'claude_process_error', state.credentialValues),
     usage: state.usage,
     nativeSessionId: state.sessionId,
   });
   state.recorder.finalResult();
 }
 
-export function interruptedError(signal: AbortSignal | undefined, fallback: unknown): unknown {
+export function interruptedError(
+  signal: AbortSignal | undefined,
+  fallback: unknown,
+  redact?: RunnerCallCredentialRedactor,
+): unknown {
   if (!signal?.aborted) return fallback;
-  return signal.reason instanceof Error ? signal.reason : fallback;
+  if (!(signal.reason instanceof Error) || redact === undefined) {
+    return signal.reason instanceof Error ? signal.reason : fallback;
+  }
+  const safeReason = error('runner-interrupted', redact(signal.reason.message), {
+    status: runnerCallInterruptedStatus(signal),
+    name: signal.reason.name,
+  });
+  safeReason.name = signal.reason.name;
+  return safeReason;
 }

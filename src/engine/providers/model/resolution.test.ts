@@ -42,9 +42,15 @@ describe('getBundledModels', () => {
     expect(bundled.some((m) => m.name === 'claude-sonnet-4-6')).toBe(true);
   });
 
-  it('returns empty array for a provider with no bundled models', () => {
-    // groq is declared with [] in KNOWN_MODELS
-    expect(getBundledModels('groq')).toEqual([]);
+  it('returns Groq bundled default metadata', () => {
+    expect(getBundledModels('groq')).toEqual([
+      expect.objectContaining({
+        name: 'openai/gpt-oss-120b',
+        isDefault: true,
+        contextLength: 131_072,
+        maxOutputTokens: 65_536,
+      }),
+    ]);
   });
 });
 
@@ -114,9 +120,9 @@ describe('getEffectiveModelId', () => {
       expected: 'gpt-5.4', // openai default is { name: 'auto', catalogModelId: 'gpt-5.4' }
     },
     {
-      name: 'provider without default returns undefined',
+      name: 'Groq default resolves to its bundled model id',
       providerId: 'groq',
-      expected: undefined,
+      expected: 'openai/gpt-oss-120b',
     },
     {
       name: 'selected model is trimmed before lookup',

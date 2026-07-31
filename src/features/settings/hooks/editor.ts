@@ -49,7 +49,7 @@ export function useSettingsEditor({
   const saveValue = (dotPath: string, value: unknown) => {
     const current = getCurrentConfig();
     const updated = applyEdits(current, { [dotPath]: value });
-    const result = configStore.save(updated, { changedPaths: [dotPath] });
+    const result = configStore.save(updated);
     if (result.ok) {
       feedbackStore.setMessage('Saved');
     } else if (result.error) {

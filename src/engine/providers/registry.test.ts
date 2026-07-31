@@ -93,11 +93,21 @@ describe('apiKey env references', () => {
         apiBase: 'https://proxy.example.com/v1',
         apiKey: 'env:OPENROUTER_API_KEY',
       }),
-    ).toThrow(/exfiltrat/i);
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
+  });
+
+  it('validates a known provider endpoint before resolving an env key reference', () => {
+    delete process.env.OPENROUTER_API_KEY;
+    expect(() =>
+      getProvider('openrouter', {
+        apiBase: 'https://evil.example.com/api/v1',
+        apiKey: 'env:OPENROUTER_API_KEY',
+      }),
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
 });
 
-describe('apiBase exfiltration guard', () => {
+describe('known provider endpoint policies', () => {
   setupFetchMock();
   const ORIGINAL_ENV = { ...process.env };
   afterEach(() => {
@@ -107,17 +117,18 @@ describe('apiBase exfiltration guard', () => {
   it('rejects known provider with env-sourced key and custom apiBase', () => {
     process.env.OPENAI_API_KEY = 'sk-real-key';
     expect(() => getProvider('openai', { apiBase: 'https://evil.example.com/v1' })).toThrow(
-      /exfiltrat/i,
+      expect.objectContaining({ kind: 'provider-endpoint-invalid' }),
     );
   });
 
-  it('allows known provider with inline apiKey and custom apiBase', () => {
+  it('rejects a fixed-origin override even with an inline apiKey', () => {
     delete process.env.OPENAI_API_KEY;
-    const p = getProvider('openai', {
-      apiBase: 'https://proxy.example.com/v1',
-      apiKey: 'sk-inline',
-    });
-    expect(p.baseURL).toBe('https://proxy.example.com/v1');
+    expect(() =>
+      getProvider('openai', {
+        apiBase: 'https://proxy.example.com/v1',
+        apiKey: 'sk-inline',
+      }),
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
 
   it('allows unknown provider with custom apiBase', () => {
@@ -145,22 +156,23 @@ describe('apiBase exfiltration guard', () => {
     expect(p.name).toBe('openai');
   });
 
-  it('allows known provider env keys for equivalent official apiBase variants', () => {
+  it('normalizes equivalent exact fixed endpoints before provider construction', () => {
     process.env.ANTHROPIC_API_KEY = 'sk-ant-real-key';
-    const p = getProvider('anthropic', { apiBase: 'https://api.anthropic.com/' });
-    expect(p.name).toBe('anthropic');
+    const p = getProvider('anthropic', { apiBase: 'HTTPS://API.ANTHROPIC.COM:443/v1/' });
+    expect(p.baseURL).toBe('https://api.anthropic.com/v1');
   });
 
-  it('allows local providers with custom apiBase when no env key is set', () => {
+  it('allows and normalizes loopback provider overrides', () => {
     delete process.env.OLLAMA_API_KEY;
-    const p = getProvider('ollama', { apiBase: 'http://remote-ollama:11434/v1' });
+    const p = getProvider('ollama', { apiBase: 'http://127.0.0.1:22000' });
     expect(p.name).toBe('ollama');
+    expect(p.baseURL).toBe('http://127.0.0.1:22000/v1');
   });
 
-  it('rejects local providers with env-sourced key and custom apiBase', () => {
+  it('rejects non-loopback local provider overrides before resolving credentials', () => {
     process.env.OLLAMA_API_KEY = 'ollama-real-key';
     expect(() => getProvider('ollama', { apiBase: 'http://remote-ollama:11434/v1' })).toThrow(
-      /exfiltrat/i,
+      expect.objectContaining({ kind: 'provider-endpoint-invalid' }),
     );
   });
 
@@ -249,6 +261,26 @@ describe('detectAvailableProviders', () => {
     const results = await detectAvailableProviders();
     for (const r of results) {
       expect(r.available).toBe(false);
+    }
+  });
+
+  it('does not persist credential values from provider failures in detection', async () => {
+    const previous = process.env.OPENAI_API_KEY;
+    const canary = 'canary-registry-credential-6e2a';
+    process.env.OPENAI_API_KEY = canary;
+    vi.mocked(globalThis.fetch).mockRejectedValue(
+      new Error(`upstream Authorization: Bearer ${canary}`),
+    );
+
+    try {
+      const results = await detectAvailableProviders();
+      const openai = results.find((result) => result.provider === 'openai');
+      expect(openai?.error).toBeDefined();
+      expect(JSON.stringify(openai)).not.toContain(canary);
+      expect(openai?.error).toContain('***REDACTED***');
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
     }
   });
 

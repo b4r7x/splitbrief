@@ -1,14 +1,38 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { writeFileSync, chmodSync, symlinkSync, readFileSync } from 'node:fs';
+import {
+  writeFileSync,
+  chmodSync,
+  symlinkSync,
+  readFileSync,
+  existsSync,
+  realpathSync,
+  statSync,
+  unlinkSync,
+} from 'node:fs';
 import { join } from 'node:path';
-import { createCliPlanner } from './cli.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
+import { createCliPlanner as createCliPlannerImpl } from './cli.js';
+import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
 import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
-import { TASKS_FILE } from '../../core/paths.js';
+import { SANDBOX_DIR, TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
+import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../calls/output-limit.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { PlannerFactoryOptions } from './types.js';
+import type { CliStartGate } from '../runners/start-gate.js';
+
+function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
+  const implementer = overrides.implementer;
+  return makeBaseConfig({
+    ...overrides,
+    implementer:
+      implementer?.kind !== undefined && implementer.kind !== 'api'
+        ? implementer
+        : { service: 'ollama', offering: 'local', ...implementer },
+  });
+}
 
 /**
  * CLI planner is a thin wrapper around a real subprocess. Instead of mocking
@@ -24,6 +48,41 @@ let projectDir: string;
 let shimDir: string;
 let restorePath: () => void;
 const itUnix = process.platform === 'win32' ? it.skip : it;
+
+/**
+ * Planner execution accepts only a canonical identity produced by readiness.
+ * Test shims are real executable files; derive their path and fingerprint just
+ * as the production readiness/start gate does.
+ */
+function trustedGate(tool: CliToolId): CliStartGate {
+  const commandPath = join(shimDir, CLI_TOOL_CATALOG[tool].command);
+  if (!existsSync(commandPath)) {
+    writeFileSync(commandPath, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(commandPath, 0o755);
+  }
+  const path = realpathSync(commandPath);
+  const info = statSync(path);
+  return {
+    tool,
+    executable: {
+      path,
+      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+    },
+  };
+}
+
+function createCliPlanner(
+  config: Parameters<typeof createCliPlannerImpl>[0],
+  initialSessionId?: string | null,
+  options?: PlannerFactoryOptions,
+): ReturnType<typeof createCliPlannerImpl> {
+  const tool = config.planner.kind === 'cli' ? config.planner.tool : null;
+  if (tool === null) throw new Error('test helper requires a CLI planner config');
+  return createCliPlannerImpl(config, initialSessionId, {
+    ...options,
+    trustedCli: options?.trustedCli ?? trustedGate(tool),
+  });
+}
 
 function installShim(command: string, bodyLines: string[]): void {
   writeCommandShim({ dir: shimDir, command, lines: bodyLines });
@@ -64,6 +123,43 @@ describe('createCliPlanner', () => {
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
 
     expect(await planner.isAvailable()).toBe(true);
+  });
+
+  it('passes only the explicitly selected API-key channel to a normal planner process', async () => {
+    const envFile = join(shimDir, 'env.txt');
+    const shimPath = join(shimDir, 'codex');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `printf '%s|%s|%s' "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY" "$HOME" > '${envFile}'`,
+        `printf '%s\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'done' } })}'`,
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const originalOpenAi = process.env.OPENAI_API_KEY;
+    const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+    process.env.OPENAI_API_KEY = 'sk-openai';
+    process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
+    try {
+      const planner = createCliPlanner(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+        }),
+      );
+
+      await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+      expect(readFileSync(envFile, 'utf8')).toBe(
+        `sk-openai||${join(projectDir, SANDBOX_DIR, 'home')}`,
+      );
+    } finally {
+      if (originalOpenAi === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = originalOpenAi;
+      if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = originalAnthropic;
+    }
   });
 
   it('capabilities: supportsSessionResume mirrors the tool config (codex yes, opencode no)', () => {
@@ -254,28 +350,59 @@ Create the mismatch fallback file.
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50 });
   });
 
-  it('uses bounded stderr for Aider postProcess usage extraction', async () => {
+  it('rejects a typed truncated call and reaps Aider when stdout exceeds its budget', async () => {
+    const pidFile = join(shimDir, 'aider-pids.json');
     const shimPath = join(shimDir, 'aider');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        "printf '%s\\n' 'Aider response text'",
-        "printf '%s\\n' 'Tokens: 1 sent, 1 received.' >&2",
-        'node -e \'process.stderr.write("x".repeat(2 * 1024 * 1024) + "\\n")\' >&2',
-        "printf '%s\\n' 'Tokens: 321 sent, 123 received.' >&2",
-        '',
-      ].join('\n'),
-      'utf8',
-    );
+    const script = [
+      '#!/usr/bin/env node',
+      "const { spawn } = require('node:child_process');",
+      "const { writeFileSync } = require('node:fs');",
+      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
+      `writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify([process.pid, child.pid]));`,
+      "process.stdout.write('Aider response text\\n');",
+      `setTimeout(() => process.stdout.write('x'.repeat(${RUNNER_CALL_OUTPUT_MAX_BYTES + 2})), 25);`,
+      'setInterval(() => {}, 60_000);',
+    ].join('\n');
+    writeFileSync(shimPath, `${script}\n`, 'utf8');
     chmodSync(shimPath, 0o755);
 
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'aider' } }));
+    const events: RunnerCallEvent[] = [];
 
-    const result = await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+    await expect(
+      planner.review('prompt', projectDir, {
+        onOutput: vi.fn(),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({
+      kind: 'runner-call-failed',
+      data: {
+        role: 'review',
+        backendKind: 'cli',
+        status: 'truncated',
+        partial: true,
+        error: {
+          code: 'output-budget-breach',
+          message: expect.stringContaining('output budget'),
+        },
+      },
+    });
 
-    expect(result.text).toContain('Aider response text');
-    expect(result.usage).toEqual({ inputTokens: 321, outputTokens: 123 });
+    const pids = JSON.parse(readFileSync(pidFile, 'utf8')) as number[];
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_error',
+        status: 'truncated',
+        partial: true,
+        error: { code: 'output-budget-breach', message: expect.any(String) },
+      }),
+    );
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_completed' }));
+    expect(pids).toHaveLength(2);
+    for (const pid of pids) {
+      expect(pid).toBeGreaterThan(1);
+      expect(() => process.kill(pid, 0)).toThrow();
+    }
   });
 
   it('uses a CLI-written tasks.md artifact when stdout reports the file path', async () => {
@@ -365,10 +492,11 @@ Outside task content.
   });
 
   it('rejects with a not-found error when the CLI binary is missing from PATH', async () => {
-    // Point PATH at an empty dir — no `codex` shim → ENOENT.
-    process.env['PATH'] = createTempDir('empty-path');
-
+    // Admit the actual shim identity, then remove the executable before the
+    // launch. The start gate must not fall back to an ambient PATH entry.
     const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    unlinkSync(join(shimDir, 'codex'));
+    process.env['PATH'] = createTempDir('empty-path');
 
     try {
       await expect(planner.review('prompt', projectDir, { onOutput: vi.fn() })).rejects.toSatisfy(

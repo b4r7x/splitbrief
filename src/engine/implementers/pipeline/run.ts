@@ -12,9 +12,12 @@ import { toTokenDelta } from '../../calls/projection.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { formatErrorWithHint } from '../../error-hints.js';
-import { formatTaskPrompt, formatRetryPrompt } from '../../spec/prompt-formatter.js';
+import {
+  formatImplementerSystemPreamble,
+  formatTaskPrompt,
+  formatRetryPrompt,
+} from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
-import { buildSystemPreamble } from '../../spec/prompts/system.js';
 import { DEFAULT_AVAILABILITY } from '../../availability.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
 import {
@@ -66,6 +69,7 @@ function retryTemperature(
 export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implementer {
   const shouldThrow = baseConfig.shouldThrow ?? defaultShouldThrow;
   const prependSystemPreamble = baseConfig.prependSystemPreamble !== false;
+  const writesFiles = baseConfig.extractsCode ? 'extracted-code' : 'direct';
   const buildPrompt =
     baseConfig.buildPrompt ??
     ((opts: ImplementerOptions) =>
@@ -74,6 +78,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         context: opts.context,
         contextLength: opts.config.implementer.contextLength,
         languageContext: opts.languageContext,
+        writesFiles,
       }));
   const buildRetryPrompt =
     baseConfig.buildRetryPrompt ??
@@ -85,6 +90,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         attempt: opts.attempt,
         contextLength: opts.config.implementer.contextLength,
         languageContext: opts.languageContext,
+        writesFiles,
       }));
 
   async function runPipeline(
@@ -94,8 +100,9 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     temperature?: number,
   ): Promise<ImplementerResult> {
     const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
-    const systemPreamble = buildSystemPreamble(languageContext);
-    const prompt = prependSystemPreamble ? systemPreamble + '\n\n' + rawPrompt : rawPrompt;
+    const systemPreamble = formatImplementerSystemPreamble(languageContext, writesFiles);
+    const prompt =
+      prependSystemPreamble && systemPreamble ? systemPreamble + '\n\n' + rawPrompt : rawPrompt;
     const { task, projectDir, config, onOutput, sessionId, phase } = opts;
 
     const failTask = () => {
@@ -103,7 +110,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         baseConfig.publisher?.publishFailed({
           phase,
           taskId: task.id,
-          model: config.implementer.model,
+          ...(config.implementer.model !== undefined && { model: config.implementer.model }),
         });
     };
 
@@ -281,7 +288,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     },
 
     ...DEFAULT_AVAILABILITY,
-    capabilities: { writesFiles: baseConfig.extractsCode ? 'extracted-code' : 'direct' },
+    capabilities: { writesFiles },
     ...(baseConfig.isAvailable && { isAvailable: baseConfig.isAvailable }),
   };
 }

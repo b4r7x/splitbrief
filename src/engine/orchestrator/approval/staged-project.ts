@@ -7,7 +7,7 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import { INTERNAL_SKIP_DIRS } from '../../../core/paths.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
-import { createSandboxEnv, runnerAuthEnvKeys } from '../../runners/sandbox-env.js';
+import { createRunnerSandboxEnv, createSandboxEnv } from '../../runners/sandbox-env.js';
 import { captureProjectFileHashes, getChangedFilesSnapshot } from './file-snapshots/capture.js';
 import type { FileContentSnapshot } from './file-snapshots/types.js';
 import { readCurrentFileContent, writeCurrentFileContent } from './file-snapshots/contents.js';
@@ -60,8 +60,9 @@ export async function createStagedProject(
     const baselineFileHashes = await captureProjectFileHashes(stagedProjectDir, {
       ignoreProjectDir: projectDir,
     });
-    const preserveEnvKeys = config ? runnerAuthEnvKeys(config[runnerRole]) : [];
-    const sandboxEnv = await createSandboxEnv(stagedProjectDir, preserveEnvKeys);
+    const sandboxEnv = config
+      ? await createRunnerSandboxEnv(stagedProjectDir, config[runnerRole])
+      : await createSandboxEnv(stagedProjectDir);
     return {
       projectDir: stagedProjectDir,
       sandboxEnv,

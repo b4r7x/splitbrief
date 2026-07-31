@@ -9,6 +9,8 @@ import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { composeSteeredPrompt } from '../../implementers/types.js';
 import type { PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { PlannerCallRunResult, PlannerCallOptions } from './types.js';
+import { createRunnerSandboxEnv } from '../../runners/sandbox-env.js';
+import { withChildProcessEnv } from '../../../lib/process/spawn/lifecycle.js';
 
 export const MAX_CLARIFICATION_QUESTIONS = 5;
 
@@ -27,6 +29,10 @@ export async function runPlannerCallInContinuationLoop(
     attachments,
   } = opts;
   const { projectDir, sessionId, config, callbacks, resumeHolder, sinks, signal } = wctx;
+  const plannerEnv =
+    config.planner.kind === 'cli'
+      ? await createRunnerSandboxEnv(projectDir, config.planner)
+      : undefined;
   let state = opts.state;
   const textHandler = createBusTextHandler(
     { bus: wctx.bus, phase: state.phase },
@@ -118,23 +124,27 @@ export async function runPlannerCallInContinuationLoop(
 
         if (mode === 'quick') {
           const quickPlanFn = planner.quickPlan ?? planner.plan;
-          const result = await quickPlanFn.call(planner, {
-            feature: prompt,
-            projectDir,
-            callbacks: plannerCallbacks,
-            codebaseContext,
-          });
+          const run = () =>
+            quickPlanFn.call(planner, {
+              feature: prompt,
+              projectDir,
+              callbacks: plannerCallbacks,
+              codebaseContext,
+            });
+          const result = plannerEnv ? await withChildProcessEnv(plannerEnv, run) : await run();
           const rest = stripper.flush();
           if (rest.length > 0) textHandler(rest);
           return result;
         }
-        const result = await planner.plan({
-          feature: prompt,
-          projectDir,
-          callbacks: plannerCallbacks,
-          skillsContext,
-          codebaseContext,
-        });
+        const run = () =>
+          planner.plan({
+            feature: prompt,
+            projectDir,
+            callbacks: plannerCallbacks,
+            skillsContext,
+            codebaseContext,
+          });
+        const result = plannerEnv ? await withChildProcessEnv(plannerEnv, run) : await run();
         const rest = stripper.flush();
         if (rest.length > 0) textHandler(rest);
         return result;

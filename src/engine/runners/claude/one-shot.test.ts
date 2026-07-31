@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { runClaudeOneShot } from './invoke.js';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { runClaudeOneShot as runClaudeOneShotImpl } from './invoke.js';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../../lib/process/spawn/lifecycle.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import {
   replayRunnerCallEventsIntoOperations,
   runnerCallErrors,
@@ -17,19 +18,71 @@ import {
 } from '#testing/helpers/claude-cli-shim.js';
 
 let shimDir: string;
+let projectDir: string;
 let restorePath: () => void;
+let originalAnthropicApiKey: string | undefined;
+let originalOpenAiApiKey: string | undefined;
 
 beforeEach(() => {
   shimDir = createTempDir('claude-runner-shim');
+  projectDir = createTempDir('claude-runner-project');
   restorePath = prependPath(shimDir);
+  originalAnthropicApiKey = process.env['ANTHROPIC_API_KEY'];
+  originalOpenAiApiKey = process.env['OPENAI_API_KEY'];
 });
 
 afterEach(() => {
   restorePath();
+  if (originalAnthropicApiKey === undefined) delete process.env['ANTHROPIC_API_KEY'];
+  else process.env['ANTHROPIC_API_KEY'] = originalAnthropicApiKey;
+  if (originalOpenAiApiKey === undefined) delete process.env['OPENAI_API_KEY'];
+  else process.env['OPENAI_API_KEY'] = originalOpenAiApiKey;
   cleanupTempDir(shimDir);
+  cleanupTempDir(projectDir);
 });
 
+function trustedClaudeExecutable(): CliExecutableIdentity {
+  const path = realpathSync(`${shimDir}/claude`);
+  const info = statSync(path);
+  return {
+    path,
+    fingerprint: {
+      dev: info.dev,
+      ino: info.ino,
+      size: info.size,
+      mtimeMs: info.mtimeMs,
+    },
+  };
+}
+
+function runClaudeOneShot(
+  opts: Parameters<typeof runClaudeOneShotImpl>[0],
+): ReturnType<typeof runClaudeOneShotImpl> {
+  return runClaudeOneShotImpl({ ...opts, executable: trustedClaudeExecutable() });
+}
+
 describe('runClaudeOneShot', () => {
+  it('does not inherit ambient credentials when no spawn environment is supplied', async () => {
+    const envFile = `${shimDir}/auth-env.txt`;
+    installClaudeNodeShim(
+      shimDir,
+      `const fs = require('node:fs');
+fs.writeFileSync(${JSON.stringify(envFile)}, [process.env.ANTHROPIC_API_KEY ?? '', process.env.OPENAI_API_KEY ?? ''].join('|'));
+process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`,
+    );
+    process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
+    process.env['OPENAI_API_KEY'] = 'openai-canary';
+
+    await runClaudeOneShot({
+      prompt: 'p',
+      projectDir,
+      authChannel: 'session',
+      onOutput: () => {},
+    });
+
+    expect(readFileSync(envFile, 'utf8')).toBe('|');
+  });
+
   it('returns text and usage from the result event', async () => {
     installClaudeShim(shimDir, [
       '{"type":"assistant","message":{"content":[{"type":"text","text":"reply"}]}}',
@@ -38,7 +91,7 @@ describe('runClaudeOneShot', () => {
 
     const result = await runClaudeOneShot({
       prompt: 'hi',
-      projectDir: shimDir,
+      projectDir,
       onOutput: () => {},
     });
 
@@ -57,7 +110,7 @@ describe('runClaudeOneShot', () => {
     const chunks: string[] = [];
     await runClaudeOneShot({
       prompt: 'p',
-      projectDir: shimDir,
+      projectDir,
       onOutput: (text) => chunks.push(text),
     });
 
@@ -69,43 +122,26 @@ describe('runClaudeOneShot', () => {
     expect(streamed.indexOf('two')).toBeLessThan(streamed.indexOf('three'));
   });
 
-  it('rejects with CLAUDE_NOT_FOUND when claude binary is missing', async () => {
-    const emptyDir = createTempDir('empty-path-2');
-    const savedPath = process.env['PATH'];
-    process.env['PATH'] = emptyDir;
+  it('rejects before spawning when no trusted executable identity is supplied', async () => {
+    const markerFile = `${shimDir}/started`;
+    installClaudeNodeShim(
+      shimDir,
+      `require('node:fs').writeFileSync(${JSON.stringify(markerFile)}, 'started');
+process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + '\\n');`,
+    );
     const events: RunnerCallEvent[] = [];
-    try {
-      await expect(
-        runClaudeOneShot({
-          prompt: 'p',
-          projectDir: shimDir,
-          onOutput: () => {},
-          onCallEvent: (event) => events.push(event),
-        }),
-      ).rejects.toThrow(/Claude Code CLI not found/);
-    } finally {
-      if (savedPath === undefined) delete process.env['PATH'];
-      else process.env['PATH'] = savedPath;
-      cleanupTempDir(emptyDir);
-    }
-    const errors = runnerCallErrors(events);
+    await expect(
+      runClaudeOneShotImpl({
+        prompt: 'p',
+        projectDir,
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({ kind: 'cli-executable-untrusted' });
+    expect(existsSync(markerFile)).toBe(false);
     expect(runnerCallTerminals(events)).toHaveLength(1);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      status: 'failed',
-      error: {
-        code: 'command-not-found',
-        message: expect.stringContaining('Claude Code CLI not found'),
-      },
-      partial: false,
-    });
-    const operations = replayRunnerCallEventsIntoOperations(events);
-    expect(operations.active).toBeNull();
-    expect(operations.last).toMatchObject({
-      callId: errors[0]?.callId,
-      status: 'failed',
-      reason: expect.stringContaining('Claude Code CLI not found'),
-    });
+    expect(runnerCallErrors(events)).toHaveLength(1);
+    expect(replayRunnerCallEventsIntoOperations(events).active).toBeNull();
   });
 
   it('rejects without spawning when the signal is already aborted', async () => {
@@ -116,7 +152,7 @@ describe('runClaudeOneShot', () => {
     await expect(
       runClaudeOneShot({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         onOutput: () => {},
         signal: controller.signal,
       }),
@@ -128,7 +164,7 @@ describe('runClaudeOneShot', () => {
 
     await runClaudeOneShot({
       prompt: 'escalate me',
-      projectDir: shimDir,
+      projectDir,
       onOutput: () => {},
       effort: 'xhigh',
     });
@@ -151,7 +187,7 @@ describe('runClaudeOneShot', () => {
     await expect(
       runClaudeOneShot({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         onOutput: () => {},
       }),
     ).rejects.toMatchObject({
@@ -170,7 +206,7 @@ describe('runClaudeOneShot', () => {
     await expect(
       runClaudeOneShot({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         onOutput: (text) => chunks.push(text),
         onCallEvent: (event) => events.push(event),
       }),
@@ -197,7 +233,7 @@ describe('runClaudeOneShot', () => {
     });
   });
 
-  it('reports an oversized terminal result line as bounded truncation', async () => {
+  it('reports an oversized terminal result line as an output-budget breach', async () => {
     installClaudeNodeShim(
       shimDir,
       `
@@ -210,13 +246,13 @@ process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
     await expect(
       runClaudeOneShot({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         onOutput: () => {},
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
-      kind: 'process-output',
-      message: expect.stringContaining('stdout line exceeded'),
+      state: 'output-budget-breach',
+      remediation: expect.stringContaining('output budget'),
     });
 
     const errors = runnerCallErrors(events);

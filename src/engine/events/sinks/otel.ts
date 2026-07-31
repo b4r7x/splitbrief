@@ -11,6 +11,7 @@ import type { EngineEvent, EventSink } from '../types.js';
 import { taskIdToString } from '../../../core/schemas/task.js';
 import { totalInputTokens, totalOutputTokens } from '../../../core/schemas/tokens.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { error } from '../../../utils/error.js';
 import { protectConsumerPayload } from '../../../core/consumer-policy.js';
 import { projectEngineEventForTranscriptPolicy } from '../protection/protect.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
@@ -230,7 +231,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'error': {
         if (workflowSpan) {
           const message = otelString(event.message);
-          workflowSpan.recordException(new Error(message));
+          workflowSpan.recordException(error('engine-event-error', message));
           for (const t of taskSpans.values()) {
             t.setStatus({ code: SpanStatusCode.ERROR, message });
             t.end();

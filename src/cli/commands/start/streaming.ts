@@ -7,12 +7,15 @@ import type { RequiredFeatureDispatchArgs } from './types.js';
 export async function runJsonStart(args: RequiredFeatureDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   await ensureGitAndConfig(projectDir);
-  const { sessionId } = await bootstrapSession({
+  const { sessionId, trustedCliGates } = await bootstrapSession({
     projectDir,
     feature,
     opts,
     assertJson: true,
     defaultAutoApprove: true,
+    ...(deps.detectCliReadiness !== undefined && {
+      detectCliReadiness: deps.detectCliReadiness,
+    }),
     emitReadiness: (report) => {
       writeHeadlessJsonRecord({ type: 'readiness_report', report });
     },
@@ -23,17 +26,21 @@ export async function runJsonStart(args: RequiredFeatureDispatchArgs): Promise<v
     opts,
     sessionId,
     plannerContext,
+    trustedCliGates,
   });
 }
 
 export async function runRpcStart(args: RequiredFeatureDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   await ensureGitAndConfig(projectDir);
-  const { sessionId } = await bootstrapSession({
+  const { sessionId, trustedCliGates } = await bootstrapSession({
     projectDir,
     feature,
     opts,
     assertJson: true,
+    ...(deps.detectCliReadiness !== undefined && {
+      detectCliReadiness: deps.detectCliReadiness,
+    }),
     emitReadiness: (report) => {
       createResponseWriter({ stream: process.stdout, onClose: () => {} }).status({
         type: 'readiness_report',
@@ -47,5 +54,6 @@ export async function runRpcStart(args: RequiredFeatureDispatchArgs): Promise<vo
     opts,
     sessionId,
     plannerContext,
+    trustedCliGates,
   });
 }

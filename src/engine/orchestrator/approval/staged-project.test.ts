@@ -271,6 +271,48 @@ describe('createStagedProject — sensitive file exclusion', () => {
       cleanupTempDir(dir);
     }
   });
+
+  it('uses only the selected CLI auth channel in a staged implementer', async () => {
+    const dir = createTempDir('staged-cli-auth-test');
+    const hostHome = createTempDir('staged-cli-host-home');
+    const originalHome = process.env.HOME;
+    try {
+      createTestGitRepo(dir);
+      touchedEnvKeys.push('OPENAI_API_KEY', 'ANTHROPIC_API_KEY');
+      process.env.HOME = hostHome;
+      process.env.OPENAI_API_KEY = 'sk-openai';
+      process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
+
+      const session = await createStagedProject(
+        dir,
+        makeConfig({
+          implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        }),
+      );
+      const apiKey = await createStagedProject(
+        dir,
+        makeConfig({
+          implementer: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+        }),
+      );
+      try {
+        expect(session.sandboxEnv.HOME).toBe(hostHome);
+        expect(session.sandboxEnv.OPENAI_API_KEY).toBeUndefined();
+        expect(session.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
+        expect(apiKey.sandboxEnv.HOME).toBe(join(apiKey.projectDir, SANDBOX_DIR, 'home'));
+        expect(apiKey.sandboxEnv.OPENAI_API_KEY).toBe('sk-openai');
+        expect(apiKey.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
+      } finally {
+        session.cleanup();
+        apiKey.cleanup();
+      }
+    } finally {
+      if (originalHome === undefined) delete process.env.HOME;
+      else process.env.HOME = originalHome;
+      cleanupTempDir(hostHome);
+      cleanupTempDir(dir);
+    }
+  });
 });
 
 describe('promoteStagedChanges', () => {

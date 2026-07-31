@@ -1,4 +1,18 @@
+import type { ImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { buildLanguageContext, type LanguageContext } from './language-context.js';
+
+export function buildImplementerSystemPreamble(
+  languageContext: LanguageContext,
+  writesFiles: ImplementerWriteMode,
+): string {
+  if (writesFiles === 'extracted-code') return buildSystemPreamble(languageContext);
+
+  return `SYSTEM: You are a coding agent for ${languageContext.language}. You write clean, working code directly in the staged working directory.
+Rules:
+- Do NOT add comments unless specified in the task
+- Use ${languageContext.importConvention}
+- Follow the exact function signatures provided`;
+}
 
 export function buildSystemPreamble(languageContext?: LanguageContext): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
