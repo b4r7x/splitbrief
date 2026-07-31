@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { runClaudePlannerStream } from './invoke.js';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { runClaudePlannerStream as runClaudePlannerStreamImpl } from './invoke.js';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../../lib/process/spawn/lifecycle.js';
 import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../../calls/output-limit.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
+import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import {
   replayRunnerCallEventsIntoOperations,
   runnerCallErrors,
@@ -21,25 +22,47 @@ import {
 } from '#testing/helpers/claude-cli-shim.js';
 
 /**
- * These tests exercise the real subprocess seam. `claude/invoke.ts` hardcodes
- * `command: 'claude'`; we intercept by installing a shim named `claude` in a
- * temp directory and prepending that directory to PATH for the duration of
- * each test. The shim emits real stream-json lines so the invoke module's
- * parse + state-aggregation path is observable end-to-end.
+ * These tests exercise the real subprocess seam. Each test installs a shim
+ * named `claude` in a temp directory and passes its trusted executable
+ * identity to the invoke boundary. The shim emits real stream-json lines so
+ * the invoke module's parse + state-aggregation path is observable end-to-end.
  */
 
 let shimDir: string;
+let projectDir: string;
 let restorePath: () => void;
 
 beforeEach(() => {
   shimDir = createTempDir('claude-runner-shim');
+  projectDir = createTempDir('claude-runner-project');
   restorePath = prependPath(shimDir);
 });
 
 afterEach(() => {
   restorePath();
   cleanupTempDir(shimDir);
+  cleanupTempDir(projectDir);
 });
+
+function trustedClaudeExecutable(): CliExecutableIdentity {
+  const path = realpathSync(`${shimDir}/claude`);
+  const info = statSync(path);
+  return {
+    path,
+    fingerprint: {
+      dev: info.dev,
+      ino: info.ino,
+      size: info.size,
+      mtimeMs: info.mtimeMs,
+    },
+  };
+}
+
+function runClaudePlannerStream(
+  opts: Parameters<typeof runClaudePlannerStreamImpl>[0],
+): ReturnType<typeof runClaudePlannerStreamImpl> {
+  return runClaudePlannerStreamImpl({ ...opts, executable: trustedClaudeExecutable() });
+}
 
 describe('runClaudePlannerStream', () => {
   it('accumulates streamed text and captures session id + usage from result event', async () => {
@@ -53,7 +76,7 @@ describe('runClaudePlannerStream', () => {
     const chunks: string[] = [];
     const result = await runClaudePlannerStream({
       prompt: 'do thing',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: (text) => chunks.push(text),
     });
@@ -73,7 +96,7 @@ describe('runClaudePlannerStream', () => {
     const chunks: string[] = [];
     const result = await runClaudePlannerStream({
       prompt: 'do thing',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: (text) => chunks.push(text),
     });
@@ -92,7 +115,7 @@ describe('runClaudePlannerStream', () => {
     const events: RunnerCallEvent[] = [];
     const result = await runClaudePlannerStream({
       prompt: 'do thing',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: (text) => chunks.push(text),
       onCallEvent: (event) => events.push(event),
@@ -118,7 +141,7 @@ describe('runClaudePlannerStream', () => {
 
     const result = await runClaudePlannerStream({
       prompt: 'p',
-      projectDir: shimDir,
+      projectDir,
       sessionId: 'pre-existing-session',
       onOutput: () => {},
     });
@@ -137,7 +160,7 @@ describe('runClaudePlannerStream', () => {
     const events: RunnerCallEvent[] = [];
     await runClaudePlannerStream({
       prompt: 'p',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: (text) => chunks.push(text),
       onCallEvent: (event) => events.push(event),
@@ -182,7 +205,7 @@ describe('runClaudePlannerStream', () => {
     const events: RunnerCallEvent[] = [];
     await runClaudePlannerStream({
       prompt: 'p',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: () => {},
       onCallEvent: (event) => events.push(event),
@@ -210,7 +233,7 @@ describe('runClaudePlannerStream', () => {
     const questions: Array<{ id: string }> = [];
     await runClaudePlannerStream({
       prompt: 'p',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: () => {},
       onQuestion: (qs) => {
@@ -221,44 +244,27 @@ describe('runClaudePlannerStream', () => {
     expect(questions.map((it) => it.id)).toContain('q1');
   });
 
-  it('rejects with CLAUDE_NOT_FOUND message when `claude` is not on PATH', async () => {
-    const emptyDir = createTempDir('empty-path');
-    const savedPath = process.env['PATH'];
-    process.env['PATH'] = emptyDir;
+  it('rejects before spawning when no trusted executable identity is supplied', async () => {
+    const markerFile = `${shimDir}/started`;
+    installClaudeNodeShim(
+      shimDir,
+      `require('node:fs').writeFileSync(${JSON.stringify(markerFile)}, 'started');
+process.stdout.write(JSON.stringify({ type: 'result', result: 'unexpected' }) + '\\n');`,
+    );
     const events: RunnerCallEvent[] = [];
-    try {
-      await expect(
-        runClaudePlannerStream({
-          prompt: 'p',
-          projectDir: shimDir,
-          sessionId: null,
-          onOutput: () => {},
-          onCallEvent: (event) => events.push(event),
-        }),
-      ).rejects.toThrow(/Claude Code CLI not found/);
-    } finally {
-      if (savedPath === undefined) delete process.env['PATH'];
-      else process.env['PATH'] = savedPath;
-      cleanupTempDir(emptyDir);
-    }
-    const errors = runnerCallErrors(events);
+    await expect(
+      runClaudePlannerStreamImpl({
+        prompt: 'p',
+        projectDir,
+        sessionId: null,
+        onOutput: () => {},
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toMatchObject({ kind: 'cli-executable-untrusted' });
+    expect(existsSync(markerFile)).toBe(false);
     expect(runnerCallTerminals(events)).toHaveLength(1);
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toMatchObject({
-      status: 'failed',
-      error: {
-        code: 'command-not-found',
-        message: expect.stringContaining('Claude Code CLI not found'),
-      },
-      partial: false,
-    });
-    const operations = replayRunnerCallEventsIntoOperations(events);
-    expect(operations.active).toBeNull();
-    expect(operations.last).toMatchObject({
-      callId: errors[0]?.callId,
-      status: 'failed',
-      reason: expect.stringContaining('Claude Code CLI not found'),
-    });
+    expect(runnerCallErrors(events)).toHaveLength(1);
+    expect(replayRunnerCallEventsIntoOperations(events).active).toBeNull();
   });
 
   it('rejects without spawning when the signal is already aborted', async () => {
@@ -269,7 +275,7 @@ describe('runClaudePlannerStream', () => {
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: () => {},
         signal: controller.signal,
@@ -290,7 +296,7 @@ describe('runClaudePlannerStream', () => {
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: () => {},
       }),
@@ -309,7 +315,7 @@ describe('runClaudePlannerStream', () => {
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: () => {},
       }),
@@ -326,7 +332,7 @@ describe('runClaudePlannerStream', () => {
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: () => {},
         onCallEvent: (event) => events.push(event),
@@ -353,7 +359,7 @@ describe('runClaudePlannerStream', () => {
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: (text) => chunks.push(text),
         onCallEvent: (event) => events.push(event),
@@ -382,7 +388,7 @@ describe('runClaudePlannerStream', () => {
     });
   });
 
-  it('reports an oversized terminal result line as bounded truncation', async () => {
+  it('reports an oversized terminal result line as an output-budget breach', async () => {
     installClaudeNodeShim(
       shimDir,
       `
@@ -395,14 +401,14 @@ process.stdout.write(JSON.stringify({ type: "result", result }) + "\\n");
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: () => {},
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
-      kind: 'process-output',
-      message: expect.stringContaining('stdout line exceeded'),
+      state: 'output-budget-breach',
+      remediation: expect.stringContaining('output budget'),
     });
 
     const errors = runnerCallErrors(events);
@@ -446,7 +452,7 @@ process.stdout.write(JSON.stringify({
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: (text) => chunks.push(text),
         onCallEvent: (event) => events.push(event),
@@ -481,7 +487,7 @@ process.stdout.write(JSON.stringify({
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: (text) => {
           chunks.push(text);
@@ -515,7 +521,7 @@ process.stdout.write(JSON.stringify({
     await expect(
       runClaudePlannerStream({
         prompt: 'p',
-        projectDir: shimDir,
+        projectDir,
         sessionId: null,
         onOutput: () => {},
         signal: AbortSignal.timeout(20),
@@ -528,7 +534,7 @@ process.stdout.write(JSON.stringify({
 
     await runClaudePlannerStream({
       prompt: 'describe the screenshot',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: () => {},
       images: [makeClaudeTestImage('/tmp/a.png'), makeClaudeTestImage('/tmp/b.png')],
@@ -550,7 +556,7 @@ process.stdout.write(JSON.stringify({
 
     await runClaudePlannerStream({
       prompt: 'go',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: () => {},
       effort: 'high',
@@ -574,7 +580,7 @@ process.stdout.write(JSON.stringify({
 
     await runClaudePlannerStream({
       prompt: 'go',
-      projectDir: shimDir,
+      projectDir,
       sessionId: null,
       onOutput: () => {},
     });

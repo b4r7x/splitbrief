@@ -15,11 +15,15 @@ const scenario = {
       profiles: {
         'cheap-local': {
           ...e2eImplementer,
+          service: 'anthropic',
+          offering: 'payg',
           costTier: 'local',
           contextLength: 200000,
         },
         'expensive-cloud': {
           ...e2ePlanner,
+          service: 'anthropic',
+          offering: 'payg',
           costTier: 'frontier',
           contextLength: 200000,
         },

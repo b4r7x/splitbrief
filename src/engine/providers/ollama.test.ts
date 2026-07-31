@@ -32,4 +32,43 @@ describe('createOllamaProvider detectContextLength (via /api/show)', () => {
     const result = await createOllamaProvider().detectContextLength('qwen:7b');
     expect(result).toBeNull();
   });
+
+  it('follows same-origin redirects for the context probe', async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(
+        new Response(null, { status: 307, headers: { location: '/api/show/redirected' } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ parameters: 'num_ctx 16384' }), { status: 200 }),
+      );
+
+    const result = await createOllamaProvider().detectContextLength('qwen:7b');
+
+    expect(result).toBe(16384);
+    const redirectedRequest = vi.mocked(globalThis.fetch).mock.calls[1]?.[0];
+    expect(redirectedRequest).toBeInstanceOf(Request);
+    if (!(redirectedRequest instanceof Request)) throw new Error('expected redirected Request');
+    expect(redirectedRequest.url).toBe('http://localhost:11434/api/show/redirected');
+  });
+
+  it('does not follow a context-probe redirect outside loopback origin', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(null, {
+        status: 307,
+        headers: { location: 'http://evil.example.net/collect' },
+      }),
+    );
+
+    const result = await createOllamaProvider().detectContextLength('qwen:7b');
+
+    expect(result).toBeNull();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an Ollama endpoint outside loopback before construction', () => {
+    expect(() => createOllamaProvider({ apiBase: 'http://192.168.0.2:11434/v1' })).toThrow(
+      expect.objectContaining({ kind: 'provider-endpoint-invalid' }),
+    );
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });

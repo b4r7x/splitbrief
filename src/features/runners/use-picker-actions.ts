@@ -2,9 +2,7 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { CHEVRON_SEP } from '../../components/separators.js';
-import { uniqueInOrder } from '../../utils/collections.js';
 import { error } from '../../utils/error.js';
-import { isRecord } from '../../utils/type-guards.js';
 import { formatModelName } from '../../core/model-display.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { PickerOption, ModelOption } from './model-catalog.js';
@@ -28,28 +26,6 @@ export interface PickerActions {
   closeOverlay(): void;
 }
 
-function collectChangedPaths(before: unknown, after: unknown, prefix: string): string[] {
-  if (Object.is(before, after)) return [];
-  if (isRecord(before) && isRecord(after)) {
-    const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-    return Array.from(keys).flatMap((key) =>
-      collectChangedPaths(before[key], after[key], `${prefix}.${key}`),
-    );
-  }
-  if (JSON.stringify(before) === JSON.stringify(after)) return [];
-  return [prefix];
-}
-
-function runnerChangedPaths(
-  config: Config,
-  updated: Config,
-  role: 'planner' | 'implementer',
-  extra: string[] = [],
-): string[] {
-  const changed = collectChangedPaths(config[role], updated[role], role);
-  return uniqueInOrder([...changed, ...extra]);
-}
-
 export function usePickerActions(opts: {
   role: 'planner' | 'implementer';
   onConfirm: ((updated: Config) => void) | undefined;
@@ -61,12 +37,12 @@ export function usePickerActions(opts: {
   const isPlanner = role === 'planner';
   const config = configStore.useConfig();
 
-  const commit = (updated: Config, message: string, changedPaths?: string[] | undefined) => {
+  const commit = (updated: Config, message: string) => {
     if (onConfirm) {
       onConfirm(updated);
       return;
     }
-    const result = configStore.save(updated, changedPaths ? { changedPaths } : undefined);
+    const result = configStore.save(updated);
     if (result.ok) {
       feedbackStore.setMessage(message);
       overlayStore.close();
@@ -96,28 +72,10 @@ export function usePickerActions(opts: {
         : selection.displayName;
       if (isPlanner) {
         const updated = commitPlannerSelection(config, selection, model);
-        commit(
-          updated,
-          `Planner set to: ${label}`,
-          runnerChangedPaths(config, updated, 'planner', [
-            'planner.kind',
-            'planner.tool',
-            'planner.provider',
-            ...(model ? ['planner.model'] : []),
-          ]),
-        );
+        commit(updated, `Planner set to: ${label}`);
       } else {
         const updated = commitImplementerSelection(config, selection, model);
-        commit(
-          updated,
-          `Implementer set to: ${label}`,
-          runnerChangedPaths(config, updated, 'implementer', [
-            'implementer.kind',
-            'implementer.tool',
-            'implementer.provider',
-            'implementer.model',
-          ]),
-        );
+        commit(updated, `Implementer set to: ${label}`);
       }
     },
     leftChange(item: PickerOption) {
@@ -125,12 +83,7 @@ export function usePickerActions(opts: {
     },
     deleteRight(item: ModelOption) {
       const updated = removeCustomModel(config, role, item.id);
-      const result = configStore.save(updated, {
-        changedPaths: runnerChangedPaths(config, updated, role, [
-          `${role}.customModels`,
-          `${role}.model`,
-        ]),
-      });
+      const result = configStore.save(updated);
       if (result.ok) {
         feedbackStore.setMessage(`Removed custom model: ${item.id}`);
       } else if (result.error) {
@@ -149,16 +102,7 @@ export function usePickerActions(opts: {
         command: cmd,
         kind: viewState.view.intendedKind,
       });
-      commit(
-        updated,
-        `${catalog.roleLabel} set to: ${viewState.view.intendedKind}: ${cmd}`,
-        runnerChangedPaths(config, updated, role, [
-          `${role}.kind`,
-          `${role}.tool`,
-          `${role}.command`,
-          ...(role === 'implementer' ? [`${role}.model`] : []),
-        ]),
-      );
+      commit(updated, `${catalog.roleLabel} set to: ${viewState.view.intendedKind}: ${cmd}`);
     },
     customModel(modelName: string) {
       if (viewState.view.kind !== 'custom-model') return;
@@ -173,13 +117,6 @@ export function usePickerActions(opts: {
       commit(
         updated,
         `${catalog.roleLabel} set to: ${customModelItem.displayName}${CHEVRON_SEP}${formatModelName(modelName)}`,
-        runnerChangedPaths(config, updated, role, [
-          `${role}.kind`,
-          `${role}.tool`,
-          `${role}.provider`,
-          `${role}.model`,
-          `${role}.customModels`,
-        ]),
       );
     },
     openCustomModel(item: PickerOption) {

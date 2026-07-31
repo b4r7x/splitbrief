@@ -1,8 +1,8 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { ApiImplementerConfig } from '../../../core/schemas/implementer-config.js';
-import { hasApiBase } from '../../../core/config/accessors/runner-config.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
+import { API_PROVIDER_CATALOG } from '../../../core/providers/api-provider-catalog.js';
 import { getProviderBaseURL } from '../../../core/providers/catalog.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
 import {
@@ -132,6 +132,9 @@ export function resolveIntermediateConfig(
   const escalation = ctx.config.escalation;
   if (!escalation?.intermediateProvider || !escalation.intermediateModel) return null;
   const intermediateModel = escalation.intermediateModel;
+  const intermediateDescriptor = Object.values(API_PROVIDER_CATALOG).find(
+    (descriptor) => descriptor.id === escalation.intermediateProvider,
+  );
   const resolvedApiBase = getProviderBaseURL(escalation.intermediateProvider);
   if (!resolvedApiBase) {
     publishWarning({
@@ -141,11 +144,12 @@ export function resolveIntermediateConfig(
     });
   }
 
-  const currentApiBase = hasApiBase(ctx.config.implementer)
-    ? ctx.config.implementer.apiBase
-    : undefined;
+  const currentImplementer = ctx.config.implementer;
+  const currentApiBase = currentImplementer.kind === 'api' ? currentImplementer.apiBase : undefined;
   const effectiveApiBase = resolvedApiBase || currentApiBase;
-  if (!effectiveApiBase) {
+  const intermediateIdentity =
+    intermediateDescriptor ?? (currentImplementer.kind === 'api' ? currentImplementer : undefined);
+  if (!effectiveApiBase || !intermediateIdentity) {
     publishWarning({
       bus: ctx.bus,
       phase: state.phase,
@@ -163,6 +167,8 @@ export function resolveIntermediateConfig(
   const intermediateImplConfig: ApiImplementerConfig = {
     kind: 'api',
     provider: escalation.intermediateProvider,
+    service: intermediateIdentity.service,
+    offering: intermediateIdentity.offering,
     model: intermediateModel,
     apiBase: effectiveApiBase,
     ...(contextLength !== undefined && { contextLength }),

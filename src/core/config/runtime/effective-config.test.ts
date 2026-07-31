@@ -11,6 +11,8 @@ describe('resolveEffectiveConfig', () => {
       implementer: {
         kind: 'api' as const,
         provider: 'anthropic' as const,
+        service: 'anthropic' as const,
+        offering: 'payg' as const,
         apiBase: 'https://api.anthropic.com/v1',
         model: 'claude-sonnet-4-6',
         apiKey: 'sk-ant-inline',
@@ -34,6 +36,8 @@ describe('resolveEffectiveConfig', () => {
       implementer: {
         kind: 'api',
         provider: 'anthropic',
+        service: 'anthropic',
+        offering: 'payg',
         apiBase: 'https://api.anthropic.com/v1',
         model: 'claude-sonnet-4-6',
         apiKey: 'sk-ant-inline',
@@ -93,6 +97,8 @@ describe('resolveEffectiveConfig', () => {
       implementer: {
         kind: 'api',
         provider: 'anthropic',
+        service: 'anthropic',
+        offering: 'payg',
         apiBase: 'https://api.anthropic.com/v1',
         model: 'claude-sonnet-4-6',
         apiKey: 'sk-ant-inline',

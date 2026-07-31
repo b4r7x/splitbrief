@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   abortTurn,
@@ -12,7 +11,6 @@ import {
 } from './handlers.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../stores/workflow/events.js';
-import { registerProcess, unregisterProcess } from '../../lib/process/registry.js';
 
 describe('createAbortHandlerScope', () => {
   afterEach(() => {
@@ -71,36 +69,14 @@ describe('interruptTurn', () => {
     clearAllHandlers();
   });
 
-  it('interruptTurn kills processes and returns turn while a call is in flight', async () => {
+  it('interruptTurn invokes the current abort owner and returns turn while a call is in flight', () => {
     const abort = vi.fn();
     createAbortHandlerScope()(abort);
-    const proc = spawn('sleep', ['60'], { stdio: 'ignore' });
-    registerProcess(proc);
 
-    try {
-      expect(interruptTurn()).toBe('turn');
-      expect(abort).toHaveBeenCalledTimes(1);
-      expect(lifecycleStore.get().status).toBe('interrupted');
-      expect(lifecycleStore.get().cancelled).toBe(false);
-
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('process did not exit')), 3000);
-        proc.once('close', () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-      expect(proc.signalCode === 'SIGTERM' || proc.exitCode !== null).toBe(true);
-    } finally {
-      unregisterProcess(proc);
-      if (proc.exitCode === null && !proc.killed) {
-        try {
-          proc.kill('SIGKILL');
-        } catch {
-          /* ignore */
-        }
-      }
-    }
+    expect(interruptTurn()).toBe('turn');
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(lifecycleStore.get().status).toBe('interrupted');
+    expect(lifecycleStore.get().cancelled).toBe(false);
   });
 
   it('interruptTurn sets the boundary flag instead of cancelling during a dead zone', () => {

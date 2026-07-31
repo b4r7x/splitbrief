@@ -59,12 +59,6 @@ export function getRunnerModelName(runner: RunnerConfig): string | undefined {
   return undefined;
 }
 
-export function hasApiBase(
-  runner: RunnerConfig,
-): runner is Extract<RunnerConfig, { apiBase: string }> {
-  return 'apiBase' in runner && typeof runner.apiBase === 'string' && runner.apiBase.length > 0;
-}
-
 export function getPlannerToolId(config: Config['planner']): PlannerToolId {
   switch (config.kind) {
     case 'cli':

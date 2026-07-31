@@ -2,6 +2,7 @@ import type { OutputFormat } from '../../core/schemas/enums.js';
 import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import {
+  createRunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
   runnerCallIdleTimeoutError,
   runnerCallInterruptedStatus,
@@ -10,15 +11,17 @@ import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../ca
 import type { ParsedLine } from '../runners/types.js';
 import { processError } from '../../lib/process/errors.js';
 import { spawnWithStdin } from '../../lib/process/spawn/line-stream.js';
+import type { SpawnPipeFatalSignal } from '../../lib/process/spawn/lifecycle.js';
+import { redactSecrets } from '../../utils/redact.js';
 import {
   finishRunnerCallOutputLimit,
-  runnerCallLimitWarning,
   runnerCallLineOutputLimit,
+  type RunnerCallOutputLimit,
 } from '../calls/output-limit.js';
 import { getLineParser } from './output-parsers.js';
-import { parseTextLine } from './parse-text.js';
 import { createParsedLineRecorder } from './parsed-line-recorder.js';
 import { createRunnerCallStderrBuffer } from './stderr-lines.js';
+import { sandboxCredentialValues } from '../runners/sandbox-env.js';
 
 interface SpawnAndCollectOptions {
   command: string;
@@ -38,9 +41,42 @@ interface SpawnAndCollectOptions {
   // Defaults are applied here in spawnAndCollect, the single defaulting site —
   // callers pass configured overrides through.
   idle?: { warnMs?: number | undefined; killMs?: number | undefined } | undefined;
+  outputMaxBytes?: number | undefined;
+  stderrMaxBytes?: number | undefined;
+  stdoutLineMaxBytes?: number | undefined;
+  outputBudgetBytes?: number | undefined;
+  /** Credential values are passed explicitly so callbacks never receive raw secrets. */
+  credentialValues?: readonly string[] | undefined;
 }
 
 let callSequence = 0;
+
+function fatalLimitFromEvent(event: RunnerCallEvent): RunnerCallOutputLimit | null {
+  if (event.type !== 'call_warning') return null;
+  const { code, message } = event.warning;
+  if (
+    code === 'runner_output_text_limit' ||
+    code === 'stdout_line_overflow' ||
+    code === 'stderr_line_overflow' ||
+    (code.startsWith('runner_call_') && code.endsWith('_limit'))
+  ) {
+    return { code, message };
+  }
+  return null;
+}
+
+function isOutputBudgetFatalSignal(
+  err: unknown,
+): err is SpawnPipeFatalSignal & { state: 'output-budget-breach' } {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'state' in err &&
+    err.state === 'output-budget-breach' &&
+    'remediation' in err &&
+    typeof err.remediation === 'string'
+  );
+}
 
 export async function spawnAndCollect(
   opts: SpawnAndCollectOptions,
@@ -55,13 +91,38 @@ export async function spawnAndCollect(
       runnerName: opts.command,
     } satisfies RunnerCallContext);
 
-  const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
+  const credentialValues =
+    opts.credentialValues ?? credentialValuesFromEnvironment(opts.env ?? process.env);
+  const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
+  const redactCredential = (value: string): string => redactSecrets(explicitRedactor(value));
+  let fatalLimit: RunnerCallOutputLimit | null = null;
+  const recorder = createRunnerCallRecorder({
+    context,
+    credentialValues,
+    onEvent: (event) => {
+      fatalLimit ??= fatalLimitFromEvent(event);
+      opts.onCallEvent?.(event);
+    },
+  });
   const parsedRecorder = createParsedLineRecorder({
     recorder,
-    onText: opts.onText,
-    onSessionId: opts.onSessionId,
+    onText: (text) => opts.onText?.(redactCredential(text)),
+    onSessionId: (id) => opts.onSessionId?.(redactCredential(id)),
   });
   const stderrBuffer = createRunnerCallStderrBuffer(recorder);
+  const fatalOutputSignal = (): SpawnPipeFatalSignal | undefined => {
+    if (fatalLimit === null) return undefined;
+    if (!recorder.hasTerminal()) {
+      recorder.finishFailed({
+        status: 'truncated',
+        error: { code: fatalLimit.code, message: fatalLimit.message },
+        usage: parsedRecorder.usage,
+        nativeSessionId: parsedRecorder.sessionId,
+        partial: true,
+      });
+    }
+    return { state: 'output-budget-breach', remediation: fatalLimit.message };
+  };
 
   try {
     await spawnWithStdin({
@@ -73,7 +134,8 @@ export async function spawnAndCollect(
       notFoundMessage: opts.notFoundMessage,
       onStderr: (chunk) => {
         stderrBuffer.push(chunk);
-        opts.onStderr?.(chunk);
+        opts.onStderr?.(redactCredential(chunk));
+        return fatalOutputSignal();
       },
       signal: opts.signal,
       idle: {
@@ -82,6 +144,10 @@ export async function spawnAndCollect(
         onWarn: (silentMs) => recorder.stalled({ silentMs }),
         onClear: () => recorder.stallCleared(),
       },
+      outputMaxBytes: opts.outputMaxBytes,
+      stderrMaxBytes: opts.stderrMaxBytes,
+      stdoutLineMaxBytes: opts.stdoutLineMaxBytes,
+      outputBudgetBytes: opts.outputBudgetBytes,
       onStdoutLineOverflow: (overflow) => {
         const limit = runnerCallLineOutputLimit({
           code: 'stdout_line_overflow',
@@ -89,29 +155,39 @@ export async function spawnAndCollect(
           lineBytes: overflow.lineBytes,
           maxLineBytes: overflow.maxLineBytes,
         });
-        // Plain text loses only the overlong line, so warn and keep collecting
-        // (mirrors stderr overflow); structured line protocols lose a whole
-        // frame, which invalidates the result.
-        if (parseLine === parseTextLine) {
-          recorder.warning({ warning: runnerCallLimitWarning(limit) });
-          return;
-        }
+        fatalLimit = limit;
         finishRunnerCallOutputLimit(recorder, limit, {
           usage: parsedRecorder.usage,
           nativeSessionId: parsedRecorder.sessionId,
         });
+        return fatalOutputSignal();
       },
       onLine(line) {
         parsedRecorder.apply(parseLine(line));
+        return fatalOutputSignal();
       },
     });
   } catch (err) {
     stderrBuffer.flush();
+    if (isOutputBudgetFatalSignal(err)) {
+      if (!recorder.hasTerminal()) {
+        const limit = fatalLimit ?? {
+          code: 'runner_process_output_limit',
+          message: err.remediation,
+        };
+        finishRunnerCallOutputLimit(recorder, limit, {
+          usage: parsedRecorder.usage,
+          nativeSessionId: parsedRecorder.sessionId,
+        });
+      }
+      const result = recorder.finalResult();
+      return { ...result, sessionId: parsedRecorder.sessionId };
+    }
     if (!recorder.hasTerminal()) {
       if (processError.isIdleTimeout(err)) {
         recorder.finishFailed({
           status: 'failed',
-          error: runnerCallIdleTimeoutError(err),
+          error: runnerCallIdleTimeoutError(err, credentialValues),
         });
       } else {
         recorder.finishFailed({
@@ -119,11 +195,12 @@ export async function spawnAndCollect(
           error: runnerCallErrorFromUnknown(
             err,
             opts.signal?.aborted ? 'runner_interrupted' : 'runner_process_error',
+            credentialValues,
           ),
         });
       }
     }
-    throw err;
+    throw redactThrownError(err, redactCredential);
   }
 
   stderrBuffer.flush();
@@ -133,4 +210,28 @@ export async function spawnAndCollect(
 
   const result = recorder.finalResult();
   return { ...result, sessionId: parsedRecorder.sessionId };
+}
+
+function credentialValuesFromEnvironment(environment: NodeJS.ProcessEnv): readonly string[] {
+  const values = Object.entries(environment)
+    .filter(([name, value]) => value !== undefined && looksLikeCredentialEnvironmentName(name))
+    .map(([, value]) => value)
+    .filter((value): value is string => value !== undefined && value.length > 0);
+  return [...new Set([...values, ...sandboxCredentialValues(environment)])];
+}
+
+function looksLikeCredentialEnvironmentName(name: string): boolean {
+  return /(?:^|[_.-])(?:API[_.-]?KEY|KEY|TOKEN|PASSWORD|PASSWD|SECRET|CREDENTIAL|AUTH(?:ORIZATION)?)(?:$|[_.-])/i.test(
+    name,
+  );
+}
+
+function redactThrownError(err: unknown, redactCredential: (value: string) => string): unknown {
+  if (!(err instanceof Error)) return err;
+  err.message = redactCredential(err.message);
+  if (processError.isExitCode(err)) {
+    err.data.stderr = redactCredential(err.data.stderr);
+    err.data.output = redactCredential(err.data.output);
+  }
+  return err;
 }

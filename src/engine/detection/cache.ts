@@ -3,106 +3,26 @@ import { z } from 'zod';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { confinedReadFileAsync, confinedUnlinkSync } from '../../lib/confined-fs.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
-import type {
-  DetectedModel,
-  PlannerDetection,
-  ProviderDetection,
+import {
+  CliToolDetectionSchema,
+  ProviderDetectionSchema,
+  type CliToolDetection,
+  type ProviderDetection,
 } from '../../core/discovery/detection.js';
-import { PLANNER_TOOL_IDS, PROVIDER_IDS } from '../../core/schemas/enums.js';
 import { getSplitbriefPath } from '../../core/paths.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
-const DetectedModelRawSchema = z.object({
-  id: z.string(),
-  contextLength: z.number().optional(),
-  maxOutputTokens: z.number().optional(),
-  pricingInput: z.number().optional(),
-  pricingOutput: z.number().optional(),
-  pricingCacheRead: z.number().optional(),
-  pricingCacheWrite: z.number().optional(),
-  isFree: z.boolean().optional(),
-  supportsTemperature: z.boolean().optional(),
-  supportsReasoning: z.boolean().optional(),
-  supportsImages: z.boolean().optional(),
-  capabilities: z.array(z.string()).optional(),
-  releaseDate: z.string().optional(),
-});
-
-const DetectedModelSchema = DetectedModelRawSchema.transform(
-  (m): DetectedModel => ({
-    id: m.id,
-    ...(m.contextLength !== undefined && { contextLength: m.contextLength }),
-    ...(m.maxOutputTokens !== undefined && { maxOutputTokens: m.maxOutputTokens }),
-    ...(m.pricingInput !== undefined && { pricingInput: m.pricingInput }),
-    ...(m.pricingOutput !== undefined && { pricingOutput: m.pricingOutput }),
-    ...(m.pricingCacheRead !== undefined && { pricingCacheRead: m.pricingCacheRead }),
-    ...(m.pricingCacheWrite !== undefined && { pricingCacheWrite: m.pricingCacheWrite }),
-    ...(m.isFree !== undefined && { isFree: m.isFree }),
-    ...(m.supportsTemperature !== undefined && { supportsTemperature: m.supportsTemperature }),
-    ...(m.supportsReasoning !== undefined && { supportsReasoning: m.supportsReasoning }),
-    ...(m.supportsImages !== undefined && { supportsImages: m.supportsImages }),
-    ...(m.capabilities !== undefined && { capabilities: m.capabilities }),
-    ...(m.releaseDate !== undefined && { releaseDate: m.releaseDate }),
-  }),
-);
-
-const PlannerCompatibilitySchema = z.object({
-  kind: z.literal('major-version-mismatch'),
-  installedVersion: z.string(),
-  testedVersion: z.string(),
-});
-
-const PlannerDetectionRawSchema = z.object({
-  tool: z.enum(PLANNER_TOOL_IDS),
-  type: z.enum(['cli', 'api', 'shell']),
-  available: z.boolean(),
-  version: z.string().optional(),
-  compatibility: PlannerCompatibilitySchema.optional(),
-  description: z.string().optional(),
-  error: z.string().optional(),
-});
-
-const PlannerDetectionSchema = PlannerDetectionRawSchema.transform(
-  (p): PlannerDetection => ({
-    tool: p.tool,
-    type: p.type,
-    available: p.available,
-    ...(p.version !== undefined && { version: p.version }),
-    ...(p.compatibility !== undefined && { compatibility: p.compatibility }),
-    ...(p.description !== undefined && { description: p.description }),
-    ...(p.error !== undefined && { error: p.error }),
-  }),
-);
-
-const ProviderDetectionRawSchema = z.object({
-  provider: z.enum(PROVIDER_IDS),
-  available: z.boolean(),
-  models: z.array(DetectedModelSchema).optional(),
-  isLocal: z.boolean(),
-  hasKey: z.boolean().optional(),
-  error: z.string().optional(),
-});
-
-const ProviderDetectionSchema = ProviderDetectionRawSchema.transform(
-  (p): ProviderDetection => ({
-    provider: p.provider,
-    available: p.available,
-    isLocal: p.isLocal,
-    ...(p.models !== undefined && { models: p.models }),
-    ...(p.hasKey !== undefined && { hasKey: p.hasKey }),
-    ...(p.error !== undefined && { error: p.error }),
-  }),
-);
-
-const DetectionCacheSchema = z.object({
-  version: z.literal(CACHE_VERSION),
-  timestamp: z.number(),
-  planners: z.array(PlannerDetectionSchema),
-  implementers: z.array(ProviderDetectionSchema),
-});
+const DetectionCacheSchema = z
+  .object({
+    version: z.literal(CACHE_VERSION),
+    timestamp: z.number(),
+    providers: z.array(ProviderDetectionSchema),
+    cliTools: z.array(CliToolDetectionSchema),
+  })
+  .strict();
 
 type DetectionCache = z.infer<typeof DetectionCacheSchema>;
 
@@ -131,24 +51,24 @@ async function readCacheRaw(projectDir: string): Promise<unknown | null> {
 export async function loadDetectionCache(
   projectDir: string,
   ttlMs = DEFAULT_TTL_MS,
-): Promise<{ planners: PlannerDetection[]; implementers: ProviderDetection[] } | null> {
+): Promise<{ providers: ProviderDetection[]; cliTools: CliToolDetection[] } | null> {
   const parsed = parseCache(await readCacheRaw(projectDir));
   if (!parsed) return null;
   if (Date.now() - parsed.timestamp >= ttlMs) return null;
-  return { planners: parsed.planners, implementers: parsed.implementers };
+  return { providers: parsed.providers, cliTools: parsed.cliTools };
 }
 
 export async function saveDetectionCache(
   projectDir: string,
-  planners: PlannerDetection[],
-  implementers: ProviderDetection[],
+  providers: ProviderDetection[],
+  cliTools: CliToolDetection[],
 ): Promise<void> {
   const path = cachePath(projectDir);
   const cache: DetectionCache = {
     version: CACHE_VERSION,
     timestamp: Date.now(),
-    planners,
-    implementers,
+    providers,
+    cliTools,
   };
   try {
     await writeConfinedSecureFileAsync(

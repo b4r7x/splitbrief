@@ -14,6 +14,7 @@ import { buildRepoChecks } from './repo.js';
 import { buildCostChecks } from './cost.js';
 import { nowIso } from '../../../utils/format-time.js';
 import type { Config } from '../../schemas/config.js';
+import type { CliReadinessResult } from '../../schemas/readiness.js';
 import type { ReadinessReport, ReadinessSection } from '../types.js';
 import type { ConfigReadinessInput } from './config.js';
 import type { PackageScriptsReadinessInput } from './validation.js';
@@ -25,6 +26,7 @@ export interface BuildReadinessReportInput {
   configLoad: ConfigReadinessInput;
   packageScripts: PackageScriptsReadinessInput;
   repo: RepoReadinessInput;
+  cliReadiness?: readonly CliReadinessResult[] | undefined;
 }
 
 export function buildReadinessReport(input: BuildReadinessReportInput): ReadinessReport {
@@ -88,7 +90,7 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
     {
       id: 'runners',
       title: 'Runners',
-      checks: buildRunnerChecks(input.config),
+      checks: buildRunnerChecks(input.config, input.cliReadiness),
     },
     {
       id: 'context',

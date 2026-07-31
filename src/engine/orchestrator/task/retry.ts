@@ -128,6 +128,7 @@ export async function retryAndRecord(
     }
     return { state: nextState, completed: false };
   }
+  const model = result.model ?? nextState.implementerModel ?? wctx.config.implementer.model;
   recordTaskUsage({
     task,
     method: result.method,
@@ -138,7 +139,7 @@ export async function retryAndRecord(
     taskBreakdowns,
     retryCount: result.attempts,
     tool: result.tool ?? nextState.implementerTool ?? getRunnerDisplayName(wctx.config.implementer),
-    model: result.model ?? nextState.implementerModel ?? wctx.config.implementer.model,
+    ...(model !== undefined && { model }),
     ...(retryImplementerProfile !== undefined && { implementerProfile: retryImplementerProfile }),
     ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
   });

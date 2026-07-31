@@ -2,18 +2,24 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import { createDetectionService } from './service.js';
 import type { DetectionDeps } from './service.js';
 
-const makePlanner = (overrides?: Partial<PlannerDetection>): PlannerDetection => ({
+const makeCliTool = (overrides?: Partial<CliToolDetection>): CliToolDetection => ({
   tool: 'claude-code',
-  type: 'cli',
-  available: true,
+  executable: null,
+  trust: 'trusted',
+  installedVersion: '1.0.0',
+  testedVersion: '1.0.0',
+  compatibility: 'compatible',
+  auth: 'authenticated',
+  diagnostic: { state: 'ready', remediation: null },
+  probedAt: 1_700_000_000_000,
   ...overrides,
 });
 
-const makeImplementer = (overrides?: Partial<ProviderDetection>): ProviderDetection => ({
+const makeProvider = (overrides?: Partial<ProviderDetection>): ProviderDetection => ({
   provider: 'ollama',
   available: true,
   isLocal: true,
@@ -25,8 +31,8 @@ function makeCountingDeps(overrides: Partial<DetectionDeps> = {}): DetectionDeps
   const detectAll = async () => {
     calls++;
     return {
-      planners: [makePlanner({ version: `gen-${calls}` })],
-      implementers: [makeImplementer()],
+      providers: [makeProvider()],
+      cliTools: [makeCliTool({ installedVersion: `gen-${calls}` })],
     };
   };
   return {
@@ -55,11 +61,12 @@ describe('createDetectionService loadDetection', () => {
     const deps = makeCountingDeps();
 
     const first = await service.loadDetection(deps, tempDir);
-    expect(first.detection.planners[0]?.version).toBe('gen-1');
+    expect(first.cliTools[0]?.installedVersion).toBe('gen-1');
 
     await service.getPendingSave();
     const second = await service.loadDetection(deps, tempDir);
-    expect(second.detection.planners[0]?.version).toBe('gen-1');
+    expect(second.cliTools[0]?.installedVersion).toBe('gen-1');
+    expect(second.providers[0]?.provider).toBe('ollama');
   });
 
   it('hydrates models.dev and CLI discovery on cache hit', async () => {
@@ -84,13 +91,13 @@ describe('createDetectionService loadDetection', () => {
     };
 
     const first = await service.loadDetection(deps, tempDir);
-    expect(first.detection.planners[0]?.version).toBe('gen-1');
+    expect(first.cliTools[0]?.installedVersion).toBe('gen-1');
     expect(first.catalog).toEqual(catalog);
     expect(first.cliModels.opencode).toEqual([{ id: 'anthropic/claude-sonnet-4.6' }]);
 
     await service.getPendingSave();
     const second = await service.loadDetection(deps, tempDir);
-    expect(second.detection.planners[0]?.version).toBe('gen-1');
+    expect(second.cliTools[0]?.installedVersion).toBe('gen-1');
     expect(second.catalog).toEqual(catalog);
     expect(second.cliModels.opencode).toEqual([{ id: 'anthropic/claude-sonnet-4.6' }]);
   });
@@ -99,22 +106,22 @@ describe('createDetectionService loadDetection', () => {
     const deps = makeCountingDeps();
 
     const first = await service.loadDetection(deps, undefined);
-    expect(first.detection.planners[0]?.version).toBe('gen-1');
+    expect(first.cliTools[0]?.installedVersion).toBe('gen-1');
 
     const second = await service.loadDetection(deps, undefined);
-    expect(second.detection.planners[0]?.version).toBe('gen-2');
+    expect(second.cliTools[0]?.installedVersion).toBe('gen-2');
   });
 
   it('invalidate() forces re-detection on next load', async () => {
     const deps = makeCountingDeps();
 
     const first = await service.loadDetection(deps, tempDir);
-    expect(first.detection.planners[0]?.version).toBe('gen-1');
+    expect(first.cliTools[0]?.installedVersion).toBe('gen-1');
 
     await service.getPendingSave();
     await service.invalidateDetection(tempDir);
 
     const second = await service.loadDetection(deps, tempDir);
-    expect(second.detection.planners[0]?.version).toBe('gen-2');
+    expect(second.cliTools[0]?.installedVersion).toBe('gen-2');
   });
 });

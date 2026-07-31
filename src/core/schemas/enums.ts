@@ -1,24 +1,24 @@
 import { z } from 'zod';
 import { includes } from '../../utils/type-guards.js';
+import {
+  IMPLEMENTER_API_PROVIDER_IDS,
+  KNOWN_API_PROVIDER_IDS,
+  LOCAL_API_PROVIDER_IDS,
+  PLANNER_API_PROVIDER_IDS,
+  REMOTE_API_PROVIDER_IDS,
+} from '../providers/api-provider-catalog.js';
+import {
+  CLI_TOOL_IDS,
+  IMPLEMENTER_CLI_TOOL_IDS,
+  PLANNER_CLI_TOOL_IDS,
+  type CliToolId,
+} from '../runners/cli-tool-catalog.js';
 
-export const CLI_TOOL_IDS = [
-  'claude-code',
-  'codex',
-  'opencode',
-  'aider',
-  'copilot',
-  'kilo-code',
-] as const;
 // agent-sdk is NOT here — it is a meta runner (unpriced-meta); SPLITBRIEF does not serve its pricing.
-export const API_PROVIDER_IDS = [
-  'anthropic',
-  'openrouter',
-  'deepseek',
-  'openai',
-  'groq',
-  'together',
-] as const;
-export const LOCAL_PROVIDER_IDS = ['ollama', 'lm-studio'] as const;
+export { CLI_TOOL_IDS };
+export type { CliToolId };
+export const API_PROVIDER_IDS = REMOTE_API_PROVIDER_IDS;
+export const LOCAL_PROVIDER_IDS = LOCAL_API_PROVIDER_IDS;
 export const META_PROVIDER_IDS = ['shell', 'agent', 'agent-sdk'] as const;
 
 export const PROVIDER_IDS = [
@@ -35,9 +35,17 @@ export const PLANNER_TOOL_IDS = [
   ...META_PROVIDER_IDS,
 ] as const;
 
-export type CliToolId = (typeof CLI_TOOL_IDS)[number];
 export type ProviderId = (typeof PROVIDER_IDS)[number];
 export type PlannerToolId = (typeof PLANNER_TOOL_IDS)[number];
+
+export const PlannerCliToolIdSchema = z.enum(PLANNER_CLI_TOOL_IDS);
+export type PlannerCliToolId = z.infer<typeof PlannerCliToolIdSchema>;
+
+export const ImplementerCliToolIdSchema = z.enum(IMPLEMENTER_CLI_TOOL_IDS);
+export type ImplementerCliToolId = z.infer<typeof ImplementerCliToolIdSchema>;
+
+export const PlannerApiProviderIdSchema = z.enum(PLANNER_API_PROVIDER_IDS);
+export const ImplementerApiProviderIdSchema = z.enum(IMPLEMENTER_API_PROVIDER_IDS);
 
 export function isProviderId(id: string): id is ProviderId {
   return includes(PROVIDER_IDS, id);
@@ -214,7 +222,7 @@ export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent', 'agent-sdk'] as con
 const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
 
-export const KNOWN_API_PROVIDERS = [...LOCAL_PROVIDER_IDS, ...API_PROVIDER_IDS] as const;
+export const KNOWN_API_PROVIDERS = KNOWN_API_PROVIDER_IDS;
 
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
 export const EffortLevelSchema = z.enum(EFFORT_LEVELS);

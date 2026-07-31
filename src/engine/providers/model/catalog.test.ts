@@ -261,8 +261,9 @@ describe('resolveModelCatalog', () => {
 });
 
 describe('lookupCatalogContextLength', () => {
-  it('looks up context length by comparable catalog keys', () => {
-    expect(lookupCatalogContextLength('deepseek', 'deepseek/deepseek-chat')).toBe(128_000);
+  it('looks up context length for canonical DeepSeek V4 keys', () => {
+    expect(lookupCatalogContextLength('deepseek', 'deepseek/deepseek-v4-flash')).toBe(1_000_000);
+    expect(lookupCatalogContextLength('deepseek', 'deepseek-v4-pro')).toBe(1_000_000);
   });
 
   it('returns undefined for an unknown provider', () => {

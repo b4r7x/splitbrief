@@ -10,6 +10,7 @@ import { runHeadless } from '../../headless.js';
 import { runRpc } from '../../rpc/run/host.js';
 import { setupWorkflow } from '../../setup.js';
 import { printCrashDiagnostic } from '../../crash-diagnostic.js';
+import { detectConfiguredCliReadiness } from '../start/readiness.js';
 
 const defaultContinueDeps: ContinueDeps = {
   checkServerStatus,
@@ -19,6 +20,7 @@ const defaultContinueDeps: ContinueDeps = {
   runRpc,
   setupWorkflow,
   printCrashDiagnostic,
+  detectCliReadiness: detectConfiguredCliReadiness,
 };
 
 export function registerContinueCommand(

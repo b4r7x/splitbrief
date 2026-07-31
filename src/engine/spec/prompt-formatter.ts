@@ -1,13 +1,16 @@
 import type { ProjectContext, CodeContext } from '../../core/state/types.js';
 import type { Task } from '../../core/schemas/task.js';
+import type { ImplementerWriteMode } from '../../core/schemas/implementer-config.js';
 import { extractFunctionContext } from '../parsers/scope-extractor.js';
 import { DECLARATION_NAME_RE } from '../parsers/code-patterns.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { truncateMiddle, computeTokenBudget } from './token-budget.js';
 import { buildLanguageContext, type LanguageContext } from './prompts/language-context.js';
-import { buildSystemPreamble } from './prompts/system.js';
+import { buildImplementerSystemPreamble as formatImplementerSystemPreamble } from './prompts/system.js';
 import { buildScopeLines } from './formatter.js';
 import { TASK_BRIEF_HEADINGS } from './headings.js';
+
+export { formatImplementerSystemPreamble };
 
 const CLOSING_CONSTRAINTS = [
   'Do NOT invent new functions not described in the task',
@@ -48,7 +51,11 @@ function resolveCodeContext(
   return { mode: 'whole-file', content: '' };
 }
 
-function buildTaskSections(task: Task, context?: ProjectContext): string[] {
+function buildTaskSections(
+  task: Task,
+  context: ProjectContext | undefined,
+  writesFiles: ImplementerWriteMode,
+): string[] {
   const sections: string[] = [];
 
   if (context) {
@@ -105,10 +112,11 @@ function buildTaskSections(task: Task, context?: ProjectContext): string[] {
     TASK_BRIEF_HEADINGS.constraints.heading,
     ...allConstraints.map((c) => `- ${c}`),
   );
-  sections.push(
-    '',
-    `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`,
-  );
+  const completionInstruction =
+    writesFiles === 'direct'
+      ? `Edit ${task.file} directly in the staged working directory. Run the validation commands listed in this Task Brief before finishing.`
+      : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
+  sections.push('', completionInstruction);
 
   return sections;
 }
@@ -186,10 +194,11 @@ export function formatTaskPrompt(opts: {
   context: ProjectContext;
   contextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
+  writesFiles?: ImplementerWriteMode | undefined;
 }): string {
-  const { task, context, contextLength, languageContext } = opts;
+  const { task, context, contextLength, languageContext, writesFiles = 'extracted-code' } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
-  const sections = buildTaskSections(task, context);
+  const sections = buildTaskSections(task, context, writesFiles);
 
   if (!contextLength) {
     if (task.action === 'modify') insertCodeContext(sections, task);
@@ -198,7 +207,7 @@ export function formatTaskPrompt(opts: {
 
   if (task.action === 'modify') {
     const budget = computeTokenBudget({
-      system: buildSystemPreamble(ctx),
+      system: formatImplementerSystemPreamble(ctx, writesFiles),
       taskBody: sections.join('\n'),
       contextLength,
     });
@@ -215,8 +224,17 @@ export function formatRetryPrompt(opts: {
   attempt: number;
   contextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
+  writesFiles?: ImplementerWriteMode | undefined;
 }): string {
-  const { task, context, error, attempt, contextLength, languageContext } = opts;
+  const {
+    task,
+    context,
+    error,
+    attempt,
+    contextLength,
+    languageContext,
+    writesFiles = 'extracted-code',
+  } = opts;
   const ctx = languageContext ?? buildLanguageContext(undefined);
   const framings: Record<number, string> = {
     1: 'Your previous attempt had an error. Fix it:',
@@ -225,14 +243,14 @@ export function formatRetryPrompt(opts: {
   };
 
   const framing = framings[attempt] ?? framings[3] ?? '';
-  const sections = buildTaskSections(task, context);
+  const sections = buildTaskSections(task, context, writesFiles);
 
   sections.unshift(framing, '', 'Error from previous attempt:', error, '');
 
   if (task.currentCode) {
     const budget = contextLength
       ? computeTokenBudget({
-          system: buildSystemPreamble(ctx),
+          system: formatImplementerSystemPreamble(ctx, writesFiles),
           taskBody: sections.join('\n'),
           contextLength,
         })

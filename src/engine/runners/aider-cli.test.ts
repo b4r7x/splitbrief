@@ -2,32 +2,27 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CLI_TOOLS } from './cli-tools.js';
-
-function getPlanner(tool: keyof typeof CLI_TOOLS) {
-  const planner = CLI_TOOLS[tool].planner;
-  if (!planner) throw new Error(`Expected planner entry for ${tool}`);
-  return planner;
-}
-
-function getImplementer(tool: keyof typeof CLI_TOOLS) {
-  const impl = CLI_TOOLS[tool].implementer;
-  if (!impl) throw new Error(`Expected implementer entry for ${tool}`);
-  return impl;
-}
+import {
+  aiderImplementerAdapter,
+  aiderPlannerAdapter,
+  aiderPromptArgs,
+} from './cli-tools/aider.js';
 
 describe('aider implementer — keeps the staged working tree dirty for change detection', () => {
-  const aider = getImplementer('aider');
-
   it('disables aider self-commits so edits are observable as uncommitted changes', () => {
-    const args = aider.buildArgs({ prompt: 'do it', model: undefined });
+    const args = aiderImplementerAdapter.buildArgs({
+      prompt: '<PROMPT>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+    });
     expect(args).toContain('--no-auto-commits');
     expect(args).toContain('--no-dirty-commits');
+    expect(aiderImplementerAdapter.validateArgs(args)).toEqual({ valid: true });
   });
 });
 
 describe('aider planner — only seeds --read src/ for projects that have a src/ dir', () => {
-  const aider = getPlanner('aider');
   let projectDir: string;
 
   beforeEach(() => {
@@ -40,25 +35,53 @@ describe('aider planner — only seeds --read src/ for projects that have a src/
 
   it('adds --read src/ in plan mode when src/ exists', () => {
     mkdirSync(join(projectDir, 'src'));
-    const args = aider.buildArgs({ prompt: 'plan it', model: undefined, projectDir, mode: 'plan' });
+    const args = aiderPlannerAdapter.buildArgs({
+      prompt: '<PROMPT>',
+      model: undefined,
+      projectDir,
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+    });
     expect(args).toContain('--read');
     expect(args[args.indexOf('--read') + 1]).toBe('src/');
   });
 
   it('omits --read src/ in plan mode when src/ is absent', () => {
-    const args = aider.buildArgs({ prompt: 'plan it', model: undefined, projectDir, mode: 'plan' });
+    const args = aiderPlannerAdapter.buildArgs({
+      prompt: '<PROMPT>',
+      model: undefined,
+      projectDir,
+      configuredArgs: [],
+      mode: 'plan',
+      sessionId: null,
+      effort: undefined,
+    });
     expect(args).not.toContain('--read');
     expect(args).not.toContain('src/');
   });
 
   it('never seeds --read src/ in escalate mode even when src/ exists', () => {
     mkdirSync(join(projectDir, 'src'));
-    const args = aider.buildArgs({
-      prompt: 'escalate it',
+    const args = aiderPlannerAdapter.buildArgs({
+      prompt: '<PROMPT>',
       model: undefined,
       projectDir,
+      configuredArgs: [],
       mode: 'escalate',
+      sessionId: null,
+      effort: undefined,
     });
     expect(args).not.toContain('--read');
+  });
+
+  it('keeps the prompt sentinel as one standalone argv element', () => {
+    expect(
+      aiderPromptArgs({ role: 'planner', projectDir: '', mode: 'plan', configuredArgs: [] }),
+    ).toContain('<PROMPT>');
+    expect(aiderPromptArgs({ role: 'implementer', projectDir: '', configuredArgs: [] })).toContain(
+      '<PROMPT>',
+    );
   });
 });

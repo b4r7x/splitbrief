@@ -42,7 +42,7 @@ export async function shutdownWorkflow(
   getTrackedState: () => WorkflowState | undefined,
   getCurrentTask: () => Pick<Task, 'file' | 'action'> | undefined,
 ): Promise<void> {
-  killAllProcesses();
+  await killAllProcesses();
   const trackedState = getTrackedState();
   if (trackedState) {
     try {

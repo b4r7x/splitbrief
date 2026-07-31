@@ -23,7 +23,6 @@ import {
   cloneValue,
   persistedConfigForSave,
   editsForSave,
-  type SaveOptions,
 } from './config-persistence.js';
 
 interface ConfigState {
@@ -70,7 +69,7 @@ function load(projectDir: string, overrides: CLIOverrides = {}) {
   });
 }
 
-function save(updated: Config, options?: SaveOptions): SaveResult {
+function save(updated: Config): SaveResult {
   const { config, diskConfig, rawYaml, projectDir } = store.get();
   if (!projectDir) throw configError.loadNotCalled('save');
   if (!config || !diskConfig) throw configError.loadNotCalled('save');
@@ -78,13 +77,12 @@ function save(updated: Config, options?: SaveOptions): SaveResult {
     persisted: diskConfig,
     effective: config,
     updated,
-    options,
   });
-  const edits = options?.changedPaths?.length ? editsForSave(updated, options) : [];
+  const edits = editsForSave(diskConfig, persisted);
   try {
     let nextRaw = rawYaml;
-    if (edits.length > 0 && rawDocumentHasVersion(rawYaml)) {
-      nextRaw = writeConfigDocument(projectDir, rawYaml, edits);
+    if (rawDocumentHasVersion(rawYaml)) {
+      if (edits.length > 0) nextRaw = writeConfigDocument(projectDir, rawYaml, edits);
     } else {
       nextRaw = writeConfig(projectDir, persisted);
     }

@@ -92,7 +92,7 @@ export function ModeSelector() {
   const selectMode = (item: ModeDef, index: number) => {
     if (!actionableModeIndices.has(index)) return;
     const updated = { ...config, workflow: { ...config.workflow, mode: item.mode } };
-    const result = configStore.save(updated, { changedPaths: ['workflow.mode'] });
+    const result = configStore.save(updated);
     if (result.ok) {
       feedbackStore.setMessage(`Mode set to: ${item.mode}`);
       overlayStore.close();

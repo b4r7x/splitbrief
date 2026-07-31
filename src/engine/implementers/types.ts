@@ -5,6 +5,7 @@ import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
+import type { CliStartGate } from '../runners/start-gate.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
 
@@ -27,12 +28,14 @@ export interface ImplementerPublisher {
     linesRemoved: number;
     duration: number;
   }): void;
-  publishFailed(opts: { phase: Phase; taskId: TaskId; model: string }): void;
+  publishFailed(opts: { phase: Phase; taskId: TaskId; model?: string | undefined }): void;
 }
 
 export interface ImplementerFactoryOptions {
   publisher?: ImplementerPublisher | undefined;
   allowRepoRunners?: boolean | undefined;
+  /** Canonical CLI identity admitted by the start-readiness gate. */
+  trustedCli?: CliStartGate | undefined;
 }
 
 export interface ImplementerOptions {

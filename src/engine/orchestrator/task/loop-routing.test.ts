@@ -46,6 +46,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'local-small': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-small',
             costTier: 'local',
@@ -54,6 +56,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'cheap-large': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-large',
             costTier: 'cheap',
@@ -101,6 +105,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         implementer: {
           kind: cheapLarge.kind,
           provider: cheapLarge.provider,
+          service: cheapLarge.service,
+          offering: cheapLarge.offering,
           apiBase: cheapLarge.apiBase,
           model: cheapLarge.model,
           contextLength: cheapLarge.contextLength,
@@ -160,6 +166,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'cheap-large': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-large',
             costTier: 'cheap',
@@ -168,6 +176,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'local-small': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-small',
             costTier: 'local',
@@ -240,6 +250,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'cheap-large': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-large',
             costTier: 'cheap',
@@ -248,6 +260,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'local-small': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-small',
             costTier: 'local',
@@ -319,6 +333,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'local-small': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-small',
             costTier: 'local',
@@ -377,6 +393,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'cheap-large': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-large',
             costTier: 'cheap',
@@ -385,6 +403,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'local-small': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'qwen-small',
             costTier: 'local',

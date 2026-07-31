@@ -6,7 +6,9 @@ import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/f
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createImplementer } from '../runners/factory.js';
 
-function makeConfig(extra?: Partial<Config['implementer']>): Config {
+type ShellConfig = Extract<Config['implementer'], { kind: 'shell' }>;
+
+function makeConfig(extra?: Partial<ShellConfig>): Config {
   return makeBaseConfig({
     implementer: {
       model: 'test',

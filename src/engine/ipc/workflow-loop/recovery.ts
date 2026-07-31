@@ -18,6 +18,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import { assertPromptResponse } from './prompts.js';
 import type { IpcServer } from '../server.js';
 import type { IpcServerAttachment } from '../server-args.js';
+import type { CliStartGates } from '../../runners/start-gate.js';
 
 export type WorkflowLoopContext = {
   projectDir: string;
@@ -27,6 +28,7 @@ export type WorkflowLoopContext = {
   allowHooks?: boolean | undefined;
   allowRepoRunners?: boolean | undefined;
   attachments?: IpcServerAttachment[] | undefined;
+  trustedCliGates?: CliStartGates | undefined;
 };
 
 type DetachedRecoveryResolution = {

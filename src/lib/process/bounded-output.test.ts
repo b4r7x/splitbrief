@@ -48,4 +48,21 @@ describe('createBoundedOutput', () => {
       truncated: true,
     });
   });
+
+  it('retains a UTF-8-safe bounded partial snapshot at a fatal budget boundary', () => {
+    const output = createBoundedOutput({ maxBytes: 48, policy: 'prefix-tail' });
+
+    output.append('before-日本語-');
+    output.append('event-data-'.repeat(20));
+    const snapshot = output.snapshot();
+
+    expect(snapshot).toMatchObject({
+      truncated: true,
+      maxBytes: 48,
+      policy: 'prefix-tail',
+    });
+    expect(Buffer.byteLength(snapshot.text, 'utf8')).toBeLessThanOrEqual(48);
+    expect(snapshot.text).not.toContain('�');
+    expect(snapshot.text).toContain('output truncated');
+  });
 });

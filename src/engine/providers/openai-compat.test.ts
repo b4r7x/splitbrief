@@ -20,14 +20,15 @@ describe('createOpenAICompatProvider', () => {
     expect(p.isLocal).toBe(false);
   });
 
-  it('uses override apiBase when provided', () => {
-    const p = createOpenAICompatProvider({
-      name: 'deepseek',
-      defaultBaseURL: 'https://api.deepseek.com/v1',
-      envKeyName: 'DEEPSEEK_API_KEY',
-      overrides: { apiBase: 'https://custom.example.com/v1' },
-    });
-    expect(p.baseURL).toBe('https://custom.example.com/v1');
+  it('rejects a DeepSeek override outside its declared fixed origin', () => {
+    expect(() =>
+      createOpenAICompatProvider({
+        name: 'deepseek',
+        defaultBaseURL: 'https://api.deepseek.com/v1',
+        envKeyName: 'DEEPSEEK_API_KEY',
+        overrides: { apiBase: 'https://custom.example.com/v1' },
+      }),
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
   });
 
   it.each([

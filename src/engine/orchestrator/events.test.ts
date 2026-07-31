@@ -10,7 +10,9 @@ import {
   publishWarning,
   publishGitCommit,
   publishDriftChainDetected,
+  createImplementerPublisher,
 } from './events.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { protectEngineEventForConsumer } from '../events/protection/protect.js';
 
@@ -95,6 +97,20 @@ describe('publishPlannerStatus', () => {
     publishPlannerStatus(bus, state, 'done', { tool: 'agent-sdk', model: 'sonnet-4' });
 
     expect(events[0]).toMatchObject({ tool: 'agent-sdk', model: 'sonnet-4' });
+  });
+});
+
+describe('createImplementerPublisher', () => {
+  it('publishes failures without fabricating an absent model', () => {
+    const { bus, events } = makeBusRecorder();
+
+    createImplementerPublisher(bus).publishFailed({
+      phase: 'implementing',
+      taskId: makeTask().id,
+    });
+
+    expect(events[0]).toMatchObject({ type: 'implementer_generate_failed' });
+    expect(events[0] && 'model' in events[0]).toBe(false);
   });
 });
 

@@ -6,9 +6,15 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { streamError, throwMappedError } from '../../streaming/stream-errors.js';
 import { STREAM_IDLE_TIMEOUT_MS, STREAM_IDLE_TIMEOUT_MESSAGE } from '../../constants.js';
 import { throwIfAborted } from '../../../utils/abort.js';
+import { error as createError } from '../../../utils/error.js';
 import type { StreamMessage } from '../types.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
-import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
+import {
+  createRunnerCallCredentialRedactor,
+  runnerCallErrorFromUnknown,
+  runnerCallInterruptedStatus,
+} from '../../calls/status.js';
+import type { RunnerCallCredentialRedactor } from '../../calls/status.js';
 import {
   createRunnerCallDeltaLimiter,
   finishRunnerCallOutputLimit,
@@ -22,6 +28,8 @@ import type {
   RunnerCallUsage,
 } from '../../calls/types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { redactSecrets } from '../../../utils/redact.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import {
   buildAnthropicStreamRequest,
   prepareAnthropicConversation,
@@ -37,6 +45,11 @@ import {
   parseAnthropicPayload,
 } from './payload.js';
 import { formatBoundedErrorBody, readResponseTextBounded, readSseEvents } from './transport.js';
+import { API_PROVIDER_CATALOG } from '../../../core/providers/api-provider-catalog.js';
+import {
+  createEndpointPolicyFetch,
+  normalizeProviderEndpoint,
+} from '../../../core/providers/endpoint-policy.js';
 
 interface AnthropicStreamOptions {
   apiKey: string;
@@ -69,10 +82,14 @@ function emitText(
   recorder: RunnerCallRecorder,
   text: string,
   limiter: ReturnType<typeof createRunnerCallDeltaLimiter>,
+  redactCredential: RunnerCallCredentialRedactor,
 ): RunnerCallDeltaLimitResult {
   const accepted = limiter.accept(text);
-  if (accepted.text.length > 0) recorder.text({ channel: 'assistant', text: accepted.text });
-  return accepted;
+  const safeAccepted = { ...accepted, text: redactCredential(accepted.text) };
+  if (safeAccepted.text.length > 0) {
+    recorder.text({ channel: 'assistant', text: safeAccepted.text });
+  }
+  return safeAccepted;
 }
 
 function mapProviderError(err: unknown, endpoint: { provider: string; apiBase: string }): unknown {
@@ -83,25 +100,82 @@ function mapProviderError(err: unknown, endpoint: { provider: string; apiBase: s
   }
 }
 
+function redactStreamErrorData(
+  kind: string,
+  data: unknown,
+  redactCredential: RunnerCallCredentialRedactor,
+): unknown {
+  if (!isRecord(data)) return undefined;
+  const redactString = (value: unknown): string | undefined =>
+    typeof value === 'string' ? redactSecrets(redactCredential(value)) : undefined;
+
+  switch (kind) {
+    case 'stream-connection-refused':
+      return {
+        provider: redactString(data.provider),
+        apiBase: redactString(data.apiBase),
+      };
+    case 'stream-http-status':
+      return {
+        provider: redactString(data.provider),
+        status: typeof data.status === 'number' ? data.status : undefined,
+        detail: redactString(data.detail),
+      };
+    case 'stream-api-error':
+      return {
+        provider: redactString(data.provider),
+        detail: redactString(data.detail),
+      };
+    case 'stream-empty-response':
+      return { provider: redactString(data.provider) };
+    case 'stream-invalid-payload':
+      return { reason: redactString(data.reason) };
+    default:
+      return undefined;
+  }
+}
+
+function throwRedactedAbort(
+  signal: AbortSignal | undefined,
+  redactCredential: RunnerCallCredentialRedactor,
+): never {
+  try {
+    throwIfAborted(signal);
+  } catch (err: unknown) {
+    throw redactThrownError(err, redactCredential);
+  }
+  throw createError('operation-aborted', 'Operation aborted');
+}
+
 function finishAnthropicFailure(
   recorder: RunnerCallRecorder,
   err: unknown,
   endpoint: { provider: string; apiBase: string },
   usage: RunnerCallUsage | null,
+  credentialValues: readonly string[],
+  redactCredential: RunnerCallCredentialRedactor,
 ): never {
   const mapped = mapProviderError(err, endpoint);
+  const safeMapped = redactThrownError(mapped, redactCredential);
   recorder.finishFailed({
     status: 'failed',
-    error: runnerCallErrorFromUnknown(mapped, 'anthropic_stream_error'),
+    error: runnerCallErrorFromUnknown(safeMapped, 'anthropic_stream_error', credentialValues),
     usage,
     nativeSessionId: null,
   });
-  throw mapped;
+  throw safeMapped;
 }
 
 export async function streamAnthropicCompletion(
   opts: AnthropicStreamOptions,
 ): Promise<RunnerCallResult> {
+  const credentialValues = opts.apiKey.length > 0 ? [opts.apiKey] : [];
+  const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
+  const redactCredential = (value: string): string => redactSecrets(explicitRedactor(value));
+  const apiBase = normalizeProviderEndpoint(
+    API_PROVIDER_CATALOG.anthropic.endpointPolicy,
+    opts.apiBase,
+  );
   const { system } = splitSystemMessages(opts.messages);
   const finalConversation = await prepareAnthropicConversation({
     messages: opts.messages,
@@ -109,7 +183,7 @@ export async function streamAnthropicCompletion(
   });
   const request = buildAnthropicStreamRequest({
     apiKey: opts.apiKey,
-    apiBase: opts.apiBase,
+    apiBase,
     model: opts.model,
     messages: finalConversation,
     system,
@@ -117,13 +191,18 @@ export async function streamAnthropicCompletion(
     maxTokens: opts.maxTokens,
     effort: opts.effort,
   });
-  const endpoint = { provider: 'anthropic', apiBase: opts.apiBase };
+  const endpoint = { provider: 'anthropic', apiBase };
   const context = opts.callContext ?? anthropicCallContext(opts.model);
-  const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
+  const recorder = createRunnerCallRecorder({
+    context,
+    credentialValues,
+    onEvent: opts.onCallEvent,
+  });
 
   let response: Response;
   try {
-    response = await fetch(request.url, {
+    const policyFetch = createEndpointPolicyFetch(apiBase);
+    response = await policyFetch(request.url, {
       method: 'POST',
       headers: request.headers,
       body: JSON.stringify(request.body),
@@ -133,20 +212,35 @@ export async function streamAnthropicCompletion(
     if (opts.signal?.aborted) {
       recorder.finishFailed({
         status: runnerCallInterruptedStatus(opts.signal),
-        error: runnerCallErrorFromUnknown(err, 'runner_interrupted'),
+        error: runnerCallErrorFromUnknown(err, 'runner_interrupted', credentialValues),
         nativeSessionId: null,
       });
-      throwIfAborted(opts.signal);
+      throwRedactedAbort(opts.signal, redactCredential);
     }
-    finishAnthropicFailure(recorder, err, endpoint, null);
+    finishAnthropicFailure(recorder, err, endpoint, null, credentialValues, redactCredential);
   }
 
   if (!response.ok) {
-    const message = formatBoundedErrorBody(await readResponseTextBounded(response));
+    let message: string;
+    try {
+      message = redactSecrets(
+        redactCredential(formatBoundedErrorBody(await readResponseTextBounded(response))),
+      );
+    } catch (err: unknown) {
+      if (opts.signal?.aborted) {
+        recorder.finishFailed({
+          status: runnerCallInterruptedStatus(opts.signal),
+          error: runnerCallErrorFromUnknown(err, 'runner_interrupted', credentialValues),
+          nativeSessionId: null,
+        });
+        throwRedactedAbort(opts.signal, redactCredential);
+      }
+      finishAnthropicFailure(recorder, err, endpoint, null, credentialValues, redactCredential);
+    }
     const err = streamError.httpStatus('anthropic', response.status, message);
     recorder.finishFailed({
       status: 'failed',
-      error: runnerCallErrorFromUnknown(err, 'anthropic_http_error'),
+      error: runnerCallErrorFromUnknown(err, 'anthropic_http_error', credentialValues),
       nativeSessionId: null,
     });
     throw err;
@@ -190,7 +284,7 @@ export async function streamAnthropicCompletion(
         case 'content_block_delta': {
           const text = getDeltaText(payload);
           if (!text) break;
-          const accepted = emitText(recorder, text, textLimiter);
+          const accepted = emitText(recorder, text, textLimiter, redactCredential);
           if (accepted.text.length > 0) opts.onProgress(accepted.text);
           if (accepted.limit !== null) {
             outputLimit = accepted.limit;
@@ -223,20 +317,23 @@ export async function streamAnthropicCompletion(
     if (opts.signal?.aborted) {
       recorder.finishFailed({
         status: runnerCallInterruptedStatus(opts.signal),
-        error: { code: 'runner_interrupted', message: toErrorMessage(err) },
+        error: {
+          code: 'runner_interrupted',
+          message: redactCredential(toErrorMessage(err)),
+        },
         usage,
         nativeSessionId: null,
       });
-      throwIfAborted(opts.signal);
+      throwRedactedAbort(opts.signal, redactCredential);
     }
     if (timeoutError.isIdle(err)) {
       recorder.finishFailed({
         status: 'timeout',
-        error: { code: 'stream_idle_timeout', message: toErrorMessage(err) },
+        error: { code: 'stream_idle_timeout', message: redactCredential(toErrorMessage(err)) },
         usage,
         nativeSessionId: null,
       });
-      throw err;
+      throw redactThrownError(err, redactCredential);
     }
     const outputLimit = runnerCallOutputLimitFromError(err);
     if (outputLimit !== null) {
@@ -245,18 +342,18 @@ export async function streamAnthropicCompletion(
     }
     if (err instanceof SyntaxError) {
       const mapped = streamError.invalidPayload(
-        `Invalid Anthropic stream payload: ${err.message}`,
+        redactCredential(`Invalid Anthropic stream payload: ${err.message}`),
         err,
       );
       recorder.finishFailed({
         status: 'failed',
-        error: runnerCallErrorFromUnknown(mapped, 'anthropic_invalid_payload'),
+        error: runnerCallErrorFromUnknown(mapped, 'anthropic_invalid_payload', credentialValues),
         usage,
         nativeSessionId: null,
       });
-      throw mapped;
+      throw redactThrownError(mapped, redactCredential);
     }
-    finishAnthropicFailure(recorder, err, endpoint, usage);
+    finishAnthropicFailure(recorder, err, endpoint, usage, credentialValues, redactCredential);
   }
 
   if (outputLimit !== null) {
@@ -266,4 +363,18 @@ export async function streamAnthropicCompletion(
 
   emitAnthropicTerminal(recorder, stopReason, sawMessageStop, usage);
   return recorder.finalResult();
+}
+
+function redactThrownError(err: unknown, redactCredential: RunnerCallCredentialRedactor): Error {
+  const safeMessage = redactSecrets(redactCredential(toErrorMessage(err)));
+  if (!(err instanceof Error)) {
+    return createError('provider-stream-error', safeMessage);
+  }
+
+  const metadata = err as Error & { kind?: unknown; data?: unknown };
+  const kind = typeof metadata.kind === 'string' ? metadata.kind : undefined;
+  if (kind === undefined) return createError('anthropic_stream_error', safeMessage);
+
+  const data = redactStreamErrorData(kind, metadata.data, redactCredential);
+  return data === undefined ? createError(kind, safeMessage) : createError(kind, safeMessage, data);
 }

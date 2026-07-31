@@ -233,15 +233,20 @@ describe('buildCommandContext', () => {
       detectAll: async () => {
         detectCalls++;
         return {
-          planners: [
+          providers: [{ provider: 'ollama', available: true, isLocal: true }],
+          cliTools: [
             {
               tool: 'claude-code',
-              type: 'cli',
-              available: true,
-              version: `gen-${detectCalls}`,
+              executable: null,
+              trust: 'trusted',
+              installedVersion: `gen-${detectCalls}`,
+              testedVersion: '1.0.0',
+              compatibility: 'compatible',
+              auth: 'authenticated',
+              diagnostic: { state: 'ready', remediation: null },
+              probedAt: 0,
             },
           ],
-          implementers: [{ provider: 'ollama', available: true, isLocal: true }],
         };
       },
       fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),

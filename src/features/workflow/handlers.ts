@@ -4,7 +4,6 @@ import {
   markInterruptRequested,
 } from '../../stores/workflow/actions/interrupt.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { killAllProcesses } from '../../lib/process/registry.js';
 import type { RewindTarget } from '../../core/state/build-rewind-action.js';
 import type { QueueClearResult, QueueSubmissionResult } from '../../engine/orchestrator/types.js';
 
@@ -85,7 +84,6 @@ export function interruptTurn(): InterruptResult {
   const alreadyInterrupted = lifecycleStore.get().status === 'interrupted';
   markInterruptRequested();
   if (abortTurn()) {
-    killAllProcesses();
     return 'turn';
   }
   // Already parked at the interrupted prompt with no call in flight: planting a

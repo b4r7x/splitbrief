@@ -11,7 +11,6 @@ import {
   isConfiguredKeyDebugEnabled,
   logSplitbriefRawKeyChunk,
 } from '../../core/key-debug.js';
-import { killAllProcesses } from '../../lib/process/registry.js';
 import {
   installTerminalOutputErrorGuard,
   isBrokenOutputError,
@@ -21,10 +20,7 @@ import {
   setActiveTerminalHandover,
   suspendTerminalForEditor,
 } from '../../lib/terminal/editor-handover.js';
-import { flushOtel } from '../../lib/otel.js';
-import { awaitActiveWorkflowShutdown } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { teardownStores } from '../init-stores.js';
 import { resolveRenderInputConfig } from './input-config.js';
 import {
   createCrashHandler,
@@ -32,6 +28,7 @@ import {
   createSuspendHandler,
   createSuspendListenerToggle,
   createTerminationHandler,
+  createTuiCleanup,
   restoreTerminal,
 } from './process-lifecycle.js';
 import {
@@ -44,6 +41,47 @@ interface RenderOptions {
   mouse?: boolean;
   hover?: boolean;
   projectDir?: string | undefined;
+}
+
+type TerminationSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP';
+
+function createSettledProcessListener<T>(deps: {
+  handle: (value: T) => Promise<void>;
+  reportFailure: (value: T, error: unknown) => void;
+}): (value: T) => void {
+  return (value) => {
+    void deps.handle(value).catch((error: unknown) => {
+      try {
+        deps.reportFailure(value, error);
+      } catch {
+        // A process event listener cannot leak a second rejection when stderr is unavailable.
+      }
+    });
+  };
+}
+
+export function createTerminationSignalListener(deps: {
+  handle: (signal: TerminationSignal) => Promise<void>;
+  reportCleanupFailure: (error: unknown) => void;
+}): (signal: TerminationSignal) => void {
+  return createSettledProcessListener({
+    handle: deps.handle,
+    reportFailure: (_signal, error) => deps.reportCleanupFailure(error),
+  });
+}
+
+export function createCrashListener(deps: {
+  handle: (reason: unknown) => Promise<void>;
+  reportCrash: (reason: unknown) => void;
+  reportCleanupFailure: (error: unknown) => void;
+}): (reason: unknown) => void {
+  return createSettledProcessListener({
+    handle: deps.handle,
+    reportFailure: (reason, error) => {
+      deps.reportCrash(reason);
+      deps.reportCleanupFailure(error);
+    },
+  });
 }
 
 export async function renderApp(
@@ -93,45 +131,39 @@ export async function renderApp(
     restoreTerminal({ fullscreen, stdin: process.stdin });
   };
 
-  const reapAndRestore = () => {
-    try {
-      try {
-        teardownStores();
-      } finally {
-        killAllProcesses();
-      }
-    } finally {
-      cleanupTerminal();
-    }
-  };
+  const cleanup = createTuiCleanup({ restore: cleanupTerminal });
 
   // A fullscreen `kill` reaches this handler at the same time as the in-flight workflow's
   // own signal-driven shutdown; exiting the process here would race it to completion and
-  // skip the mid-task rollback. Await that shutdown first so the TUI discards a partially
+  // skip the mid-task rollback. Await cleanup before exiting so the TUI discards a partially
   // applied task exactly like the headless host does.
   const onTerminationSignal = createTerminationHandler({
-    cleanup: reapAndRestore,
-    exit: (code) => {
-      void awaitActiveWorkflowShutdown()
-        .then(flushOtel)
-        .finally(() => process.exit(code));
-    },
+    cleanup,
+    exit: (code) => process.exit(code),
   });
-  process.on('SIGINT', onTerminationSignal);
-  process.on('SIGTERM', onTerminationSignal);
-  process.on('SIGHUP', onTerminationSignal);
+  const settleTerminationSignal = createTerminationSignalListener({
+    handle: onTerminationSignal,
+    reportCleanupFailure: (error) => warnError('TUI cleanup failed during termination', error),
+  });
+  process.on('SIGINT', settleTerminationSignal);
+  process.on('SIGTERM', settleTerminationSignal);
+  process.on('SIGHUP', settleTerminationSignal);
 
+  const reportCrash = (reason: unknown) => {
+    process.stderr.write(`SPLITBRIEF crashed: ${toErrorMessage(reason)}\n`);
+  };
   const onCrash = createCrashHandler({
-    cleanup: reapAndRestore,
-    report: (reason) => {
-      process.stderr.write(`SPLITBRIEF crashed: ${toErrorMessage(reason)}\n`);
-    },
-    exit: (code) => {
-      void flushOtel().finally(() => process.exit(code));
-    },
+    cleanup,
+    report: reportCrash,
+    exit: (code) => process.exit(code),
   });
-  process.on('uncaughtException', onCrash);
-  process.on('unhandledRejection', onCrash);
+  const settleCrash = createCrashListener({
+    handle: onCrash,
+    reportCrash,
+    reportCleanupFailure: (error) => warnError('TUI cleanup failed during crash handling', error),
+  });
+  process.on('uncaughtException', settleCrash);
+  process.on('unhandledRejection', settleCrash);
 
   // SIGTSTP must remove its own listener before re-raising so the kernel applies Node's default
   // stop disposition; SIGCONT re-installs it after restoring so a second Ctrl+Z still works. The
@@ -226,15 +258,13 @@ export async function renderApp(
       await inst.waitUntilExit();
     }
   } finally {
-    process.off('SIGINT', onTerminationSignal);
-    process.off('SIGTERM', onTerminationSignal);
-    process.off('SIGHUP', onTerminationSignal);
+    process.off('SIGINT', settleTerminationSignal);
+    process.off('SIGTERM', settleTerminationSignal);
+    process.off('SIGHUP', settleTerminationSignal);
     process.off('SIGTSTP', onSuspend);
     process.off('SIGCONT', onResume);
-    process.off('uncaughtException', onCrash);
-    process.off('unhandledRejection', onCrash);
-    teardownStores();
-    cleanupTerminal();
-    await flushOtel();
+    process.off('uncaughtException', settleCrash);
+    process.off('unhandledRejection', settleCrash);
+    await cleanup();
   }
 }

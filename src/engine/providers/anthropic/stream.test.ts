@@ -127,6 +127,120 @@ describe('streamAnthropicCompletion', () => {
     expect(chunks).toEqual(['Hello ', 'world']);
   });
 
+  it('redacts the API key from streamed text, progress, events, and provider errors', async () => {
+    const credential = 'opaque-anthropic-credential-canary-7d93c612';
+    const events: RunnerCallEvent[] = [];
+    const progress: string[] = [];
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      makeSseResponse([
+        textDeltaEvent(`answer ${credential}`),
+        'event: error\ndata: ' +
+          JSON.stringify({ type: 'error', error: { message: `provider ${credential}` } }) +
+          '\n\n',
+      ]),
+    );
+
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: credential,
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        onProgress: (text) => progress.push(text),
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toThrow('***REDACTED***');
+
+    const persisted = JSON.stringify({ events, progress });
+    expect(persisted).not.toContain(credential);
+    expect(persisted).toContain('***REDACTED***');
+    expect(progress).toEqual(['answer ***REDACTED***']);
+  });
+
+  it('wraps untyped provider errors with a typed redacted error', async () => {
+    const credential = 'opaque-anthropic-untyped-error-canary-7d93c612';
+    const upstream = new Error(`provider rejected request: ${credential}`);
+    vi.mocked(globalThis.fetch).mockRejectedValue(upstream);
+
+    let caught: unknown;
+    try {
+      await streamAnthropicCompletion({
+        apiKey: credential,
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        onProgress: () => {},
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toMatchObject({ kind: 'anthropic_stream_error' });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain('***REDACTED***');
+    expect((caught as { cause?: unknown }).cause).toBeUndefined();
+    expect(JSON.stringify(caught)).not.toContain(credential);
+  });
+
+  it('does not retain credential-bearing provider properties when rethrowing', async () => {
+    const credential = 'opaque-anthropic-thrown-error-canary-7d93c612';
+    const upstreamCause = Object.assign(new Error(`nested cause ${credential}`), {
+      response: { body: credential },
+    });
+    const upstream = Object.assign(new Error(`provider rejected ${credential}`), {
+      status: 502,
+      response: { body: credential },
+      cause: upstreamCause,
+    });
+    vi.mocked(globalThis.fetch).mockRejectedValue(upstream);
+
+    let caught: unknown;
+    try {
+      await streamAnthropicCompletion({
+        apiKey: credential,
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        onProgress: () => {},
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toMatchObject({ kind: 'stream-http-status' });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).not.toContain(credential);
+    expect(JSON.stringify((caught as { data?: unknown }).data)).not.toContain(credential);
+    expect((caught as { cause?: unknown }).cause).toBeUndefined();
+    expect(JSON.stringify(caught)).not.toContain(credential);
+  });
+
+  it('redacts API keys echoed in an HTTP error body before throwing', async () => {
+    const credential = 'opaque-anthropic-http-credential-canary-7d93c612';
+    const events: RunnerCallEvent[] = [];
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(`provider failure ${credential}`, { status: 401 }),
+    );
+
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: credential,
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        onProgress: () => {},
+        onCallEvent: (event) => events.push(event),
+      }),
+    ).rejects.toThrow(/Invalid API key/);
+
+    const persisted = JSON.stringify(events);
+    expect(persisted).not.toContain(credential);
+  });
+
   it('parses CRLF-framed Anthropic SSE events', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       makeSseResponse([
@@ -659,5 +773,44 @@ describe('stream that the model truncates at max_tokens', () => {
       error: { code: 'stream-api-error', message: expect.stringContaining('provider overloaded') },
       partial: false,
     });
+  });
+
+  it('rejects a cross-origin redirect before resending the API key', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(null, {
+        status: 307,
+        headers: { location: 'https://evil.example.net/collect' },
+      }),
+    );
+
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: 'sk-ant-redirect-secret',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hi' }],
+        temperature: 0.3,
+        onProgress: () => {},
+      }),
+    ).rejects.toMatchObject({ kind: 'provider-endpoint-invalid' });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [input] = vi.mocked(globalThis.fetch).mock.calls[0] ?? [];
+    expect(input?.toString()).not.toContain('evil.example.net');
+  });
+
+  it('rejects a non-official Anthropic endpoint before making a request', async () => {
+    await expect(
+      streamAnthropicCompletion({
+        apiKey: 'sk-ant-endpoint-secret',
+        apiBase: 'https://proxy.example.net/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hi' }],
+        temperature: 0.3,
+        onProgress: () => {},
+      }),
+    ).rejects.toMatchObject({ kind: 'provider-endpoint-invalid' });
+
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

@@ -332,6 +332,8 @@ describe('applyRecoveryAction: persisted success effects', () => {
         implementer: {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen-small',
         },
@@ -341,6 +343,8 @@ describe('applyRecoveryAction: persisted success effects', () => {
             'cheap-cloud': {
               kind: 'api',
               provider: 'deepseek',
+              service: 'deepseek',
+              offering: 'payg',
               apiBase: 'https://api.deepseek.com/v1',
               model: 'deepseek-chat',
               costTier: 'cheap',
@@ -348,6 +352,8 @@ describe('applyRecoveryAction: persisted success effects', () => {
             'local-qwen': {
               kind: 'api',
               provider: 'ollama',
+              service: 'ollama',
+              offering: 'local',
               apiBase: 'http://localhost:11434/v1',
               model: 'qwen-small',
               costTier: 'local',

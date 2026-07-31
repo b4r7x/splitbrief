@@ -75,9 +75,11 @@ describe('pricing-resolver', () => {
       expect(result.cacheWritePer1M).toBe(6.25);
     });
 
-    it('resolvePricing for non-Anthropic priced model returns undefined cache pricing fields', () => {
-      const result = resolvePricing('deepseek', NULL_CACHE, 'deepseek-chat');
+    it('resolvePricing for DeepSeek V4 Flash returns its bundled pricing without cache rates', () => {
+      const result = resolvePricing('deepseek', NULL_CACHE, 'deepseek-v4-flash');
       expect(result.isPriced).toBe(true);
+      expect(result.inputPer1M).toBe(0.14);
+      expect(result.outputPer1M).toBe(0.28);
       expect(result.cacheReadPer1M).toBeUndefined();
       expect(result.cacheWritePer1M).toBeUndefined();
     });

@@ -4,6 +4,7 @@ export interface KnownModel {
   name: string;
   isDefault?: boolean;
   contextLength?: number;
+  maxOutputTokens?: number;
   pricingInput?: number;
   pricingOutput?: number;
   pricingCacheRead?: number;
@@ -160,33 +161,45 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       catalogProvider: 'openrouter',
       provenance: 'Minimal bundled fallback (2026-04)',
     },
+    {
+      name: 'openrouter/free',
+      isFree: true,
+      provenance:
+        'OpenRouter free pool; opportunistic fallback, not a reproducible default (2026-07)',
+    },
   ],
   ollama: [
     {
       name: 'qwen3-coder:30b',
       isDefault: true,
-      contextLength: 262_144,
-      provenance: 'Ollama library qwen3-coder:30b listing (2026-07)',
+      provenance: 'Ollama local model fallback; context limit discovered from the daemon (2026-07)',
     },
   ],
-  'lm-studio': [{ name: 'qwen2.5-coder-7b', isDefault: true }],
+  'lm-studio': [
+    {
+      name: 'qwen2.5-coder-7b',
+      isDefault: true,
+      provenance:
+        'LM Studio local model fallback; context limit discovered from the daemon (2026-07)',
+    },
+  ],
   deepseek: [
     {
-      name: 'deepseek-chat',
+      name: 'deepseek-v4-flash',
       isDefault: true,
-      contextLength: 128_000,
+      contextLength: 1_000_000,
+      maxOutputTokens: 384_000,
       pricingInput: 0.14,
       pricingOutput: 0.28,
-      provenance:
-        'DeepSeek V4 Flash fallback (2026-06); deepseek-chat is the legacy alias for V4 Flash, scheduled for removal 2026-07-24',
+      provenance: 'DeepSeek V4 Flash fallback (2026-07); 1M context and 384K maximum output',
     },
     {
-      name: 'deepseek-reasoner',
-      contextLength: 128_000,
-      pricingInput: 0.14,
-      pricingOutput: 0.28,
-      provenance:
-        'DeepSeek V4 Flash reasoning fallback (2026-06); priced at the V4 Flash rate alongside the deepseek-chat alias removal on 2026-07-24',
+      name: 'deepseek-v4-pro',
+      contextLength: 1_000_000,
+      maxOutputTokens: 384_000,
+      pricingInput: 0.435,
+      pricingOutput: 0.87,
+      provenance: 'DeepSeek V4 Pro fallback (2026-07); 1M context and 384K maximum output',
     },
   ],
   openai: [
@@ -211,7 +224,15 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       provenance: 'OpenAI coding-specialized fallback (2026-04)',
     },
   ],
-  groq: [],
+  groq: [
+    {
+      name: 'openai/gpt-oss-120b',
+      isDefault: true,
+      contextLength: 131_072,
+      maxOutputTokens: 65_536,
+      provenance: 'Groq GPT OSS 120B recommendation; max_completion_tokens contract (2026-07)',
+    },
+  ],
   together: [
     {
       name: 'zai-org/GLM-5.1',

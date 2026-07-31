@@ -1,157 +1,152 @@
-import { describe, it, expect } from 'vitest';
-import { CLI_TOOLS } from './cli-tools.js';
+import { describe, expect, it } from 'vitest';
+import {
+  CLI_CONFORMANCE_CANDIDATES,
+  codexImplementerAdapter,
+  codexPlannerAdapter,
+} from './cli-tools/codex.js';
 
-function getPlanner(tool: keyof typeof CLI_TOOLS) {
-  const planner = CLI_TOOLS[tool].planner;
-  if (!planner) throw new Error(`Expected planner entry for ${tool}`);
-  return planner;
-}
+const PROMPT = '<PROMPT>';
 
-function getImplementer(tool: keyof typeof CLI_TOOLS) {
-  const impl = CLI_TOOLS[tool].implementer;
-  if (!impl) throw new Error(`Expected implementer entry for ${tool}`);
-  return impl;
-}
-
-function promptArg(args: string[]): string {
-  const longest = args.reduce((a, b) => (b.length > a.length ? b : a), '');
-  return longest;
-}
-
-describe('codex planner — session resume (CLI contract)', () => {
-  const codex = getPlanner('codex');
-
-  it('declares supportsSessionResume: true', () => {
-    expect(codex.supportsSessionResume).toBe(true);
-  });
-
-  it('drops planner effort because the current Codex CLI has no stable reasoning flag', () => {
-    expect(codex.supportsEffort).toBe(false);
-    const args = codex.buildArgs({
-      prompt: 'new feature',
+describe('Codex planner adapter — session resume', () => {
+  it('uses exec resume with model, json, session, and prompt in order', () => {
+    const args = codexPlannerAdapter.buildArgs({
+      prompt: PROMPT,
       model: 'gpt-5',
-      projectDir: '/tmp/proj',
+      projectDir: '/project',
+      configuredArgs: [],
       mode: 'plan',
+      sessionId: 'session-1',
       effort: 'high',
     });
+    expect(args).toEqual(['exec', 'resume', '--model', 'gpt-5', '--json', 'session-1', PROMPT]);
     expect(args).not.toContain('--reasoning-effort');
   });
 
-  it('also drops planner effort on resumed Codex sessions', () => {
-    const args = codex.buildArgs({
-      prompt: 'continue',
+  it('uses read-only exec --json with --cd when no session is provided', () => {
+    const args = codexPlannerAdapter.buildArgs({
+      prompt: PROMPT,
       model: 'gpt-5',
-      projectDir: '/tmp/proj',
+      projectDir: '/project',
+      configuredArgs: [],
       mode: 'plan',
-      sessionId: 'abc-123',
-      effort: 'high',
+      sessionId: null,
+      effort: undefined,
     });
-    expect(args).toEqual(['exec', 'resume', '--model', 'gpt-5', '--json', 'abc-123', 'continue']);
-    expect(args).not.toContain('--reasoning-effort');
+    expect(args).toEqual(['--model', 'gpt-5', 'exec', '--json', '--cd', '/project', PROMPT]);
+    expect(args).not.toContain('--sandbox');
   });
 
-  it('uses `exec resume --model <m> --json <id> <prompt>` in plan mode with sessionId', () => {
-    const args = codex.buildArgs({
-      prompt: 'continue',
-      model: 'gpt-5',
-      projectDir: '/tmp/proj',
-      mode: 'plan',
-      sessionId: 'abc-123',
-    });
-    expect(args).toEqual(['exec', 'resume', '--model', 'gpt-5', '--json', 'abc-123', 'continue']);
-  });
-
-  it('uses read-only `exec --json` in plan mode when no sessionId is provided', () => {
-    const args = codex.buildArgs({
-      prompt: 'new feature',
-      model: 'gpt-5',
-      projectDir: '/tmp/proj',
-      mode: 'plan',
-    });
-    expect(args).toEqual([
-      '--model',
-      'gpt-5',
-      'exec',
-      '--json',
-      '--cd',
-      '/tmp/proj',
-      'new feature',
-    ]);
-    expect(args).not.toContain('--full-auto');
-  });
-
-  it('uses write-permissive `--sandbox workspace-write` with `--skip-git-repo-check` in escalate mode', () => {
-    const args = codex.buildArgs({
-      prompt: 'escalate',
-      model: 'gpt-5',
-      projectDir: '/tmp/proj',
+  it('uses workspace-write escalation and skips the git repository check', () => {
+    const args = codexPlannerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
       mode: 'escalate',
-      sessionId: 'abc-123',
+      sessionId: 'session-1',
+      effort: undefined,
     });
     expect(args).toEqual([
-      '--model',
-      'gpt-5',
       'exec',
       '--json',
       '--sandbox',
       'workspace-write',
       '--skip-git-repo-check',
       '--cd',
-      '/tmp/proj',
-      'escalate',
+      '/project',
+      PROMPT,
+    ]);
+  });
+});
+
+describe('Codex implementer adapter — staged direct writes', () => {
+  it('keeps workspace-write, skip-git-repo-check, cd, and model placement', () => {
+    const args = codexImplementerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: 'gpt-5.2',
+      projectDir: '/staged',
+      configuredArgs: [],
+    });
+    expect(args).toEqual([
+      '--model',
+      'gpt-5.2',
+      'exec',
+      '--json',
+      '--sandbox',
+      'workspace-write',
+      '--skip-git-repo-check',
+      '--cd',
+      '/staged',
+      PROMPT,
     ]);
     expect(args).not.toContain('--full-auto');
   });
+
+  it('rejects custom arguments that weaken the terminal or sandbox contract', () => {
+    const args = codexImplementerAdapter.buildArgs({
+      prompt: PROMPT,
+      model: undefined,
+      projectDir: '/staged',
+      configuredArgs: [],
+    });
+    expect(codexImplementerAdapter.validateArgs([...args, '--json'])).toEqual({
+      valid: false,
+      conflicts: ['--json'],
+    });
+    expect(codexImplementerAdapter.validateArgs([...args, '--sandbox', 'danger'])).toEqual({
+      valid: false,
+      conflicts: ['--sandbox'],
+    });
+  });
 });
 
-describe('codex implementer — runs in the git-less staged copy', () => {
-  const codex = getImplementer('codex');
-
-  it('passes --skip-git-repo-check so codex does not exit before the model call', () => {
-    const skipFlag = (args: string[]) => args.includes('--skip-git-repo-check');
-    expect(skipFlag(codex.buildArgs({ prompt: 'do it', model: undefined }))).toBe(true);
-    expect(skipFlag(codex.buildArgs({ prompt: 'do it', model: 'gpt-5.2' }))).toBe(true);
-  });
-
-  it('uses --sandbox workspace-write instead of the deprecated --full-auto', () => {
-    const args = codex.buildArgs({ prompt: 'do it', model: undefined });
-    expect(args).toContain('--sandbox');
-    expect(args[args.indexOf('--sandbox') + 1]).toBe('workspace-write');
-    expect(args).not.toContain('--full-auto');
-  });
-});
-
-describe('codex planner — prompt argv clamping (Linux MAX_ARG_STRLEN guard)', () => {
-  const MAX_ARGV_PROMPT_BYTES = 120_000;
-  const TRUNCATION_MARKER = '[SPLITBRIEF: prompt truncated to fit the OS argv limit';
-  const longHead = 'HEAD_SENTINEL ';
-  const longTail = ' TAIL_SENTINEL';
-  const oversizedPrompt = longHead + 'x'.repeat(200_000) + longTail;
-  const codex = getPlanner('codex');
-
-  it('truncates the codex resumed-session prompt as well', () => {
-    const args = codex.buildArgs({
+describe('Codex lossless prompt transport', () => {
+  it('keeps an oversized planner prompt byte-for-byte for pre-launch rejection', () => {
+    const longHead = 'HEAD_SENTINEL ';
+    const longTail = ' TAIL_SENTINEL';
+    const oversizedPrompt = longHead + 'x'.repeat(200_000) + longTail;
+    const args = codexPlannerAdapter.buildArgs({
       prompt: oversizedPrompt,
       model: 'gpt-5',
-      projectDir: '/tmp/proj',
+      projectDir: '/project',
+      configuredArgs: [],
       mode: 'plan',
-      sessionId: 'abc-123',
+      sessionId: 'session-1',
+      effort: undefined,
     });
-    const arg = promptArg(args);
-    expect(Buffer.byteLength(arg, 'utf8')).toBeLessThanOrEqual(MAX_ARGV_PROMPT_BYTES);
-    expect(arg).toContain(TRUNCATION_MARKER);
-    expect(arg).not.toContain(longTail);
+    expect(args.at(-1)).toBe(oversizedPrompt);
+    expect(args.at(-1)).toContain(longTail);
   });
 
-  it('does not split a multibyte character at the truncation boundary', () => {
-    const args = codex.buildArgs({
-      prompt: '😀'.repeat(80_000),
+  it('does not alter multibyte prompt code points', () => {
+    const prompt = '😀'.repeat(80_000);
+    const args = codexPlannerAdapter.buildArgs({
+      prompt,
       model: undefined,
-      projectDir: '/tmp',
+      projectDir: '/project',
+      configuredArgs: [],
       mode: 'plan',
+      sessionId: null,
+      effort: undefined,
     });
-    const arg = promptArg(args);
-    expect(arg).not.toContain('\uFFFD');
-    expect(Buffer.byteLength(arg, 'utf8')).toBeLessThanOrEqual(MAX_ARGV_PROMPT_BYTES);
+    expect(args.at(-1)).toBe(prompt);
+    expect(args.at(-1)).not.toContain('\uFFFD');
+  });
+});
+
+describe('Codex conformance candidates', () => {
+  it('keeps exactly planner then implementer entries with matching adapters', () => {
+    expect(CLI_CONFORMANCE_CANDIDATES).toHaveLength(2);
+    expect(CLI_CONFORMANCE_CANDIDATES.map((candidate) => candidate.role)).toEqual([
+      'planner',
+      'implementer',
+    ]);
+    expect(CLI_CONFORMANCE_CANDIDATES[0]?.adapter).toBe(codexPlannerAdapter);
+    expect(CLI_CONFORMANCE_CANDIDATES[1]?.adapter).toBe(codexImplementerAdapter);
+    expect(
+      CLI_CONFORMANCE_CANDIDATES.every((candidate) =>
+        /^[a-f0-9]{64}$/.test(candidate.contractSha256),
+      ),
+    ).toBe(true);
   });
 });

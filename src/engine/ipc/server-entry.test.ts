@@ -1,5 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,8 +8,21 @@ import type { ConfigLoaderDiagnostic } from '../../core/config/load/io.js';
 import { sessionDir } from '../../core/paths.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { readLockfile } from './lockfile.js';
+import {
+  killAllProcesses,
+  registerProcess,
+  unregisterProcess,
+} from '../../lib/process/registry.js';
+import { processError } from '../../lib/process/errors.js';
 import type { IpcServerArgs } from './server-args.js';
-import { emitConfigWarnings, getArgv, writeStartupLockfile } from './server-entry.js';
+import {
+  createServerCleanup,
+  createServerExitHandlers,
+  createServerProcessCleanup,
+  emitConfigWarnings,
+  getArgv,
+  writeStartupLockfile,
+} from './server-entry.js';
 import { writeIpcServerArgsFile } from './server-args.js';
 
 describe('getArgv', () => {
@@ -221,5 +234,147 @@ describe('writeStartupLockfile ps-facing redaction', () => {
 
     const lock = await readLockfile(testDir);
     expect(lock?.feature).toBe('add secret oauth login');
+  });
+});
+
+describe('detached server cleanup ordering', () => {
+  const leaders: ReturnType<typeof spawn>[] = [];
+  const fixtureDirs: string[] = [];
+
+  afterEach(async () => {
+    await killAllProcesses();
+    for (const leader of leaders.splice(0)) unregisterProcess(leader);
+    for (const dir of fixtureDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function createLifecycleProbe() {
+    const dir = mkdtempSync(join(tmpdir(), 'server-entry-cleanup-'));
+    fixtureDirs.push(dir);
+    const marker = join(dir, 'grandchild-exit');
+    const grandchildScript = [
+      'const { appendFileSync } = require("node:fs");',
+      'const marker = process.argv[1];',
+      'process.on("SIGTERM", () => { appendFileSync(marker, "grandchild-exit\\n"); process.exit(0); });',
+      'process.stdout.write("ready");',
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const leaderScript = [
+      'const { spawn } = require("node:child_process");',
+      'const marker = process.argv[1];',
+      'const script = process.argv[2];',
+      'const child = spawn(process.execPath, ["-e", script, marker], { stdio: ["ignore", "pipe", "ignore"] });',
+      'child.stdout.once("data", () => process.stdout.write("ready"));',
+      'process.on("SIGTERM", () => process.exit(0));',
+      'setInterval(() => {}, 1000);',
+    ].join('');
+    const leader = spawn(process.execPath, ['-e', leaderScript, marker, grandchildScript], {
+      detached: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    leaders.push(leader);
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('grandchild did not become ready')), 3000);
+      leader.stdout?.once('data', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+    registerProcess(leader, { group: true, ledger: false });
+
+    const stages: Array<{ stage: string; grandchildExited: boolean }> = [];
+    const captureStage = (stage: string) => {
+      stages.push({ stage, grandchildExited: existsSync(marker) });
+    };
+    const cleanup = createServerCleanup({
+      cleanupProcesses: createServerProcessCleanup(),
+      stopHeartbeat: () => captureStage('heartbeat-stopped'),
+      closeBridge: () => captureStage('bridge-closed'),
+      closeServer: async () => captureStage('server-closed'),
+      terminalize: async (termination) => captureStage(`terminalized:${termination.kind}`),
+      flushTelemetry: async () => captureStage('telemetry-flushed'),
+    });
+    const exits: Array<{ code: number; grandchildExited: boolean }> = [];
+    const handlers = createServerExitHandlers({
+      cleanup,
+      exitProcess: (code) => exits.push({ code, grandchildExited: existsSync(marker) }),
+    });
+    return { cleanup, exits, handlers, stages };
+  }
+
+  it('coalesces repeated cleanup and reaps the grandchild before IPC close and terminalization', async () => {
+    const { cleanup, stages } = await createLifecycleProbe();
+
+    const first = cleanup({ kind: 'exit', exitCode: 0 });
+    const repeated = cleanup({ kind: 'signal', signal: 'SIGTERM' });
+
+    expect(repeated).toBe(first);
+    await first;
+    expect(stages).toEqual([
+      { stage: 'heartbeat-stopped', grandchildExited: false },
+      { stage: 'bridge-closed', grandchildExited: true },
+      { stage: 'server-closed', grandchildExited: true },
+      { stage: 'terminalized:exit', grandchildExited: true },
+      { stage: 'telemetry-flushed', grandchildExited: true },
+    ]);
+  });
+
+  it('signal exit waits for the grandchild-exit marker', async () => {
+    const { exits, handlers } = await createLifecycleProbe();
+
+    await handlers.signal('SIGTERM');
+
+    expect(exits).toEqual([{ code: 0, grandchildExited: true }]);
+  });
+
+  it.each([
+    ['unhandled rejection crash', new Error('rejected')],
+    ['uncaught exception crash', new Error('thrown')],
+  ])('%s exit waits for the grandchild-exit marker', async (_label, reason) => {
+    const { exits, handlers } = await createLifecycleProbe();
+
+    await handlers.crash(reason);
+
+    expect(exits).toEqual([{ code: 1, grandchildExited: true }]);
+  });
+
+  it('top-level main rejection exit waits for the grandchild-exit marker', async () => {
+    const { exits, handlers } = await createLifecycleProbe();
+
+    await Promise.reject(new Error('startup failed')).catch(handlers.crash);
+
+    expect(exits).toEqual([{ code: 1, grandchildExited: true }]);
+  });
+
+  it('propagates an unreaped-group limitation before IPC finalization or exit', async () => {
+    const limitation = processError.platformLimitation({
+      operation: 'verify-absence',
+      target: 'process-group',
+      signal: 'SIGKILL',
+    });
+    const stages: string[] = [];
+    const cleanup = createServerCleanup({
+      cleanupProcesses: async () => {
+        stages.push('processes');
+        throw limitation;
+      },
+      stopHeartbeat: () => stages.push('heartbeat-stopped'),
+      closeBridge: () => stages.push('bridge-closed'),
+      closeServer: async () => {
+        stages.push('server-closed');
+      },
+      terminalize: async () => {
+        stages.push('terminalized');
+      },
+      flushTelemetry: async () => {
+        stages.push('telemetry-flushed');
+      },
+    });
+    const exitProcess = vi.fn();
+    const handlers = createServerExitHandlers({ cleanup, exitProcess });
+
+    await expect(handlers.signal('SIGTERM')).rejects.toBe(limitation);
+
+    expect(stages).toEqual(['heartbeat-stopped', 'processes']);
+    expect(exitProcess).not.toHaveBeenCalled();
   });
 });

@@ -4,13 +4,19 @@ import { formatReadinessReport, readinessBlockerMessage } from '../../core/readi
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { writeHeadlessJsonRecord } from '../../engine/events/public-json.js';
+import { detectConfiguredCliReadiness } from './start/readiness.js';
+import type { DetectCliReadiness } from './start/types.js';
 
 interface DoctorOpts {
   project?: string | undefined;
   json?: boolean | undefined;
 }
 
-export function registerDoctorCommand(program: Command): void {
+export interface DoctorDeps {
+  detectCliReadiness?: DetectCliReadiness | undefined;
+}
+
+export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): void {
   program
     .command('doctor')
     .description('Check run readiness without creating a workflow session')
@@ -18,7 +24,10 @@ export function registerDoctorCommand(program: Command): void {
     .option('--json', 'Emit readiness as JSON', false)
     .action(async (opts: DoctorOpts) => {
       const projectDir = resolveProjectDir(opts.project);
-      const { report } = await collectReadiness({ projectDir });
+      const { report } = await collectReadiness({
+        projectDir,
+        detectCliReadiness: deps.detectCliReadiness ?? detectConfiguredCliReadiness,
+      });
 
       if (opts.json) {
         writeHeadlessJsonRecord({ type: 'readiness_report', report });

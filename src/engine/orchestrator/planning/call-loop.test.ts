@@ -17,6 +17,7 @@ import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
 import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import type { PlannerCallbacksContext } from '../types.js';
+import type { Config } from '../../../core/schemas/config.js';
 
 let dirs: string[] = [];
 
@@ -82,7 +83,17 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       quickPlan: vi.fn().mockRejectedValue(new Error('planner crashed')),
     });
     const { bus, events } = makeBusRecorder();
-    const wctx = makeWctx(projectDir, sessionId, { bus });
+    const wctx = makeWctx(projectDir, sessionId, {
+      bus,
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'test',
+        },
+      }),
+    });
 
     const caught = runPlannerCallInContinuationLoop({
       wctx,
@@ -128,7 +139,17 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
           };
         }),
     });
-    const wctx = makeWctx(projectDir, sessionId, { bus });
+    const wctx = makeWctx(projectDir, sessionId, {
+      bus,
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'test',
+        },
+      }),
+    });
 
     const run = runPlannerCallInContinuationLoop({
       wctx,
@@ -190,6 +211,31 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
     expect(sinks.abortTurn()).toBe(true);
     expect(capturedSignal?.aborted).toBe(true);
     await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('runPlannerCallInContinuationLoop — runner auth', () => {
+  it('fails before calling a CLI planner when legacy config has no selected auth channel', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const quickPlan = vi.fn();
+    const planner = makePlanner({ quickPlan });
+    const current = makeConfig();
+    const config = {
+      ...current,
+      planner: { kind: 'cli', tool: 'codex' },
+    } as Config;
+    const wctx = makeWctx(projectDir, sessionId, { config });
+
+    await expect(
+      runPlannerCallInContinuationLoop({
+        wctx,
+        state: planningState(),
+        planner,
+        feature: 'test feature',
+        mode: 'quick',
+      }),
+    ).rejects.toMatchObject({ kind: 'runner-auth-channel-required' });
+    expect(quickPlan).not.toHaveBeenCalled();
   });
 });
 

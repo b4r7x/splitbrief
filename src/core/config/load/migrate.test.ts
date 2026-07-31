@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { migrateConfig, migrateV2ToV3 } from './migrate.js';
+import {
+  ImplementerConfigSchema,
+  ImplementerProfileConfigSchema,
+} from '../../schemas/implementer-config.js';
+import { PlannerConfigSchema } from '../../schemas/planner-config.js';
 import type {
   CliPlannerConfig,
   ApiPlannerConfig,
@@ -40,18 +45,117 @@ describe('migrateConfig', () => {
       expect(warnings.some((w) => /version 2 is deprecated/.test(w))).toBe(true);
     });
 
-    it('passes through v3 configs unchanged', () => {
+    it('passes through current v3 configs unchanged', () => {
       const v3Config = {
         version: 3,
         planner: { kind: 'cli', tool: 'claude-code' },
         implementer: {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen2.5:7b',
         },
       };
       expect(migrateConfig(v3Config)).toEqual(v3Config);
+    });
+
+    it.each([
+      2, 3,
+    ])('normalizes provider-only API identities in every runner slot after v%s migration', (version) => {
+      const migrated = migrateConfig({
+        version,
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          apiBase: 'https://api.anthropic.com/v1',
+          model: 'claude-opus-4',
+        },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5:7b',
+        },
+        implementerProfiles: {
+          default: 'cloud',
+          profiles: {
+            cloud: {
+              kind: 'api',
+              provider: 'openrouter',
+              apiBase: 'https://openrouter.ai/api/v1',
+              model: 'anthropic/claude-sonnet-4',
+            },
+            local: {
+              kind: 'api',
+              provider: 'lm-studio',
+              apiBase: 'http://localhost:1234/v1',
+              model: 'local-model',
+            },
+          },
+        },
+      }) as Record<string, unknown>;
+
+      expect(migrated).toMatchObject({
+        planner: { service: 'anthropic', offering: 'payg' },
+        implementer: { service: 'ollama', offering: 'local' },
+        implementerProfiles: {
+          profiles: {
+            cloud: { service: 'openrouter', offering: 'payg' },
+            local: { service: 'lm-studio', offering: 'local' },
+          },
+        },
+      });
+      PlannerConfigSchema.parse(migrated.planner);
+      ImplementerConfigSchema.parse(migrated.implementer);
+      const implementerProfiles = migrated.implementerProfiles as Record<string, unknown>;
+      const profiles = implementerProfiles.profiles as Record<string, unknown>;
+      ImplementerProfileConfigSchema.parse(profiles.cloud);
+      ImplementerProfileConfigSchema.parse(profiles.local);
+    });
+
+    it.each([
+      2, 3,
+    ])('rejects a non-catalog provider-only API runner after v%s migration', (version) => {
+      const migrated = migrateConfig({
+        version,
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: {
+          kind: 'api',
+          provider: 'custom-provider',
+          apiBase: 'https://llm.example.test/v1',
+          model: 'custom-model',
+        },
+      }) as Record<string, unknown>;
+
+      expect(ImplementerConfigSchema.safeParse(migrated.implementer).success).toBe(false);
+    });
+
+    it('preserves partial and mismatched API identities for strict schema rejection', () => {
+      const migrated = migrateConfig({
+        version: 3,
+        planner: {
+          kind: 'api',
+          provider: 'openrouter',
+          service: 'openrouter',
+          apiBase: 'https://openrouter.ai/api/v1',
+        },
+        implementer: {
+          kind: 'api',
+          provider: 'ollama',
+          service: 'ollama',
+          offering: 'payg',
+          apiBase: 'http://localhost:11434/v1',
+          model: 'qwen2.5:7b',
+        },
+      }) as Record<string, unknown>;
+
+      expect(migrated.planner).toMatchObject({ service: 'openrouter' });
+      expect(migrated.planner).not.toHaveProperty('offering');
+      expect(migrated.implementer).toMatchObject({ service: 'ollama', offering: 'payg' });
+      expect(PlannerConfigSchema.safeParse(migrated.planner).success).toBe(false);
+      expect(ImplementerConfigSchema.safeParse(migrated.implementer).success).toBe(false);
     });
 
     it('folds a legacy top-level commitStrategy into git on a v3 config', () => {

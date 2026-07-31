@@ -19,6 +19,8 @@ import { assertSessionExists } from '../../sessions/resolve.js';
 import { readActive } from '../../../core/sessions/lifecycle.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import { resumeSavedSession } from './resume.js';
+import { detectConfiguredCliReadiness } from '../start/readiness.js';
+import type { DetectCliReadiness } from '../start/types.js';
 
 export interface ContinueDeps {
   checkServerStatus: typeof checkServerStatus;
@@ -28,6 +30,8 @@ export interface ContinueDeps {
   runRpc: typeof runRpc;
   setupWorkflow: typeof setupWorkflow;
   printCrashDiagnostic: typeof printCrashDiagnostic;
+  /** Live, uncached CLI readiness used to establish resume execution gates. */
+  detectCliReadiness?: DetectCliReadiness | undefined;
 }
 
 const defaultContinueDeps: ContinueDeps = {
@@ -38,6 +42,7 @@ const defaultContinueDeps: ContinueDeps = {
   runRpc,
   setupWorkflow,
   printCrashDiagnostic,
+  detectCliReadiness: detectConfiguredCliReadiness,
 };
 
 async function resolveTargetSession(

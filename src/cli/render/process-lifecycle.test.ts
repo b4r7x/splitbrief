@@ -5,108 +5,238 @@ import {
   createSuspendHandler,
   createSuspendListenerToggle,
   createTerminationHandler,
+  createTuiCleanup,
   restoreTerminal,
 } from './process-lifecycle.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
+import { processError } from '../../lib/process/errors.js';
 
-describe('createTerminationHandler', () => {
-  it('cleans up then exits with the conventional code for SIGINT', () => {
+const lifecycleMocks = vi.hoisted(() => ({
+  teardownStores: vi.fn<() => void | Promise<void>>(),
+  killAllProcesses: vi.fn<() => Promise<void>>(),
+  awaitActiveWorkflowShutdown: vi.fn<() => Promise<void>>(),
+  flushOtel: vi.fn<() => Promise<void>>(),
+}));
+
+vi.mock('../init-stores.js', () => ({ teardownStores: lifecycleMocks.teardownStores }));
+vi.mock('../../lib/process/registry.js', () => ({
+  killAllProcesses: lifecycleMocks.killAllProcesses,
+}));
+vi.mock('../../engine/orchestrator/session-lifecycle/shutdown.js', () => ({
+  awaitActiveWorkflowShutdown: lifecycleMocks.awaitActiveWorkflowShutdown,
+}));
+vi.mock('../../lib/otel.js', () => ({ flushOtel: lifecycleMocks.flushOtel }));
+
+describe('TUI cleanup', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    lifecycleMocks.killAllProcesses.mockResolvedValue(undefined);
+    lifecycleMocks.awaitActiveWorkflowShutdown.mockResolvedValue(undefined);
+    lifecycleMocks.flushOtel.mockResolvedValue(undefined);
+  });
+
+  it('awaits every cleanup owner in order', async () => {
     const calls: string[] = [];
-    const cleanup = vi.fn(() => calls.push('cleanup'));
+    lifecycleMocks.teardownStores.mockImplementation(() => {
+      calls.push('stores');
+    });
+    lifecycleMocks.killAllProcesses.mockImplementation(async () => {
+      calls.push('processes');
+    });
+    lifecycleMocks.awaitActiveWorkflowShutdown.mockImplementation(async () => {
+      calls.push('workflow');
+    });
+    lifecycleMocks.flushOtel.mockImplementation(async () => {
+      calls.push('telemetry');
+    });
+    const cleanup = createTuiCleanup({
+      restore: async () => {
+        calls.push('terminal');
+      },
+    });
+
+    await cleanup();
+
+    expect(calls).toEqual(['stores', 'processes', 'workflow', 'terminal', 'telemetry']);
+  });
+
+  it('deduplicates concurrent cleanup with the same promise', async () => {
+    let releaseProcesses = () => {};
+    lifecycleMocks.killAllProcesses.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseProcesses = resolve;
+        }),
+    );
+    const restore = vi.fn();
+    const cleanup = createTuiCleanup({ restore });
+
+    const first = cleanup();
+    const concurrent = cleanup();
+
+    expect(concurrent).toBe(first);
+    await vi.waitFor(() => expect(lifecycleMocks.killAllProcesses).toHaveBeenCalledTimes(1));
+    releaseProcesses();
+    await first;
+    expect(restore).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues cleanup when an earlier owner fails', async () => {
+    lifecycleMocks.teardownStores.mockImplementation(() => {
+      throw new Error('store teardown failed');
+    });
+    const restore = vi.fn();
+
+    await expect(createTuiCleanup({ restore })()).resolves.toBeUndefined();
+
+    expect(lifecycleMocks.killAllProcesses).toHaveBeenCalledOnce();
+    expect(lifecycleMocks.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce();
+    expect(restore).toHaveBeenCalledOnce();
+    expect(lifecycleMocks.flushOtel).toHaveBeenCalledOnce();
+  });
+
+  it('withholds later cleanup and exit while a process group remains live', async () => {
+    const limitation = processError.platformLimitation({
+      operation: 'verify-absence',
+      target: 'process-group',
+      signal: 'SIGKILL',
+    });
+    lifecycleMocks.killAllProcesses.mockRejectedValue(limitation);
+    const restore = vi.fn();
+    const exit = vi.fn();
+    const handle = createTerminationHandler({
+      cleanup: createTuiCleanup({ restore }),
+      exit,
+    });
+
+    await expect(handle('SIGTERM')).rejects.toBe(limitation);
+
+    expect(lifecycleMocks.awaitActiveWorkflowShutdown).not.toHaveBeenCalled();
+    expect(restore).not.toHaveBeenCalled();
+    expect(lifecycleMocks.flushOtel).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+  });
+});
+
+describe('termination handler', () => {
+  it('cleans up then exits with the conventional code for SIGINT', async () => {
+    const calls: string[] = [];
+    const cleanup = vi.fn(async () => {
+      calls.push('cleanup');
+    });
     const exit = vi.fn((code: number) => calls.push(`exit:${code}`));
 
     const handle = createTerminationHandler({ cleanup, exit });
-    handle('SIGINT');
+    await handle('SIGINT');
 
     expect(calls).toEqual(['cleanup', 'exit:130']);
   });
 
-  it('exits with 143 for SIGTERM', () => {
-    const cleanup = vi.fn();
+  it('exits with 143 for SIGTERM', async () => {
+    const cleanup = vi.fn(async () => {});
     const exit = vi.fn();
 
     const handle = createTerminationHandler({ cleanup, exit });
-    handle('SIGTERM');
+    await handle('SIGTERM');
 
     expect(exit).toHaveBeenCalledWith(143);
   });
 
-  it('cleans up then exits with 129 for SIGHUP', () => {
+  it('cleans up then exits with 129 for SIGHUP', async () => {
     const calls: string[] = [];
-    const cleanup = vi.fn(() => calls.push('cleanup'));
+    const cleanup = vi.fn(async () => {
+      calls.push('cleanup');
+    });
     const exit = vi.fn((code: number) => calls.push(`exit:${code}`));
 
     const handle = createTerminationHandler({ cleanup, exit });
-    handle('SIGHUP');
+    await handle('SIGHUP');
 
     expect(calls).toEqual(['cleanup', 'exit:129']);
   });
 
-  it('runs only once even if the signal fires repeatedly', () => {
-    const cleanup = vi.fn();
+  it('returns one promise when signals fire repeatedly', async () => {
+    const cleanup = vi.fn(async () => {});
     const exit = vi.fn();
 
     const handle = createTerminationHandler({ cleanup, exit });
-    handle('SIGINT');
-    handle('SIGINT');
-    handle('SIGTERM');
+    const first = handle('SIGINT');
+    const repeated = handle('SIGINT');
+    const competing = handle('SIGTERM');
 
+    expect(repeated).toBe(first);
+    expect(competing).toBe(first);
+    await first;
     expect(cleanup).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
   });
 
-  it('still exits when cleanup throws', () => {
-    const cleanup = vi.fn(() => {
-      throw new Error('cleanup failed');
+  it('propagates cleanup failure without exiting', async () => {
+    const limitation = processError.platformLimitation({
+      operation: 'verify-absence',
+      target: 'process-group',
+      signal: 'SIGKILL',
+    });
+    const cleanup = vi.fn(async () => {
+      throw limitation;
     });
     const exit = vi.fn();
 
     const handle = createTerminationHandler({ cleanup, exit });
 
-    expect(() => handle('SIGINT')).not.toThrow();
-    expect(exit).toHaveBeenCalledWith(130);
+    await expect(handle('SIGINT')).rejects.toBe(limitation);
+    expect(exit).not.toHaveBeenCalled();
   });
 });
 
-describe('createCrashHandler', () => {
-  it('restores the terminal before reporting, then exits non-zero', () => {
+describe('crash handler', () => {
+  it('restores the terminal before reporting, then exits non-zero', async () => {
     const calls: string[] = [];
-    const cleanup = vi.fn(() => calls.push('cleanup'));
+    const cleanup = vi.fn(async () => {
+      calls.push('cleanup');
+    });
     const report = vi.fn((reason: unknown) => calls.push(`report:${String(reason)}`));
     const exit = vi.fn((code: number) => calls.push(`exit:${code}`));
 
     const handle = createCrashHandler({ cleanup, report, exit });
-    handle(new Error('boom'));
+    await handle(new Error('boom'));
 
     expect(calls).toEqual(['cleanup', 'report:Error: boom', 'exit:1']);
   });
 
-  it('runs only once even if multiple crashes fire', () => {
-    const cleanup = vi.fn();
+  it('returns one promise when multiple crashes fire', async () => {
+    const cleanup = vi.fn(async () => {});
     const report = vi.fn();
     const exit = vi.fn();
 
     const handle = createCrashHandler({ cleanup, report, exit });
-    handle(new Error('first'));
-    handle(new Error('second'));
+    const first = handle(new Error('first'));
+    const repeated = handle(new Error('second'));
 
+    expect(repeated).toBe(first);
+    await first;
     expect(cleanup).toHaveBeenCalledTimes(1);
     expect(report).toHaveBeenCalledTimes(1);
     expect(exit).toHaveBeenCalledTimes(1);
   });
 
-  it('still reports and exits when cleanup throws', () => {
-    const calls: string[] = [];
-    const cleanup = vi.fn(() => {
-      throw new Error('cleanup failed');
+  it('propagates cleanup failure without reporting or exiting', async () => {
+    const limitation = processError.platformLimitation({
+      operation: 'verify-absence',
+      target: 'process-group',
+      signal: 'SIGKILL',
     });
-    const report = vi.fn(() => calls.push('report'));
-    const exit = vi.fn((code: number) => calls.push(`exit:${code}`));
+    const cleanup = vi.fn(async () => {
+      throw limitation;
+    });
+    const report = vi.fn();
+    const exit = vi.fn();
 
     const handle = createCrashHandler({ cleanup, report, exit });
 
-    expect(() => handle(new Error('boom'))).not.toThrow();
-    expect(calls).toEqual(['report', 'exit:1']);
+    await expect(handle(new Error('boom'))).rejects.toBe(limitation);
+    expect(report).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
   });
 });
 

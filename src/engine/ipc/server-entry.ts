@@ -27,6 +27,69 @@ import { shouldPreserveActiveState } from '../orchestrator/session-lifecycle/fin
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { bootstrapOtel, flushOtel } from '../../lib/otel.js';
 import { runWorkflowLoop } from './workflow-loop/run.js';
+import { cliStartGatesFromArray } from '../runners/start-gate.js';
+
+type ServerTermination =
+  | { kind: 'exit'; exitCode: number }
+  | { kind: 'signal'; signal: string }
+  | { kind: 'crash'; cause: string };
+
+type ServerCleanupOptions = {
+  cleanupProcesses: () => Promise<void>;
+  stopHeartbeat: () => void;
+  closeBridge: () => void;
+  closeServer: () => Promise<void>;
+  terminalize: (termination: ServerTermination) => Promise<void>;
+  flushTelemetry: () => Promise<void>;
+};
+
+type ExitProcess = (code: number) => void;
+
+export function createServerProcessCleanup(): () => Promise<void> {
+  let cleanupPromise: Promise<void> | null = null;
+  return () => {
+    cleanupPromise ??= (async () => {
+      await killAllProcesses();
+    })();
+    return cleanupPromise;
+  };
+}
+
+export function createServerCleanup(
+  options: ServerCleanupOptions,
+): (termination: ServerTermination) => Promise<void> {
+  let cleanupPromise: Promise<void> | null = null;
+  return (termination) => {
+    if (cleanupPromise !== null) return cleanupPromise;
+    options.stopHeartbeat();
+    cleanupPromise = (async () => {
+      await options.cleanupProcesses();
+      options.closeBridge();
+      await options.closeServer();
+      await options.terminalize(termination);
+      await options.flushTelemetry();
+    })();
+    return cleanupPromise;
+  };
+}
+
+export function createServerExitHandlers(options: {
+  cleanup: (termination: ServerTermination) => Promise<void>;
+  exitProcess?: ExitProcess;
+}): {
+  signal: (signal: string) => Promise<void>;
+  crash: (reason: unknown) => Promise<void>;
+} {
+  const exitProcess = options.exitProcess ?? process.exit;
+  const exitAfterCleanup = async (termination: ServerTermination, successCode: number) => {
+    await options.cleanup(termination);
+    exitProcess(successCode);
+  };
+  return {
+    signal: (signal) => exitAfterCleanup({ kind: 'signal', signal }, 0),
+    crash: (reason) => exitAfterCleanup({ kind: 'crash', cause: toErrorMessage(reason) }, 1),
+  };
+}
 
 function exitInvalidArgs(message: string): never {
   process.stderr.write(`server-entry: ${message}\n`);
@@ -73,7 +136,11 @@ export async function writeStartupLockfile(
   return { authToken, startedAt: now };
 }
 
-export async function main(argv: IpcServerArgs, dir: string) {
+export async function main(
+  argv: IpcServerArgs,
+  dir: string,
+  cleanupProcesses = createServerProcessCleanup(),
+) {
   bootstrapOtel();
   mkdirSync(dir, { recursive: true });
 
@@ -110,82 +177,91 @@ export async function main(argv: IpcServerArgs, dir: string) {
     persistTranscript: config.workflow.persistTranscript,
   });
 
-  const onCleanup = async (exitCode: number) => {
-    killAllProcesses();
-    stopHeartbeat();
-    ipcBridge.close();
-    await ipcServer.close();
-    await markExited(dir, exitCode);
-    const sessionRef = { projectDir: argv.projectDir, sessionId: argv.sessionId };
-    const finalState = loadState(sessionRef);
-    if (!shouldPreserveActiveState(finalState)) clearActive(sessionRef);
-    await flushOtel();
-  };
+  const sessionRef = { projectDir: argv.projectDir, sessionId: argv.sessionId };
+  const onCleanup = createServerCleanup({
+    cleanupProcesses,
+    stopHeartbeat,
+    closeBridge: ipcBridge.close,
+    closeServer: ipcServer.close,
+    terminalize: async (termination) => {
+      switch (termination.kind) {
+        case 'exit':
+          await markExited(dir, termination.exitCode);
+          break;
+        case 'signal':
+          await markSignaled(dir, termination.signal);
+          await markExited(dir, 0);
+          break;
+        case 'crash':
+          await markCrashed(dir, 'uncaught', termination.cause);
+          return;
+      }
+      const finalState = loadState(sessionRef);
+      if (!shouldPreserveActiveState(finalState)) clearActive(sessionRef);
+    },
+    flushTelemetry: flushOtel,
+  });
+
+  const exitHandlers = createServerExitHandlers({ cleanup: onCleanup });
 
   const handleSignal = (signal: string) => {
-    stopHeartbeat();
-    void (async () => {
-      try {
-        await markSignaled(dir, signal);
-        await onCleanup(0);
-        process.exit(0);
-      } catch {
-        process.exit(1);
-      }
-    })();
+    void exitHandlers.signal(signal);
   };
 
   process.on('SIGTERM', () => handleSignal('SIGTERM'));
   process.on('SIGINT', () => handleSignal('SIGINT'));
 
   process.on('unhandledRejection', (reason) => {
-    stopHeartbeat();
-    killAllProcesses();
-    void markCrashed(dir, 'uncaught', toErrorMessage(reason))
-      .then(() => flushOtel())
-      .catch(() => {})
-      .finally(() => process.exit(1));
+    void exitHandlers.crash(reason);
   });
 
   process.on('uncaughtException', (err) => {
-    stopHeartbeat();
-    killAllProcesses();
-    void markCrashed(dir, 'uncaught', toErrorMessage(err))
-      .then(() => flushOtel())
-      .catch(() => {})
-      .finally(() => process.exit(1));
+    void exitHandlers.crash(err);
   });
 
-  const summary = await runWorkflowLoop(
-    {
-      projectDir: argv.projectDir,
-      sessionId: argv.sessionId,
-      feature: argv.feature,
-      plannerContext: argv.plannerContext,
-      allowHooks: argv.allowHooks,
-      allowRepoRunners: argv.allowRepoRunners,
-      attachments: argv.attachments,
-    },
-    ipcServer,
-    ipcBridge,
-    ipcBus,
-    config,
-  );
+  try {
+    const summary = await runWorkflowLoop(
+      {
+        projectDir: argv.projectDir,
+        sessionId: argv.sessionId,
+        feature: argv.feature,
+        plannerContext: argv.plannerContext,
+        allowHooks: argv.allowHooks,
+        allowRepoRunners: argv.allowRepoRunners,
+        attachments: argv.attachments,
+        trustedCliGates: cliStartGatesFromArray(argv.trustedCliGates),
+      },
+      ipcServer,
+      ipcBridge,
+      ipcBus,
+      config,
+    );
 
-  const completedTasks = summary.completedByLocal + summary.escalatedToPlanner + summary.skipped;
-  const isIncomplete = summary.totalTasks > 0 && completedTasks < summary.totalTasks;
-  const exitCode = summary.failed > 0 || isIncomplete ? 1 : 0;
-  await onCleanup(exitCode);
+    const completedTasks = summary.completedByLocal + summary.escalatedToPlanner + summary.skipped;
+    const isIncomplete = summary.totalTasks > 0 && completedTasks < summary.totalTasks;
+    const exitCode = summary.failed > 0 || isIncomplete ? 1 : 0;
+    await onCleanup({ kind: 'exit', exitCode });
+  } catch (err) {
+    await exitHandlers.crash(err);
+  }
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {
   const argv = getArgv(process.argv);
   const dir = sessionDir(argv.projectDir, argv.sessionId);
-  main(argv, dir).catch((err) => {
-    killAllProcesses();
-    void markCrashed(dir, 'uncaught', toErrorMessage(err))
-      .then(() => flushOtel())
-      .catch(() => {})
-      .finally(() => process.exit(1));
+  const cleanupProcesses = createServerProcessCleanup();
+  const exitHandlers = createServerExitHandlers({
+    cleanup: createServerCleanup({
+      cleanupProcesses,
+      stopHeartbeat: () => {},
+      closeBridge: () => {},
+      closeServer: () => Promise.resolve(),
+      terminalize: (termination) =>
+        termination.kind === 'crash'
+          ? markCrashed(dir, 'uncaught', termination.cause)
+          : Promise.resolve(),
+      flushTelemetry: flushOtel,
+    }),
   });
+  main(argv, dir, cleanupProcesses).catch((err) => exitHandlers.crash(err));
 }

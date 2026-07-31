@@ -1,15 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { CLI_TOOLS } from './cli-tools.js';
-
-function getPlanner(tool: keyof typeof CLI_TOOLS) {
-  const planner = CLI_TOOLS[tool].planner;
-  if (!planner) throw new Error(`Expected planner entry for ${tool}`);
-  return planner;
-}
+import { copilotParseLine } from './cli-tools/copilot.js';
 
 describe('copilot planner — parses the {type, data} JSON envelope', () => {
-  const copilot = getPlanner('copilot');
-  const parse = (event: unknown) => copilot.parseLine(JSON.stringify(event));
+  const parse = (event: unknown) => copilotParseLine(JSON.stringify(event));
 
   it('extracts the session id from session.start', () => {
     const result = parse({
@@ -106,7 +99,7 @@ describe('copilot planner — parses the {type, data} JSON envelope', () => {
   });
 
   it('returns bounded warnings for unknown event types and empty for blank lines', () => {
-    expect(copilot.parseLine('')).toEqual({});
+    expect(copilotParseLine('')).toEqual({});
     expect(parse({ type: 'future.event', data: {} })).toEqual({
       warning: [expect.objectContaining({ code: 'unknown_copilot_record' })],
     });

@@ -159,6 +159,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'tiny-cloud': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'tiny-cloud',
             costTier: 'cheap',
@@ -167,6 +169,8 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
           'tiny-local': {
             kind: 'api',
             provider: 'ollama',
+            service: 'ollama',
+            offering: 'local',
             apiBase: 'http://localhost:11434/v1',
             model: 'tiny-local',
             costTier: 'local',

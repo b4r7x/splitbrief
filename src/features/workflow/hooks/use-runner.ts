@@ -27,6 +27,7 @@ import {
 import { addTuiEvent, createTuiSink } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
+import type { CliStartGates } from '../../../engine/runners/start-gate.js';
 import {
   createAbortHandlerScope,
   setCancelHandler,
@@ -36,7 +37,6 @@ import {
   clearAllHandlers,
   consumeBoundaryInterrupt,
 } from '../handlers.js';
-import { killAllProcesses } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -73,6 +73,7 @@ interface UseWorkflowRunnerOptions {
   allowRepoRunners?: boolean | undefined;
   enabled?: boolean | undefined;
   runWorkflow?: RunWorkflowFn | undefined;
+  trustedCliGates?: CliStartGates | undefined;
 }
 
 export interface WorkflowCompletion {
@@ -111,6 +112,7 @@ export function useWorkflowRunner({
   allowRepoRunners = false,
   enabled = true,
   runWorkflow: runWorkflowFn = runWorkflow,
+  trustedCliGates,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
   const pendingRewindRef = useRef<PendingRewind | null>(null);
@@ -259,6 +261,7 @@ export function useWorkflowRunner({
           savedState: stateForRun,
           selectedSkills,
           sessionId: activeSessionId,
+          trustedCliGates,
           ...(rewindFeedbackForRun !== undefined && { rewindFeedback: rewindFeedbackForRun }),
           ...(detectedContextLength !== undefined && { detectedContextLength }),
           ...(retryProfileOverride !== undefined && { retryProfileOverride }),
@@ -338,7 +341,6 @@ export function useWorkflowRunner({
       inputMode.resetMode();
       controller.abort();
       clearAllHandlers();
-      killAllProcesses();
       closeApprovalPrompt();
       closeCostApprovalPrompt({ approved: false });
     };

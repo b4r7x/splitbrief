@@ -201,7 +201,7 @@ export function eventRowBlock(options: {
       return cardRowsBlock({
         keyPrefix,
         label: 'failed',
-        value: formatModelName(event.model),
+        value: event.model === undefined ? undefined : formatModelName(event.model),
         width: ctx.width,
         labelTone: 'error',
         valueTone: 'textDim',

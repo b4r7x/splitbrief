@@ -3,6 +3,7 @@ import YAML, { parseDocument } from 'yaml';
 import { ConfigSchema, type Config } from '../../schemas/config.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../../providers/catalog.js';
+import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
 import { validateConfig } from './validation/config.js';
 import { fromYaml, toYaml } from './transform.js';
 import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
@@ -22,14 +23,17 @@ export function configPath(projectDir: string): string {
 }
 
 export function createDefaultConfig(): Config {
+  const provider = API_PROVIDER_CATALOG.ollama;
   return {
     version: 3,
     planner: { kind: 'cli', tool: 'claude-code' },
     implementer: {
       kind: 'api',
-      provider: 'ollama',
+      provider: provider.id,
+      service: provider.service,
+      offering: provider.offering,
       model: 'qwen3-coder:30b',
-      apiBase: resolveDefaultApiBase('ollama') ?? KNOWN_PROVIDER_BASE_URLS.ollama,
+      apiBase: resolveDefaultApiBase(provider.id) ?? KNOWN_PROVIDER_BASE_URLS.ollama,
       temperature: DEFAULT_IMPLEMENTER_TEMPERATURE,
     },
     validation: {

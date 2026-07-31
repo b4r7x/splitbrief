@@ -1,5 +1,9 @@
 import type { Config } from '../../core/schemas/config.js';
 import { PlannerConfigSchema, type PlannerConfig } from '../../core/schemas/planner-config.js';
+import {
+  ImplementerConfigSchema,
+  type ImplementerConfig,
+} from '../../core/schemas/implementer-config.js';
 import { buildRunnerConfig } from '../../core/config/runtime/build-runner.js';
 import { updateDefaultImplementerConfig } from '../../core/config/accessors/implementer-profiles.js';
 import type { PickerOption } from './model-catalog.js';
@@ -8,16 +12,55 @@ function setPlanner(config: Config, planner: PlannerConfig): Config {
   return { ...config, planner };
 }
 
+function isAutomaticCliSelection(selection: PickerOption, model: { id: string } | null): boolean {
+  return selection.kind === 'cli' && model?.id.trim().toLowerCase() === 'auto';
+}
+
+function plannerWithoutModel(config: PlannerConfig): PlannerConfig {
+  const { model: _model, ...rest } = config;
+  return PlannerConfigSchema.parse(rest);
+}
+
+function implementerWithoutModel(config: ImplementerConfig): ImplementerConfig {
+  // API implementers require a model.  Automatic selection is a CLI-only
+  // sentinel, so never destructure a model from an API profile even if this
+  // helper is reused by a future selection path.
+  if (config.kind !== 'cli') return config;
+  const { model: _model, ...rest } = config;
+  return ImplementerConfigSchema.parse(rest);
+}
+
+function plannerExistingForSelection(
+  config: PlannerConfig,
+  selection: PickerOption,
+  automaticSelection: boolean,
+): PlannerConfig {
+  return automaticSelection && config.kind === 'cli' && config.tool === selection.id
+    ? plannerWithoutModel(config)
+    : config;
+}
+
+function implementerExistingForSelection(
+  config: ImplementerConfig,
+  selection: PickerOption,
+  automaticSelection: boolean,
+): ImplementerConfig {
+  const sameCliTarget =
+    selection.kind === 'cli' && config.kind === 'cli' && config.tool === selection.id;
+  return automaticSelection && sameCliTarget ? implementerWithoutModel(config) : config;
+}
+
 export function commitPlannerSelection(
   config: Config,
   selection: PickerOption,
   model: { id: string } | null,
 ): Config {
+  const automaticSelection = isAutomaticCliSelection(selection, model);
   const opts = {
     kind: selection.kind,
     tool: selection.id,
-    model: model?.id,
-    existing: config.planner,
+    ...(model !== null && !automaticSelection && { model: model.id }),
+    existing: plannerExistingForSelection(config.planner, selection, automaticSelection),
   };
   return setPlanner(config, buildRunnerConfig('planner', opts));
 }
@@ -28,11 +71,12 @@ export function commitImplementerSelection(
   model: { id: string } | null,
 ): Config {
   return updateDefaultImplementerConfig(config, (existing) => {
+    const automaticSelection = isAutomaticCliSelection(selection, model);
     const opts = {
       kind: selection.kind,
       tool: selection.id,
-      model: model?.id ?? existing.model,
-      existing,
+      ...(model !== null && !automaticSelection && { model: model.id }),
+      existing: implementerExistingForSelection(existing, selection, automaticSelection),
     };
     return buildRunnerConfig('implementer', opts);
   });
@@ -106,11 +150,15 @@ export function removeCustomModel(
     if (existing.model !== modelId) {
       return { ...existing, customModels: filtered };
     }
-    return {
-      ...existing,
-      model: filtered[0] ?? 'auto',
-      customModels: filtered,
-    };
+    const fallbackModel = filtered[0];
+    if (fallbackModel !== undefined) {
+      return { ...existing, model: fallbackModel, customModels: filtered };
+    }
+    if (existing.kind !== 'cli') {
+      return { ...existing, customModels: filtered };
+    }
+    const { model: _model, ...rest } = existing;
+    return { ...rest, customModels: filtered };
   });
 }
 

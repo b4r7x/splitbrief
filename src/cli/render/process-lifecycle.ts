@@ -1,4 +1,8 @@
+import { awaitActiveWorkflowShutdown } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
+import { flushOtel } from '../../lib/otel.js';
+import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
+import { teardownStores } from '../init-stores.js';
 
 const SIGNAL_EXIT_CODE: Record<TerminationSignal, number> = {
   SIGINT: 130,
@@ -13,6 +17,32 @@ interface RestoreTerminalOptions {
   mouse?: boolean | undefined;
   paste?: boolean | undefined;
   stdin?: NodeJS.ReadStream | undefined;
+}
+
+type CleanupStep = () => void | Promise<void>;
+
+async function runCleanupStep(step: CleanupStep): Promise<void> {
+  try {
+    await step();
+  } catch {
+    // Ancillary cleanup is best-effort, but every step must run before cleanup completes.
+  }
+}
+
+async function cleanupTuiProcess(restore: CleanupStep): Promise<void> {
+  await runCleanupStep(teardownStores);
+  await killAllProcesses();
+  await runCleanupStep(awaitActiveWorkflowShutdown);
+  await runCleanupStep(restore);
+  await runCleanupStep(flushOtel);
+}
+
+export function createTuiCleanup(deps: { restore: CleanupStep }): () => Promise<void> {
+  let pending: Promise<void> | undefined;
+  return () => {
+    pending ??= cleanupTuiProcess(deps.restore);
+    return pending;
+  };
 }
 
 // fullscreen-ink restores the main screen buffer only after `waitUntilExit()` resolves, but a
@@ -30,45 +60,42 @@ export function restoreTerminal(options: RestoreTerminalOptions): void {
 }
 
 // Fires when Ctrl+C reaches the OS instead of Ink (a child owns the terminal, so raw
-// mode is off) or when an external `kill` arrives. Runs once: restores the terminal,
-// reaps orphaned children, then exits with the conventional 128+signal code.
+// mode is off) or when an external `kill` arrives. Awaits the shared cleanup once, then exits
+// with the conventional 128+signal code.
 export function createTerminationHandler(deps: {
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
   exit: (code: number) => void;
-}): (signal: TerminationSignal) => void {
-  let handled = false;
+}): (signal: TerminationSignal) => Promise<void> {
+  let pending: Promise<void> | undefined;
   return (signal) => {
-    if (handled) return;
-    handled = true;
-    try {
-      deps.cleanup();
-    } catch {
-      // signal shutdown must still exit even when terminal cleanup races a closed TTY
-    }
-    deps.exit(SIGNAL_EXIT_CODE[signal]);
+    pending ??= (async () => {
+      await deps.cleanup();
+      deps.exit(SIGNAL_EXIT_CODE[signal]);
+    })();
+    return pending;
   };
 }
 
 // Fires when a crash escapes the render promise chain (uncaughtException or
-// unhandledRejection). Runs once: restores the terminal and reaps orphaned children
-// before the report reaches stderr, otherwise the trace prints onto the alternate
-// screen buffer and is lost when the buffer is torn down.
+// unhandledRejection). Awaits the shared cleanup once before the report reaches stderr,
+// otherwise the trace prints onto the alternate screen buffer and is lost when the buffer
+// is torn down.
 export function createCrashHandler(deps: {
-  cleanup: () => void;
+  cleanup: () => Promise<void>;
   report: (reason: unknown) => void;
   exit: (code: number) => void;
-}): (reason: unknown) => void {
-  let handled = false;
+}): (reason: unknown) => Promise<void> {
+  let pending: Promise<void> | undefined;
   return (reason) => {
-    if (handled) return;
-    handled = true;
-    try {
-      deps.cleanup();
-    } catch {
-      // crash shutdown must still report and exit even when terminal cleanup races a closed TTY
-    }
-    deps.report(reason);
-    deps.exit(1);
+    pending ??= (async () => {
+      await deps.cleanup();
+      try {
+        deps.report(reason);
+      } finally {
+        deps.exit(1);
+      }
+    })();
+    return pending;
   };
 }
 

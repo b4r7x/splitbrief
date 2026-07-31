@@ -8,6 +8,9 @@ import { error } from '../../utils/error.js';
 import { sessionDir } from '../../core/paths.js';
 import { assertSessionConfinement } from '../../core/sessions/confinement.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
+import { CliExecutableIdentitySchema } from '../../core/discovery/detection.js';
+import { CliToolIdSchema } from '../../core/schemas/enums.js';
+import type { CliStartGate } from '../runners/start-gate.js';
 
 export const SERVER_ARGS_FILE = 'server-args.json';
 
@@ -16,6 +19,10 @@ const IpcServerAttachmentSchema = z.object({
   path: z.string(),
   mimeType: z.string(),
 });
+
+const IpcCliStartGateSchema = z
+  .object({ tool: CliToolIdSchema, executable: CliExecutableIdentitySchema })
+  .strict();
 
 export type IpcServerAttachment = z.infer<typeof IpcServerAttachmentSchema>;
 
@@ -34,9 +41,12 @@ const IpcServerArgsSchema = z.object({
   allowRepoRunners: z.boolean().optional(),
   plannerContext: z.string().optional(),
   attachments: z.array(IpcServerAttachmentSchema).optional(),
+  trustedCliGates: z.array(IpcCliStartGateSchema).optional(),
 });
 
-export type IpcServerArgs = z.infer<typeof IpcServerArgsSchema>;
+export type IpcServerArgs = z.infer<typeof IpcServerArgsSchema> & {
+  trustedCliGates?: CliStartGate[] | undefined;
+};
 
 export const ipcServerArgsError = {
   invalidServerArgs: () => error('ipc-invalid-server-args', 'invalid server-args.json'),

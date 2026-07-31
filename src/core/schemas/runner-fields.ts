@@ -1,6 +1,27 @@
 import { z } from 'zod';
-import { CliToolIdSchema, EffortLevelSchema, OutputFormatSchema } from './enums.js';
-import type { CliToolId, RunnerKind } from './enums.js';
+import { API_PROVIDER_CATALOG, type ApiOffering } from '../providers/api-provider-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  CLI_TOOL_TRUST,
+  cliModelPolicyViolations,
+  type CliAuthChannelId,
+  type CliModelPolicy,
+  type RunnerRole,
+  type RunnerRoleTrustMetadata,
+  type RunnerTrustMetadata,
+} from '../runners/cli-tool-catalog.js';
+import { narrowRecord } from '../../utils/type-guards.js';
+import {
+  CliToolIdSchema,
+  EffortLevelSchema,
+  ImplementerApiProviderIdSchema,
+  ImplementerCliToolIdSchema,
+  OutputFormatSchema,
+  PlannerApiProviderIdSchema,
+  PlannerCliToolIdSchema,
+} from './enums.js';
+import type { CliToolId } from '../runners/cli-tool-catalog.js';
+import type { RunnerKind } from './enums.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
 
@@ -49,17 +70,189 @@ const IDLE_THRESHOLD_ORDER = {
 const CliRunnerFields = {
   kind: z.literal('cli'),
   tool: CliToolIdSchema,
+  authChannel: z
+    .enum(['api-key', 'session', 'provider-dependent'] satisfies readonly [
+      CliAuthChannelId,
+      ...CliAuthChannelId[],
+    ])
+    .optional(),
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
   ...WatchdogFields,
 };
 
+const PlannerCliRunnerFields = {
+  ...CliRunnerFields,
+  tool: PlannerCliToolIdSchema,
+};
+
+const ImplementerCliRunnerFields = {
+  ...CliRunnerFields,
+  tool: ImplementerCliToolIdSchema,
+};
+
+const ApiOfferingSchema = z.enum([
+  'payg',
+  'free-quota',
+  'coding-subscription',
+  'local',
+] satisfies readonly [ApiOffering, ...ApiOffering[]]);
+
 const ApiRunnerFields = {
   kind: z.literal('api'),
   provider: z.string().min(1),
+  service: z.string().min(1),
+  offering: ApiOfferingSchema,
   apiBase: z.string().min(1),
   apiKey: z.string().optional(),
 };
+
+function apiProviderSchemaForRole(role: RunnerRole) {
+  const roleProviderIds =
+    role === 'planner' ? PlannerApiProviderIdSchema : ImplementerApiProviderIdSchema;
+
+  // Custom providers remain supported, and legacy service aliases remain
+  // usable, but a known catalog identity can never bypass its role admission
+  // by taking the custom-provider branch.
+  const customProvider = z
+    .string()
+    .min(1)
+    .refine(
+      (provider) => {
+        const descriptor = Object.values(API_PROVIDER_CATALOG).find(
+          (candidate) => candidate.id === provider || candidate.service === provider,
+        );
+        return (
+          descriptor === undefined ||
+          descriptor.roles.some((candidateRole) => candidateRole === role)
+        );
+      },
+      {
+        message: `API provider is not admitted for the ${role} role`,
+      },
+    );
+
+  return z.union([roleProviderIds, customProvider]);
+}
+
+const PlannerApiRunnerFields = {
+  ...ApiRunnerFields,
+  provider: apiProviderSchemaForRole('planner'),
+};
+
+const ImplementerApiRunnerFields = {
+  ...ApiRunnerFields,
+  provider: apiProviderSchemaForRole('implementer'),
+};
+
+const API_PROVIDER_DESCRIPTORS = Object.values(API_PROVIDER_CATALOG);
+
+function descriptorsForProviderIdentity(provider: string) {
+  return API_PROVIDER_DESCRIPTORS.filter(
+    (descriptor) => descriptor.id === provider || descriptor.service === provider,
+  );
+}
+
+function validateApiIdentity(input: unknown, ctx: z.RefinementCtx): void {
+  const runner = narrowRecord(input);
+  if (
+    !runner ||
+    runner.kind !== 'api' ||
+    typeof runner.provider !== 'string' ||
+    typeof runner.service !== 'string' ||
+    typeof runner.offering !== 'string'
+  ) {
+    return;
+  }
+
+  const providerCandidates = descriptorsForProviderIdentity(runner.provider);
+  if (
+    providerCandidates.length > 0 &&
+    !providerCandidates.some(
+      (candidate) => candidate.service === runner.service && candidate.offering === runner.offering,
+    )
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['offering'],
+      message: `API provider "${runner.provider}" does not match service "${runner.service}" with offering "${runner.offering}"`,
+    });
+    return;
+  }
+
+  const serviceCandidates = API_PROVIDER_DESCRIPTORS.filter(
+    (descriptor) => descriptor.service === runner.service,
+  );
+  if (
+    serviceCandidates.length > 0 &&
+    !serviceCandidates.some((candidate) => candidate.offering === runner.offering)
+  ) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['offering'],
+      message: `API service "${runner.service}" does not provide offering "${runner.offering}"`,
+    });
+  }
+}
+
+function validateCliModelPolicy(role: RunnerRole, input: unknown, ctx: z.RefinementCtx): void {
+  const runner = narrowRecord(input);
+  if (!runner || runner.kind !== 'cli' || typeof runner.tool !== 'string') return;
+
+  const descriptor = Object.values(CLI_TOOL_CATALOG).find(({ id }) => id === runner.tool);
+  if (descriptor === undefined) return;
+
+  const selection = {
+    model: typeof runner.model === 'string' ? runner.model : undefined,
+    customModels: Array.isArray(runner.customModels)
+      ? runner.customModels.filter((model): model is string => typeof model === 'string')
+      : undefined,
+  };
+  for (const violation of cliModelPolicyViolations(descriptor.modelPolicy[role], selection)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: [violation.field],
+      message: violation.message,
+    });
+  }
+}
+
+function validateCliAuthChannel(input: unknown, ctx: z.RefinementCtx): void {
+  const runner = narrowRecord(input);
+  if (
+    !runner ||
+    runner.kind !== 'cli' ||
+    typeof runner.tool !== 'string' ||
+    typeof runner.authChannel !== 'string'
+  ) {
+    return;
+  }
+
+  const descriptor = Object.values(CLI_TOOL_CATALOG).find(({ id }) => id === runner.tool);
+  if (descriptor?.auth.channels.some(({ id }) => id === runner.authChannel)) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['authChannel'],
+    message: `CLI tool "${runner.tool}" does not support auth channel "${runner.authChannel}"`,
+  });
+}
+
+export function createCliModelPolicySchema(policy: CliModelPolicy) {
+  return z
+    .strictObject({
+      model: z.string().min(1).optional(),
+      customModels: z.array(z.string()).optional(),
+    })
+    .superRefine((selection, ctx) => {
+      for (const violation of cliModelPolicyViolations(policy, selection)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [violation.field],
+          message: violation.message,
+        });
+      }
+    });
+}
 
 const PlannerCapabilitiesField = {
   capabilities: PlannerCapabilitiesSchema.partial().optional(),
@@ -100,19 +293,10 @@ type RunnerKindCapabilities = {
   usesArgsOutputFormat: boolean;
   usesApiKey: boolean;
   requiresCommand: boolean;
-  trust: RunnerRoleTrustMetadata;
+  // Non-CLI kinds expose one role map. CLI trust is keyed by the catalog tool
+  // because permission flags and posture are tool-specific.
+  trust: RunnerRoleTrustMetadata | typeof CLI_TOOL_TRUST;
 };
-
-export type RunnerTrustMetadata = {
-  executesLocalCommand: boolean;
-  mayUseNetwork: boolean;
-  mayWriteFilesDirectly: boolean;
-  autoAllowFlags: readonly string[];
-};
-
-export type RunnerRole = 'planner' | 'implementer';
-
-export type RunnerRoleTrustMetadata = Record<RunnerRole, RunnerTrustMetadata>;
 
 type RunnerTrustConfig = { kind: 'cli'; tool: CliToolId } | { kind: Exclude<RunnerKind, 'cli'> };
 
@@ -120,20 +304,6 @@ const API_TRUST: RunnerTrustMetadata = {
   executesLocalCommand: false,
   mayUseNetwork: true,
   mayWriteFilesDirectly: false,
-  autoAllowFlags: [],
-};
-
-const CLI_PLANNER_TRUST: RunnerTrustMetadata = {
-  executesLocalCommand: true,
-  mayUseNetwork: true,
-  mayWriteFilesDirectly: false,
-  autoAllowFlags: [],
-};
-
-const CLI_IMPLEMENTER_TRUST: RunnerTrustMetadata = {
-  executesLocalCommand: true,
-  mayUseNetwork: true,
-  mayWriteFilesDirectly: true,
   autoAllowFlags: [],
 };
 
@@ -158,33 +328,13 @@ const AGENT_SDK_IMPLEMENTER_TRUST: RunnerTrustMetadata = {
   autoAllowFlags: [],
 };
 
-const cliToolTrust = (implementerAutoAllowFlags: readonly string[]): RunnerRoleTrustMetadata => ({
-  planner: CLI_PLANNER_TRUST,
-  implementer: {
-    ...CLI_IMPLEMENTER_TRUST,
-    autoAllowFlags: implementerAutoAllowFlags,
-  },
-});
-
-export const CLI_TOOL_TRUST = {
-  'claude-code': cliToolTrust(['--permission-mode acceptEdits']),
-  codex: cliToolTrust(['--sandbox workspace-write']),
-  opencode: cliToolTrust([]),
-  aider: cliToolTrust(['--yes-always']),
-  copilot: cliToolTrust(['--allow-all']),
-  'kilo-code': cliToolTrust(['--auto']),
-} as const satisfies Record<CliToolId, RunnerRoleTrustMetadata>;
-
 export const RUNNER_DESCRIPTORS = {
   cli: {
     fields: CliRunnerFields,
     usesArgsOutputFormat: true,
     usesApiKey: false,
     requiresCommand: false,
-    trust: {
-      planner: CLI_PLANNER_TRUST,
-      implementer: CLI_IMPLEMENTER_TRUST,
-    },
+    trust: CLI_TOOL_TRUST,
   },
   api: {
     fields: ApiRunnerFields,
@@ -244,33 +394,53 @@ export function getRunnerTrustMeta(
 }
 
 export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
+  const { model: _requiredModel, ...cliCommonFields } = commonFields;
   return z
     .discriminatedUnion('kind', [
-      z.strictObject({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }),
-      z.strictObject({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }),
-      z.strictObject({ ...RUNNER_DESCRIPTORS.shell.fields, ...commonFields }),
-      z.strictObject({ ...RUNNER_DESCRIPTORS.agent.fields, ...commonFields }),
-      z.strictObject({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }),
+      z.strictObject({
+        ...cliCommonFields,
+        ...ImplementerCliRunnerFields,
+        model: z.string().min(1).optional(),
+      }),
+      z.strictObject({ ...commonFields, ...ImplementerApiRunnerFields }),
+      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS.shell.fields }),
+      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS.agent.fields }),
+      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS['agent-sdk'].fields }),
     ])
+    .superRefine((input, ctx) => {
+      validateApiIdentity(input, ctx);
+      validateCliModelPolicy('implementer', input, ctx);
+      validateCliAuthChannel(input, ctx);
+    })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
 }
 
 export function createPlannerConfigSchema<C extends z.ZodRawShape>(commonFields: C) {
+  const { model: _configuredModel, ...cliCommonFields } = commonFields;
   return z
     .discriminatedUnion('kind', [
-      z.strictObject({ ...RUNNER_DESCRIPTORS.cli.fields, ...commonFields }),
-      z.strictObject({ ...RUNNER_DESCRIPTORS.api.fields, ...commonFields }),
       z.strictObject({
+        ...cliCommonFields,
+        ...PlannerCliRunnerFields,
+        model: z.string().min(1).optional(),
+      }),
+      z.strictObject({ ...commonFields, ...PlannerApiRunnerFields }),
+      z.strictObject({
+        ...commonFields,
         ...RUNNER_DESCRIPTORS.shell.fields,
         ...PlannerCapabilitiesField,
-        ...commonFields,
       }),
       z.strictObject({
+        ...commonFields,
         ...RUNNER_DESCRIPTORS.agent.fields,
         ...PlannerCapabilitiesField,
-        ...commonFields,
       }),
-      z.strictObject({ ...RUNNER_DESCRIPTORS['agent-sdk'].fields, ...commonFields }),
+      z.strictObject({ ...commonFields, ...RUNNER_DESCRIPTORS['agent-sdk'].fields }),
     ])
+    .superRefine((input, ctx) => {
+      validateApiIdentity(input, ctx);
+      validateCliModelPolicy('planner', input, ctx);
+      validateCliAuthChannel(input, ctx);
+    })
     .refine(idleThresholdsOrdered, IDLE_THRESHOLD_ORDER);
 }

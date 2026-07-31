@@ -2,10 +2,24 @@ import type { z } from 'zod';
 import type { ProviderDefWithMetadata, ProviderOverrides } from '../types.js';
 import type { DetectedModel } from '../../../core/discovery/detection.js';
 import { warnError } from '../../../lib/warn.js';
+import { error as createError } from '../../../utils/error.js';
 import { createProviderShell } from './shell.js';
 import { resolveApiKeyOverride } from './api-key.js';
 import { validateProviderBaseURL } from './connection.js';
-import { extractOpenAIModelList, fetchModelList, isOpenAIModelList } from './request.js';
+import {
+  extractOpenAIModelList,
+  fetchModelList,
+  isOpenAIModelList,
+  sanitizeProviderDiagnostic,
+} from './request.js';
+import {
+  createEndpointPolicyFetch,
+  endpointPolicyFetch,
+  normalizeProviderEndpoint,
+  type EndpointPolicy,
+  type EndpointPolicyFetchOwner,
+} from '../../../core/providers/endpoint-policy.js';
+import { API_PROVIDER_CATALOG } from '../../../core/providers/api-provider-catalog.js';
 
 export interface MetadataProviderOpts<TRaw extends { id: string }> {
   name: string;
@@ -20,13 +34,48 @@ export interface MetadataProviderOpts<TRaw extends { id: string }> {
   modelsUrl?: (baseURL: string) => string;
   headers?: (apiKey: string) => Record<string, string>;
   extractModels?: (data: unknown) => TRaw[] | null;
+  /**
+   * Candidate modules may supply their own endpoint policy before they resolve
+   * any credential. Known providers use the catalog policy by default.
+   */
+  endpointPolicy?: EndpointPolicy;
+}
+
+function catalogEndpointPolicy(name: string): EndpointPolicy | undefined {
+  const descriptor = Object.values(API_PROVIDER_CATALOG).find((entry) => entry.id === name);
+  return descriptor?.endpointPolicy;
+}
+
+function resolveEndpointPolicy(
+  opts: Pick<MetadataProviderOpts<{ id: string }>, 'name' | 'endpointPolicy'>,
+  requestedBaseURL: string,
+): EndpointPolicy | undefined {
+  const catalogPolicy = catalogEndpointPolicy(opts.name);
+  if (catalogPolicy !== undefined) return catalogPolicy;
+  if (opts.endpointPolicy !== undefined) return opts.endpointPolicy;
+
+  // A legacy/unknown provider has no catalog identity to borrow. Validate its
+  // explicit URL before credential resolution and retain the origin lock, but
+  // preserve the existing custom-provider support for an explicitly configured
+  // HTTP endpoint. Candidate modules should provide their declared policy.
+  validateProviderBaseURL(requestedBaseURL);
+  return undefined;
 }
 
 export function createMetadataProvider<TRaw extends { id: string }>(
   opts: MetadataProviderOpts<TRaw>,
   overrides?: ProviderOverrides,
-): ProviderDefWithMetadata {
-  const baseURL = validateProviderBaseURL(overrides?.apiBase ?? opts.defaultBaseURL);
+): ProviderDefWithMetadata & EndpointPolicyFetchOwner {
+  const requestedBaseURL = overrides?.apiBase ?? opts.defaultBaseURL;
+  const endpointPolicy = resolveEndpointPolicy(opts, requestedBaseURL);
+  const baseURL =
+    endpointPolicy === undefined
+      ? validateProviderBaseURL(requestedBaseURL)
+      : normalizeProviderEndpoint(endpointPolicy, requestedBaseURL);
+  const policyFetch = createEndpointPolicyFetch(baseURL);
+
+  // Endpoint validation intentionally precedes this call. An invalid endpoint
+  // must fail closed before an env: reference can read a credential.
   const resolvedApiKey = resolveApiKeyOverride(overrides?.apiKey);
   const shell = createProviderShell({ name: opts.name, baseURL, isLocal: opts.isLocal });
   const apiKey = (): string =>
@@ -49,11 +98,32 @@ export function createMetadataProvider<TRaw extends { id: string }>(
   async function fetchModels(): Promise<TRaw[]> {
     const key = apiKey();
     if (!opts.isLocal && !key) return [];
-    const headers = opts.headers ? opts.headers(key) : undefined;
+    let headers: Record<string, string> | undefined;
+    try {
+      headers = opts.headers ? opts.headers(key) : undefined;
+    } catch (error) {
+      const diagnostic = sanitizeProviderDiagnostic(error, {
+        credentialValues: key ? [key] : undefined,
+      });
+      shell.trackError(diagnostic);
+      throw createError('provider-header-callback-failed', diagnostic, {
+        provider: opts.name,
+        diagnostic,
+      });
+    }
     return fetchModelList({
       endpoint: getUrl(),
+      fetch: policyFetch,
       ...(headers ? { headers } : { apiKey: !opts.isLocal && key ? key : undefined }),
-      onError: shell.trackError,
+      onError: (message) =>
+        shell.trackError(
+          message === undefined
+            ? undefined
+            : sanitizeProviderDiagnostic(message, {
+                credentialValues: key ? [key] : undefined,
+                headers,
+              }),
+        ),
       extractModels,
     });
   }
@@ -62,6 +132,7 @@ export function createMetadataProvider<TRaw extends { id: string }>(
   const getContextLength = opts.contextLength ?? (() => null);
 
   return {
+    [endpointPolicyFetch]: policyFetch,
     name: opts.name,
     baseURL,
     apiKey,
@@ -84,7 +155,10 @@ export function createMetadataProvider<TRaw extends { id: string }>(
         const entry = models.find((m) => m.id === model);
         return entry ? getContextLength(entry) : null;
       } catch (error) {
-        warnError(`detectContextLength(${opts.name})`, error);
+        warnError(
+          `detectContextLength(${opts.name})`,
+          sanitizeProviderDiagnostic(error, { credentialValues: [apiKey()] }),
+        );
         return null;
       }
     },

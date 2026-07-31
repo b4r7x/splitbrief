@@ -2,6 +2,11 @@ import OpenAI from 'openai';
 import { validateApiBaseUrl } from '../../../core/providers/validate-api-base.js';
 import type { ProviderDef } from '../types.js';
 import { providerError } from '../errors.js';
+import {
+  endpointPolicyError,
+  endpointPolicyFetch,
+  type EndpointPolicyFetchOwner,
+} from '../../../core/providers/endpoint-policy.js';
 
 export function validateProviderBaseURL(baseURL: string): string {
   try {
@@ -14,5 +19,22 @@ export function validateProviderBaseURL(baseURL: string): string {
 }
 
 export function createClientFromProvider(provider: ProviderDef): OpenAI {
-  return new OpenAI({ baseURL: provider.baseURL, apiKey: provider.apiKey() });
+  const fetch = hasEndpointPolicyFetch(provider) ? provider[endpointPolicyFetch] : undefined;
+  if (fetch === undefined) {
+    // OpenAI's default fetch follows redirects itself. A provider without the
+    // policy-owned transport must never reach that path with credentials.
+    throw endpointPolicyError.unsupported();
+  }
+
+  return new OpenAI({
+    baseURL: provider.baseURL,
+    apiKey: provider.apiKey(),
+    fetch,
+  });
+}
+
+function hasEndpointPolicyFetch(
+  provider: ProviderDef,
+): provider is ProviderDef & EndpointPolicyFetchOwner {
+  return endpointPolicyFetch in provider;
 }

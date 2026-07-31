@@ -102,4 +102,17 @@ describe('createLineBuffer', () => {
     expect(overflows).toEqual([20]);
     expect(lines).toEqual(['ok']);
   });
+
+  it('returns the first callback signal from a chunk or flush', () => {
+    const lineSignal = { state: 'line' };
+    const overflowSignal = { state: 'overflow' };
+    const buffer = createLineBuffer((line) => (line === 'stop' ? lineSignal : undefined), {
+      maxLineBytes: 8,
+      onOverflow: () => overflowSignal,
+    });
+
+    expect(buffer.push('ok\nstop\nlater\n')).toBe(lineSignal);
+    expect(buffer.push('x'.repeat(20))).toBe(overflowSignal);
+    expect(buffer.flush()).toBeUndefined();
+  });
 });

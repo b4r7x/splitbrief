@@ -6,7 +6,7 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
-import type { Implementer } from '../../implementers/types.js';
+import type { Implementer, ImplementerFactoryOptions } from '../../implementers/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
@@ -54,6 +54,7 @@ import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation/run.js';
 import { rejectUntrustedRunners } from '../../runners/trust.js';
+import { cliStartGateFor, type CliStartGates } from '../../runners/start-gate.js';
 
 const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
 
@@ -105,6 +106,8 @@ export type RunWorkflowOptions = {
   modelCache?: ModelCacheAccessor | undefined;
   /** Implementer context length sourced from boot provider detection (not explicit config/CLI/env). Injected from composition layer. */
   detectedContextLength?: number | undefined;
+  /** Canonical trusted CLI identities emitted by the start-readiness gate. */
+  trustedCliGates?: CliStartGates | undefined;
   /** Drains pending attachments from the store — injected from composition layer. */
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   streamingSink?: StreamingSink | undefined;
@@ -201,7 +204,15 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
-  const planner = opts._planner ?? (await createPlanner(config, initialSessionId));
+  const plannerStartGate =
+    opts._planner === undefined && config.planner.kind === 'cli'
+      ? cliStartGateFor(config.planner.tool, opts.trustedCliGates)
+      : undefined;
+  const planner =
+    opts._planner ??
+    (await createPlanner(config, initialSessionId, {
+      ...(plannerStartGate !== undefined && { trustedCli: plannerStartGate }),
+    }));
   if (savedState && !hasPendingRecovery) {
     savedState = await autoCompactResumeContext({
       projectDir,
@@ -241,9 +252,23 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }
   }
 
+  const createImplementerWithStartGate = async (
+    runnerConfig: Config,
+    factoryOptions: ImplementerFactoryOptions = {},
+  ): Promise<Implementer> => {
+    const trustedCli =
+      runnerConfig.implementer.kind === 'cli'
+        ? (factoryOptions.trustedCli ??
+          cliStartGateFor(runnerConfig.implementer.tool, opts.trustedCliGates))
+        : undefined;
+    return createImplementer(runnerConfig, {
+      ...factoryOptions,
+      ...(trustedCli !== undefined && { trustedCli }),
+    });
+  };
   const implementer =
     opts._implementer ??
-    (await createImplementer(config, {
+    (await createImplementerWithStartGate(config, {
       publisher: createImplementerPublisher(bus),
       allowRepoRunners: opts.allowRepoRunners ?? false,
     }));
@@ -323,6 +348,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     planner,
     context,
     implementer,
+    createImplementer: createImplementerWithStartGate,
     allowRepoRunners: opts.allowRepoRunners ?? false,
     signal: opts.signal,
     metadata,

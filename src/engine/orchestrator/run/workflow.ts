@@ -477,6 +477,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             return;
           }
         } catch (err) {
+          await killAllProcesses();
           const persistedRewindState = loadPersistedRewindState({
             projectDir,
             sessionId,
@@ -496,7 +497,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
                 );
             }
           }
-          killAllProcesses();
           if (opts.signal?.aborted) {
             sessionStatus = 'interrupted';
           } else {

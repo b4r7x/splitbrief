@@ -17,6 +17,7 @@ import { applyWorktreeOption, rollbackCreatedWorktree } from './worktree.js';
 import { runDetachedStart } from './detached.js';
 import { runJsonStart, runRpcStart } from './streaming.js';
 import { runInteractiveStart } from './interactive.js';
+import { detectConfiguredCliReadiness } from './readiness.js';
 import type { StartDeps } from './types.js';
 
 const defaultStartDeps: StartDeps = {
@@ -25,6 +26,7 @@ const defaultStartDeps: StartDeps = {
   runRpc,
   initStores,
   renderApp,
+  detectCliReadiness: detectConfiguredCliReadiness,
 };
 
 export function registerStartCommand(program: Command, deps: StartDeps = defaultStartDeps): void {

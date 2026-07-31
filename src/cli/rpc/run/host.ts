@@ -5,6 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { Planner } from '../../../engine/planners/types.js';
 import type { Implementer } from '../../../engine/implementers/types.js';
+import type { CliStartGates } from '../../../engine/runners/start-gate.js';
 import type { ClearQueueHandler, QueueHandler } from '../../../engine/orchestrator/types.js';
 import {
   runWorkflow,
@@ -48,6 +49,7 @@ export interface RunRpcOptions {
   planner?: Planner | undefined;
   implementer?: Implementer | undefined;
   plannerContext?: string | undefined;
+  trustedCliGates?: CliStartGates | undefined;
   deps?: RunRpcDeps | undefined;
 }
 
@@ -77,6 +79,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     planner,
     implementer,
     plannerContext,
+    trustedCliGates,
     deps = {},
   } = options;
   installTerminalOutputErrorGuard();
@@ -291,6 +294,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         sessionId: activeSessionId,
         _planner: planner,
         _implementer: implementer,
+        trustedCliGates,
         ...(rewindFeedbackForRun !== undefined && { rewindFeedback: rewindFeedbackForRun }),
         ...(retryProfileOverride !== undefined && { retryProfileOverride }),
         ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),

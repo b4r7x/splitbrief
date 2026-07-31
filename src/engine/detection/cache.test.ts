@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CLI_TOOLS } from '../runners/cli-tools.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -21,17 +22,22 @@ describe('detection cache', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  const planners = [
+  const cliTools: CliToolDetection[] = [
     {
-      tool: 'claude-code' as const,
-      type: 'cli' as const,
-      available: true,
-      description: 'Claude Code CLI',
+      tool: 'claude-code',
+      executable: null,
+      trust: 'trusted',
+      installedVersion: CLI_TOOLS['claude-code'].testedVersion,
+      testedVersion: CLI_TOOLS['claude-code'].testedVersion,
+      compatibility: 'compatible',
+      auth: 'authenticated',
+      diagnostic: { state: 'ready', remediation: null },
+      probedAt: 1_700_000_000_000,
     },
   ];
-  const implementers = [
+  const providers: ProviderDetection[] = [
     {
-      provider: 'ollama' as const,
+      provider: 'ollama',
       available: true,
       isLocal: true,
       models: [{ id: 'qwen2.5-coder:7b' }],
@@ -44,28 +50,39 @@ describe('detection cache', () => {
   });
 
   it('roundtrips the complete detection payload', async () => {
-    const planners = [
+    const cliTools: CliToolDetection[] = [
       {
-        tool: 'codex' as const,
-        type: 'cli' as const,
-        available: true,
-        version: '9.0.0',
-        compatibility: {
-          kind: 'major-version-mismatch' as const,
-          installedVersion: '9.0.0',
-          testedVersion: CLI_TOOLS.codex.testedVersion,
+        tool: 'codex',
+        executable: {
+          path: join(tmpdir(), 'codex'),
+          fingerprint: {
+            dev: 1,
+            ino: 2,
+            size: 3,
+            mtimeMs: 4,
+          },
         },
+        trust: 'trusted',
+        installedVersion: '9.0.0',
+        testedVersion: CLI_TOOLS.codex.testedVersion,
+        compatibility: 'incompatible',
+        auth: 'authenticated',
+        diagnostic: {
+          state: 'incompatible',
+          remediation: `Install Codex ${CLI_TOOLS.codex.testedVersion}`,
+        },
+        probedAt: 1_700_000_000_000,
       },
     ];
-    const implementers = [
+    const providers: ProviderDetection[] = [
       {
-        provider: 'ollama' as const,
+        provider: 'ollama',
         available: false,
         isLocal: true,
         error: 'connection refused',
       },
       {
-        provider: 'openrouter' as const,
+        provider: 'openrouter',
         available: true,
         isLocal: false,
         models: [
@@ -77,6 +94,28 @@ describe('detection cache', () => {
             pricingOutput: 15,
             pricingCacheRead: 0.3,
             pricingCacheWrite: 3.75,
+            pricingTiers: [
+              {
+                type: 'context',
+                thresholdTokens: 0,
+                inputPer1M: 3,
+                outputPer1M: 15,
+                cacheReadPer1M: 0.3,
+                cacheWritePer1M: 3.75,
+              },
+              {
+                type: 'context',
+                thresholdTokens: 200_000,
+                inputPer1M: 6,
+                outputPer1M: 22.5,
+                cacheReadPer1M: 0.6,
+                cacheWritePer1M: 7.5,
+              },
+            ],
+            pricingProvenance: {
+              asOf: '2026-07-31',
+              source: 'test fixture pricing record',
+            },
             isFree: false,
             supportsTemperature: true,
             supportsReasoning: false,
@@ -87,19 +126,24 @@ describe('detection cache', () => {
         ],
       },
     ];
-    await saveDetectionCache(tempDir, planners, implementers);
+    await saveDetectionCache(tempDir, providers, cliTools);
     const result = await loadDetectionCache(tempDir, 60_000);
-    expect(result).toEqual({ planners, implementers });
+    expect(result).toEqual({ providers, cliTools });
+
+    const loadedTier = result?.providers[1]?.models?.[0]?.pricingTiers?.[0];
+    if (!loadedTier) throw new Error('Expected cached pricing tier');
+    loadedTier.inputPer1M = 99;
+    expect(providers[1]?.models?.[0]?.pricingTiers?.[0]?.inputPer1M).toBe(3);
   });
 
   it('returns null when cache is expired (TTL=0)', async () => {
-    await saveDetectionCache(tempDir, planners, implementers);
+    await saveDetectionCache(tempDir, providers, cliTools);
     const result = await loadDetectionCache(tempDir, 0);
     expect(result).toBeNull();
   });
 
   it('returns data when cache is within TTL', async () => {
-    await saveDetectionCache(tempDir, planners, implementers);
+    await saveDetectionCache(tempDir, providers, cliTools);
     const result = await loadDetectionCache(tempDir, 60_000);
     expect(result).not.toBeNull();
   });
@@ -115,7 +159,7 @@ describe('detection cache', () => {
   it('roundtrips empty arrays', async () => {
     await saveDetectionCache(tempDir, [], []);
     const result = await loadDetectionCache(tempDir, 60_000);
-    expect(result).toEqual({ planners: [], implementers: [] });
+    expect(result).toEqual({ providers: [], cliTools: [] });
   });
 
   itUnix('returns null when .splitbrief is a symlink outside the project', async () => {
@@ -126,10 +170,10 @@ describe('detection cache', () => {
       writeFileSync(
         join(outside, 'detection-cache.json'),
         JSON.stringify({
-          version: 1,
+          version: 2,
           timestamp: Date.now(),
-          planners,
-          implementers,
+          providers,
+          cliTools,
         }),
       );
       symlinkSync(outside, join(projectDir, SPLITBRIEF_DIR));
@@ -142,21 +186,45 @@ describe('detection cache', () => {
   });
 
   it('includes version in saved cache', async () => {
-    await saveDetectionCache(tempDir, planners, implementers);
+    await saveDetectionCache(tempDir, providers, cliTools);
     const raw = await readFile(join(tempDir, '.splitbrief', 'detection-cache.json'), 'utf-8');
     const parsed = JSON.parse(raw);
-    expect(parsed.version).toBe(1);
+    expect(parsed.version).toBe(2);
+  });
+
+  it('rejects version 1 cache data', async () => {
+    const dir = join(tempDir, '.splitbrief');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'detection-cache.json'),
+      JSON.stringify({ version: 1, timestamp: Date.now(), providers, cliTools }),
+      'utf-8',
+    );
+
+    await expect(loadDetectionCache(tempDir, 60_000)).resolves.toBeNull();
+  });
+
+  it('rejects planner and implementer field aliases', async () => {
+    const dir = join(tempDir, '.splitbrief');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'detection-cache.json'),
+      JSON.stringify({ version: 2, timestamp: Date.now(), planners: [], implementers: [] }),
+      'utf-8',
+    );
+
+    await expect(loadDetectionCache(tempDir, 60_000)).resolves.toBeNull();
   });
 
   it('does not throw when save target is read-only', async () => {
     await expect(
-      saveDetectionCache('/nonexistent/readonly/path', planners, implementers),
+      saveDetectionCache('/nonexistent/readonly/path', providers, cliTools),
     ).resolves.toBeUndefined();
   });
 
   describe('invalidateCache', () => {
     it('removes existing cache file', async () => {
-      await saveDetectionCache(tempDir, planners, implementers);
+      await saveDetectionCache(tempDir, providers, cliTools);
       const before = await loadDetectionCache(tempDir, 60_000);
       expect(before).not.toBeNull();
 

@@ -95,6 +95,8 @@ describe('planner estimate review packet', () => {
           'cheap-worker': {
             kind: 'api' as const,
             provider: 'deepseek',
+            service: 'deepseek' as const,
+            offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             model: 'deepseek-chat',
             contextLength: 20_000,

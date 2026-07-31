@@ -1,6 +1,6 @@
-export type LineBufferOptions = {
+export type LineBufferOptions<T = void> = {
   maxLineBytes?: number | undefined;
-  onOverflow?: ((overflow: LineBufferOverflow) => void) | undefined;
+  onOverflow?: ((overflow: LineBufferOverflow) => T) | undefined;
 };
 
 export interface LineBufferOverflow {
@@ -9,21 +9,27 @@ export interface LineBufferOverflow {
   readonly truncated: true;
 }
 
-export function createLineBuffer(
-  onLine: (line: string) => void,
-  options: LineBufferOptions = {},
+export function createLineBuffer<T = void>(
+  onLine: (line: string) => T,
+  options: LineBufferOptions<T> = {},
 ): {
-  push(chunk: string): void;
-  flush(): void;
+  push(chunk: string): T | undefined;
+  flush(): T | undefined;
 } {
   let buffer = '';
   let skipping = false;
+  let callbackResult: T | undefined;
+  const captureResult = (result: T | undefined) => {
+    if (callbackResult === undefined && result !== undefined) callbackResult = result;
+  };
   const emitOverflow = (lineBytes: number, maxLineBytes: number) => {
-    options.onOverflow?.({
-      lineBytes,
-      maxLineBytes,
-      truncated: true,
-    });
+    captureResult(
+      options.onOverflow?.({
+        lineBytes,
+        maxLineBytes,
+        truncated: true,
+      }),
+    );
   };
 
   const discardOversizedTail = (maxLineBytes: number) => {
@@ -36,9 +42,10 @@ export function createLineBuffer(
 
   return {
     push(chunk: string) {
+      callbackResult = undefined;
       if (skipping) {
         const newlineIndex = chunk.indexOf('\n');
-        if (newlineIndex === -1) return;
+        if (newlineIndex === -1) return callbackResult;
         skipping = false;
         buffer = chunk.slice(newlineIndex + 1);
       } else {
@@ -54,7 +61,7 @@ export function createLineBuffer(
         const line = buffer.slice(0, newlineIndex);
         buffer = buffer.slice(newlineIndex + 1);
         if (maxLineBytes === undefined) {
-          onLine(line);
+          captureResult(onLine(line));
           continue;
         }
 
@@ -64,27 +71,30 @@ export function createLineBuffer(
           continue;
         }
 
-        onLine(line);
+        captureResult(onLine(line));
       }
 
       if (maxLineBytes !== undefined && discardOversizedTail(maxLineBytes)) {
         skipping = true;
       }
+      return callbackResult;
     },
     flush() {
+      callbackResult = undefined;
       if (skipping) {
         skipping = false;
-        return;
+        return callbackResult;
       }
 
       const maxLineBytes = options.maxLineBytes;
       if (maxLineBytes !== undefined && discardOversizedTail(maxLineBytes)) {
-        return;
+        return callbackResult;
       }
 
-      if (!buffer) return;
-      onLine(buffer);
+      if (!buffer) return callbackResult;
+      captureResult(onLine(buffer));
       buffer = '';
+      return callbackResult;
     },
   };
 }

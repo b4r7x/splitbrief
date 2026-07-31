@@ -14,13 +14,17 @@ export async function runInteractiveStart(args: DispatchArgs): Promise<void> {
 
   let sessionId: string | undefined;
   let readiness: Awaited<ReturnType<typeof bootstrapSession>>['readiness'] | undefined;
+  let trustedCliGates: Awaited<ReturnType<typeof bootstrapSession>>['trustedCliGates'] | undefined;
   if (feature && !needsSetup) {
-    ({ sessionId, readiness } = await bootstrapSession({
+    ({ sessionId, readiness, trustedCliGates } = await bootstrapSession({
       projectDir,
       feature,
       opts,
       assertJson: false,
       emitReadiness: () => {},
+      ...(deps.detectCliReadiness !== undefined && {
+        detectCliReadiness: deps.detectCliReadiness,
+      }),
     }));
   } else {
     clearStaleSessionForCli(projectDir);
@@ -50,6 +54,7 @@ export async function runInteractiveStart(args: DispatchArgs): Promise<void> {
       sessionId,
       worktreeName: worktreeName ?? undefined,
       readiness: readiness ? readiness.report : undefined,
+      trustedCliGates,
     });
   }
 

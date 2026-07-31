@@ -104,6 +104,22 @@ describe('config defaults', () => {
       expect((workflow.git as Record<string, unknown>).commit_strategy).toBe('none');
     });
 
+    it('serializes the default API identity and loads it unchanged', () => {
+      const dir = join(TMP, 'default-api-identity');
+      mkdirSync(dir, { recursive: true });
+      initConfig(dir);
+
+      const written = YAML.parse(
+        readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
+      ) as Record<string, unknown>;
+      expect(written.implementer).toMatchObject({
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+      });
+      expect(loadConfig(dir).config).toEqual(createDefaultConfig());
+    });
+
     it('accepts and preserves a user-supplied sessions.scope for forward-compat', () => {
       const dir = join(TMP, 'sessions-scope-forward-compat');
       writeConfigYaml(dir, {

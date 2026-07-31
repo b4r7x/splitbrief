@@ -22,6 +22,8 @@ function profile(
     config: {
       kind: 'api',
       provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       apiBase: 'http://localhost:11434/v1',
       model: name,
       ...(contextLength !== undefined ? { contextLength } : {}),
@@ -42,6 +44,8 @@ function openRouterProfile(
     config: {
       kind: 'api',
       provider: 'openrouter',
+      service: 'openrouter',
+      offering: 'payg',
       apiBase: 'https://openrouter.ai/api/v1',
       model: name,
       ...(contextLength !== undefined ? { contextLength } : {}),
@@ -63,6 +67,8 @@ function customApiProfile(
     config: {
       kind: 'api',
       provider: 'custom-cloud',
+      service: 'custom-cloud',
+      offering: 'payg',
       apiBase: 'https://custom.example/v1',
       model: name,
       ...(apiKey !== undefined ? { apiKey } : {}),
@@ -376,6 +382,8 @@ describe('routeTaskToImplementerProfile', () => {
       config: {
         kind: 'api',
         provider: 'deepseek',
+        service: 'deepseek',
+        offering: 'payg',
         apiBase: 'https://api.deepseek.com/v1',
         apiKey: 'test-key',
         model: 'runtime-only',

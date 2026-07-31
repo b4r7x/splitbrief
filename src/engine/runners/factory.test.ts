@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { realpathSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createImplementer, createPlanner } from './factory.js';
+import type { CliStartGate } from './start-gate.js';
 
 function withPlanner(planner: Config['planner']): Config {
   return { ...makeConfig(), planner };
@@ -25,6 +28,8 @@ describe('createPlanner', () => {
       withPlanner({
         kind: 'api',
         provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
         apiBase: 'http://localhost:11434/v1',
         model: 'test',
       }),
@@ -50,6 +55,8 @@ describe('createPlanner', () => {
     const config = withPlanner({
       kind: 'api',
       provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       apiBase: 'http://localhost:11434/v1',
       model: 'test',
       effort: 'high',
@@ -81,6 +88,8 @@ describe('createPlanner', () => {
     const config = withPlanner({
       kind: 'api',
       provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       apiBase: 'http://localhost:11434/v1',
       model: 'test',
       temperature: 0.7,
@@ -117,10 +126,20 @@ describe('createPlanner', () => {
       const config = withPlanner({
         kind: 'cli',
         tool: 'claude-code',
+        authChannel: 'session',
         model: 'test',
         idleWarnMs: 30,
       });
-      const planner = await createPlanner(config);
+      const path = realpathSync(join(shimDir, 'claude'));
+      const info = statSync(path);
+      const trustedCli: CliStartGate = {
+        tool: 'claude-code',
+        executable: {
+          path,
+          fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+        },
+      };
+      const planner = await createPlanner(config, undefined, { trustedCli });
 
       const events: RunnerCallEvent[] = [];
       const result = await planner.review('prompt', shimDir, {
@@ -136,12 +155,17 @@ describe('createPlanner', () => {
 
 describe('createImplementer', () => {
   it.each([
-    ['CLI implementer', withImplementer({ kind: 'cli', tool: 'codex', model: 'test' })],
+    [
+      'CLI implementer',
+      withImplementer({ kind: 'cli', tool: 'codex', authChannel: 'session', model: 'test' }),
+    ],
     [
       'API implementer',
       withImplementer({
         kind: 'api',
         provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
         apiBase: 'http://localhost:11434/v1',
         model: 'test',
       }),
@@ -167,6 +191,7 @@ describe('createImplementer', () => {
     const config = withImplementer({
       kind: 'cli',
       tool: 'codex',
+      authChannel: 'session',
       model: 'test',
       temperature: 0.3,
     });
@@ -182,6 +207,8 @@ describe('createImplementer', () => {
     const config = withImplementer({
       kind: 'api',
       provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
       apiBase: 'http://localhost:11434/v1',
       model: 'test',
       temperature: 0.3,

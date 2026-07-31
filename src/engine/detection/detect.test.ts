@@ -1,142 +1,243 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
-import { detectAvailablePlanners } from './detect.js';
-import { CLI_TOOLS } from '../runners/cli-tools.js';
-import type { Config } from '../../core/schemas/config.js';
-import type { CliToolId } from '../../core/schemas/enums.js';
-import type { Planner } from '../planners/types.js';
+import { describe, expect, it, vi } from 'vitest';
+import type {
+  CliExecutableIdentity,
+  CliToolDetection,
+  ProviderDetection,
+} from '../../core/discovery/detection.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import { deriveCliReadiness } from '../../core/schemas/readiness.js';
+import { error } from '../../utils/error.js';
+import type { ProbeCliReadinessOptions } from '../runners/cli-tools/readiness-probe.js';
+import { detectAll, detectAvailableCliReadiness, detectAvailableCliTools } from './detect.js';
 
-type PlannerFactory = (config: Config) => Promise<Planner>;
+const executable: CliExecutableIdentity = {
+  path: '/trusted/bin/tool',
+  fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+};
 
-function makeCliPlannerFactory(opts: {
-  available?: boolean;
-  versions?: Partial<Record<CliToolId, string>>;
-}): PlannerFactory {
-  return async (config) => {
-    if (config.planner.kind !== 'cli') throw new Error('expected cli planner config');
-    const version =
-      opts.versions?.[config.planner.tool] ?? CLI_TOOLS[config.planner.tool].testedVersion;
-    return makePlanner({
-      isAvailable: vi.fn().mockResolvedValue(opts.available ?? true),
-      getVersion: vi.fn().mockResolvedValue(version),
+describe('role-neutral CLI detection', () => {
+  it('detects every catalog CLI once without planner construction', async () => {
+    const resolveExecutable = vi.fn(async () => executable);
+    const probeReadiness = vi.fn(async (options: ProbeCliReadinessOptions) => deriveProbe(options));
+
+    const results = await detectAvailableCliTools({
+      projectDir: '/neutral/project',
+      resolveExecutable,
+      probeReadiness,
+      now: () => 1_700_000_000_000,
     });
-  };
-}
 
-describe('detectAvailablePlanners', () => {
-  const providerResults = [
-    { provider: 'openrouter', available: false, isLocal: false, hasKey: false },
-  ] as const;
-  const createPlanner = makeCliPlannerFactory({ available: false });
-
-  it('shell planner is always available', async () => {
-    const results = await detectAvailablePlanners({
-      providerResults: [...providerResults],
-      createPlanner,
-    });
-    const shell = results.find((r) => r.tool === 'shell');
-    expect(shell).toMatchObject({ type: 'shell', available: true, description: 'Custom command' });
-  });
-
-  it('anthropic API planner available when ANTHROPIC_API_KEY is set', async () => {
-    const orig = process.env.ANTHROPIC_API_KEY;
-    process.env.ANTHROPIC_API_KEY = 'test-key';
-    try {
-      const results = await detectAvailablePlanners({
-        providerResults: [...providerResults],
-        createPlanner,
-      });
-      const anthropic = results.find((r) => r.tool === 'anthropic');
-      expect(anthropic).toMatchObject({
-        available: true,
-        type: 'api',
-        description: 'Anthropic API',
-      });
-    } finally {
-      if (orig === undefined) delete process.env.ANTHROPIC_API_KEY;
-      else process.env.ANTHROPIC_API_KEY = orig;
+    expect(results.map((result) => result.tool)).toEqual(CLI_TOOL_IDS);
+    expect(resolveExecutable).toHaveBeenCalledTimes(CLI_TOOL_IDS.length);
+    expect(probeReadiness).toHaveBeenCalledTimes(CLI_TOOL_IDS.length);
+    for (const [index, tool] of CLI_TOOL_IDS.entries()) {
+      expect(resolveExecutable).toHaveBeenNthCalledWith(
+        index + 1,
+        CLI_TOOL_CATALOG[tool].command,
+        '/neutral/project',
+      );
+      expect(probeReadiness).toHaveBeenNthCalledWith(
+        index + 1,
+        expect.objectContaining({ tool, executable }),
+      );
     }
   });
 
-  it('openrouter API planner not available when /models endpoint returns no data', async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString();
-      if (urlStr.includes('openrouter.ai')) {
-        return new Response(JSON.stringify({ data: [] }), { status: 200 });
-      }
-      return new Response('', { status: 404 });
-    }) as typeof fetch;
-    try {
-      const results = await detectAvailablePlanners({
-        providerResults: [...providerResults],
-        createPlanner,
-      });
-      const openrouter = results.find((r) => r.tool === 'openrouter');
-      expect(openrouter).toMatchObject({
-        available: false,
-        type: 'api',
-        description: 'OpenRouter API',
-      });
-    } finally {
-      globalThis.fetch = originalFetch;
+  it('forwards only explicitly selected auth channels to the probe boundary', async () => {
+    const probeReadiness = vi.fn(async (options: ProbeCliReadinessOptions) => deriveProbe(options));
+
+    await detectAvailableCliTools({
+      resolveExecutable: async () => executable,
+      probeReadiness,
+      authChannels: { codex: 'api-key' },
+      now: () => 42,
+    });
+
+    expect(probeReadiness).toHaveBeenCalledWith(
+      expect.objectContaining({ tool: 'codex', authChannel: 'api-key' }),
+    );
+    for (const call of probeReadiness.mock.calls) {
+      if (call[0].tool !== 'codex') expect(call[0].authChannel).toBeUndefined();
     }
   });
-});
 
-describe('detectAvailablePlanners CLI version matrix', () => {
-  const providerResults = [
-    { provider: 'openrouter', available: false, isLocal: false, hasKey: false },
-  ] as const;
+  it('cannot claim readiness from a probe result when no auth channel was selected', async () => {
+    const [result] = await detectAvailableCliTools({
+      resolveExecutable: async () => executable,
+      probeReadiness: async (options) =>
+        deriveCliReadiness({
+          tool: options.tool,
+          enabled: true,
+          installation: 'installed',
+          executable: options.executable,
+          trust: 'trusted',
+          installedVersion: CLI_TOOL_CATALOG[options.tool].compatibility.testedVersion,
+          testedVersion: CLI_TOOL_CATALOG[options.tool].compatibility.testedVersion,
+          compatibility: 'compatible',
+          auth: 'authenticated',
+          probedAt: options.now?.() ?? 42,
+        }),
+      now: () => 42,
+    });
 
-  let stderr: string;
-  let writeSpy: ReturnType<typeof vi.spyOn>;
+    expect(result).toMatchObject({ auth: 'unknown', diagnostic: { state: 'unverified' } });
+  });
 
-  beforeEach(() => {
-    stderr = '';
-    writeSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
-      stderr += String(chunk);
-      return true;
+  it('keeps unknown authentication explicit and fails readiness closed', async () => {
+    const [result] = await detectAvailableCliTools({
+      resolveExecutable: async () => executable,
+      probeReadiness: async (options) => deriveProbe(options),
+      now: () => 42,
+    });
+
+    expect(result).toMatchObject({
+      executable,
+      trust: 'trusted',
+      installedVersion: CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion,
+      compatibility: 'compatible',
+      auth: 'unknown',
+      diagnostic: {
+        state: 'unverified',
+        remediation: expect.any(String),
+      },
+      probedAt: 42,
     });
   });
 
-  afterEach(() => {
-    writeSpy.mockRestore();
-  });
-
-  it('records version compatibility without writing startup stderr', async () => {
-    const testedMajor = Number(CLI_TOOLS.codex.testedVersion.split('.')[0]);
-    const installed = `${testedMajor + 9}.0.0`;
-    const createPlanner = makeCliPlannerFactory({
-      versions: { codex: installed },
-    });
-
-    const codex = (
-      await detectAvailablePlanners({ providerResults: [...providerResults], createPlanner })
-    ).find((r) => r.tool === 'codex');
-
-    expect(codex).toMatchObject({ available: true, version: installed });
-    expect(codex).not.toHaveProperty('error');
-    expect(codex).toMatchObject({
-      compatibility: {
-        kind: 'major-version-mismatch',
-        installedVersion: installed,
-        testedVersion: CLI_TOOLS.codex.testedVersion,
+  it('retains major-version mismatch classification without claiming authentication', async () => {
+    const [result] = await detectAvailableCliTools({
+      resolveExecutable: async () => executable,
+      probeReadiness: async (options) => {
+        const testedVersion = CLI_TOOL_CATALOG[options.tool].compatibility.testedVersion;
+        const installedVersion = `${Number(testedVersion.split('.')[0]) + 1}.0.0`;
+        const compatibility =
+          options.classifyVersion?.({ installedVersion, testedVersion }) ?? 'unverified';
+        return deriveCliReadiness({
+          tool: options.tool,
+          enabled: true,
+          installation: 'installed',
+          executable: options.executable,
+          trust: 'trusted',
+          installedVersion,
+          testedVersion,
+          compatibility,
+          auth: 'not-checked',
+          probedAt: 43,
+        });
       },
     });
-    expect(stderr).not.toContain('differs in major version');
+
+    expect(result).toMatchObject({
+      compatibility: 'incompatible',
+      auth: 'unknown',
+      diagnostic: { state: 'incompatible', remediation: expect.any(String) },
+    });
   });
 
-  it('does not warn when the installed CLI major version matches the tested one', async () => {
-    const createPlanner = makeCliPlannerFactory({
-      versions: { codex: CLI_TOOLS.codex.testedVersion },
+  it('reports unavailable and untrusted executable resolution separately', async () => {
+    const unavailable = await detectAvailableCliTools({
+      resolveExecutable: async () => {
+        throw error('cli-executable-unavailable', 'not installed');
+      },
+      probeReadiness: async (options) => deriveProbe(options),
+      now: () => 7,
+    });
+    const untrusted = await detectAvailableCliTools({
+      resolveExecutable: async () => {
+        throw error('cli-executable-untrusted', 'project-local shadow');
+      },
+      probeReadiness: async (options) => deriveProbe(options),
+      now: () => 8,
     });
 
-    const codex = (
-      await detectAvailablePlanners({ providerResults: [...providerResults], createPlanner })
-    ).find((r) => r.tool === 'codex');
+    for (const result of unavailable) {
+      expect(result).toMatchObject({
+        trust: 'not-checked',
+        diagnostic: { state: 'unavailable', remediation: expect.any(String) },
+        probedAt: 7,
+      });
+    }
+    for (const result of untrusted) {
+      expect(result).toMatchObject({
+        trust: 'untrusted',
+        diagnostic: { state: 'untrusted', remediation: expect.any(String) },
+        probedAt: 8,
+      });
+    }
+  });
 
-    expect(codex).toMatchObject({ available: true, version: CLI_TOOLS.codex.testedVersion });
-    expect(stderr).not.toContain('differs in major version');
+  it('projects resolver trust failures as untrusted readiness', async () => {
+    const [result] = await detectAvailableCliReadiness({
+      tools: ['codex'],
+      resolveExecutable: async () => {
+        throw error('cli-executable-untrusted', 'project-local shadow');
+      },
+      probeReadiness: async (options) => deriveProbe(options),
+      now: () => 9,
+    });
+    if (result === undefined) throw new Error('expected one readiness result');
+
+    expect(result).toMatchObject({
+      tool: 'codex',
+      installation: 'installed',
+      executable: null,
+      trust: 'untrusted',
+      status: 'untrusted',
+      checkId: 'runners.cli.codex.readiness',
+      remediation: expect.any(String),
+      probedAt: 9,
+    });
+    expect(result.status).not.toBe('unavailable');
   });
 });
+
+describe('detectAll', () => {
+  it('returns only canonical provider and role-neutral CLI collections', async () => {
+    const providers: ProviderDetection[] = [{ provider: 'ollama', available: true, isLocal: true }];
+    const cliTools: CliToolDetection[] = [
+      {
+        tool: 'codex',
+        executable,
+        trust: 'trusted',
+        installedVersion: '0.40.0',
+        testedVersion: '0.40.0',
+        compatibility: 'compatible',
+        auth: 'unknown',
+        diagnostic: {
+          state: 'unverified',
+          remediation: 'Authenticate and verify the CLI before selecting it.',
+        },
+        probedAt: 1,
+      },
+    ];
+
+    const result = await detectAll({
+      detectProviders: async () => providers,
+      detectCliTools: async () => cliTools,
+    });
+
+    expect(result).toEqual({ providers, cliTools });
+    expect(result).not.toHaveProperty('planners');
+    expect(result).not.toHaveProperty('implementers');
+  });
+});
+
+function deriveProbe(options: ProbeCliReadinessOptions) {
+  const testedVersion = CLI_TOOL_CATALOG[options.tool].compatibility.testedVersion;
+  const compatibility = options.classifyVersion?.({
+    installedVersion: testedVersion,
+    testedVersion,
+  });
+  return deriveCliReadiness({
+    tool: options.tool,
+    enabled: true,
+    installation: 'installed',
+    executable: options.executable,
+    trust: 'trusted',
+    installedVersion: testedVersion,
+    testedVersion,
+    compatibility: compatibility ?? 'unverified',
+    auth: 'not-checked',
+    probedAt: options.now?.() ?? Date.now(),
+  });
+}

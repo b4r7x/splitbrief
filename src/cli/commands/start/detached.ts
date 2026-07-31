@@ -28,12 +28,15 @@ export async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promi
 
   const mode = resolveCliWorkflowMode(opts, config);
   const persistTranscript = config.workflow.persistTranscript;
-  const { sessionId: sessId } = await bootstrapSession({
+  const { sessionId: sessId, trustedCliGates } = await bootstrapSession({
     projectDir,
     feature,
     opts,
     assertJson: opts.json ?? false,
     emitReadiness: () => {},
+    ...(deps.detectCliReadiness !== undefined && {
+      detectCliReadiness: deps.detectCliReadiness,
+    }),
   });
   const sessDir = sessionDir(projectDir, sessId);
 
@@ -55,6 +58,7 @@ export async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promi
       args.attachments.length > 0 && {
         attachments: args.attachments,
       }),
+    trustedCliGates,
   });
 
   if (!result.ok) {

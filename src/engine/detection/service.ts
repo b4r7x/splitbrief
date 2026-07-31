@@ -1,20 +1,24 @@
 import { loadDetectionCache, saveDetectionCache, invalidateCache } from './cache.js';
-import type { DetectAllResult } from './detect.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import type { CliToolId } from '../../core/schemas/enums.js';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import type {
+  CliToolDetection,
+  DetectedModel,
+  ProviderDetection,
+} from '../../core/discovery/detection.js';
+
+export interface DetectionProjection {
+  providers: ProviderDetection[];
+  cliTools: CliToolDetection[];
+}
 
 export interface DetectionDeps {
-  detectAll(): Promise<DetectAllResult>;
+  detectAll(): Promise<DetectionProjection>;
   fetchModelsDevCatalog(): Promise<ModelsDevCatalog>;
   discoverAllCliTools(): Promise<Partial<Record<CliToolId, DetectedModel[]>>>;
 }
 
-export interface DetectionServiceResult {
-  detection: {
-    planners: DetectAllResult['planners'];
-    implementers: DetectAllResult['implementers'];
-  };
+export interface DetectionServiceResult extends DetectionProjection {
   catalog: ModelsDevCatalog | null;
   cliModels: Partial<Record<CliToolId, DetectedModel[]>>;
 }
@@ -35,7 +39,7 @@ export function createDetectionService() {
     projectDir?: string,
   ): Promise<DetectionServiceResult> {
     lastDeps = deps;
-    let detection: DetectionServiceResult['detection'];
+    let detection: DetectionProjection;
     let shouldPersist = false;
 
     if (projectDir) {
@@ -57,11 +61,11 @@ export function createDetectionService() {
 
     if (projectDir && shouldPersist) {
       pendingSave = pendingSave.then(() =>
-        saveDetectionCache(projectDir, detection.planners, detection.implementers).catch(() => {}),
+        saveDetectionCache(projectDir, detection.providers, detection.cliTools).catch(() => {}),
       );
     }
 
-    return { detection, catalog, cliModels };
+    return { ...detection, catalog, cliModels };
   }
 
   async function invalidateDetection(projectDir: string): Promise<void> {

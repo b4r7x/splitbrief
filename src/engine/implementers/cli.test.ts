@@ -1,18 +1,63 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, chmodSync, existsSync, readFileSync } from 'node:fs';
+import {
+  writeFileSync,
+  chmodSync,
+  existsSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
-import { createCliImplementer } from './cli.js';
+import { createCliImplementer as createCliImplementerImpl } from './cli.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliStartGate } from '../runners/start-gate.js';
+import type { ImplementerFactoryOptions } from './types.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
+import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
+import type { RunnerCallEvent } from '../calls/types.js';
+import type { ImplementerPublisher } from './types.js';
 
 let projectDir: string;
 let shimDir: string;
 let originalPath: string | undefined;
+
+/**
+ * Production CLI runners require an explicit identity admitted by readiness.
+ * The test shims are real executable files, so derive the same canonical
+ * path/fingerprint that readiness would provide instead of bypassing the gate.
+ */
+function trustedGate(tool: CliToolId): CliStartGate {
+  const commandPath = join(shimDir, CLI_TOOL_CATALOG[tool].command);
+  if (!existsSync(commandPath)) {
+    writeFileSync(commandPath, '#!/bin/sh\nexit 0\n', 'utf8');
+    chmodSync(commandPath, 0o755);
+  }
+  const path = realpathSync(commandPath);
+  const info = statSync(path);
+  return {
+    tool,
+    executable: {
+      path,
+      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+    },
+  };
+}
+
+function createCliImplementer(
+  config: CliImplementerConfig,
+  options?: ImplementerFactoryOptions,
+): ReturnType<typeof createCliImplementerImpl> {
+  return createCliImplementerImpl(config, {
+    ...options,
+    trustedCli: options?.trustedCli ?? trustedGate(config.tool),
+  });
+}
 
 function installRecordingClaudeShim(writtenRelPath: string): { argvFile: string } {
   const argvFile = join(shimDir, 'argv.txt');
@@ -34,7 +79,7 @@ function installRecordingClaudeShim(writtenRelPath: string): { argvFile: string 
 const cliClaudeImplementer: CliImplementerConfig = {
   kind: 'cli',
   tool: 'claude-code',
-  model: 'auto',
+  authChannel: 'session',
   contextLength: 8192,
   temperature: 0.3,
 };
@@ -98,6 +143,53 @@ describe('createCliImplementer (claude-code)', () => {
     expect(readFileSync(join(projectDir, 'src/hello.ts'), 'utf8')).toBe('generated');
   });
 
+  it('passes only the selected API-key channel to the implementer process', async () => {
+    const envFile = join(shimDir, 'env.txt');
+    const target = join(projectDir, 'src/hello.ts');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `printf '%s|%s|%s' "$ANTHROPIC_API_KEY" "$OPENAI_API_KEY" "$HOME" > '${envFile}'`,
+        'cat > /dev/null',
+        `mkdir -p "$(dirname '${target}')"`,
+        `printf generated > '${target}'`,
+        `printf '%s\n' '{"type":"result","result":"done"}'`,
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    const originalAnthropic = process.env.ANTHROPIC_API_KEY;
+    const originalOpenAi = process.env.OPENAI_API_KEY;
+    process.env.ANTHROPIC_API_KEY = 'sk-anthropic';
+    process.env.OPENAI_API_KEY = 'sk-openai';
+    try {
+      const apiKeyConfig: CliImplementerConfig = {
+        ...cliClaudeImplementer,
+        authChannel: 'api-key',
+      };
+      const implementer = createCliImplementer(apiKeyConfig);
+      const result = await implementer.implement({
+        task: makeTask(),
+        projectDir,
+        config: makeConfig({ implementer: apiKeyConfig }),
+        context: { ...defaultContext, dir: projectDir },
+        onOutput: () => {},
+      });
+
+      expect(result.success).toBe(true);
+      expect(readFileSync(envFile, 'utf8')).toBe(
+        `sk-anthropic||${join(projectDir, '.splitbrief', 'sandbox', 'home')}`,
+      );
+    } finally {
+      if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = originalAnthropic;
+      if (originalOpenAi === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = originalOpenAi;
+    }
+  });
+
   it('fails when the claude subprocess changes no files', async () => {
     const argvFile = join(shimDir, 'argv.txt');
     const shimPath = join(shimDir, 'claude');
@@ -146,11 +238,29 @@ function readArgv(argvFile: string): string[] {
   return readFileSync(argvFile, 'utf8').split('\n').slice(0, -1);
 }
 
+function processGroupIsAbsent(pid: number): boolean {
+  try {
+    process.kill(-pid, 0);
+    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ESRCH';
+  }
+}
+
+function processIsAbsent(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'ESRCH';
+  }
+}
+
 describe('createCliImplementer (opencode arg vector)', () => {
   const opencodeImplementer: CliImplementerConfig = {
     kind: 'cli',
     tool: 'opencode',
-    model: 'auto',
+    authChannel: 'provider-dependent',
     contextLength: 8192,
     temperature: 0.3,
   };
@@ -251,13 +361,90 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(argv[0]).toBe('run');
     expect(argv.slice(-2)).toEqual(['--extra-flag', 'value']);
   });
+
+  it('preserves a typed budget failure and group reaping through the real CLI path', async () => {
+    const pidsFile = join(shimDir, 'pids.txt');
+    const shimPath = join(shimDir, 'opencode');
+    const script = [
+      '#!/usr/bin/env node',
+      "const { spawn } = require('node:child_process');",
+      "const { writeFileSync } = require('node:fs');",
+      "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 25)'], { stdio: 'ignore' });",
+      'child.unref();',
+      `writeFileSync(${JSON.stringify(pidsFile)}, process.pid + ':' + child.pid);`,
+      `const line = JSON.stringify({ type: 'text', part: { type: 'text', text: 'x' } }) + '\\n';`,
+      `for (let i = 0; i < ${RUNNER_CALL_OUTPUT_MAX_EVENTS + 10}; i += 1) process.stdout.write(line);`,
+    ].join('\n');
+    writeFileSync(shimPath, `${script}\n`, 'utf8');
+    chmodSync(shimPath, 0o755);
+    const config = makeConfig({ implementer: opencodeImplementer });
+    let events: RunnerCallEvent[] = [];
+    const publisher: ImplementerPublisher = {
+      publishRunning: () => {},
+      publishCallEvent: ({ event }) => events.push(event),
+      publishDone: () => {},
+      publishFailed: () => {},
+    };
+
+    const implementer = createCliImplementer(opencodeImplementer, { publisher });
+    for (let iteration = 1; iteration <= 50; iteration += 1) {
+      let leaderPid = 0;
+      let descendantPid = 0;
+      let absentAtSettlement = { group: false, leader: false, descendant: false };
+      const result = await implementer
+        .implement({
+          task: makeTask(),
+          projectDir,
+          config,
+          context: { ...defaultContext, dir: projectDir },
+          onOutput: () => {},
+          phase: 'implementing',
+        })
+        .then((value) => {
+          const [leader, descendant] = readFileSync(pidsFile, 'utf8').split(':');
+          leaderPid = Number.parseInt(leader ?? '', 10);
+          descendantPid = Number.parseInt(descendant ?? '', 10);
+          absentAtSettlement = {
+            group: processGroupIsAbsent(leaderPid),
+            leader: processIsAbsent(leaderPid),
+            descendant: processIsAbsent(descendantPid),
+          };
+          return value;
+        });
+
+      expect(result, `iteration ${iteration}`).toMatchObject({
+        success: false,
+        error: expect.stringContaining('CLI protocol event budget was exceeded'),
+      });
+      expect(
+        events.filter((event) => event.type === 'call_error'),
+        `iteration ${iteration}`,
+      ).toEqual([
+        expect.objectContaining({
+          status: 'truncated',
+          error: {
+            code: 'output-budget-breach',
+            message: 'CLI protocol event budget was exceeded',
+          },
+        }),
+      ]);
+      expect(leaderPid, `iteration ${iteration}`).toBeGreaterThan(1);
+      expect(descendantPid, `iteration ${iteration}`).toBeGreaterThan(1);
+      expect(absentAtSettlement, `iteration ${iteration}`).toEqual({
+        group: true,
+        leader: true,
+        descendant: true,
+      });
+      events = [];
+    }
+  }, 60_000);
 });
 
 describe('createCliImplementer (timeout surfacing)', () => {
   const opencodeImplementer: CliImplementerConfig = {
     kind: 'cli',
     tool: 'opencode',
-    model: 'auto',
+    authChannel: 'provider-dependent',
     contextLength: 8192,
     temperature: 0.3,
     timeout: 50,

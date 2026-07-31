@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { CLI_TOOL_TRUST } from '../runners/cli-tool-catalog.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import {
   GenerationCommonFields,
+  RUNNER_DESCRIPTORS,
+  createCliModelPolicySchema,
   createPlannerConfigSchema,
   createRunnerConfigSchema,
+  getRunnerKindMeta,
+  getRunnerTrustMeta,
 } from './runner-fields.js';
 
 describe('createRunnerConfigSchema', () => {
@@ -21,6 +26,8 @@ describe('createRunnerConfigSchema', () => {
       schema.safeParse({
         kind: 'api',
         provider: 'openai',
+        service: 'openai',
+        offering: 'payg',
         apiBase: 'https://api.openai.com/v1',
         apiKey: 'env:OPENAI_API_KEY',
         model: 'gpt-5-mini',
@@ -42,6 +49,188 @@ describe('createRunnerConfigSchema', () => {
         model: 'claude-sonnet-4-5',
       }).success,
     ]).toEqual([true, true, true, true, true]);
+  });
+
+  it('requires known API providers to state service and offering at runtime schema boundaries', () => {
+    const providerOnly = {
+      kind: 'api',
+      provider: 'openrouter',
+      apiBase: 'https://openrouter.ai/api/v1',
+      model: 'anthropic/claude-sonnet-4',
+    } as const;
+
+    expect(createRunnerConfigSchema(GenerationCommonFields).safeParse(providerOnly).success).toBe(
+      false,
+    );
+    expect(createPlannerConfigSchema(GenerationCommonFields).safeParse(providerOnly).success).toBe(
+      false,
+    );
+  });
+
+  it('requires custom API providers to state service and offering explicitly', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    expect(
+      schema.safeParse({
+        kind: 'api',
+        provider: 'custom-openai-compatible',
+        apiBase: 'https://llm.example.test/v1',
+        model: 'custom-model',
+      }).success,
+    ).toBe(false);
+
+    expect(
+      schema.safeParse({
+        kind: 'api',
+        provider: 'custom-openai-compatible',
+        service: 'example-llm',
+        offering: 'payg',
+        apiBase: 'https://llm.example.test/v1',
+        model: 'custom-model',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('enforces catalog role admission for API runners while retaining explicit custom providers', () => {
+    const plannerSchema = createPlannerConfigSchema(GenerationCommonFields);
+    const implementerSchema = createRunnerConfigSchema(GenerationCommonFields);
+
+    for (const provider of ['ollama', 'lm-studio'] as const) {
+      const localRunner = {
+        kind: 'api' as const,
+        provider,
+        service: provider,
+        offering: 'local' as const,
+        apiBase: provider === 'ollama' ? 'http://localhost:11434/v1' : 'http://localhost:1234/v1',
+        model: 'local-model',
+      };
+
+      expect(plannerSchema.safeParse(localRunner).success).toBe(false);
+      expect(implementerSchema.safeParse(localRunner).success).toBe(true);
+    }
+
+    const customRunner = {
+      kind: 'api' as const,
+      provider: 'custom-openai-compatible',
+      service: 'example-llm',
+      offering: 'payg' as const,
+      apiBase: 'https://llm.example.test/v1',
+      model: 'custom-model',
+    };
+    expect(plannerSchema.safeParse(customRunner).success).toBe(true);
+    expect(implementerSchema.safeParse(customRunner).success).toBe(true);
+  });
+
+  it('rejects partial, unknown, and catalog-mismatched API identities before runner use', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    expect(
+      schema.safeParse({
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        apiBase: 'https://openrouter.ai/api/v1',
+        model: 'anthropic/claude-sonnet-4',
+      }).success,
+    ).toBe(false);
+
+    const mismatch = schema.safeParse({
+      kind: 'api',
+      provider: 'openrouter',
+      service: 'openrouter',
+      offering: 'coding-subscription',
+      apiBase: 'https://openrouter.ai/api/v1',
+      model: 'anthropic/claude-sonnet-4',
+    });
+    expect(mismatch.success).toBe(false);
+    expect(mismatch.error?.issues[0]?.path).toEqual(['offering']);
+    expect(mismatch.error?.issues[0]?.message).toContain('does not match');
+
+    expect(
+      schema.safeParse({
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'unknown-offering',
+        apiBase: 'https://openrouter.ai/api/v1',
+        model: 'anthropic/claude-sonnet-4',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('applies the catalog model policy at both role schema boundaries', () => {
+    const implementerSchema = createRunnerConfigSchema(GenerationCommonFields);
+    const plannerSchema = createPlannerConfigSchema(GenerationCommonFields);
+
+    for (const tool of [
+      'claude-code',
+      'codex',
+      'opencode',
+      'aider',
+      'copilot',
+      'kilo-code',
+    ] as const) {
+      for (const schema of [plannerSchema, implementerSchema]) {
+        expect(schema.safeParse({ kind: 'cli', tool }).success).toBe(true);
+        expect(schema.safeParse({ kind: 'cli', tool, model: 'explicit-model' }).success).toBe(true);
+      }
+    }
+
+    expect(
+      implementerSchema.safeParse({
+        kind: 'shell',
+        command: './run',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('accepts legacy CLI configs without authChannel but rejects channels unsupported by the tool', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    expect(schema.safeParse({ kind: 'cli', tool: 'codex' }).success).toBe(true);
+    expect(schema.safeParse({ kind: 'cli', tool: 'codex', authChannel: 'session' }).success).toBe(
+      true,
+    );
+    const unsupported = schema.safeParse({
+      kind: 'cli',
+      tool: 'copilot',
+      authChannel: 'api-key',
+    });
+    expect(unsupported.success).toBe(false);
+    expect(unsupported.error?.issues[0]?.path).toEqual(['authChannel']);
+  });
+
+  it('schema validation covers every CLI model policy without magic auto data', () => {
+    expect(createCliModelPolicySchema('required').safeParse({}).success).toBe(false);
+    expect(
+      createCliModelPolicySchema('required').safeParse({ model: 'explicit-model' }).success,
+    ).toBe(true);
+
+    expect(createCliModelPolicySchema('optional').safeParse({}).success).toBe(true);
+    expect(
+      createCliModelPolicySchema('optional').safeParse({ model: 'explicit-model' }).success,
+    ).toBe(true);
+
+    for (const policy of ['backend-default', 'auto-only'] as const) {
+      expect(createCliModelPolicySchema(policy).safeParse({}).success).toBe(true);
+      expect(
+        createCliModelPolicySchema(policy).safeParse({ model: 'explicit-model' }).success,
+      ).toBe(false);
+      expect(
+        createCliModelPolicySchema(policy).safeParse({ customModels: ['explicit-model'] }).success,
+      ).toBe(false);
+    }
+
+    expect(createCliModelPolicySchema('auto-only').safeParse({ model: 'auto' }).success).toBe(
+      false,
+    );
+    expect(
+      createRunnerConfigSchema(GenerationCommonFields).safeParse({
+        kind: 'cli',
+        tool: 'copilot',
+        model: 'auto',
+      }).success,
+    ).toBe(false);
   });
 
   it('rejects the planner-only capabilities field on shell and agent runners', () => {
@@ -332,6 +521,8 @@ describe('createRunnerConfigSchema', () => {
     const result = schema.safeParse({
       kind: 'api',
       provider: 'openai',
+      service: 'openai',
+      offering: 'payg',
       apiBase: 'https://api.openai.com/v1',
       model: 'gpt-5-mini',
       idleWarnMs: 60_000,
@@ -339,5 +530,24 @@ describe('createRunnerConfigSchema', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe('runner trust metadata', () => {
+  it('derives every CLI trust lookup from the canonical catalog', () => {
+    expect(RUNNER_DESCRIPTORS.cli.trust).toBe(CLI_TOOL_TRUST);
+
+    for (const tool of Object.keys(CLI_TOOL_TRUST) as Array<keyof typeof CLI_TOOL_TRUST>) {
+      for (const role of ['planner', 'implementer'] as const) {
+        expect(getRunnerTrustMeta(role, { kind: 'cli', tool })).toBe(CLI_TOOL_TRUST[tool][role]);
+      }
+    }
+  });
+
+  it('retains role trust maps for non-CLI runner kinds', () => {
+    expect(getRunnerKindMeta('api').trust).toBe(RUNNER_DESCRIPTORS.api.trust);
+    expect(getRunnerKindMeta('shell').trust).toBe(RUNNER_DESCRIPTORS.shell.trust);
+    expect(getRunnerKindMeta('agent').trust).toBe(RUNNER_DESCRIPTORS.agent.trust);
+    expect(getRunnerKindMeta('agent-sdk').trust).toBe(RUNNER_DESCRIPTORS['agent-sdk'].trust);
   });
 });

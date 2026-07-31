@@ -71,9 +71,11 @@ describe('detectCapabilities', () => {
         implementer: {
           kind: 'api',
           provider: 'deepseek',
+          service: 'deepseek',
+          offering: 'payg',
           apiBase: 'https://api.deepseek.com/v1',
           apiKey: 'test-key',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
         },
       });
       delete config.implementer.contextLength;
@@ -113,7 +115,7 @@ describe('detectCapabilities', () => {
 
       const result = await detectCapabilities(deepseekConfig());
 
-      expect(result.contextLength).toBe(128_000);
+      expect(result.contextLength).toBe(1_000_000);
       expect(result.origin).toBe('catalog');
     });
   });

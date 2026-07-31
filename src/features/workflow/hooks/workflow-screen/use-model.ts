@@ -63,6 +63,9 @@ export function useWorkflowScreen({
   const routeReadiness = routerStore.use((s) =>
     s.screen === 'workflow' ? s.readiness : undefined,
   );
+  const trustedCliGates = routerStore.use((s) =>
+    s.screen === 'workflow' ? s.trustedCliGates : undefined,
+  );
   const attach = routerStore.use((s) => (s.screen === 'workflow' ? s.attach : undefined));
 
   const inputMode = useInputMode();
@@ -113,6 +116,7 @@ export function useWorkflowScreen({
     // restarts with a fresh `…-unknown` session id that overwrites the summary route.
     enabled: onWorkflowScreen && !isAttachedClient && readinessLoaded && !readinessBlocked,
     runWorkflow: deps?.runWorkflow,
+    trustedCliGates,
   });
 
   const approvalPromptState = approvalPromptStore.use((s) => s);

@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { applyCLIOverrides } from './apply.js';
+import { buildRunnerConfig } from '../build-runner.js';
+import { existingToOpts } from './runner.js';
 import type { Config } from '../../../schemas/config.js';
+import type { PlannerConfig } from '../../../schemas/planner-config.js';
+import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
 import { resolveImplementerProfiles } from '../../accessors/implementer-profiles.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
@@ -11,6 +15,180 @@ function buildBaseConfig(): Config {
   return c;
 }
 const baseConfig: Config = buildBaseConfig();
+
+const commonGeneration = {
+  customModels: ['model-primary', 'model-fallback'],
+  contextLength: 131_072,
+  temperature: 0.4,
+  timeout: 240_000,
+  effort: 'high' as const,
+};
+
+const plannerCapabilities = {
+  supportsConversationalPlanning: true,
+  supportsHintEscalation: true,
+  supportsSessionResume: false,
+  supportsEffort: false,
+  supportsImages: false,
+  supportsSelfSummarisation: true,
+};
+
+const watchdogs = { idleWarnMs: 90_000, idleKillMs: 600_000 };
+
+const sameTargetCases: readonly (
+  | { role: 'planner'; existing: PlannerConfig }
+  | { role: 'implementer'; existing: ImplementerConfig }
+)[] = [
+  {
+    role: 'planner',
+    existing: {
+      kind: 'cli',
+      tool: 'claude-code',
+      authChannel: 'session',
+      model: 'claude-opus-4-6',
+      args: ['--permission-mode', 'plan'],
+      outputFormat: 'stream-json',
+      ...watchdogs,
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'planner',
+    existing: {
+      kind: 'api',
+      provider: 'openrouter',
+      service: 'openrouter',
+      offering: 'payg',
+      apiBase: 'https://openrouter.ai/api/v1',
+      apiKey: 'env:OPENROUTER_API_KEY',
+      model: 'anthropic/claude-opus-4.6',
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'planner',
+    existing: {
+      kind: 'shell',
+      command: 'planner-shell',
+      args: ['--json'],
+      outputFormat: 'jsonl',
+      capabilities: plannerCapabilities,
+      model: 'shell-planner-model',
+      ...watchdogs,
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'planner',
+    existing: {
+      kind: 'agent',
+      command: 'planner-agent',
+      args: ['--verbose'],
+      outputFormat: 'text',
+      capabilities: plannerCapabilities,
+      model: 'agent-planner-model',
+      ...watchdogs,
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'planner',
+    existing: {
+      kind: 'agent-sdk',
+      apiKey: 'env:ANTHROPIC_API_KEY',
+      model: 'claude-opus-4-6',
+      ...watchdogs,
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'implementer',
+    existing: {
+      kind: 'cli',
+      tool: 'codex',
+      authChannel: 'api-key',
+      args: ['--sandbox', 'workspace-write'],
+      outputFormat: 'jsonl',
+      ...watchdogs,
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'implementer',
+    existing: {
+      kind: 'api',
+      provider: 'openrouter',
+      service: 'openrouter',
+      offering: 'payg',
+      apiBase: 'https://openrouter.ai/api/v1',
+      apiKey: 'env:OPENROUTER_API_KEY',
+      model: 'qwen/qwen3-coder',
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'implementer',
+    existing: {
+      kind: 'shell',
+      command: 'implementer-shell',
+      args: ['--apply'],
+      outputFormat: 'text',
+      model: 'shell-implementer-model',
+      ...watchdogs,
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'implementer',
+    existing: {
+      kind: 'agent',
+      command: 'implementer-agent',
+      args: ['--apply'],
+      outputFormat: 'jsonl',
+      model: 'agent-implementer-model',
+      ...watchdogs,
+      ...commonGeneration,
+    },
+  },
+  {
+    role: 'implementer',
+    existing: {
+      kind: 'agent-sdk',
+      apiKey: 'env:ANTHROPIC_API_KEY',
+      model: 'claude-sonnet-4-6',
+      ...watchdogs,
+      ...commonGeneration,
+    },
+  },
+];
+
+describe('same target runner rebuilds', () => {
+  it.each(sameTargetCases)('preserves the complete $role $existing.kind config', (testCase) => {
+    const opts = { ...existingToOpts(testCase.existing), existing: testCase.existing };
+    const rebuilt =
+      testCase.role === 'planner'
+        ? buildRunnerConfig('planner', opts)
+        : buildRunnerConfig('implementer', opts);
+
+    expect(rebuilt).toEqual(testCase.existing);
+  });
+
+  it.each(
+    sameTargetCases,
+  )('changes only the model for a complete $role $existing.kind config', (testCase) => {
+    const model = 'same-target-model-override';
+    const rebuilt =
+      testCase.role === 'planner'
+        ? applyCLIOverrides(makeConfig({ planner: testCase.existing }), {
+            planner: { model },
+          }).planner
+        : applyCLIOverrides(makeConfig({ implementer: testCase.existing }), {
+            implementer: { model },
+          }).implementer;
+
+    expect(rebuilt).toEqual({ ...testCase.existing, model });
+  });
+});
 
 describe('applyCLIOverrides — unusable provider overrides', () => {
   afterEach(() => {
@@ -71,14 +249,40 @@ describe('applyCLIOverrides — runner commands', () => {
 
   it('uses shell config for implementer command override without explicit tool', () => {
     const result = applyCLIOverrides(baseConfig, {
-      implementer: { command: 'custom-implementer' },
+      implementer: { command: 'custom-implementer', model: 'custom-model' },
     });
 
     expect(result.implementer.kind).toBe('shell');
     if (result.implementer.kind === 'shell') {
       expect(result.implementer.command).toBe('custom-implementer');
-      expect(result.implementer.model).toBe(baseConfig.implementer.model);
+      expect(result.implementer.model).toBe('custom-model');
     }
+  });
+
+  it('rejects fake auto while resetting source state for a different target', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
+        apiBase: 'https://openrouter.ai/api/v1',
+        apiKey: 'env:OPENROUTER_API_KEY',
+        model: 'anthropic/claude-opus-4.6',
+        customModels: ['anthropic/claude-opus-4.6', 'source-only-model'],
+        effort: 'high',
+      },
+    });
+
+    expect(() =>
+      applyCLIOverrides(config, {
+        implementer: { tool: 'copilot', model: 'auto' },
+      }),
+    ).toThrow(/auto.*not a model ID/);
+
+    const result = applyCLIOverrides(config, { implementer: { tool: 'copilot' } });
+
+    expect(result.implementer).toEqual({ kind: 'cli', tool: 'copilot' });
   });
 
   it('applies API base and env API key overrides to API implementers', () => {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -10,6 +11,7 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { registerProcess } from '../../../lib/process/registry.js';
 import {
   captureChangedFilesBaseline,
   serializeChangedFilesBaseline,
@@ -82,6 +84,44 @@ describe('shutdownWorkflow', () => {
       () => ({ file, action: 'create' }),
     );
 
+    expect(existsSync(filePath)).toBe(false);
+  });
+
+  it('waits for process cleanup before persisting state or rolling back files', async () => {
+    const { projectDir, sessionId } = setupGitProject();
+    const file = 'src/generated.ts';
+    const filePath = join(projectDir, file);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(filePath, 'export const generated = true;\n');
+    const trackedState: WorkflowState = {
+      ...createInitialState('feat'),
+      feature: 'process-barrier-test',
+    };
+    const child = spawn(
+      process.execPath,
+      [
+        '-e',
+        'process.on("SIGTERM", () => setTimeout(() => process.exit(0), 100)); process.stdout.write("ready"); setInterval(() => {}, 1000);',
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    await new Promise<void>((resolve) => child.stdout?.once('data', () => resolve()));
+    registerProcess(child);
+
+    const shutdown = shutdownWorkflow(
+      projectDir,
+      sessionId,
+      () => trackedState,
+      () => ({ file, action: 'create' }),
+    );
+
+    const statePath = join(sessionDir(projectDir, sessionId), 'state.json');
+    expect(existsSync(statePath)).toBe(false);
+    expect(existsSync(filePath)).toBe(true);
+
+    await shutdown;
+
+    expect(existsSync(statePath)).toBe(true);
     expect(existsSync(filePath)).toBe(false);
   });
 });

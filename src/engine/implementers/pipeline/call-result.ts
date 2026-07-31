@@ -1,4 +1,9 @@
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
+import {
+  runnerOutcome,
+  type RunnerFailureOutcomeState,
+  type RunnerOutcome,
+} from '../../runners/errors.js';
 import type { ImplementerOptions } from '../types.js';
 import { processError } from '../../../lib/process/errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -61,6 +66,52 @@ function runnerCallStatusMessage(status: Exclude<RunnerCallResult['status'], 'co
       return 'Implementer call was incomplete';
     default: {
       const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
+  switch (code) {
+    case 'spawn-not-found':
+    case 'incompatible-version':
+    case 'unauthenticated':
+    case 'timeout':
+    case 'user-abort':
+    case 'signal-exit':
+    case 'non-zero-exit':
+    case 'protocol-failure':
+    case 'output-budget-breach':
+    case 'callback-failure':
+    case 'no-staged-change':
+    case 'platform-limitation':
+      return code;
+    default:
+      return null;
+  }
+}
+
+export function runnerCallOutcome(result: RunnerCallResult): RunnerOutcome {
+  if (result.status === 'completed') return runnerOutcome.success();
+
+  const stableState = failureStateFromCode(result.error.code);
+  if (stableState !== null) return runnerOutcome.failure(stableState);
+
+  switch (result.status) {
+    case 'failed':
+    case 'refused':
+    case 'incomplete':
+      return runnerOutcome.failure('protocol-failure');
+    case 'truncated':
+      return runnerOutcome.failure('output-budget-breach');
+    case 'aborted':
+      return runnerOutcome.failure('user-abort');
+    case 'timeout':
+      return runnerOutcome.failure('timeout');
+    case 'unsupported_tool':
+      return runnerOutcome.failure('platform-limitation');
+    default: {
+      const _exhaustive: never = result;
       return _exhaustive;
     }
   }

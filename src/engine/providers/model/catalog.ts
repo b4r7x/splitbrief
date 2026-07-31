@@ -76,6 +76,7 @@ function toBundledEntry(
     pricingMode: getPricingMode(providerId),
     ...(entry.isDefault !== undefined && { isDefault: entry.isDefault }),
     ...(entry.contextLength !== undefined && { contextLength: entry.contextLength }),
+    ...(entry.maxOutputTokens !== undefined && { maxOutputTokens: entry.maxOutputTokens }),
     ...(apiPriced && entry.pricingInput !== undefined && { pricingInput: entry.pricingInput }),
     ...(apiPriced && entry.pricingOutput !== undefined && { pricingOutput: entry.pricingOutput }),
     ...(apiPriced && entry.isFree !== undefined && { isFree: entry.isFree }),

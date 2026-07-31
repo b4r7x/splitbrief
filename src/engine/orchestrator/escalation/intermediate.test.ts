@@ -186,8 +186,31 @@ describe('resolveIntermediateConfig', () => {
     expect(resolved?.implementer).toMatchObject({
       kind: 'api',
       provider: 'deepseek',
+      service: 'deepseek',
+      offering: 'payg',
       model: 'deepseek-chat',
       contextLength: 128_000,
+    });
+  });
+
+  it('retains the current endpoint identity when an unknown provider uses its fallback', () => {
+    const ctx = makeIntermediateCtx();
+    ctx.config.escalation = {
+      intermediateProvider: 'custom-proxy',
+      intermediateModel: 'custom-model',
+      enabled: true,
+    };
+    const state = makeImplState([makeTask()]);
+
+    const resolved = resolveIntermediateConfig(ctx, state);
+
+    expect(resolved?.implementer).toMatchObject({
+      kind: 'api',
+      provider: 'custom-proxy',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'custom-model',
     });
   });
 

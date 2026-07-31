@@ -1,36 +1,63 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  API_PROVIDER_CATALOG,
+  type ApiOffering,
+} from '../../../src/core/providers/api-provider-catalog.js';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type {
   ApiImplementerConfig,
   ImplementerConfig,
+  ImplementerProfileConfig,
 } from '../../../src/core/schemas/implementer-config.js';
-import type { PlannerConfig } from '../../../src/core/schemas/planner-config.js';
+import type { ApiPlannerConfig, PlannerConfig } from '../../../src/core/schemas/planner-config.js';
 import type { ProjectContext } from '../../../src/core/state/types.js';
+import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 
 const defaultApiImplementer: ApiImplementerConfig = {
   kind: 'api',
   provider: 'ollama',
+  service: 'ollama',
+  offering: 'local',
   model: 'qwen2.5-coder:7b',
   apiBase: 'http://localhost:11434/v1',
   contextLength: 32768,
   temperature: 0.2,
 };
 
+type ApiFixture<T extends { service: string; offering: ApiOffering }> = Omit<
+  T,
+  'service' | 'offering'
+> &
+  Partial<Pick<T, 'service' | 'offering'>>;
+
+type PartialUnion<T> = T extends unknown ? Partial<T> : never;
+type PlannerFixture = Exclude<PlannerConfig, { kind: 'api' }> | ApiFixture<ApiPlannerConfig>;
+type ImplementerFixture =
+  | Exclude<ImplementerConfig, { kind: 'api' }>
+  | ApiFixture<ApiImplementerConfig>;
+type ImplementerProfileFixture =
+  | Exclude<ImplementerProfileConfig, { kind: 'api' }>
+  | ApiFixture<Extract<ImplementerProfileConfig, { kind: 'api' }>>;
+type ImplementerProfilesFixture = Omit<NonNullable<Config['implementerProfiles']>, 'profiles'> & {
+  profiles: Record<string, ImplementerProfileFixture>;
+};
+
 type ConfigOverrides = Omit<
   Partial<Config>,
-  'implementer' | 'planner' | 'validation' | 'workflow'
+  'implementer' | 'implementerProfiles' | 'planner' | 'validation' | 'workflow'
 > & {
-  implementer?: Partial<ImplementerConfig>;
-  planner?: PlannerConfig;
+  implementer?: PartialUnion<ImplementerFixture>;
+  planner?: PlannerFixture;
   validation?: Partial<Config['validation']>;
   workflow?: Partial<Config['workflow']>;
+  implementerProfiles?: ImplementerProfilesFixture;
 };
 
 type ConfigInput = {
   version: Config['version'];
-  planner: PlannerConfig;
-  implementer: Partial<ImplementerConfig>;
+  planner: unknown;
+  implementer: unknown;
   validation: Config['validation'];
   workflow: Config['workflow'];
   theme?: Config['theme'];
@@ -41,20 +68,72 @@ type ConfigInput = {
   approval?: Config['approval'];
   plannerEstimateReview?: Config['plannerEstimateReview'];
   autoSplitOverflow?: Config['autoSplitOverflow'];
-  implementerProfiles?: Config['implementerProfiles'];
+  implementerProfiles?: ImplementerProfilesFixture;
 };
 
-function makeImplementerConfig(overrides?: Partial<ImplementerConfig>): Partial<ImplementerConfig> {
+function apiIdentity(provider: string): { service: string; offering: ApiOffering } {
+  const descriptor = Object.values(API_PROVIDER_CATALOG).find(({ id }) => id === provider);
+  return {
+    service: descriptor?.service ?? provider,
+    offering: descriptor?.offering ?? 'payg',
+  };
+}
+
+function makePlannerConfig(planner?: PlannerFixture): unknown {
+  const config = planner ?? { kind: 'cli', tool: 'claude-code' };
+  if (config.kind === 'cli') {
+    return {
+      authChannel: CLI_TOOL_CATALOG[config.tool].auth.channels[0]?.id,
+      ...config,
+    };
+  }
+  if (config.kind !== 'api') return config;
+  return { ...apiIdentity(config.provider), ...config };
+}
+
+function makeImplementerConfig(overrides?: PartialUnion<ImplementerFixture>): unknown {
   if (overrides?.kind !== undefined && overrides.kind !== 'api') {
+    if (overrides.kind === 'cli') {
+      return {
+        authChannel:
+          overrides.tool === undefined
+            ? undefined
+            : CLI_TOOL_CATALOG[overrides.tool].auth.channels[0]?.id,
+        ...overrides,
+      };
+    }
     return overrides;
   }
-  return { ...defaultApiImplementer, ...overrides };
+  const provider =
+    overrides !== undefined && 'provider' in overrides && overrides.provider !== undefined
+      ? overrides.provider
+      : defaultApiImplementer.provider;
+  return { ...defaultApiImplementer, ...apiIdentity(provider), ...overrides };
+}
+
+function makeImplementerProfiles(profiles: ImplementerProfilesFixture): ImplementerProfilesFixture {
+  return {
+    ...profiles,
+    profiles: Object.fromEntries(
+      Object.entries(profiles.profiles).map(([name, profile]) => [
+        name,
+        profile.kind === 'api'
+          ? { ...apiIdentity(profile.provider), ...profile }
+          : profile.kind === 'cli'
+            ? {
+                authChannel: CLI_TOOL_CATALOG[profile.tool].auth.channels[0]?.id,
+                ...profile,
+              }
+            : profile,
+      ]),
+    ),
+  };
 }
 
 export function makeConfig(overrides?: ConfigOverrides): Config {
   const base: ConfigInput = {
     version: 2,
-    planner: overrides?.planner ?? { kind: 'cli', tool: 'claude-code' },
+    planner: makePlannerConfig(overrides?.planner),
     implementer: makeImplementerConfig(overrides?.implementer),
     validation: {
       typecheck: true,
@@ -86,7 +165,7 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
   if (overrides?.autoSplitOverflow !== undefined)
     base.autoSplitOverflow = overrides.autoSplitOverflow;
   if (overrides?.implementerProfiles !== undefined)
-    base.implementerProfiles = overrides.implementerProfiles;
+    base.implementerProfiles = makeImplementerProfiles(overrides.implementerProfiles);
   return ConfigSchema.parse(base);
 }
 

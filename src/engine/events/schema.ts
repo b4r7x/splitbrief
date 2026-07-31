@@ -488,7 +488,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('implementer_generate_failed').extend({
     taskId: TaskIdSchema,
-    model: z.string(),
+    model: z.string().optional(),
   }),
   phaseEvent('validate').extend({
     taskId: TaskIdSchema,

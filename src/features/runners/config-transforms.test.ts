@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import YAML from 'yaml';
+import { fromYaml } from '../../core/config/load/transform.js';
+import { ConfigSchema } from '../../core/schemas/config.js';
 import type { Config } from '../../core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
   commitCustomCommand,
+  commitCustomModel,
   commitImplementerSelection,
   commitPlannerSelection,
   removeCustomModel,
@@ -15,6 +19,8 @@ function makeBaseConfig(): Config {
       command: 'old-command',
     },
     implementer: {
+      service: 'ollama',
+      offering: 'local',
       model: 'llama3',
       contextLength: 8192,
       temperature: 0.3,
@@ -64,6 +70,50 @@ function makeConfigWithOptionalSections(): Config {
       feedRejectionsToPlanner: false,
     },
   };
+}
+
+function namedImplementerProfileConfig(): Config {
+  return ConfigSchema.parse(
+    fromYaml(
+      YAML.parse(`
+version: 3
+planner:
+  kind: cli
+  tool: claude-code
+implementer:
+  kind: cli
+  tool: codex
+  model: legacy-model
+implementer_profiles:
+  default: active-cloud
+  profiles:
+    active-cloud:
+      kind: api
+      provider: together
+      service: together
+      offering: payg
+      api_base: https://api.together.xyz/v1
+      api_key: env:PATH
+      model: existing-model
+      custom_models:
+        - existing-model
+      label: Active cloud
+      cost_tier: cheap
+    dormant-local:
+      kind: cli
+      tool: codex
+      model: dormant-model
+validation:
+  typecheck: true
+  lint: true
+  test: true
+workflow:
+  max_retries: 3
+  persist_transcript: true
+  compaction_format: auto
+`),
+    ),
+  );
 }
 
 describe('commitCustomCommand', () => {
@@ -169,6 +219,164 @@ describe('runner selection commits', () => {
     }
   });
 
+  it('persists an automatic CLI selection as model absence for an existing planner target', () => {
+    const config: Config = {
+      ...makeBaseConfig(),
+      planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
+    };
+
+    const updated = commitPlannerSelection(
+      config,
+      {
+        id: 'claude-code',
+        displayName: 'Claude Code',
+        kind: 'cli',
+        available: true,
+        badge: 'CLI',
+      },
+      { id: 'auto' },
+    );
+
+    expect(updated.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
+  });
+
+  it('persists an automatic CLI selection as model absence for a named implementer profile', () => {
+    const config = namedImplementerProfileConfig();
+    const updated = commitImplementerSelection(
+      config,
+      {
+        id: 'codex',
+        displayName: 'Codex',
+        kind: 'cli',
+        available: true,
+        badge: 'CLI',
+      },
+      { id: 'AUTO' },
+    );
+
+    expect(updated.implementerProfiles?.profiles['active-cloud']).toMatchObject({
+      kind: 'cli',
+      tool: 'codex',
+    });
+    expect(updated.implementerProfiles?.profiles['active-cloud']).not.toHaveProperty('model');
+  });
+
+  it('switches a named API profile to CLI without parsing the API profile as model-less', () => {
+    const config = namedImplementerProfileConfig();
+    const updated = commitImplementerSelection(
+      config,
+      {
+        id: 'codex',
+        displayName: 'Codex',
+        kind: 'cli',
+        available: true,
+        badge: 'CLI',
+      },
+      null,
+    );
+
+    expect(updated.implementerProfiles?.profiles['active-cloud']).toMatchObject({
+      kind: 'cli',
+      tool: 'codex',
+    });
+    expect(updated.implementerProfiles?.profiles['active-cloud']).not.toHaveProperty('model');
+  });
+
+  it('preserves an active API model when the API provider remains selected', () => {
+    const config = namedImplementerProfileConfig();
+    const updated = commitImplementerSelection(
+      config,
+      {
+        id: 'together',
+        displayName: 'Together AI',
+        kind: 'api',
+        available: true,
+        badge: 'API',
+      },
+      null,
+    );
+
+    expect(updated.implementerProfiles?.profiles['active-cloud']).toMatchObject({
+      kind: 'api',
+      provider: 'together',
+      model: 'existing-model',
+    });
+  });
+
+  it('preserves explicit model IDs when committing a CLI selection', () => {
+    const updated = commitPlannerSelection(
+      makeBaseConfig(),
+      {
+        id: 'claude-code',
+        displayName: 'Claude Code',
+        kind: 'cli',
+        available: true,
+        badge: 'CLI',
+      },
+      { id: 'sonnet' },
+    );
+
+    expect(updated.planner).toEqual({ kind: 'cli', tool: 'claude-code', model: 'sonnet' });
+  });
+
+  it('drops source model metadata when switching without a destination model', () => {
+    const config: Config = {
+      ...makeBaseConfig(),
+      implementer: {
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
+        apiBase: 'https://openrouter.ai/api/v1',
+        model: 'source-model',
+        customModels: ['source-model', 'source-only-model'],
+      },
+    };
+
+    const updated = commitImplementerSelection(
+      config,
+      {
+        id: 'codex',
+        displayName: 'Codex',
+        kind: 'cli',
+        available: true,
+        badge: 'CLI',
+      },
+      null,
+    );
+
+    expect(updated.implementer).toEqual({ kind: 'cli', tool: 'codex' });
+  });
+
+  it('requires an explicit model when switching to a destination that needs one', () => {
+    const config: Config = {
+      ...makeBaseConfig(),
+      implementer: {
+        kind: 'api',
+        provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
+        apiBase: 'https://openrouter.ai/api/v1',
+        model: 'source-model',
+        customModels: ['source-model', 'source-only-model'],
+      },
+    };
+
+    expect(() =>
+      commitImplementerSelection(
+        config,
+        {
+          id: 'anthropic',
+          displayName: 'Anthropic',
+          kind: 'api',
+          available: true,
+          badge: 'API',
+        },
+        null,
+      ),
+    ).toThrow(/model/);
+  });
+
   it('switches planners from shell to api when selecting an API provider', () => {
     const updated = commitPlannerSelection(
       makeBaseConfig(),
@@ -210,6 +418,101 @@ describe('runner selection commits', () => {
     expect(updated.palette).toEqual(config.palette);
     expect(updated.approval).toEqual(config.approval);
   });
+
+  it('updates every picker field on the active named implementer profile', () => {
+    const config = namedImplementerProfileConfig();
+    const profiles = config.implementerProfiles;
+    expect(profiles).toBeDefined();
+    if (!profiles) return;
+    const dormant = profiles.profiles['dormant-local'];
+
+    const selectedModel = commitImplementerSelection(
+      config,
+      {
+        id: 'together',
+        displayName: 'Together AI',
+        kind: 'api',
+        available: true,
+        badge: 'API',
+      },
+      { id: 'selected-model' },
+    );
+    const selectedApi = selectedModel.implementerProfiles?.profiles['active-cloud'];
+    expect(selectedApi).toMatchObject({
+      kind: 'api',
+      provider: 'together',
+      apiBase: 'https://api.together.xyz/v1',
+      apiKey: 'env:PATH',
+      model: 'selected-model',
+    });
+
+    const selectedTool = commitImplementerSelection(
+      config,
+      {
+        id: 'codex',
+        displayName: 'Codex',
+        kind: 'cli',
+        available: true,
+        badge: 'CLI',
+      },
+      { id: 'gpt-5.4-mini' },
+    );
+    expect(selectedTool.implementerProfiles?.profiles['active-cloud']).toMatchObject({
+      kind: 'cli',
+      tool: 'codex',
+      model: 'gpt-5.4-mini',
+    });
+
+    const customAdded = commitCustomModel({
+      config,
+      role: 'implementer',
+      selection: {
+        id: 'together',
+        displayName: 'Together AI',
+        kind: 'api',
+        available: true,
+        badge: 'API',
+      },
+      modelName: 'custom-added',
+      customModels: ['existing-model'],
+    });
+    expect(customAdded.implementerProfiles?.profiles['active-cloud']).toMatchObject({
+      model: 'custom-added',
+      customModels: ['existing-model', 'custom-added'],
+      apiBase: 'https://api.together.xyz/v1',
+      apiKey: 'env:PATH',
+    });
+
+    const customRemoved = removeCustomModel(customAdded, 'implementer', 'custom-added');
+    expect(customRemoved.implementerProfiles?.profiles['active-cloud']).toMatchObject({
+      model: 'existing-model',
+      customModels: ['existing-model'],
+    });
+
+    const customCommand = commitCustomCommand({
+      config,
+      role: 'implementer',
+      command: 'local-implementer --stdio',
+      kind: 'agent',
+    });
+    expect(customCommand.implementerProfiles?.profiles['active-cloud']).toEqual({
+      kind: 'agent',
+      command: 'local-implementer --stdio',
+      model: 'existing-model',
+      label: 'Active cloud',
+      costTier: 'cheap',
+    });
+
+    for (const updated of [
+      selectedModel,
+      selectedTool,
+      customAdded,
+      customRemoved,
+      customCommand,
+    ]) {
+      expect(updated.implementerProfiles?.profiles['dormant-local']).toEqual(dormant);
+    }
+  });
 });
 
 describe('removeCustomModel', () => {
@@ -219,6 +522,8 @@ describe('removeCustomModel', () => {
       planner: {
         kind: 'api' as const,
         provider: 'openrouter',
+        service: 'openrouter',
+        offering: 'payg',
         apiBase: 'https://openrouter.ai/api/v1',
         model: 'my-custom-planner',
         customModels: ['my-custom-planner', 'other-planner-model'],
@@ -226,6 +531,8 @@ describe('removeCustomModel', () => {
       implementer: {
         kind: 'api' as const,
         provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
         apiBase: 'http://localhost:11434/v1',
         model: 'my-custom-impl',
         contextLength: 8192,
@@ -274,12 +581,14 @@ describe('removeCustomModel', () => {
     expect(updated.implementer.customModels).toEqual([]);
   });
 
-  it('falls back to auto when deleting the active last custom implementer model', () => {
+  it('keeps an explicit required model when deleting its last custom-model entry', () => {
     const config: Config = {
       ...makeBaseConfig(),
       implementer: {
         kind: 'api' as const,
         provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
         apiBase: 'http://localhost:11434/v1',
         model: 'the-only-custom',
         contextLength: 8192,
@@ -289,6 +598,22 @@ describe('removeCustomModel', () => {
     };
     const updated = removeCustomModel(config, 'implementer', 'the-only-custom');
     expect(updated.implementer.customModels).toEqual([]);
-    expect(updated.implementer.model).toBe('auto');
+    expect(updated.implementer.model).toBe('the-only-custom');
+  });
+
+  it('uses model absence when deleting the active last custom model from a CLI', () => {
+    const config: Config = {
+      ...makeBaseConfig(),
+      implementer: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'the-only-custom',
+        customModels: ['the-only-custom'],
+      },
+    };
+    const updated = removeCustomModel(config, 'implementer', 'the-only-custom');
+    expect(updated.implementer.customModels).toEqual([]);
+    expect(updated.implementer.model).toBeUndefined();
+    expect('model' in updated.implementer).toBe(false);
   });
 });

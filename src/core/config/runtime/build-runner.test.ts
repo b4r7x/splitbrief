@@ -102,6 +102,50 @@ describe('buildRunnerConfig', () => {
       expect(expectApi(result).apiBase).toBe('http://localhost:1234/v1');
     });
 
+    it('normalizes an exact fixed provider endpoint', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'openai',
+        apiBase: 'HTTPS://API.OPENAI.COM:443/v1/',
+        model: 'gpt-5.4',
+      });
+
+      expect(expectApi(result).apiBase).toBe('https://api.openai.com/v1');
+    });
+
+    it('normalizes a loopback provider endpoint', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'ollama',
+        apiBase: 'http://127.0.0.1:22000',
+        model: 'qwen2.5:7b',
+      });
+
+      expect(expectApi(result).apiBase).toBe('http://127.0.0.1:22000/v1');
+    });
+
+    it('rejects a fixed provider endpoint on another origin', () => {
+      expect(() =>
+        buildRunnerConfig('implementer', {
+          kind: 'api',
+          tool: 'openai',
+          apiBase: 'https://proxy.example.com/v1',
+          model: 'gpt-5.4',
+        }),
+      ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
+    });
+
+    it('rejects a local provider endpoint outside loopback', () => {
+      expect(() =>
+        buildRunnerConfig('implementer', {
+          kind: 'api',
+          tool: 'ollama',
+          apiBase: 'http://192.168.0.2:11434/v1',
+          model: 'qwen2.5:7b',
+        }),
+      ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
+    });
+
     it('does not reuse the previous provider apiBase when switching providers', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
@@ -110,6 +154,8 @@ describe('buildRunnerConfig', () => {
         existing: {
           kind: 'api',
           provider: 'openrouter',
+          service: 'openrouter',
+          offering: 'payg',
           apiBase: 'https://openrouter.ai/api/v1',
           apiKey: 'openrouter-key',
           model: 'anthropic/claude-sonnet-4.6',
@@ -167,6 +213,8 @@ describe('buildRunnerConfig', () => {
         existing: {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen2.5:7b',
           contextLength: 8192,
@@ -184,6 +232,8 @@ describe('buildRunnerConfig', () => {
         existing: {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'old-model',
         },
@@ -195,10 +245,12 @@ describe('buildRunnerConfig', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
         tool: 'anthropic',
-        model: 'qwen2.5:7b',
+        model: 'claude-sonnet-4-6',
         existing: {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen2.5:7b',
           contextLength: 8192,
@@ -211,24 +263,29 @@ describe('buildRunnerConfig', () => {
       expect(api.temperature).toBeUndefined();
     });
 
-    it('switching model on the same tool drops them', () => {
+    it('switching model on the same target preserves every other generation field', () => {
+      const existing = {
+        kind: 'api' as const,
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local' as const,
+        apiBase: 'http://localhost:11434/v1',
+        apiKey: 'env:OLLAMA_API_KEY',
+        model: 'old-model',
+        contextLength: 8192,
+        temperature: 0.3,
+        timeout: 120000,
+        customModels: ['old-model', 'other-model'],
+        effort: 'high' as const,
+      };
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
         tool: 'ollama',
         model: 'new-model',
-        existing: {
-          kind: 'api',
-          provider: 'ollama',
-          apiBase: 'http://localhost:11434/v1',
-          model: 'old-model',
-          contextLength: 8192,
-          temperature: 0.3,
-        },
+        existing,
       });
 
-      const api = expectApi(result);
-      expect(api.contextLength).toBeUndefined();
-      expect(api.temperature).toBeUndefined();
+      expect(result).toEqual({ ...existing, model: 'new-model' });
     });
 
     it('same target + same model keeps them', () => {
@@ -239,6 +296,8 @@ describe('buildRunnerConfig', () => {
         existing: {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'qwen2.5:7b',
           contextLength: 8192,
@@ -251,7 +310,7 @@ describe('buildRunnerConfig', () => {
       expect(api.temperature).toBe(0.3);
     });
 
-    it('timeout and customModels always carry', () => {
+    it('carries timeout but resets source customModels across targets', () => {
       const result = buildRunnerConfig('implementer', {
         kind: 'api',
         tool: 'anthropic',
@@ -259,6 +318,8 @@ describe('buildRunnerConfig', () => {
         existing: {
           kind: 'api',
           provider: 'ollama',
+          service: 'ollama',
+          offering: 'local',
           apiBase: 'http://localhost:11434/v1',
           model: 'old-model',
           contextLength: 8192,
@@ -270,7 +331,197 @@ describe('buildRunnerConfig', () => {
 
       const api = expectApi(result);
       expect(api.timeout).toBe(120000);
-      expect(api.customModels).toEqual(['old-model', 'other-model']);
+      expect(api.customModels).toBeUndefined();
+    });
+  });
+
+  describe('target changes', () => {
+    const source = {
+      kind: 'api' as const,
+      provider: 'openrouter',
+      service: 'openrouter',
+      offering: 'payg' as const,
+      apiBase: 'https://openrouter.ai/api/v1',
+      apiKey: 'env:OPENROUTER_API_KEY',
+      model: 'anthropic/claude-opus-4.6',
+      customModels: ['anthropic/claude-opus-4.6', 'source-only-model'],
+      effort: 'high' as const,
+    };
+
+    it('requires a destination model for a required target', () => {
+      expect(() =>
+        buildRunnerConfig('implementer', {
+          kind: 'api',
+          tool: 'anthropic',
+          existing: source,
+        }),
+      ).toThrow(/model/);
+    });
+
+    it('keeps an explicit destination model even when it equals the source model', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'anthropic',
+        model: source.model,
+        existing: source,
+      });
+
+      expect(result).toEqual({
+        kind: 'api',
+        provider: 'anthropic',
+        service: 'anthropic',
+        offering: 'payg',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: source.model,
+      });
+    });
+
+    it('keeps explicitly supplied destination custom models', () => {
+      const destinationCustomModels = [...source.customModels];
+      const result = buildRunnerConfig('implementer', {
+        kind: 'cli',
+        tool: 'codex',
+        model: source.model,
+        customModels: destinationCustomModels,
+        existing: source,
+      });
+
+      expect(result).toEqual({
+        kind: 'cli',
+        tool: 'codex',
+        model: source.model,
+        customModels: destinationCustomModels,
+      });
+    });
+
+    it('keeps an explicit destination model for an optional target', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'gpt-5.4',
+        existing: source,
+      });
+
+      expect(result).toEqual({ kind: 'cli', tool: 'codex', model: 'gpt-5.4' });
+    });
+
+    it('uses model absence when an optional CLI target delegates to its backend default', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'cli',
+        tool: 'codex',
+        existing: source,
+      });
+
+      expect(result).toEqual({ kind: 'cli', tool: 'codex' });
+    });
+
+    it('rejects the auto sentinel instead of silently substituting model absence', () => {
+      expect(() =>
+        buildRunnerConfig('implementer', {
+          kind: 'cli',
+          tool: 'copilot',
+          model: 'auto',
+          existing: source,
+        }),
+      ).toThrow(/auto.*not a model ID/);
+    });
+
+    it('initializes a hosted target from its destination descriptor', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        apiBase: source.apiBase,
+        apiKey: source.apiKey,
+        service: source.service,
+        offering: source.offering,
+        effort: source.effort,
+        existing: source,
+      });
+
+      expect(result).toEqual({
+        kind: 'api',
+        provider: 'anthropic',
+        service: 'anthropic',
+        offering: 'payg',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+      });
+    });
+
+    it('initializes a subscription target without API or auto state', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'cli',
+        tool: 'copilot',
+        effort: source.effort,
+        existing: source,
+      });
+
+      expect(result).toEqual({ kind: 'cli', tool: 'copilot' });
+    });
+
+    it('initializes a local target from its destination descriptor', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'ollama',
+        model: 'qwen3-coder:30b',
+        apiBase: source.apiBase,
+        apiKey: source.apiKey,
+        service: source.service,
+        offering: source.offering,
+        effort: source.effort,
+        existing: source,
+      });
+
+      expect(result).toEqual({
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'qwen3-coder:30b',
+      });
+    });
+
+    it('does not carry planner capability state to a different command target', () => {
+      const capabilities = {
+        supportsConversationalPlanning: true,
+        supportsHintEscalation: true,
+      };
+      const commandSource = {
+        kind: 'shell' as const,
+        command: 'source-planner',
+        model: 'source-model',
+        effort: 'high' as const,
+        capabilities,
+      };
+      const result = buildRunnerConfig('planner', {
+        kind: 'shell',
+        command: 'destination-planner',
+        effort: commandSource.effort,
+        capabilities,
+        existing: commandSource,
+      });
+
+      expect(result).toEqual({ kind: 'shell', command: 'destination-planner' });
+    });
+
+    it('resets inherited CLI auth channel when switching CLI targets', () => {
+      const source = {
+        kind: 'cli' as const,
+        tool: 'codex' as const,
+        authChannel: 'session' as const,
+        model: 'source-model',
+      };
+
+      const result = buildRunnerConfig('implementer', {
+        ...source,
+        existing: source,
+        tool: 'copilot',
+        model: undefined,
+      });
+
+      expect(result).toEqual({ kind: 'cli', tool: 'copilot' });
     });
   });
 

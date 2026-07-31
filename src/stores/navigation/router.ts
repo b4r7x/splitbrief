@@ -6,6 +6,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { Screen } from '../../core/navigation/types.js';
+import type { CliStartGates } from '../../engine/runners/start-gate.js';
 
 export type WorkflowAttach = {
   sockPath: string;
@@ -21,6 +22,7 @@ type WorkflowPayload = {
   allowRepoRunners?: boolean | undefined;
   attach?: WorkflowAttach | undefined;
   readiness?: ReadinessReport | undefined;
+  trustedCliGates?: CliStartGates | undefined;
 };
 type SummaryPayload = {
   summary: Summary;
@@ -82,6 +84,7 @@ function navigate(args: NavigateArgs) {
         allowRepoRunners: args.allowRepoRunners,
         attach: args.attach,
         readiness: args.readiness,
+        trustedCliGates: args.trustedCliGates,
       });
       return;
     case 'summary':

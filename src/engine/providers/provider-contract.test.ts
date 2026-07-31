@@ -155,11 +155,28 @@ describe.each(FIXTURES)('$name provider contract', (f) => {
     expect(p.isLocal).toBe(f.isLocal);
   });
 
-  it('respects apiBase and apiKey overrides', () => {
-    const p = f.create({ apiBase: 'https://override.example/v1', apiKey: 'override-key' });
-    expect(p.baseURL).toBe('https://override.example/v1');
+  it('respects policy-valid apiBase and apiKey overrides', () => {
+    const apiBase =
+      f.name === 'ollama' || f.name === 'lm-studio'
+        ? 'http://127.0.0.1:22000/v1'
+        : f.defaultBaseURL;
+    const p = f.create({ apiBase, apiKey: 'override-key' });
+    expect(p.baseURL).toBe(apiBase);
     expect(p.apiKey()).toBe('override-key');
   });
+
+  if (f.name !== 'ollama') {
+    it('rejects a policy-invalid apiBase before resolving credentials', () => {
+      delete process.env.PROVIDER_CONTRACT_MISSING;
+
+      expect(() =>
+        f.create({
+          apiBase: 'https://override.example/v1',
+          apiKey: 'env:PROVIDER_CONTRACT_MISSING',
+        }),
+      ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
+    });
+  }
 
   it('listModels returns model IDs on success', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
