@@ -82,13 +82,13 @@ export function OpenGraphSurface() {
       <div className="metadata-og__face">
         <header className="metadata-og__header">
           <Wordmark />
-          <p>Planner / Task Brief / Implementer</p>
+          <p>Task compiler for AI coding agents</p>
         </header>
 
         <div className="metadata-og__body">
           <div className="metadata-og__copy">
             <p className="metadata-eyebrow">Patch field / signal path</p>
-            <h1 id="og-title">Patch your planner into your implementer.</h1>
+            <h1 id="og-title">Patch any planner into any implementer.</h1>
             <p>The Task Brief is the signal between them.</p>
           </div>
 

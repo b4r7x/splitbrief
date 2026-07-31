@@ -1,7 +1,9 @@
 /* Wordmark lock: the figlet lives on a fixed cell grid — hard px font-size and
    line-height, `pre`, box reserved at the grid's own dimensions. Fragment Mono's
-   cell is 0.618125em wide by 1.2em tall; any line-height under 1.2em collides the
-   rows into each other. Resize only via transform: scale(), never via font math. */
+   cell is 0.618125em wide; its rows need 1.47em, not a terminal's 1.2em, because
+   the web font's stems and underscores carry more ink than a terminal cell's and
+   collide into an unreadable mass at the tighter step (measured at 15px and 22px).
+   Resize only via transform: scale(), never via font math. */
 .wordmark {
   margin: 0;
   color: var(--fg);
@@ -12,16 +14,16 @@
 
 .wordmark--full {
   inline-size: 43ch;
-  block-size: 108px;
+  block-size: 132px;
   font-size: 15px;
-  line-height: 18px;
+  line-height: 22px;
 }
 
 .wordmark--compact {
   inline-size: 37ch;
-  block-size: 78px;
+  block-size: 95px;
   font-size: 13px;
-  line-height: 15.6px;
+  line-height: 19px;
 }
 
 .jack-bullet {
@@ -218,8 +220,9 @@
     border-block-end: 1px solid var(--grid-decorative);
   }
 
-  .bordered-frame__patch {
-    justify-content: flex-start;
-    padding-inline: 0.5rem;
+  /* The patch cord stays a spacer so the actions keep their end, but its leads
+     would otherwise sit alone on the wrapped row. */
+  .bordered-frame__patch span {
+    display: none;
   }
 }

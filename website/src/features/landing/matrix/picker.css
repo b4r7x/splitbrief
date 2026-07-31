@@ -65,8 +65,10 @@
 
 .pairing-picker__option:has(.pairing-picker__input:focus-visible) {
   z-index: 2;
-  outline: var(--focus-width) solid var(--focus);
+  outline-color: var(--focus);
   outline-offset: var(--focus-offset);
+  outline-style: solid;
+  outline-width: var(--focus-width);
 }
 
 .pairing-picker__option[data-selected="true"] {

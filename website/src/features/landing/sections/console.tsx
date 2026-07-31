@@ -9,17 +9,32 @@ export function ConsoleSection() {
     <PanelStrip className="console-section" id="console" legend="The console">
       <figure className="console-section__figure">
         <div className="console-section__artifact">
-          <img
-            alt={FRAME_ALT}
-            className="console-section__frame"
-            height={608}
-            src="/frames/workflow-implementation-120x38.svg"
-            width={960}
-          />
+          <picture>
+            <source
+              height={288}
+              media="(max-width: 699px)"
+              srcSet="/frames/workflow-implementation-60x18.svg"
+              width={480}
+            />
+            <img
+              alt={FRAME_ALT}
+              className="console-section__frame"
+              height={608}
+              src="/frames/workflow-implementation-120x38.svg"
+              width={960}
+            />
+          </picture>
         </div>
         <figcaption className="console-section__caption">
           <span aria-hidden="true" className="console-section__provenance">
-            workflow-implementation / real capture · header cropped / 120 × 38
+            <span className="console-section__geometry console-section__geometry--wide">
+              workflow-implementation / real capture · header cropped /{' '}
+              <span className="console-section__dims">120 × 38</span>
+            </span>
+            <span className="console-section__geometry console-section__geometry--narrow">
+              workflow-implementation / real capture /{' '}
+              <span className="console-section__dims">60 × 18</span>
+            </span>
           </span>
           <span className="console-section__whisper">You pay for the thinking once.</span>
         </figcaption>

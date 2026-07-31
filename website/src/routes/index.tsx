@@ -7,6 +7,7 @@ import { BreathSection } from '../features/landing/sections/breath.js';
 import { ConsoleSection } from '../features/landing/sections/console.js';
 import { InterlockSection } from '../features/landing/sections/interlock.js';
 import { ModesSection } from '../features/landing/sections/modes.js';
+import { PatchFieldSection } from '../features/landing/sections/patch-field.js';
 import { RunnerKindsSection } from '../features/landing/sections/runner-kinds.js';
 import { SignalSection } from '../features/landing/sections/signal.js';
 import { SiteFooter } from '../features/landing/site-footer.js';
@@ -48,6 +49,7 @@ function LandingPage() {
     <div className="landing-shell" data-theme="dark">
       <main>
         <Hero />
+        <PatchFieldSection />
         <BreathSection />
         <SignalSection />
         <RunnerKindsSection />

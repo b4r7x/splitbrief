@@ -1,0 +1,262 @@
+/* THE ENTRANCE — an HTML recreation of the real `splitbrief` home screen, labeled
+   as one on its own faceplate. Frame is one surface step above the hero ground;
+   the composer well is one step below it. */
+
+.terminal {
+  --terminal-pad-block: clamp(1.25rem, 2.4vw, 1.75rem);
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  block-size: 100%;
+  min-inline-size: 0;
+  overflow: hidden;
+  border: var(--edge);
+  border-radius: var(--radius-frame);
+  background-color: var(--surface-1);
+  box-shadow:
+    var(--edge-highlight),
+    0 1px 2px rgb(0 0 0 / 24%),
+    0 12px 32px rgb(0 0 0 / 22%);
+}
+
+.terminal__faceplate {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  min-block-size: 2.25rem;
+  padding-inline: 0.875rem;
+  border-block-end: 1px solid var(--grid-decorative);
+  background-color: var(--surface-2);
+}
+
+.terminal__shell {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+
+.terminal__provenance {
+  color: var(--dim);
+  font-family: var(--display);
+  font-size: 0.6875rem;
+  font-stretch: expanded;
+  font-weight: 500;
+  letter-spacing: var(--track-legend);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.terminal__screen {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+  padding: var(--terminal-pad-block) clamp(0.875rem, 2vw, 1.5rem);
+}
+
+/* De-idled ground: what was half the entrance's height is now one breath, and it
+   is the only part that stretches when the frame is taller than its rows. */
+.terminal__ground {
+  flex: 1 1 auto;
+  min-block-size: clamp(0.75rem, 2.5vh, 2rem);
+}
+
+/* Wordmark lock: the tiers keep their own fixed cell grid (primitives.css) and are
+   resized only by this one scale, with the box reserved at the scaled height. */
+.terminal__wordmark {
+  --wordmark-scale: 1;
+  display: flex;
+  justify-content: center;
+  block-size: calc(95px * var(--wordmark-scale));
+  margin-block-start: clamp(0.25rem, 2vh, 1.25rem);
+}
+
+.terminal__wordmark-tier {
+  transform: scale(var(--wordmark-scale));
+  transform-origin: top center;
+}
+
+.terminal__wordmark-tier--full {
+  display: none;
+}
+
+.terminal__pairing {
+  max-inline-size: none;
+  margin: clamp(1rem, 2.6vh, 1.75rem) 0 0;
+  font-family: var(--mono);
+  font-size: var(--text-mono);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* Segments break only between roles, never mid-pairing. */
+.terminal__segment {
+  white-space: nowrap;
+}
+
+.terminal__role--planner {
+  color: var(--planner-text);
+}
+
+.terminal__role--implementer {
+  color: var(--implementer);
+}
+
+.terminal__punct,
+.terminal__model,
+.terminal__mode {
+  color: var(--dim);
+}
+
+.terminal__sessions {
+  margin-block-start: clamp(1.25rem, 3.2vh, 2.25rem);
+  font-family: var(--mono);
+  font-size: var(--text-mono);
+}
+
+.terminal__sessions-label {
+  max-inline-size: none;
+  margin: 0;
+  color: var(--fg);
+}
+
+.terminal__sessions-empty {
+  max-inline-size: none;
+  margin: 0;
+  color: var(--dim);
+}
+
+.terminal__hints {
+  max-inline-size: none;
+  margin: clamp(0.75rem, 2.5vh, 2rem) 0 0;
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  text-align: center;
+  text-wrap: balance;
+}
+
+.terminal__composer {
+  display: flex;
+  gap: 0.625rem;
+  align-items: center;
+  min-block-size: 2.75rem;
+  margin-block-start: 0.875rem;
+  padding-inline: 0.75rem;
+  border: 1px solid var(--grid-functional);
+  border-radius: var(--radius-control);
+  background-color: var(--ground);
+}
+
+.terminal__composer:focus-within {
+  outline-color: var(--focus);
+  outline-offset: var(--focus-offset);
+  outline-style: solid;
+  outline-width: var(--focus-width);
+}
+
+.terminal__composer-prompt {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: var(--text-mono);
+}
+
+.terminal__composer-field {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+}
+
+.terminal__composer-input {
+  inline-size: 100%;
+  min-block-size: 2.25rem;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: var(--text-mono);
+}
+
+.terminal__composer-input[data-empty] {
+  caret-color: transparent;
+}
+
+.terminal__composer-input:focus-visible {
+  outline: none;
+}
+
+.terminal__caret {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 0;
+  inline-size: 0.62em;
+  block-size: 1.15em;
+  translate: 0 -50%;
+  background-color: var(--fg);
+  font-size: var(--text-mono);
+  animation: terminal-caret 1.06s step-end infinite;
+  pointer-events: none;
+}
+
+@keyframes terminal-caret {
+  0%,
+  60% {
+    opacity: 1;
+  }
+
+  60.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.terminal__composer-hint {
+  color: var(--dim);
+  font-family: var(--mono);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal__caret {
+    animation: none;
+  }
+}
+
+@media (min-width: 700px) {
+  .terminal__wordmark {
+    --wordmark-scale: 1.2;
+    block-size: calc(132px * var(--wordmark-scale));
+  }
+
+  .terminal__wordmark-tier--full {
+    display: block;
+  }
+
+  .terminal__wordmark-tier--compact {
+    display: none;
+  }
+}
+
+/* The hero headline crosses this faceplate's left end; the legends clear it. */
+@media (min-width: 1024px) {
+  .terminal__faceplate {
+    gap: 1.75rem;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 559px) {
+  .terminal__hints {
+    font-size: 0.6875rem;
+  }
+
+  .terminal__composer-hint {
+    display: none;
+  }
+}

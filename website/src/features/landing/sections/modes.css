@@ -40,6 +40,7 @@
   font-family: var(--mono);
   font-size: var(--text-mono);
   font-weight: 400;
+  white-space: nowrap;
 }
 
 .modes-table tbody td {
@@ -55,6 +56,7 @@
 
 .modes-table__approval {
   color: var(--fg);
+  white-space: nowrap;
 }
 
 .modes-table__artifacts {
@@ -70,6 +72,10 @@
 
 .modes-note p {
   margin: 0;
+}
+
+.modes-note code {
+  white-space: nowrap;
 }
 
 .modes-note p + p {

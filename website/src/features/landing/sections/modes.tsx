@@ -47,8 +47,11 @@ export function ModesSection() {
         </table>
         <div className="modes-note">
           <p>
-            Counts assume a clean run. Regeneration, clarifications, retries, and escalation add
-            calls.
+            Counts are the workflow reference's own, for a clean run. A successful run adds one
+            final-review call; regeneration, clarifications, retries, and escalation add more.{' '}
+            <a className="inline-link" href="/docs/concepts/workflow-modes-and-phases">
+              Modes and phases, in full.
+            </a>
           </p>
           <p>
             <code>standard</code> and <code>speckit</code> also pause for briefs review before

@@ -33,11 +33,15 @@ describe('ModesSection', () => {
       expect(within(row).getByRole('cell', { name: approval })).toBeVisible();
       expect(within(row).getByRole('cell', { name: artifacts })).toBeVisible();
     }
-    expect(
-      within(section).getByText(
-        'Counts assume a clean run. Regeneration, clarifications, retries, and escalation add calls.',
-      ),
-    ).toBeVisible();
+    const basis = within(section).getByText(/Counts are the workflow reference's own/);
+    expect(basis).toHaveTextContent(
+      "Counts are the workflow reference's own, for a clean run. A successful run adds one " +
+        'final-review call; regeneration, clarifications, retries, and escalation add more.',
+    );
+    expect(within(basis).getByRole('link', { name: 'Modes and phases, in full.' })).toHaveAttribute(
+      'href',
+      '/docs/concepts/workflow-modes-and-phases',
+    );
     expect(within(section).getByText(/pause for briefs review before/)).toBeVisible();
   });
 });

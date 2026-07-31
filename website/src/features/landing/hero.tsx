@@ -1,7 +1,6 @@
 import { DOCS_HOME_PATH } from '../../docs-home-path.js';
 import { GITHUB_REPOSITORY_URL } from '../../../shared/site-identity.js';
-import { PairingMatrix } from './matrix/matrix.js';
-import { Wordmark } from './wordmark.js';
+import { TerminalEntrance } from './terminal/terminal.js';
 import './hero.css';
 
 export function Hero() {
@@ -20,15 +19,12 @@ export function Hero() {
         </nav>
       </header>
 
-      <div className="hero__head">
+      <div className="hero__stage">
         <div className="hero__copy">
-          <Wordmark className="hero__wordmark" tier="compact" />
           <h1 className="hero__headline" id="landing-headline">
-            Patch <span className="hero__accent-planner">your planner</span> into{' '}
-            <span className="hero__accent-implementer">your implementer</span>.
+            Patch <span className="hero__accent-planner">any planner</span> into{' '}
+            <span className="hero__accent-implementer">any implementer</span>.
           </h1>
-        </div>
-        <div className="hero__aside">
           <p className="hero__sub">The Task Brief is the signal between them.</p>
           <p className="hero__meta">open source · MIT · runs in your terminal</p>
           <a className="hero__cta" href="#install">
@@ -38,13 +34,10 @@ export function Hero() {
             </span>
           </a>
         </div>
-      </div>
 
-      <div className="hero__field">
-        <p className="hero__field-lead">
-          Six planners × six implementers. Every crossing emits a complete, schema-valid config.
-        </p>
-        <PairingMatrix />
+        <div className="hero__entrance">
+          <TerminalEntrance />
+        </div>
       </div>
     </section>
   );

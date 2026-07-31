@@ -1,9 +1,12 @@
 .hero {
+  --hero-headline: clamp(2.4rem, 4vw, 3.75rem);
+  --hero-line: calc(var(--hero-headline) * 1.05);
   position: relative;
-  padding-block-end: clamp(3rem, 6vh, 4.5rem);
+  padding-block-end: clamp(3rem, 7vh, 5rem);
   background: radial-gradient(120% 90% at 50% 0%, #121216 0%, var(--ground) 60%);
 }
 
+/* The page's only atmosphere: one blurred floor under the entrance, plus grain. */
 .hero__atmosphere {
   position: absolute;
   z-index: 0;
@@ -28,14 +31,15 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Entry stub of the signal path: same x as the section motif line below. */
+/* Entry stub of the signal path: leaves the entrance's bottom edge on the rail x
+   the section motif below continues from. */
 .hero::after {
   position: absolute;
   z-index: 0;
   inset-block-end: 0;
   inset-inline-start: calc(var(--rail-x) - 16px);
   inline-size: 1px;
-  block-size: 22vh;
+  block-size: clamp(3rem, 7vh, 5rem);
   background: linear-gradient(to top, var(--grid-decorative), transparent);
   content: "";
 }
@@ -85,33 +89,25 @@
   text-underline-offset: 0.2em;
 }
 
-.hero__head {
+.hero__stage {
   position: relative;
   z-index: 1;
   display: grid;
-  gap: 1.75rem;
+  gap: clamp(2rem, 4.5vh, 3rem);
   padding-block-start: clamp(2rem, 4.5vh, 3rem);
   padding-inline: var(--rail-x);
 }
 
 .hero__copy {
+  position: relative;
+  z-index: 2;
   min-inline-size: 0;
-}
-
-/* Wordmark lock: fixed cell grid (px font and line-height, pre), engraved-legend ink. */
-.hero__wordmark {
-  margin-block-end: 1.25rem;
-  color: var(--dim);
-  font-size: 12px;
-  line-height: 12px;
-  inline-size: 37ch;
-  block-size: calc(5 * 12px);
 }
 
 .hero__headline {
   color: var(--fg);
-  font-size: clamp(2.4rem, 4vw, 3.75rem);
-  line-height: 1.04;
+  font-size: var(--hero-headline);
+  line-height: 1.05;
 }
 
 .hero__accent-planner {
@@ -122,13 +118,9 @@
   color: var(--implementer);
 }
 
-.hero__aside {
-  min-inline-size: 0;
-}
-
 .hero__sub {
-  max-inline-size: 34ch;
-  margin: 0;
+  max-inline-size: 32ch;
+  margin: clamp(1.25rem, 3vh, 2rem) 0 0;
   color: var(--dim);
   font-size: 1.125rem;
   line-height: 1.5;
@@ -136,7 +128,7 @@
 
 .hero__meta {
   max-inline-size: none;
-  margin: 1rem 0 0;
+  margin: 0.875rem 0 0;
   color: var(--dim);
   font-family: var(--mono);
   font-size: 0.75rem;
@@ -147,7 +139,7 @@
   gap: 0.75rem;
   align-items: center;
   min-block-size: 2.75rem;
-  margin-block-start: 1.25rem;
+  margin-block-start: 1.5rem;
   padding-inline: 1.25rem;
   border: var(--edge);
   border-radius: var(--radius-control);
@@ -178,48 +170,48 @@
   color: var(--fg);
 }
 
-.hero__field {
+.hero__entrance {
   position: relative;
   z-index: 1;
   min-inline-size: 0;
-  margin-block-start: clamp(2.25rem, 5vh, 3.5rem);
-  padding-inline: var(--rail-x);
 }
 
-.hero__field-lead {
-  margin: 0 0 clamp(1rem, 2vw, 1.5rem);
-  color: var(--dim);
-  font-size: 1.0625rem;
-}
-
+/* Two-plane composition: the headline's last line crosses the entrance faceplate,
+   which is why the faceplate legends sit on its right end. */
 @media (min-width: 1024px) {
-  .hero__head {
-    grid-template-columns: minmax(0, 7fr) minmax(17rem, 3fr);
-    column-gap: 3rem;
-    align-items: end;
+  .hero__stage {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    column-gap: clamp(1.5rem, 3vw, 3rem);
   }
 
-  .hero__aside {
-    justify-self: end;
-    padding-block-end: 0.25rem;
-    text-align: end;
+  .hero__headline {
+    inline-size: calc(100% + clamp(4rem, 9vw, 11rem));
   }
 
-  .hero__sub {
-    margin-inline-start: auto;
+  .hero__copy {
+    display: flex;
+    flex-direction: column;
+    align-items: start;
+  }
+
+  /* Two groups, one gap: the claim at the top of the face, its chrome and the
+     install control at the bottom, on the same row as the entrance's composer. */
+  .hero__meta {
+    margin-block-start: auto;
+  }
+
+  .hero__cta {
+    margin-block-end: clamp(1.25rem, 2.4vw, 1.75rem);
+  }
+
+  .hero__entrance {
+    margin-block-start: calc(3 * var(--hero-line));
   }
 }
 
 @media (max-width: 699px) {
   .hero__nav-row {
     min-block-size: 3rem;
-  }
-
-  .hero__wordmark {
-    font-size: 9px;
-    line-height: 9px;
-    block-size: calc(5 * 9px);
-    margin-block-end: 1rem;
   }
 
   .hero__headline {

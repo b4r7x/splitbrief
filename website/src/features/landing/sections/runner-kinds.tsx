@@ -1,5 +1,15 @@
 import { PanelStrip } from '../../../components/panel-strip.js';
+import { IMPLEMENTER_JACKS, PLANNER_JACKS } from '../matrix/pairings.js';
 import './runner-kinds.css';
+
+// The crossings the patch field above actually wires, read off its own jack lists.
+const WIRED_CROSSINGS = new Set(
+  Object.values(PLANNER_JACKS).flatMap((planner) =>
+    Object.values(IMPLEMENTER_JACKS).map(
+      (implementer) => `${planner.runner.kind}:${implementer.runner.kind}`,
+    ),
+  ),
+);
 
 const RUNNER_KINDS = [
   {
@@ -34,43 +44,62 @@ export function RunnerKindsSection() {
     <PanelStrip className="runner-kinds panel-strip--band" id="kinds" legend="Runner kinds">
       <p className="runner-kinds__lead">Five supported runner kinds on either side.</p>
 
-      <section
-        aria-label="Runner-kind crossing table"
-        className="runner-kinds__table-scroll"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: axe and Safari require a keyboard-focusable scroll region.
-        tabIndex={0}
-      >
-        <table className="runner-kinds__table">
-          <caption>Planner and implementer runner-kind crossings</caption>
-          <thead>
-            <tr>
-              <th scope="col">Planner / implementer</th>
-              {RUNNER_KINDS.map((runner) => (
-                <th className="runner-kinds__implementer" key={runner.kind} scope="col">
-                  <code>{runner.kind}</code>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {RUNNER_KINDS.map((planner) => (
-              <tr key={planner.kind}>
-                <th className="runner-kinds__planner" scope="row">
-                  <code>{planner.kind}</code>
-                </th>
-                {RUNNER_KINDS.map((implementer) => (
-                  <td key={implementer.kind}>
-                    <span aria-hidden="true" className="runner-kinds__crossing" />
-                    <span className="runner-kinds__visually-hidden">
-                      {planner.kind} planner to {implementer.kind} implementer
-                    </span>
-                  </td>
+      <div className="runner-kinds__table-window">
+        <section
+          aria-label="Runner-kind crossing table"
+          className="runner-kinds__table-scroll"
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: axe and Safari require a keyboard-focusable scroll region.
+          tabIndex={0}
+        >
+          <table className="runner-kinds__table">
+            <caption>Planner and implementer runner-kind crossings</caption>
+            <thead>
+              <tr>
+                <th scope="col">Planner / implementer</th>
+                {RUNNER_KINDS.map((runner) => (
+                  <th className="runner-kinds__implementer" key={runner.kind} scope="col">
+                    <code>{runner.kind}</code>
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+            </thead>
+            <tbody>
+              {RUNNER_KINDS.map((planner) => (
+                <tr key={planner.kind}>
+                  <th className="runner-kinds__planner" scope="row">
+                    <code>{planner.kind}</code>
+                  </th>
+                  {RUNNER_KINDS.map((implementer) => {
+                    const wired = WIRED_CROSSINGS.has(`${planner.kind}:${implementer.kind}`);
+
+                    return (
+                      <td key={implementer.kind}>
+                        <span
+                          aria-hidden="true"
+                          className={
+                            wired
+                              ? 'runner-kinds__crossing runner-kinds__crossing--wired'
+                              : 'runner-kinds__crossing'
+                          }
+                        />
+                        <span className="runner-kinds__visually-hidden">
+                          {planner.kind} planner to {implementer.kind} implementer
+                          {wired ? ', wired in the patch field' : ''}
+                        </span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <p className="runner-kinds__key">
+        <span aria-hidden="true" className="runner-kinds__crossing runner-kinds__crossing--wired" />
+        <span>Filled crossings are the ones the patch field above wires.</span>
+      </p>
 
       <dl className="runner-kinds__ledger">
         {RUNNER_KINDS.map((runner) => (

@@ -1,0 +1,5 @@
+.patch-field__lead {
+  margin: 0 0 clamp(1.25rem, 2.5vw, 2rem);
+  color: var(--dim);
+  font-size: 1.0625rem;
+}

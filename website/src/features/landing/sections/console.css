@@ -43,11 +43,27 @@
   text-transform: uppercase;
 }
 
+.console-section__geometry--narrow {
+  display: none;
+}
+
+.console-section__dims {
+  white-space: nowrap;
+}
+
 .console-section__whisper {
   text-align: end;
 }
 
 @media (max-width: 699px) {
+  .console-section__geometry--wide {
+    display: none;
+  }
+
+  .console-section__geometry--narrow {
+    display: inline;
+  }
+
   .console-section__caption {
     flex-direction: column;
     gap: 0.375rem;

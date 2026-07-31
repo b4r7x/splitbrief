@@ -41,8 +41,10 @@
   pointer-events: none;
 }
 
+/* Height is the pre's block-start padding plus whole code lines, so the clipped
+   edge always lands between lines instead of through one. */
 .signal-section__transport-scroll {
-  max-block-size: 36rem;
+  max-block-size: calc(1rem + 24 * 1.3125rem);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-block: contain;
@@ -54,8 +56,7 @@
   inline-size: 100%;
   max-inline-size: none;
   margin: 0;
-  padding: clamp(1rem, 3vw, 1.5rem);
-  padding-block-end: 3rem;
+  padding: 1rem clamp(1rem, 3vw, 1.5rem) 3rem;
   color: var(--fg);
   overflow-wrap: break-word;
   white-space: pre-wrap;

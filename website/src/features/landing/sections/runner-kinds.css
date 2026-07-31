@@ -20,12 +20,36 @@
   text-transform: uppercase;
 }
 
+/* Scroll affordance: the window holds a fixed right-edge scrim over the clipped
+   columns so the table never looks simply cut off. */
+.runner-kinds__table-window {
+  position: relative;
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+/* Only where the table actually overflows: content box is 100vw minus the rail on
+   both sides, against the table's own min-inline-size (44rem, 33rem under 700px). */
+.runner-kinds__table-window::after {
+  display: none;
+  position: absolute;
+  z-index: 1;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inline-size: 2.5rem;
+  background: linear-gradient(to left, var(--ground) 10%, transparent);
+  content: "";
+  pointer-events: none;
+}
+
 .runner-kinds__table-scroll {
   inline-size: 100%;
   min-inline-size: 0;
   max-inline-size: 100%;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
+  scrollbar-color: var(--grid-functional) var(--surface-1);
 }
 
 .runner-kinds__table {
@@ -78,11 +102,27 @@
 
 .runner-kinds__crossing {
   display: inline-block;
+  flex: 0 0 auto;
   inline-size: 0.75rem;
   block-size: 0.75rem;
   border: 1px solid var(--grid-functional);
   border-radius: 50%;
   background-color: var(--surface-1);
+}
+
+.runner-kinds__crossing--wired {
+  border-color: var(--pin);
+  background-color: var(--pin);
+}
+
+.runner-kinds__key {
+  display: flex;
+  gap: 0.625rem;
+  align-items: center;
+  max-inline-size: none;
+  margin-block: 0.875rem 0;
+  color: var(--dim);
+  font-size: var(--text-label);
 }
 
 .runner-kinds__visually-hidden {
@@ -144,6 +184,7 @@
   border: 1px solid var(--grid-functional);
   font-family: var(--mono);
   font-size: var(--text-label);
+  white-space: nowrap;
 }
 
 .runner-kinds__contract {
@@ -157,7 +198,32 @@
   color: var(--fg);
 }
 
+@media (min-width: 700px) and (max-width: 751px) {
+  .runner-kinds__table-window::after {
+    display: block;
+  }
+}
+
+@media (max-width: 559px) {
+  .runner-kinds__table-window::after {
+    display: block;
+  }
+}
+
 @media (max-width: 699px) {
+  .runner-kinds__table {
+    min-inline-size: 33rem;
+  }
+
+  .runner-kinds__table caption {
+    font-size: 0.6875rem;
+    letter-spacing: 0.04em;
+  }
+
+  .runner-kinds__table th:first-child {
+    inline-size: 8.5rem;
+  }
+
   .runner-kinds__ledger > div {
     grid-template-columns: 1fr;
     gap: 0.25rem;

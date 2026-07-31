@@ -3,6 +3,7 @@
    Positioned 16px left of the shared content rail so it never touches text.
    The hero emits the entry stub (hero::after) at the same x. */
 
+.patch-field,
 .breath,
 .signal-section,
 .runner-kinds,
@@ -13,6 +14,7 @@
   position: relative;
 }
 
+.patch-field::before,
 .breath::before,
 .signal-section::before,
 .runner-kinds::before,
@@ -34,6 +36,7 @@
   pointer-events: none;
 }
 
+.patch-field::after,
 .breath::after,
 .signal-section::after,
 .runner-kinds::after,
@@ -73,6 +76,7 @@
 }
 
 @media (max-width: 699px) {
+  .patch-field::before,
   .breath::before,
   .signal-section::before,
   .runner-kinds::before,

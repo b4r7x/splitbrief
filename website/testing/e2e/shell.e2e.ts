@@ -40,7 +40,7 @@ test('serves an interactive, accessible built shell and preserves a real 404', a
   const shell = page.locator('.landing-shell[data-theme="dark"]');
   const heading = page.getByRole('heading', { level: 1 });
   await expect(heading).toHaveCount(1);
-  await expect(heading).toHaveText('Patch your planner into your implementer.');
+  await expect(heading).toHaveText('Patch any planner into any implementer.');
   await expect(shell).toBeVisible();
 
   const matrix = page.getByRole('region', { name: 'Planner and implementer pairing' });

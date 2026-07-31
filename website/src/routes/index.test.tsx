@@ -96,7 +96,8 @@ describe('LandingPage', () => {
     }
 
     expect([...main.children]).toEqual([
-      screen.getByRole('region', { name: 'Patch your planner into your implementer.' }),
+      screen.getByRole('region', { name: 'Patch any planner into any implementer.' }),
+      screen.getByRole('region', { name: 'Patch field' }),
       breath,
       screen.getByRole('region', { name: 'The signal' }),
       screen.getByRole('region', { name: 'Runner kinds' }),

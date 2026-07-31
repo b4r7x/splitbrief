@@ -41,7 +41,15 @@ export function DocsShell({
           <TocScope items={toc}>
             <header className="docs-page-header">
               <p className="docs-page-header__signal" aria-hidden="true">
-                Planner / Task Brief / Implementer
+                <span className="docs-page-header__role docs-page-header__role--planner">
+                  Planner
+                </span>
+                <span className="docs-page-header__signal-lead" />
+                <span>Task Brief</span>
+                <span className="docs-page-header__signal-lead" />
+                <span className="docs-page-header__role docs-page-header__role--implementer">
+                  Implementer
+                </span>
               </p>
               <h1>{title}</h1>
               {description ? <p className="docs-page-header__description">{description}</p> : null}

@@ -94,6 +94,17 @@ Docs carry the vocabulary, not the artifact — the matrix itself never appears 
 - Callouts are panel-strip slips, not colored blobs; the phase rail `Spec › Plan › Briefs → Build → Verify` (real connectors) may appear as a wayfinding strip on workflow-related pages.
 - **Docs mobile (< 700px), designed not shrunk:** the sidebar collapses into a top panel-strip disclosure (engraved legend "INDEX", jack bullets preserved) above the content; the TOC collapses into a "ON THIS PAGE" disclosure between title and body. Docs pages must be fully usable at 390px (P4 gate + e2e).
 
+## Owner amendments (2026-07-31)
+
+Ruled by the maintainer after the landing was rebuilt around the matrix. These override the clauses they name; everything else in this file stands.
+
+- **The hero is the CLI entrance, recreated in HTML and labeled as one.** `src/features/landing/terminal/` renders the real `splitbrief` home screen — faceplate (`~ % splitbrief` / `html recreation`), figlet wordmark, pairing status line, Recent sessions, the verbatim hint row, and a composer whose input is real (Enter jumps to the patch field). This is a **sanctioned exception to gate row 5**: it is not a real capture, so it carries its own provenance label on the faceplate and never claims to be a screenshot. Its blinking block cursor and the pairing cycler are the entrance's only motion.
+- **Headline: "Patch any planner into any implementer."** — `any planner` in `--planner-text`, `any implementer` in `--implementer`. The OG surface carries the same line.
+- **The atmospheric floor is hero-only.** One blurred radial wash plus grain, behind the entrance, nowhere else on the site.
+- **The pairing cycler is the hero's motion moment.** Six real crossings from `pairings.ts`, one every 4s, paused when `document.hidden`, held on the pre-seated pairing under `prefers-reduced-motion`. "The patch takes" pulse remains the matrix's own concept.
+- **Consequence — viewport priority changes.** The matrix moves out of the hero into its own `PATCH FIELD` panel strip directly below it. What must be visible on load is now the headline plus the entrance (which contains the wordmark and a live pairing); the matrix sits one section down. The landing order is Hero → Patch field → Breath → Signal → Runner kinds → Console → Interlock → Modes → Install → Footer.
+- **Consequence — wordmark cell.** The lock still holds (hard px cell, `pre`, resize by `transform: scale()` only), but the measured row step is **1.47em**, not a terminal's 1.2em: Fragment Mono's stems and underscores carry more ink than a terminal cell's and collide into an unreadable mass at the tighter step.
+
 ## Anti-default gate — every row must pass before ship
 
 1. **Type:** no Inter/Roboto/Open Sans/system-ui as a chosen face (system stack only as fallback chain).

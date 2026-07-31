@@ -35,7 +35,7 @@ describe('metadata surfaces', () => {
 
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-      'Patch your planner into your implementer.',
+      'Patch any planner into any implementer.',
     );
     expect(screen.getByText('The Task Brief is the signal between them.')).toBeVisible();
     expect(screen.getByRole('img', { name: 'splitbrief' })).toBeVisible();

@@ -61,16 +61,22 @@
   padding-inline-start: 1rem;
 }
 
+/* Two lines is the rail's budget; longer headings ellipsize rather than sprawl.
+   The full heading stays the link's accessible name. */
 .docs-toc__link {
-  display: block;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   min-block-size: 2.75rem;
   padding: 0.5625rem 0.625rem;
+  overflow: hidden;
   color: inherit;
   font-size: 0.875rem;
   line-height: 1.4;
   text-decoration-line: underline;
   text-decoration-thickness: max(1px, 0.08em);
   text-underline-offset: 0.2em;
+  text-overflow: ellipsis;
 }
 
 .docs-toc__link[data-active="true"] {
