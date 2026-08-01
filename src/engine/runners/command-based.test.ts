@@ -182,6 +182,30 @@ describe('invokeCommandBasedRunner', () => {
     expect(result.stderr).not.toContain('x'.repeat(1024 * 1024));
   });
 
+  it('keeps collecting past a stdout line overflow on the non-timeout branch', async () => {
+    const result = await invokeCommandBasedRunner({
+      command: 'node',
+      args: [
+        '-e',
+        [
+          `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n");`,
+          'process.stdout.write("after-overflow\\n");',
+        ].join(''),
+      ],
+      prompt: '',
+      projectDir: process.cwd(),
+    });
+
+    expect(result.callResult.status).toBe('completed');
+    expect(result.stdout).toContain('after-overflow');
+    expect(result.callResult.warnings).toEqual([
+      expect.objectContaining({
+        code: 'stdout_line_overflow',
+        message: expect.stringContaining('stdout line exceeded'),
+      }),
+    ]);
+  });
+
   it('records stderr activity on the timeout branch', async () => {
     const events: RunnerCallEvent[] = [];
     const result = await invokeCommandBasedRunner({
@@ -201,6 +225,28 @@ describe('invokeCommandBasedRunner', () => {
       ),
     ).toBe(true);
     expect(result.callResult.warnings).toEqual([]);
+  });
+
+  it('redacts credential values on the timeout branch', async () => {
+    const credential = 'timeout-branch-credential-canary-91ac';
+    const events: RunnerCallEvent[] = [];
+    const streamed: string[] = [];
+
+    const result = await invokeCommandBasedRunner({
+      command: 'sh',
+      args: ['-c', `echo "answer ${credential}"; echo "diagnostic ${credential}" >&2`],
+      env: { ...process.env, OPENAI_API_KEY: credential },
+      timeout: 30_000,
+      prompt: '',
+      projectDir: process.cwd(),
+      onOutput: (chunk) => streamed.push(chunk),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    expect(streamed.join('')).toContain('***REDACTED***');
+    expect(streamed.join('')).not.toContain(credential);
+    expect(JSON.stringify(events)).not.toContain(credential);
+    expect(JSON.stringify(result.callResult)).not.toContain(credential);
   });
 
   it('marks an idle kill on the timeout branch with the runner_idle_timeout code', async () => {

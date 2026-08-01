@@ -61,7 +61,7 @@ describe('runSingleTask — user edits', () => {
         config: makeConfig({
           approval: { enabled: true, feedRejectionsToPlanner: false },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
       }),
       task,
@@ -118,7 +118,7 @@ describe('runSingleTask — user edits', () => {
         config: makeConfig({
           approval: { enabled: true, feedRejectionsToPlanner: false },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
       }),
       task,
@@ -172,7 +172,7 @@ describe('runSingleTask — user edits', () => {
         config: makeConfig({
           approval: { enabled: true, feedRejectionsToPlanner: false },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -265,7 +265,7 @@ describe('runSingleTask — user edits', () => {
             tiers: { write_in_scope: 'sticky' },
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),

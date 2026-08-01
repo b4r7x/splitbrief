@@ -6,8 +6,10 @@ import { collectReadiness } from '../../../core/readiness/collect.js';
 import {
   createStartReadinessRecord,
   formatReadinessBlockers,
+  formatUngatedCliStartRefusal,
   readinessBlockerPointer,
 } from '../../../core/readiness/format.js';
+import { ungatedCliReadinessChecks } from '../../../core/readiness/status.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { READINESS_FILE, sessionDir } from '../../../core/paths.js';
@@ -17,6 +19,9 @@ import { cliStartGatesFromReadiness } from '../../../engine/runners/start-gate.j
 import { detectAvailableCliReadiness } from '../../../engine/detection/detect.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
+import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
+import { resolveCliRunnerAuth } from '../../../engine/runners/sandbox-env.js';
 import {
   CLI_TOOL_IDS,
   type CliAuthChannelId,
@@ -25,26 +30,29 @@ import {
 import type { BootstrapSessionArgs, BootstrapSessionResult, DetectCliReadiness } from './types.js';
 
 /**
- * Build one auth-channel selection per configured CLI tool. A conflicting
- * channel used by two roles is intentionally left unselected so the probe
- * cannot accidentally authorize either role through an ambient credential.
+ * Build one auth-channel selection per configured CLI tool, resolved through
+ * the same rule execution uses, so a role that names no channel is probed on
+ * the channel its runner will stage. A conflicting channel used by two roles is
+ * intentionally left unselected so the probe cannot accidentally authorize
+ * either role through an ambient credential.
  */
 function configuredCliAuthChannels(
   config: Config,
 ): Partial<Record<CliToolId, CliAuthChannelId | undefined>> {
   const selections = new Map<CliToolId, CliAuthChannelId | undefined>();
-  const add = (tool: CliToolId, channel: CliAuthChannelId | undefined): void => {
-    if (!selections.has(tool)) {
-      selections.set(tool, channel);
+  const add = (runner: Extract<PlannerConfig | ImplementerConfig, { kind: 'cli' }>): void => {
+    const channel = resolveCliRunnerAuth(runner).id;
+    if (!selections.has(runner.tool)) {
+      selections.set(runner.tool, channel);
       return;
     }
-    if (selections.get(tool) !== channel) selections.set(tool, undefined);
+    if (selections.get(runner.tool) !== channel) selections.set(runner.tool, undefined);
   };
 
-  if (config.planner.kind === 'cli') add(config.planner.tool, config.planner.authChannel);
+  if (config.planner.kind === 'cli') add(config.planner);
   try {
     for (const profile of resolveImplementerProfiles(config).profiles) {
-      if (profile.config.kind === 'cli') add(profile.config.tool, profile.config.authChannel);
+      if (profile.config.kind === 'cli') add(profile.config);
     }
   } catch {
     // Config readiness reports the invalid profile. Do not probe a guessed
@@ -73,10 +81,21 @@ export function persistStartReadiness(ref: SessionRef, report: ReadinessReport):
   );
 }
 
+/**
+ * Fail closed on a configured CLI runner that produced no trusted start gate.
+ * Its readiness check is only a warning — the probe could not verify the tool,
+ * it did not prove it unusable — but execution admits a CLI runner solely
+ * through a `ready` probe, so continuing here would create a session and then
+ * abort at run init with `cli-executable-untrusted`. Refuse before the session
+ * exists, quoting the probe's own remediation.
+ */
 export function assertReadinessCanStart(report: ReadinessReport, json: boolean | undefined): void {
-  if (report.status !== 'blocked') return;
-  if (!json) console.log(formatReadinessBlockers(report));
-  throw cliError(readinessBlockerPointer(report), 1);
+  if (report.status === 'blocked') {
+    if (!json) console.log(formatReadinessBlockers(report));
+    throw cliError(readinessBlockerPointer(report), 1);
+  }
+  const ungatedCli = ungatedCliReadinessChecks(report);
+  if (ungatedCli.length > 0) throw cliError(formatUngatedCliStartRefusal(ungatedCli), 1);
 }
 
 export function clearStaleSessionForCli(projectDir: string): void {
@@ -97,7 +116,7 @@ export async function bootstrapSession(
     projectDir: args.projectDir,
     opts: args.opts,
     probeValidation: true,
-    ...(args.defaultAutoApprove !== undefined && { defaultAutoApprove: args.defaultAutoApprove }),
+    ...(args.defaultApprove !== undefined && { defaultApprove: args.defaultApprove }),
     ...(args.cliReadiness !== undefined && { cliReadiness: args.cliReadiness }),
     ...(args.detectCliReadiness !== undefined && {
       detectCliReadiness: args.detectCliReadiness,

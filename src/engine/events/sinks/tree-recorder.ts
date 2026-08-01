@@ -300,7 +300,6 @@ export function createTreeRecorderSink(opts: TreeRecorderOptions): EventSink {
       case 'snapshot_restored':
       case 'snapshot_restore_conflict':
       case 'mode_resolved':
-      case 'mode_downgrade_advised':
       case 'mode_advice':
       case 'instant_plan_received':
       case 'task_skipped':

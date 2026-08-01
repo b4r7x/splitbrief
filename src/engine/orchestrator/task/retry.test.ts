@@ -176,7 +176,7 @@ describe('retryAndRecord — retry budget', () => {
       bus,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 2 },
+        workflow: { maxRetries: 2 },
       }),
     });
 
@@ -233,7 +233,7 @@ describe('retryAndRecord — recovery stop points', () => {
       implementer,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 0 },
+        workflow: { maxRetries: 0 },
       }),
     });
 
@@ -292,7 +292,7 @@ describe('retryAndRecord — recovery stop points', () => {
       implementer,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 0 },
+        workflow: { maxRetries: 0 },
       }),
     });
 
@@ -341,7 +341,7 @@ describe('retryAndRecord — recovery stop points', () => {
       sessionId,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 1 },
+        workflow: { maxRetries: 1 },
       }),
     });
 
@@ -418,7 +418,7 @@ describe('retryAndRecord — escalated-intermediate booking identity', () => {
       implementer,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 1 },
+        workflow: { maxRetries: 1 },
         escalation: {
           intermediateProvider: 'openrouter',
           intermediateModel: 'x-ai/grok-4-fast',

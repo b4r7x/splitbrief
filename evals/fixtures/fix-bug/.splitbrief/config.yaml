@@ -1,15 +1,16 @@
 version: 3
 planner:
   kind: shell
-  command: "cat"
+  command: cat
 implementer:
   kind: shell
-  command: "cat"
+  command: cat
+  model: auto
 validation:
   typecheck: true
   lint: false
   test: true
-  testCommand: "npm test"
+  testCommand: npm test
 workflow:
   maxRetries: 1
   mode: quick

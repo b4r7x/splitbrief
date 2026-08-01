@@ -1,1 +1,0 @@
-# Spec: add email validator

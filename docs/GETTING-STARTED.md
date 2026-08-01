@@ -10,8 +10,8 @@
 
 It splits the work an AI normally does in one shot into two roles:
 
-- A **planner** — an expensive, smart model (Claude Opus, GPT-5, Codex, Claude Code via your existing subscription) that *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**.
-- An **implementer** — a cheap or local model (LM Studio, Ollama, DeepSeek, Sonnet, Haiku) that *types*: it executes one task at a time against the brief, with the resolved typecheck, lint, and test pipeline after each.
+- A **planner** — an expensive, smart model that *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**. Admitted planners (CLI subscriptions, APIs, shells, agents) are listed in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
+- An **implementer** — a cheap or local model that *types*: it executes one task at a time against the brief, with the resolved typecheck, lint, and test pipeline after each. Admitted implementers and API/local providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
 
 The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; abort and continue preserve resumable phases, and the brief is durable on disk.
 
@@ -41,6 +41,12 @@ For the long version, see [docs/VISION.md](./VISION.md).
 Requires **Node.js 22 or newer** (ESM-only).
 
 ```bash
+npm install -g splitbrief   # or run it ad hoc with: npx splitbrief
+```
+
+To hack on SPLITBRIEF itself, install from source instead:
+
+```bash
 git clone https://github.com/b4r7x/splitbrief.git
 cd splitbrief
 npm install
@@ -58,10 +64,11 @@ splitbrief --help
 
 ## 4. First run
 
-Pick a project with configured or detectable validation and run:
+Pick a project with configured or detectable validation, verify readiness, then start:
 
 ```bash
 cd ~/code/my-project
+splitbrief doctor                                  # read-only readiness check (no model calls)
 splitbrief init                                    # one-time interactive setup
 splitbrief start "fix the typo in src/auth.ts"     # your first task
 ```
@@ -92,7 +99,7 @@ Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `splitbrief
        ┌──────────────────────────────────────────────────────────────────┐
        │  PLANNER (expensive · slow · smart)                              │
        │                                                                  │
-       │  Claude Code subscription · Codex · Opus API · GPT-5 · Agent SDK │
+       │  admitted planner (see PLANNERS-AND-IMPLEMENTERS.md)             │
        │                                                                  │
        │  - Reads the repo (token-budgeted PageRank repo-map)             │
        │  - Asks clarifying questions inline                              │
@@ -116,7 +123,7 @@ Use `/quit` or `Ctrl-Q` to exit. State is on disk. Resume later with `splitbrief
        ┌──────────────────────────────────────────────────────────────────┐
        │  IMPLEMENTER (cheap · fast · stateless per task)                 │
        │                                                                  │
-       │  LM Studio · Ollama · DeepSeek · Together · Groq · Sonnet · Haiku│
+       │  admitted implementer (see CONFIGURATION.md + PLANNERS-AND-IMPLEMENTERS) │
        │                                                                  │
        │  - Receives a fully self-contained task prompt                   │
        │  - Returns code (whole-file or search/replace markers)           │
@@ -154,21 +161,33 @@ Full workflow-mode semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
 
 ## 7. Configuration
 
-`.splitbrief/config.yaml` (created by `splitbrief init`). The minimum useful config:
+`.splitbrief/config.yaml` (created by `splitbrief init`). Runner matrices, field reference, and secret handling live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [CONFIGURATION.md](./CONFIGURATION.md), and [API-KEYS.md](./API-KEYS.md). Do not paste credentials into this file or into examples — set the provider's env var (see [CONFIGURATION.md](./CONFIGURATION.md)) or use `apiKey: env:VAR_NAME` for custom endpoints.
+
+`version: 3` is the only accepted config version; anything else fails the load with `Unsupported config version`.
+
+### Concise onboarding route
+
+Fastest path from install to a validated run using **admitted** runners only. Full support tables: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (CLI matrix, readiness states, billing posture per tool) and [CONFIGURATION.md](./CONFIGURATION.md) (API providers, model catalog, profiles).
+
+**1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue.
+
+**2. Hybrid recipe (subscription planner + cheap API implementer).** The admitted CLI `claude-code` (evidence as-of 2026-07-31, tested version 2.0.0) uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with the bundled **`compatible-only`** Groq row `openai/gpt-oss-120b` (`provider-dependent` API billing; set `GROQ_API_KEY` in your environment — never inline in YAML). No bundled model is `recommended` — see the note below:
 
 ```yaml
 version: 3
 
 planner:
   kind: cli
-  tool: claude-code           # uses your Claude Code subscription, no API key needed
+  tool: claude-code
 
 implementer:
   kind: api
-  provider: ollama
-  apiBase: http://localhost:11434/v1
-  model: qwen2.5-coder:7b
-  contextLength: 32768
+  provider: groq
+  service: groq
+  offering: payg
+  apiBase: https://api.groq.com/openai/v1
+  model: openai/gpt-oss-120b
+  contextLength: 131072
   temperature: 0.3
 
 validation:
@@ -178,23 +197,24 @@ validation:
   testCommand: npm test
 
 workflow:
-  mode: standard              # instant | quick | standard | speckit
-  approve: default            # follow the per-mode default
+  mode: standard
   maxRetries: 3
-  maxBudget: 2.00             # dollars; pause gate defaults to 85%
+  maxBudget: 2.00
   git:
-    commitStrategy: none      # manual review and commits
+    commitStrategy: none
 ```
 
-`version: 2` configs still load for backwards compatibility and are migrated to v3; new configs should use `version: 3`.
+After each implementer task, the orchestrator runs the resolved typecheck, lint, and test pipeline (from this config, planner discovery, or project heuristics). On failure it retries up to `maxRetries`, then escalates to the planner.
 
-A few common alternatives:
+**3. Subscription CLI implementer (optional).** To type through the same admitted CLI instead of an API, set `implementer.kind: cli` with `tool: claude-code`. The child CLI may auto-edit SPLITBRIEF's disposable staged copy; SPLITBRIEF detects changes and asks before promoting approved paths into your checkout. Posture and auth channels: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
-- **Pure local (zero cost)**: planner `kind: api`, `provider: ollama`, model `qwen2.5-coder:32b`. No API keys, nothing leaves your machine.
-- **Hybrid (default after `splitbrief init`)**: Claude Code planner + Ollama implementer. Best quality-per-dollar.
-- **Cloud-only**: planner `kind: api`, `provider: anthropic`, model `claude-opus-4-5`; implementer `kind: api`, `provider: deepseek`, model `deepseek-coder`.
+**4. Named implementer profiles.** Persist multiple implementer backends under `implementerProfiles` — profile names are stable identifiers saved in config and referenced by routing/recovery events. Example: keep `local-qwen` (Ollama, `costTier: local`) and `cheap-cloud` (Groq row above, `costTier: cheap`); set `default` to the profile SPLITBRIEF should pick when no routing hint applies. Schema and persistence rules: [CONFIGURATION.md](./CONFIGURATION.md#optional-implementerprofiles).
 
-Every field, default, and validation rule is in [docs/CONFIGURATION.md](./CONFIGURATION.md). API key handling: [docs/API-KEYS.md](./API-KEYS.md).
+**5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request; `local` providers keep traffic on loopback. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md). `workflow.persistTranscript: false` strips prompt/answer text from logs and machine-readable consumers while still writing review artifacts (`tasks.md`, `review.md`, validation output). Details: [CONFIGURATION.md](./CONFIGURATION.md#transcript-persistence-policy).
+
+**No recommended API models.** Evaluation currently produces zero runtime `recommended` rows, so every row in the **compatible-only** model table in [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state) is selectable but carries no SPLITBRIEF quality claim. The Groq row above is a working starting point, not a recommendation; SPLITBRIEF publishes no default cloud implementer recipe until a model passes evaluation.
+
+For every other planner/implementer combination, swap tools and models via the canonical matrices rather than duplicating lists here.
 
 ---
 
@@ -214,7 +234,7 @@ SPLITBRIEF shows you what you are spending, in real time, without ceremony.
 - `NN% plan` — fraction of the projected cost already burned
 - `cache NN%` — prompt-cache hit rate (where the runner reports it; else `n/a`)
 
-**Drill-down overlay**: press `$` at any time to open a per-phase / per-task breakdown with horizontal bars showing input vs output token split (output is typically 3–5× more expensive) and cache-hit % per phase.
+**Drill-down overlay**: press `Ctrl+G` at any time to open a per-phase / per-task breakdown with horizontal bars showing input vs output token split (output is typically 3–5× more expensive) and cache-hit % per phase.
 
 **Budget gate**: at `workflow.budgetPauseThreshold` (default **85%**) of `workflow.maxBudget`, the task loop pauses and asks you to approve continuing. In headless `--json` mode, the same threshold exits non-zero with a machine-readable error so CI doesn't keep burning.
 

@@ -14,37 +14,27 @@ import {
 } from '../../../../core/paths.js';
 import { getCommittedFilesSince, getCurrentDiff, getDiffSince } from '../../../../lib/git/diff.js';
 import { getCurrentChangedFiles } from '../../../../lib/git/files.js';
-import { resolveRunStartBase, type RunStartProvenance } from '../../../../lib/git/refs.js';
+import { resolveRunStartBase } from '../../../../lib/git/refs.js';
 import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
-import { RUN_COMMIT_MESSAGE_PREFIX } from '../../task/commit.js';
 import { addMissing } from './missing-artifacts.js';
 
 const REVIEW_EXCERPT_MAX = 500;
 
-type PersistedRunBaseline = { head: string | null } | undefined;
+type PersistedRunBaseline = { head: string | null };
 
 type RunUniverse = {
   fullDiff: string;
   changedFiles: string[];
 };
 
-function runStartProvenance(baseline: PersistedRunBaseline): RunStartProvenance {
-  return baseline
-    ? { kind: 'captured', head: baseline.head }
-    : { kind: 'legacy-prefix', commitMessagePrefix: RUN_COMMIT_MESSAGE_PREFIX };
-}
-
 export async function resolveRunUniverse(
   projectDir: string,
   baseline: PersistedRunBaseline,
 ): Promise<RunUniverse> {
-  const base = await resolveRunStartBase({
-    projectDir,
-    provenance: runStartProvenance(baseline),
-  });
+  const base = await resolveRunStartBase({ projectDir, head: baseline.head });
   const status = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
   if (base.kind === 'working-tree-only') {
     return {
@@ -63,10 +53,14 @@ export async function resolveChangedFiles(opts: {
   projectDir: string;
   drift: DriftReport | null;
   missing: string[];
-  baseline?: PersistedRunBaseline;
+  baseline: PersistedRunBaseline | undefined;
 }): Promise<string[]> {
   const { projectDir, drift, missing, baseline } = opts;
   if (drift) return uniqueSorted(drift.changedFiles);
+  if (!baseline) {
+    addMissing(missing, 'run-start baseline');
+    return [];
+  }
   try {
     const { changedFiles: files } = await resolveRunUniverse(projectDir, baseline);
     if (files.length === 0) addMissing(missing, 'changed files');

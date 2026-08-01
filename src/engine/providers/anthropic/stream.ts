@@ -47,9 +47,10 @@ import {
 import { formatBoundedErrorBody, readResponseTextBounded, readSseEvents } from './transport.js';
 import { API_PROVIDER_CATALOG } from '../../../core/providers/api-provider-catalog.js';
 import {
-  createEndpointPolicyFetch,
+  endpointPolicyError,
   normalizeProviderEndpoint,
 } from '../../../core/providers/endpoint-policy.js';
+import { createEndpointPolicyFetch } from '../../../lib/http/policy-fetch.js';
 
 interface AnthropicStreamOptions {
   apiKey: string;
@@ -201,7 +202,7 @@ export async function streamAnthropicCompletion(
 
   let response: Response;
   try {
-    const policyFetch = createEndpointPolicyFetch(apiBase);
+    const policyFetch = createEndpointPolicyFetch(apiBase, endpointPolicyError.invalid);
     response = await policyFetch(request.url, {
       method: 'POST',
       headers: request.headers,
@@ -371,7 +372,7 @@ function redactThrownError(err: unknown, redactCredential: RunnerCallCredentialR
     return createError('provider-stream-error', safeMessage);
   }
 
-  const metadata = err as Error & { kind?: unknown; data?: unknown };
+  const metadata: Record<string, unknown> = isRecord(err) ? err : {};
   const kind = typeof metadata.kind === 'string' ? metadata.kind : undefined;
   if (kind === undefined) return createError('anthropic_stream_error', safeMessage);
 

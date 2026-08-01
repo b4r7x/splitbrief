@@ -45,14 +45,14 @@ describe('config defaults', () => {
       expect(config.validation.testCommand).toBeUndefined();
     });
 
-    it('drops the legacy npm test default so it is not treated as user-set', () => {
-      const dir = join(TMP, 'legacy-npm-test');
+    it('keeps a user-set validation.testCommand of "npm test"', () => {
+      const dir = join(TMP, 'explicit-npm-test');
       writeConfigYaml(dir, {
         validation: { test: true, test_command: 'npm test' },
       });
 
       const { config } = loadConfig(dir);
-      expect(config.validation.testCommand).toBeUndefined();
+      expect(config.validation.testCommand).toBe('npm test');
     });
 
     it('accepts and ignores a stale shikiTheme field from an old config', () => {
@@ -75,21 +75,21 @@ describe('config defaults', () => {
       expect(createDefaultConfig()).not.toHaveProperty('sessions');
     });
 
-    it('does not write deprecated v2 workflow fields into a new default config', () => {
+    it('does not write removed workflow fields into a new default config', () => {
       const workflow = createDefaultConfig().workflow;
       expect(workflow).not.toHaveProperty('autoApproveSpec');
       expect(workflow).not.toHaveProperty('autoApprovePlan');
       expect(workflow).not.toHaveProperty('commitStrategy');
     });
 
-    it('writes only the v3 replacements (approve, git.commitStrategy) in the default config', () => {
+    it('writes approve and git.commitStrategy in the default config', () => {
       const workflow = createDefaultConfig().workflow;
       expect(workflow.approve).toBe('default');
       expect(workflow.git?.commitStrategy).toBe('none');
     });
 
-    it('does not serialize deprecated v2 workflow fields when writing a new config', () => {
-      const dir = join(TMP, 'default-no-deprecated-v2');
+    it('does not serialize removed workflow fields when writing a new config', () => {
+      const dir = join(TMP, 'default-no-removed-workflow-fields');
       mkdirSync(dir, { recursive: true });
       initConfig(dir);
 
@@ -152,7 +152,6 @@ describe('config defaults', () => {
       expect(config.planner).toEqual(defaults.planner);
       expect(config.validation).toEqual(defaults.validation);
       expect(config.workflow).toEqual(defaults.workflow);
-      // v2 uses 'provider' instead of 'tool' for API implementers
       const defaultImpl = expectApi(defaults.implementer);
       const configImpl = expectApi(config.implementer);
       expect(configImpl.provider).toBe(defaultImpl.provider);

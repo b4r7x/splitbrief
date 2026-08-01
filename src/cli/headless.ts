@@ -99,11 +99,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
     trustedCliGates,
   } = options;
   installTerminalOutputErrorGuard();
-  const config = resolveRunConfig({
-    projectDir,
-    opts,
-    autoApprove: opts.auto !== undefined ? opts.auto : true,
-  });
+  const config = resolveRunConfig({ projectDir, opts, defaultApprove: 'none' });
   const runConfig = configForSessionTranscriptPolicy(
     config,
     sessionId === undefined ? undefined : { projectDir, sessionId },

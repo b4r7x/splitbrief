@@ -12,7 +12,7 @@ User-facing capability reference for SPLITBRIEF. For each feature: what it does,
 
 **What it does.** Four canonical modes trade ceremony for speed. All four converge on the same Task Brief contract and pass through the shared `runWorkflow` orchestrator.
 
-**How to use.** `--mode` flag, `workflow.mode` config, or `/mode` at runtime. Legacy `full` is accepted as an alias for `speckit`.
+**How to use.** `--mode` flag, `workflow.mode` config, or `/mode` at runtime.
 
 ```bash
 splitbrief start --mode instant "rename foo to bar"
@@ -65,7 +65,7 @@ splitbrief start "add endpoint" @api-spec.yaml @existing-handler.ts
 | `kind` | What it is | Example |
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
-| `api` | OpenAI-compatible HTTP endpoint | Anthropic, OpenRouter, DeepSeek, Groq, Together, Ollama, LM Studio |
+| `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, Anthropic, OpenRouter, DeepSeek, OpenAI, Groq, Together |
 | `shell` | Arbitrary stdin → stdout subprocess; no shell/network sandbox | Custom scripts |
 | `agent` | Subprocess that writes files directly; no shell/network sandbox | File-writing tools (no stdout extraction) |
 | `agent-sdk` | `@anthropic-ai/claude-agent-sdk` library call | In-process Anthropic Agent SDK |
@@ -97,7 +97,7 @@ splitbrief start "add profile settings"
 splitbrief start --json "fix parser edge case"
 ```
 
-`splitbrief doctor` is strictly read-only and writes no config, migrations, sessions, worktrees, snapshots, model calls, validation runs, or network probes. Every interactive workflow start writes a compact `.splitbrief/sessions/<id>/readiness.json` record inside the active execution session before model calls — CLI starts (`splitbrief start`) write it at session bootstrap, and TUI starts (home composer, setup completion) write the client-computed report once the session id exists. In headless mode the readiness report is emitted as the first structured JSON line.
+`splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, model calls, validation runs, or network probes. Every interactive workflow start writes a compact `.splitbrief/sessions/<id>/readiness.json` record inside the active execution session before model calls — CLI starts (`splitbrief start`) write it at session bootstrap, and TUI starts (home composer, setup completion) write the client-computed report once the session id exists. In headless mode the readiness report is emitted as the first structured JSON line.
 
 **When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
 
@@ -217,7 +217,7 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **How to use.** Runs automatically before planning. Surfaces in the workflow footer as `advisor: consider quick · trivial edit` or similar. Never auto-switches the mode — the user decides via `/mode`.
 
-**Events.** `mode_advice` (current canonical), `mode_downgrade_advised` (legacy alias).
+**Events.** `mode_advice`.
 
 ### Brief review gate (standard / speckit)
 
@@ -252,11 +252,11 @@ After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<
 
 **How to use.** No setup. The `budget` column appears only when `workflow.maxBudget` is set. Cache % renders `cache n/a` when the runner does not expose cache hit data.
 
-### Cost drilldown overlay (`$` key)
+### Cost drilldown overlay (`Ctrl+G`)
 
 **What it does.** Opens a per-phase and per-task breakdown: horizontal bars for each planner phase showing input vs output token split (output is typically 3–5x more expensive) and cache-hit %; per-task bars showing total tokens.
 
-**How to use.** Press `$` from any workflow screen. Esc to dismiss.
+**How to use.** Press `Ctrl+G` from any workflow screen. Any key dismisses it.
 
 **When to use.** When you want to see which planner phase or which task is dominating the bill.
 
@@ -864,14 +864,6 @@ splitbrief resume
 ```
 
 For backends without native session resume, the planner context is rebuilt from `session.jsonl` (`transcript/rebuild.ts`).
-
-### `splitbrief migrate`
-
-**What it does.** Migrates `.splitbrief/config.yaml` from v1 → v2 → v3.
-
-```bash
-splitbrief migrate -p .
-```
 
 ### Repo-map context for the planner
 

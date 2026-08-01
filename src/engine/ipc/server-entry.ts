@@ -55,6 +55,9 @@ export function createServerProcessCleanup(): () => Promise<void> {
   };
 }
 
+// A runner group that survives reaping is reported to the caller, but it must not cost the session
+// its terminal state or leave the IPC socket bound: the remaining owners run first, then the
+// failure is surfaced.
 export function createServerCleanup(
   options: ServerCleanupOptions,
 ): (termination: ServerTermination) => Promise<void> {
@@ -63,11 +66,17 @@ export function createServerCleanup(
     if (cleanupPromise !== null) return cleanupPromise;
     options.stopHeartbeat();
     cleanupPromise = (async () => {
-      await options.cleanupProcesses();
+      let reaping: { error: unknown } | undefined;
+      try {
+        await options.cleanupProcesses();
+      } catch (error) {
+        reaping = { error };
+      }
       options.closeBridge();
       await options.closeServer();
       await options.terminalize(termination);
       await options.flushTelemetry();
+      if (reaping !== undefined) throw reaping.error;
     })();
     return cleanupPromise;
   };
@@ -81,8 +90,22 @@ export function createServerExitHandlers(options: {
   crash: (reason: unknown) => Promise<void>;
 } {
   const exitProcess = options.exitProcess ?? process.exit;
+  // The process must reach an exit on every termination path: a failed cleanup is reported and
+  // exits non-zero. A rejection here would instead be re-entered by the next signal or by the
+  // `unhandledRejection` handler — which receives the same memoized rejection — and leave an
+  // orphaned server bound to its socket, so even the report cannot throw.
   const exitAfterCleanup = async (termination: ServerTermination, successCode: number) => {
-    await options.cleanup(termination);
+    try {
+      await options.cleanup(termination);
+    } catch (err) {
+      try {
+        process.stderr.write(`server-entry: cleanup failed: ${toErrorMessage(err)}\n`);
+      } catch {
+        // An unwritable stderr must not keep a terminating server alive.
+      }
+      exitProcess(1);
+      return;
+    }
     exitProcess(successCode);
   };
   return {

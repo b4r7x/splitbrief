@@ -56,7 +56,7 @@ function makeValidatingState(): WorkflowState {
 
 // Validation disabled so runValidationWithEvents returns [] → treated as all-pass.
 // Commit strategy 'none' so we don't need a dirty repo for every happy-path test.
-const defaultWorkflow = { maxRetries: 2, commitStrategy: 'none' as const };
+const defaultWorkflow = { maxRetries: 2 as const };
 
 describe('handleRetryAndEscalation', () => {
   it('retry succeeds on attempt 1 → completed with method=local', async () => {
@@ -119,7 +119,7 @@ describe('handleRetryAndEscalation', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         planner,
         callbacks,
         implementer,
@@ -172,7 +172,7 @@ describe('handleRetryAndEscalation', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         planner,
         callbacks,
         implementer,
@@ -224,7 +224,7 @@ describe('handleRetryAndEscalation', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         planner,
         callbacks,
         implementer,
@@ -278,7 +278,7 @@ describe('handleRetryAndEscalation', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          workflow: { maxRetries: 1, commitStrategy: 'none' },
+          workflow: { maxRetries: 1 },
           approval: { enabled: true, feedRejectionsToPlanner: false },
         }),
         planner,
@@ -350,7 +350,7 @@ describe('handleRetryAndEscalation', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         planner,
         callbacks,
         implementer,
@@ -411,7 +411,7 @@ describe('handleRetryAndEscalation', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         planner: makePlanner(),
         callbacks,
         implementer,
@@ -467,7 +467,7 @@ describe('handleRetryAndEscalation', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         planner,
         callbacks,
         implementer,
@@ -527,7 +527,7 @@ describe('handleRetryAndEscalation', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          workflow: { maxRetries: 1, commitStrategy: 'none' },
+          workflow: { maxRetries: 1 },
           hooks,
         }),
         planner,

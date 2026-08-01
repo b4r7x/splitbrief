@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
@@ -6,12 +5,18 @@ import type { ParsedLine } from '../types.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
 import { parseTextLine } from '../../streaming/parse-text.js';
 import { isRecord } from '../../../utils/type-guards.js';
+import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import { validateCliArgs } from './validate-args.js';
 
 const KILO_ID = 'kilo-code' as const;
 const KILO_COMMAND = 'kilo' as const;
-const PROMPT_PLACEHOLDER = '<PROMPT>' as const;
-const KILO_PROMPT_TRANSPORT = Object.freeze({ kind: 'argv', maxBytes: 120_000 } as const);
+const KILO_PROMPT_TRANSPORT = Object.freeze({
+  kind: 'argv',
+  maxBytes: 120_000,
+  placement: 'positional',
+} as const);
 const KILO_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 const KILO_PROTECTED_FLAGS = new Set([
@@ -29,46 +34,13 @@ type KiloPlannerBuildInput = Parameters<CliPlannerAdapter<'kilo-code'>['buildArg
 type KiloImplementerBuildInput = Parameters<CliImplementerAdapter<'kilo-code'>['buildArgs']>[0];
 type KiloTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
-function promptPlaceholderConflict(value: string): boolean {
-  return value.includes(PROMPT_PLACEHOLDER) || /^<[^>]+>$/.test(value) || /\{prompt\}/i.test(value);
-}
-
-function protectedFlag(value: string): string | null {
-  if (KILO_PROTECTED_FLAGS.has(value)) return value;
-  if (!value.startsWith('-')) return null;
-  const flag = value.split('=', 1)[0] ?? value;
-  return KILO_PROTECTED_FLAGS.has(flag) ? flag : null;
-}
-
-function validateArgs(
-  invocationArgs: readonly string[],
-  baseArgs: readonly string[] | null,
-): Readonly<{ valid: true }> | Readonly<{ valid: false; conflicts: readonly string[] }> {
-  if (baseArgs === null) return { valid: false, conflicts: ['adapter-build-order'] };
-
-  const conflicts: string[] = [];
-  const orderConflict =
-    invocationArgs.length < baseArgs.length ||
-    baseArgs.some((arg, index) => invocationArgs[index] !== arg);
-  if (orderConflict) conflicts.push('argument-order');
-
-  const promptCount = invocationArgs.filter((arg) => arg === PROMPT_PLACEHOLDER).length;
-  if (promptCount !== 1) conflicts.push('prompt-transport');
-  if (invocationArgs.some((arg) => arg !== PROMPT_PLACEHOLDER && promptPlaceholderConflict(arg))) {
-    conflicts.push('prompt-transport');
-  }
-
-  if (!orderConflict) {
-    for (const arg of invocationArgs.slice(baseArgs.length)) {
-      const flag = protectedFlag(arg);
-      if (flag) conflicts.push(flag);
-    }
-  }
-
-  const uniqueConflicts = [...new Set(conflicts)];
-  return uniqueConflicts.length === 0
-    ? { valid: true }
-    : { valid: false, conflicts: uniqueConflicts };
+function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+  return validateCliArgs({
+    invocationArgs,
+    baseArgs,
+    protectedFlags: KILO_PROTECTED_FLAGS,
+    promptTransport: 'argv',
+  });
 }
 
 function structuredEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
@@ -166,10 +138,6 @@ export function kiloImplementerProtocolEvents(line: string): readonly CliProtoco
   return textEvents(parseTextLine(line));
 }
 
-export function kiloProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return kiloPlannerProtocolEvents(line);
-}
-
 function terminal(input: { events: readonly CliProtocolEvent[] }): KiloTerminalEvent {
   const explicit = input.events.findLast(
     (event): event is KiloTerminalEvent => event.type === 'result',
@@ -232,17 +200,15 @@ function createProbe() {
 }
 
 function createPlannerAdapter(): CliPlannerAdapter<'kilo-code'> {
-  let baseArgs: readonly string[] | null = null;
   return {
     descriptor: CLI_TOOL_CATALOG[KILO_ID],
     role: 'planner',
+    supportsSessionResume: false,
+    supportsEffort: false,
     promptTransport: KILO_PROMPT_TRANSPORT,
-    buildArgs: (input) => {
-      const args = plannerBaseArgs(input);
-      baseArgs = args;
-      return [...args, ...input.configuredArgs];
-    },
-    validateArgs: (invocationArgs) => validateArgs(invocationArgs, baseArgs),
+    baseArgs: plannerBaseArgs,
+    buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
+    validateArgs,
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: kiloPlannerProtocolEvents,
@@ -252,17 +218,13 @@ function createPlannerAdapter(): CliPlannerAdapter<'kilo-code'> {
 }
 
 function createImplementerAdapter(): CliImplementerAdapter<'kilo-code'> {
-  let baseArgs: readonly string[] | null = null;
   return {
     descriptor: CLI_TOOL_CATALOG[KILO_ID],
     role: 'implementer',
     promptTransport: KILO_PROMPT_TRANSPORT,
-    buildArgs: (input) => {
-      const args = implementerBaseArgs(input);
-      baseArgs = args;
-      return [...args, ...input.configuredArgs];
-    },
-    validateArgs: (invocationArgs) => validateArgs(invocationArgs, baseArgs),
+    baseArgs: implementerBaseArgs,
+    buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
+    validateArgs,
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: kiloImplementerProtocolEvents,
@@ -294,21 +256,6 @@ export type KiloCliConformanceCandidate = Readonly<{
   adapter: CliPlannerAdapter<'kilo-code'> | CliImplementerAdapter<'kilo-code'>;
 }>;
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (isRecord(value)) {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
-
-function contractHash(contract: RawKiloCliContract): string {
-  return createHash('sha256').update(canonicalJson(contract), 'utf8').digest('hex');
-}
-
 function rawContract(role: 'planner' | 'implementer'): RawKiloCliContract {
   return {
     id: KILO_ID,
@@ -318,8 +265,8 @@ function rawContract(role: 'planner' | 'implementer'): RawKiloCliContract {
     auth: { kind: 'env-or-native', env: [] },
     rawInvocation:
       role === 'planner'
-        ? ['run', '--format', 'json', '--agent', 'architect', PROMPT_PLACEHOLDER]
-        : ['run', '--auto', PROMPT_PLACEHOLDER],
+        ? ['run', '--format', 'json', '--agent', 'architect', CLI_PROMPT_SENTINEL]
+        : ['run', '--auto', CLI_PROMPT_SENTINEL],
     promptTransport: 'argv',
     expectedRawTerminal: 'process-exit',
     asOf: '2026-07-31',
@@ -334,14 +281,14 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly KiloCliConformanceCandidate[] 
     id: KILO_ID,
     role: 'planner',
     rawContract: plannerRawContract,
-    contractSha256: contractHash(plannerRawContract),
+    contractSha256: contractSha256(plannerRawContract),
     adapter: kiloPlannerAdapter,
   }),
   Object.freeze({
     id: KILO_ID,
     role: 'implementer',
     rawContract: implementerRawContract,
-    contractSha256: contractHash(implementerRawContract),
+    contractSha256: contractSha256(implementerRawContract),
     adapter: kiloImplementerAdapter,
   }),
 ]);
@@ -356,7 +303,7 @@ export function kiloPromptArgs(opts: {
   const configuredArgs = opts.configuredArgs ?? [];
   if (opts.role === 'planner') {
     return kiloPlannerAdapter.buildArgs({
-      prompt: PROMPT_PLACEHOLDER,
+      prompt: CLI_PROMPT_SENTINEL,
       model: opts.model,
       projectDir: opts.projectDir ?? '',
       configuredArgs,
@@ -366,7 +313,7 @@ export function kiloPromptArgs(opts: {
     });
   }
   return kiloImplementerAdapter.buildArgs({
-    prompt: PROMPT_PLACEHOLDER,
+    prompt: CLI_PROMPT_SENTINEL,
     model: opts.model,
     projectDir: opts.projectDir ?? '',
     configuredArgs,

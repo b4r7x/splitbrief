@@ -1,4 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import type { ProviderDef } from './types.js';
 import { lookupCatalogContextLength } from './model/catalog.js';
 import { warnError } from '../../lib/warn.js';
@@ -23,7 +24,7 @@ function getImplementerProvider(config: Config): ProviderDef {
 
 function lookupConfiguredCatalogContextLength(config: Config): number | undefined {
   const implementer = config.implementer;
-  if (implementer.model === undefined || implementer.model === 'auto') return undefined;
+  if (implementer.model === undefined || isAutomaticModel(implementer.model)) return undefined;
   if (implementer.kind === 'api') {
     return lookupCatalogContextLength(implementer.provider, implementer.model);
   }

@@ -12,6 +12,8 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
+import { cliStartGatesFromArray } from '../../../src/engine/runners/start-gate.js';
+import { trustedCliGateFor } from '#testing/helpers/command-shim.js';
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
@@ -55,6 +57,7 @@ function normalizeMacTmpPath(path: string | null): string | null {
 }
 
 function prependFakeOpencodeToPath(opts: { marker: string; requiredPromptText: string }): {
+  binDir: string;
   executablePath: string;
   runLogPath: string;
 } {
@@ -87,7 +90,7 @@ function prependFakeOpencodeToPath(opts: { marker: string; requiredPromptText: s
   writeFileSync(executablePath, script + '\n', 'utf-8');
   chmodSync(executablePath, 0o755);
   process.env.PATH = `${binDir}:${originalPath ?? ''}`;
-  return { executablePath, runLogPath };
+  return { binDir, executablePath, runLogPath };
 }
 
 describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
@@ -98,6 +101,9 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     const targetFile = 'src/loop.ts';
     const requiredPromptText = 'OpenCode CLI backed module';
     const fakeOpencode = prependFakeOpencodeToPath({ marker, requiredPromptText });
+    const trustedCliGates = cliStartGatesFromArray([
+      trustedCliGateFor('opencode', fakeOpencode.binDir),
+    ]);
     const events: EngineEvent[] = [];
 
     const task = makeTask({
@@ -160,7 +166,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
         workflow: {
           mode: 'standard',
           approve: 'none',
-          commitStrategy: 'none',
           maxRetries: 1,
           persistTranscript: true,
         },
@@ -168,6 +173,7 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       sessionId,
+      trustedCliGates,
       _planner: planner,
       _eventSink: (event) => events.push(event),
     });
@@ -193,7 +199,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     expect(readFileSync(join(projectDir, targetFile), 'utf-8')).toContain(
       'export const loop = "from-opencode-cli";',
     );
-    expect(existsSync(join(projectDir, SANDBOX_DIR))).toBe(false);
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

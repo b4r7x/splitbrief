@@ -117,7 +117,7 @@ The sink handles the event types below. Other `EngineEvent` variants are no-ops 
 | Attribute | Description |
 |---|---|
 | `splitbrief.feature` | Feature description passed to SPLITBRIEF. Omitted or replaced with a transcript placeholder when `workflow.persistTranscript: false`. |
-| `splitbrief.mode` | Workflow mode: `instant`, `quick`, `standard`, or `speckit` (legacy `full` alias) |
+| `splitbrief.mode` | Workflow mode: `instant`, `quick`, `standard`, or `speckit` |
 | `splitbrief.planner.tool` | Planner runner identifier |
 | `splitbrief.planner.model` | Planner model name (if applicable) |
 | `splitbrief.implementer.tool` | Implementer runner identifier |

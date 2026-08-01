@@ -5,11 +5,10 @@ import {
   EFFORT_LEVELS,
   EffortLevelSchema,
   WORKFLOW_MODES,
-  normalizeLegacyMode,
+  WorkflowModeSchema,
   type ApproveLevel,
 } from '../../../schemas/enums.js';
 import { configError } from '../../errors.js';
-import { warnStderr } from '../../../../lib/warn.js';
 import type { Config } from '../../../schemas/config.js';
 import { defaultApprovalConfig } from '../../../schemas/config.js';
 import { applyImplementerOverrides, applyPlannerEffort, applyRunnerOverrides } from './runner.js';
@@ -29,14 +28,7 @@ function parseOverrideOrThrow<T>(
 }
 
 export function applyApproveOverride(config: Config, level: ApproveLevel): Config {
-  return {
-    ...config,
-    workflow: {
-      ...config.workflow,
-      approve: level,
-      ...(level === 'none' ? { autoApproveSpec: true, autoApprovePlan: true } : {}),
-    },
-  };
+  return { ...config, workflow: { ...config.workflow, approve: level } };
 }
 
 export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Config {
@@ -65,30 +57,16 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
     );
     next = applyApproveOverride(next, level);
   }
-  if (overrides.autoApprove !== undefined) {
-    if (overrides.autoApprove && overrides.approve !== undefined && overrides.approve !== 'none') {
-      warnStderr(`--approve ${overrides.approve} is overridden by --auto (approve=none).`);
-    }
-    next = {
-      ...next,
-      workflow: {
-        ...next.workflow,
-        autoApproveSpec: overrides.autoApprove,
-        autoApprovePlan: overrides.autoApprove,
-        ...(overrides.autoApprove ? { approve: 'none' satisfies ApproveLevel } : {}),
-      },
-    };
-  }
   if (overrides.mode !== undefined) {
-    const normalized = normalizeLegacyMode(overrides.mode);
-    if (!normalized) {
+    const parsed = WorkflowModeSchema.safeParse(overrides.mode);
+    if (!parsed.success) {
       throw configError.invalidOverride(
         'workflow mode',
         overrides.mode,
         `Must be: ${WORKFLOW_MODES.join(', ')}`,
       );
     }
-    next = { ...next, workflow: { ...next.workflow, mode: normalized } };
+    next = { ...next, workflow: { ...next.workflow, mode: parsed.data } };
   }
   if (overrides.budget !== undefined) {
     if (!Number.isFinite(overrides.budget) || overrides.budget <= 0) {

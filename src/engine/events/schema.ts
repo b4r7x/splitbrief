@@ -394,10 +394,6 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     mode: WorkflowModeSchema,
     approve: ApproveLevelSchema,
   }),
-  phaseEvent('mode_downgrade_advised').extend({
-    currentMode: WorkflowModeSchema,
-    suggestedMode: WorkflowModeSchema,
-  }),
   phaseEvent('mode_advice').extend({
     kind: z.enum(['none', 'downgrade', 'upgrade', 'missing-context']),
     risk: z.enum(['trivial', 'small', 'normal', 'high']),
@@ -611,28 +607,13 @@ type EngineEventFromPayloadSchemas =
 export const EngineEventSchema = z
   .unknown()
   .transform((value, ctx): EngineEventFromPayloadSchemas => {
-    const normalized = normalizeLegacyEngineEvent(value);
-    const parsed = parseEngineEventPayload(normalized);
+    const parsed = parseEngineEventPayload(value);
     if (parsed !== null) return parsed;
-    ctx.addIssue({ code: 'custom', path: [], message: invalidEngineEventMessage(normalized) });
+    ctx.addIssue({ code: 'custom', path: [], message: invalidEngineEventMessage(value) });
     return z.NEVER;
   });
 
 type EngineEventFromSchema = z.infer<typeof EngineEventSchema>;
-
-function normalizeLegacyEngineEvent(value: unknown): unknown {
-  if (!isRecord(value)) return value;
-
-  if (value.type === 'runner_call_text_delta' && value.channel === undefined) {
-    return { ...value, channel: 'stdout' };
-  }
-
-  if (value.type === 'runner_call_tool_use' && value.stage === undefined) {
-    return { ...value, stage: value.toolUse !== undefined ? 'done' : 'delta' };
-  }
-
-  return value;
-}
 
 export function parseEngineEvent(value: unknown): EngineEventFromSchema | null {
   const result = EngineEventSchema.safeParse(value);

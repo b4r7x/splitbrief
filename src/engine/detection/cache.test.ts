@@ -5,8 +5,8 @@ import { symlinkSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
-import { CLI_TOOLS } from '../runners/cli-tools.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -22,19 +22,7 @@ describe('detection cache', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
-  const cliTools: CliToolDetection[] = [
-    {
-      tool: 'claude-code',
-      executable: null,
-      trust: 'trusted',
-      installedVersion: CLI_TOOLS['claude-code'].testedVersion,
-      testedVersion: CLI_TOOLS['claude-code'].testedVersion,
-      compatibility: 'compatible',
-      auth: 'authenticated',
-      diagnostic: { state: 'ready', remediation: null },
-      probedAt: 1_700_000_000_000,
-    },
-  ];
+  const cliTools: CliToolDetection[] = [cliDetectionFor('ready', 'claude-code')];
   const providers: ProviderDetection[] = [
     {
       provider: 'ollama',
@@ -51,28 +39,13 @@ describe('detection cache', () => {
 
   it('roundtrips the complete detection payload', async () => {
     const cliTools: CliToolDetection[] = [
-      {
-        tool: 'codex',
+      cliDetectionFor('incompatible', 'codex', {
         executable: {
           path: join(tmpdir(), 'codex'),
-          fingerprint: {
-            dev: 1,
-            ino: 2,
-            size: 3,
-            mtimeMs: 4,
-          },
+          fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
         },
-        trust: 'trusted',
         installedVersion: '9.0.0',
-        testedVersion: CLI_TOOLS.codex.testedVersion,
-        compatibility: 'incompatible',
-        auth: 'authenticated',
-        diagnostic: {
-          state: 'incompatible',
-          remediation: `Install Codex ${CLI_TOOLS.codex.testedVersion}`,
-        },
-        probedAt: 1_700_000_000_000,
-      },
+      }),
     ];
     const providers: ProviderDetection[] = [
       {

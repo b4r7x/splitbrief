@@ -456,7 +456,7 @@ function redactThrownError(err: unknown, redactCredential: RunnerCallCredentialR
     return createError('provider-stream-error', safeMessage);
   }
 
-  const metadata = err as Error & { kind?: unknown; data?: unknown };
+  const metadata: Record<string, unknown> = isRecord(err) ? err : {};
   const kind = typeof metadata.kind === 'string' ? metadata.kind : undefined;
   if (kind === undefined) return createError('openai_stream_error', safeMessage);
 

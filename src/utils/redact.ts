@@ -7,7 +7,22 @@ interface RedactionRule {
   replacement: (marker: string) => RedactionReplacement;
 }
 
-const SENSITIVE_KEY_NAME = `(?:(?:[A-Z0-9]+[_.-])*(?:API[_-]?KEY|TOKENS?|PASSWORD|PASSWD|SECRETS?|CREDENTIALS?|AUTHORIZATION|X[_-]API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN)(?:[_.-][A-Z0-9]+)*|CLIENTSECRET|CLIENTTOKEN|PRIVATETOKEN|AUTHTOKEN)`;
+const GLUED_SENSITIVE_KEY_NAMES = 'CLIENTSECRET|CLIENTTOKEN|PRIVATETOKEN|AUTHTOKEN';
+
+const SENSITIVE_KEY_NAME = `(?:(?:[A-Z0-9]+[_.-])*(?:API[_-]?KEY|TOKENS?|PASSWORD|PASSWD|SECRETS?|CREDENTIALS?|AUTHORIZATION|X[_-]API[_-]?KEY|ACCESS[_-]?TOKEN|REFRESH[_-]?TOKEN)(?:[_.-][A-Z0-9]+)*|${GLUED_SENSITIVE_KEY_NAMES})`;
+
+// Wider than the assigned-secret matcher above: a bare `KEY` or `AUTH` segment
+// names a credential when it is an environment variable, while the same word in
+// prose does not.
+const CREDENTIAL_ENV_NAME_PATTERN = new RegExp(
+  `(?:^|[_.-])(?:API[_.-]?KEY|KEY|TOKENS?|PASSWORD|PASSWD|SECRETS?|CREDENTIALS?|AUTH(?:ORIZATION)?)(?:$|[_.-])|${GLUED_SENSITIVE_KEY_NAMES}`,
+  'i',
+);
+
+/** Whether an environment variable name carries a credential value. */
+export function isCredentialEnvironmentName(name: string): boolean {
+  return CREDENTIAL_ENV_NAME_PATTERN.test(name);
+}
 
 const ASSIGNED_SECRET_PATTERN = new RegExp(
   String.raw`((?<![A-Z0-9])(?:"${SENSITIVE_KEY_NAME}"|'${SENSITIVE_KEY_NAME}'|${SENSITIVE_KEY_NAME})(?![A-Z0-9])\s*[:=]\s*)("(?:\\.|[^"\\])+"|'(?:\\.|[^'\\])+'|Bearer\s+[A-Z0-9._~+/*=-]+|\S+)`,

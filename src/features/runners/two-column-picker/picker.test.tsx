@@ -27,6 +27,8 @@ const TOOLS: Tool[] = [
   { id: 'gamma', displayName: 'Gamma' },
 ];
 
+const BACKSPACE = '\u007f';
+
 const MODELS_BY_TOOL: Record<string, Model[]> = {
   alpha: [
     { id: 'a-1', displayName: 'alpha-1' },
@@ -89,6 +91,94 @@ describe('TwoColumnPicker', () => {
     ui.unmount();
   });
 
+  it('typing a left filter emits onLeftChange so right models track the filtered tool', async () => {
+    function Consumer() {
+      const [leftId, setLeftId] = useState('alpha');
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: TOOLS,
+            getKey: (t) => t.id,
+            isDisabled: (t) => !!t.disabled,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL[leftId] ?? [],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+            onLeftChange: (t) => {
+              setLeftId(t.id);
+            },
+          }}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('alpha-1');
+
+    ui.stdin.write('g');
+    await flushEffects();
+
+    expect(ui.lastFrame()).toContain('gamma-1');
+    expect(ui.lastFrame()).not.toContain('alpha-1');
+    ui.unmount();
+  });
+
+  it('re-sorting the left list under the cursor re-emits onLeftChange and confirms the visible pair', async () => {
+    const confirms: Array<{ l: string; r: string | null }> = [];
+    function Consumer() {
+      const [tools, setTools] = useState(TOOLS);
+      const [leftId, setLeftId] = useState('alpha');
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: tools,
+            getKey: (t) => t.id,
+            isDisabled: (t) => !!t.disabled,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL[leftId] ?? [],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+            onLeftChange: (t) => {
+              setLeftId(t.id);
+            },
+          }}
+          onConfirm={(l, r) => {
+            confirms.push({ l: l.id, r: r?.id ?? null });
+          }}
+          onCancel={() => {}}
+          onRefresh={() => {
+            setTools(TOOLS.toReversed());
+          }}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('alpha-1');
+
+    ui.stdin.write('\u0012'); // ctrl+r - refresh re-sorts the tools under the cursor
+    await flushEffects();
+
+    expect(ui.lastFrame()).toContain('gamma-1');
+    expect(ui.lastFrame()).not.toContain('alpha-1');
+
+    ui.stdin.write('\r'); // Enter left -> focus right
+    await flushEffects();
+    ui.stdin.write('\r'); // Enter right -> confirm
+    await tick(20);
+
+    expect(confirms).toEqual([{ l: 'gamma', r: 'g-1' }]);
+    ui.unmount();
+  });
+
   it('Enter on left moves focus right; right items derive from left; Enter on right confirms both', async () => {
     const confirms: Array<{ l: string; r: string | null }> = [];
     function Consumer() {
@@ -127,6 +217,114 @@ describe('TwoColumnPicker', () => {
     await tick(20);
 
     expect(confirms).toEqual([{ l: 'alpha', r: 'a-1' }]);
+    ui.unmount();
+  });
+
+  it('resets the right cursor to the destination left item, falling back to the default', async () => {
+    const confirms: Array<{ l: string; r: string | null }> = [];
+    function Consumer() {
+      const [leftId, setLeftId] = useState('alpha');
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: TOOLS,
+            getKey: (t) => t.id,
+            isDisabled: (t) => !!t.disabled,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL[leftId] ?? [],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+            // Only alpha resolves an index; every other destination takes the default.
+            resolveInitialIndex: (left) => (left?.id === 'alpha' ? 1 : undefined),
+            onLeftChange: (t) => {
+              setLeftId(t.id);
+            },
+          }}
+          onConfirm={(l, r) => {
+            confirms.push({ l: l.id, r: r?.id ?? null });
+          }}
+          onCancel={() => {}}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+
+    // Down to gamma (beta is disabled but still navigable), back up to alpha:
+    // each move resets the right cursor through resolveInitialIndex.
+    ui.stdin.write('\u001B[B');
+    await flushEffects();
+    ui.stdin.write('\u001B[B');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(confirms).toEqual([{ l: 'gamma', r: 'g-1' }]);
+
+    ui.stdin.write('\u001B[D');
+    await flushEffects();
+    ui.stdin.write('\u001B[B');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(confirms.at(-1)).toEqual({ l: 'alpha', r: 'a-2' });
+    ui.unmount();
+  });
+
+  it.each([
+    { branch: 'printable input', keys: ['al'] },
+    { branch: 'backspace', keys: ['alz', BACKSPACE] },
+  ])('resolves the right cursor for the left item a $branch filter lands on', async ({ keys }) => {
+    const confirms: Array<{ l: string; r: string | null }> = [];
+    function Consumer() {
+      const [leftId, setLeftId] = useState('gamma');
+      return (
+        <TwoColumnPicker<Tool, Model>
+          title="Picker"
+          leftProps={{
+            items: TOOLS,
+            getKey: (t) => t.id,
+            isDisabled: (t) => !!t.disabled,
+            initialIndex: 2,
+            renderRow: (t) => <Text>{t.displayName}</Text>,
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL[leftId] ?? [],
+            getKey: (m) => m.id,
+            renderRow: (m) => <Text>{m.displayName}</Text>,
+            resolveInitialIndex: (left) => (left?.id === 'alpha' ? 1 : undefined),
+            onLeftChange: (t) => {
+              setLeftId(t.id);
+            },
+          }}
+          onConfirm={(l, r) => {
+            confirms.push({ l: l.id, r: r?.id ?? null });
+          }}
+          onCancel={() => {}}
+        />
+      );
+    }
+    const ui = renderFeature(<Consumer />);
+    await flushEffects();
+
+    for (const keystroke of keys) {
+      ui.stdin.write(keystroke);
+      await flushEffects();
+    }
+    ui.stdin.write('\r');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(confirms).toEqual([{ l: 'alpha', r: 'a-2' }]);
     ui.unmount();
   });
 

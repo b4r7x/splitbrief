@@ -5,7 +5,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { detectWorktree } from '../../../engine/worktree/detect.js';
 import { createGitClient } from '../../../lib/git/client.js';
 import { bootstrapSession, clearStaleSessionForCli } from './readiness.js';
-import type { DispatchArgs } from './types.js';
+import type { BootstrapSessionResult, DispatchArgs } from './types.js';
 
 export async function runInteractiveStart(args: DispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
@@ -13,8 +13,8 @@ export async function runInteractiveStart(args: DispatchArgs): Promise<void> {
   const { useFullscreen, useMouse, useHover, needsSetup } = await setupWorkflow(opts);
 
   let sessionId: string | undefined;
-  let readiness: Awaited<ReturnType<typeof bootstrapSession>>['readiness'] | undefined;
-  let trustedCliGates: Awaited<ReturnType<typeof bootstrapSession>>['trustedCliGates'] | undefined;
+  let readiness: BootstrapSessionResult['readiness'] | undefined;
+  let trustedCliGates: BootstrapSessionResult['trustedCliGates'] | undefined;
   if (feature && !needsSetup) {
     ({ sessionId, readiness, trustedCliGates } = await bootstrapSession({
       projectDir,

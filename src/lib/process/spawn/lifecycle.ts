@@ -1,5 +1,4 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { error, matches } from '../../../utils/error.js';
 import { createBoundedOutput, type BoundedOutputMetadata } from '../bounded-output.js';
@@ -97,12 +96,6 @@ export function createSanitizedChildEnv(
   return env;
 }
 
-const scopedChildEnv = new AsyncLocalStorage<NodeJS.ProcessEnv>();
-
-export function withChildProcessEnv<T>(env: NodeJS.ProcessEnv, operation: () => T): T {
-  return scopedChildEnv.run(env, operation);
-}
-
 export type SpawnPipeFatalState = 'output-budget-breach' | 'protocol-failure' | 'callback-failure';
 
 export interface SpawnPipeFatalSignal {
@@ -176,7 +169,7 @@ function defaultFatalRemediation(state: SpawnPipeFatalState): string {
   }
 }
 
-function isFatalSignal(value: unknown): value is SpawnPipeFatalSignal {
+export function isFatalSignal(value: unknown): value is SpawnPipeFatalSignal {
   if (typeof value !== 'object' || value === null) return false;
   if (!('state' in value) || !('remediation' in value)) return false;
   const state = value.state;
@@ -290,7 +283,10 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     const terminateFatal = (signal: SpawnPipeFatalSignal) => {
       terminate({ kind: 'fatal', signal });
     };
-    const invokeGuarded = (callback: () => unknown): boolean => {
+    // Only callbacks that are contractually allowed to signal fatality are guarded by result:
+    // a `void` callback may legally return a value under TypeScript's return-type bivariance, so
+    // treating that value as a fatal signal would kill the child for a harmless expression body.
+    const invokeGuarded = (callback: () => SpawnPipeCallbackResult): boolean => {
       if (phase !== 'active') return false;
       try {
         const result = callback();
@@ -306,6 +302,11 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       terminateFatal({ state: 'callback-failure', remediation: '' });
       return false;
     };
+    const invokeVoidGuarded = (callback: () => void): boolean =>
+      invokeGuarded(() => {
+        callback();
+        return undefined;
+      });
 
     const armIdleTimers = () => {
       if (idle === undefined) return;
@@ -314,7 +315,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       idleWarnTimer = setTimeout(() => {
         idleWarned = true;
         if (idle.onWarn !== undefined) {
-          invokeGuarded(() => idle.onWarn?.(Date.now() - since));
+          invokeVoidGuarded(() => idle.onWarn?.(Date.now() - since));
         }
       }, idle.warnMs);
       idleWarnTimer.unref?.();
@@ -330,7 +331,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       if (idle === undefined || phase !== 'active') return phase === 'active';
       if (idleWarned) {
         idleWarned = false;
-        if (idle.onClear !== undefined && !invokeGuarded(() => idle.onClear?.())) return false;
+        if (idle.onClear !== undefined && !invokeVoidGuarded(() => idle.onClear?.())) return false;
       }
       armIdleTimers();
       return phase === 'active';
@@ -338,7 +339,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     try {
       proc = spawn(opts.command, opts.args, {
         cwd: opts.cwd,
-        env: opts.env ?? scopedChildEnv.getStore(),
+        env: opts.env,
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: opts.detached ?? false,
       });
@@ -449,7 +450,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       }
     }
 
-    if (opts.onSpawned !== undefined && !invokeGuarded(() => opts.onSpawned?.(proc))) return;
+    if (opts.onSpawned !== undefined && !invokeVoidGuarded(() => opts.onSpawned?.(proc))) return;
     armIdleTimers();
 
     if (opts.stdin === undefined) {

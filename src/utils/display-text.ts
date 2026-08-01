@@ -38,6 +38,7 @@ const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme
 
 export interface TerminalDiagnosticTextOptions {
   maxChars?: number | undefined;
+  preserveLineBreaks?: boolean | undefined;
 }
 
 export interface TerminalDisplayTextOptions {
@@ -72,7 +73,7 @@ export function sanitizeTerminalDiagnosticText(
   opts: TerminalDiagnosticTextOptions = {},
 ): string {
   return truncateDiagnosticText(
-    sanitizeTerminalDisplayText(text),
+    sanitizeTerminalDisplayText(text, { preserveLineBreaks: opts.preserveLineBreaks }),
     opts.maxChars ?? DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS,
   );
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 import { createMetadataProvider } from './metadata.js';
+import { resolveProviderRunMetadata } from '../cost/breakdown.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 describe('createMetadataProvider', () => {
@@ -267,5 +268,74 @@ describe('createMetadataProvider', () => {
     });
     const detected = await p.listModelsWithMetadata();
     expect(detected).toEqual([{ id: 'a', contextLength: 50, pricingInput: 1 }]);
+  });
+});
+
+describe('metadata provider offering billing metadata', () => {
+  setupFetchMock();
+
+  const RawSchema = z.object({ id: z.string(), context: z.number().optional() }).passthrough();
+  type Raw = z.infer<typeof RawSchema>;
+
+  it('carries catalog service, offering, billing, and asOf from a metadata provider base URL', () => {
+    const p = createMetadataProvider<Raw>({
+      name: 'deepseek',
+      defaultBaseURL: 'https://api.deepseek.com/v1',
+      envKeyName: 'DEEPSEEK_API_KEY',
+      isLocal: false,
+      schema: RawSchema,
+      fallback: (id): Raw => ({ id }),
+    });
+
+    expect(resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL })).toEqual({
+      service: 'deepseek',
+      offering: 'payg',
+      normalizedEndpoint: 'https://api.deepseek.com/v1',
+      billing: 'api-metered',
+      asOf: '2026-07-31',
+    });
+  });
+
+  it('retains normalized endpoint overrides in run metadata', () => {
+    const p = createMetadataProvider<Raw>(
+      {
+        name: 'openai',
+        defaultBaseURL: 'https://api.openai.com/v1',
+        envKeyName: 'OPENAI_API_KEY',
+        isLocal: false,
+        schema: RawSchema,
+        fallback: (id): Raw => ({ id }),
+      },
+      { apiBase: 'https://api.openai.com/v1' },
+    );
+
+    expect(
+      resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL }),
+    ).toMatchObject({
+      service: 'openai',
+      offering: 'payg',
+      normalizedEndpoint: 'https://api.openai.com/v1',
+      billing: 'api-metered',
+      asOf: '2026-07-31',
+    });
+  });
+
+  it('labels local metadata providers as local compute in run metadata', () => {
+    const p = createMetadataProvider<Raw>({
+      name: 'ollama',
+      defaultBaseURL: 'http://localhost:11434/v1',
+      envKeyName: 'OLLAMA_API_KEY',
+      isLocal: true,
+      schema: RawSchema,
+      fallback: (id): Raw => ({ id }),
+    });
+
+    expect(resolveProviderRunMetadata({ tool: p.name, normalizedEndpoint: p.baseURL })).toEqual({
+      service: 'ollama',
+      offering: 'local',
+      normalizedEndpoint: 'http://localhost:11434/v1',
+      billing: 'local',
+      asOf: '2026-07-31',
+    });
   });
 });

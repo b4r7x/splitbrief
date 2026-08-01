@@ -254,8 +254,6 @@ export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<Plann
     resolveApproveLevel({
       mode: getWorkflowMode(config),
       configApprove: config.workflow.approve,
-      legacyAutoFlag:
-        config.workflow.autoApproveSpec === true && config.workflow.autoApprovePlan === true,
     });
   const skipSpecApproval = !blocksSpecGate(approveLevel);
   const skipPlanApproval = !blocksPlanGate(approveLevel);

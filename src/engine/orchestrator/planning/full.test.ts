@@ -61,7 +61,7 @@ describe('runFullPlanning — skill rehydration', () => {
       wctx: {
         projectDir,
         sessionId,
-        config: makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } }),
+        config: makeConfig({ workflow: { approve: 'none' } }),
         callbacks: makeCallbacks().callbacks,
         bus: makeBusRecorder().bus,
         metadata: TEST_METADATA,
@@ -102,7 +102,7 @@ describe('runFullPlanning — skill rehydration', () => {
       wctx: {
         projectDir,
         sessionId,
-        config: makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } }),
+        config: makeConfig({ workflow: { approve: 'none' } }),
         callbacks: makeCallbacks().callbacks,
         bus: makeBusRecorder().bus,
         metadata: TEST_METADATA,
@@ -147,7 +147,7 @@ describe('runFullPlanning — questions', () => {
       wctx: {
         projectDir,
         sessionId,
-        config: makeConfig({ workflow: { autoApproveSpec: true, autoApprovePlan: true } }),
+        config: makeConfig({ workflow: { approve: 'none' } }),
         callbacks: makeCallbacks({ onQuestionAsked }).callbacks,
         bus: makeBusRecorder().bus,
         metadata: TEST_METADATA,

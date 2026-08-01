@@ -34,7 +34,9 @@ export function createCommandReader(options: CommandReaderOptions): { close: () 
     },
     {
       maxLineBytes: RPC_MAX_FRAME_BYTES,
-      onOverflow: (overflow) => onError(`RPC frame too large: ${overflow.lineBytes} bytes`),
+      onOverflow: (overflow) => {
+        onError(`RPC frame too large: ${overflow.lineBytes} bytes`);
+      },
     },
   );
 

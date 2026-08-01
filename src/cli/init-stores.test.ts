@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { CliToolDetection, ProviderDetection } from '../core/discovery/detection.js';
@@ -94,32 +95,12 @@ describe('initStores', () => {
         models: [{ id: 'qwen', pricingTiers: [{ type: 'context', thresholdTokens: 0 }] }],
       },
     ];
-    const cliTools: CliToolDetection[] = [
-      {
-        tool: 'claude-code',
-        executable: null,
-        trust: 'trusted',
-        installedVersion: '2.0.0',
-        testedVersion: '2.0.0',
-        compatibility: 'compatible',
-        auth: 'authenticated',
-        diagnostic: { state: 'ready', remediation: null },
-        probedAt: 1_700_000_000_000,
-      },
-    ];
+    const cliTools: CliToolDetection[] = [cliDetectionFor('ready', 'claude-code')];
     const dir = makeProjectDir({ providers, cliTools });
 
     await initStores(dir);
 
-    expect(detectionStore.get().planners).toEqual([
-      {
-        tool: 'claude-code',
-        type: 'cli',
-        available: true,
-        description: 'Claude Code CLI',
-        version: '2.0.0',
-      },
-    ]);
+    expect(detectionStore.get().cliTools).toEqual(cliTools);
     expect(detectionStore.get().implementers).toEqual(providers);
   }, 30_000);
 
@@ -375,7 +356,7 @@ Skill body for bootstrap proof.
     writeFileSync(
       join(dir, SPLITBRIEF_DIR, 'config.yaml'),
       YAML.stringify({
-        version: 2,
+        version: 3,
         planner: { kind: 'cli', tool: 'not-a-real-tool' },
         implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
       }),

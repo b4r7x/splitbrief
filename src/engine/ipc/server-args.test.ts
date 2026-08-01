@@ -79,31 +79,29 @@ describe('parseIpcServerArgs launch contract', () => {
     expect(parsed?.overrides).toEqual({ planner: { tool: 'codex' } });
   });
 
-  it('normalizes the legacy full mode to speckit', () => {
-    const parsed = parseIpcServerArgs({
-      sessionId: 'test-session',
-      projectDir: '/repo',
-      feature: 'feature',
-      mode: 'full',
-      configPath: '/repo/.splitbrief/config.yaml',
-      overrides: {},
-    });
-
-    expect(parsed?.mode).toBe('speckit');
+  it.each(['full', 'spec-kit'])('rejects the removed %s mode alias', (mode) => {
+    expect(
+      parseIpcServerArgs({
+        sessionId: 'test-session',
+        projectDir: '/repo',
+        feature: 'feature',
+        mode,
+        configPath: '/repo/.splitbrief/config.yaml',
+        overrides: {},
+      }),
+    ).toBeNull();
   });
 
-  it('normalizes the legacy full mode inside nested overrides to speckit', () => {
-    const parsed = parseIpcServerArgs({
-      sessionId: 'test-session',
-      projectDir: '/repo',
-      feature: 'feature',
-      mode: 'full',
-      configPath: '/repo/.splitbrief/config.yaml',
-      overrides: { mode: 'full' },
-    });
-
-    expect(parsed).not.toBeNull();
-    expect(parsed?.mode).toBe('speckit');
-    expect(parsed?.overrides.mode).toBe('speckit');
+  it.each(['full', 'spec-kit'])('rejects the removed %s alias inside nested overrides', (mode) => {
+    expect(
+      parseIpcServerArgs({
+        sessionId: 'test-session',
+        projectDir: '/repo',
+        feature: 'feature',
+        mode: 'speckit',
+        configPath: '/repo/.splitbrief/config.yaml',
+        overrides: { mode },
+      }),
+    ).toBeNull();
   });
 });

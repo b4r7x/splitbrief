@@ -2,26 +2,7 @@ import type { Command } from 'commander';
 import { resolveProjectDir } from '../../setup.js';
 import { addWorkflowOptions } from '../../options.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
-import { continueCommand, type ContinueDeps } from './command.js';
-import { checkServerStatus } from '../../../engine/ipc/lockfile.js';
-import { initStores } from '../../init-stores.js';
-import { renderApp } from '../../render/app.js';
-import { runHeadless } from '../../headless.js';
-import { runRpc } from '../../rpc/run/host.js';
-import { setupWorkflow } from '../../setup.js';
-import { printCrashDiagnostic } from '../../crash-diagnostic.js';
-import { detectConfiguredCliReadiness } from '../start/readiness.js';
-
-const defaultContinueDeps: ContinueDeps = {
-  checkServerStatus,
-  initStores,
-  renderApp,
-  runHeadless,
-  runRpc,
-  setupWorkflow,
-  printCrashDiagnostic,
-  detectCliReadiness: detectConfiguredCliReadiness,
-};
+import { continueCommand, defaultContinueDeps, type ContinueDeps } from './command.js';
 
 export function registerContinueCommand(
   program: Command,

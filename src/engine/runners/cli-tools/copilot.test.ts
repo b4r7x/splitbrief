@@ -48,7 +48,11 @@ describe('Copilot role adapters', () => {
 
   it('keeps argv, process-exit completion, version/auth probes, and output limits explicit', () => {
     for (const adapter of [copilotPlannerAdapter, copilotImplementerAdapter]) {
-      expect(adapter.promptTransport).toEqual({ kind: 'argv', maxBytes: 120_000 });
+      expect(adapter.promptTransport).toEqual({
+        kind: 'argv',
+        maxBytes: 120_000,
+        placement: 'flag-value',
+      });
       expect(adapter.outputContract).toEqual({ kind: 'text-exit', successfulExitCodes: [0] });
       expect(adapter.probe.version).toEqual({
         command: ['copilot', '--version'],
@@ -86,7 +90,7 @@ describe('Copilot role adapters', () => {
       '--label',
       'fixture',
     ]);
-    expect(copilotPlannerAdapter.validateArgs(args)).toEqual({ valid: true });
+    expect(copilotPlannerAdapter.validateArgs(args, args.slice(0, -2))).toEqual({ valid: true });
   });
 
   it('preserves implementer --allow-all and model placement', () => {
@@ -104,33 +108,35 @@ describe('Copilot role adapters', () => {
       '--label',
       'fixture',
     ]);
-    expect(copilotImplementerAdapter.validateArgs(args)).toEqual({ valid: true });
+    expect(copilotImplementerAdapter.validateArgs(args, args.slice(0, -2))).toEqual({
+      valid: true,
+    });
     expect(args).toContain('--allow-all');
   });
 
   it('rejects reordered, protected, duplicate, embedded, and alternate prompt arguments', () => {
-    const args = copilotPromptArgs({ role: 'implementer' });
-    expect(copilotImplementerAdapter.validateArgs([PROMPT, ...args])).toEqual({
+    const base = copilotPromptArgs({ role: 'implementer' });
+    expect(copilotImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...args, '--allow-all'])).toEqual({
+    expect(copilotImplementerAdapter.validateArgs([...base, '--allow-all'], base)).toEqual({
       valid: false,
       conflicts: ['--allow-all'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...args, '--model', 'other'])).toEqual({
+    expect(copilotImplementerAdapter.validateArgs([...base, '--model', 'other'], base)).toEqual({
       valid: false,
       conflicts: ['--model'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...args, 'prefix-<PROMPT>'])).toEqual({
+    expect(copilotImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...args, '<OTHER>'])).toEqual({
+    expect(copilotImplementerAdapter.validateArgs([...base, '<OTHER>'], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(copilotImplementerAdapter.validateArgs([...args, PROMPT])).toEqual({
+    expect(copilotImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });

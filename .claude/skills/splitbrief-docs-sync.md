@@ -111,9 +111,8 @@ Every "see `src/...`" or "see `docs/...`" link in a doc file must point at a rea
 grep -rn "EVENTS_FILE\|/current/" docs/ README.md CLAUDE.md AGENTS.md
 ```
 
-Any `EVENTS_FILE` hit is stale. `/current/` is valid only in schema-migration sections
-that describe importing the supported pre-v3 canonical layout. Cross-reference
-`src/core/paths.ts` and `src/core/migration/` before editing.
+Any `EVENTS_FILE` or `/current/` hit is stale — the only on-disk session layout is
+`.splitbrief/sessions/<id>/`. Cross-reference `src/core/paths.ts` before editing.
 
 ## Report format
 

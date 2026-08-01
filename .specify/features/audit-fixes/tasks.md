@@ -180,8 +180,8 @@ grep -A20 'REWIND_TO_SPEC\|REWIND_TO_PLAN' src/core/state/machine.ts | grep 'pla
 - [ ] T031 [P] [P1] Extract shared `retryCountsFromEvents` from `src/engine/orchestrator/evidence/review-packet/sections.ts:321` and `src/engine/orchestrator/explain/sections.ts:192` into `src/engine/orchestrator/evidence/retry-counts.ts`
   - **Done when**: Both files import from shared location
 
-- [ ] T032 [P] [P1] Extract `findUnusedId(root, base, suffixer)` from `src/core/sessions/lifecycle.ts:39-48` and `core/migration/legacy.ts:10,18-24`
-  - **Done when**: Both files import from shared location
+- [ ] T032 [P] [P1] Extract `findUnusedId(root, base, suffixer)` from `src/core/sessions/lifecycle.ts:39-48` into `src/core/sessions/find-unused-id.ts`
+  - **Done when**: `lifecycle.ts` imports from the shared location
 
 - [ ] T033 [P] [P1] Extract `accumulateProviderCosts(target, source)` from `src/core/sessions/analytics.ts:41-48` and `core/stats/persistence.ts:65-72`
   - **Done when**: Both files import from shared location

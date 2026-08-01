@@ -6,7 +6,6 @@ import { runHeadless } from '../../headless.js';
 import { runRpc } from '../../rpc/run/host.js';
 import { renderApp } from '../../render/app.js';
 import { spawnServer } from '../../../engine/ipc/spawn-server.js';
-import { maybeMigrateAndReport } from '../migrate.js';
 import { parseAtFiles } from '../../parse-at-files.js';
 import { attachmentsStore } from '../../../stores/workflow/attachments.js';
 import { cliError } from '../../errors.js';
@@ -20,7 +19,7 @@ import { runInteractiveStart } from './interactive.js';
 import { detectConfiguredCliReadiness } from './readiness.js';
 import type { StartDeps } from './types.js';
 
-const defaultStartDeps: StartDeps = {
+export const defaultStartDeps: StartDeps = {
   spawnServer,
   runHeadless,
   runRpc,
@@ -66,8 +65,6 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
           console.error(`Warning: @${stripTerminalControls(err.path)}: ${err.reason}`);
         }
       }
-
-      await maybeMigrateAndReport(projectDir, opts);
 
       if ((opts.detach || opts.json || opts.rpc) && feature) {
         const dispatch = {

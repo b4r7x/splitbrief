@@ -1,9 +1,9 @@
-import { chmod, lstat, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
-import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
+import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import {
-  CLI_TOOL_CATALOG,
+  defaultCliAuthChannel,
   selectCliAuthChannel,
   type CliAuthChannel,
   type CliToolId,
@@ -200,6 +200,19 @@ const MAX_STATE_FILE_BYTES = 8 * 1024 * 1024;
 export const SANDBOX_CREDENTIAL_VALUES = Symbol('splitbrief.sandboxCredentialValues');
 
 const MAX_STATE_REDACTION_VALUE_BYTES = 8 * 1024 * 1024;
+/**
+ * Bridged state files carry long opaque tokens next to short descriptive
+ * values — `subscriptionType: "max"`, `type: "oauth"`. Redacting those would
+ * shred every runner delta containing "max" or "oauth", so only values long
+ * enough to be a credential are handed to the redactor.
+ */
+const MIN_STATE_REDACTION_VALUE_LENGTH = 12;
+
+function addStateRedactionValue(candidate: string, values: Set<string>): void {
+  if (candidate.length < MIN_STATE_REDACTION_VALUE_LENGTH) return;
+  if (Buffer.byteLength(candidate, 'utf8') > MAX_STATE_REDACTION_VALUE_BYTES) return;
+  values.add(candidate);
+}
 
 export function sandboxCredentialValues(environment: unknown): readonly string[] {
   if (typeof environment !== 'object' || environment === null) return [];
@@ -210,16 +223,18 @@ export function sandboxCredentialValues(environment: unknown): readonly string[]
     return [];
   }
   if (!Array.isArray(value)) return [];
-  return value.filter((candidate): candidate is string => candidate.length > 0);
+  return value.filter(
+    (candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0,
+  );
 }
 
 function collectStateStrings(value: unknown, values: Set<string>): void {
   if (typeof value === 'string') {
-    if (value.length > 0 && Buffer.byteLength(value, 'utf8') <= MAX_STATE_REDACTION_VALUE_BYTES) {
-      values.add(value);
-      for (const token of value.split(/[^\p{L}\p{N}_./:+@=-]+/u)) {
-        if (token.length > 0) values.add(token);
-      }
+    addStateRedactionValue(value, values);
+    // A composite value ("Bearer <token>") reaches the child as its token
+    // alone, so keep the credential-shaped parts as well.
+    for (const token of value.split(/[^\p{L}\p{N}_./:+@=-]+/u)) {
+      addStateRedactionValue(token, values);
     }
     return;
   }
@@ -240,12 +255,10 @@ function collectStateCredentialValues(content: Buffer, tool: CliToolId): readonl
     collectStateStrings(JSON.parse(text) as unknown, values);
   } catch {
     // A few supported CLIs have historically used line-oriented state files.
-    // Preserve fail-closed isolation while still redacting every non-empty
-    // token in a bounded plain-text snapshot.
+    // Preserve fail-closed isolation while still redacting every
+    // credential-shaped token in a bounded plain-text snapshot.
     for (const token of text.split(/[^\p{L}\p{N}_./:+@=-]+/u)) {
-      if (token.length > 0 && Buffer.byteLength(token, 'utf8') <= MAX_STATE_REDACTION_VALUE_BYTES) {
-        values.add(token);
-      }
+      addStateRedactionValue(token, values);
     }
     if (values.size === 0 && text.length > 0) values.add(text);
   }
@@ -305,16 +318,19 @@ async function copyReadOnlyStateEntry(
     throw stateBridgeFailure(tool);
   }
 
-  if (destinationKind !== null) {
-    const snapshot = await readFile(destination);
-    return collectStateCredentialValues(snapshot, tool);
-  }
   const stat = await lstat(source);
   if (!stat.isFile() || stat.size > MAX_STATE_FILE_BYTES) {
     throw stateBridgeFailure(tool);
   }
   const content = await readFile(source);
   const credentialValues = collectStateCredentialValues(content, tool);
+  // A snapshot that outlives a re-login or a rotated session token keeps handing
+  // the child a credential the host no longer holds, so replace it whenever the
+  // admitted source has moved on.
+  if (destinationKind !== null) {
+    if ((await readFile(destination)).equals(content)) return credentialValues;
+    await rm(destination, { force: true });
+  }
   await ensureReadOnlyDirectory(dirname(destination), tool);
   await writeFile(destination, content, {
     mode: READONLY_STATE_FILE_MODE,
@@ -350,17 +366,27 @@ async function bridgeCliState(
   return [...credentialValues];
 }
 
-export function resolveCliRunnerAuth(runner: Extract<RunnerLike, { kind: 'cli' }>): CliAuthChannel {
-  if (runner.authChannel === undefined) {
-    throw error(
-      'runner-auth-channel-required',
-      `CLI runner "${runner.tool}" requires an explicit authChannel before it can start`,
-      {
-        tool: runner.tool,
-        allowed: CLI_TOOL_CATALOG[runner.tool].auth.channels.map(({ id }) => id),
-      },
-    );
+/**
+ * Drop every bridged host-credential snapshot from a project's sandbox. The
+ * bridge re-creates whatever the next call needs, so an admitted subscription
+ * token never outlives the run it was staged for.
+ */
+export async function clearBridgedCliState(projectDir: string): Promise<void> {
+  const root = join(projectDir, SANDBOX_DIR);
+  const stateRoots: Readonly<Record<SandboxStateRoot, string>> = {
+    home: join(root, 'home'),
+    config: join(root, 'config'),
+    data: join(root, 'data'),
+  };
+  for (const paths of Object.values(CLI_STATE_PATHS)) {
+    for (const statePath of paths) {
+      await rm(join(stateRoots[statePath.destination], statePath.destinationPath), { force: true });
+    }
   }
+}
+
+export function resolveCliRunnerAuth(runner: Extract<RunnerLike, { kind: 'cli' }>): CliAuthChannel {
+  if (runner.authChannel === undefined) return defaultCliAuthChannel(runner.tool);
   const channel = selectCliAuthChannel(runner.tool, { channel: runner.authChannel });
   if (channel === undefined) {
     throw error(
@@ -380,9 +406,7 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
   }
   switch (runner.kind) {
     case 'api': {
-      const descriptor = Object.values(API_PROVIDER_CATALOG).find(
-        (candidate) => candidate.id === runner.provider,
-      );
+      const descriptor = getApiProviderDescriptor(runner.provider);
       if (descriptor?.credentialEnv) keys.add(descriptor.credentialEnv);
       break;
     }
@@ -401,7 +425,7 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
 export async function createSandboxEnv(
   projectDir: string,
   preserveEnvKeys: string[] = [],
-  bridgeHostCliState: boolean | CliToolId = false,
+  bridgeHostCliState?: CliToolId | undefined,
 ): Promise<NodeJS.ProcessEnv> {
   const root = join(projectDir, SANDBOX_DIR);
   const home = join(root, 'home');
@@ -434,16 +458,13 @@ export async function createSandboxEnv(
     PIP_CACHE_DIR: pipCache,
     CARGO_HOME: cargoHome,
   };
-  const bridgeTool = typeof bridgeHostCliState === 'string' ? bridgeHostCliState : undefined;
   let credentialValues: readonly string[] = [];
-  if (bridgeHostCliState === true) {
-    // A bare boolean has no selected provider state and therefore cannot be
-    // admitted.  Keep the environment isolated instead of guessing a tool or
-    // forwarding host paths.
-    return { ...env, ...sandboxState };
-  }
-  if (bridgeTool !== undefined) {
-    credentialValues = await bridgeCliState(bridgeTool, process.env, { home, config, data });
+  if (bridgeHostCliState !== undefined) {
+    credentialValues = await bridgeCliState(bridgeHostCliState, process.env, {
+      home,
+      config,
+      data,
+    });
   }
   const result = { ...env, ...sandboxState };
   Object.defineProperty(result, SANDBOX_CREDENTIAL_VALUES, {
@@ -461,6 +482,6 @@ export async function createRunnerSandboxEnv(
 ): Promise<NodeJS.ProcessEnv> {
   const channel = runner.kind === 'cli' ? resolveCliRunnerAuth(runner) : undefined;
   const bridgeTool =
-    runner.kind === 'cli' && channel?.stateBridge === 'host-cli-state' ? runner.tool : false;
+    runner.kind === 'cli' && channel?.stateBridge === 'host-cli-state' ? runner.tool : undefined;
   return createSandboxEnv(projectDir, runnerAuthEnvKeys(runner), bridgeTool);
 }

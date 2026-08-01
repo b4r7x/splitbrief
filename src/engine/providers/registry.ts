@@ -10,20 +10,34 @@ import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
 import { createAnthropicProvider } from './anthropic/adapter.js';
 import { createOpenAICompatProvider } from './openai-compat.js';
-import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.js';
+import {
+  API_PROVIDER_CATALOG,
+  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
+  PASS_API_PROVIDER_IDS,
+  getApiProviderDescriptor,
+} from '../../core/providers/api-provider-catalog.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
 import {
   endpointPolicyError,
   normalizeProviderEndpoint,
   type EndpointPolicy,
 } from '../../core/providers/endpoint-policy.js';
+import { assertCandidateFilesAbsent } from '../../core/runners/candidate-admission.js';
 import { withTimeout } from '../../utils/with-timeout.js';
 import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { providerError } from './errors.js';
 import { error } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { sanitizeProviderDiagnostic } from './client/request.js';
+
 type ProviderFactory = (overrides?: ProviderOverrides) => ProviderDef;
+
+function assertVerdictCandidateAdmission(): void {
+  assertCandidateFilesAbsent(
+    API_PROVIDER_VERDICT_CANDIDATE_PATHS.flatMap((entry) => [entry.source, entry.test]),
+    providerError.admissionOmitRequiresAbsentSource,
+  );
+}
 
 const BESPOKE_PROVIDERS: Partial<Record<ApiProviderId, ProviderFactory>> = {
   anthropic: createAnthropicProvider,
@@ -52,14 +66,20 @@ function buildOpenAICompatFactories(): Partial<Record<ApiProviderId, ProviderFac
   return out;
 }
 
-export const KNOWN_PROVIDERS: Partial<Record<ApiProviderId, ProviderFactory>> = {
+assertVerdictCandidateAdmission();
+
+export const REGISTRY_PASS_CANDIDATE_IDS = PASS_API_PROVIDER_IDS;
+
+export const REGISTRY_OMIT_CANDIDATE_IDS = Object.freeze(
+  API_PROVIDER_VERDICT_CANDIDATE_PATHS.map((entry) => entry.id),
+);
+
+export const REGISTRY_PASS_CANDIDATE_WIRING_COUNT = PASS_API_PROVIDER_IDS.length;
+
+export const KNOWN_PROVIDERS: Partial<Record<ApiProviderId, ProviderFactory>> = Object.freeze({
   ...BESPOKE_PROVIDERS,
   ...buildOpenAICompatFactories(),
-};
-
-function getApiDescriptor(name: string) {
-  return Object.values(API_PROVIDER_CATALOG).find((descriptor) => descriptor.id === name);
-}
+});
 
 function defaultEndpointForPolicy(policy: EndpointPolicy): string | undefined {
   switch (policy.kind) {
@@ -73,7 +93,7 @@ function defaultEndpointForPolicy(policy: EndpointPolicy): string | undefined {
 }
 
 export function getProvider(name: string, overrides?: ProviderOverrides): ProviderDef {
-  const descriptor = getApiDescriptor(name);
+  const descriptor = getApiProviderDescriptor(name);
   if (descriptor) {
     const factory = KNOWN_PROVIDERS[descriptor.id];
     if (!factory) throw endpointPolicyError.unsupported();
@@ -111,8 +131,21 @@ async function detectOne(
   name: ApiProviderId,
   factory: ProviderFactory,
 ): Promise<ProviderDetection> {
-  const provider = factory();
-  const apiKey = provider.apiKey();
+  let provider: ProviderDef;
+  let apiKey: string;
+  try {
+    provider = factory();
+    apiKey = provider.apiKey();
+  } catch (cause) {
+    const isLocal = API_PROVIDER_CATALOG[name].offering === 'local';
+    return {
+      provider: name,
+      available: false,
+      isLocal,
+      ...(isLocal ? {} : { hasKey: false }),
+      error: sanitizeProviderDiagnostic(cause),
+    };
+  }
   if (!provider.isLocal && apiKey.length === 0) {
     return { provider: name, available: false, isLocal: false, hasKey: false };
   }

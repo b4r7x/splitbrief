@@ -18,7 +18,7 @@ describe('aider implementer — keeps the staged working tree dirty for change d
     });
     expect(args).toContain('--no-auto-commits');
     expect(args).toContain('--no-dirty-commits');
-    expect(aiderImplementerAdapter.validateArgs(args)).toEqual({ valid: true });
+    expect(aiderImplementerAdapter.validateArgs(args, args)).toEqual({ valid: true });
   });
 });
 

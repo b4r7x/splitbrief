@@ -296,7 +296,7 @@ describe('createStagedProject — sensitive file exclusion', () => {
         }),
       );
       try {
-        expect(session.sandboxEnv.HOME).toBe(hostHome);
+        expect(session.sandboxEnv.HOME).toBe(join(session.projectDir, SANDBOX_DIR, 'home'));
         expect(session.sandboxEnv.OPENAI_API_KEY).toBeUndefined();
         expect(session.sandboxEnv.ANTHROPIC_API_KEY).toBeUndefined();
         expect(apiKey.sandboxEnv.HOME).toBe(join(apiKey.projectDir, SANDBOX_DIR, 'home'));

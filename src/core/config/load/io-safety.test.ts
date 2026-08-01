@@ -162,7 +162,15 @@ describe('config load safety', () => {
       delete process.env['ANTHROPIC_API_KEY'];
       try {
         writeConfigYaml(dir, {
-          planner: { kind: 'api', provider: 'anthropic', model: 'm', api_key: 'sk-ant-test' },
+          planner: {
+            kind: 'api',
+            provider: 'anthropic',
+            service: 'anthropic',
+            offering: 'payg',
+            api_base: 'https://api.anthropic.com/v1',
+            model: 'm',
+            api_key: 'sk-ant-test',
+          },
         });
 
         const { warnings } = loadConfig(dir);
@@ -205,7 +213,7 @@ describe('config load safety', () => {
     it('does not leak api-specific defaults into cli implementer (kind mismatch)', () => {
       const dir = join(TMP, 'kind-mismatch');
       writeConfigYaml(dir, {
-        version: 2,
+        version: 3,
         planner: { kind: 'cli', tool: 'claude-code' },
         implementer: {
           kind: 'cli',

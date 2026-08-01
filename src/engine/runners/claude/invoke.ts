@@ -11,12 +11,6 @@ import type { CliExecutableIdentity } from '../../../core/discovery/detection.js
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
 import { runnerCallLineOutputLimit } from '../../calls/output-limit.js';
 import { error } from '../../../utils/error.js';
-import { createQuestionAccumulator } from '../../parsers/question.js';
-import { CLI_NO_DEADLINE_MS, invokeCliAdapter, toCliEnvironment } from '../cli-tools.js';
-import {
-  claudeCodeImplementerAdapter,
-  claudeCodePlannerAdapter,
-} from '../cli-tools/claude-code.js';
 import {
   buildClaudeIdleOptions,
   createStreamHandler,
@@ -333,88 +327,4 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
   const result = finishClaudeStream(state);
 
   return { ...result, text: state.text };
-}
-
-export type ClaudeAdapterInvocationOpts = Readonly<{
-  role: 'planner' | 'implementer';
-  prompt: string;
-  projectDir: string;
-  executable: CliExecutableIdentity;
-  environment: NodeJS.ProcessEnv;
-  model?: string | undefined;
-  effort?: EffortLevel | undefined;
-  sessionId?: string | null | undefined;
-  permissionMode?: 'acceptEdits' | undefined;
-  signal?: AbortSignal | undefined;
-  timeoutMs?: number | undefined;
-  callContext: RunnerCallContext;
-  onOutput?: ((text: string) => void) | undefined;
-  onSessionId?: ((id: string) => void) | undefined;
-  onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
-  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
-}>;
-
-export async function invokeClaudeCodeAdapter(
-  opts: ClaudeAdapterInvocationOpts,
-): Promise<RunnerCallResult> {
-  const questions = opts.onQuestion === undefined ? null : createQuestionAccumulator();
-  const onCallEvent = (event: RunnerCallEvent): void => {
-    if (event.type === 'call_text_delta' && event.channel === 'assistant' && questions) {
-      const nextQuestions = questions.addChunk(event.text);
-      if (nextQuestions.length > 0) opts.onQuestion?.(nextQuestions);
-    }
-    opts.onCallEvent?.(event);
-  };
-  if (opts.role === 'planner') {
-    const args = claudeCodePlannerAdapter.buildArgs({
-      prompt: opts.prompt,
-      model: opts.model,
-      projectDir: opts.projectDir,
-      configuredArgs: [],
-      mode: opts.sessionId === undefined || opts.sessionId === null ? 'escalate' : 'plan',
-      sessionId: opts.sessionId ?? null,
-      effort: opts.effort,
-    });
-    return invokeCliAdapter({
-      adapter: claudeCodePlannerAdapter,
-      invocation: {
-        executable: opts.executable,
-        args,
-        promptTransport: claudeCodePlannerAdapter.promptTransport,
-        environment: toCliEnvironment(opts.environment),
-        cwd: opts.projectDir,
-        timeoutMs: opts.timeoutMs ?? CLI_NO_DEADLINE_MS,
-        signal: opts.signal,
-      },
-      prompt: opts.prompt,
-      callContext: opts.callContext,
-      onOutput: opts.onOutput,
-      onSessionId: opts.onSessionId,
-      onCallEvent,
-    });
-  }
-
-  const args = claudeCodeImplementerAdapter.buildArgs({
-    prompt: opts.prompt,
-    model: opts.model,
-    projectDir: opts.projectDir,
-    configuredArgs: [],
-  });
-  return invokeCliAdapter({
-    adapter: claudeCodeImplementerAdapter,
-    invocation: {
-      executable: opts.executable,
-      args,
-      promptTransport: claudeCodeImplementerAdapter.promptTransport,
-      environment: toCliEnvironment(opts.environment),
-      cwd: opts.projectDir,
-      timeoutMs: opts.timeoutMs ?? CLI_NO_DEADLINE_MS,
-      signal: opts.signal,
-    },
-    prompt: opts.prompt,
-    callContext: opts.callContext,
-    onOutput: opts.onOutput,
-    onSessionId: opts.onSessionId,
-    onCallEvent,
-  });
 }

@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { includes } from '../../utils/type-guards.js';
 import {
   IMPLEMENTER_API_PROVIDER_IDS,
-  KNOWN_API_PROVIDER_IDS,
   LOCAL_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
   REMOTE_API_PROVIDER_IDS,
@@ -11,27 +10,22 @@ import {
   CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
-  type CliToolId,
 } from '../runners/cli-tool-catalog.js';
 
 // agent-sdk is NOT here — it is a meta runner (unpriced-meta); SPLITBRIEF does not serve its pricing.
-export { CLI_TOOL_IDS };
-export type { CliToolId };
-export const API_PROVIDER_IDS = REMOTE_API_PROVIDER_IDS;
-export const LOCAL_PROVIDER_IDS = LOCAL_API_PROVIDER_IDS;
 export const META_PROVIDER_IDS = ['shell', 'agent', 'agent-sdk'] as const;
 
 export const PROVIDER_IDS = [
   ...CLI_TOOL_IDS,
-  ...API_PROVIDER_IDS,
-  ...LOCAL_PROVIDER_IDS,
+  ...REMOTE_API_PROVIDER_IDS,
+  ...LOCAL_API_PROVIDER_IDS,
   ...META_PROVIDER_IDS,
 ] as const;
 
-// Excludes local-only providers (ollama, lm-studio).
+// Role projection: only CLI tools and API providers the catalog admits for planning.
 export const PLANNER_TOOL_IDS = [
-  ...CLI_TOOL_IDS,
-  ...API_PROVIDER_IDS,
+  ...PLANNER_CLI_TOOL_IDS,
+  ...PLANNER_API_PROVIDER_IDS,
   ...META_PROVIDER_IDS,
 ] as const;
 
@@ -45,6 +39,7 @@ export const ImplementerCliToolIdSchema = z.enum(IMPLEMENTER_CLI_TOOL_IDS);
 export type ImplementerCliToolId = z.infer<typeof ImplementerCliToolIdSchema>;
 
 export const PlannerApiProviderIdSchema = z.enum(PLANNER_API_PROVIDER_IDS);
+
 export const ImplementerApiProviderIdSchema = z.enum(IMPLEMENTER_API_PROVIDER_IDS);
 
 export function isProviderId(id: string): id is ProviderId {
@@ -171,21 +166,6 @@ export const WORKFLOW_MODES = ['instant', 'quick', 'standard', 'speckit'] as con
 export const WorkflowModeSchema = z.enum(WORKFLOW_MODES);
 export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
 
-const LEGACY_WORKFLOW_MODE_ALIASES = { full: 'speckit', 'spec-kit': 'speckit' } as const;
-type LegacyWorkflowMode = keyof typeof LEGACY_WORKFLOW_MODE_ALIASES;
-
-function isLegacyMode(input: string): input is LegacyWorkflowMode {
-  return input in LEGACY_WORKFLOW_MODE_ALIASES;
-}
-
-export function normalizeLegacyMode(input: string): WorkflowMode | null {
-  if (includes(WORKFLOW_MODES, input)) return input;
-  if (isLegacyMode(input)) {
-    return LEGACY_WORKFLOW_MODE_ALIASES[input];
-  }
-  return null;
-}
-
 export const APPROVE_LEVELS = ['none', 'spec', 'plan', 'all', 'default'] as const;
 export const ApproveLevelSchema = z.enum(APPROVE_LEVELS);
 export type ApproveLevel = z.infer<typeof ApproveLevelSchema>;
@@ -221,8 +201,6 @@ export const CliToolIdSchema = z.enum(CLI_TOOL_IDS);
 export const RUNNER_KINDS = ['cli', 'api', 'shell', 'agent', 'agent-sdk'] as const;
 const RunnerKindSchema = z.enum(RUNNER_KINDS);
 export type RunnerKind = z.infer<typeof RunnerKindSchema>;
-
-export const KNOWN_API_PROVIDERS = KNOWN_API_PROVIDER_IDS;
 
 export const EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh'] as const;
 export const EffortLevelSchema = z.enum(EFFORT_LEVELS);

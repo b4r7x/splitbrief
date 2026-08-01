@@ -1,16 +1,18 @@
 import { z } from 'zod';
-import { API_PROVIDER_CATALOG, type ApiOffering } from '../providers/api-provider-catalog.js';
+import { API_OFFERINGS, API_PROVIDER_CATALOG } from '../providers/api-provider-catalog.js';
 import {
+  CLI_AUTH_CHANNEL_IDS,
   CLI_TOOL_CATALOG,
   CLI_TOOL_TRUST,
   cliModelPolicyViolations,
-  type CliAuthChannelId,
   type CliModelPolicy,
   type RunnerRole,
   type RunnerRoleTrustMetadata,
   type RunnerTrustMetadata,
 } from '../runners/cli-tool-catalog.js';
 import { narrowRecord } from '../../utils/type-guards.js';
+import { isAutomaticModel, normalizeConfiguredModel } from '../providers/automatic-model.js';
+import { hasAutomaticModelDefault } from '../providers/model-selection.js';
 import {
   CliToolIdSchema,
   EffortLevelSchema,
@@ -70,12 +72,7 @@ const IDLE_THRESHOLD_ORDER = {
 const CliRunnerFields = {
   kind: z.literal('cli'),
   tool: CliToolIdSchema,
-  authChannel: z
-    .enum(['api-key', 'session', 'provider-dependent'] satisfies readonly [
-      CliAuthChannelId,
-      ...CliAuthChannelId[],
-    ])
-    .optional(),
+  authChannel: z.enum(CLI_AUTH_CHANNEL_IDS).optional(),
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
   ...WatchdogFields,
@@ -91,12 +88,7 @@ const ImplementerCliRunnerFields = {
   tool: ImplementerCliToolIdSchema,
 };
 
-const ApiOfferingSchema = z.enum([
-  'payg',
-  'free-quota',
-  'coding-subscription',
-  'local',
-] satisfies readonly [ApiOffering, ...ApiOffering[]]);
+const ApiOfferingSchema = z.enum(API_OFFERINGS);
 
 const ApiRunnerFields = {
   kind: z.literal('api'),
@@ -107,21 +99,27 @@ const ApiRunnerFields = {
   apiKey: z.string().optional(),
 };
 
+const API_PROVIDER_DESCRIPTORS = Object.values(API_PROVIDER_CATALOG);
+
+function descriptorsForProviderIdentity(provider: string) {
+  return API_PROVIDER_DESCRIPTORS.filter(
+    (descriptor) => descriptor.id === provider || descriptor.service === provider,
+  );
+}
+
 function apiProviderSchemaForRole(role: RunnerRole) {
   const roleProviderIds =
     role === 'planner' ? PlannerApiProviderIdSchema : ImplementerApiProviderIdSchema;
 
-  // Custom providers remain supported, and legacy service aliases remain
-  // usable, but a known catalog identity can never bypass its role admission
-  // by taking the custom-provider branch.
+  // Custom providers remain supported, but a string that names a catalog
+  // identity — by descriptor id or by service — can never bypass its role
+  // admission by taking the custom-provider branch.
   const customProvider = z
     .string()
     .min(1)
     .refine(
       (provider) => {
-        const descriptor = Object.values(API_PROVIDER_CATALOG).find(
-          (candidate) => candidate.id === provider || candidate.service === provider,
-        );
+        const [descriptor] = descriptorsForProviderIdentity(provider);
         return (
           descriptor === undefined ||
           descriptor.roles.some((candidateRole) => candidateRole === role)
@@ -145,12 +143,30 @@ const ImplementerApiRunnerFields = {
   provider: apiProviderSchemaForRole('implementer'),
 };
 
-const API_PROVIDER_DESCRIPTORS = Object.values(API_PROVIDER_CATALOG);
+function validateAutomaticModelResolvable(input: unknown, ctx: z.RefinementCtx): void {
+  const runner = narrowRecord(input);
+  if (!runner) return;
 
-function descriptorsForProviderIdentity(provider: string) {
-  return API_PROVIDER_DESCRIPTORS.filter(
-    (descriptor) => descriptor.id === provider || descriptor.service === provider,
-  );
+  const model = typeof runner.model === 'string' ? runner.model : undefined;
+  if (model !== undefined && normalizeConfiguredModel(model) === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['model'],
+      message: 'model must be a model ID or "auto"',
+    });
+    return;
+  }
+
+  if (runner.kind !== 'api' || typeof runner.provider !== 'string') return;
+  const automatic = runner.model === undefined || isAutomaticModel(model);
+  if (!automatic || hasAutomaticModelDefault(runner.provider)) return;
+
+  const spelling = runner.model === undefined ? 'an omitted model' : 'model "auto"';
+  ctx.addIssue({
+    code: 'custom',
+    path: ['model'],
+    message: `${spelling} cannot be resolved for API provider "${runner.provider}" — it has no catalog default; set an explicit model ID`,
+  });
 }
 
 function validateApiIdentity(input: unknown, ctx: z.RefinementCtx): void {
@@ -409,6 +425,7 @@ export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: 
     ])
     .superRefine((input, ctx) => {
       validateApiIdentity(input, ctx);
+      validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('implementer', input, ctx);
       validateCliAuthChannel(input, ctx);
     })
@@ -439,6 +456,7 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(commonFields:
     ])
     .superRefine((input, ctx) => {
       validateApiIdentity(input, ctx);
+      validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('planner', input, ctx);
       validateCliAuthChannel(input, ctx);
     })

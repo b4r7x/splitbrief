@@ -152,47 +152,112 @@ describe('config loading', () => {
       });
     });
 
-    it('reconciles a legacy v3 workflow.commitStrategy into git.commitStrategy at load time', () => {
-      const dir = join(TMP, 'v3-legacy-commit-strategy');
+    it('reads git.commitStrategy from YAML', () => {
+      const dir = join(TMP, 'git-commit-strategy');
       writeConfigYaml(dir, {
-        version: 3,
-        planner: { kind: 'cli', tool: 'claude-code' },
-        implementer: { kind: 'api', provider: 'ollama', api_base: 'http://localhost:11434/v1' },
-        workflow: { max_retries: 3, commit_strategy: 'per-task' },
+        workflow: { max_retries: 3, git: { commit_strategy: 'per-task' } },
       });
 
       const { config } = loadConfig(dir);
       expect(config.workflow.git?.commitStrategy).toBe('per-task');
     });
 
+    it.each([
+      { field: 'auto_approve_spec', value: true, path: 'workflow.autoApproveSpec' },
+      { field: 'auto_approve_plan', value: true, path: 'workflow.autoApprovePlan' },
+      { field: 'commit_strategy', value: 'per-task', path: 'workflow.commitStrategy' },
+    ])('rejects the removed workflow.$field field and names $path', ({ field, value, path }) => {
+      const dir = join(TMP, `removed-workflow-${field}`);
+      writeConfigYaml(dir, { workflow: { max_retries: 3, [field]: value } });
+
+      expect(() => loadConfig(dir)).toThrow(`${path}: Unknown config key`);
+    });
+
+    it('names the nested path when workflow.git carries an unknown key', () => {
+      const dir = join(TMP, 'unknown-workflow-git-key');
+      writeConfigYaml(dir, {
+        workflow: { git: { commit_strategy: 'per-task', auto_push: true } },
+      });
+
+      expect(() => loadConfig(dir)).toThrow('workflow.git.autoPush: Unknown config key');
+    });
+
+    it('accepts every current workflow field', () => {
+      const dir = join(TMP, 'workflow-full-surface');
+      writeConfigYaml(dir, {
+        workflow: {
+          approve: 'all',
+          max_retries: 2,
+          git: { commit_strategy: 'per-task', create_branch: true },
+          speckit: { min_coverage: 0.8 },
+          mode: 'speckit',
+          brief_review: 'rich',
+          task_review: 'every',
+          max_budget: 5,
+          budget_pause_threshold: 0.5,
+          drift_chain_threshold: 0.4,
+          cost_gate: true,
+          persist_transcript: false,
+          compaction_threshold: 50,
+          compaction_format: 'structured',
+        },
+      });
+
+      expect(loadConfig(dir).config.workflow).toEqual({
+        approve: 'all',
+        maxRetries: 2,
+        git: { commitStrategy: 'per-task', createBranch: true },
+        speckit: { minCoverage: 0.8 },
+        mode: 'speckit',
+        briefReview: 'rich',
+        taskReview: 'every',
+        maxBudget: 5,
+        budgetPauseThreshold: 0.5,
+        driftChainThreshold: 0.4,
+        costGate: true,
+        persistTranscript: false,
+        compactionThreshold: 50,
+        compactionFormat: 'structured',
+      });
+    });
+
     it('deep merges nested objects', () => {
       const dir = join(TMP, 'deep-merge');
       writeConfigYaml(dir, {
-        planner: { tool: 'codex' },
+        planner: { kind: 'cli', tool: 'codex' },
         implementer: { temperature: 0.7 },
         validation: { lint: false },
-        workflow: { auto_approve_spec: true },
+        workflow: { approve: 'none' },
       });
 
       const { config } = loadConfig(dir);
       expect(expectCli(config.planner).tool).toBe('codex');
       expect(config.implementer.temperature).toBe(0.7);
-      // v2 uses 'provider' instead of 'tool' for API implementers
       expect((config.implementer as { provider: string }).provider).toBe('ollama');
       expect(config.validation.lint).toBe(false);
       expect(config.validation.typecheck).toBe(true);
-      expect(config.workflow.autoApproveSpec).toBe(true);
+      expect(config.workflow.approve).toBe('none');
       expect(config.workflow.maxRetries).toBe(3);
     });
 
-    it('migrates commitPerTask true to commitStrategy per-task', () => {
-      const dir = join(TMP, 'commit-per-task-true');
-      writeConfigYaml(dir, {
-        workflow: { commit_per_task: true },
-      });
+    it.each([
+      ['1', 1],
+      ['2', 2],
+      ['99', 99],
+    ])('rejects config version %s', (_label, version) => {
+      const dir = join(TMP, `unsupported-version-${String(version)}`);
+      writeConfigYaml(dir, { version, implementer: { model: 'codellama:13b' } });
 
-      const { config } = loadConfig(dir);
-      expect(config.workflow.commitStrategy).toBe('per-task');
+      expect(() => loadConfig(dir)).toThrow(/Unsupported config version: .*Supported: 3/s);
+    });
+
+    it('rejects a config without a version', () => {
+      const dir = join(TMP, 'missing-version');
+      const splitbriefDir = join(dir, SPLITBRIEF_DIR);
+      mkdirSync(splitbriefDir, { recursive: true });
+      writeFileSync(join(splitbriefDir, 'config.yaml'), 'implementer:\n  model: llama3\n', 'utf-8');
+
+      expect(() => loadConfig(dir)).toThrow(/Unsupported config version: undefined/);
     });
 
     it('defaults workflow.mode to standard when raw YAML omits mode', () => {

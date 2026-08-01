@@ -37,7 +37,7 @@ function configWithProfiles() {
   return {
     ...makeNoValidationConfig({
       approval: { enabled: false, feedRejectionsToPlanner: true },
-      workflow: { commitStrategy: 'none' },
+      workflow: {},
     }),
     implementerProfiles: {
       default: 'cheap-large',

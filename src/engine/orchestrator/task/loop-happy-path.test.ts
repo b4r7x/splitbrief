@@ -32,7 +32,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
+const defaultWorkflow = { maxRetries: 2 };
 
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('happy path completes a task after implementation and validation pass', async () => {
@@ -57,7 +57,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          workflow: { commitStrategy: 'none' },
+          workflow: {},
         }),
         callbacks,
         implementer,

@@ -18,19 +18,20 @@ let tmpDir: string;
 
 function writeConfigYaml(extras: Record<string, unknown> = {}) {
   const base = {
-    planner: { tool: 'claude-code' },
+    planner: { kind: 'cli', tool: 'claude-code' },
     implementer: {
-      tool: 'ollama',
+      kind: 'api',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      api_base: 'http://localhost:11434/v1',
       model: 'qwen2.5-coder:7b',
       context_length: 8192,
       temperature: 0.3,
     },
     validation: { typecheck: true, lint: true, test: true, test_command: 'npm test' },
     workflow: {
-      auto_approve_spec: false,
-      auto_approve_plan: false,
       max_retries: 3,
-      commit_strategy: 'none',
       mode: 'standard',
     },
     theme: 'terminal',

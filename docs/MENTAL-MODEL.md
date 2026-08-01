@@ -111,7 +111,7 @@ Both planner and implementer are pluggable. The same five backend kinds work for
 
 **cli** — Spawns a CLI tool as a subprocess. Claude Code, Codex, Aider, Copilot, Opencode, Kilo-Code.
 
-**api** — Calls an OpenAI-compatible HTTP endpoint. Ollama, LM Studio, OpenRouter, DeepSeek, Groq, Together, Anthropic direct.
+**api** — Calls an OpenAI-compatible HTTP endpoint. Ollama, LM Studio, Anthropic, OpenRouter, DeepSeek, OpenAI, Groq, Together.
 
 **shell** — Runs an arbitrary command with stdin/stdout piping; no shell/network sandbox.
 

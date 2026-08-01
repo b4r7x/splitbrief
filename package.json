@@ -17,6 +17,7 @@
   "files": [
     "dist/",
     "docs/",
+    "!docs/design/",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"

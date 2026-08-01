@@ -15,7 +15,12 @@ describe('readDriftReport — backward compat', () => {
   });
 
   it('does not throw on legacy JSON without briefHash and normalizes to null', () => {
-    const report = analyzeBriefDrift({ tasks: [], changedFiles: [], diff: '' });
+    const report = analyzeBriefDrift({
+      tasks: [],
+      changedFiles: [],
+      diff: '',
+      preRunChangedFiles: [],
+    });
     const { briefHash: _bh, ...legacy } = report;
     const sessionPath = join(dir, '.splitbrief', 'sessions', 's1');
     mkdirSync(sessionPath, { recursive: true });
@@ -38,7 +43,12 @@ describe('writeDriftReport', () => {
   });
 
   it('persists the report at the session path with trailing newline', () => {
-    const report = analyzeBriefDrift({ tasks: [], changedFiles: [], diff: '' });
+    const report = analyzeBriefDrift({
+      tasks: [],
+      changedFiles: [],
+      diff: '',
+      preRunChangedFiles: [],
+    });
     writeDriftReport({ projectDir: dir, sessionId: 's1' }, report);
     const path = driftReportPath({ projectDir: dir, sessionId: 's1' });
     expect(existsSync(path)).toBe(true);

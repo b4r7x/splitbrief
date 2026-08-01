@@ -125,7 +125,7 @@ describe('CostDrilldownOverlay task metadata', () => {
       pricingContext: {
         plannerTool: 'anthropic',
         implementerTool: 'deepseek',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       },
       perTask: {
         T001: {
@@ -138,7 +138,7 @@ describe('CostDrilldownOverlay task metadata', () => {
               escalationTokens: 0,
               retryCount: 0,
               tool: 'deepseek',
-              model: 'deepseek-chat',
+              model: 'deepseek-v4-flash',
               implementerCacheReadTokens: 1_000_000,
             },
           ],

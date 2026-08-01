@@ -60,8 +60,7 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
     const config = makeConfig({
       workflow: {
         mode: 'quick',
-        autoApproveSpec: true,
-        autoApprovePlan: true,
+        approve: 'none',
         persistTranscript: false,
       },
       codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.splitbrief' },
@@ -117,8 +116,7 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
     const config = makeConfig({
       workflow: {
         mode: 'quick',
-        autoApproveSpec: true,
-        autoApprovePlan: true,
+        approve: 'none',
         persistTranscript: false,
       },
       codebase: { enabled: false, tokenBudget: 1000, cacheDir: '.splitbrief' },
@@ -180,8 +178,7 @@ describe('codebase context injection into planner', { timeout: 90_000 }, () => {
     const config = makeConfig({
       workflow: {
         mode: 'quick',
-        autoApproveSpec: true,
-        autoApprovePlan: true,
+        approve: 'none',
         persistTranscript: false,
       },
       codebase: { enabled: true, tokenBudget: 1000, cacheDir: '.splitbrief' },

@@ -73,7 +73,7 @@ describe('start command — readiness', () => {
       report?: { status?: string; nextAction?: { kind?: string } };
     };
     expect(firstLine.type).toBe('readiness_report');
-    expect(firstLine.report?.status).toBe('ready');
+    expect(firstLine.report?.status).toBe('ready-with-warnings');
 
     const readinessRecord = readSingleSessionArtifact(tmp, 'readiness.json') as {
       type?: string;
@@ -81,8 +81,8 @@ describe('start command — readiness', () => {
       warningCount?: number;
     };
     expect(readinessRecord.type).toBe('start-readiness');
-    expect(readinessRecord.status).toBe('ready');
-    expect(readinessRecord.warningCount).toBe(0);
+    expect(readinessRecord.status).toBe('ready-with-warnings');
+    expect(readinessRecord.warningCount).toBeGreaterThan(0);
   });
 
   it('blocks headless start before workflow execution when readiness has a blocker', async () => {
@@ -106,12 +106,22 @@ describe('start command — readiness', () => {
     expect(isCliError(captured)).toBe(true);
     expect(runHeadlessMock).not.toHaveBeenCalled();
     const firstLine = JSON.parse(stdoutChunks[0]?.trim() ?? '{}') as {
-      report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
+      report?: {
+        status?: string;
+        sections?: unknown;
+        checks?: Array<{ id: string; stateId: string | null; remediation: string | null }>;
+      };
     };
     expect(firstLine.report?.status).toBe('blocked');
-    expect(
-      firstLine.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
-    ).toContain('repo.active-session-live');
+    expect(firstLine.report?.sections).toBeUndefined();
+    expect(firstLine.report?.checks?.map((check) => check.id)).toContain(
+      'repo.active-session-live',
+    );
+    const blocker = firstLine.report?.checks?.find(
+      (check) => check.id === 'repo.active-session-live',
+    );
+    expect(blocker).toMatchObject({ stateId: null });
+    expect(blocker?.remediation).toEqual(expect.any(String));
   });
 
   it('emits readiness before RPC workflow execution and persists compact session evidence', async () => {

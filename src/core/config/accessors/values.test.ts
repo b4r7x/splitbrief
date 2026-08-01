@@ -12,7 +12,7 @@ const mockConfig = makeConfig({
 describe('getConfigValue', () => {
   it('reads nested dot-path values', () => {
     expect(getConfigValue(mockConfig, 'planner.tool')).toBe('claude-code');
-    expect(getConfigValue(mockConfig, 'workflow.commitStrategy')).toBe('none');
+    expect(getConfigValue(mockConfig, 'workflow.maxRetries')).toBe(3);
     expect(getConfigValue(mockConfig, 'implementer.temperature')).toBe(0.3);
   });
 
@@ -33,9 +33,9 @@ describe('getConfigValue', () => {
 
 describe('applyEdits', () => {
   it('sets nested values immutably', () => {
-    const updated = applyEdits(mockConfig, { 'workflow.commitStrategy': 'per-task' });
-    expect(updated.workflow.commitStrategy).toBe('per-task');
-    expect(mockConfig.workflow.commitStrategy).toBe('none');
+    const updated = applyEdits(mockConfig, { 'workflow.git.commitStrategy': 'per-task' });
+    expect(updated.workflow.git?.commitStrategy).toBe('per-task');
+    expect(mockConfig.workflow.git?.commitStrategy).toBeUndefined();
   });
 
   it('applies multiple edits at once', () => {

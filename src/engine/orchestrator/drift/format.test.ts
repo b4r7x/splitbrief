@@ -26,6 +26,7 @@ describe('publishDriftReport', () => {
       ],
       changedFiles: ['src/a.ts', 'src/extra.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
 
     publishDriftReport(bus, 'final-review', report);
@@ -48,6 +49,7 @@ describe('formatDriftReportForPrompt', () => {
       tasks,
       changedFiles: ['src/a.ts', 'src/extra.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
     const out = formatDriftReportForPrompt(report);
     expect(out).toContain('passed: true');
@@ -58,7 +60,12 @@ describe('formatDriftReportForPrompt', () => {
 
   it('emits "findings: none" when report is clean', () => {
     const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
-    const report = analyzeBriefDrift({ tasks, changedFiles: ['src/a.ts'], diff: '' });
+    const report = analyzeBriefDrift({
+      tasks,
+      changedFiles: ['src/a.ts'],
+      diff: '',
+      preRunChangedFiles: [],
+    });
     expect(formatDriftReportForPrompt(report)).toContain('findings: none');
   });
 });

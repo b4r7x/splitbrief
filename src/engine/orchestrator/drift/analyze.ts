@@ -12,7 +12,7 @@ export type AnalyzeBriefDriftInput = {
   diff: string;
   ledger?: EvidenceLedger | null | undefined;
   briefHash?: string | null;
-  preRunChangedFiles?: string[] | null | undefined;
+  preRunChangedFiles: readonly string[];
 };
 
 function isFailedOrSkipped(status: Task['status']): boolean {
@@ -29,8 +29,7 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   ]);
   const changedFiles = uniqueInOrder(input.changedFiles).sort();
 
-  // Files attributed to task execution by the evidence ledger. Legacy states
-  // without a run-start baseline use this as their only provenance signal.
+  // Files attributed to task execution by the evidence ledger.
   const runAttributed = new Set<string>();
   if (input.ledger) {
     for (const entry of input.ledger.tasks) {
@@ -41,14 +40,10 @@ export function analyzeBriefDrift(input: AnalyzeBriefDriftInput): DriftReport {
   // `none` commit strategy the working-tree universe over-includes these, so a
   // pre-run-dirty file the run never touched must be annotated "pre-existing"
   // rather than attributed to this run. The ledger overrides a baseline file
-  // the run did touch. Legacy states without a baseline fall back to treating
-  // files absent from the ledger as pre-existing.
-  const preRunBaseline = new Set(input.preRunChangedFiles ?? []);
-  const hasPreRunBaseline = input.preRunChangedFiles != null;
-  const isPreExisting = (file: string): boolean => {
-    if (runAttributed.has(file)) return false;
-    return hasPreRunBaseline ? preRunBaseline.has(file) : input.ledger != null;
-  };
+  // the run did touch.
+  const preRunBaseline = new Set(input.preRunChangedFiles);
+  const isPreExisting = (file: string): boolean =>
+    !runAttributed.has(file) && preRunBaseline.has(file);
 
   const outOfBoundsPatterns: string[] = [];
   for (const task of input.tasks) {

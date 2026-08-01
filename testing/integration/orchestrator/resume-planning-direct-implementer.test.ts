@@ -106,7 +106,6 @@ describe('resume planning continuation with a direct-writing implementer', {
         workflow: {
           mode: 'standard',
           approve: 'none',
-          commitStrategy: 'none',
           maxRetries: 1,
           persistTranscript: true,
         },

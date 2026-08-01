@@ -1,5 +1,17 @@
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
-import type { CostBreakdown } from '../../../core/schemas/summary.js';
+import type {
+  CostBreakdown,
+  OfferingBillingPresentation,
+  ProviderRunMetadata,
+} from '../../../core/schemas/summary.js';
+import {
+  API_PROVIDER_CATALOG,
+  type ApiOffering,
+} from '../../../core/providers/api-provider-catalog.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import type { RunnerBillingPosture } from '../../../core/runners/runner-billing.js';
+import { normalizeProviderEndpoint } from '../../../core/providers/endpoint-policy.js';
+import { formatCost, formatCostFact } from '../../../core/formatting.js';
 import { resolvePricing, type ResolvedPricing } from '../pricing-resolver.js';
 import type { ModelCacheAccessor } from '../model/resolution.js';
 import {
@@ -13,6 +25,144 @@ import {
   type ProviderCostEntry,
   type ProviderUsageSegment,
 } from '../cost-math.js';
+
+type ResolveProviderRunMetadataOpts = {
+  tool: string;
+  normalizedEndpoint?: string | undefined;
+};
+
+function isApiProviderId(tool: string): tool is keyof typeof API_PROVIDER_CATALOG {
+  return Object.hasOwn(API_PROVIDER_CATALOG, tool);
+}
+
+function isCliToolId(tool: string): tool is CliToolId {
+  return Object.hasOwn(CLI_TOOL_CATALOG, tool);
+}
+
+function cliOfferingFromBilling(billing: RunnerBillingPosture): ApiOffering {
+  if (billing === 'local') return 'local';
+  if (billing === 'subscription-included') return 'coding-subscription';
+  return 'payg';
+}
+
+function defaultEndpointForApiProvider(providerId: keyof typeof API_PROVIDER_CATALOG): string {
+  const policy = API_PROVIDER_CATALOG[providerId].endpointPolicy;
+  if (policy.kind === 'fixed-origin') return policy.baseURL;
+  if (policy.kind === 'loopback') return policy.defaultBaseURL;
+  return '';
+}
+
+export function resolveProviderRunMetadata(
+  opts: ResolveProviderRunMetadataOpts,
+): ProviderRunMetadata | undefined {
+  const { tool, normalizedEndpoint } = opts;
+
+  if (isApiProviderId(tool)) {
+    const descriptor = API_PROVIDER_CATALOG[tool];
+    const endpointInput = normalizedEndpoint ?? defaultEndpointForApiProvider(tool);
+    const resolvedEndpoint =
+      endpointInput.length > 0
+        ? normalizeProviderEndpoint(descriptor.endpointPolicy, endpointInput)
+        : '';
+    return {
+      service: descriptor.service,
+      offering: descriptor.offering,
+      normalizedEndpoint: resolvedEndpoint,
+      billing: descriptor.billing,
+      asOf: descriptor.asOf,
+    };
+  }
+
+  if (isCliToolId(tool)) {
+    const descriptor = CLI_TOOL_CATALOG[tool];
+    return {
+      service: descriptor.id,
+      offering: cliOfferingFromBilling(descriptor.billing),
+      normalizedEndpoint: `cli:${descriptor.command}`,
+      billing: descriptor.billing,
+      asOf: descriptor.compatibility.evidence.asOf,
+    };
+  }
+
+  return undefined;
+}
+
+export function describeOfferingBillingPresentation(
+  metadata: ProviderRunMetadata,
+  opts?: { hasUsage?: boolean | undefined; meteredCost?: number | undefined },
+): OfferingBillingPresentation {
+  const hasUsage = opts?.hasUsage ?? false;
+  const meteredCost = opts?.meteredCost ?? 0;
+
+  switch (metadata.offering) {
+    case 'payg':
+      return {
+        costLabel: hasUsage ? formatCost(meteredCost) : metadata.billing,
+        billingLabel: metadata.billing,
+      };
+    case 'coding-subscription':
+      return {
+        costLabel: 'subscription-included',
+        billingLabel: 'subscription-included',
+      };
+    case 'free-quota':
+      return {
+        costLabel: 'variable quota',
+        billingLabel: metadata.billing,
+      };
+    case 'local':
+      return {
+        costLabel: 'local',
+        billingLabel: 'local',
+      };
+  }
+}
+
+export function formatOfferingAwareExtraCost(
+  metadata: ProviderRunMetadata,
+  extraAmount: number,
+): string | null {
+  if (metadata.offering === 'coding-subscription') return null;
+  if (!Number.isFinite(extraAmount) || extraAmount <= 0) return null;
+  return `Extra ${formatCostFact(extraAmount)}`;
+}
+
+function collectRunMetadataTools(opts: CostBreakdownOptions): string[] {
+  const tools = new Set<string>([opts.plannerTool, opts.implementerTool]);
+  for (const task of opts.taskBreakdowns ?? []) {
+    if (task.tool !== undefined) tools.add(task.tool);
+  }
+  return [...tools];
+}
+
+function buildProviderRunMetadataRecord(
+  opts: CostBreakdownOptions,
+  providerCosts: Record<string, ProviderCostEntry> | undefined,
+): {
+  providerRunMetadata: Record<string, ProviderRunMetadata>;
+  offeringPresentations: Record<string, OfferingBillingPresentation>;
+} {
+  const providerRunMetadata: Record<string, ProviderRunMetadata> = {};
+  const offeringPresentations: Record<string, OfferingBillingPresentation> = {};
+
+  for (const tool of collectRunMetadataTools(opts)) {
+    const metadata = resolveProviderRunMetadata({ tool });
+    if (metadata === undefined) continue;
+    providerRunMetadata[tool] = metadata;
+    const usageEntry = providerCosts?.[tool];
+    const usageTokens =
+      (usageEntry?.inputTokens ?? 0) +
+      (usageEntry?.outputTokens ?? 0) +
+      (usageEntry?.cacheReadTokens ?? 0) +
+      (usageEntry?.cacheCreateTokens ?? 0);
+    offeringPresentations[tool] = describeOfferingBillingPresentation(metadata, {
+      hasUsage: usageTokens > 0,
+      meteredCost: usageEntry?.cost ?? 0,
+    });
+  }
+
+  return { providerRunMetadata, offeringPresentations };
+}
 
 type CostBreakdownOptions = {
   tokenUsage: TokenUsage;
@@ -302,6 +452,11 @@ export function calculateCostBreakdown(
     cacheReadSavings += implementerAccounting.cacheReadSavings;
   }
 
+  const { providerRunMetadata, offeringPresentations } = buildProviderRunMetadataRecord(
+    opts,
+    Object.keys(providerCosts).length > 0 ? providerCosts : undefined,
+  );
+
   return {
     hypotheticalCost,
     actualPlannerCost,
@@ -318,6 +473,8 @@ export function calculateCostBreakdown(
     isTotalActualCostKnown,
     isAllPlannerBaselineKnown,
     providerCosts: Object.keys(providerCosts).length > 0 ? providerCosts : undefined,
+    ...(Object.keys(providerRunMetadata).length > 0 && { providerRunMetadata }),
+    ...(Object.keys(offeringPresentations).length > 0 && { offeringPresentations }),
     ...(cacheReadSavings > 0 && { cacheReadSavings }),
     ...(cacheReadTokens > 0 && { cacheReadTokens }),
     ...(cacheWriteTokens > 0 && { cacheWriteTokens }),

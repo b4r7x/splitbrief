@@ -3,22 +3,25 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type OpenAI from 'openai';
 import type { z } from 'zod';
-import type {
-  EndpointPolicyFetch,
-  EndpointPolicyFetchOwner,
-} from '../../core/providers/endpoint-policy.js';
+import type { EndpointPolicyFetchOwner } from '../../core/providers/endpoint-policy.js';
 import {
-  createEndpointPolicyFetch,
+  endpointPolicyError,
   normalizeProviderEndpoint,
   endpointPolicyFetch,
 } from '../../core/providers/endpoint-policy.js';
+import {
+  createEndpointPolicyFetch,
+  type EndpointPolicyFetch,
+} from '../../lib/http/policy-fetch.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import {
   CandidateEvidence,
+  CONFORMANCE_EXIT_CODES,
+  CONFORMANCE_PROMPT,
+  MAX_EVIDENCE_OUTPUT_BYTES,
   RawProviderCandidateContract,
   UnregisteredProviderCandidate,
   baseUrlEnvironmentName,
-  canonicalJson,
   contractSha256,
   normalizeCandidateEvidence,
   sanitizeCandidateOutput,
@@ -40,17 +43,11 @@ import type { RunnerCallResult } from '../calls/types.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { error as createError } from '../../utils/error.js';
 
-const MAX_CAPTURE_BYTES = 32_768;
+const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MODEL_LIST_TIMEOUT_MS = 5_000;
 const COMPLETION_TIMEOUT_MS = 30_000;
-const CONFORMANCE_PROMPT =
-  'Implement the requested change in the staged project.\n\nFiles:\n- src/example.ts\n- tests/example.test.ts\n\nReturn a concise result.';
 
-export const PROVIDER_CONFORMANCE_EXIT_CODES = Object.freeze({
-  PASS: 0,
-  HARNESS_FAILURE: 1,
-  OMIT: 2,
-} as const);
+export const PROVIDER_CONFORMANCE_EXIT_CODES = CONFORMANCE_EXIT_CODES;
 
 export type ProviderConformanceExitCode =
   (typeof PROVIDER_CONFORMANCE_EXIT_CODES)[keyof typeof PROVIDER_CONFORMANCE_EXIT_CODES];
@@ -99,8 +96,11 @@ type UnregisteredProviderCandidateValue = z.infer<typeof UnregisteredProviderCan
 type RawCapture = z.infer<typeof CandidateEvidence>['rawCapture'];
 
 interface ProbeResult {
-  readonly output: string;
   readonly status: number;
+  // `text` is the full response and decides the verdict; `evidence` is the bounded,
+  // redacted copy that is the only part written to the record.
+  readonly text: string;
+  readonly evidence: string;
   readonly body: unknown;
 }
 
@@ -132,11 +132,7 @@ function redactWithCredentials(value: string, credentialValues: readonly string[
 }
 
 function boundedCandidateOutput(value: string): string {
-  let bounded = sanitizeCandidateOutput(value, MAX_CAPTURE_BYTES);
-  while (Buffer.byteLength(bounded, 'utf8') > MAX_CAPTURE_BYTES) {
-    bounded = Buffer.from(bounded, 'utf8').subarray(0, MAX_CAPTURE_BYTES).toString('utf8');
-  }
-  return bounded;
+  return sanitizeCandidateOutput(value, MAX_EVIDENCE_OUTPUT_BYTES);
 }
 
 function diagnosticOptions(credentials: readonly string[]): ProviderDiagnosticOptions {
@@ -203,25 +199,23 @@ function bearerHeaders(credential: string): Record<string, string> | undefined {
   return credential.length === 0 ? undefined : { Authorization: `Bearer ${credential}` };
 }
 
-async function readBoundedResponse(response: Response): Promise<string> {
-  if (response.body === null) {
-    return (await response.text()).slice(0, MAX_CAPTURE_BYTES);
-  }
+async function readResponseText(response: Response): Promise<string> {
+  if (response.body === null) return response.text();
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
-    while (total < MAX_CAPTURE_BYTES) {
+    while (total <= MAX_RESPONSE_BYTES) {
       const next = await reader.read();
       if (next.done) break;
-      const remaining = MAX_CAPTURE_BYTES - total;
-      const chunk = next.value.subarray(0, remaining);
-      chunks.push(chunk);
-      total += chunk.byteLength;
-      if (chunk.byteLength < next.value.byteLength) break;
+      chunks.push(next.value);
+      total += next.value.byteLength;
     }
   } finally {
     await reader.cancel().catch(() => undefined);
+  }
+  if (total > MAX_RESPONSE_BYTES) {
+    throwConformance('credentialed-omit', 'provider response exceeded the conformance read budget');
   }
   const output = new Uint8Array(total);
   let offset = 0;
@@ -252,10 +246,11 @@ async function captureRequest(
     ...init,
     signal: init.signal ?? AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS),
   });
-  const text = await readBoundedResponse(response);
+  const text = await readResponseText(response);
   return {
     status: response.status,
-    output: redactWithCredentials(text, credentials),
+    text,
+    evidence: redactWithCredentials(text, credentials),
     body: parseJsonBody(text),
   };
 }
@@ -382,6 +377,7 @@ export async function runRawProviderConformance(
     if (credential.length > 0) credentials.push(credential);
     const policyFetch = createEndpointPolicyFetch(
       endpoint,
+      endpointPolicyError.invalid,
       options.fetchImplementation ?? globalThis.fetch,
     );
     const headers = bearerHeaders(credential);
@@ -392,7 +388,7 @@ export async function runRawProviderConformance(
       { method: 'GET', ...(headers ? { headers } : {}) },
       credentials,
     );
-    output += `models status=${modelResult.status}\n${modelResult.output}\n`;
+    output += `models status=${modelResult.status}\n${modelResult.evidence}\n`;
     if (modelResult.status < 200 || modelResult.status >= 300) {
       throwConformance(
         'credentialed-omit',
@@ -415,8 +411,8 @@ export async function runRawProviderConformance(
       },
       credentials,
     );
-    output += `completion status=${completionResult.status}\n${completionResult.output}\n`;
-    if (!completionResult.body && completionResult.output.length === 0) {
+    output += `completion status=${completionResult.status}\n${completionResult.evidence}\n`;
+    if (!completionResult.body && completionResult.text.length === 0) {
       throwConformance('credentialed-omit', 'provider returned an empty completion response');
     }
     if (completionResult.status < 200 || completionResult.status >= 300) {
@@ -425,7 +421,7 @@ export async function runRawProviderConformance(
         `provider completion returned HTTP ${completionResult.status}`,
       );
     }
-    if (!completionResult.output.includes(contract.expectedRawTerminal)) {
+    if (!completionResult.text.includes(contract.expectedRawTerminal)) {
       throwConformance(
         'credentialed-omit',
         'provider completion did not expose the declared terminal field',
@@ -506,6 +502,7 @@ export function createUnregisteredOpenAICompatProvider(
   const credential = credentialForContract(candidate.rawContract, environment);
   const policyFetch = createEndpointPolicyFetch(
     endpoint,
+    endpointPolicyError.invalid,
     options.fetchImplementation ?? globalThis.fetch,
   );
   const provider: ProviderDefWithMetadata & EndpointPolicyFetchOwner = {
@@ -736,18 +733,4 @@ export async function runProductionProviderConformance(
       reason,
     };
   }
-}
-
-export async function runProviderConformance(
-  options:
-    | ({ readonly mode: 'raw' } & RawProviderConformanceOptions)
-    | ({ readonly mode: 'production' } & ProductionProviderConformanceOptions),
-): Promise<ProviderConformanceOutcome> {
-  return options.mode === 'raw'
-    ? runRawProviderConformance(options)
-    : runProductionProviderConformance(options);
-}
-
-export function providerConformanceRecordJson(value: unknown): string {
-  return canonicalJson(value);
 }

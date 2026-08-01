@@ -12,6 +12,7 @@ import { Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { configStore } from '../../stores/project/config.js';
+import type { CliToolDetection } from '../../core/discovery/detection.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -26,6 +27,7 @@ import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { SetupScreen } from './setup.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 
 const ENTER = '\r';
 const ORIGINAL_PLATFORM = Object.getOwnPropertyDescriptor(process, 'platform');
@@ -33,11 +35,12 @@ const ORIGINAL_TERM = process.env['TERM'];
 const ORIGINAL_LANG = process.env['LANG'];
 const ORIGINAL_STDOUT_IS_TTY = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
 
+function cliDetection(tool: CliToolDetection['tool'], ready: boolean): CliToolDetection {
+  return cliDetectionFor(ready ? 'ready' : 'unavailable', tool);
+}
+
 const INSTALLED_RUNNERS = {
-  planners: [
-    { tool: 'claude-code', type: 'cli', available: true, description: 'Claude Code' },
-    { tool: 'codex', type: 'cli', available: true, description: 'Codex' },
-  ],
+  cliTools: [cliDetection('claude-code', true), cliDetection('codex', true)],
   implementers: [],
 } satisfies Parameters<typeof detectionStore.setDetection>[0];
 
@@ -99,12 +102,9 @@ describe('SetupScreen', () => {
     ui.unmount();
   });
 
-  it('shows the no-planners screen when only the always-available shell planner is detected', async () => {
+  it('shows the no-planners screen when no planner-capable CLI is ready', async () => {
     detectionStore.setDetection({
-      planners: [
-        { tool: 'claude-code', type: 'cli', available: false, description: 'Claude Code' },
-        { tool: 'shell', type: 'shell', available: true, description: 'Custom command' },
-      ],
+      cliTools: [cliDetection('claude-code', false), cliDetection('codex', false)],
       implementers: [],
     });
 
@@ -117,12 +117,9 @@ describe('SetupScreen', () => {
     ui.unmount();
   });
 
-  it('renders the planner picker with the full step label when a non-shell planner is available', async () => {
+  it('renders the planner picker with the full step label when a planner-capable CLI is ready', async () => {
     detectionStore.setDetection({
-      planners: [
-        { tool: 'claude-code', type: 'cli', available: true, description: 'Claude Code' },
-        { tool: 'shell', type: 'shell', available: true, description: 'Custom command' },
-      ],
+      cliTools: [cliDetection('claude-code', true), cliDetection('codex', false)],
       implementers: [],
     });
 
@@ -268,8 +265,12 @@ describe('SetupScreen', () => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain('Implementer');
       expect(frame).toContain('Choose model · 2 of 2');
-      expect(frame).toContain('Codex');
-      expect(frame).toContain('Claude Code');
+      expect(frame).toContain('OpenAI Codex CLI');
+      // At 80x24 the Tools column is scrolled to the current implementer
+      // (Ollama), so the alphabetically-first rows — 'Claude Code CLI' among
+      // them — fall outside the window. The planner just chosen is proven by
+      // the persisted config below, never by this frame.
+      expect(frame).not.toContain('Claude Code');
 
       ui.stdin.write('\u001b');
       await flushEffects();

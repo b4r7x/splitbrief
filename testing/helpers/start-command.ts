@@ -3,10 +3,10 @@ import { Command } from 'commander';
 import {
   chmodSync,
   mkdirSync,
-  writeFileSync,
   readFileSync,
   readdirSync,
   realpathSync,
+  writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -19,6 +19,11 @@ import { CONFIG_FILE, SPLITBRIEF_DIR, LOCKFILE, STATE_FILE } from '../../src/cor
 import type { SpawnServerOptions, SpawnServerResult } from '../../src/engine/ipc/spawn-server.js';
 import { buildServerArgs } from '../../src/engine/ipc/spawn-server.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
+import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
+import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool-catalog.js';
+import type { Config } from '../../src/core/schemas/config.js';
+import type { CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
+import { deriveCliReadiness, type CliReadinessResult } from '../../src/core/schemas/readiness.js';
 
 export const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<SpawnServerResult>>();
 export const runHeadlessMock = vi.fn<() => Promise<void>>();
@@ -31,12 +36,65 @@ const renderAppFake: StartDeps['renderApp'] = async (_app, options) => {
   renderCalls.push(options);
 };
 
+function configuredCliTools(config: Config): CliToolId[] {
+  const tools = new Set<CliToolId>();
+  if (config.planner.kind === 'cli') tools.add(config.planner.tool);
+  try {
+    for (const profile of resolveImplementerProfiles(config).profiles) {
+      if (profile.config.kind === 'cli') tools.add(profile.config.tool);
+    }
+  } catch {
+    // Invalid profile config is surfaced by config readiness, not this helper.
+  }
+  return [...tools];
+}
+
+const declaredCliReadiness = new Map<CliToolId, CliReadinessResult>();
+
+/**
+ * Start gates come from a declared probe result, never from an ambient PATH
+ * lookup — a test that wants a tool admitted must say so explicitly.
+ */
+export function declareReadyCliTool(tool: CliToolId): void {
+  const testedVersion = CLI_TOOL_CATALOG[tool].compatibility.testedVersion;
+  declaredCliReadiness.set(
+    tool,
+    deriveCliReadiness({
+      tool,
+      enabled: true,
+      installation: 'installed',
+      executable: {
+        path: `/opt/splitbrief/bin/${CLI_TOOL_CATALOG[tool].command}`,
+        fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
+      },
+      trust: 'trusted',
+      installedVersion: testedVersion,
+      testedVersion,
+      compatibility: 'compatible',
+      auth: 'authenticated',
+      probedAt: 1,
+    }),
+  );
+}
+
+export const detectCliReadinessMock = vi.fn<NonNullable<StartDeps['detectCliReadiness']>>(
+  async ({ config }) => {
+    const results: CliReadinessResult[] = [];
+    for (const tool of configuredCliTools(config)) {
+      const declared = declaredCliReadiness.get(tool);
+      if (declared) results.push(declared);
+    }
+    return results;
+  },
+);
+
 export const fakeDeps: StartDeps = {
   spawnServer: spawnServerMock,
   runHeadless: runHeadlessMock as unknown as StartDeps['runHeadless'],
   runRpc: runRpcMock as unknown as StartDeps['runRpc'],
   initStores: initStoresMock,
   renderApp: renderAppFake,
+  detectCliReadiness: detectCliReadinessMock,
 };
 
 let tmp = '';
@@ -53,9 +111,11 @@ export function setupStartCommandIntegration(): void {
     routerStore.init({ screen: 'home' });
     process.stdin.isTTY = true;
     renderCalls.length = 0;
+    declaredCliReadiness.clear();
     spawnServerMock.mockClear();
     runHeadlessMock.mockClear();
     runRpcMock.mockClear();
+    detectCliReadinessMock.mockClear();
     spawnServerMock.mockImplementation(async (opts: SpawnServerOptions) => {
       mkdirSync(opts.sessionDir, { recursive: true });
       writeFileSync(

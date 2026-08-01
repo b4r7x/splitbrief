@@ -10,6 +10,7 @@ import {
 import { join } from 'node:path';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
+  declareReadyCliTool,
   getStartCommandTmp,
   readSingleSessionArtifact,
   runStart,
@@ -23,7 +24,6 @@ import {
   featureForTranscriptPolicy,
   isOpaqueSessionId,
 } from '../../../src/core/sessions/lifecycle.js';
-import { parseIpcServerArgs } from '../../../src/engine/ipc/server-args.js';
 import type {
   SpawnServerOptions,
   SpawnServerResult,
@@ -32,6 +32,8 @@ import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../src/core/transcript-policy.
 import { formatDetachedAttachHint } from '../../../src/cli/commands/attach-hint.js';
 
 setupStartCommandIntegration();
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 describe('start command — detached', () => {
   afterEach(() => {
@@ -42,6 +44,7 @@ describe('start command — detached', () => {
 
   it('applies --worktree before --detach creates detached session artifacts', async () => {
     const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp);
     const wtPath = worktreePath(tmp, 'detached-feature');
     spawnServerMock.mockClear();
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -118,7 +121,8 @@ describe('start command — detached', () => {
   it('persists detached CLI overrides in the server args artifact', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    process.env.OPENROUTER_API_KEY = 'test-openrouter-key';
+    declareReadyCliTool('codex');
+    process.env.OPENROUTER_API_KEY = 'sk-or-test-openrouter-key';
     process.env.PLANNER_KEY = 'test-planner-key';
     spawnServerMock.mockClear();
     vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -173,7 +177,6 @@ describe('start command — detached', () => {
       'high',
       '--mode',
       'quick',
-      '--auto',
       'implement X',
     ]);
 
@@ -206,7 +209,6 @@ describe('start command — detached', () => {
           outputFormat: 'opencode',
           contextLength: 131_072,
         },
-        autoApprove: true,
         approve: 'all',
         mode: 'quick',
         budget: 4.25,
@@ -215,74 +217,74 @@ describe('start command — detached', () => {
     });
   });
 
-  it('prints config load warnings to stderr on the detached path before spawning the server', async () => {
+  itUnix(
+    'prints config load warnings to stderr on the detached path before spawning the server',
+    async () => {
+      const tmp = getStartCommandTmp();
+      writeReadyReadinessFixtures(tmp);
+      const configFilePath = join(tmp, SPLITBRIEF_DIR, CONFIG_FILE);
+      writeFileSync(
+        configFilePath,
+        [
+          'version: 3',
+          'planner:',
+          '  kind: shell',
+          "  command: 'true'",
+          '  outputFormat: text',
+          '  model: shell',
+          '  contextLength: 32768',
+          'implementer:',
+          '  kind: api',
+          '  provider: ollama',
+          '  apiBase: http://localhost:11434/v1',
+          '  model: qwen2.5-coder:7b',
+          '  contextLength: 32768',
+          'validation:',
+          '  typecheck: true',
+          '  lint: true',
+          '  test: true',
+          '  typecheckCommand: node -e ""',
+          '  lintCommand: node -e ""',
+          '  testCommand: node -e ""',
+          'workflow:',
+          '  approve: default',
+          '  maxRetries: 3',
+          '  persistTranscript: true',
+          '  mode: standard',
+        ].join('\n'),
+      );
+      chmodSync(configFilePath, 0o666);
+      spawnServerMock.mockClear();
+      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const stderrChunks: string[] = [];
+      let warningsBeforeSpawn = '';
+      vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+        stderrChunks.push(String(chunk));
+        return true;
+      });
+      spawnServerMock.mockImplementationOnce(async (opts: SpawnServerOptions) => {
+        warningsBeforeSpawn = stderrChunks.join('');
+        mkdirSync(opts.sessionDir, { recursive: true });
+        return { ok: true, pid: 1234, sessionId: opts.sessionId };
+      });
+
+      await runStart(['--project', tmp, '--detach', 'implement X']);
+
+      expect(spawnServerMock).toHaveBeenCalledTimes(1);
+      expect(warningsBeforeSpawn).toContain('has overly permissive permissions');
+    },
+  );
+
+  it.each(['full', 'spec-kit'])('rejects the removed --mode %s alias', async (mode) => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    const configFilePath = join(tmp, SPLITBRIEF_DIR, CONFIG_FILE);
-    writeFileSync(
-      configFilePath,
-      [
-        'version: 2',
-        'planner:',
-        '  kind: api',
-        '  provider: ollama',
-        '  apiBase: http://localhost:11434/v1',
-        '  model: qwen2.5-coder:7b',
-        '  contextLength: 32768',
-        'implementer:',
-        '  kind: api',
-        '  provider: ollama',
-        '  apiBase: http://localhost:11434/v1',
-        '  model: qwen2.5-coder:7b',
-        '  contextLength: 32768',
-        'validation:',
-        '  typecheck: true',
-        '  lint: true',
-        '  test: true',
-        '  typecheckCommand: node -e ""',
-        '  lintCommand: node -e ""',
-        '  testCommand: node -e ""',
-        'workflow:',
-        '  approve: default',
-        '  maxRetries: 3',
-        '  persistTranscript: true',
-        '  mode: standard',
-      ].join('\n'),
-    );
-    chmodSync(configFilePath, 0o600);
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
-    const stderrChunks: string[] = [];
-    let warningsBeforeSpawn = '';
-    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
-      stderrChunks.push(String(chunk));
-      return true;
-    });
-    spawnServerMock.mockImplementationOnce(async (opts: SpawnServerOptions) => {
-      warningsBeforeSpawn = stderrChunks.join('');
-      mkdirSync(opts.sessionDir, { recursive: true });
-      return { ok: true, pid: 1234, sessionId: opts.sessionId };
-    });
-
-    await runStart(['--project', tmp, '--detach', 'implement X']);
-
-    expect(spawnServerMock).toHaveBeenCalledTimes(1);
-    expect(warningsBeforeSpawn).toContain('config.version 2 is deprecated');
-  });
-
-  it('normalizes the legacy --mode full alias through nested detached overrides', async () => {
-    const tmp = getStartCommandTmp();
     spawnServerMock.mockClear();
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await runStart(['--project', tmp, '--detach', '--mode', 'full', 'implement X']);
-
-    const artifact = readSingleSessionArtifact(tmp, 'server-args.json');
-    const parsed = parseIpcServerArgs(artifact);
-
-    expect(parsed).not.toBeNull();
-    expect(parsed?.mode).toBe('speckit');
-    expect(parsed?.overrides.mode).toBe('speckit');
+    await expect(
+      runStart(['--project', tmp, '--detach', '--mode', mode, 'implement X']),
+    ).rejects.toThrow(/Invalid workflow mode/);
+    expect(spawnServerMock).not.toHaveBeenCalled();
   });
 
   it('clears the active pointer when detached server spawn fails', async () => {

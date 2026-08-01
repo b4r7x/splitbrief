@@ -112,7 +112,7 @@ When a hook would wrap another hook and add only trivial logic, inline instead. 
 | Put pure functions under `src/hooks/` | The `use-` prefix is a promise — if it has no React lifecycle, it is not a hook. |
 | Wrap a store's `.use()` in a single-call hook | Consumers should call the store directly. |
 | Wrap another hook in a thin hook that adds ≤5 lines | Inline. If the wrapper carries only one transformation, it is not earning its keep. |
-| Write tests that assert "hook calls `useState` internally" | Tests should assert observable behavior. Internal hook calls are implementation details. See [`test-behavior-not-implementation`](../CLAUDE.md). |
+| Write tests that assert "hook calls `useState` internally" | Tests should assert observable behavior. Internal hook calls are implementation details. See [`test-behavior-not-implementation`](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md). |
 | Create a `use-*` hook to hold state that should cross components | Use a store. Hooks for per-component or per-subtree lifecycle; stores for cross-tree shared state. |
 | Add a barrel (`hooks/index.ts`) | Forbidden project-wide. See [`NO-BARRELS.md`](./NO-BARRELS.md). |
 

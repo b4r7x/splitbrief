@@ -33,9 +33,10 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   setSelectedLeftKey: (key: string | null) => void;
   setLeftFilter: (fn: (prev: string) => string) => void;
   setRightFilter: (fn: (prev: string) => string) => void;
-  setLeftIndex: (index: number) => void;
+  /** Returns the left item the cursor lands on, so the right column can reset against it. */
+  setLeftIndex: (index: number) => L | undefined;
   setRightIndex: (index: number) => void;
-  resetRight: () => void;
+  resetRight: (left?: L | undefined) => void;
 }
 
 export function handleKeyboardInput<L extends FilterableItem, R extends { id: string }>(
@@ -104,8 +105,7 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
     if (ctx.leftActive) {
       if (ctx.leftFiltered.length === 0) return;
       const next = stepIndex(ctx.leftFiltered, ctx.leftEffectiveIndex, direction);
-      ctx.setLeftIndex(next);
-      ctx.resetRight();
+      ctx.resetRight(ctx.setLeftIndex(next));
     } else {
       if (ctx.filteredRight.length === 0) return;
       const next = stepIndex(ctx.filteredRight, ctx.rightEffectiveIndex, direction);
@@ -141,8 +141,7 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   if (key.backspace || key.delete) {
     if (ctx.leftActive && !ctx.isSpecial) {
       ctx.setLeftFilter((prev) => prev.slice(0, -1));
-      ctx.setLeftIndex(0);
-      ctx.resetRight();
+      ctx.resetRight(ctx.setLeftIndex(0));
     } else if (ctx.rightActive) {
       ctx.setRightFilter((prev) => prev.slice(0, -1));
       ctx.setRightIndex(0);
@@ -153,8 +152,7 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   if (input && !key.ctrl && !key.meta) {
     if (ctx.leftActive && !ctx.isSpecial) {
       ctx.setLeftFilter((prev) => prev + input);
-      ctx.setLeftIndex(0);
-      ctx.resetRight();
+      ctx.resetRight(ctx.setLeftIndex(0));
     } else if (ctx.rightActive) {
       ctx.setRightFilter((prev) => prev + input);
       ctx.setRightIndex(0);

@@ -1,60 +1,20 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { applyCLIOverrides, applyApproveOverride } from './apply.js';
 import type { Config } from '../../../schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
-function buildBaseConfig(): Config {
-  const c = makeConfig({ workflow: { approve: 'default' } });
-  delete (c.workflow as Record<string, unknown>).autoApproveSpec;
-  delete (c.workflow as Record<string, unknown>).autoApprovePlan;
-  return c;
-}
-const baseConfig: Config = buildBaseConfig();
+const baseConfig: Config = makeConfig({ workflow: { approve: 'default' } });
 
-describe('applyCLIOverrides — approve / auto', () => {
+describe('applyCLIOverrides — approve', () => {
   it('--approve <level> sets workflow.approve', () => {
     const result = applyCLIOverrides(baseConfig, { approve: 'none' });
     expect(result.workflow.approve).toBe('none');
   });
 
-  it('--approve none also dual-writes legacy autoApprove* keys', () => {
+  it('--approve none writes no companion keys beyond approve', () => {
     const result = applyCLIOverrides(baseConfig, { approve: 'none' });
-    expect(result.workflow.autoApproveSpec).toBe(true);
-    expect(result.workflow.autoApprovePlan).toBe(true);
-  });
-
-  it('--approve all does not dual-write legacy keys', () => {
-    const result = applyCLIOverrides(baseConfig, { approve: 'all' });
-    expect(result.workflow.approve).toBe('all');
-    expect(result.workflow.autoApproveSpec).toBeUndefined();
-    expect(result.workflow.autoApprovePlan).toBeUndefined();
-  });
-
-  it('--auto sets approve=none and dual-writes autoApprove*', () => {
-    const result = applyCLIOverrides(baseConfig, { autoApprove: true });
-    expect(result.workflow.approve).toBe('none');
-    expect(result.workflow.autoApproveSpec).toBe(true);
-    expect(result.workflow.autoApprovePlan).toBe(true);
-  });
-
-  it('--auto false does not change approve', () => {
-    const result = applyCLIOverrides(baseConfig, { autoApprove: false });
-    expect(result.workflow.approve).toBe('default');
-    expect(result.workflow.autoApproveSpec).toBe(false);
-    expect(result.workflow.autoApprovePlan).toBe(false);
-  });
-
-  it('--auto overrides an explicit --approve and warns instead of silently winning', () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    try {
-      const result = applyCLIOverrides(baseConfig, { approve: 'spec', autoApprove: true });
-      expect(result.workflow.approve).toBe('none');
-      const output = stderr.mock.calls.map((c) => String(c[0])).join('');
-      expect(output).toMatch(/--approve/);
-      expect(output).toMatch(/overrid|ignored/i);
-    } finally {
-      stderr.mockRestore();
-    }
+    expect(result.workflow).not.toHaveProperty('autoApproveSpec');
+    expect(result.workflow).not.toHaveProperty('autoApprovePlan');
   });
 
   it('throws on invalid --approve value', () => {
@@ -68,17 +28,9 @@ describe('applyCLIOverrides — approve / auto', () => {
 });
 
 describe('applyApproveOverride', () => {
-  it('sets approve and dual-writes when level is none', () => {
-    const result = applyApproveOverride(baseConfig, 'none');
-    expect(result.workflow.approve).toBe('none');
-    expect(result.workflow.autoApproveSpec).toBe(true);
-    expect(result.workflow.autoApprovePlan).toBe(true);
-  });
-
-  it('only sets approve for non-none levels', () => {
-    const result = applyApproveOverride(baseConfig, 'plan');
-    expect(result.workflow.approve).toBe('plan');
-    expect(result.workflow.autoApproveSpec).toBeUndefined();
+  it.each(['none', 'plan'] as const)('sets approve to %s and nothing else', (level) => {
+    const result = applyApproveOverride(baseConfig, level);
+    expect(result.workflow).toEqual({ ...baseConfig.workflow, approve: level });
   });
 });
 
@@ -135,9 +87,10 @@ describe('applyCLIOverrides — contextLength, mode, budget', () => {
     expect(result.implementer.contextLength).toBe(16384);
   });
 
-  it('applies legacy full mode override as speckit', () => {
-    const result = applyCLIOverrides(baseConfig, { mode: 'full' as 'speckit' });
-    expect(result.workflow.mode).toBe('speckit');
+  it.each(['full', 'spec-kit'])('rejects the removed %s mode alias', (mode) => {
+    expect(() => applyCLIOverrides(baseConfig, { mode: mode as 'speckit' })).toThrow(
+      /Invalid workflow mode/,
+    );
   });
 
   it('throws on NaN budget override', () => {
@@ -157,17 +110,8 @@ describe('applyCLIOverrides — contextLength, mode, budget', () => {
     expect(result.workflow.maxBudget).toBe(10.5);
   });
 
-  it('preserves autoApproveSpec and autoApprovePlan when autoApprove is omitted', () => {
-    const config: Config = {
-      ...baseConfig,
-      workflow: {
-        ...baseConfig.workflow,
-        autoApproveSpec: true,
-        autoApprovePlan: true,
-      },
-    };
-    const result = applyCLIOverrides(config, { autoApprove: undefined });
-    expect(result.workflow.autoApproveSpec).toBe(true);
-    expect(result.workflow.autoApprovePlan).toBe(true);
+  it('preserves a configured approve level when no approve override is given', () => {
+    const config: Config = { ...baseConfig, workflow: { ...baseConfig.workflow, approve: 'none' } };
+    expect(applyCLIOverrides(config, {}).workflow.approve).toBe('none');
   });
 });

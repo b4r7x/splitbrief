@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
+import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import { validateCliArgs } from './validate-args.js';
 import { parseStreamLine } from '../../streaming/parse-stream-json.js';
-import { isRecord } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 
 const CLAUDE_COMMAND = 'claude' as const;
@@ -33,13 +33,13 @@ const CLAUDE_PROTECTED_FLAGS = new Set([
 type ClaudeBuildCommon = Readonly<{
   model: string | undefined;
   effort: EffortLevel | undefined;
-  configuredArgs: readonly string[];
 }>;
 
 type ClaudePlannerBuild = ClaudeBuildCommon &
   Readonly<{
     prompt: string;
     projectDir: string;
+    configuredArgs: readonly string[];
     mode: 'plan' | 'escalate';
     sessionId: string | null;
   }>;
@@ -58,49 +58,27 @@ function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
   return args;
 }
 
-function buildPlannerArgs(opts: ClaudePlannerBuild): string[] {
+function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
   const args = buildBaseArgs(opts);
   if (opts.sessionId !== null) args.push('--session-id', opts.sessionId);
-  return [...args, ...opts.configuredArgs];
+  return args;
 }
 
-function buildImplementerArgs(opts: ClaudeImplementerBuild): string[] {
+function implementerBaseArgs(opts: ClaudeImplementerBuild): string[] {
   return [
-    ...buildBaseArgs({ model: opts.model, effort: undefined, configuredArgs: opts.configuredArgs }),
+    ...buildBaseArgs({ model: opts.model, effort: undefined }),
     '--permission-mode',
     'acceptEdits',
-    ...opts.configuredArgs,
   ];
 }
 
-function hasPromptPlaceholder(value: string): boolean {
-  return value.includes('<PROMPT>') || /\{prompt\}/i.test(value) || /^<[^>]+>$/.test(value);
-}
-
-function validateArgs(
-  invocationArgs: readonly string[],
-  baseArgs: readonly string[] | null,
-): Readonly<{ valid: true }> | Readonly<{ valid: false; conflicts: readonly string[] }> {
-  if (baseArgs === null) return { valid: false, conflicts: ['adapter-build-order'] };
-  const conflicts: string[] = [];
-  if (
-    invocationArgs.length < baseArgs.length ||
-    baseArgs.some((arg, index) => invocationArgs[index] !== arg)
-  ) {
-    conflicts.push('argument-order');
-  }
-  const configuredArgs = invocationArgs.slice(baseArgs.length);
-  for (const arg of configuredArgs) {
-    if (hasPromptPlaceholder(arg)) conflicts.push('prompt-transport');
-    if (arg.startsWith('-')) {
-      const flag = arg.split('=', 1)[0] ?? arg;
-      if (CLAUDE_PROTECTED_FLAGS.has(flag)) conflicts.push(flag);
-    }
-  }
-  const uniqueConflicts = [...new Set(conflicts)];
-  return uniqueConflicts.length === 0
-    ? { valid: true }
-    : { valid: false, conflicts: uniqueConflicts };
+function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+  return validateCliArgs({
+    invocationArgs,
+    baseArgs,
+    protectedFlags: CLAUDE_PROTECTED_FLAGS,
+    promptTransport: 'stdin',
+  });
 }
 
 function toProtocolEvents(line: string): readonly CliProtocolEvent[] {
@@ -179,12 +157,11 @@ function createAdapter(role: 'implementer'): CliImplementerAdapter<'claude-code'
 function createAdapter(
   role: 'planner' | 'implementer',
 ): CliPlannerAdapter<'claude-code'> | CliImplementerAdapter<'claude-code'> {
-  let baseArgs: readonly string[] | null = null;
   const shared = {
     descriptor: CLI_TOOL_CATALOG[CLAUDE_ID],
     role,
     promptTransport: CLAUDE_PROMPT_TRANSPORT,
-    validateArgs: (invocationArgs: readonly string[]) => validateArgs(invocationArgs, baseArgs),
+    validateArgs,
     environment: {},
     outputContract: { kind: 'structured-terminal', terminalEvent: 'required' } as const,
     parse: toProtocolEvents,
@@ -202,22 +179,18 @@ function createAdapter(
     return {
       ...shared,
       role,
-      buildArgs: (input) => {
-        const built = buildPlannerArgs(input);
-        baseArgs = built.slice(0, built.length - input.configuredArgs.length);
-        return built;
-      },
+      supportsSessionResume: true,
+      supportsEffort: true,
+      baseArgs: plannerBaseArgs,
+      buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
     } satisfies CliPlannerAdapter<'claude-code'>;
   }
 
   return {
     ...shared,
     role,
-    buildArgs: (input) => {
-      const built = buildImplementerArgs(input);
-      baseArgs = built.slice(0, built.length - input.configuredArgs.length);
-      return built;
-    },
+    baseArgs: implementerBaseArgs,
+    buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
   } satisfies CliImplementerAdapter<'claude-code'>;
 }
 
@@ -244,23 +217,6 @@ export type ClaudeCliConformanceCandidate = Readonly<{
   adapter: CliPlannerAdapter<'claude-code'> | CliImplementerAdapter<'claude-code'>;
 }>;
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (value !== null && typeof value === 'object') {
-    if (!isRecord(value)) return JSON.stringify(value);
-    const record = value;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function contractHash(contract: RawClaudeCliContract): string {
-  return createHash('sha256').update(canonicalJson(contract), 'utf8').digest('hex');
-}
-
 function rawContract(role: 'planner' | 'implementer'): RawClaudeCliContract {
   return {
     id: CLAUDE_ID,
@@ -286,45 +242,18 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly ClaudeCliConformanceCandidate[
     id: CLAUDE_ID,
     role: 'planner',
     rawContract: plannerRawContract,
-    contractSha256: contractHash(plannerRawContract),
+    contractSha256: contractSha256(plannerRawContract),
     adapter: claudeCodePlannerAdapter,
   }),
   Object.freeze({
     id: CLAUDE_ID,
     role: 'implementer',
     rawContract: implementerRawContract,
-    contractSha256: contractHash(implementerRawContract),
+    contractSha256: contractSha256(implementerRawContract),
     adapter: claudeCodeImplementerAdapter,
   }),
 ]);
 
 export function claudeProtocolEvents(line: string): readonly CliProtocolEvent[] {
   return toProtocolEvents(line);
-}
-
-export function claudePromptArgs(opts: {
-  role: 'planner' | 'implementer';
-  model?: string | undefined;
-  effort?: EffortLevel | undefined;
-  sessionId?: string | null | undefined;
-  configuredArgs?: readonly string[] | undefined;
-}): readonly string[] {
-  const configuredArgs = opts.configuredArgs ?? [];
-  if (opts.role === 'planner') {
-    return buildPlannerArgs({
-      prompt: '',
-      projectDir: '',
-      mode: 'plan',
-      sessionId: opts.sessionId ?? null,
-      model: opts.model,
-      effort: opts.effort,
-      configuredArgs,
-    });
-  }
-  return buildImplementerArgs({
-    prompt: '',
-    projectDir: '',
-    model: opts.model,
-    configuredArgs,
-  });
 }

@@ -220,3 +220,38 @@ describe('createImplementer', () => {
     expect(written).not.toContain('implementer-temperature');
   });
 });
+
+describe('CLI role enforcement', () => {
+  it('rejects CLI tools outside the planner tuple before planner construction', async () => {
+    const config = withPlanner({
+      kind: 'cli',
+      tool: 'cursor' as Config['planner'] extends { kind: 'cli'; tool: infer T } ? T : never,
+      authChannel: 'session',
+      model: 'test',
+    });
+
+    await expect(createPlanner(config)).rejects.toThrow(/planner configuration/);
+  });
+
+  it('rejects unknown CLI tools before planner construction', async () => {
+    const config = withPlanner({
+      kind: 'cli',
+      tool: 'kiro' as Config['planner'] extends { kind: 'cli'; tool: infer T } ? T : never,
+      authChannel: 'session',
+      model: 'test',
+    });
+
+    await expect(createPlanner(config)).rejects.toThrow(/planner configuration/);
+  });
+
+  it('rejects unknown CLI tools before implementer construction', async () => {
+    const config = withImplementer({
+      kind: 'cli',
+      tool: 'kiro' as Config['implementer'] extends { kind: 'cli'; tool: infer T } ? T : never,
+      authChannel: 'session',
+      model: 'test',
+    });
+
+    await expect(createImplementer(config)).rejects.toThrow(/implementer/);
+  });
+});

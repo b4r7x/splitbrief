@@ -4,6 +4,7 @@ import { fromYaml } from '../../core/config/load/transform.js';
 import { ConfigSchema } from '../../core/schemas/config.js';
 import type { Config } from '../../core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import {
   commitCustomCommand,
   commitCustomModel,
@@ -189,13 +190,7 @@ describe('commitCustomCommand', () => {
 });
 
 describe('runner selection commits', () => {
-  const agentSdkSelection = {
-    id: 'agent-sdk',
-    displayName: 'Agent SDK',
-    kind: 'agent-sdk' as const,
-    available: true,
-    badge: 'SDK',
-  };
+  const agentSdkSelection = realPickerOption('planner', 'agent-sdk');
 
   it('commits planner Agent SDK selections with the explicit kind', () => {
     const updated = commitPlannerSelection(makeBaseConfig(), agentSdkSelection, {
@@ -219,59 +214,47 @@ describe('runner selection commits', () => {
     }
   });
 
-  it('persists an automatic CLI selection as model absence for an existing planner target', () => {
+  it('persists an automatic CLI selection as the explicit auto sentinel on the planner', () => {
     const config: Config = {
       ...makeBaseConfig(),
       planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
     };
 
-    const updated = commitPlannerSelection(
-      config,
-      {
-        id: 'claude-code',
-        displayName: 'Claude Code',
-        kind: 'cli',
-        available: true,
-        badge: 'CLI',
-      },
-      { id: 'auto' },
-    );
+    const updated = commitPlannerSelection(config, realPickerOption('planner', 'claude-code'), {
+      id: 'auto',
+    });
 
-    expect(updated.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
+    expect(updated.planner).toEqual({ kind: 'cli', tool: 'claude-code', model: 'auto' });
   });
 
-  it('persists an automatic CLI selection as model absence for a named implementer profile', () => {
+  it('persists an automatic CLI selection verbatim into a named implementer profile only', () => {
     const config = namedImplementerProfileConfig();
-    const updated = commitImplementerSelection(
-      config,
-      {
-        id: 'codex',
-        displayName: 'Codex',
-        kind: 'cli',
-        available: true,
-        badge: 'CLI',
-      },
-      { id: 'AUTO' },
+    const before = config.implementerProfiles?.profiles;
+    const siblings = Object.fromEntries(
+      Object.entries(before ?? {}).filter(([name]) => name !== 'active-cloud'),
     );
 
+    const updated = commitImplementerSelection(config, realPickerOption('implementer', 'codex'), {
+      id: 'AUTO',
+    });
+
+    // Stored exactly as chosen — the picker's own Auto row carries the lower-case
+    // id, and nothing rewrites a user's spelling behind their back.
     expect(updated.implementerProfiles?.profiles['active-cloud']).toMatchObject({
       kind: 'cli',
       tool: 'codex',
+      model: 'AUTO',
     });
-    expect(updated.implementerProfiles?.profiles['active-cloud']).not.toHaveProperty('model');
+    for (const [name, profile] of Object.entries(siblings)) {
+      expect(updated.implementerProfiles?.profiles[name]).toEqual(profile);
+    }
   });
 
   it('switches a named API profile to CLI without parsing the API profile as model-less', () => {
     const config = namedImplementerProfileConfig();
     const updated = commitImplementerSelection(
       config,
-      {
-        id: 'codex',
-        displayName: 'Codex',
-        kind: 'cli',
-        available: true,
-        badge: 'CLI',
-      },
+      realPickerOption('implementer', 'codex'),
       null,
     );
 
@@ -286,13 +269,7 @@ describe('runner selection commits', () => {
     const config = namedImplementerProfileConfig();
     const updated = commitImplementerSelection(
       config,
-      {
-        id: 'together',
-        displayName: 'Together AI',
-        kind: 'api',
-        available: true,
-        badge: 'API',
-      },
+      realPickerOption('implementer', 'together'),
       null,
     );
 
@@ -306,13 +283,7 @@ describe('runner selection commits', () => {
   it('preserves explicit model IDs when committing a CLI selection', () => {
     const updated = commitPlannerSelection(
       makeBaseConfig(),
-      {
-        id: 'claude-code',
-        displayName: 'Claude Code',
-        kind: 'cli',
-        available: true,
-        badge: 'CLI',
-      },
+      realPickerOption('planner', 'claude-code'),
       { id: 'sonnet' },
     );
 
@@ -335,13 +306,7 @@ describe('runner selection commits', () => {
 
     const updated = commitImplementerSelection(
       config,
-      {
-        id: 'codex',
-        displayName: 'Codex',
-        kind: 'cli',
-        available: true,
-        badge: 'CLI',
-      },
+      realPickerOption('implementer', 'codex'),
       null,
     );
 
@@ -363,30 +328,14 @@ describe('runner selection commits', () => {
     };
 
     expect(() =>
-      commitImplementerSelection(
-        config,
-        {
-          id: 'anthropic',
-          displayName: 'Anthropic',
-          kind: 'api',
-          available: true,
-          badge: 'API',
-        },
-        null,
-      ),
+      commitImplementerSelection(config, realPickerOption('implementer', 'anthropic'), null),
     ).toThrow(/model/);
   });
 
   it('switches planners from shell to api when selecting an API provider', () => {
     const updated = commitPlannerSelection(
       makeBaseConfig(),
-      {
-        id: 'anthropic',
-        displayName: 'Anthropic',
-        kind: 'api',
-        available: true,
-        badge: 'API',
-      },
+      realPickerOption('planner', 'anthropic'),
       { id: 'claude-sonnet-4-6' },
     );
 
@@ -399,17 +348,9 @@ describe('runner selection commits', () => {
 
   it('preserves optional top-level config sections when committing picker selections', () => {
     const config = makeConfigWithOptionalSections();
-    const updated = commitPlannerSelection(
-      config,
-      {
-        id: 'anthropic',
-        displayName: 'Anthropic',
-        kind: 'api',
-        available: true,
-        badge: 'API',
-      },
-      { id: 'claude-sonnet-4-6' },
-    );
+    const updated = commitPlannerSelection(config, realPickerOption('planner', 'anthropic'), {
+      id: 'claude-sonnet-4-6',
+    });
 
     expect(updated.codebase).toEqual(config.codebase);
     expect(updated.hooks).toEqual(config.hooks);
@@ -428,13 +369,7 @@ describe('runner selection commits', () => {
 
     const selectedModel = commitImplementerSelection(
       config,
-      {
-        id: 'together',
-        displayName: 'Together AI',
-        kind: 'api',
-        available: true,
-        badge: 'API',
-      },
+      realPickerOption('implementer', 'together'),
       { id: 'selected-model' },
     );
     const selectedApi = selectedModel.implementerProfiles?.profiles['active-cloud'];
@@ -448,13 +383,7 @@ describe('runner selection commits', () => {
 
     const selectedTool = commitImplementerSelection(
       config,
-      {
-        id: 'codex',
-        displayName: 'Codex',
-        kind: 'cli',
-        available: true,
-        badge: 'CLI',
-      },
+      realPickerOption('implementer', 'codex'),
       { id: 'gpt-5.4-mini' },
     );
     expect(selectedTool.implementerProfiles?.profiles['active-cloud']).toMatchObject({
@@ -466,13 +395,7 @@ describe('runner selection commits', () => {
     const customAdded = commitCustomModel({
       config,
       role: 'implementer',
-      selection: {
-        id: 'together',
-        displayName: 'Together AI',
-        kind: 'api',
-        available: true,
-        badge: 'API',
-      },
+      selection: realPickerOption('implementer', 'together'),
       modelName: 'custom-added',
       customModels: ['existing-model'],
     });

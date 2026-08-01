@@ -81,6 +81,7 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 - `lib/warn.ts` — `stderr` formatter
 - `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`)
 - `lib/terminal/` — terminal I/O (`mouse` events, `kitty-keyboard` protocol)
+- `lib/http/policy-fetch.ts` — manual-redirect `fetch` transport; the caller supplies the initial endpoint and the rejection factory, so the module carries no provider knowledge
 
 **Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `lib/` may import other `lib/` siblings and `utils/`.
 
@@ -116,11 +117,11 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - Knows SPLITBRIEF concepts: config shape, workflow state machine, task entities, cost/token math, session metadata, path conventions
 - No React, no Ink, no DOM — pure TypeScript
 - No workflow orchestration — `core/` does not run planners, implementers, retries, or commits (that's `engine/`). The one sanctioned subprocess in `core/` is the read-only readiness baseline probe (`core/readiness/checks/validation.ts` runs the configured typecheck/lint/test commands via `lib/process/spawn/run-command.ts` to detect a pre-broken tree before any task starts); it spawns nothing else
-- Domain persistence is allowed: `core/` writes its own state to disk (sessions, stats, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `readJsonSafe`, `ensureSecureDir`, confined writes) and `lib/file-lock.ts` for whole-file payloads (e.g. `evidence/ledger-storage.ts`), but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/tree/io.ts`, `sessions/compaction.ts`, `migration/executor.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
+- Domain persistence is allowed: `core/` writes its own state to disk (sessions, stats, state machine, config, evidence ledger). It prefers the secure `lib/fs.ts` / `lib/confined-fs.ts` helpers (`writeSecureFile`, `readJsonSafe`, `ensureSecureDir`, confined writes) and `lib/file-lock.ts` for whole-file payloads (e.g. `evidence/ledger-storage.ts`), but also writes directly with raw `node:fs` for appends, lockfiles, and atomic renames (e.g. `sessions/tree/io.ts`, `sessions/compaction.ts`) — always with inline secure-mode (`SECURE_FILE_MODE`, `0o700`) and symlink/confinement guards
 - Typed data structures, pure transformations, and schema validation live here
 
 **What lives here:**
-- `core/config/` — YAML config loading, validation, migration
+- `core/config/` — YAML config loading and validation
 - `core/schemas/` — Zod schemas + their inferred TS types (the source of truth for `Config`, `Task`, `WorkflowState`, `Session`, token/summary shapes, etc.)
 - `core/types/` — cross-cutting TS-only types that have no runtime schema (`StateAction`, `TokenBudget`, `ProjectContext`, `WorkflowOpts`, etc.). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See [`docs/TYPES.md`](./TYPES.md).
 - `core/state/` — workflow state machine, transitions, persistence shape

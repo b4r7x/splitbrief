@@ -61,9 +61,7 @@ function unavailablePlannerConfig(): Config {
     },
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
     workflow: {
-      autoApproveSpec: true,
-      autoApprovePlan: true,
-      commitStrategy: 'none',
+      approve: 'none',
       mode: 'quick',
       persistTranscript: false,
     },
@@ -141,9 +139,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
         },
@@ -173,9 +169,7 @@ describe('runWorkflow — smoke', () => {
     const config = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        autoApproveSpec: true,
-        autoApprovePlan: true,
-        commitStrategy: 'none',
+        approve: 'none',
         mode: 'quick',
         persistTranscript: false,
       },
@@ -273,9 +267,7 @@ describe('runWorkflow — smoke', () => {
     const config = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        autoApproveSpec: true,
-        autoApprovePlan: true,
-        commitStrategy: 'none',
+        approve: 'none',
         mode: 'quick',
         persistTranscript: false,
       },
@@ -370,9 +362,7 @@ describe('runWorkflow — smoke', () => {
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: {
-            autoApproveSpec: true,
-            autoApprovePlan: true,
-            commitStrategy: 'none',
+            approve: 'none',
             mode: 'quick',
             persistTranscript: false,
           },
@@ -482,9 +472,7 @@ describe('runWorkflow — smoke', () => {
       planner: { kind: 'agent', command: 'echo', args: ['done'] },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        autoApproveSpec: true,
-        autoApprovePlan: true,
-        commitStrategy: 'none',
+        approve: 'none',
         mode: 'quick',
         persistTranscript: false,
       },
@@ -518,9 +506,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
         },
@@ -585,9 +571,7 @@ describe('runWorkflow — smoke', () => {
       planner: { kind: 'agent', command: 'echo', args: ['done'] },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        autoApproveSpec: true,
-        autoApprovePlan: true,
-        commitStrategy: 'none',
+        approve: 'none',
         mode: 'quick',
         persistTranscript: false,
       },
@@ -618,7 +602,6 @@ describe('runWorkflow — smoke', () => {
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
         approve: 'plan',
-        commitStrategy: 'none',
         mode: 'standard',
         persistTranscript: false,
       },
@@ -667,9 +650,7 @@ describe('runWorkflow — smoke', () => {
       planner: { kind: 'agent', command: 'echo', args: ['done'] },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        autoApproveSpec: true,
-        autoApprovePlan: true,
-        commitStrategy: 'none',
+        approve: 'none',
         mode: 'quick',
         persistTranscript: false,
       },
@@ -702,9 +683,7 @@ describe('runWorkflow — smoke', () => {
       planner: { kind: 'agent', command: 'echo', args: ['done'] },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        autoApproveSpec: true,
-        autoApprovePlan: true,
-        commitStrategy: 'none',
+        approve: 'none',
         mode: 'quick',
         persistTranscript: false,
       },
@@ -742,9 +721,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
         },
@@ -820,9 +797,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
           taskReview: 'every',
@@ -859,9 +834,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
           taskReview: 'every',
@@ -922,9 +895,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
         },
@@ -1007,9 +978,7 @@ describe('runWorkflow — smoke', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
         },
@@ -1055,7 +1024,7 @@ describe('runWorkflow — createBranch', () => {
     const config = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        git: { createBranch: true, commitStrategy: 'none' },
+        git: { createBranch: true },
         mode: 'quick',
         persistTranscript: false,
       },
@@ -1095,7 +1064,7 @@ describe('runWorkflow — createBranch', () => {
     const config = makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        git: { createBranch: false, commitStrategy: 'none' },
+        git: { createBranch: false },
         mode: 'quick',
         persistTranscript: false,
       },
@@ -1158,9 +1127,7 @@ describe('runWorkflow — recovery resume', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
         },
@@ -1210,9 +1177,7 @@ describe('runWorkflow — recovery resume', () => {
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
         },
@@ -1277,9 +1242,7 @@ describe('runWorkflow — recovery resume', () => {
         },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: true,
-          autoApprovePlan: true,
-          commitStrategy: 'none',
+          approve: 'none',
           mode: 'quick',
           persistTranscript: false,
         },

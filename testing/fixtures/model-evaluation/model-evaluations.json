@@ -1,0 +1,124 @@
+{
+  "asOf": "2026-07-31",
+  "scenarioIds": [
+    "typescript-fix",
+    "multi-file-esm",
+    "react-no-memo",
+    "behavior-test",
+    "near-limit-brief"
+  ],
+  "thresholds": {
+    "compileTest": {
+      "passed": 5,
+      "total": 5
+    },
+    "extraction": {
+      "passed": 5,
+      "total": 5
+    },
+    "instructionAdherence": {
+      "passed": 5,
+      "total": 5
+    },
+    "maxUnnecessaryFiles": 0,
+    "maxRetryRate": 0.2
+  },
+  "modelEvaluationRows": [
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-080",
+      "provider": "openrouter",
+      "model": "anthropic/claude-sonnet-4.6",
+      "reason": "no credentialed five-scenario extracted-code run was executed; runtime recommendation stays compatible-only"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-080",
+      "provider": "groq",
+      "model": "openai/gpt-oss-120b",
+      "reason": "no credentialed five-scenario extracted-code run was executed; runtime recommendation stays compatible-only"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-080",
+      "provider": "ollama",
+      "model": "qwen3-coder:30b",
+      "reason": "no credentialed five-scenario extracted-code run was executed; runtime recommendation stays compatible-only"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-080",
+      "provider": "lm-studio",
+      "model": "qwen2.5-coder-7b",
+      "reason": "no credentialed five-scenario extracted-code run was executed; runtime recommendation stays compatible-only"
+    }
+  ],
+  "omitRows": [
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-043",
+      "provider": "deepseek",
+      "reason": "provider verdict OMIT at T-043; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-044",
+      "provider": "mistral",
+      "reason": "provider verdict OMIT at T-044; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-045",
+      "provider": "gemini",
+      "reason": "provider verdict OMIT at T-045; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-046",
+      "provider": "cerebras",
+      "reason": "provider verdict OMIT at T-046; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-047",
+      "provider": "zai",
+      "reason": "provider verdict OMIT at T-047; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-048",
+      "provider": "mimo",
+      "reason": "provider verdict OMIT at T-048; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-049",
+      "provider": "mimo-token-plan",
+      "reason": "provider verdict OMIT at T-049; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-050",
+      "provider": "minimax",
+      "reason": "provider verdict OMIT at T-050; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-051",
+      "provider": "moonshot",
+      "reason": "provider verdict OMIT at T-051; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-052",
+      "provider": "dashscope",
+      "reason": "provider verdict OMIT at T-052; no pending-evaluation model"
+    },
+    {
+      "resolution": "OMIT-NOT-APPLICABLE",
+      "taskId": "T-053",
+      "provider": "llama-cpp",
+      "reason": "provider verdict OMIT at T-053; no pending-evaluation model"
+    }
+  ]
+}

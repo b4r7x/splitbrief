@@ -31,7 +31,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
+const defaultWorkflow = { maxRetries: 2 };
 
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('routes a task to the selected profile and publishes profile/tool/model metadata', async () => {

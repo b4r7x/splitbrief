@@ -1,10 +1,19 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors/runner-config.js';
 import { resolveApproveLevel, resolveMode } from '../../config/runtime/resolve.js';
-import { CLI_TOOL_CATALOG, type RunnerTrustMetadata } from '../../runners/cli-tool-catalog.js';
+import { isAutomaticModel } from '../../providers/automatic-model.js';
+import {
+  CLI_TOOL_CATALOG,
+  type CliToolId,
+  type RunnerTrustMetadata,
+} from '../../runners/cli-tool-catalog.js';
 import type { Config } from '../../schemas/config.js';
-import type { CliToolId } from '../../schemas/enums.js';
-import { cliReadinessCheckId, type CliReadinessResult } from '../../schemas/readiness.js';
+import {
+  cliReadinessCheckId,
+  type CliReadinessResult,
+  type ReadinessDiagnosticStateId,
+  type ReadinessModelSelection,
+} from '../../schemas/readiness.js';
 import { getRunnerTrustMeta, RUNNER_IDLE_KILL_MS } from '../../schemas/runner-fields.js';
 import type { ReadinessCheck } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
@@ -20,9 +29,21 @@ function diagnosticExecutablePath(result: CliReadinessResult): string | null {
   return result.executable === null ? null : REDACTED_EXECUTABLE_PATH;
 }
 
+function modelSelection(
+  runner: Config['planner'] | Config['implementer'],
+): ReadinessModelSelection {
+  if (isAutomaticModel(runner.model, getRunnerDisplayName(runner))) return 'auto';
+  return runner.model === undefined ? 'unset' : 'explicit';
+}
+
+// A CLI runner in automatic mode has no resolved model — the harness picks it —
+// so report the configured intent rather than leaving it indistinguishable from
+// an unset model.
 function formatRunner(runner: Config['planner'] | Config['implementer']): string {
+  const displayName = getRunnerDisplayName(runner);
   const model = getRunnerModelName(runner);
-  return model ? `${getRunnerDisplayName(runner)} (${model})` : getRunnerDisplayName(runner);
+  if (model) return `${displayName} (${model})`;
+  return modelSelection(runner) === 'auto' ? `${displayName} (auto)` : displayName;
 }
 
 export function buildRunnerChecks(
@@ -117,10 +138,30 @@ function missingCliReadinessCheck(tool: CliToolId): ReadinessCheck {
   };
 }
 
+function cliReadinessDiagnosticState(
+  result: CliReadinessResult,
+): ReadinessDiagnosticStateId | undefined {
+  switch (result.status) {
+    case 'unavailable':
+      return 'missing-binary';
+    case 'untrusted':
+      return 'untrusted-path';
+    case 'incompatible':
+      return 'incompatible-version';
+    case 'unauthenticated':
+      return 'unauthenticated';
+    case 'unverified':
+      return result.auth === 'unknown' ? 'auth-unknown' : undefined;
+    default:
+      return undefined;
+  }
+}
+
 function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
   const descriptor = CLI_TOOL_CATALOG[result.tool];
   const severity =
     result.status === 'ready' ? 'ok' : result.status === 'unverified' ? 'warning' : 'blocker';
+  const diagnosticState = cliReadinessDiagnosticState(result);
   return {
     id: result.checkId,
     severity,
@@ -131,6 +172,7 @@ function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
           : `${descriptor.displayName} is installed, trusted, compatible, and authenticated.`
         : `${descriptor.displayName} readiness is ${result.status}.`,
     ...(result.remediation !== null && { fix: result.remediation }),
+    ...(diagnosticState !== undefined && { diagnosticState }),
     metadata: {
       tool: result.tool,
       status: result.status,
@@ -151,12 +193,7 @@ function buildRunnerTrustBoundaryChecks(
   profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
 ): ReadinessCheck[] {
   const mode = resolveMode({ config });
-  const approve = resolveApproveLevel({
-    mode,
-    configApprove: config.workflow.approve,
-    legacyAutoFlag:
-      config.workflow.autoApproveSpec === true && config.workflow.autoApprovePlan === true,
-  });
+  const approve = resolveApproveLevel({ mode, configApprove: config.workflow.approve });
   const specPlanAutoApproved = approve === 'none';
   const fileWriteApprovalDisabled = config.approval?.enabled === false;
 
@@ -362,6 +399,7 @@ function runnerCheck(
       kind: runner.kind,
       name: getRunnerDisplayName(runner),
       model: getRunnerModelName(runner) ?? null,
+      modelSelection: modelSelection(runner),
       contextLength: runner.contextLength ?? null,
     },
   };

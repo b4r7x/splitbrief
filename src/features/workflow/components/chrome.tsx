@@ -24,7 +24,7 @@ function useComposerBoxHints(override?: ComposerBoxHintOverride | undefined): Co
     ? [baseKeys, glyph('check')].filter((part) => part.length > 0).join('  ')
     : baseKeys;
   const display = formatCostDisplay(localRate, costBreakdown, pricingState);
-  const cost = override?.cost && display.hasPricedUsage ? display.spentText : undefined;
+  const cost = override?.cost && display.showSpend ? display.spentText : undefined;
   return { keys, cost };
 }
 

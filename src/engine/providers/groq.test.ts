@@ -6,7 +6,7 @@ import { setupFetchMock, setupEnvMock } from '#testing/helpers/fetch-mock.js';
 // This file covers only Groq-specific metadata mapping: context_window → contextLength.
 describe('createGroqProvider metadata', () => {
   setupFetchMock();
-  setupEnvMock('GROQ_API_KEY', 'test-key');
+  setupEnvMock('GROQ_API_KEY', 'gsk_test-key');
 
   it('listModelsWithMetadata maps context_window to contextLength', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(

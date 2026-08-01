@@ -19,6 +19,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { useStores } from '../../stores/use-stores.js';
 import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
 import { formatCopyResult } from '../../core/runtime/commands/types.js';
+import { cliToolSupportsRole } from '../../core/runners/cli-tool-catalog.js';
 import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
 import type { Config } from '../../core/schemas/config.js';
 import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
@@ -72,7 +73,7 @@ interface SetupScreenProps {
 export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   const t = useTheme();
   const { exit } = useApp();
-  const [{ planners }, { projectDir }, { cols, rows, isSmall }] = useStores(
+  const [{ cliTools }, { projectDir }, { cols, rows, isSmall }] = useStores(
     detectionStore,
     configStore,
     terminalSizeStore,
@@ -88,9 +89,12 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
 
   const [step, setStep] = useState<Step>(() =>
-    planners.filter((p) => p.available && p.type !== 'shell').length === 0
-      ? 'no-planners'
-      : 'planner',
+    cliTools.some(
+      (cliTool) =>
+        cliTool.diagnostic.state === 'ready' && cliToolSupportsRole(cliTool.tool, 'planner'),
+    )
+      ? 'planner'
+      : 'no-planners',
   );
   const [focusedInstallId, setFocusedInstallId] = useState<InstallActionId>('claude-code');
   const visibleInstallCount =

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectContext } from '../../../core/state/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { classifyContextFit, estimateFormattedTaskPromptTokens } from './estimation.js';
-import { formatTaskPrompt } from '../../spec/prompt-formatter.js';
+import { formatImplementerSystemPreamble, formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { buildSystemPreamble } from '../../spec/prompts/system.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
@@ -39,6 +39,41 @@ describe('estimateFormattedTaskPromptTokens', () => {
 
     expect(estimatedTokens).toBe(
       promptOnlyTokens + estimateTokens(buildSystemPreamble(languageContext)),
+    );
+  });
+
+  it('budgets a direct-writing implementer against the prompt it actually sends', () => {
+    const task = makeTask();
+    const languageContext = buildLanguageContext('typescript');
+
+    const estimatedTokens = estimateFormattedTaskPromptTokens({
+      task,
+      context,
+      contextLength: 10_000,
+      languageContext,
+      writesFiles: 'direct',
+    });
+    const promptOnlyTokens = estimateTokens(
+      formatTaskPrompt({
+        task,
+        context,
+        contextLength: 10_000,
+        languageContext,
+        writesFiles: 'direct',
+      }),
+    );
+
+    expect(estimatedTokens).toBe(
+      promptOnlyTokens + estimateTokens(formatImplementerSystemPreamble(languageContext, 'direct')),
+    );
+    expect(estimatedTokens).toBeLessThan(
+      estimateFormattedTaskPromptTokens({
+        task,
+        context,
+        contextLength: 10_000,
+        languageContext,
+        writesFiles: 'extracted-code',
+      }),
     );
   });
 });

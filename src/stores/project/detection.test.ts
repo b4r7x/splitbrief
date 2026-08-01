@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { detectionStore } from './detection.js';
-import type { PlannerDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 
 describe('detectionStore', () => {
   beforeEach(() => {
@@ -8,14 +9,8 @@ describe('detectionStore', () => {
   });
 
   it('clones detection arrays and nested model data on ingress', () => {
-    const planners: PlannerDetection[] = [
-      {
-        tool: 'claude-code',
-        type: 'cli',
-        available: true,
-        version: '1.0.0',
-      },
-    ];
+    const cliTools: CliToolDetection[] = [cliDetectionFor('ready', 'claude-code')];
+    const installedVersion = cliTools[0]?.installedVersion;
     const implementers: ProviderDetection[] = [
       {
         provider: 'ollama',
@@ -25,36 +20,24 @@ describe('detectionStore', () => {
       },
     ];
 
-    detectionStore.setDetection({ planners, implementers });
-    planners[0]!.version = 'mutated';
+    detectionStore.setDetection({ cliTools, implementers });
+    cliTools[0]!.installedVersion = 'mutated';
     implementers[0]!.models![0]!.capabilities!.push('mutated');
 
-    expect(detectionStore.get().planners[0]?.version).toBe('1.0.0');
+    expect(detectionStore.get().cliTools[0]?.installedVersion).toBe(installedVersion);
     expect(detectionStore.get().implementers[0]?.models?.[0]?.capabilities).toEqual(['tools']);
   });
 
-  it('clones planner compatibility on ingress', () => {
-    const planners: PlannerDetection[] = [
-      {
-        tool: 'codex',
-        type: 'cli',
-        available: true,
-        version: '9.0.0',
-        compatibility: {
-          kind: 'major-version-mismatch',
-          installedVersion: '9.0.0',
-          testedVersion: '0.40.0',
-        },
-      },
-    ];
+  it('clones CLI executable fingerprints and diagnostics on ingress', () => {
+    const cliTools: CliToolDetection[] = [cliDetectionFor('incompatible', 'codex')];
+    const produced = cliTools[0]?.diagnostic;
+    const mtimeMs = cliTools[0]?.executable?.fingerprint.mtimeMs;
 
-    detectionStore.setDetection({ planners, implementers: [] });
-    planners[0]!.compatibility!.installedVersion = 'mutated';
+    detectionStore.setDetection({ cliTools, implementers: [] });
+    cliTools[0]!.executable!.fingerprint.mtimeMs = 99;
+    cliTools[0]!.diagnostic = { state: 'ready', remediation: null };
 
-    expect(detectionStore.get().planners[0]?.compatibility).toEqual({
-      kind: 'major-version-mismatch',
-      installedVersion: '9.0.0',
-      testedVersion: '0.40.0',
-    });
+    expect(detectionStore.get().cliTools[0]?.executable?.fingerprint.mtimeMs).toBe(mtimeMs);
+    expect(detectionStore.get().cliTools[0]?.diagnostic).toEqual(produced);
   });
 });

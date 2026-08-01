@@ -12,7 +12,6 @@ import { registerStatsCommand } from './cli/commands/stats.js';
 import { registerExportCommand } from './cli/commands/export.js';
 import { registerExplainCommand } from './cli/commands/explain.js';
 import { registerResumeCommand } from './cli/commands/resume.js';
-import { registerMigrateCommand } from './cli/commands/migrate.js';
 import { registerHandoffCommand } from './cli/commands/handoff.js';
 import { registerSnapshotCommand } from './cli/commands/snapshot.js';
 import { registerApprovalCommand } from './cli/commands/approval.js';
@@ -49,7 +48,6 @@ registerStatsCommand(program);
 registerExportCommand(program);
 registerExplainCommand(program);
 registerResumeCommand(program);
-registerMigrateCommand(program);
 registerHandoffCommand(program);
 registerSnapshotCommand(program);
 registerApprovalCommand(program);
@@ -63,10 +61,7 @@ registerLastCommand(program);
 
 program.parseAsync().catch(async (err) => {
   await flushOtel();
-  if (isCliError(err)) {
-    console.error(`${ansis.red('Error:')} ${toErrorMessage(err)}`);
-    process.exit(err.exitCode);
-  }
-  console.error(`${ansis.red('Error:')} ${toErrorMessage(err)}`);
-  process.exit(1);
+  const message = toErrorMessage(err, { preserveLineBreaks: true });
+  console.error(`${ansis.red('Error:')} ${message}`);
+  process.exit(isCliError(err) ? err.exitCode : 1);
 });

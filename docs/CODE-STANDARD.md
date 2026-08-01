@@ -148,14 +148,14 @@ These are non-negotiable and (where noted) gated automatically. Do not re-derive
 
 | Convention | Doc | Auto-gate |
 |---|---|---|
-| Zero runtime classes (errors via factory bag) | [ERRORS.md](./ERRORS.md), [CLAUDE.md](../CLAUDE.md) | INVARIANTS #8 |
-| ESM `.js` extension in every relative import | [CLAUDE.md](../CLAUDE.md) | INVARIANTS #16 |
+| Zero runtime classes (errors via factory bag) | [ERRORS.md](./ERRORS.md), [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #8 |
+| ESM `.js` extension in every relative import | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | INVARIANTS #16 |
 | Zero barrels / disguised barrels | [NO-BARRELS.md](./NO-BARRELS.md) | INVARIANTS #1, #1b |
 | Zero memoization (`useMemo`/`useCallback`/`React.memo`) | [STORES.md](./STORES.md) | INVARIANTS #3 |
 | No `forwardRef` / `useImperativeHandle` — extract to a store | [STORES.md](./STORES.md) | INVARIANTS #3 |
 | Engine imports no React/Ink/`features`/`components`/`hooks`/`cli` | [LAYERS.md](./LAYERS.md) | INVARIANTS #12, #12b, #12c |
 | Errors at boundaries via `error()` + domain bag (no raw `throw new Error`) | [ERRORS.md](./ERRORS.md) | INVARIANTS #4 |
-| No unsafe `!` / broad `as` outside the sanctioned list | [CLAUDE.md](../CLAUDE.md) | review |
+| No unsafe `!` / broad `as` outside the sanctioned list | [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) | review |
 | No decorative comments / section banners | [STRUCTURE.md](./STRUCTURE.md#no-decorative-comments) | review |
 
 **Type-safety judgment items (not fully gated):**

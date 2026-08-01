@@ -16,10 +16,7 @@ import {
 
 function workflowConfig(persistTranscript: boolean, compactionThreshold?: number) {
   return {
-    autoApproveSpec: false,
-    autoApprovePlan: false,
     maxRetries: 3,
-    commitStrategy: 'none' as const,
     persistTranscript,
     compactionFormat: 'auto' as const,
     ...(compactionThreshold !== undefined && { compactionThreshold }),

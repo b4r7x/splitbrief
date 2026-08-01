@@ -91,6 +91,7 @@ describe('analyzeBriefDrift', () => {
         tasks: [task],
         changedFiles: [changedFile],
         diff: '',
+        preRunChangedFiles: [],
       });
       const reportedUntargeted = report.findings.some(
         (finding) => finding.code === 'out_of_scope_file' && finding.file === changedFile,
@@ -110,6 +111,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/a.ts', 'src/b.ts'],
       diff: 'diff stuff',
+      preRunChangedFiles: [],
     });
     expect(report.passed).toBe(true);
     expect(report.findings).toEqual([]);
@@ -122,6 +124,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/a.ts', 'src/extra.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
     const finding = report.findings.find((f) => f.code === 'out_of_scope_file');
     expect(finding?.severity).toBe('warning');
@@ -142,6 +145,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/a.ts', 'src/extra.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
     const out = report.findings.find((f) => f.code === 'out_of_scope_file');
     expect(out?.severity).toBe('error');
@@ -157,6 +161,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/a.ts', 'src/b.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
     const finding = report.findings.find((f) => f.code === 'failed_task_with_diff');
     expect(finding?.severity).toBe('error');
@@ -170,6 +175,7 @@ describe('analyzeBriefDrift', () => {
       tasks: [task],
       changedFiles: ['src/failed/matched.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
 
     expect(report.findings).toContainEqual(
@@ -194,6 +200,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/a.ts', 'src/secrets/leak.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
     const finding = report.findings.find((f) => f.code === 'out_of_bounds_text_match');
     expect(finding?.severity).toBe('error');
@@ -213,6 +220,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/a.ts'],
       diff: 'export const SECRET_TOKEN = 1;',
+      preRunChangedFiles: [],
     });
     expect(report.findings.some((f) => f.code === 'out_of_bounds_text_match')).toBe(true);
     expect(report.passed).toBe(false);
@@ -231,6 +239,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/a.ts'],
       diff: 'src/foo.ts',
+      preRunChangedFiles: [],
     });
     expect(report.findings.some((f) => f.code === 'out_of_bounds_text_match')).toBe(false);
     expect(report.passed).toBe(true);
@@ -238,7 +247,7 @@ describe('analyzeBriefDrift', () => {
 
   it('warns missing_expected_file when a completed task file is absent from the changed universe', () => {
     const tasks = [makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' })];
-    const report = analyzeBriefDrift({ tasks, changedFiles: [], diff: '' });
+    const report = analyzeBriefDrift({ tasks, changedFiles: [], diff: '', preRunChangedFiles: [] });
     const finding = report.findings.find((f) => f.code === 'missing_expected_file');
     expect(finding?.severity).toBe('warning');
     expect(finding?.taskId).toBe('T001');
@@ -251,6 +260,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/a.ts'],
       diff: 'diff --git a/src/a.ts b/src/a.ts',
+      preRunChangedFiles: [],
     });
     expect(report.findings.some((f) => f.code === 'missing_expected_file')).toBe(false);
     expect(report.findings).toEqual([]);
@@ -262,6 +272,7 @@ describe('analyzeBriefDrift', () => {
       tasks: [task],
       changedFiles: ['src/feature/matched.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
 
     expect(report.expectedFiles).toEqual(['src/feature/*.ts']);
@@ -278,6 +289,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/z.ts', 'src/extra-z.ts', 'src/a.ts', 'src/extra-a.ts', 'src/z.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
 
     expect(report.changedFiles).toEqual([
@@ -317,13 +329,14 @@ describe('analyzeBriefDrift', () => {
       changedFiles: ['src/a.ts'],
       diff: '',
       ledger,
+      preRunChangedFiles: [],
     });
     const f = report.findings.find((x) => x.code === 'missing_evidence');
     expect(f?.severity).toBe('warning');
     expect(f?.taskId).toBe('T001');
   });
 
-  it('preserves the legacy no-baseline fallback when the ledger does not attribute an extra changed file', () => {
+  it('treats a ledger-unattributed file absent from the run-start baseline as run-produced', () => {
     const task = makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' });
     const ledger = withUpdatedTask(
       createEvidenceLedger({ sessionId: 's1', feature: 'f', tasks: [task] }),
@@ -332,18 +345,15 @@ describe('analyzeBriefDrift', () => {
     );
     const report = analyzeBriefDrift({
       tasks: [task],
-      changedFiles: ['src/a.ts', 'src/legacy.ts'],
+      changedFiles: ['src/a.ts', 'src/unattributed.ts'],
       diff: '',
       ledger,
+      preRunChangedFiles: [],
     });
-    const finding = report.findings.find((f) => f.file === 'src/legacy.ts');
+    const finding = report.findings.find((f) => f.file === 'src/unattributed.ts');
     expect(finding?.code).toBe('out_of_scope_file');
-    expect(finding?.severity).toBe('info');
-    expect(finding?.message).toContain('pre-existing');
-    expect(report.passed).toBe(true);
-    expect(report.findings.some((f) => f.file === 'src/legacy.ts' && f.severity !== 'info')).toBe(
-      false,
-    );
+    expect(finding?.severity).toBe('warning');
+    expect(finding?.message).not.toContain('pre-existing');
   });
 
   it('uses an explicit run-start baseline to distinguish pre-existing files from unattributed run-produced files', () => {
@@ -453,6 +463,7 @@ describe('analyzeBriefDrift', () => {
       changedFiles: ['src/a.ts', 'src/extra.ts'],
       diff: '',
       ledger,
+      preRunChangedFiles: [],
     });
     const finding = report.findings.find((f) => f.file === 'src/extra.ts');
     expect(finding?.code).toBe('out_of_scope_file');
@@ -469,6 +480,7 @@ describe('analyzeBriefDrift', () => {
       tasks,
       changedFiles: ['src/c.ts'],
       diff: '',
+      preRunChangedFiles: [],
     });
     expect(report.findings.some((f) => f.code === 'orphan_diff')).toBe(true);
     expect(report.passed).toBe(false);
@@ -479,8 +491,18 @@ describe('analyzeBriefDrift', () => {
       makeTask({ id: 'T001', file: 'src/a.ts', status: 'done' }),
       makeTask({ id: 'T002', file: 'src/b.ts', status: 'failed' }),
     ];
-    const r1 = analyzeBriefDrift({ tasks, changedFiles: ['src/a.ts', 'src/b.ts'], diff: '' });
-    const r2 = analyzeBriefDrift({ tasks, changedFiles: ['src/a.ts', 'src/b.ts'], diff: '' });
+    const r1 = analyzeBriefDrift({
+      tasks,
+      changedFiles: ['src/a.ts', 'src/b.ts'],
+      diff: '',
+      preRunChangedFiles: [],
+    });
+    const r2 = analyzeBriefDrift({
+      tasks,
+      changedFiles: ['src/a.ts', 'src/b.ts'],
+      diff: '',
+      preRunChangedFiles: [],
+    });
     expect(r1.score).toBe(r2.score);
     expect(r1.score).toBeCloseTo(0.75, 5);
     expect(r1.passed).toBe(false);
@@ -494,12 +516,18 @@ describe('analyzeBriefDrift — briefHash', () => {
       changedFiles: [],
       diff: '',
       briefHash: 'abc123',
+      preRunChangedFiles: [],
     });
     expect(report.briefHash).toBe('abc123');
   });
 
   it('sets briefHash: null when not supplied', () => {
-    const report = analyzeBriefDrift({ tasks: [], changedFiles: [], diff: '' });
+    const report = analyzeBriefDrift({
+      tasks: [],
+      changedFiles: [],
+      diff: '',
+      preRunChangedFiles: [],
+    });
     expect(report.briefHash).toBeNull();
   });
 });

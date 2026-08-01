@@ -24,7 +24,7 @@ import {
 import { hashTaskBrief } from '../brief-hash.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { loadState } from '../../core/state/persistence.js';
-import { runFinalReviewPhase } from './final-review.js';
+import { finalReviewError, runFinalReviewPhase } from './final-review.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
@@ -41,16 +41,21 @@ afterEach(() => {
   dirs = [];
 });
 
-function setupProject(): { projectDir: string; sessionId: string } {
+function setupProject(): { projectDir: string; sessionId: string; runStartHead: string } {
   const projectDir = createTempDir('final-review-test');
   dirs.push(projectDir);
   createTestGitRepo(projectDir);
   const sessionId = 'sess-final';
   ensureSessionDir(projectDir, sessionId);
-  return { projectDir, sessionId };
+  const runStartHead = execSync('git rev-parse HEAD', {
+    cwd: projectDir,
+    stdio: 'pipe',
+    encoding: 'utf8',
+  }).trim();
+  return { projectDir, sessionId, runStartHead };
 }
 
-function allTasksDoneState(tasks: Task[]): WorkflowState {
+function allTasksDoneState(tasks: Task[], runStartHead: string | null): WorkflowState {
   // Walk the state machine into a state where ALL_DONE is valid.
   let s = createInitialState('feat');
   s = transition(s, { type: 'START' });
@@ -60,8 +65,12 @@ function allTasksDoneState(tasks: Task[]): WorkflowState {
   s = transition(s, { type: 'PLAN_DONE', tasks });
   s = transition(s, { type: 'BRIEFS_READY', tasks });
   s = transition(s, { type: 'APPROVE_BRIEFS' });
-  s = { ...s, implementerTool: 'ollama', implementerModel: 'qwen2.5' };
-  return s;
+  return {
+    ...s,
+    implementerTool: 'ollama',
+    implementerModel: 'qwen2.5',
+    changedFilesBaseline: { head: runStartHead, fingerprints: {}, runStartChangedFiles: [] },
+  };
 }
 
 const TEST_METADATA = {
@@ -79,7 +88,7 @@ const SUMMARY_BASE = {
 
 describe('runFinalReviewPhase', () => {
   it('runs the planner review, writes review.md, emits workflow_complete, transitions to complete', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     // A non-trivial spec so the review prompt is well-formed.
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
 
@@ -97,7 +106,7 @@ describe('runFinalReviewPhase', () => {
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ review });
 
-    const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]);
+    const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
 
     const { summary } = await runFinalReviewPhase(
@@ -148,7 +157,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('persists the review usage through the continuation loop on the sinks path', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     const { callbacks } = makeCallbacks();
@@ -164,7 +173,7 @@ describe('runFinalReviewPhase', () => {
         config: makeNoValidationConfig(),
         callbacks,
         bus,
-        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]),
+        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
         planner,
         metadata: TEST_METADATA,
         sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
@@ -182,7 +191,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('reviews the task brief packet, falling back to current state tasks when tasks.md is missing', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nSparse spec.\n', null);
     writeSpecFile(
       { projectDir, sessionId },
@@ -218,7 +227,7 @@ describe('runFinalReviewPhase', () => {
         config: makeNoValidationConfig(),
         callbacks,
         bus,
-        state: allTasksDoneState([task]),
+        state: allTasksDoneState([task], runStartHead),
         planner,
         metadata: TEST_METADATA,
       },
@@ -230,7 +239,11 @@ describe('runFinalReviewPhase', () => {
       'Persisted-only acceptance marker: verify password pepper migration.',
     );
 
-    const { projectDir: fallbackProjectDir, sessionId: fallbackSessionId } = setupProject();
+    const {
+      projectDir: fallbackProjectDir,
+      sessionId: fallbackSessionId,
+      runStartHead: fallbackRunStartHead,
+    } = setupProject();
     writeSpecFile(
       { projectDir: fallbackProjectDir, sessionId: fallbackSessionId },
       SPEC_FILE,
@@ -246,7 +259,7 @@ describe('runFinalReviewPhase', () => {
         config: makeNoValidationConfig(),
         callbacks,
         bus,
-        state: allTasksDoneState([task]),
+        state: allTasksDoneState([task], fallbackRunStartHead),
         planner,
         metadata: TEST_METADATA,
       },
@@ -258,7 +271,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('does not complete the workflow when the planner review throws', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     const review = async () => {
@@ -272,7 +285,7 @@ describe('runFinalReviewPhase', () => {
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ review });
 
-    const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]);
+    const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
     const phaseTimings: Record<string, number> = {};
 
     const { summary } = await runFinalReviewPhase(
@@ -312,7 +325,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('does not emit workflow completion when final review is aborted', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     const controller = new AbortController();
@@ -338,7 +351,7 @@ describe('runFinalReviewPhase', () => {
         config: makeNoValidationConfig(),
         callbacks,
         bus,
-        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]),
+        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
         planner,
         metadata: TEST_METADATA,
         signal: controller.signal,
@@ -356,7 +369,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('works without a phaseTimings map (metadata argument remains optional)', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     const { callbacks } = makeCallbacks();
@@ -364,7 +377,7 @@ describe('runFinalReviewPhase', () => {
     const planner = makePlanner({
       review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }),
     });
-    const state = allTasksDoneState([]);
+    const state = allTasksDoneState([], runStartHead);
 
     const { summary: result } = await runFinalReviewPhase(
       { projectDir, sessionId, config: makeNoValidationConfig(), callbacks, bus, state, planner },
@@ -377,7 +390,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('writes active briefHash into the drift report artifact', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
@@ -396,7 +409,7 @@ describe('runFinalReviewPhase', () => {
         config: makeNoValidationConfig(),
         callbacks,
         bus,
-        state: allTasksDoneState(tasks),
+        state: allTasksDoneState(tasks, runStartHead),
         planner,
       },
       SUMMARY_BASE,
@@ -411,40 +424,24 @@ describe('runFinalReviewPhase', () => {
     expect(drift.findings).toEqual([]);
   });
 
-  it('uses the legacy drift fallback when persisted baseline state has no run-start paths', async () => {
-    const { projectDir, sessionId } = setupProject();
+  it('fails the review instead of guessing the run boundary when state has no run-start baseline', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/feature.ts'), 'export const feature = true;\n');
-    writeFileSync(join(projectDir, 'src/legacy.ts'), 'export const legacy = true;\n');
 
-    const task = makeTask({
-      id: 'T001',
-      file: 'src/feature.ts',
-      status: 'done',
-      scope: { outOfBounds: ['docs/**'] },
-    });
-    const ledger = withUpdatedTask(
-      createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
-      task.id,
-      (entry) => ({ ...entry, changedFiles: [task.file] }),
-    );
-    writeEvidenceLedger({ projectDir, sessionId }, ledger);
-    const state: WorkflowState = {
-      ...allTasksDoneState([task]),
-      changedFilesBaseline: {
-        head: null,
-        fingerprints: {
-          'src/feature.ts': 'feature-hash',
-          'src/legacy.ts': 'legacy-hash',
-        },
+    const task = makeTask({ id: 'T001', file: 'src/feature.ts', status: 'done' });
+    const { changedFilesBaseline: _dropped, ...state } = allTasksDoneState([task], runStartHead);
+    const completions: Summary[] = [];
+    const { callbacks } = makeCallbacks({
+      onComplete: (s: Summary) => {
+        completions.push(s);
       },
-    };
-    const { callbacks } = makeCallbacks();
-    const { bus } = makeBusRecorder();
-    const planner = makePlanner({ review: vi.fn().mockResolvedValue({ text: 'ok', usage: null }) });
+    });
+    const { bus, events } = makeBusRecorder();
+    const review = vi.fn().mockResolvedValue({ text: 'ok', usage: null });
 
-    await runFinalReviewPhase(
+    const { summary } = await runFinalReviewPhase(
       {
         projectDir,
         sessionId,
@@ -452,29 +449,26 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state,
-        planner,
+        planner: makePlanner({ review }),
       },
       SUMMARY_BASE,
       [],
     );
 
-    const drift = JSON.parse(
-      readFileSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE), 'utf8'),
-    );
-    expect(
-      drift.findings.find((finding: { file?: string }) => finding.file === 'src/legacy.ts'),
-    ).toMatchObject({
-      code: 'out_of_scope_file',
-      severity: 'info',
-    });
-    expect(drift.passed).toBe(true);
-    expect(loadState({ projectDir, sessionId })?.changedFilesBaseline?.runStartChangedFiles).toBe(
-      undefined,
-    );
+    const errorEvent = events.find((event) => event.type === 'error');
+    const message = errorEvent && 'message' in errorEvent ? errorEvent.message : '';
+    expect(message).toContain(finalReviewError.missingRunBaseline().message);
+    expect(review).not.toHaveBeenCalled();
+    expect(existsSync(join(sessionDir(projectDir, sessionId), DRIFT_REPORT_FILE))).toBe(false);
+    expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    expect(completions).toEqual([]);
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('final-review');
+    expect(summary.reviewPacket?.finalReviewStatus).toBe('failed');
   });
 
   it('fails drift for a rolling-only out-of-scope path absent at run start', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/feature.ts'), 'export const feature = true;\n');
@@ -493,7 +487,7 @@ describe('runFinalReviewPhase', () => {
     );
     writeEvidenceLedger({ projectDir, sessionId }, ledger);
     const state: WorkflowState = {
-      ...allTasksDoneState([task]),
+      ...allTasksDoneState([task], runStartHead),
       changedFilesBaseline: {
         head: null,
         fingerprints: {
@@ -534,7 +528,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('includes untracked created-file content in the review prompt diff', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -559,7 +553,7 @@ describe('runFinalReviewPhase', () => {
         config: makeNoValidationConfig(),
         callbacks,
         bus,
-        state: allTasksDoneState(tasks),
+        state: allTasksDoneState(tasks, runStartHead),
         planner,
         metadata: TEST_METADATA,
       },
@@ -571,7 +565,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('derives the review diff and drift universe from per-task commits when the tree is clean', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
 
     // Per-task commit strategy: the implemented file is committed (with the
@@ -605,7 +599,7 @@ describe('runFinalReviewPhase', () => {
         config: makeNoValidationConfig(),
         callbacks,
         bus,
-        state: allTasksDoneState(tasks),
+        state: allTasksDoneState(tasks, runStartHead),
         planner,
         metadata: TEST_METADATA,
       },
@@ -664,7 +658,7 @@ describe('runFinalReviewPhase', () => {
     });
     const task = makeTask({ id: 'T001', file: 'src/post-run.ts', status: 'done' });
     const state: WorkflowState = {
-      ...allTasksDoneState([task]),
+      ...allTasksDoneState([task], runStartHead),
       changedFilesBaseline: {
         head: runStartHead,
         fingerprints: {},
@@ -695,7 +689,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('treats captured null as an unborn run boundary after commits appear', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     const marker = 'CAPTURED_NULL_POST_RUN_COMMIT_MARKER';
@@ -725,7 +719,7 @@ describe('runFinalReviewPhase', () => {
         callbacks,
         bus,
         state: {
-          ...allTasksDoneState([task]),
+          ...allTasksDoneState([task], runStartHead),
           changedFilesBaseline: {
             head: null,
             fingerprints: {},
@@ -746,7 +740,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('keeps the complete diff for drift while bounding the planner prompt at 100,000 characters', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     const prohibitedMarker = 'PROHIBITED_AFTER_PROMPT_BOUNDARY';
@@ -778,7 +772,7 @@ describe('runFinalReviewPhase', () => {
         config: makeNoValidationConfig(),
         callbacks,
         bus,
-        state: allTasksDoneState([task]),
+        state: allTasksDoneState([task], runStartHead),
         planner,
       },
       SUMMARY_BASE,
@@ -802,7 +796,7 @@ describe('runFinalReviewPhase', () => {
   });
 
   it('records the real pre-final-review auto snapshot in the run ledger', async () => {
-    const { projectDir, sessionId } = setupProject();
+    const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -815,7 +809,7 @@ describe('runFinalReviewPhase', () => {
         config: { ...makeNoValidationConfig(), snapshots: { auto: { preFinalReview: true } } },
         callbacks,
         bus,
-        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })]),
+        state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
         planner,
       },
       SUMMARY_BASE,

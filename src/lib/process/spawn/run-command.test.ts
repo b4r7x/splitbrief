@@ -1,12 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { describe, it, expect, vi } from 'vitest';
 import { runCommand } from './run-command.js';
-import {
-  createSanitizedChildEnv,
-  spawnPipe,
-  type SpawnPipeFatalOutcome,
-  withChildProcessEnv,
-} from './lifecycle.js';
+import { createSanitizedChildEnv, spawnPipe, type SpawnPipeFatalOutcome } from './lifecycle.js';
 import { killProcess, setProcessLedger } from '../registry.js';
 import { processError } from '../errors.js';
 
@@ -80,24 +75,28 @@ describe('createSanitizedChildEnv', () => {
     expect(env).toEqual({ LANG: 'C.UTF-8', OPENAI_API_KEY: 'sk-openai' });
   });
 
-  it('applies a scoped environment without mutating the parent process', async () => {
+  it('applies an explicit child environment and never an ambient one', async () => {
     const original = process.env.SPLITBRIEF_SCOPED_ENV_TEST;
     delete process.env.SPLITBRIEF_SCOPED_ENV_TEST;
-    try {
+    const readChildValue = async (env?: NodeJS.ProcessEnv): Promise<string> => {
       let output = '';
-      await withChildProcessEnv({ SPLITBRIEF_SCOPED_ENV_TEST: 'scoped' }, () =>
-        spawnPipe({
-          command: process.execPath,
-          args: ['-e', 'process.stdout.write(process.env.SPLITBRIEF_SCOPED_ENV_TEST ?? "missing")'],
-          onStdout: (chunk) => {
-            output += chunk;
-          },
-          onStderr: () => {},
-          onClose: () => undefined,
-        }),
-      );
-
-      expect(output).toBe('scoped');
+      await spawnPipe({
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write(process.env.SPLITBRIEF_SCOPED_ENV_TEST ?? "missing")'],
+        ...(env !== undefined && { env }),
+        onStdout: (chunk) => {
+          output += chunk;
+        },
+        onStderr: () => {},
+        onClose: () => undefined,
+      });
+      return output;
+    };
+    try {
+      expect(await readChildValue({ SPLITBRIEF_SCOPED_ENV_TEST: 'explicit' })).toBe('explicit');
+      // A spawn that declares no environment inherits this process, never an
+      // environment a surrounding async scope happens to have installed.
+      expect(await readChildValue()).toBe('missing');
       expect(process.env.SPLITBRIEF_SCOPED_ENV_TEST).toBeUndefined();
     } finally {
       if (original !== undefined) process.env.SPLITBRIEF_SCOPED_ENV_TEST = original;

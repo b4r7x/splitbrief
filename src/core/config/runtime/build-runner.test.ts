@@ -415,15 +415,15 @@ describe('buildRunnerConfig', () => {
       expect(result).toEqual({ kind: 'cli', tool: 'codex' });
     });
 
-    it('rejects the auto sentinel instead of silently substituting model absence', () => {
-      expect(() =>
-        buildRunnerConfig('implementer', {
-          kind: 'cli',
-          tool: 'copilot',
-          model: 'auto',
-          existing: source,
-        }),
-      ).toThrow(/auto.*not a model ID/);
+    it('carries the auto sentinel to a CLI target without any source state', () => {
+      const result = buildRunnerConfig('implementer', {
+        kind: 'cli',
+        tool: 'copilot',
+        model: 'auto',
+        existing: source,
+      });
+
+      expect(result).toEqual({ kind: 'cli', tool: 'copilot', model: 'auto' });
     });
 
     it('initializes a hosted target from its destination descriptor', () => {

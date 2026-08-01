@@ -1,15 +1,20 @@
-import { createHash } from 'node:crypto';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
+import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import { validateCliArgs } from './validate-args.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
 import type { ParsedLine } from '../types.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 const OPENCODE_ID = 'opencode' as const;
 const OPENCODE_COMMAND = 'opencode' as const;
-const PROMPT_PLACEHOLDER = '<PROMPT>' as const;
-const OPENCODE_PROMPT_TRANSPORT = Object.freeze({ kind: 'argv', maxBytes: 120_000 } as const);
+const OPENCODE_PROMPT_TRANSPORT = Object.freeze({
+  kind: 'argv',
+  maxBytes: 120_000,
+  placement: 'positional',
+} as const);
 const OPENCODE_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 const OPENCODE_PROTECTED_FLAGS = new Set([
@@ -21,48 +26,17 @@ const OPENCODE_PROTECTED_FLAGS = new Set([
   'run',
 ]);
 
+type OpenCodePlannerBuildInput = Parameters<CliPlannerAdapter<'opencode'>['buildArgs']>[0];
+type OpenCodeImplementerBuildInput = Parameters<CliImplementerAdapter<'opencode'>['buildArgs']>[0];
 type OpenCodeTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
-function promptPlaceholderConflict(value: string): boolean {
-  return value.includes(PROMPT_PLACEHOLDER) || /^<[^>]+>$/.test(value) || /\{prompt\}/i.test(value);
-}
-
-function protectedFlag(value: string): string | null {
-  if (OPENCODE_PROTECTED_FLAGS.has(value)) return value;
-  if (!value.startsWith('-')) return null;
-  const flag = value.split('=', 1)[0] ?? value;
-  return OPENCODE_PROTECTED_FLAGS.has(flag) ? flag : null;
-}
-
-function validateArgs(
-  invocationArgs: readonly string[],
-  baseArgs: readonly string[] | null,
-): Readonly<{ valid: true }> | Readonly<{ valid: false; conflicts: readonly string[] }> {
-  if (baseArgs === null) return { valid: false, conflicts: ['adapter-build-order'] };
-
-  const conflicts: string[] = [];
-  if (
-    invocationArgs.length < baseArgs.length ||
-    baseArgs.some((arg, index) => invocationArgs[index] !== arg)
-  ) {
-    conflicts.push('argument-order');
-  }
-
-  const promptCount = invocationArgs.filter((arg) => arg === PROMPT_PLACEHOLDER).length;
-  if (promptCount !== 1) conflicts.push('prompt-transport');
-  if (invocationArgs.some((arg) => arg !== PROMPT_PLACEHOLDER && promptPlaceholderConflict(arg))) {
-    conflicts.push('prompt-transport');
-  }
-
-  for (const arg of invocationArgs.slice(baseArgs.length)) {
-    const flag = protectedFlag(arg);
-    if (flag) conflicts.push(flag);
-  }
-
-  const uniqueConflicts = [...new Set(conflicts)];
-  return uniqueConflicts.length === 0
-    ? { valid: true }
-    : { valid: false, conflicts: uniqueConflicts };
+function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+  return validateCliArgs({
+    invocationArgs,
+    baseArgs,
+    protectedFlags: OPENCODE_PROTECTED_FLAGS,
+    promptTransport: 'argv',
+  });
 }
 
 function toProtocolEvents(parsed: ParsedLine): readonly CliProtocolEvent[] {
@@ -175,20 +149,30 @@ function createProbe() {
   } as const;
 }
 
+function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
+  const args = ['run'];
+  if (input.model !== undefined) args.push('--model', input.model);
+  args.push('--format', 'json', '--agent', 'plan', input.prompt);
+  return args;
+}
+
+function implementerBaseArgs(input: OpenCodeImplementerBuildInput): string[] {
+  const args = ['run'];
+  if (input.model !== undefined) args.push('--model', input.model);
+  args.push('--format', 'json', input.prompt);
+  return args;
+}
+
 function createPlannerAdapter(): CliPlannerAdapter<'opencode'> {
-  let baseArgs: readonly string[] | null = null;
   return {
     descriptor: CLI_TOOL_CATALOG.opencode,
     role: 'planner',
+    supportsSessionResume: false,
+    supportsEffort: false,
     promptTransport: OPENCODE_PROMPT_TRANSPORT,
-    buildArgs: (input) => {
-      const args = ['run'];
-      if (input.model !== undefined) args.push('--model', input.model);
-      args.push('--format', 'json', '--agent', 'plan', input.prompt);
-      baseArgs = args;
-      return [...args, ...input.configuredArgs];
-    },
-    validateArgs: (invocationArgs) => validateArgs(invocationArgs, baseArgs),
+    baseArgs: plannerBaseArgs,
+    buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
+    validateArgs,
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: opencodeProtocolEvents,
@@ -198,19 +182,13 @@ function createPlannerAdapter(): CliPlannerAdapter<'opencode'> {
 }
 
 function createImplementerAdapter(): CliImplementerAdapter<'opencode'> {
-  let baseArgs: readonly string[] | null = null;
   return {
     descriptor: CLI_TOOL_CATALOG.opencode,
     role: 'implementer',
     promptTransport: OPENCODE_PROMPT_TRANSPORT,
-    buildArgs: (input) => {
-      const args = ['run'];
-      if (input.model !== undefined) args.push('--model', input.model);
-      args.push('--format', 'json', input.prompt);
-      baseArgs = args;
-      return [...args, ...input.configuredArgs];
-    },
-    validateArgs: (invocationArgs) => validateArgs(invocationArgs, baseArgs),
+    baseArgs: implementerBaseArgs,
+    buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
+    validateArgs,
     environment: {},
     outputContract: { kind: 'text-exit', successfulExitCodes: [0] },
     parse: opencodeProtocolEvents,
@@ -242,21 +220,6 @@ export type OpenCodeCliConformanceCandidate = Readonly<{
   adapter: CliPlannerAdapter<'opencode'> | CliImplementerAdapter<'opencode'>;
 }>;
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (isRecord(value)) {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
-
-function contractHash(contract: RawOpenCodeCliContract): string {
-  return createHash('sha256').update(canonicalJson(contract), 'utf8').digest('hex');
-}
-
 function rawContract(role: 'planner' | 'implementer'): RawOpenCodeCliContract {
   return {
     id: OPENCODE_ID,
@@ -266,8 +229,8 @@ function rawContract(role: 'planner' | 'implementer'): RawOpenCodeCliContract {
     auth: { kind: 'env-or-native', env: [] },
     rawInvocation:
       role === 'planner'
-        ? ['run', '--format', 'json', '--agent', 'plan', PROMPT_PLACEHOLDER]
-        : ['run', '--format', 'json', PROMPT_PLACEHOLDER],
+        ? ['run', '--format', 'json', '--agent', 'plan', CLI_PROMPT_SENTINEL]
+        : ['run', '--format', 'json', CLI_PROMPT_SENTINEL],
     promptTransport: 'argv',
     expectedRawTerminal: 'process-exit',
     asOf: '2026-07-31',
@@ -283,14 +246,14 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly OpenCodeCliConformanceCandidat
       id: OPENCODE_ID,
       role: 'planner',
       rawContract: plannerRawContract,
-      contractSha256: contractHash(plannerRawContract),
+      contractSha256: contractSha256(plannerRawContract),
       adapter: opencodePlannerAdapter,
     }),
     Object.freeze({
       id: OPENCODE_ID,
       role: 'implementer',
       rawContract: implementerRawContract,
-      contractSha256: contractHash(implementerRawContract),
+      contractSha256: contractSha256(implementerRawContract),
       adapter: opencodeImplementerAdapter,
     }),
   ],
@@ -304,7 +267,7 @@ export function opencodePromptArgs(opts: {
   const configuredArgs = opts.configuredArgs ?? [];
   if (opts.role === 'planner') {
     return opencodePlannerAdapter.buildArgs({
-      prompt: PROMPT_PLACEHOLDER,
+      prompt: CLI_PROMPT_SENTINEL,
       model: opts.model,
       projectDir: '',
       configuredArgs,
@@ -314,7 +277,7 @@ export function opencodePromptArgs(opts: {
     });
   }
   return opencodeImplementerAdapter.buildArgs({
-    prompt: PROMPT_PLACEHOLDER,
+    prompt: CLI_PROMPT_SENTINEL,
     model: opts.model,
     projectDir: '',
     configuredArgs,

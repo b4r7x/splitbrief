@@ -120,7 +120,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         workflow: {
           mode: 'standard',
           approve: 'none',
-          commitStrategy: 'none',
           maxRetries: 1,
           persistTranscript: true,
         },
@@ -255,7 +254,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         workflow: {
           mode: 'standard',
           approve: 'none',
-          commitStrategy: 'none',
           maxRetries: 1,
           persistTranscript: true,
         },

@@ -14,6 +14,8 @@ export interface TaskPromptEstimateOptions {
   context: ProjectContext;
   contextLength?: number | undefined;
   languageContext?: LanguageContext | undefined;
+  /** Write mode of the implementer the estimate is for; picks the prompt and preamble it will actually send. */
+  writesFiles?: ImplementerWriteMode | undefined;
 }
 
 export interface ContextFitOptions {

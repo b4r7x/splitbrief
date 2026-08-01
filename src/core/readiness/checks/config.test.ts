@@ -4,15 +4,11 @@ import type { ConfigLoaderDiagnostic } from '../../config/load/io.js';
 import { buildConfigChecks } from './config.js';
 
 describe('buildConfigChecks', () => {
-  it('sets fix-config for config-migration loader diagnostics', () => {
+  it('surfaces loader and validation warnings without a next action', () => {
     const checks = buildConfigChecks({
       state: 'loaded',
       path: '/tmp/.splitbrief/config.yaml',
       warnings: [
-        {
-          source: 'loader',
-          diagnostic: { kind: 'config-migration', code: 'deprecated-v2' },
-        },
         {
           source: 'loader',
           diagnostic: {
@@ -24,9 +20,6 @@ describe('buildConfigChecks', () => {
       ],
     });
 
-    const migration = checks.find(
-      (check) => check.id === 'config.warning' && check.summary.includes('deprecated'),
-    );
     const permissions = checks.find(
       (check) => check.id === 'config.warning' && check.summary.includes('permissive'),
     );
@@ -34,16 +27,38 @@ describe('buildConfigChecks', () => {
       (check) => check.id === 'config.warning' && check.summary.includes('unknown model'),
     );
 
-    expect(migration?.nextAction).toBe('fix-config');
-    expect(migration?.fix).toContain('reconfigure');
     expect(permissions?.nextAction).toBeUndefined();
     expect(validation?.nextAction).toBeUndefined();
   });
 
-  it('does not offer a config rewrite for a validation warning with migration wording', () => {
+  it('publishes the loader diagnostic state on an invalid config', () => {
+    const [check] = buildConfigChecks({
+      state: 'invalid',
+      path: '/tmp/.splitbrief/config.yaml',
+      warnings: [],
+      error: 'implementer.apiBase: Invalid apiBase: must use http or https',
+      diagnosticState: 'endpoint-invalid',
+    });
+
+    expect(check?.id).toBe('config.invalid');
+    expect(check?.diagnosticState).toBe('endpoint-invalid');
+  });
+
+  it('publishes no diagnostic state when the loader reports no known failure family', () => {
+    const [check] = buildConfigChecks({
+      state: 'invalid',
+      path: '/tmp/.splitbrief/config.yaml',
+      warnings: [],
+      error: 'planner.model: Required',
+    });
+
+    expect(check?.diagnosticState).toBeUndefined();
+  });
+
+  it('does not offer a config rewrite for a validation warning that repeats a loader message', () => {
     const diagnostic = {
-      kind: 'config-migration',
-      code: 'deprecated-v2',
+      kind: 'config-file-permissions',
+      path: '/tmp/.splitbrief/config.yaml',
     } satisfies ConfigLoaderDiagnostic;
     const message = formatConfigLoaderDiagnostic(diagnostic);
 

@@ -1,4 +1,9 @@
 import { error } from '../../utils/error.js';
+import { includes, isRecord } from '../../utils/type-guards.js';
+import {
+  READINESS_DIAGNOSTIC_STATE_IDS,
+  type ReadinessDiagnosticStateId,
+} from '../schemas/readiness.js';
 
 type Role = 'planner' | 'implementer';
 
@@ -47,8 +52,11 @@ export const configError = {
       `Config file ${path} exists but could not be read — check its permissions or delete it to use defaults.`,
       { path },
     ),
-  validationFailed: (path: string, issues: string[]) =>
-    error('config-validation-failed', issues.join('\n'), { path, issues }),
+  validationFailed: (
+    path: string,
+    issues: string[],
+    diagnosticStates: readonly ReadinessDiagnosticStateId[] = [],
+  ) => error('config-validation-failed', issues.join('\n'), { path, issues, diagnosticStates }),
   loadNotCalled: (operation: string) =>
     error('config-load-not-called', `configStore.load must be called before ${operation}`, {
       operation,
@@ -60,7 +68,7 @@ export const configError = {
   unsupportedVersion: (version: unknown) =>
     error(
       'config-unsupported-version',
-      `Unsupported config version: ${String(version)}. Supported: 1 (migrated), 2 (deprecated), 3.`,
+      `Unsupported config version: ${String(version)}. Supported: 3. Run \`splitbrief init --reconfigure\` to write a current config.`,
       { version },
     ),
   runnerKindIndeterminate: (role: Role, opts: unknown) =>
@@ -109,3 +117,12 @@ export const configError = {
       { defaultName },
     ),
 } as const;
+
+export function configErrorDiagnosticState(err: unknown): ReadinessDiagnosticStateId | undefined {
+  if (!isRecord(err) || !isRecord(err['data'])) return undefined;
+  const states = err['data']['diagnosticStates'];
+  if (!Array.isArray(states)) return undefined;
+  return states.find((state): state is ReadinessDiagnosticStateId =>
+    includes(READINESS_DIAGNOSTIC_STATE_IDS, state),
+  );
+}

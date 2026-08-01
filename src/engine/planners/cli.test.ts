@@ -18,7 +18,7 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
 import { SANDBOX_DIR, TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
-import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../calls/output-limit.js';
+import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerFactoryOptions } from './types.js';
 import type { CliStartGate } from '../runners/start-gate.js';
@@ -84,16 +84,32 @@ function createCliPlanner(
   });
 }
 
+const CODEX_TURN_COMPLETED = JSON.stringify({ type: 'turn.completed' });
+
+function codexLines(lines: string[]): string[] {
+  const hasTerminal = lines.some((line) => {
+    try {
+      return (JSON.parse(line) as { type?: string }).type === 'turn.completed';
+    } catch {
+      return false;
+    }
+  });
+  return hasTerminal ? lines : [...lines, CODEX_TURN_COMPLETED];
+}
+
 function installShim(command: string, bodyLines: string[]): void {
-  writeCommandShim({ dir: shimDir, command, lines: bodyLines });
+  writeCommandShim({
+    dir: shimDir,
+    command,
+    lines: command === 'codex' ? codexLines(bodyLines) : bodyLines,
+  });
 }
 
 function installRecordingShim(command: string, bodyLines: string[]): { argvFile: string } {
   const argvFile = join(shimDir, 'argv.txt');
   const shimPath = join(shimDir, command);
-  const body = bodyLines
-    .map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`)
-    .join('\n');
+  const lines = command === 'codex' ? codexLines(bodyLines) : bodyLines;
+  const body = lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`).join('\n');
   writeFileSync(shimPath, `#!/bin/bash\nprintf '%s\\n' "$@" > '${argvFile}'\n${body}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
   return { argvFile };
@@ -134,6 +150,7 @@ describe('createCliPlanner', () => {
         '#!/bin/bash',
         `printf '%s|%s|%s' "$OPENAI_API_KEY" "$ANTHROPIC_API_KEY" "$HOME" > '${envFile}'`,
         `printf '%s\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: 'done' } })}'`,
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
       ].join('\n'),
       'utf8',
     );
@@ -228,6 +245,7 @@ Create the fallback file.
         '  exit 1',
         'fi',
         `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: tasksMarkdown } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -287,10 +305,12 @@ Create the mismatch fallback file.
         'if printf \'%s\\n\' "$@" | grep -q "^sess-old$"; then',
         `  printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'sess-new-unexpected' }).replace(/'/g, "'\\''")}'`,
         `  printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: tasksMarkdown } }).replace(/'/g, "'\\''")}'`,
+        `  printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
         '  exit 0',
         'fi',
         `printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'sess-fresh' }).replace(/'/g, "'\\''")}'`,
         `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: tasksMarkdown } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -360,7 +380,8 @@ Create the mismatch fallback file.
       "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
       `writeFileSync(${JSON.stringify(pidFile)}, JSON.stringify([process.pid, child.pid]));`,
       "process.stdout.write('Aider response text\\n');",
-      `setTimeout(() => process.stdout.write('x'.repeat(${RUNNER_CALL_OUTPUT_MAX_BYTES + 2})), 25);`,
+      "const frame = 'x'.repeat(999_999) + '\\n';",
+      `setTimeout(() => { for (let i = 0; i < ${Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 2}; i += 1) process.stdout.write(frame); }, 25);`,
       'setInterval(() => {}, 60_000);',
     ].join('\n');
     writeFileSync(shimPath, `${script}\n`, 'utf8');
@@ -433,6 +454,7 @@ Create the CLI-written file.
         tasksMarkdown,
         'EOF',
         `printf '%s\\n' '${JSON.stringify({ type: 'item.completed', item: { type: 'agent_message', text: `Wrote [${TASKS_FILE}](${artifactPath}).` } }).replace(/'/g, "'\\''")}'`,
+        `printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
       'utf8',
@@ -527,6 +549,53 @@ Outside task content.
     expect(argv.slice(-2)).toEqual(['--reasoning', 'high']);
   });
 
+  it.each([
+    ['auto', undefined],
+    ['AUTO', undefined],
+    ['  auto  ', undefined],
+    [undefined, undefined],
+    ['gpt-5.4', 'gpt-5.4'],
+  ])('spawns codex with model %j resolved to %j', async (model, expected) => {
+    const { argvFile } = installRecordingShim('codex', [
+      JSON.stringify({
+        type: 'item.completed',
+        item: { type: 'agent_message', text: 'response' },
+      }),
+    ]);
+
+    const planner = createCliPlanner(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'codex', ...(model === undefined ? {} : { model }) },
+      }),
+    );
+
+    await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+    const argv = readArgv(argvFile);
+    if (expected === undefined) {
+      expect(argv).not.toContain('--model');
+    } else {
+      expect(argv.slice(argv.indexOf('--model'), argv.indexOf('--model') + 2)).toEqual([
+        '--model',
+        expected,
+      ]);
+    }
+  });
+
+  it('keeps the legacy Claude Code "default" alias from reaching argv as a model id', async () => {
+    const { argvFile } = installRecordingShim('claude', [
+      JSON.stringify({ type: 'result', result: 'response' }),
+    ]);
+
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'default' } }),
+    );
+
+    await planner.review('prompt', projectDir, { onOutput: vi.fn() });
+
+    expect(readArgv(argvFile)).not.toContain('--model');
+  });
+
   it('uses cfg.outputFormat to select the parser over the tool default', async () => {
     // Codex defaults to JSONL; opencode-format lines would be opaque to it.
     // Forcing outputFormat: 'text' makes the planner read raw lines verbatim.
@@ -566,12 +635,12 @@ Outside task content.
     writeCommandShim({
       dir: shimDir,
       command: 'codex',
-      lines: [
+      lines: codexLines([
         JSON.stringify({
           type: 'item.completed',
           item: { type: 'agent_message', text: 'slow response' },
         }),
-      ],
+      ]),
       sleepSeconds: 0.15,
     });
 

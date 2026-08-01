@@ -53,6 +53,12 @@ const SHORTCUTS: ShortcutInfo[] = [
     screens: ['workflow'],
   },
   {
+    id: 'cost-drilldown',
+    key: 'ctrl+g',
+    description: 'Cost drilldown',
+    screens: ['workflow'],
+  },
+  {
     id: 'scroll',
     key: 'shift+↑/↓, pgup/pgdn, home/end',
     description: 'Scroll; PageUp/PageDown; /scroll top|bottom',

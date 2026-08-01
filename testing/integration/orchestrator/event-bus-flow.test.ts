@@ -40,7 +40,7 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
         temperature: 0,
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', commitStrategy: 'none', persistTranscript: false, maxRetries: 1 },
+      workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
     });
 
     await runWorkflow({

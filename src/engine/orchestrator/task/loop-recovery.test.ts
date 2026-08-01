@@ -41,7 +41,7 @@ function setupSessionOnly(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
+const defaultWorkflow = { maxRetries: 2 };
 
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('task with failed dependency creates dependency-blocked recovery instead of auto-skipping', async () => {
@@ -311,7 +311,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
             provider: 'deepseek',
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
           },
           workflow: { ...defaultWorkflow, maxBudget: 1.5, budgetPauseThreshold: 0.25 },
         }),
@@ -352,7 +352,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
             provider: 'deepseek',
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
           },
           workflow: { ...defaultWorkflow, maxBudget: 1.5, budgetPauseThreshold: 0.25 },
         }),
@@ -390,7 +390,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
             provider: 'deepseek',
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
           },
           workflow: { ...defaultWorkflow, maxBudget: 0.1 },
         }),

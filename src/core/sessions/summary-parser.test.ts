@@ -3,8 +3,8 @@ import { parsePersistedSummary } from './summary-parser.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 
 describe('parsePersistedSummary', () => {
-  it('accepts legacy summaries whose costBreakdown omits cache fields', () => {
-    const legacy = makeSummary({
+  it('accepts summaries whose costBreakdown omits the optional cache fields', () => {
+    const withoutCacheFields = makeSummary({
       costBreakdown: {
         hypotheticalCost: 1,
         actualPlannerCost: 0.5,
@@ -16,7 +16,7 @@ describe('parsePersistedSummary', () => {
       },
     });
 
-    const parsed = parsePersistedSummary(legacy);
+    const parsed = parsePersistedSummary(withoutCacheFields);
     expect(parsed.status).toBe('ok');
     if (parsed.status !== 'ok') return;
     expect(parsed.summary.costBreakdown?.cacheReadSavings).toBeUndefined();

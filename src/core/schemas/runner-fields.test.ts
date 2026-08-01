@@ -221,16 +221,71 @@ describe('createRunnerConfigSchema', () => {
       ).toBe(false);
     }
 
-    expect(createCliModelPolicySchema('auto-only').safeParse({ model: 'auto' }).success).toBe(
-      false,
+    expect(createCliModelPolicySchema('auto-only').safeParse({ model: 'auto' }).success).toBe(true);
+    expect(createCliModelPolicySchema('backend-default').safeParse({ model: 'auto' }).success).toBe(
+      true,
     );
+    expect(createCliModelPolicySchema('required').safeParse({ model: 'auto' }).success).toBe(false);
     expect(
       createRunnerConfigSchema(GenerationCommonFields).safeParse({
         kind: 'cli',
         tool: 'copilot',
         model: 'auto',
       }).success,
-    ).toBe(false);
+    ).toBe(true);
+  });
+
+  it('accepts the automatic sentinel only where it can resolve', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+
+    expect(
+      schema.safeParse({
+        kind: 'api',
+        provider: 'anthropic',
+        service: 'anthropic',
+        offering: 'payg',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'auto',
+      }).success,
+    ).toBe(true);
+
+    const unresolvable = schema.safeParse({
+      kind: 'api',
+      provider: 'my-gateway',
+      service: 'my-gateway',
+      offering: 'payg',
+      apiBase: 'https://gateway.internal',
+      model: 'auto',
+    });
+    expect(unresolvable.success).toBe(false);
+    expect(unresolvable.error?.issues[0]?.path).toEqual(['model']);
+    expect(unresolvable.error?.issues[0]?.message).toContain('model "auto"');
+
+    const unresolvablePlanner = createPlannerConfigSchema(GenerationCommonFields).safeParse({
+      kind: 'api',
+      provider: 'my-gateway',
+      service: 'my-gateway',
+      offering: 'payg',
+      apiBase: 'https://gateway.internal',
+    });
+    expect(unresolvablePlanner.success).toBe(false);
+    expect(unresolvablePlanner.error?.issues[0]?.path).toEqual(['model']);
+
+    const omittedPlannerModel = PlannerConfigSchema.safeParse({
+      kind: 'api',
+      provider: 'my-gateway',
+      service: 'my-gateway',
+      offering: 'payg',
+      apiBase: 'https://gateway.internal',
+    });
+    expect(omittedPlannerModel.success).toBe(false);
+    expect(omittedPlannerModel.error?.issues[0]?.path).toEqual(['model']);
+    expect(omittedPlannerModel.error?.issues[0]?.message).toContain('an omitted model');
+    expect(omittedPlannerModel.error?.issues[0]?.message).not.toContain('"auto"');
+
+    const blank = schema.safeParse({ kind: 'cli', tool: 'copilot', model: '   ' });
+    expect(blank.success).toBe(false);
+    expect(blank.error?.issues[0]?.path).toEqual(['model']);
   });
 
   it('rejects the planner-only capabilities field on shell and agent runners', () => {

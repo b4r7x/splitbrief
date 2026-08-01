@@ -150,7 +150,7 @@ describe('runSingleTask — completion and abort', () => {
         config: makeConfig({
           hooks,
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -224,7 +224,7 @@ describe('runSingleTask — completion and abort', () => {
         signal: controller.signal,
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -281,7 +281,7 @@ describe('runSingleTask — completion and abort', () => {
         signal: controller.signal,
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -340,7 +340,7 @@ describe('runSingleTask — completion and abort', () => {
             tiers: { write_in_scope: 'confirm' },
           },
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
       }),
       task,

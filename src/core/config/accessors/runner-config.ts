@@ -1,4 +1,5 @@
 import type { Config } from '../../schemas/config.js';
+import { resolveCliModel } from '../../providers/automatic-model.js';
 import { resolveAutoModel } from '../../providers/model-selection.js';
 import { getProviderDisplayName } from '../../providers/catalog.js';
 import { isPlannerToolId, type PlannerToolId } from '../../schemas/enums.js';
@@ -54,7 +55,9 @@ export function getRunnerApiKey(runner: RunnerConfig): string | undefined {
 
 export function getRunnerModelName(runner: RunnerConfig): string | undefined {
   if ('model' in runner && typeof runner.model === 'string') {
-    return resolveAutoModel(runner.model, getRunnerDisplayName(runner));
+    return runner.kind === 'cli'
+      ? resolveCliModel(runner.model, runner.tool)
+      : resolveAutoModel(runner.model, getRunnerDisplayName(runner));
   }
   return undefined;
 }

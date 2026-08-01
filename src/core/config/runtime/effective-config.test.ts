@@ -122,8 +122,8 @@ describe('resolveEffectiveConfig', () => {
 
   it('deduplicates colliding messages only when formatting for output', () => {
     const diagnostic = {
-      kind: 'config-migration',
-      code: 'deprecated-v2',
+      kind: 'config-file-permissions',
+      path: '/tmp/.splitbrief/config.yaml',
     } satisfies ConfigLoaderDiagnostic;
     const message = formatConfigLoaderDiagnostic(diagnostic);
 

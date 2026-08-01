@@ -49,12 +49,16 @@ const adapterMembers = {
 const plannerAdapter = {
   ...adapterMembers,
   role: 'planner',
+  supportsSessionResume: false,
+  supportsEffort: false,
+  baseArgs: ({ prompt }) => ['plan', prompt],
   buildArgs: ({ prompt }) => ['plan', prompt],
 } satisfies CliPlannerAdapter<'codex'>;
 
 const implementerAdapter = {
   ...adapterMembers,
   role: 'implementer',
+  baseArgs: ({ prompt }) => ['implement', prompt],
   buildArgs: ({ prompt }) => ['implement', prompt],
 } satisfies CliImplementerAdapter<'codex'>;
 
@@ -63,20 +67,17 @@ const wrongDescriptorAdapter = {
   descriptor: CLI_TOOL_CATALOG.aider,
 };
 
-// @ts-expect-error The adapter's tool parameter must match its catalog descriptor.
-const mismatchedDescriptor: CliPlannerAdapter<'codex'> = wrongDescriptorAdapter;
-
 describe('CLI adapter contract', () => {
   it('models stdin, bounded lossless argv, and private-file prompt transports', () => {
     const transports = [
       { kind: 'stdin' },
-      { kind: 'argv', maxBytes: 120_000 },
+      { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
       { kind: 'file', mode: 0o600 },
     ] as const satisfies readonly CliPromptTransport[];
 
     expect(transports).toEqual([
       { kind: 'stdin' },
-      { kind: 'argv', maxBytes: 120_000 },
+      { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
       { kind: 'file', mode: 0o600 },
     ]);
   });
@@ -142,6 +143,6 @@ describe('CLI adapter contract', () => {
     expect('probe' in implementerWithoutProbe).toBe(false);
     expect('promptTransport' in plannerWithoutTransport).toBe(false);
     expect('descriptor' in implementerWithoutDescriptor).toBe(false);
-    expect(mismatchedDescriptor.descriptor.id).toBe('aider');
+    expect(wrongDescriptorAdapter.descriptor.id).toBe('aider');
   });
 });

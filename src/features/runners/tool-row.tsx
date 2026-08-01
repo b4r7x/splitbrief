@@ -1,9 +1,9 @@
 import { ListRow } from '../../components/list-row.js';
-import { isProviderLocal } from '../../core/providers/catalog.js';
 import { formatModelName } from '../../core/model-display.js';
 import { formatContextLength } from '../../core/formatting.js';
-import type { PickerOption, ModelOption } from './model-catalog.js';
-import { isCustomModel } from './model-catalog.js';
+import type { PickerOption } from './model-catalog/options.js';
+import { isCustomModel, type ModelOption } from './model-catalog/recency.js';
+import { formatPickerStatusLabel } from './picker-format.js';
 
 interface ToolRowParams {
   item: PickerOption;
@@ -28,8 +28,6 @@ export function renderToolRow({
   currentCommandKind,
 }: ToolRowParams) {
   const isCommandBased = item.kind === 'shell' || item.kind === 'agent';
-  const dimmed = !item.available && !isCommandBased && item.kind !== 'agent-sdk';
-  const isLocal = isProviderLocal(item.id);
   const showConfiguredCommand =
     isCommandBased && currentCommandKind === item.kind && currentCommand;
   const label = isCommandBased
@@ -39,8 +37,9 @@ export function renderToolRow({
         ? COMMAND_LABELS.shell
         : COMMAND_LABELS.agent
     : item.displayName;
-  const status = dimmed ? (isLocal ? 'No models' : 'Unavailable') : undefined;
-  const metadata = status ?? (!isCommandBased ? (item.version ?? undefined) : undefined);
+  const statusLabel = formatPickerStatusLabel(item.status);
+  const metadata =
+    statusLabel ?? (!isCommandBased && item.available && item.version ? item.version : undefined);
 
   return (
     <ListRow
@@ -48,7 +47,7 @@ export function renderToolRow({
       state={isCursor ? 'active' : 'default'}
       defaultLead="dot"
       metadata={metadata}
-      selected={isSelected && !dimmed}
+      selected={isSelected || !!item.isCurrent}
       width={maxWidth}
     />
   );
@@ -64,10 +63,8 @@ interface ModelRowParams {
 export function renderModelRow({ item, isCursor, maxWidth, currentModel }: ModelRowParams) {
   const isCfgMatch = item.id === currentModel;
   const modelName = formatModelName(item.id);
-  const isAutoModel = item.isDefault && item.id === 'auto';
-  const contextStr =
-    !isAutoModel && item.contextLength ? formatContextLength(item.contextLength) : '';
-  const badge = isCustomModel(item) ? 'Custom' : isAutoModel ? 'Default' : '';
+  const contextStr = item.contextLength ? formatContextLength(item.contextLength) : '';
+  const badge = isCustomModel(item) ? 'Custom' : item.isDefault ? 'Default' : '';
   const metadata = [contextStr, badge].filter(Boolean).join(' ') || undefined;
 
   return (

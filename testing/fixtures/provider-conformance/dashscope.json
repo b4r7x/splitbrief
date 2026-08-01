@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "dashscope",
+    "role": "implementer",
+    "contractSha256": "a9bf7005e02b539b5d759f5d60c6b58290fbeace73f3b7c7f60e813bde8a1be6",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing configured provider endpoint"
+  },
+  "productionConformance": {
+    "candidateId": "dashscope",
+    "role": "implementer",
+    "contractSha256": "a9bf7005e02b539b5d759f5d60c6b58290fbeace73f3b7c7f60e813bde8a1be6",
+    "stdout": "",
+    "stderr": "missing configured provider endpoint"
+  },
+  "verdict": "OMIT"
+}

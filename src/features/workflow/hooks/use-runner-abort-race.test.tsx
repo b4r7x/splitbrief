@@ -53,9 +53,7 @@ function Harness({
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
     workflow: {
       mode: 'quick',
-      commitStrategy: 'none',
-      autoApproveSpec: true,
-      autoApprovePlan: true,
+      approve: 'none',
     },
   });
   const runner = useWorkflowRunner({

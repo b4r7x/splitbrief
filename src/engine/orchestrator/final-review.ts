@@ -6,6 +6,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { Config } from '../../core/schemas/config.js';
 import { readSpecFileOrEmpty, type SpecMetadata } from '../../core/paths-io.js';
 import { SPEC_FILE, REVIEW_FILE, TASKS_FILE } from '../../core/paths.js';
+import { error } from '../../utils/error.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
@@ -33,6 +34,14 @@ import { composeSteeredPrompt } from '../implementers/types.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
 
 export type FinalReviewResult = { summary: Summary; state: WorkflowState };
+
+export const finalReviewError = {
+  missingRunBaseline: () =>
+    error(
+      'final-review-missing-run-baseline',
+      'Session state carries no run-start baseline, so the run diff cannot be bounded. Start a new run.',
+    ),
+} as const;
 
 export async function runFinalReviewPhase(
   opts: {
@@ -107,7 +116,9 @@ export async function runFinalReviewPhase(
 
   let reviewStatus: 'written' | 'failed' = 'written';
   try {
-    const universe = await resolveRunUniverse(projectDir, state.changedFilesBaseline);
+    const baseline = state.changedFilesBaseline;
+    if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
+    const universe = await resolveRunUniverse(projectDir, baseline);
     const fullDiff = universe.fullDiff;
     let promptDiff = fullDiff;
     if (promptDiff.length > MAX_DIFF_CHARS) {
@@ -129,7 +140,7 @@ export async function runFinalReviewPhase(
         diff: fullDiff,
         ledger,
         briefHash: hashTaskBrief(state.tasks),
-        preRunChangedFiles: state.changedFilesBaseline?.runStartChangedFiles ?? null,
+        preRunChangedFiles: baseline.runStartChangedFiles,
       });
       writeDriftReport({ projectDir, sessionId }, driftReport);
       publishDriftReport(bus, state.phase, driftReport);

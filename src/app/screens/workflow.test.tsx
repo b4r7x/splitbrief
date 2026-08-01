@@ -294,9 +294,11 @@ describe('WorkflowScreen chrome calibration', () => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('First brief');
     });
 
+    await flushEffects();
     ui.stdin.write('\x1b[B');
     await tick();
     expect(focusStore.get()).toEqual({ region: 'brief', index: 0 });
+    await flushEffects();
     ui.stdin.write('\x1b[B');
     await tick();
     expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });

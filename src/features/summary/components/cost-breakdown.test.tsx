@@ -117,4 +117,120 @@ describe('buildCostBreakdownRows', () => {
 
     ui.unmount();
   });
+
+  it('labels each offering posture from the run metadata instead of a raw amount', () => {
+    const costBreakdown: CostBreakdown = {
+      hypotheticalCost: 4,
+      actualPlannerCost: 0,
+      actualImplementerCost: 0.25,
+      totalActualCost: 0.25,
+      savingsAmount: 3.75,
+      savingsPercentage: 94,
+      localCompletionRate: 0.5,
+      hasPricedUsage: true,
+      hasSavingsEstimate: true,
+      isActualPlannerCostKnown: true,
+      isActualImplementerCostKnown: true,
+      isTotalActualCostKnown: true,
+      isAllPlannerBaselineKnown: true,
+      providerCosts: {
+        'claude-code': { inputTokens: 100, outputTokens: 100, cost: 0 },
+        openai: { inputTokens: 100, outputTokens: 100, cost: 0.25 },
+        groq: { inputTokens: 100, outputTokens: 100, cost: 0 },
+        ollama: { inputTokens: 100, outputTokens: 100, cost: 0 },
+      },
+      providerRunMetadata: {
+        'claude-code': {
+          service: 'claude-code',
+          offering: 'coding-subscription',
+          normalizedEndpoint: '',
+          billing: 'subscription-included',
+          asOf: '2026-07-31',
+        },
+        openai: {
+          service: 'openai',
+          offering: 'payg',
+          normalizedEndpoint: 'https://api.openai.com/v1',
+          billing: 'api-metered',
+          asOf: '2026-07-31',
+        },
+        groq: {
+          service: 'groq',
+          offering: 'free-quota',
+          normalizedEndpoint: 'https://api.groq.com/openai/v1',
+          billing: 'api-metered',
+          asOf: '2026-07-31',
+        },
+        ollama: {
+          service: 'ollama',
+          offering: 'local',
+          normalizedEndpoint: 'http://localhost:11434/v1',
+          billing: 'local',
+          asOf: '2026-07-31',
+        },
+      },
+      offeringPresentations: {
+        'claude-code': {
+          costLabel: 'subscription-included',
+          billingLabel: 'subscription-included',
+        },
+        openai: { costLabel: '$0.25', billingLabel: 'api-metered' },
+        groq: { costLabel: 'variable quota', billingLabel: 'api-metered' },
+        ollama: { costLabel: 'local', billingLabel: 'local' },
+      },
+    };
+
+    const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('subscription-included');
+    expect(frame).toContain('variable quota');
+    expect(frame).toContain('local');
+    expect(frame).toContain('$0.25');
+
+    ui.unmount();
+  });
+
+  it('never presents a subscription-only run as a metered charge', () => {
+    const costBreakdown: CostBreakdown = {
+      hypotheticalCost: 2,
+      actualPlannerCost: 0,
+      actualImplementerCost: 0,
+      totalActualCost: 0,
+      savingsAmount: -0.5,
+      savingsPercentage: -25,
+      localCompletionRate: 1,
+      hasPricedUsage: true,
+      hasSavingsEstimate: true,
+      isActualPlannerCostKnown: true,
+      isActualImplementerCostKnown: true,
+      isTotalActualCostKnown: true,
+      isAllPlannerBaselineKnown: true,
+      providerRunMetadata: {
+        'claude-code': {
+          service: 'claude-code',
+          offering: 'coding-subscription',
+          normalizedEndpoint: '',
+          billing: 'subscription-included',
+          asOf: '2026-07-31',
+        },
+      },
+      offeringPresentations: {
+        'claude-code': {
+          costLabel: 'subscription-included',
+          billingLabel: 'subscription-included',
+        },
+      },
+    };
+
+    const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('subscription-included');
+    expect(frame).not.toContain('Extra $');
+    expect(frame).not.toContain('$0.00');
+    expect(frame).not.toMatch(/\bfree\b/);
+
+    ui.unmount();
+  });
 });

@@ -25,20 +25,28 @@ const EMPTY_SEED: OverlaySeed = () => {};
 
 function seedRunnerCatalog(): void {
   detectionStore.setDetection({
-    planners: [
+    cliTools: [
       {
         tool: 'claude-code',
-        type: 'cli',
-        available: true,
-        version: '2.4.0',
-        description: 'Claude Code CLI',
+        executable: null,
+        trust: 'trusted',
+        installedVersion: '2.4.0',
+        testedVersion: '2.4.0',
+        compatibility: 'compatible',
+        auth: 'authenticated',
+        diagnostic: { state: 'ready', remediation: null },
+        probedAt: 1_786_000_000_000,
       },
       {
         tool: 'codex',
-        type: 'cli',
-        available: true,
-        version: '1.2.0',
-        description: 'Codex CLI',
+        executable: null,
+        trust: 'trusted',
+        installedVersion: '1.2.0',
+        testedVersion: '1.2.0',
+        compatibility: 'compatible',
+        auth: 'authenticated',
+        diagnostic: { state: 'ready', remediation: null },
+        probedAt: 1_786_000_000_000,
       },
     ],
     implementers: [

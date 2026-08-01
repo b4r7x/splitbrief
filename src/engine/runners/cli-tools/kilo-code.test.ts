@@ -34,7 +34,11 @@ describe('Kilo Code role adapters', () => {
 
   it('keeps argv transport, process-exit completion, and five-second probes explicit', () => {
     for (const adapter of [kiloPlannerAdapter, kiloImplementerAdapter]) {
-      expect(adapter.promptTransport).toEqual({ kind: 'argv', maxBytes: 120_000 });
+      expect(adapter.promptTransport).toEqual({
+        kind: 'argv',
+        maxBytes: 120_000,
+        placement: 'positional',
+      });
       expect(adapter.outputContract).toEqual({ kind: 'text-exit', successfulExitCodes: [0] });
       expect(adapter.probe).toEqual({
         version: {
@@ -76,33 +80,33 @@ describe('Kilo Code role adapters', () => {
         configuredArgs: ['--verbose'],
       }),
     ).toEqual(['run', '--model', 'qwen2.5-coder:7b', '--auto', PROMPT, '--verbose']);
-    expect(kiloPlannerAdapter.validateArgs(kiloPromptArgs({ role: 'planner' }))).toEqual({
-      valid: true,
-    });
-    expect(kiloImplementerAdapter.validateArgs(kiloPromptArgs({ role: 'implementer' }))).toEqual({
+    const plannerBase = kiloPromptArgs({ role: 'planner' });
+    const implementerBase = kiloPromptArgs({ role: 'implementer' });
+    expect(kiloPlannerAdapter.validateArgs(plannerBase, plannerBase)).toEqual({ valid: true });
+    expect(kiloImplementerAdapter.validateArgs(implementerBase, implementerBase)).toEqual({
       valid: true,
     });
   });
 
   it('rejects protected flags, reordered args, and alternate prompt placeholders', () => {
-    const args = kiloPromptArgs({ role: 'implementer' });
-    expect(kiloImplementerAdapter.validateArgs([PROMPT, ...args])).toEqual({
+    const base = kiloPromptArgs({ role: 'implementer' });
+    expect(kiloImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...args, '--auto'])).toEqual({
+    expect(kiloImplementerAdapter.validateArgs([...base, '--auto'], base)).toEqual({
       valid: false,
       conflicts: ['--auto'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...args, 'prefix-<PROMPT>'])).toEqual({
+    expect(kiloImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...args, '<OTHER>'])).toEqual({
+    expect(kiloImplementerAdapter.validateArgs([...base, '<OTHER>'], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(kiloImplementerAdapter.validateArgs([...args, PROMPT])).toEqual({
+    expect(kiloImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });

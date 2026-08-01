@@ -280,26 +280,101 @@ The planner reads artifacts from disk (session directory or project root) via `r
 
 The implementer writes files directly (`writesFiles: 'direct'`). Change detection via git diff. Claude Code gets a special path through `runClaudeOneShot()`.
 
-#### Tested CLI version matrix
+#### Canonical CLI runner matrix
 
-Each `CLI_TOOLS` entry in `src/engine/runners/cli-tools.ts` carries a `testedVersion` — the upstream CLI release the flag, subcommand, and JSON-envelope contract was last verified against. These tools ship breaking CLI changes with no compatibility guarantee, so `detectAvailablePlanners` (`src/engine/detection/detect.ts`) probes the installed version via `getVersion()`. When the installed **major** version differs from the tested one, detection still reports the tool as available and includes `compatibility: { kind: 'major-version-mismatch', installedVersion, testedVersion }` on that planner result. It does not print a startup stderr warning for unselected tools.
+Runtime source of truth: `src/core/runners/cli-tool-catalog.ts` (`CLI_TOOL_CATALOG`, `CLI_TOOL_TRUST`). This section is the canonical support matrix for admitted CLI runners. Parity is enforced by `testing/docs/planners-and-implementers.test.ts`.
 
-| `tool` | command | tested version |
-|---|---|---|
-| `claude-code` | `claude` | 2.0.0 |
-| `codex` | `codex` | 0.40.0 |
-| `opencode` | `opencode` | 0.5.0 |
-| `aider` | `aider` | 0.86.0 |
-| `copilot` | `copilot` | 0.3.0 |
-| `kilo-code` | `kilo` | 0.1.0 |
+Each admitted tool carries a `testedVersion` — the upstream CLI release the flag, subcommand, and output contract was last verified against. `detectAvailablePlanners` (`src/engine/detection/detect.ts`) probes the installed version via `getVersion()`. When the installed **major** version differs from the tested one, detection still reports the tool as available and includes `compatibility: { kind: 'major-version-mismatch', installedVersion, testedVersion }` on that planner result. It does not print a startup stderr warning for unselected tools.
 
-When you adjust a tool's `buildArgs` or `parseLine` to track an upstream CLI change, bump that tool's `testedVersion` to the release you verified against and update this table.
+When you adjust a tool's adapter to track an upstream CLI change, bump that tool's `testedVersion` in the catalog and update this matrix.
+
+##### Admitted support summary
+
+| `tool` | command | roles | tested version | evidence as-of | model policy (planner / implementer) | billing |
+|---|---|---|---|---|---|---|
+| `claude-code` | `claude` | planner, implementer | 2.0.0 | 2026-07-31 | optional / optional | subscription-included |
+| `codex` | `codex` | planner, implementer | 0.40.0 | 2026-07-31 | optional / optional | subscription-included |
+| `opencode` | `opencode` | planner, implementer | 0.5.0 | 2026-07-31 | optional / optional | provider-dependent |
+| `aider` | `aider` | planner, implementer | 0.86.0 | 2026-07-31 | optional / optional | provider-dependent |
+| `copilot` | `copilot` | planner, implementer | 0.3.0 | 2026-07-31 | optional / optional | subscription-included |
+| `kilo-code` | `kilo` | planner, implementer | 0.1.0 | 2026-07-31 | optional / optional | provider-dependent |
+
+##### Posture, trust, and auth
+
+| `tool` | direct write (planner / implementer) | shell | network | automatic approval (implementer) | sandbox (planner / implementer) | auth channels | credential env |
+|---|---|---|---|---|---|---|---|
+| `claude-code` | no / yes | yes / yes | yes / yes | `--permission-mode acceptEdits` | none / none | session, api-key | `ANTHROPIC_API_KEY` (api-key channel) |
+| `codex` | no / yes | yes / yes | yes / yes | `--sandbox workspace-write` | mode-dependent / cli-managed | session, api-key | `OPENAI_API_KEY` (api-key channel) |
+| `opencode` | no / yes | yes / yes | yes / yes | — | none / none | provider-dependent | inherited from provider config |
+| `aider` | no / yes | yes / yes | yes / yes | `--yes-always` | none / none | provider-dependent | inherited from provider config |
+| `copilot` | no / yes | yes / yes | yes / yes | `--allow-all` | none / none | session | `GH_TOKEN`, `GITHUB_TOKEN` |
+| `kilo-code` | no / yes | yes / yes | yes / yes | `--auto` | none / none | provider-dependent | inherited from provider config |
+
+Session channels use `host-cli-state` bridging where noted in the catalog. SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
+
+##### Readiness states
+
+Each admitted CLI exposes check ID `runners.cli.<tool>.readiness`. `deriveCliReadiness()` (`src/core/schemas/readiness.ts`) resolves these states in order:
+
+| state | meaning |
+|---|---|
+| `disabled` | Tool is not enabled for selection |
+| `unavailable` | Binary not installed or not on trusted PATH |
+| `untrusted` | Executable identity does not match the trusted fingerprint |
+| `unverified` | Version probe failed or compatibility is unknown |
+| `incompatible` | Installed major version differs from tested version |
+| `unauthenticated` | Required auth channel is not satisfied in the staged environment |
+| `ready` | Binary trusted, version compatible, auth satisfied |
+
+Run `splitbrief doctor` or workflow start readiness to surface remediation copy for each non-ready state.
+
+Only `ready` produces the trusted start gate execution requires. `splitbrief start` therefore refuses to open a session while a configured CLI runner sits in any other state — including `unverified`, which `doctor` reports as a warning — and exits non-zero with that state's remediation.
+
+##### Minimal configuration
+
+```yaml
+version: 3
+planner:
+  kind: cli
+  tool: claude-code
+  model: claude-sonnet-4-20250514 # optional for optional-policy tools
+implementer:
+  kind: cli
+  tool: claude-code
+  model: claude-sonnet-4-20250514
+```
+
+Swap `tool` and `model` for any admitted CLI. Omit `model`, or write `model: auto`, to use the CLI's automatic selection — both spellings pass no `--model` flag, so the tool keeps its own configured model. Tools with `backend-default` or `auto-only` model policy (none in the current admitted set) accept model absence or `auto` and reject an explicit model ID or `customModels` before spawn.
+
+##### Blocked admission candidates (OMIT)
+
+These researched CLIs have **blocked verdicts** — they do not appear in the admitted support table above and have no first-class catalog ID until their admission gate passes.
+
+| candidate | verdict | as-of | evidence | route when gate passes |
+|---|---|---|---|---|
+| `cursor` | OMIT | 2026-07-31 | `.nuke/release-evidence/cursor.json` | implementer-only `cursor-agent`; stream-json terminal contract |
+| `antigravity` | OMIT | 2026-07-31 | `.nuke/release-evidence/antigravity.json` | implementer-only `agy`; conditional consumer route replacing legacy Gemini CLI |
+
+`CURSOR_CLI_ADMISSION_VERDICT` and `ANTIGRAVITY_CLI_ADMISSION_VERDICT` are `OMIT` in `cli-tool-catalog.ts`. Candidate adapter sources must remain absent while the verdict is OMIT.
+
+##### Excluded researched candidates
+
+These candidates have **dated blocked verdicts** — no first-class ID, descriptor, adapter, or picker row.
+
+| candidate | verdict | as-of | reason |
+|---|---|---|---|
+| `kiro` | DEFER | 2026-07-31 | Blocker 1: written Kiro/AWS permission confirming official-CLI orchestration is permitted for paid individual subscriptions. Blocker 2: credentialed stable-2.x staged fixture (target 2.16.0) proving prompt transport, scoped direct writes, text parsing, auth isolation, exit behavior, cancellation, and model-selection boundary. See `.nuke/.../research-kiro.md`. |
+| `gemini` | REJECT | 2026-06-18 | Legacy consumer Gemini CLI entitlement ended 2026-06-18 for free, Google AI Pro, and Google AI Ultra accounts. Consumer-plan users should use the conditional Antigravity route. Enterprise licenses and paid API keys remain on the separate Gemini API provider path — not this legacy CLI. |
+| `auggie` | DEFER | 2026-07-31 | Indie plan exists, but official docs state non-interactive mode may be disabled by customer agreement; unattended entitlement smoke test required. |
+| `junie` | DEFER | 2026-07-31 | Headless flow documents `JUNIE_API_KEY` on usage-based billing; paid-plan subscription entitlement for headless tasks is not explicitly documented. |
+| `qwen` | REJECT | 2026-07-31 | Qwen Code Coding Plan Pro ($50/month) terms prohibit automated scripts and non-interactive/batch scenarios. Not positioned for SPLITBRIEF implementer use. |
+| `cline` | FUTURE | 2026-07-31 | Strong generic/BYOK CLI contract; no subscription-backed consumer plan. Possible future generic implementer, not this feature wave. |
 
 ### api
 
 `src/engine/planners/api.ts`, `src/engine/implementers/api.ts`
 
-REST call to an OpenAI-compatible HTTP endpoint. Works with: Ollama, LM Studio, OpenRouter, DeepSeek, Groq, Together, Anthropic direct.
+REST call to an OpenAI-compatible HTTP endpoint. Works with: Ollama, LM Studio, Anthropic, OpenRouter, DeepSeek, OpenAI, Groq, Together.
 
 The planner uses `dispatchStreamCompletion()` which handles both OpenAI-format and Anthropic-native streaming. Prior messages are passed as a proper messages array (`consumesPriorMessages: true`). Token usage comes from the API response.
 
@@ -339,7 +414,7 @@ The implementer writes files directly with git-based change detection.
 
 Step by step:
 
-1. **Add the kind to the enum** in `src/core/schemas/enums.ts`. Add it to the appropriate ID array (`CLI_TOOL_IDS`, `API_PROVIDER_IDS`, `LOCAL_PROVIDER_IDS`, or `META_PROVIDER_IDS`).
+1. **Add the ID to its catalog**: a CLI tool goes in `CLI_TOOL_CATALOG` (`src/core/runners/cli-tool-catalog.ts`), an API provider in `API_PROVIDER_CATALOG` (`src/core/providers/api-provider-catalog.ts`). A meta runner goes in `META_PROVIDER_IDS` (`src/core/schemas/enums.ts`), which composes `PROVIDER_IDS` from the catalog tuples.
 
 2. **Create the planner module** at `src/engine/planners/<name>.ts`. Export a `create<Name>Planner()` function that calls `createPlannerBase()` with:
    - `invokePlan` -- your backend-specific call
@@ -379,7 +454,7 @@ type GenerationCommon = {
 
 // Kind-specific fields (simplified)
 type CliRunner    = { kind: 'cli';       tool: CliToolId; args?: string[] }
-type ApiRunner    = { kind: 'api';       provider: string; apiBase: string; apiKey?: string }
+type ApiRunner    = { kind: 'api';       provider: string; service: string; offering: ApiOffering; apiBase: string; apiKey?: string }
 type ShellRunner  = { kind: 'shell';     command: string; args?: string[] }
 type AgentRunner  = { kind: 'agent';     command: string; args?: string[] }
 type SdkRunner    = { kind: 'agent-sdk'; apiKey?: string }
@@ -392,7 +467,7 @@ The top-level `Config` groups these with workflow settings:
 
 ```typescript
 type Config = {
-  version: 2 | 3
+  version: 3
   planner: PlannerConfig
   implementer: ImplementerConfig
   implementerProfiles?: { default?: string; profiles: Record<string, ImplementerProfileConfig> }

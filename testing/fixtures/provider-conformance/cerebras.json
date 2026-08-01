@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "cerebras",
+    "role": "implementer",
+    "contractSha256": "d65814cb86431001c6e1bd61299eaa1382614cd84459227d6b6dec5128ad2284",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing credential for CEREBRAS_API_KEY"
+  },
+  "productionConformance": {
+    "candidateId": "cerebras",
+    "role": "implementer",
+    "contractSha256": "d65814cb86431001c6e1bd61299eaa1382614cd84459227d6b6dec5128ad2284",
+    "stdout": "",
+    "stderr": "missing credential for CEREBRAS_API_KEY"
+  },
+  "verdict": "OMIT"
+}

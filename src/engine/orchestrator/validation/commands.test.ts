@@ -99,7 +99,7 @@ describe('layer priority', () => {
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, 'config.yaml'),
-      YAML.stringify({ validation: { typecheck: false, lint: false, test: true } }),
+      YAML.stringify({ version: 3, validation: { typecheck: false, lint: false, test: true } }),
       'utf-8',
     );
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');

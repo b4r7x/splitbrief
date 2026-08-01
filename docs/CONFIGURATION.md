@@ -13,13 +13,14 @@ This document is a field-by-field reference. For end-user mode semantics see [WO
 ```
 
 - The file is created on first `splitbrief init` (or implicitly on first `splitbrief start`). Missing file → SPLITBRIEF runs with `createDefaultConfig()` (`src/core/config/load/io.ts`).
-- **Schema version:** `version: 3` (current). `version: 2` and older supported config shapes are upgraded in memory through `migrateV1ToV2 → migrateV2ToV3` at load time. `splitbrief migrate` is for legacy session layout migration, not config rewriting.
+- **Schema version:** `version: 3`, required and exact. Any other value (or a missing one) fails the load with `config-unsupported-version`; run `splitbrief init --reconfigure` to write a current config.
 - **Key style:** the loader transforms `snake_case` YAML into `camelCase` before validation (`src/core/config/load/transform.ts`), so both styles work. This document uses `camelCase`.
 - **Permissions:** Configuration files with group- or other-writable bits (mode & 0o022) trigger a security warning. On POSIX, the loader emits this via `warnStderr` when `checkConfigPermissions` fails (`src/lib/fs.ts`). `init` writes the file at `0600` via `writeSecureFile`.
 - **`.gitignore`:** `init` appends `.splitbrief/` to your `.gitignore` so secrets and per-machine state stay out of source control.
 
 Top-level shape:
 
+<!-- config-shape-sketch -->
 ```yaml
 version: 3
 planner:        { kind: cli|api|shell|agent|agent-sdk, ... }
@@ -43,7 +44,7 @@ plannerEstimateReview: boolean
 autoSplitOverflow:     boolean
 ```
 
-Top-level keys are **not** strict at the root — unknown keys are ignored. Most nested objects (`hooks`, `codebase`, `otel`, every runner config) are `.strict()` and will reject unknown fields.
+Top-level keys are **not** strict at the root — unknown keys are ignored. Most nested objects (`workflow` and its `git` / `speckit` blocks, `hooks`, `codebase`, `otel`, every runner config) are strict and will reject unknown fields.
 
 ---
 
@@ -58,8 +59,8 @@ type PlannerConfig =
   | { kind: 'cli';       tool: CliToolId; args?: string[]; outputFormat?: OutputFormat;
       model?: string; customModels?: string[]; contextLength?: number;
       temperature?: number; timeout?: number; effort?: EffortLevel }
-  | { kind: 'api';       provider: string; apiBase: string; apiKey?: string;
-      model?: string; ...common }
+  | { kind: 'api';       provider: string; service: string; offering: ApiOffering;
+      apiBase: string; apiKey?: string; model?: string; ...common }
   | { kind: 'shell';     command: string; args?: string[]; outputFormat?: OutputFormat;
       capabilities?: Partial<PlannerCapabilities>; model?: string; ...common }
   | { kind: 'agent';     command: string; args?: string[]; outputFormat?: OutputFormat;
@@ -73,7 +74,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `model` | string | — | Model identifier. Planner: optional. Implementer: required for every runner kind; use `auto` when you want the runner's default model. |
+| `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, `agent`, and `agent-sdk`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both delegate to the tool's own default. |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
 | `contextLength` | int > 0 | provider default | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. |
 | `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner and implementer); the `cli`, `shell`, `agent`, and `agent-sdk` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
@@ -97,6 +98,7 @@ Subprocess of a known coding-agent CLI. The wrapper handles auth, model selectio
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `aider` \| `copilot` \| `kilo-code` |
+| `model` | string | no | A model ID, or `auto`. Omitting `model` and writing `model: auto` are equivalent: SPLITBRIEF passes no `--model` flag, so the tool uses whatever model its own configuration selects. |
 | `args` | string[] | no | Extra argv appended to the tool invocation |
 | `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode` (overrides per-tool default) |
 
@@ -105,7 +107,8 @@ YAML — minimal:
 ```yaml
 planner:
   kind: cli
-  tool: claude-code
+  tool: codex
+  model: auto
 ```
 
 YAML — full:
@@ -131,6 +134,8 @@ OpenAI-compatible HTTP endpoint.
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `provider` | non-empty string | yes | `anthropic` \| `openrouter` \| `deepseek` \| `openai` \| `groq` \| `together` \| `ollama` \| `lm-studio` \| any custom name |
+| `service` | non-empty string | yes | Billing/identity service behind the provider. Back-filled from `API_PROVIDER_CATALOG` for admitted provider IDs; custom names must set it explicitly. |
+| `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. Back-filled for admitted provider IDs; custom names must set it explicitly. |
 | `apiBase` | non-empty string | yes | Base URL. For known providers, see "Default API base URLs" below. |
 | `apiKey` | string | no | Inline key. **Strongly prefer the matching env var** for official provider endpoints (see [API-KEYS.md](./API-KEYS.md)). Use an inline key for known providers with a custom/proxy `apiBase`; env-sourced provider keys are rejected for that case. |
 
@@ -240,13 +245,13 @@ Source: `src/core/providers/catalog.ts`.
 
 **See also:** §3 `implementer`, §11 environment variables, [API-KEYS.md](./API-KEYS.md).
 
-Custom OpenAI-compatible API providers are allowed when `apiBase` is set. Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly unless a future auth configuration declares otherwise.
+Custom OpenAI-compatible API providers are allowed when `service`, `offering`, and `apiBase` are all set — the catalog back-fill that supplies `service`/`offering` only covers admitted provider IDs. Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly unless a future auth configuration declares otherwise.
 
 ---
 
 ## 3. `implementer`
 
-Same discriminated union as `planner`, with two schema differences: `model` is required on every implementer variant (including `agent-sdk`), and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. Use `model: auto` to ask the runner adapter for its default when supported. Implementer write behavior (`extracted-code` vs `direct`) is configured per profile via `capabilities.writesFiles` under `implementerProfiles`.
+Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, `agent`, and `agent-sdk` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `anthropic` → `claude-sonnet-4-6`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is configured per profile via `capabilities.writesFiles` under `implementerProfiles`.
 
 YAML — minimal (local Ollama):
 
@@ -419,14 +424,11 @@ Mode, spec/plan document gates, retries, budget, git strategy, and brief-review 
 workflow: {
   // Spec/plan document gates
   approve?:               'none' | 'spec' | 'plan' | 'all' | 'default';
-  autoApproveSpec?:       boolean;  // deprecated v2 — use approve
-  autoApprovePlan?:       boolean;  // deprecated v2 — use approve
 
   // Retries
   maxRetries:             number; // int >= 0 — REQUIRED
 
   // Git
-  commitStrategy?:        'none' | 'checkpoint' | 'per-task'; // deprecated — use git.commitStrategy
   git?: {
     commitStrategy?:      'none' | 'checkpoint' | 'per-task';
     createBranch?:        boolean;
@@ -457,12 +459,9 @@ workflow: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `mode` | enum | `standard` | `instant` \| `quick` \| `standard` \| `speckit`. Legacy `full` is accepted as a one-time alias for `speckit`. |
+| `mode` | enum | `standard` | `instant` \| `quick` \| `standard` \| `speckit`. Any other value fails validation. |
 | `approve` | enum | `default` | Spec/plan document gates: `none` (skip spec/plan gates; briefs review still runs in standard/speckit), `spec` (gate spec only), `plan` (gate plan only), `all` (gate both), `default` (per-mode default). |
-| `autoApproveSpec` | boolean | `false` | **Deprecated v2** — read by legacy code paths only. Use `approve`. |
-| `autoApprovePlan` | boolean | `false` | **Deprecated v2** — read by legacy code paths only. Use `approve`. |
 | `maxRetries` | int >= 0 | `3` | Per-task local retries before escalation kicks in |
-| `commitStrategy` | enum | — | **Deprecated v2** — use `git.commitStrategy`. |
 | `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `splitbrief/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
 | `briefReview` | enum | `simple` | `simple` review. `rich` is deprecated, accepted for compatibility, and treated as `simple`. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor. |
@@ -953,14 +952,13 @@ Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/lib/otel.ts`, 
 | `TOGETHER_API_KEY` | `together` | |
 | `OLLAMA_API_KEY` | `ollama` | Optional; usually unset. |
 
-Inline `apiKey` in YAML works. For official provider endpoints, it triggers a stderr warning recommending the env var. For known providers with a custom/proxy `apiBase`, keep the key inline because env-sourced provider keys are not sent to custom endpoints. Unknown providers without a built-in catalog entry must set both `apiBase` and `apiKey` in YAML.
+Inline `apiKey` in YAML works. For official provider endpoints, it triggers a stderr warning recommending the env var. For known providers with a custom/proxy `apiBase`, keep the key inline because env-sourced provider keys are not sent to custom endpoints. Unknown providers without a built-in catalog entry must set `service`, `offering`, `apiBase`, and `apiKey` in YAML.
 
 ### Runtime overrides
 
 | Variable | Purpose |
 |---|---|
 | `SPLITBRIEF_CONTEXT_LENGTH` | Override SPLITBRIEF's detected implementer context length (`src/engine/providers/capabilities.ts`). This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
-| `SPLITBRIEF_QUIET` | Suppress legacy-mode deprecation notice (set to `1`) (`src/cli/init-stores.ts`). |
 
 ### Observability
 
@@ -990,9 +988,8 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 
 | Flag | Purpose | Commands |
 |---|---|---|
-| `--auto` | Alias for `--approve none` on spec/plan document gates | start, resume, continue, last |
 | `--approve <level>` | Spec/plan document gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue, last |
-| `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` (`full` legacy alias) | start, resume, continue, last; on `start --detach`, omitted `--mode` falls back to `workflow.mode` in config |
+| `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` | start, resume, continue, last; on `start --detach`, omitted `--mode` falls back to `workflow.mode` in config |
 | `--budget <amount>` | Dollar ceiling | start, resume, continue, last |
 | `--model <m>` | Alias for `--implementer-model` | start, resume, continue, last |
 | `--provider <p>` | Alias for `--implementer` | start, resume, continue, last |
@@ -1028,7 +1025,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--detach` | Spawn workflow as background IPC server | start |
 | `--reconfigure` | Overwrite existing config | init |
 | `--history` | Show cost history across sessions | status |
-| `-p, --project <dir>` | Project directory | `migrate`, `export` |
+| `-p, --project <dir>` | Project directory | `export` |
 
 ---
 
@@ -1041,29 +1038,16 @@ Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
   - Config file permission warning on POSIX (`config-file-permissions`; see §1 **Permissions**).
   - `apiKey` detected inline in config (recommends env var).
   - Anthropic key not starting with `sk-ant-`, etc.
-  - `version: 2` accepted but deprecated → upgrade prompt.
 
-Unknown top-level keys are tolerated; unknown nested keys in `.strict()` blocks (`hooks`, `codebase`, `otel`, every runner config, `PlannerCapabilities`) fail validation.
+Unknown top-level keys are tolerated; unknown nested keys in strict blocks (`workflow` and its `git` / `speckit` blocks, `hooks`, `codebase`, `otel`, every runner config, `PlannerCapabilities`) fail validation. Each unrecognized key is reported at its own dotted path — `workflow.autoApproveSpec: Unknown config key …`, not just `workflow`.
 
 ---
 
-## 18. Migration
+## 18. Config version
 
-Config migration happens during load: supported older shapes are normalized in memory by `migrateV1ToV2 → migrateV2ToV3` (`src/core/config/load/migrate.ts`). Subsequent config writes use the current v3 shape.
+`version: 3` is the only accepted schema version. A config carrying any other version — or none at all — is rejected at load with `Unsupported config version: <value>. Supported: 3.` Run `splitbrief init --reconfigure` to write a current config; there is no in-memory upgrade path.
 
-`splitbrief migrate -p <dir>` is separate: it migrates pre-v3 `.splitbrief/current/` session state into the session-folder layout.
-
-**v2 → v3 changes:**
-- `version: 2` → `version: 3`.
-- `workflow.autoApproveSpec` / `workflow.autoApprovePlan` → derived `workflow.approve` (kept dual for backward read compat).
-- `workflow.commitStrategy` → `workflow.git.commitStrategy` (kept dual).
-- `workflow.mode: full` → `workflow.mode: speckit`.
-
-**v1 → v2 changes:**
-- `commitPerTask: true|false` → `commitStrategy: 'per-task' | 'none'`.
-- Runner kind inference: legacy `kind: claude-code` (etc.) → `kind: cli, tool: claude-code`. Legacy `apiBase` without `kind` → `kind: api`. Legacy `command` without `kind` → `kind: shell`.
-
-The loader runs `migrateConfig` automatically on load, so even if you forget to invoke `migrate`, your config still works — but you'll see deprecation warnings until you upgrade in place.
+Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, top-level `workflow.commitStrategy` by `workflow.git.commitStrategy`, and `workflow.mode: full` by `workflow.mode: speckit`. Configs still carrying the old spellings fail validation with the offending path named.
 
 ---
 
@@ -1071,6 +1055,7 @@ The loader runs `migrateConfig` automatically on load, so even if you forget to 
 
 A representative config: Claude Code subscription as planner, Sonnet via direct Anthropic API as implementer, mid-tier escalation through OpenRouter, budget caps, snapshots, hooks, OTel, and tiered approval. Use it as a starting point, then adjust credentials, budgets, hooks, and approval tiers for your environment.
 
+<!-- config-example: full-production -->
 ```yaml
 version: 3
 
@@ -1089,6 +1074,8 @@ planner:
 implementer:
   kind: api
   provider: anthropic
+  service: anthropic
+  offering: payg
   apiBase: https://api.anthropic.com/v1
   model: claude-sonnet-4-6
   contextLength: 200000
@@ -1199,9 +1186,9 @@ sessions:
   scope: project
 ```
 
-Required env vars to make this run:
-- `ANTHROPIC_API_KEY=sk-ant-...` (implementer)
-- `OPENROUTER_API_KEY=sk-or-...` (escalation)
+Required env vars to make this run (set locally — never commit values):
+- `ANTHROPIC_API_KEY` (implementer)
+- `OPENROUTER_API_KEY` (escalation)
 - `OTEL_TRACES_EXPORTER=console` for the built-in shortcut, or an in-process provider bootstrap for non-console exporters; standard `OTEL_*` alone is not enough
 
 Then:
@@ -1212,7 +1199,207 @@ splitbrief start --allow-hooks "your feature description"
 
 ---
 
-## 20. See also
+## 20. Admitted API providers
+
+Canonical reference for every first-class `kind: api` provider in SPLITBRIEF. Source descriptors: `src/core/providers/api-provider-catalog.ts`. Credential handling: [API-KEYS.md](./API-KEYS.md).
+
+### Service, offering, and billing
+
+API runners store **service** identity separately from **offering** semantics:
+
+| Field | Meaning |
+|---|---|
+| `service` | Stable provider identity (for example `anthropic`, `openrouter`, `ollama`). |
+| `offering` | Commercial posture: `payg`, `free-quota`, `coding-subscription`, or `local`. |
+| `billing` | How SPLITBRIEF reports spend: `api-metered`, `provider-dependent`, `subscription-included`, `local`, or `unknown`. |
+
+Credential prefix or env presence validates the configured offering but **never chooses or changes** the offering. PAYG metered runs use dated pricing metadata when available; subscription-included runs never show a fictitious PAYG charge; local runs are labeled local/unpriced; opportunistic free pools (for example `openrouter/free`) are not presented as reproducible defaults.
+
+### Provider matrix
+
+`asOf` for every row: **2026-07-31** (release-time research; runtime does not fetch terms or pricing pages).
+
+<!-- api-provider-matrix -->
+| Provider | Service | Offering | Normalized endpoint | Credential env | Prefix validation | Roles | Billing |
+|---|---|---|---|---|---|---|---|
+| anthropic | anthropic | payg | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` | `sk-ant-` | planner, implementer | api-metered |
+| openrouter | openrouter | payg | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `sk-or-` | planner, implementer | provider-dependent |
+| deepseek | deepseek | payg | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` | `sk-` | planner, implementer | api-metered |
+| openai | openai | payg | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `sk-` | planner, implementer | api-metered |
+| groq | groq | payg | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `gsk_` | planner, implementer | provider-dependent |
+| together | together | payg | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` | — | planner, implementer | api-metered |
+| ollama | ollama | local | `http://localhost:11434/v1` | `OLLAMA_API_KEY` | — | implementer | local |
+| lm-studio | lm-studio | local | `http://localhost:1234/v1` | — | — | implementer | local |
+
+**Role restriction:** only `ollama` and `lm-studio` are implementer-only. Configuring them as `planner` fails schema validation. `OLLAMA_API_KEY` is optional for default loopback use.
+
+**Deferred / not admitted:** researched subscription coding plans, retired consumer CLI entitlements, generic self-hosted OpenAI-compatible shims, and every other candidate without a PASS verdict have **no** first-class provider ID, descriptor, or support row here. Verdict-pending offerings remain absent until a credentialed production gate passes. Per-offering verdicts and dates: [Excluded API offerings](#excluded-api-offerings). Excluded CLI candidates: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#excluded-researched-candidates).
+
+### Bundled model catalog (T-081 runtime state)
+
+Recommendation labels mirror `src/core/providers/known-models.ts`. A row becomes **`recommended`** only after T-080 records five-scenario evaluation metrics for it. No credentialed evaluation run exists, so every bundled row is **`compatible-only`** — selectable, with no SPLITBRIEF quality claim.
+
+<!-- api-model-catalog -->
+| Provider | Model | Recommendation | Notes |
+|---|---|---|---|
+| openrouter | anthropic/claude-sonnet-4.6 | compatible-only | Bundled cloud default. T-080: OMIT-NOT-APPLICABLE — no evaluation metrics recorded. |
+| groq | openai/gpt-oss-120b | compatible-only | Cheap hosted implementer; uses Groq `max_completion_tokens` contract. T-080: OMIT-NOT-APPLICABLE. |
+| ollama | qwen3-coder:30b | compatible-only | Local default; context limit discovered from the daemon — not hard-coded. T-080: OMIT-NOT-APPLICABLE. |
+| lm-studio | qwen2.5-coder-7b | compatible-only | Local default; context limit discovered from the daemon. T-080: OMIT-NOT-APPLICABLE. |
+| openrouter | openrouter/free | compatible-only | Opportunistic free pool — not a reproducible default. |
+| anthropic | claude-sonnet-4-6 | compatible-only | Direct API default; priced via models.dev / bundled metadata. |
+| deepseek | deepseek-v4-flash | compatible-only | Default V4 model; `deepseek-chat` / `deepseek-reasoner` retired from selectable defaults. |
+| together | zai-org/GLM-5.1 | compatible-only | Bundled Together default. |
+| openai | gpt-5.4 | compatible-only | Bundled OpenAI default; `model: auto` resolves to it. |
+
+### Minimal YAML per admitted provider
+
+Every example omits inline secrets. Set the matching env var (see matrix) or use `apiKey: env:VAR_NAME` for custom endpoints. Known providers on their official normalized origin reject env-sourced keys when `apiBase` points elsewhere — keep proxy keys inline only when you accept **normalized-origin trust** for that host.
+
+<!-- config-api-minimal: anthropic -->
+```yaml
+implementer:
+  kind: api
+  provider: anthropic
+  service: anthropic
+  offering: payg
+  apiBase: https://api.anthropic.com/v1
+  model: claude-sonnet-4-6
+```
+
+<!-- config-api-minimal: openrouter -->
+```yaml
+implementer:
+  kind: api
+  provider: openrouter
+  service: openrouter
+  offering: payg
+  apiBase: https://openrouter.ai/api/v1
+  model: anthropic/claude-sonnet-4.6
+```
+
+<!-- config-api-minimal: deepseek -->
+```yaml
+implementer:
+  kind: api
+  provider: deepseek
+  service: deepseek
+  offering: payg
+  apiBase: https://api.deepseek.com/v1
+  model: deepseek-v4-flash
+```
+
+<!-- config-api-minimal: openai -->
+```yaml
+implementer:
+  kind: api
+  provider: openai
+  service: openai
+  offering: payg
+  apiBase: https://api.openai.com/v1
+  model: gpt-5.4
+```
+
+<!-- config-api-minimal: groq -->
+```yaml
+implementer:
+  kind: api
+  provider: groq
+  service: groq
+  offering: payg
+  apiBase: https://api.groq.com/openai/v1
+  model: openai/gpt-oss-120b
+```
+
+<!-- config-api-minimal: together -->
+```yaml
+implementer:
+  kind: api
+  provider: together
+  service: together
+  offering: payg
+  apiBase: https://api.together.xyz/v1
+  model: zai-org/GLM-5.1
+```
+
+<!-- config-api-minimal: ollama -->
+```yaml
+implementer:
+  kind: api
+  provider: ollama
+  service: ollama
+  offering: local
+  apiBase: http://localhost:11434/v1
+  model: qwen3-coder:30b
+```
+
+<!-- config-api-minimal: lm-studio -->
+```yaml
+implementer:
+  kind: api
+  provider: lm-studio
+  service: lm-studio
+  offering: local
+  apiBase: http://localhost:1234/v1
+  model: qwen2.5-coder-7b
+```
+
+### Generic remote OpenAI-compatible endpoint
+
+Use a custom `provider` string only when you control the endpoint. SPLITBRIEF cannot infer a safe env var name for unknown providers. **Normalized-origin trust** is required: the declared `apiBase` origin must be the only origin that receives the configured credential; redirects to another origin are rejected with `provider-endpoint-invalid` rather than followed (endpoint normalization in `src/core/providers/endpoint-policy.ts`, redirect transport in `src/lib/http/policy-fetch.ts`). Do not commit inline secrets — reference an env var or `apiKey: env:VAR_NAME`.
+
+<!-- config-api-generic-remote: remote -->
+```yaml
+implementer:
+  kind: api
+  provider: custom-openai-compatible
+  service: custom-openai-compatible
+  offering: payg
+  apiBase: https://llm.internal.example/v1
+  apiKey: env:CUSTOM_LLM_API_KEY
+  model: hosted-model
+```
+
+Loopback-only local stacks (`ollama`, `lm-studio`) use the `loopback` endpoint policy; do not point them at arbitrary remote hosts without treating the run as a custom remote provider with explicit trust.
+
+### Required API identity triple
+
+Every `kind: api` block declares all three of `provider`, `service`, and `offering`. Nothing is inferred at load time:
+
+- A provider-only block fails validation with `implementer.service` / `implementer.offering` named in the error.
+- Known catalog IDs must match their `API_PROVIDER_CATALOG` service and offering; a mismatch is a validation error, not a silent rewrite.
+- Custom providers declare their own `service` and `offering` alongside an explicit `apiBase`.
+
+Writing the triple explicitly keeps save/load, run metadata, and billing presentation aligned.
+
+### Named implementer profiles
+
+`implementerProfiles` (§3) reuses the same runner schema as top-level `implementer`, including `service`/`offering` on API profiles. Profile names are stable identifiers (`local-qwen`, `cheap-cloud`, …). Task routing picks one capable profile per Task Brief; recovery can target a named profile via `route-bigger-worker`.
+
+### Excluded API offerings
+
+These researched offerings have **dated blocked verdicts** — no first-class provider ID, descriptor, endpoint policy, or picker row. `GENERIC-ONLY` means the endpoint is reachable through the generic remote or loopback configuration above and carries no SPLITBRIEF support claim.
+
+<!-- api-excluded-offerings -->
+| offering | verdict | as-of | reason |
+|---|---|---|---|
+| `minimax-token-plan` | DEFER | 2026-07-31 | The `sk-cp-…` plan key is documented for "any OpenAI-compatible tool", but the plan is also limited to individual interactive development with dynamic throttling. Gate on written or public confirmation that an orchestrated SPLITBRIEF run is permitted interactive use. PAYG `minimax` is unaffected. |
+| `kimi-code` | DEFER | 2026-07-31 | Personal-interactive-only guidelines prohibit non-interactive automation and batch use; the supported-tool lists conflict and SPLITBRIEF is unlisted. Gate on explicit vendor support for custom orchestrators. Never spoof another client identity. PAYG `moonshot` is unaffected. |
+| `zai-coding-plan` | REJECT | 2026-07-31 | GLM Coding Plan terms restrict quota to officially supported tools and prohibit SDK or custom-app direct calls without a separate written agreement. Falsifier: written Z.AI approval naming SPLITBRIEF. PAYG `zai` is unaffected. |
+| `alibaba-coding-plan` | REJECT | 2026-07-31 | Plan terms expressly prohibit automated scripts, application backends, and non-interactive use, and the `sk-sp-…` key is scoped to that route. Falsifier: revised public terms or written approval for human-triggered headless runs. PAYG `dashscope` is unaffected. |
+| `siliconflow` | DEFER | 2026-07-31 | `stream_options.include_usage` is undocumented, the extra `eos` finish reason needs mapping, model churn is high, 40K TPM can block a brief, and public terms restrict commercial and third-party use. Personal generic experimentation only. |
+| `cloudflare` | GENERIC-ONLY | 2026-07-31 | The account-scoped base (`…/accounts/{account_id}/ai/v1`) needs dynamic-endpoint support, and free neurons are not comparable to tokens. No Cloudflare-specific transport. |
+| `github-models` | REJECT | 2026-07-31 | Public preview positioned for experimentation, with a typical 8K input / 4K output account-tier cap far below the practical brief target. Falsifier: GA, materially larger limits, and exact stream compatibility. Experimental generic use only. |
+| `huggingface` | GENERIC-ONLY | 2026-07-31 | The USD 0.10/month free credit is negligible and capability plus data policy vary by downstream provider. Reconsider only for a stable pinned coding route with meaningful quota. |
+| `vllm` | GENERIC-ONLY | 2026-07-31 | Ports, auth, and models are operator-defined; a per-deployment provider ID adds nothing over the loopback or generic remote block. |
+| `localai` | GENERIC-ONLY | 2026-07-31 | Same operator-defined surface as vLLM across a broader backend set; behavior depends on the selected backend, not on a SPLITBRIEF descriptor. |
+| `local-openai` | GENERIC-ONLY | 2026-07-31 | A generic local OpenAI-server runner kind requires loopback/LAN trust design and is outside this feature. Configure such servers as a loopback API runner. |
+| `sambanova` | DEFER | 2026-07-31 | Official free-tier and onboarding pages conflict, and the documented free rate is only 20 requests/day. Reconsider after the entitlement is consistent and the exact stream payload passes. |
+| `nvidia-nim` | DEFER | 2026-07-31 | Hosted free use is explicitly prototyping and development only; production requires NVIDIA AI Enterprise licensing. Not a free production provider. |
+
+---
+
+## 21. See also
 
 - [PRINCIPLES.md](./PRINCIPLES.md) — one-page rule index
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — runner contracts, orchestrator loop, event model

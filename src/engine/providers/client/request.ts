@@ -3,10 +3,11 @@ import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { warnError } from '../../../lib/warn.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { providerError } from '../errors.js';
+import { endpointPolicyError } from '../../../core/providers/endpoint-policy.js';
 import {
   createEndpointPolicyFetch,
   type EndpointPolicyFetch,
-} from '../../../core/providers/endpoint-policy.js';
+} from '../../../lib/http/policy-fetch.js';
 
 const OpenAIModelItemSchema = z.looseObject({
   id: z.string(),
@@ -71,7 +72,7 @@ export function sanitizeProviderDiagnostic(
 }
 
 export async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<unknown> {
-  const policyFetch = createEndpointPolicyFetch(url);
+  const policyFetch = createEndpointPolicyFetch(url, endpointPolicyError.invalid);
   const res = await policyFetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw providerError.httpFailure(res.status, sanitizeProviderDiagnostic(url));
   return await res.json();
@@ -98,7 +99,8 @@ export async function fetchModelList<T>(options: {
       );
     };
     const signal = AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS);
-    const policyFetch = options.fetch ?? createEndpointPolicyFetch(endpoint);
+    const policyFetch =
+      options.fetch ?? createEndpointPolicyFetch(endpoint, endpointPolicyError.invalid);
     const res = await policyFetch(endpoint, headers ? { headers, signal } : { signal });
     if (!res.ok) {
       reportError(`HTTP ${res.status}`);

@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "minimax",
+    "role": "implementer",
+    "contractSha256": "7c92b5e17427d1da21af8b17727012e1c4267ea52dc2622b7012552a877c7594",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing credential for MINIMAX_API_KEY"
+  },
+  "productionConformance": {
+    "candidateId": "minimax",
+    "role": "implementer",
+    "contractSha256": "7c92b5e17427d1da21af8b17727012e1c4267ea52dc2622b7012552a877c7594",
+    "stdout": "",
+    "stderr": "missing credential for MINIMAX_API_KEY"
+  },
+  "verdict": "OMIT"
+}

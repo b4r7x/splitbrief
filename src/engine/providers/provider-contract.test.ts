@@ -1,10 +1,33 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
+  getApiProviderDescriptor,
+  PASS_API_PROVIDER_IDS,
+} from '../../core/providers/api-provider-catalog.js';
 import type { ProviderDef, ProviderOverrides } from './types.js';
 import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
 import { createLmStudioProvider } from './lm-studio.js';
 import { createOllamaProvider } from './ollama.js';
 import { createOpenRouterProvider } from './openrouter.js';
+import {
+  KNOWN_PROVIDERS,
+  REGISTRY_OMIT_CANDIDATE_IDS,
+  REGISTRY_PASS_CANDIDATE_IDS,
+} from './registry.js';
+
+const REPO_ROOT = join(import.meta.dirname, '../../..');
+
+function resolveRepoPath(relativePath: string): string {
+  return join(REPO_ROOT, relativePath);
+}
+
+/** A credential of the provider's own family; a foreign prefix fails admission. */
+function fixtureCredential(provider: string, suffix: string): string {
+  return `${getApiProviderDescriptor(provider)?.credentialPrefix ?? ''}${suffix}`;
+}
 
 interface ProviderFixture {
   name: string;
@@ -129,6 +152,33 @@ const FIXTURES: ProviderFixture[] = [
   },
 ];
 
+describe('provider verdict admission contract', () => {
+  it('derives the retained PASS allowlist from T-044–T-053 verdicts', () => {
+    expect([...REGISTRY_PASS_CANDIDATE_IDS]).toEqual([...PASS_API_PROVIDER_IDS]);
+  });
+
+  it('keeps every OMIT verdict module absent from the registry', () => {
+    for (const id of REGISTRY_OMIT_CANDIDATE_IDS) {
+      expect(KNOWN_PROVIDERS).not.toHaveProperty(id);
+    }
+    for (const candidate of API_PROVIDER_VERDICT_CANDIDATE_PATHS) {
+      if ((PASS_API_PROVIDER_IDS as readonly string[]).includes(candidate.id)) continue;
+      expect(existsSync(resolveRepoPath(candidate.source))).toBe(false);
+      expect(existsSync(resolveRepoPath(candidate.test))).toBe(false);
+    }
+  });
+
+  it('keeps provider-contract fixtures limited to retained existing factories', () => {
+    const fixtureNames = FIXTURES.map((fixture) => fixture.name);
+    for (const id of PASS_API_PROVIDER_IDS) {
+      expect(fixtureNames).not.toContain(id);
+    }
+    expect(fixtureNames.toSorted()).toEqual(
+      ['groq', 'lm-studio', 'ollama', 'openrouter', 'together'].toSorted(),
+    );
+  });
+});
+
 describe.each(FIXTURES)('$name provider contract', (f) => {
   let originalEnv: string | undefined;
 
@@ -136,7 +186,7 @@ describe.each(FIXTURES)('$name provider contract', (f) => {
     vi.stubGlobal('fetch', vi.fn());
     if (f.envKey) {
       originalEnv = process.env[f.envKey];
-      process.env[f.envKey] = 'test-key';
+      process.env[f.envKey] = fixtureCredential(f.name, 'test-key');
     }
   });
 
@@ -160,10 +210,24 @@ describe.each(FIXTURES)('$name provider contract', (f) => {
       f.name === 'ollama' || f.name === 'lm-studio'
         ? 'http://127.0.0.1:22000/v1'
         : f.defaultBaseURL;
-    const p = f.create({ apiBase, apiKey: 'override-key' });
+    const credential = fixtureCredential(f.name, 'override-key');
+    const p = f.create({ apiBase, apiKey: credential });
     expect(p.baseURL).toBe(apiBase);
-    expect(p.apiKey()).toBe('override-key');
+    expect(p.apiKey()).toBe(credential);
   });
+
+  if (f.envKey) {
+    it('rejects a credential from another provider family before any request', () => {
+      const descriptor = getApiProviderDescriptor(f.name);
+      if (descriptor?.credentialPrefix == null) return;
+      const provider = f.create({ apiKey: `foreign-${descriptor.credentialPrefix}key` });
+
+      expect(() => provider.apiKey()).toThrow(
+        expect.objectContaining({ kind: 'provider-credential-prefix-mismatch' }),
+      );
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+  }
 
   if (f.name !== 'ollama') {
     it('rejects a policy-invalid apiBase before resolving credentials', () => {

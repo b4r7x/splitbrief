@@ -282,7 +282,6 @@ export function buildCost(summary: Summary, events: PacketEvent[]): ReviewPacket
       .filter(
         (event) =>
           event.type === 'mode_advice' ||
-          event.type === 'mode_downgrade_advised' ||
           event.type === 'task_started' ||
           event.type === 'task_tokens',
       )

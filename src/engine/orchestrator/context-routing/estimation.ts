@@ -1,7 +1,6 @@
 import { estimateTokens } from '../../../core/tokens/estimate.js';
-import { formatTaskPrompt } from '../../spec/prompt-formatter.js';
+import { formatImplementerSystemPreamble, formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
-import { buildSystemPreamble } from '../../spec/prompts/system.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
 import type { TaskPromptEstimateOptions, ContextFitOptions } from './types.js';
 
@@ -12,14 +11,16 @@ export function estimateFormattedTaskPromptTokens(
   opts: TaskPromptEstimateOptions & { modelId?: string | undefined },
 ): number {
   const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
+  const writesFiles = opts.writesFiles ?? 'extracted-code';
   const prompt = formatTaskPrompt({
     task: opts.task,
     context: opts.context,
     contextLength: opts.contextLength,
     languageContext,
+    writesFiles,
   });
   return (
-    estimateTokens(buildSystemPreamble(languageContext), opts.modelId) +
+    estimateTokens(formatImplementerSystemPreamble(languageContext, writesFiles), opts.modelId) +
     estimateTokens(prompt, opts.modelId)
   );
 }

@@ -1,5 +1,6 @@
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import type { Config } from '../core/schemas/config.js';
+import type { ApproveLevel } from '../core/schemas/enums.js';
 import { loadConfig } from '../core/config/load/io.js';
 import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/from-options.js';
 import {
@@ -17,16 +18,14 @@ export function printConfigWarnings(warnings: readonly string[]): void {
 export function resolveRunConfigWithBase(args: {
   projectDir: string;
   opts: WorkflowOpts;
-  autoApprove?: boolean | undefined;
+  defaultApprove?: ApproveLevel | undefined;
 }): { config: Config; persistedConfig: Config } {
   const loadedResult = loadConfig(args.projectDir);
   const { config: loaded, loaderDiagnostics } = loadedResult;
   const overrides = workflowOptsToCLIOverrides(args.opts);
-  const effectiveOverrides =
-    args.autoApprove !== undefined ? { ...overrides, autoApprove: args.autoApprove } : overrides;
   const { config, warnings } = resolveEffectiveConfig({
     base: loaded,
-    overrides: effectiveOverrides,
+    overrides: { ...overrides, approve: overrides.approve ?? args.defaultApprove },
     loaderDiagnostics,
   });
   emitEffectiveConfigWarnings(warnings);
@@ -36,7 +35,7 @@ export function resolveRunConfigWithBase(args: {
 export function resolveRunConfig(args: {
   projectDir: string;
   opts: WorkflowOpts;
-  autoApprove?: boolean | undefined;
+  defaultApprove?: ApproveLevel | undefined;
 }): Config {
   const { config } = resolveRunConfigWithBase(args);
   return config;

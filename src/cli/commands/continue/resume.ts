@@ -32,7 +32,6 @@ const defaultResumeTailDeps: ResumeTailDeps = {
   runHeadless,
   runRpc,
   setupWorkflow,
-  detectCliReadiness: detectConfiguredCliReadiness,
 };
 
 function reconcileResumeMode(

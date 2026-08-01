@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "gemini",
+    "role": "implementer",
+    "contractSha256": "ad14af661ef20fb865a92f813c2977d7770845c344264286208d95686029aa2e",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing credential for GEMINI_API_KEY"
+  },
+  "productionConformance": {
+    "candidateId": "gemini",
+    "role": "implementer",
+    "contractSha256": "ad14af661ef20fb865a92f813c2977d7770845c344264286208d95686029aa2e",
+    "stdout": "",
+    "stderr": "missing credential for GEMINI_API_KEY"
+  },
+  "verdict": "OMIT"
+}

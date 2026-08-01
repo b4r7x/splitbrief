@@ -8,8 +8,8 @@ import { API_PROVIDER_CATALOG } from '../../core/providers/api-provider-catalog.
 import {
   endpointPolicyFetch,
   normalizeProviderEndpoint,
-  type EndpointPolicyFetch,
 } from '../../core/providers/endpoint-policy.js';
+import type { EndpointPolicyFetch } from '../../lib/http/policy-fetch.js';
 
 const DEFAULT_BASE = KNOWN_PROVIDER_BASE_URLS.ollama;
 

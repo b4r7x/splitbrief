@@ -8,12 +8,7 @@ import type { ReadinessCheck } from '../types.js';
 
 export function buildModeChecks(config: Config): ReadinessCheck[] {
   const mode = resolveMode({ config });
-  const approve = resolveApproveLevel({
-    mode,
-    configApprove: config.workflow.approve,
-    legacyAutoFlag:
-      config.workflow.autoApproveSpec === true && config.workflow.autoApprovePlan === true,
-  });
+  const approve = resolveApproveLevel({ mode, configApprove: config.workflow.approve });
   const effort = resolveEffortLevel({ config });
   return [
     {

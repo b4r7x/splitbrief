@@ -4,6 +4,7 @@ import type { Config } from '../../core/schemas/config.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { RunnerRuntime } from '../runners/types.js';
+import type { RunnerFailureOutcomeState } from '../runners/errors.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { CliStartGate } from '../runners/start-gate.js';
 import type { Phase } from '../../core/schemas/enums.js';
@@ -13,6 +14,8 @@ export interface ImplementerResult {
   success: boolean;
   output: string;
   error?: string | undefined;
+  /** Machine outcome behind a failure; the message is for humans, this is not. */
+  outcome?: RunnerFailureOutcomeState | undefined;
   usage?: TokenDelta | undefined;
 }
 

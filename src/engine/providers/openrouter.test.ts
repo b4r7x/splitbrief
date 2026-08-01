@@ -152,7 +152,7 @@ describe('toDetectedModel', () => {
 
 describe('createOpenRouterProvider listModelsWithMetadata', () => {
   setupFetchMock();
-  setupEnvMock('OPENROUTER_API_KEY', 'test-key');
+  setupEnvMock('OPENROUTER_API_KEY', 'sk-or-test-key');
 
   it('returns full metadata with pricing conversion and vision capability', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(

@@ -1,9 +1,12 @@
-import { CLI_TOOL_IDS, KNOWN_API_PROVIDERS } from '../../schemas/enums.js';
 import { includes, assertNever } from '../../../utils/type-guards.js';
 import { resolveDefaultApiBase } from '../../providers/catalog.js';
-import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
+import {
+  getApiProviderDescriptor,
+  KNOWN_API_PROVIDER_IDS,
+} from '../../providers/api-provider-catalog.js';
 import { normalizeProviderEndpoint } from '../../providers/endpoint-policy.js';
 import {
+  CLI_TOOL_IDS,
   cliModelPolicyViolations,
   getCliModelPolicy,
   type CliAuthChannelId,
@@ -223,12 +226,8 @@ function getExistingApiBase(
   return existing?.kind === 'api' && existing.provider === provider ? existing.apiBase : undefined;
 }
 
-function getApiDescriptor(provider: string) {
-  return Object.values(API_PROVIDER_CATALOG).find((descriptor) => descriptor.id === provider);
-}
-
 function getDescriptorApiBase(provider: string): string | undefined {
-  const descriptor = getApiDescriptor(provider);
+  const descriptor = getApiProviderDescriptor(provider);
   if (descriptor?.endpointPolicy.kind === 'fixed-origin') {
     return descriptor.endpointPolicy.baseURL;
   }
@@ -308,7 +307,7 @@ function buildApiConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
   const target = { kind: 'api' as const, id: provider };
   const existing = existingAtTarget(opts, target);
   const state = targetState(opts, target);
-  const descriptor = getApiDescriptor(provider);
+  const descriptor = getApiProviderDescriptor(provider);
   const requestedApiBase = destinationValue(
     state,
     opts.apiBase,
@@ -318,7 +317,7 @@ function buildApiConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
   const resolvedApiBase = requestedApiBase ?? existingApiBase ?? getDescriptorApiBase(provider);
 
   if (!resolvedApiBase) {
-    throw configError.unknownProvider(provider, KNOWN_API_PROVIDERS);
+    throw configError.unknownProvider(provider, KNOWN_API_PROVIDER_IDS);
   }
   const apiBase = descriptor
     ? normalizeProviderEndpoint(descriptor.endpointPolicy, resolvedApiBase)

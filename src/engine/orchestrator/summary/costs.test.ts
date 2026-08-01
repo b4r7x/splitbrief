@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { buildSummary } from './build.js';
 import type { BuildSummaryState } from './build.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { SummarySchema, unmeteredRunCostLabel } from '../../../core/schemas/summary.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
@@ -40,7 +41,7 @@ describe('buildSummary estimatedCostSavings', () => {
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
     expect(summary.estimatedCostSavings).toBe('$17.58');
     expect(summary.costBreakdown?.hypotheticalCost).toBe(18);
@@ -79,7 +80,7 @@ describe('buildSummary estimatedCostSavings', () => {
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
     expect(summary.estimatedCostSavings).toBe('$0.00');
   });
@@ -215,7 +216,7 @@ describe('buildSummary task costs', () => {
         escalationTokens: 0,
         retryCount: 0,
         tool: 'deepseek',
-        model: 'deepseek-chat',
+        model: 'deepseek-v4-flash',
         implementerProfile: 'cheap-cloud',
       },
     ];
@@ -227,7 +228,7 @@ describe('buildSummary task costs', () => {
       taskBreakdowns: breakdowns,
       plannerTool: 'claude-code',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     const first = summary.taskBreakdown?.[0];
@@ -244,5 +245,53 @@ describe('buildSummary task costs', () => {
     );
     expect(summary.costBreakdown.hasUnpricedUsage).toBe(true);
     expect(summary.costBreakdown.hasSavingsEstimate).toBe(false);
+  });
+});
+
+describe('buildSummary offering presentation', () => {
+  it('persists offering labels for every runner the run used', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 1_000_000,
+      implementerOutput: 1_000_000,
+    });
+
+    const summary = buildSummary({
+      feature: 'offering-labels',
+      state: makeState({ tokenUsage: usage }),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-v4-flash',
+    });
+
+    const parsed = SummarySchema.parse(summary).costBreakdown;
+    if (!parsed) throw new Error('expected cost breakdown');
+    expect(parsed.providerRunMetadata?.['claude-code']?.offering).toBe('coding-subscription');
+    expect(parsed.offeringPresentations?.['claude-code']?.costLabel).toBe('subscription-included');
+    expect(parsed.offeringPresentations?.deepseek?.costLabel).toMatch(/^\$/);
+    expect(unmeteredRunCostLabel(parsed)).toBeNull();
+  });
+
+  it('labels a subscription-only run without a metered figure', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 200_000,
+      implementerOutput: 100_000,
+    });
+
+    const summary = buildSummary({
+      feature: 'subscription-only',
+      state: makeState({ tokenUsage: usage }),
+      startTime: Date.now(),
+      plannerTool: 'claude-code',
+      implementerTool: 'claude-code',
+    });
+
+    const parsed = SummarySchema.parse(summary).costBreakdown;
+    if (!parsed) throw new Error('expected cost breakdown');
+    expect(unmeteredRunCostLabel(parsed)).toBe('subscription-included');
   });
 });

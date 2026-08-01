@@ -1,8 +1,8 @@
 # Slash Commands Reference
 
-The complete reference for every slash command available in the SPLITBRIEF TUI. This document is the exhaustive lookup — every entry in [`src/core/runtime/commands/registry.ts`](../src/core/runtime/commands/registry.ts) is documented here, grouped by purpose, with usage, screen availability, behaviour, and cross-references.
+The complete reference for every slash command available in the SPLITBRIEF TUI. This document is the exhaustive lookup — every entry in [`src/core/runtime/commands/registry.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/registry.ts) is documented here, grouped by purpose, with usage, screen availability, behaviour, and cross-references.
 
-If you only want a short overview, see [`FEATURES.md`](./FEATURES.md#slash-commands-palette). If you are adding a new command, follow the contract in [`src/core/runtime/commands/types.ts`](../src/core/runtime/commands/types.ts) and the dispatch rules in [`src/core/runtime/commands/dispatch.ts`](../src/core/runtime/commands/dispatch.ts).
+If you only want a short overview, see [`FEATURES.md`](./FEATURES.md#slash-commands-palette). If you are adding a new command, follow the contract in [`src/core/runtime/commands/types.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/types.ts) and the dispatch rules in [`src/core/runtime/commands/dispatch.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/dispatch.ts).
 
 ## How dispatch works
 
@@ -41,7 +41,7 @@ Commands that stay available either affect local UI only (`/scroll`, `/copy`, `/
 
 Commands outside that allow-list are unavailable while attached. In particular, config-mutating commands such as `/settings`, `/mode`, `/effort`, `/planner`, and `/implementer` are hidden so the attached client cannot claim a detached server setting changed when only local config would have changed.
 
-The slash commands — enumerated by [`src/core/runtime/commands/registry.ts`](../src/core/runtime/commands/registry.ts), the single source of truth — cover overlays, workflow mode/tool selection, clipboard copy, rewind/redo, scroll, activity, and sidebar controls, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
+The slash commands — enumerated by [`src/core/runtime/commands/registry.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/registry.ts), the single source of truth — cover overlays, workflow mode/tool selection, clipboard copy, rewind/redo, scroll, activity, and sidebar controls, queue and artifact actions, session export, transcript compaction, attachments, approvals, run accept/reject, and quitting. They are grouped below by purpose.
 
 ---
 
@@ -153,7 +153,7 @@ Configuration mutators that persist immediately to the project config (`.splitbr
 
 - **Purpose**: Switch workflow mode at runtime. With no argument, opens the mode-selector overlay so you can pick interactively. With a valid mode name, persists the selection via `configStore.save(...)` so subsequent runs inherit it.
 - **Screens**: all (`home`, `workflow`, `summary`, `setup`).
-- **Args**: optional. Valid values: `instant`, `quick`, `standard`, `speckit` (the `WORKFLOW_MODES` tuple in `src/core/schemas/enums.ts`). The legacy alias `full` is still parsed by the config schema but is not advertised here. Invalid values print `"Invalid mode: <x>. Valid modes: instant, quick, standard, speckit"`.
+- **Args**: optional. Valid values: `instant`, `quick`, `standard`, `speckit` (the `WORKFLOW_MODES` tuple in `src/core/schemas/enums.ts`). Invalid values print `"Invalid mode: <x>. Valid modes: instant, quick, standard, speckit"`.
 - **Example**: `/mode`, `/mode speckit`, `/mode instant`
 - **Behavior**: Successful save prints `"Workflow mode set to: <mode>"`. Failure to save (typically a malformed config file) prints `"Failed to save config: <error>"` from `setFeedbackError`. Mode semantics live in `docs/WORKFLOW.md` §3.
 - **Implementation**: catalog at `src/core/runtime/commands/registry.ts`; persistence in `src/app/command-context.ts`.
@@ -502,7 +502,7 @@ Typed commands:
 
 `Ctrl+E` during a review phase opens the built-in inline editor instead of shelling out: in `reviewing-spec` / `reviewing-plan` it opens a full-surface exclusive overlay over `spec.md` / `plan.md`; in `reviewing-briefs` it opens the small-viewport field editor over the focused Task Brief. The editor is protocol-free and single-owner — while it is open it owns keyboard input and no other handler competes. `$EDITOR` (see the `edit-file` command above) remains available as the opt-in secondary path for bulk or structural edits.
 
-The keymap is protocol-free and is the single source of truth in [`src/core/keybindings/editor.ts`](../src/core/keybindings/editor.ts) (`resolveEditorKeyAction`); the chords below are asserted against that resolver by [`src/core/keybindings/editor.test.ts`](../src/core/keybindings/editor.test.ts) so this table cannot drift.
+The keymap is protocol-free and is the single source of truth in [`src/core/keybindings/editor.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/core/keybindings/editor.ts) (`resolveEditorKeyAction`); the chords below are asserted against that resolver by [`src/core/keybindings/editor.test.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/core/keybindings/editor.test.ts) so this table cannot drift.
 
 | Key | Action |
 |---|---|
@@ -525,7 +525,7 @@ The keymap is protocol-free and is the single source of truth in [`src/core/keyb
 
 `Shift` combined with any motion (`←/→`, word, `Home`/`End`, `Ctrl+Home`/`Ctrl+End`, `PageUp`/`PageDown`) extends the selection; the same motion without `Shift` collapses it. `Ctrl+C` is **never** mapped to copy, cut, or select-all — it keeps its interrupt / exit semantics (copy is `Alt+C` or `Ctrl+Y`), so the editor cannot swallow the interrupt chord. `Home`, `End`, `PageUp`, and `PageDown` are recaptured as editor motions while the exclusive overlay is open rather than being surrendered to the conversation transcript.
 
-When the opt-in `$EDITOR` handover is used instead, `VISUAL` takes precedence over `EDITOR` in editor resolution ([`src/features/workflow/editor-command.ts`](../src/features/workflow/editor-command.ts) `resolveEditorArgv`); this precedence is asserted by [`src/features/workflow/editor-command.test.ts`](../src/features/workflow/editor-command.test.ts).
+When the opt-in `$EDITOR` handover is used instead, `VISUAL` takes precedence over `EDITOR` in editor resolution ([`src/features/workflow/editor-command.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/features/workflow/editor-command.ts) `resolveEditorArgv`); this precedence is asserted by [`src/features/workflow/editor-command.test.ts`](https://github.com/b4r7x/splitbrief/blob/main/src/features/workflow/editor-command.test.ts).
 
 ### Summary screen
 
@@ -605,4 +605,4 @@ Alphabetical, for fast lookup:
 - [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, awaiting-continue, etc.).
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
 - [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
-- [`src/core/runtime/commands/`](../src/core/runtime/commands/) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.
+- [`src/core/runtime/commands/`](https://github.com/b4r7x/splitbrief/tree/main/src/core/runtime/commands) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.

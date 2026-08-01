@@ -12,7 +12,6 @@ import type {
 } from '../../../src/core/schemas/implementer-config.js';
 import type { ApiPlannerConfig, PlannerConfig } from '../../../src/core/schemas/planner-config.js';
 import type { ProjectContext } from '../../../src/core/state/types.js';
-import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 
 const defaultApiImplementer: ApiImplementerConfig = {
   kind: 'api',
@@ -81,29 +80,12 @@ function apiIdentity(provider: string): { service: string; offering: ApiOffering
 
 function makePlannerConfig(planner?: PlannerFixture): unknown {
   const config = planner ?? { kind: 'cli', tool: 'claude-code' };
-  if (config.kind === 'cli') {
-    return {
-      authChannel: CLI_TOOL_CATALOG[config.tool].auth.channels[0]?.id,
-      ...config,
-    };
-  }
   if (config.kind !== 'api') return config;
   return { ...apiIdentity(config.provider), ...config };
 }
 
 function makeImplementerConfig(overrides?: PartialUnion<ImplementerFixture>): unknown {
-  if (overrides?.kind !== undefined && overrides.kind !== 'api') {
-    if (overrides.kind === 'cli') {
-      return {
-        authChannel:
-          overrides.tool === undefined
-            ? undefined
-            : CLI_TOOL_CATALOG[overrides.tool].auth.channels[0]?.id,
-        ...overrides,
-      };
-    }
-    return overrides;
-  }
+  if (overrides?.kind !== undefined && overrides.kind !== 'api') return overrides;
   const provider =
     overrides !== undefined && 'provider' in overrides && overrides.provider !== undefined
       ? overrides.provider
@@ -117,14 +99,7 @@ function makeImplementerProfiles(profiles: ImplementerProfilesFixture): Implemen
     profiles: Object.fromEntries(
       Object.entries(profiles.profiles).map(([name, profile]) => [
         name,
-        profile.kind === 'api'
-          ? { ...apiIdentity(profile.provider), ...profile }
-          : profile.kind === 'cli'
-            ? {
-                authChannel: CLI_TOOL_CATALOG[profile.tool].auth.channels[0]?.id,
-                ...profile,
-              }
-            : profile,
+        profile.kind === 'api' ? { ...apiIdentity(profile.provider), ...profile } : profile,
       ]),
     ),
   };
@@ -132,7 +107,7 @@ function makeImplementerProfiles(profiles: ImplementerProfilesFixture): Implemen
 
 export function makeConfig(overrides?: ConfigOverrides): Config {
   const base: ConfigInput = {
-    version: 2,
+    version: 3,
     planner: makePlannerConfig(overrides?.planner),
     implementer: makeImplementerConfig(overrides?.implementer),
     validation: {
@@ -143,10 +118,7 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
       ...overrides?.validation,
     },
     workflow: {
-      autoApproveSpec: false,
-      autoApprovePlan: false,
       maxRetries: 3,
-      commitStrategy: 'none',
       persistTranscript: true,
       mode: 'standard',
       taskReview: 'none',

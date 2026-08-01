@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliReadinessFactsFor } from '#testing/helpers/factories/detection.js';
 import { buildReadinessReport } from './checks/build.js';
 import {
   createStartReadinessRecord,
@@ -103,6 +104,35 @@ describe('readiness formatting', () => {
     expect(json).toContain('[redacted executable path]');
   });
 
+  it('promises start can continue only when every configured CLI runner is gated', () => {
+    const reportWith = (state: 'ready' | 'unverified') =>
+      buildReadinessReport({
+        projectDir: '/tmp/project',
+        config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+        configLoad: {
+          state: 'loaded',
+          path: '/tmp/project/.splitbrief/config.yaml',
+          warnings: [],
+        },
+        packageScripts: { packageJsonExists: true, scripts: { test: 'vitest run' } },
+        repo: {
+          isGitRepo: true,
+          hasCommits: true,
+          dirtyFiles: ['src/edited.ts'],
+          untrackedFiles: [],
+        },
+        cliReadiness: [deriveCliReadiness(cliReadinessFactsFor(state, 'claude-code'))],
+      });
+
+    const gated = formatReadinessReport(reportWith('ready'));
+    expect(gated).toContain('start can continue');
+
+    const ungated = formatReadinessReport(reportWith('unverified'));
+    expect(ungated).not.toContain('start can continue');
+    expect(ungated).toContain('Start blocked: no trusted readiness identity for claude-code.');
+    expect(ungated).toContain('Fix: Verify claude-code against tested version');
+  });
+
   it('summarizes blocker messages for CLI errors', () => {
     const report = buildReadinessReport({
       projectDir: '/tmp/project',
@@ -127,6 +157,11 @@ describe('readiness formatting', () => {
     expect(readinessBlockerMessage(report)).toContain('config.invalid');
     expect(readinessBlockerMessage(report)).toContain('repo.not-git');
     expect(formatReadinessReport(report)).toContain('Required action:');
+
+    const lines = readinessBlockerMessage(report).split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatch(/^config\.invalid: /);
+    expect(lines[1]).toMatch(/^repo\.not-git: /);
   });
 
   it('points to the blocker summary in a single line without listing each blocker', () => {

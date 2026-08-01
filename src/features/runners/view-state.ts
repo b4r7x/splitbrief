@@ -1,4 +1,4 @@
-import type { PickerOption } from './model-catalog.js';
+import type { PickerOption } from './model-catalog/options.js';
 import * as typeGuards from '../../utils/type-guards.js';
 
 export type View =

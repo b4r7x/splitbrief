@@ -18,8 +18,8 @@ function seedEvilModels(): void {
     config: makeConfig({
       planner: {
         kind: 'api',
-        provider: 'ollama',
-        apiBase: 'http://localhost:11434/v1',
+        provider: 'openrouter',
+        apiBase: 'https://openrouter.ai/api/v1',
         model: evilPlannerModel,
       },
       implementer: { model: evilImplModel },
@@ -54,6 +54,7 @@ describe('HomeConfigSummary', () => {
     const frame = ui.lastFrame() ?? '';
     expectNoControlBytes(frame);
     const stripped = stripAnsiStyles(frame);
+    expect(stripped).toContain('OpenRouter');
     expect(stripped).toContain('Ollama');
     expect(stripped).toContain('Llama');
     expect(stripped).toContain('Mistral');

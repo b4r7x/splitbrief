@@ -84,10 +84,7 @@ async function captureHead(projectDir: string): Promise<string | null> {
 }
 
 async function candidateChangedFiles(projectDir: string, head: string | null): Promise<string[]> {
-  const base = await resolveRunStartBase({
-    projectDir,
-    provenance: { kind: 'captured', head },
-  });
+  const base = await resolveRunStartBase({ projectDir, head });
   const working = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
   const committed =
     base.kind === 'working-tree-only'

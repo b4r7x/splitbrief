@@ -79,7 +79,7 @@ async function makeCtx(
     projectDir,
     sessionId,
     config: makeNoValidationConfig({
-      workflow: { commitStrategy: 'none' },
+      workflow: {},
       approval: { enabled: true, feedRejectionsToPlanner: false },
     }),
     callbacks: opts.callbacks,

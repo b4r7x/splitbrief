@@ -9,6 +9,7 @@ import {
   restoreClipboardExecFixture,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -235,17 +236,7 @@ describe('buildCommandContext', () => {
         return {
           providers: [{ provider: 'ollama', available: true, isLocal: true }],
           cliTools: [
-            {
-              tool: 'claude-code',
-              executable: null,
-              trust: 'trusted',
-              installedVersion: `gen-${detectCalls}`,
-              testedVersion: '1.0.0',
-              compatibility: 'compatible',
-              auth: 'authenticated',
-              diagnostic: { state: 'ready', remediation: null },
-              probedAt: 0,
-            },
+            cliDetectionFor('ready', 'claude-code', { installedVersion: `gen-${detectCalls}` }),
           ],
         };
       },
@@ -255,11 +246,11 @@ describe('buildCommandContext', () => {
 
     await loadDetectionIntoStores(getDefaultDetectionService(), deps, detectionStore, projectDir);
     detectionStore.reset();
-    expect(detectionStore.get().planners).toEqual([]);
+    expect(detectionStore.get().cliTools).toEqual([]);
 
     await build().refreshDetection();
 
-    expect(detectionStore.get().planners[0]?.version).toBe('gen-2');
+    expect(detectionStore.get().cliTools[0]?.installedVersion).toBe('gen-2');
     expect(detectionStore.get().implementers[0]?.provider).toBe('ollama');
     expect(configStore.get().config?.planner).toEqual(config.planner);
     expect(configStore.get().config?.implementer.model).toBe(config.implementer.model);

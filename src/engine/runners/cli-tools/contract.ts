@@ -7,7 +7,13 @@ import type { RunnerCallFailureStatus, RunnerCallUsageSemantics } from '../../ca
 
 export type CliPromptTransport =
   | Readonly<{ kind: 'stdin' }>
-  | Readonly<{ kind: 'argv'; maxBytes: number }>
+  /**
+   * `placement` records how the tool's own argv parser reads the prompt: a
+   * `positional` prompt is parsed as an option when it starts with `-`, a
+   * `flag-value` prompt occupies the value slot of its preceding flag and is
+   * therefore inert.
+   */
+  | Readonly<{ kind: 'argv'; maxBytes: number; placement: 'positional' | 'flag-value' }>
   | Readonly<{ kind: 'file'; mode: 0o600 }>;
 
 type CliProtocolTerminalEvent =
@@ -54,6 +60,8 @@ export type CliOutputContract =
 export type CliInvocation = Readonly<{
   executable: CliExecutableIdentity;
   args: readonly string[];
+  /** Adapter-owned prefix of `args`; anything past it is caller-configured. Absent means all of `args`. */
+  baseArgs?: readonly string[] | undefined;
   promptTransport: CliPromptTransport;
   environment: Readonly<Record<string, string>>;
   cwd: string;
@@ -77,7 +85,7 @@ type CliArgumentValidation =
   | Readonly<{ valid: true }>
   | Readonly<{ valid: false; conflicts: readonly string[] }>;
 
-type CliTerminalInput = Readonly<{
+export type CliTerminalInput = Readonly<{
   outputContract: CliOutputContract;
   events: readonly CliProtocolEvent[];
   stdout: string;
@@ -94,8 +102,12 @@ type CliAdapterContract<
   descriptor: (typeof CLI_TOOL_CATALOG)[Tool];
   role: Role;
   promptTransport: CliPromptTransport;
+  baseArgs: (input: BuildArgsInput) => readonly string[];
   buildArgs: (input: BuildArgsInput) => readonly string[];
-  validateArgs: (invocationArgs: readonly string[]) => CliArgumentValidation;
+  validateArgs: (
+    invocationArgs: readonly string[],
+    baseArgs: readonly string[],
+  ) => CliArgumentValidation;
   environment: Readonly<Record<string, string>>;
   outputContract: CliOutputContract;
   parse: (line: string) => readonly CliProtocolEvent[];
@@ -103,7 +115,7 @@ type CliAdapterContract<
   probe: CliProbeContract;
 }>;
 
-type CliPlannerBuildArgsInput = Readonly<{
+export type CliPlannerBuildArgsInput = Readonly<{
   prompt: string;
   model: string | undefined;
   projectDir: string;
@@ -113,7 +125,7 @@ type CliPlannerBuildArgsInput = Readonly<{
   effort: EffortLevel | undefined;
 }>;
 
-type CliImplementerBuildArgsInput = Readonly<{
+export type CliImplementerBuildArgsInput = Readonly<{
   prompt: string;
   model: string | undefined;
   projectDir: string;
@@ -124,10 +136,27 @@ export type CliPlannerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterCo
   Tool,
   'planner',
   CliPlannerBuildArgsInput
->;
+> &
+  Readonly<{ supportsSessionResume: boolean; supportsEffort: boolean }>;
 
 export type CliImplementerAdapter<Tool extends CliToolId = CliToolId> = CliAdapterContract<
   Tool,
   'implementer',
   CliImplementerBuildArgsInput
 >;
+
+/** The subset of the adapter contract the process executor reads. */
+export type CliProcessAdapter = Readonly<{
+  descriptor: Readonly<{
+    id: string;
+    auth: Readonly<{ channels: readonly Readonly<{ env: readonly string[] }>[] }>;
+  }>;
+  promptTransport: CliPromptTransport;
+  validateArgs: (
+    invocationArgs: readonly string[],
+    baseArgs: readonly string[],
+  ) => CliArgumentValidation;
+  outputContract: CliOutputContract;
+  parse: (line: string) => readonly CliProtocolEvent[];
+  terminal: (input: CliTerminalInput) => CliProtocolTerminalEvent;
+}>;

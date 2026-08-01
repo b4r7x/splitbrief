@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "mistral",
+    "role": "implementer",
+    "contractSha256": "7dcd95766ac97f4cc068274646a93ba41cc480c593f97a9008a05c31f72e44fe",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing credential for MISTRAL_API_KEY"
+  },
+  "productionConformance": {
+    "candidateId": "mistral",
+    "role": "implementer",
+    "contractSha256": "7dcd95766ac97f4cc068274646a93ba41cc480c593f97a9008a05c31f72e44fe",
+    "stdout": "",
+    "stderr": "missing credential for MISTRAL_API_KEY"
+  },
+  "verdict": "OMIT"
+}

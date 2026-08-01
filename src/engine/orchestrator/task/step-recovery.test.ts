@@ -57,7 +57,7 @@ describe('runSingleTask — recovery', () => {
         bus,
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 2 },
+          workflow: { maxRetries: 2 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -124,7 +124,7 @@ describe('runSingleTask — recovery', () => {
         bus,
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-          workflow: { commitStrategy: 'none', maxRetries: 1 },
+          workflow: { maxRetries: 1 },
         }),
         validator: { ...createValidator(), runValidation },
       }),
@@ -200,7 +200,7 @@ describe('runSingleTask — recovery', () => {
       bus,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-        workflow: { commitStrategy: 'none', maxRetries: 1 },
+        workflow: { maxRetries: 1 },
       }),
       validator: { ...createValidator(), runValidation },
     });

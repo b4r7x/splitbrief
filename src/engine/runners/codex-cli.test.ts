@@ -89,11 +89,11 @@ describe('Codex implementer adapter — staged direct writes', () => {
       projectDir: '/staged',
       configuredArgs: [],
     });
-    expect(codexImplementerAdapter.validateArgs([...args, '--json'])).toEqual({
+    expect(codexImplementerAdapter.validateArgs([...args, '--json'], args)).toEqual({
       valid: false,
       conflicts: ['--json'],
     });
-    expect(codexImplementerAdapter.validateArgs([...args, '--sandbox', 'danger'])).toEqual({
+    expect(codexImplementerAdapter.validateArgs([...args, '--sandbox', 'danger'], args)).toEqual({
       valid: false,
       conflicts: ['--sandbox'],
     });

@@ -5,6 +5,7 @@ import type { initStores } from '../../init-stores.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../../engine/ipc/spawn-server.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import type { CollectedReadiness } from '../../../core/readiness/collect.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
@@ -41,7 +42,7 @@ export interface BootstrapSessionArgs {
   emitReadiness: (report: ReadinessReport) => void;
   cliReadiness?: readonly CliReadinessResult[] | undefined;
   detectCliReadiness?: DetectCliReadiness | undefined;
-  defaultAutoApprove?: boolean | undefined;
+  defaultApprove?: ApproveLevel | undefined;
 }
 
 export interface DispatchArgs {

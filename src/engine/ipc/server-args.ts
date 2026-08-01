@@ -2,7 +2,7 @@ import { readFileSync, lstatSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { CLIOverridesSchema } from '../../core/config/runtime/overrides/schema.js';
-import { WorkflowModeSchema, normalizeLegacyMode } from '../../core/schemas/enums.js';
+import { WorkflowModeSchema } from '../../core/schemas/enums.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';
 import { sessionDir } from '../../core/paths.js';
@@ -30,10 +30,7 @@ const IpcServerArgsSchema = z.object({
   sessionId: z.string(),
   projectDir: z.string(),
   feature: z.string(),
-  mode: z.preprocess(
-    (m) => (typeof m === 'string' ? (normalizeLegacyMode(m) ?? m) : m),
-    WorkflowModeSchema,
-  ),
+  mode: WorkflowModeSchema,
   configPath: z.string(),
   overrides: CLIOverridesSchema.default({}),
   persistTranscript: z.boolean().optional(),

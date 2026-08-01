@@ -10,7 +10,6 @@ import { cliError } from '../errors.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import { sessionDir } from '../../core/paths.js';
-import { maybeMigrateAndReport } from './migrate.js';
 import { resumeSavedSession } from './continue/resume.js';
 import type { WorkflowOpts } from '../../core/types/config-options.js';
 
@@ -31,7 +30,6 @@ export async function resumeCommand(
   assertModeFlagsExclusive(opts);
   assertWorktreeStartOnly(opts);
   const { projectDir } = opts;
-  await maybeMigrateAndReport(projectDir, opts);
 
   const sessionId = readActive(projectDir);
   if (!sessionId) {

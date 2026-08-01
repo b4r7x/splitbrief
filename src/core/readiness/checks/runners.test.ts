@@ -103,6 +103,38 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.summary).toContain('does not require authentication');
   });
 
+  it.each([
+    ['missing-binary', { installation: 'unavailable', executable: null }, 'Install claude-code'],
+    ['untrusted-path', { trust: 'untrusted' }, 'Trust the exact'],
+    ['incompatible-version', { compatibility: 'incompatible' }, 'Install the tested'],
+    ['unauthenticated', { auth: 'unauthenticated' }, 'Authenticate claude-code'],
+    ['auth-unknown', { auth: 'unknown' }, 'Verify claude-code authentication'],
+  ] as const)('publishes %s as a structured diagnostic state', (stateId, overrides, fix) => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks(config, [cliReadiness(overrides)]).find(
+      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
+    );
+
+    expect(check?.diagnosticState).toBe(stateId);
+    expect(check?.fix).toContain(fix);
+  });
+
+  it('publishes no diagnostic state for ready, disabled, or version-unverified CLIs', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    for (const result of [
+      cliReadiness(),
+      cliReadiness({ enabled: false }),
+      cliReadiness({ compatibility: 'unverified' }),
+    ]) {
+      const check = buildRunnerChecks(config, [result]).find(
+        (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
+      );
+      expect(check?.diagnosticState).toBeUndefined();
+    }
+  });
+
   it('redacts trusted executable paths from public readiness metadata', () => {
     const executablePath = '/Users/private-user/project/bin/claude';
     const result = cliReadiness({
@@ -313,6 +345,27 @@ describe('buildRunnerChecks availability guidance', () => {
     );
 
     expect(check).toBeUndefined();
+  });
+
+  it('distinguishes automatic CLI selection from an unset model', () => {
+    const automatic = makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'auto' } });
+    const unset = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    const explicit = makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' } });
+
+    const check = (config: ReturnType<typeof makeConfig>) =>
+      buildRunnerChecks(config).find((c) => c.id === 'runners.planner.configured');
+
+    expect(check(automatic)?.summary).toContain('codex (auto)');
+    expect(check(automatic)?.metadata).toMatchObject({ model: null, modelSelection: 'auto' });
+
+    expect(check(unset)?.summary).not.toContain('(');
+    expect(check(unset)?.metadata).toMatchObject({ model: null, modelSelection: 'unset' });
+
+    expect(check(explicit)?.summary).toContain('codex (gpt-5.4)');
+    expect(check(explicit)?.metadata).toMatchObject({
+      model: 'gpt-5.4',
+      modelSelection: 'explicit',
+    });
   });
 
   it('readiness summaries capitalize roles via formatRoleLabel', () => {

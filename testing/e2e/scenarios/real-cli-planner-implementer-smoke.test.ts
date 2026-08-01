@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import type { CliToolId } from '../../../src/core/schemas/enums.js';
+import type { CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
@@ -66,7 +66,6 @@ describe('real CLI smoke: planner to implementer', () => {
             workflow: {
               mode: 'quick',
               approve: 'none',
-              commitStrategy: 'none',
               maxRetries: 1,
               persistTranscript: true,
             },

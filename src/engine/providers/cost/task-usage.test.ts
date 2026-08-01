@@ -315,7 +315,7 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
       tokenUsage: globalUsage,
       implementerTool: 'deepseek',
       plannerTool: 'claude-code',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     };
 
     // deepseek prices input/output but has no cache rate, so calculateTaskUsageCost silently drops
@@ -350,7 +350,7 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
         tokenUsage: globalUsage,
         implementerTool: 'deepseek',
         plannerTool: 'claude-code',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       }),
     ).toBe(true);
   });
@@ -378,7 +378,7 @@ describe('isTaskUsageCostKnown — cache alignment with calculateTaskUsageCost',
         tokenUsage: globalUsage,
         implementerTool: 'ollama',
         plannerTool: 'deepseek',
-        plannerModel: 'deepseek-chat',
+        plannerModel: 'deepseek-v4-flash',
       }),
     ).toBe(false);
   });

@@ -43,7 +43,7 @@ describe('runPlanningPhase — planner rejection context', () => {
     const { projectDir, sessionId } = setupProject(dirs);
     seedRejectionEvidence(projectDir, sessionId);
     const config = makeConfig({
-      workflow: { autoApproveSpec: true, autoApprovePlan: true, ...opts.workflow },
+      workflow: { approve: 'none', ...opts.workflow },
       ...(opts.approval ? { approval: opts.approval } : {}),
     });
     const result = await runPlanningPhase({

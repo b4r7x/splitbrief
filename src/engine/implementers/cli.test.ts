@@ -19,7 +19,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../lib/process/errors.js';
-import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
+import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
 
@@ -143,6 +143,28 @@ describe('createCliImplementer (claude-code)', () => {
     expect(readFileSync(join(projectDir, 'src/hello.ts'), 'utf8')).toBe('generated');
   });
 
+  it('constructs and runs a legacy config that selects no auth channel', async () => {
+    installRecordingClaudeShim('src/hello.ts');
+    const legacyConfig: CliImplementerConfig = {
+      kind: 'cli',
+      tool: 'claude-code',
+      contextLength: 8192,
+      temperature: 0.3,
+    };
+
+    const implementer = createCliImplementer(legacyConfig);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig({ implementer: legacyConfig }),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(projectDir, 'src/hello.ts'), 'utf8')).toBe('generated');
+  });
+
   it('passes only the selected API-key channel to the implementer process', async () => {
     const envFile = join(shimDir, 'env.txt');
     const target = join(projectDir, 'src/hello.ts');
@@ -213,7 +235,28 @@ describe('createCliImplementer (claude-code)', () => {
     });
 
     expect(result.success).toBe(false);
+    expect(result.outcome).toBe('no-staged-change');
     expect(result.error).toContain('without changing any files');
+  });
+
+  it('completes with a configured outputFormat that replaces the structured-terminal parser', async () => {
+    installRecordingShim('claude', 'src/hello.ts');
+    const implementerConfig: CliImplementerConfig = {
+      ...cliClaudeImplementer,
+      outputFormat: 'text',
+    };
+    const config = makeConfig({ implementer: implementerConfig });
+
+    const implementer = createCliImplementer(implementerConfig);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
   });
 });
 
@@ -320,6 +363,31 @@ describe('createCliImplementer (opencode arg vector)', () => {
     expect(argv.at(-1)).toContain('src/hello.ts');
   });
 
+  it.each([
+    'auto',
+    'AUTO',
+    '  auto  ',
+    undefined,
+  ])('omits --model entirely for automatic selection (%j) so the tool keeps its own default', async (model) => {
+    const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');
+    const automatic: CliImplementerConfig = {
+      ...opencodeImplementer,
+      ...(model === undefined ? {} : { model }),
+    };
+    const config = makeConfig({ implementer: automatic });
+
+    const implementer = createCliImplementer(automatic);
+    await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(readArgv(argvFile)).not.toContain('--model');
+  });
+
   it('retry() drives the same `run` arg vector and reports success on a file change', async () => {
     const { argvFile } = installRecordingShim('opencode', 'src/hello.ts');
     const config = makeConfig({ implementer: opencodeImplementer });
@@ -372,8 +440,7 @@ describe('createCliImplementer (opencode arg vector)', () => {
       "const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 25)'], { stdio: 'ignore' });",
       'child.unref();',
       `writeFileSync(${JSON.stringify(pidsFile)}, process.pid + ':' + child.pid);`,
-      `const line = JSON.stringify({ type: 'text', part: { type: 'text', text: 'x' } }) + '\\n';`,
-      `for (let i = 0; i < ${RUNNER_CALL_OUTPUT_MAX_EVENTS + 10}; i += 1) process.stdout.write(line);`,
+      `process.stdout.write('x'.repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 10}));`,
     ].join('\n');
     writeFileSync(shimPath, `${script}\n`, 'utf8');
     chmodSync(shimPath, 0o755);
@@ -414,7 +481,7 @@ describe('createCliImplementer (opencode arg vector)', () => {
 
       expect(result, `iteration ${iteration}`).toMatchObject({
         success: false,
-        error: expect.stringContaining('CLI protocol event budget was exceeded'),
+        error: expect.stringContaining('CLI output line exceeded the line byte budget'),
       });
       expect(
         events.filter((event) => event.type === 'call_error'),
@@ -424,7 +491,7 @@ describe('createCliImplementer (opencode arg vector)', () => {
           status: 'truncated',
           error: {
             code: 'output-budget-breach',
-            message: 'CLI protocol event budget was exceeded',
+            message: 'CLI output line exceeded the line byte budget',
           },
         }),
       ]);

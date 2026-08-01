@@ -9,7 +9,7 @@ import { createCommandAvailability } from '../availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude/invoke.js';
 import { toTokenDelta } from '../calls/projection.js';
-import { resolveAutoModel } from '../../core/providers/model-selection.js';
+import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import {
   createSessionAttemptCallContext,
   createSessionResumeState,
@@ -38,19 +38,17 @@ export function createClaudeCodePlanner(opts: {
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
 }): Planner {
-  const {
-    authChannel,
-    trustedCli,
-    model,
-    initialSessionId,
-    effort,
-    timeout,
-    idleWarnMs,
-    idleKillMs,
-  } = opts;
+  const { trustedCli, model, initialSessionId, effort, timeout, idleWarnMs, idleKillMs } = opts;
+  // The resolved channel — not the configured one — decides which credential the
+  // child receives, so the stream invocations must see the same identity the
+  // sandbox environment was built from.
+  const authChannel = resolveCliRunnerAuth({
+    kind: 'cli',
+    tool: CLAUDE_TOOL,
+    authChannel: opts.authChannel,
+  }).id;
   const runnerConfig = { kind: 'cli' as const, tool: CLAUDE_TOOL, authChannel };
-  resolveCliRunnerAuth(runnerConfig);
-  const resolvedModel = resolveAutoModel(model, 'claude-code');
+  const resolvedModel = resolveCliModel(model, CLAUDE_TOOL);
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
 

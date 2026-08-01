@@ -1,6 +1,93 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import { KNOWN_PROVIDERS, getProvider, detectAvailableProviders } from './registry.js';
+import {
+  API_PROVIDER_CATALOG,
+  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
+  EXISTING_API_PROVIDER_IDS,
+  PASS_API_PROVIDER_IDS,
+} from '../../core/providers/api-provider-catalog.js';
+import { resolveRepoPath as productionResolveRepoPath } from '../../core/runners/candidate-admission.js';
+import {
+  KNOWN_PROVIDERS,
+  REGISTRY_OMIT_CANDIDATE_IDS,
+  REGISTRY_PASS_CANDIDATE_IDS,
+  REGISTRY_PASS_CANDIDATE_WIRING_COUNT,
+  getProvider,
+  detectAvailableProviders,
+} from './registry.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
+
+const ollamaControl = vi.hoisted(() => ({ failConstruction: false }));
+
+vi.mock('./ollama.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./ollama.js')>();
+  return {
+    ...actual,
+    createOllamaProvider: (...args: Parameters<typeof actual.createOllamaProvider>) => {
+      if (ollamaControl.failConstruction) throw new Error('ollama construction failed');
+      return actual.createOllamaProvider(...args);
+    },
+  };
+});
+
+const REPO_ROOT = join(import.meta.dirname, '../../..');
+
+function resolveRepoPath(relativePath: string): string {
+  return join(REPO_ROOT, relativePath);
+}
+
+describe('provider registry admission', () => {
+  it('resolves production repo root to the workspace package.json', () => {
+    expect(existsSync(productionResolveRepoPath('package.json'))).toBe(true);
+    expect(productionResolveRepoPath('package.json')).toBe(resolveRepoPath('package.json'));
+  });
+
+  it('matches catalog keys with the exact retained registry count', () => {
+    expect(Object.keys(KNOWN_PROVIDERS).toSorted()).toEqual(
+      Object.keys(API_PROVIDER_CATALOG).toSorted(),
+    );
+    expect(Object.keys(KNOWN_PROVIDERS).length).toBe(
+      EXISTING_API_PROVIDER_IDS.length + PASS_API_PROVIDER_IDS.length,
+    );
+  });
+
+  it('derives the PASS allowlist from T-044–T-053 verdicts and keeps OMIT modules absent', () => {
+    expect([...REGISTRY_PASS_CANDIDATE_IDS]).toEqual([...PASS_API_PROVIDER_IDS]);
+    const expectedOmitIds = API_PROVIDER_VERDICT_CANDIDATE_PATHS.map((entry) => entry.id).filter(
+      (id) => !(PASS_API_PROVIDER_IDS as readonly string[]).includes(id),
+    );
+    expect([...REGISTRY_OMIT_CANDIDATE_IDS]).toEqual(expectedOmitIds);
+
+    for (const id of REGISTRY_OMIT_CANDIDATE_IDS) {
+      expect(KNOWN_PROVIDERS).not.toHaveProperty(id);
+    }
+    for (const candidate of API_PROVIDER_VERDICT_CANDIDATE_PATHS) {
+      if ((PASS_API_PROVIDER_IDS as readonly string[]).includes(candidate.id)) continue;
+      expect(existsSync(resolveRepoPath(candidate.source))).toBe(false);
+      expect(existsSync(resolveRepoPath(candidate.test))).toBe(false);
+    }
+  });
+
+  it('statically imports each PASS candidate once and wires createUnregisteredOpenAICompatProvider', () => {
+    expect(REGISTRY_PASS_CANDIDATE_WIRING_COUNT).toBe(PASS_API_PROVIDER_IDS.length);
+
+    const source = readFileSync(join(import.meta.dirname, 'registry.ts'), 'utf8');
+    const candidateImports = source.match(/from '\.\/(?:candidates\/[^']+|llama-cpp)\.js'/g) ?? [];
+    expect(candidateImports.length).toBe(PASS_API_PROVIDER_IDS.length);
+
+    for (const id of PASS_API_PROVIDER_IDS) {
+      const entry = API_PROVIDER_VERDICT_CANDIDATE_PATHS.find((candidate) => candidate.id === id);
+      expect(entry).toBeDefined();
+      if (entry === undefined) continue;
+      const importPath = entry.source
+        .replace(/^src\/engine\/providers\//, './')
+        .replace(/\.ts$/, '.js');
+      expect(source).toContain(`from '${importPath}'`);
+      expect(source).toContain(`${entry.id}:`);
+    }
+  });
+});
 
 describe('getProvider', () => {
   setupFetchMock();
@@ -50,7 +137,7 @@ describe('getProvider', () => {
 
     const provider = getProvider('anthropic', {
       apiBase: 'https://api.anthropic.com/v1',
-      apiKey: 'sk-test',
+      apiKey: 'sk-ant-test',
     });
     const models = await provider.listModels();
 
@@ -255,6 +342,37 @@ describe('detectAvailableProviders', () => {
     expect(deepseek).toMatchObject({ available: false });
   });
 
+  it('keeps detecting every provider when one factory throws during construction', async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL | Request) => {
+      const urlStr = typeof url === 'string' ? url : url.toString();
+      if (urlStr.includes('1234')) {
+        return new Response(JSON.stringify({ data: [{ id: 'deepseek-coder-v2' }] }), {
+          status: 200,
+        });
+      }
+      throw new Error('refused');
+    });
+    ollamaControl.failConstruction = true;
+
+    try {
+      const results = await detectAvailableProviders();
+
+      expect(results.length).toBe(Object.keys(KNOWN_PROVIDERS).length);
+      expect(results.find((r) => r.provider === 'ollama')).toEqual({
+        provider: 'ollama',
+        available: false,
+        isLocal: true,
+        error: 'ollama construction failed',
+      });
+      expect(results.find((r) => r.provider === 'lm-studio')).toMatchObject({
+        available: true,
+        models: [{ id: 'deepseek-coder-v2' }],
+      });
+    } finally {
+      ollamaControl.failConstruction = false;
+    }
+  });
+
   it('handles all providers failing', async () => {
     vi.mocked(globalThis.fetch).mockRejectedValue(new Error('refused'));
 
@@ -266,7 +384,7 @@ describe('detectAvailableProviders', () => {
 
   it('does not persist credential values from provider failures in detection', async () => {
     const previous = process.env.OPENAI_API_KEY;
-    const canary = 'canary-registry-credential-6e2a';
+    const canary = 'sk-canary-registry-credential-6e2a';
     process.env.OPENAI_API_KEY = canary;
     vi.mocked(globalThis.fetch).mockRejectedValue(
       new Error(`upstream Authorization: Bearer ${canary}`),

@@ -1,13 +1,12 @@
 import { join } from 'node:path';
 import YAML, { parseDocument } from 'yaml';
-import { ConfigSchema, type Config } from '../../schemas/config.js';
+import { CONFIG_VERSION, ConfigSchema, type Config } from '../../schemas/config.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { resolveDefaultApiBase, KNOWN_PROVIDER_BASE_URLS } from '../../providers/catalog.js';
 import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
 import { validateConfig } from './validation/config.js';
 import { fromYaml, toYaml } from './transform.js';
 import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
-import { migrateConfig } from './migrate.js';
 import { checkConfigPermissions, ensureGitignore } from '../../../lib/fs.js';
 import {
   confinedExists,
@@ -25,7 +24,7 @@ export function configPath(projectDir: string): string {
 export function createDefaultConfig(): Config {
   const provider = API_PROVIDER_CATALOG.ollama;
   return {
-    version: 3,
+    version: CONFIG_VERSION,
     planner: { kind: 'cli', tool: 'claude-code' },
     implementer: {
       kind: 'api',
@@ -56,29 +55,20 @@ export function createDefaultConfig(): Config {
   };
 }
 
-function stripLegacyTestCommandDefault(
-  validation: Record<string, unknown> | null,
-): Record<string, unknown> {
-  if (!validation) return {};
-  if (validation['testCommand'] !== 'npm test') return validation;
-  const { testCommand, ...rest } = validation;
-  return rest;
-}
-
 function mergeRunner(
-  migrated: Record<string, unknown> | null,
+  loaded: Record<string, unknown> | null,
   defaults: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (!migrated) return defaults;
-  // When kinds differ, the migrated config is already self-contained (from
-  // v1 to v2 migration or explicitly set in v2). Merging would leak kind-specific
-  // fields (e.g. provider/apiBase from an api default into a cli config).
-  if (migrated.kind !== undefined && migrated.kind !== defaults.kind) return migrated;
+  if (!loaded) return defaults;
+  // When kinds differ, the loaded runner is already self-contained. Merging
+  // would leak kind-specific fields (e.g. provider/apiBase from an api default
+  // into a cli config).
+  if (loaded.kind !== undefined && loaded.kind !== defaults.kind) return loaded;
   // When the provider is explicitly set and differs from the default, the
   // provider-specific defaults (model/apiBase) do not apply. Merging them would
   // mask schema validation of the genuinely missing model/apiBase fields.
-  if (migrated.provider !== undefined && migrated.provider !== defaults.provider) return migrated;
-  return { ...defaults, ...migrated };
+  if (loaded.provider !== undefined && loaded.provider !== defaults.provider) return loaded;
+  return { ...defaults, ...loaded };
 }
 
 const MERGE_HANDLED_KEYS = new Set([
@@ -93,36 +83,33 @@ const MERGE_HANDLED_KEYS = new Set([
   'autoSplitOverflow',
 ]);
 
-function mergeWithDefaults(migrated: Record<string, unknown>): Record<string, unknown> {
+function mergeWithDefaults(loaded: Record<string, unknown>): Record<string, unknown> {
   const defaults = createDefaultConfig();
   const implementerDefaults: Record<string, unknown> = { ...defaults.implementer };
 
   const passthrough: Record<string, unknown> = {};
   for (const key of Object.keys(ConfigSchema.shape)) {
     if (MERGE_HANDLED_KEYS.has(key)) continue;
-    if (migrated[key] !== undefined) passthrough[key] = migrated[key];
+    if (loaded[key] !== undefined) passthrough[key] = loaded[key];
   }
 
   return {
-    version: 3,
-    planner: migrated['planner'] ?? defaults.planner,
-    implementer: mergeRunner(narrowRecord(migrated['implementer']), implementerDefaults),
-    ...(migrated['implementerProfiles'] !== undefined && {
-      implementerProfiles: migrated['implementerProfiles'],
+    version: CONFIG_VERSION,
+    planner: loaded['planner'] ?? defaults.planner,
+    implementer: mergeRunner(narrowRecord(loaded['implementer']), implementerDefaults),
+    ...(loaded['implementerProfiles'] !== undefined && {
+      implementerProfiles: loaded['implementerProfiles'],
     }),
-    validation: narrowRecord(migrated['validation'])
-      ? {
-          ...defaults.validation,
-          ...stripLegacyTestCommandDefault(narrowRecord(migrated['validation'])),
-        }
+    validation: narrowRecord(loaded['validation'])
+      ? { ...defaults.validation, ...narrowRecord(loaded['validation']) }
       : defaults.validation,
-    workflow: narrowRecord(migrated['workflow'])
-      ? { ...defaults.workflow, ...narrowRecord(migrated['workflow']) }
+    workflow: narrowRecord(loaded['workflow'])
+      ? { ...defaults.workflow, ...narrowRecord(loaded['workflow']) }
       : defaults.workflow,
-    theme: migrated['theme'] ?? defaults.theme,
+    theme: loaded['theme'] ?? defaults.theme,
     ...passthrough,
-    plannerEstimateReview: migrated['plannerEstimateReview'] ?? defaults.plannerEstimateReview,
-    autoSplitOverflow: migrated['autoSplitOverflow'] ?? defaults.autoSplitOverflow,
+    plannerEstimateReview: loaded['plannerEstimateReview'] ?? defaults.plannerEstimateReview,
+    autoSplitOverflow: loaded['autoSplitOverflow'] ?? defaults.autoSplitOverflow,
   };
 }
 
@@ -133,30 +120,10 @@ export interface LoadConfigResult {
   rawYaml: string;
 }
 
-export type ConfigLoaderDiagnostic =
-  | { kind: 'config-file-permissions'; path: string }
-  | { kind: 'config-migration'; code: 'deprecated-v2' | 'missing-version' };
+export type ConfigLoaderDiagnostic = { kind: 'config-file-permissions'; path: string };
 
 export function formatConfigLoaderDiagnostic(diagnostic: ConfigLoaderDiagnostic): string {
-  switch (diagnostic.kind) {
-    case 'config-file-permissions':
-      return `Config file ${diagnostic.path} has overly permissive permissions. Consider running: chmod 600 ${diagnostic.path}`;
-    case 'config-migration':
-      if (diagnostic.code === 'deprecated-v2') {
-        return 'config.version 2 is deprecated; SPLITBRIEF migrated it in memory. Run `splitbrief init --reconfigure` to write a current config.';
-      }
-      return 'config.version is missing; SPLITBRIEF assumed version 1 and migrated it in memory, which drops fields added after v1. Run `splitbrief init --reconfigure` to write a current config.';
-  }
-}
-
-function migrationDiagnosticsFromVersion(version: number | undefined): ConfigLoaderDiagnostic[] {
-  if (version === 2) {
-    return [{ kind: 'config-migration', code: 'deprecated-v2' }];
-  }
-  if (version === undefined) {
-    return [{ kind: 'config-migration', code: 'missing-version' }];
-  }
-  return [];
+  return `Config file ${diagnostic.path} has overly permissive permissions. Consider running: chmod 600 ${diagnostic.path}`;
 }
 
 export function dedupeConfigWarnings(warnings: readonly string[]): string[] {
@@ -220,15 +187,13 @@ export function loadConfig(projectDir: string): LoadConfigResult {
     ]);
   }
 
-  const camelCased = fromYaml(parsed);
-  const camelRecord = narrowRecord(camelCased);
-  const rawVersion =
-    typeof camelRecord?.['version'] === 'number' ? camelRecord['version'] : undefined;
-  loaderDiagnostics.push(...migrationDiagnosticsFromVersion(rawVersion));
+  const camelRecord = narrowRecord(fromYaml(parsed));
+  if (!camelRecord) throw configError.notAnObject('Config');
+  if (camelRecord['version'] !== CONFIG_VERSION) {
+    throw configError.unsupportedVersion(camelRecord['version']);
+  }
 
-  const migrated = narrowRecord(migrateConfig(camelCased)) ?? {};
-
-  const merged = mergeWithDefaults(migrated);
+  const merged = mergeWithDefaults(camelRecord);
 
   const { errors, warnings: validationWarnings, data } = validateConfig(merged);
   if (errors.length > 0) {
@@ -236,7 +201,11 @@ export function loadConfig(projectDir: string): LoadConfigResult {
     for (const err of errors) {
       lines.push(`  ${err.path}: ${err.message}`);
     }
-    throw configError.validationFailed(filePath, lines);
+    throw configError.validationFailed(
+      filePath,
+      lines,
+      errors.flatMap((err) => err.diagnosticState ?? []),
+    );
   }
 
   if (!data) {

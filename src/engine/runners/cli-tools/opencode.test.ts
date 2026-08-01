@@ -33,7 +33,11 @@ describe('OpenCode role adapters', () => {
 
   it('keeps JSON argv, process-exit completion, and bounded probes explicit', () => {
     for (const adapter of [opencodePlannerAdapter, opencodeImplementerAdapter]) {
-      expect(adapter.promptTransport).toEqual({ kind: 'argv', maxBytes: 120_000 });
+      expect(adapter.promptTransport).toEqual({
+        kind: 'argv',
+        maxBytes: 120_000,
+        placement: 'positional',
+      });
       expect(adapter.outputContract).toEqual({
         kind: 'text-exit',
         successfulExitCodes: [0],
@@ -62,29 +66,28 @@ describe('OpenCode role adapters', () => {
         configuredArgs: [],
       }),
     ).toEqual(['run', '--model', 'anthropic/claude-sonnet', '--format', 'json', PROMPT]);
-    expect(opencodePlannerAdapter.validateArgs(opencodePromptArgs({ role: 'planner' }))).toEqual({
-      valid: true,
-    });
+    const plannerBase = opencodePromptArgs({ role: 'planner' });
+    const implementerBase = opencodePromptArgs({ role: 'implementer' });
+    expect(opencodePlannerAdapter.validateArgs(plannerBase, plannerBase)).toEqual({ valid: true });
     expect(
-      opencodeImplementerAdapter.validateArgs([
-        ...opencodePromptArgs({ role: 'implementer' }),
-        '--format',
-        'text',
-      ]),
+      opencodeImplementerAdapter.validateArgs(
+        [...implementerBase, '--format', 'text'],
+        implementerBase,
+      ),
     ).toEqual({ valid: false, conflicts: ['--format'] });
   });
 
   it('rejects prompt placeholders, duplicate sentinels, and reordered protected args', () => {
-    const args = opencodePromptArgs({ role: 'implementer' });
-    expect(opencodeImplementerAdapter.validateArgs([...args, 'prefix-<PROMPT>'])).toEqual({
+    const base = opencodePromptArgs({ role: 'implementer' });
+    expect(opencodeImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(opencodeImplementerAdapter.validateArgs([...args, PROMPT])).toEqual({
+    expect(opencodeImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(opencodeImplementerAdapter.validateArgs([PROMPT, ...args])).toEqual({
+    expect(opencodeImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
     });

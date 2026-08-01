@@ -140,6 +140,30 @@ describe('CLI readiness probe', () => {
   }, 5_000);
 
   it.runIf(process.platform !== 'win32')(
+    'settles when a descendant escapes the probe group holding the inherited pipes',
+    async () => {
+      const executable = await nodeExecutable();
+      const result = await probeCliReadiness({
+        tool: 'codex',
+        executable,
+        // The descendant starts its own session, so the group kill cannot reach
+        // it and the leader's stdio never closes: the probe must still answer.
+        probe: probe(
+          [
+            'const { spawn } = require("node:child_process");',
+            'const escaped = spawn(process.execPath, ["-e", "setTimeout(() => process.exit(0), 4_000)"], { detached: true, stdio: ["ignore", "inherit", "inherit"] });',
+            'escaped.unref();',
+            'setInterval(() => {}, 1_000);',
+          ].join(' '),
+        ),
+      });
+
+      expect(result.status).toBe('unverified');
+    },
+    10_000,
+  );
+
+  it.runIf(process.platform !== 'win32')(
     'propagates a termination platform limitation without an unhandled rejection',
     async () => {
       await withTempDir('readiness-probe-platform', async (directory) => {
@@ -149,12 +173,11 @@ describe('CLI readiness probe', () => {
         const signalCause: NodeJS.ErrnoException = new Error('signal unavailable');
         signalCause.code = 'EPERM';
         let rejectedSignal = false;
+        // Under full-suite CPU load the child may not have written pidFile before the
+        // 250ms timeout fires, so the predicate must not depend on reading it back:
+        // within this test's window, any process-group SIGTERM is the one under test.
         const processKill = vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
-          let probePid: number | null = null;
-          try {
-            probePid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
-          } catch {}
-          if (!rejectedSignal && probePid !== null && pid === -probePid && signal === 'SIGTERM') {
+          if (!rejectedSignal && typeof pid === 'number' && pid < 0 && signal === 'SIGTERM') {
             rejectedSignal = true;
             throw signalCause;
           }

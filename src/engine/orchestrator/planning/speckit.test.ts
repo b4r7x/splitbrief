@@ -144,7 +144,7 @@ async function runSpeckit(opts: RunOpts = {}) {
   });
   const { callbacks } = makeCallbacks(opts.callbacksOverride);
   const config = makeConfig({
-    workflow: { mode: 'speckit', autoApproveSpec: true, autoApprovePlan: true },
+    workflow: { mode: 'speckit', approve: 'none' },
   });
   const { bus, events } = makeBusRecorder();
   const initial = createInitialState('add login');

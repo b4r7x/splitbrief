@@ -1,11 +1,11 @@
 import { Command } from 'commander';
-import { registerStartCommand } from '../../src/cli/commands/start/register.js';
+import { defaultStartDeps, registerStartCommand } from '../../src/cli/commands/start/register.js';
+import type { StartDeps } from '../../src/cli/commands/start/types.js';
 import { registerSpecCommand } from '../../src/cli/commands/spec.js';
 import { registerInitCommand } from '../../src/cli/commands/init.js';
 import { registerStatusCommand } from '../../src/cli/commands/status.js';
 import { registerExplainCommand } from '../../src/cli/commands/explain.js';
 import { registerResumeCommand } from '../../src/cli/commands/resume.js';
-import { registerMigrateCommand } from '../../src/cli/commands/migrate.js';
 import { registerContinueCommand } from '../../src/cli/commands/continue/register.js';
 import { registerLastCommand } from '../../src/cli/commands/last.js';
 import { registerStatsCommand } from '../../src/cli/commands/stats.js';
@@ -16,17 +16,19 @@ export interface RunCommandResult {
   exitCode: number;
 }
 
-export async function runCommand(args: string[]): Promise<RunCommandResult> {
+export async function runCommand(
+  args: string[],
+  startDeps: Partial<StartDeps> = {},
+): Promise<RunCommandResult> {
   const program = new Command();
   program.name('splitbrief').version('0.1.0').exitOverride();
 
-  registerStartCommand(program);
+  registerStartCommand(program, { ...defaultStartDeps, ...startDeps });
   registerSpecCommand(program);
   registerInitCommand(program);
   registerStatusCommand(program);
   registerExplainCommand(program);
   registerResumeCommand(program);
-  registerMigrateCommand(program);
   registerContinueCommand(program);
   registerLastCommand(program);
   registerStatsCommand(program);

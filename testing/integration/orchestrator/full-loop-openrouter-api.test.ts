@@ -106,7 +106,6 @@ describe('full workflow OpenRouter API implementer', { timeout: 90_000 }, () => 
         workflow: {
           mode: 'standard',
           approve: 'none',
-          commitStrategy: 'none',
           maxRetries: 1,
           persistTranscript: true,
         },

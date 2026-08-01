@@ -2,11 +2,14 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Config } from '../../core/schemas/config.js';
+import { getProviderBaseURL } from '../../core/providers/catalog.js';
+import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import { createApiPlanner } from './api.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let server: http.Server;
 let port: number;
+let realFetch: typeof globalThis.fetch;
 type RequestBody = {
   model: string;
   stream: boolean;
@@ -16,20 +19,47 @@ let receivedBodies: RequestBody[];
 let receivedHeaders: http.IncomingHttpHeaders[];
 let projectDir: string;
 
+function admittedPlannerApiBase(provider: string): string {
+  if (provider === 'ollama') return `http://127.0.0.1:${port}/v1`;
+  return getProviderBaseURL(provider) ?? `http://127.0.0.1:${port}/v1`;
+}
+
+function proxyFetchToLocalServer(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const requestUrl =
+    typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  const parsed = new URL(requestUrl);
+  if (parsed.hostname === '127.0.0.1' && parsed.port === String(port)) {
+    return realFetch(input, init);
+  }
+
+  const localUrl = `http://127.0.0.1:${port}${parsed.pathname}${parsed.search}`;
+  if (input instanceof Request) {
+    return realFetch(localUrl, {
+      ...init,
+      method: input.method,
+      headers: input.headers,
+      body: input.body,
+      signal: input.signal ?? init?.signal,
+      redirect: init?.redirect ?? 'manual',
+    });
+  }
+  return realFetch(localUrl, init);
+}
+
 function makeApiPlannerConfig(provider: string): Config {
   const service = provider;
   const offering = provider === 'ollama' ? 'local' : 'payg';
 
   return {
-    version: 2,
+    version: 3,
     planner: {
       kind: 'api',
       provider,
       service,
       offering,
       model: 'test-model',
-      apiBase: `http://127.0.0.1:${port}/v1`,
-      apiKey: 'test-key',
+      apiBase: admittedPlannerApiBase(provider),
+      apiKey: `${getApiProviderDescriptor(provider)?.credentialPrefix ?? ''}test-key`,
     },
     implementer: {
       kind: 'api',
@@ -43,10 +73,7 @@ function makeApiPlannerConfig(provider: string): Config {
     },
     validation: { typecheck: true, lint: true, test: true, testCommand: 'npm test' },
     workflow: {
-      autoApproveSpec: false,
-      autoApprovePlan: false,
       maxRetries: 3,
-      commitStrategy: 'none',
       persistTranscript: true,
       compactionFormat: 'auto',
     },
@@ -151,9 +178,12 @@ beforeEach(async () => {
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   port = (server.address() as AddressInfo).port;
+  realFetch = globalThis.fetch.bind(globalThis);
+  vi.stubGlobal('fetch', proxyFetchToLocalServer);
 });
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   if (server.listening) {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
@@ -203,7 +233,7 @@ describe('createApiPlanner', () => {
     });
     expect(receivedHeaders[0]).toMatchObject({
       'anthropic-version': '2023-06-01',
-      'x-api-key': 'test-key',
+      'x-api-key': 'sk-ant-test-key',
     });
   });
 

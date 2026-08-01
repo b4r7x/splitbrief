@@ -1,7 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { z } from 'zod';
 import { KNOWN_API_PROVIDER_IDS } from '../providers/api-provider-catalog.js';
-import { CliToolIdSchema, PLANNER_TOOL_IDS } from '../schemas/enums.js';
+import { CliToolIdSchema } from '../schemas/enums.js';
 
 const OptionalPriceSchema = z.number().finite().nonnegative().optional();
 
@@ -58,6 +58,12 @@ export const CLI_READINESS_STATES = [
 export const CliReadinessStateSchema = z.enum(CLI_READINESS_STATES);
 export type CliReadinessState = z.infer<typeof CliReadinessStateSchema>;
 
+export const NON_READY_CLI_READINESS_STATES = Object.freeze(
+  CLI_READINESS_STATES.filter(
+    (state): state is Exclude<CliReadinessState, 'ready'> => state !== 'ready',
+  ),
+);
+
 export const CliExecutableIdentitySchema = z
   .object({
     path: z.string().min(1).refine(isAbsolute, 'Executable path must be absolute'),
@@ -101,14 +107,12 @@ const CliReadyDiagnosticSchema = z
   .strict();
 
 const RemediationSchema = z.string().min(1).max(4_000);
-const CliBlockedDiagnosticSchema = z.discriminatedUnion('state', [
-  z.object({ state: z.literal('unavailable'), remediation: RemediationSchema }).strict(),
-  z.object({ state: z.literal('untrusted'), remediation: RemediationSchema }).strict(),
-  z.object({ state: z.literal('unauthenticated'), remediation: RemediationSchema }).strict(),
-  z.object({ state: z.literal('incompatible'), remediation: RemediationSchema }).strict(),
-  z.object({ state: z.literal('unverified'), remediation: RemediationSchema }).strict(),
-  z.object({ state: z.literal('disabled'), remediation: RemediationSchema }).strict(),
-]);
+const CliBlockedDiagnosticSchema = z
+  .object({
+    state: z.enum(NON_READY_CLI_READINESS_STATES),
+    remediation: RemediationSchema,
+  })
+  .strict();
 
 export const CliDiagnosticSchema = z.union([CliReadyDiagnosticSchema, CliBlockedDiagnosticSchema]);
 export type CliDiagnostic = z.infer<typeof CliDiagnosticSchema>;
@@ -142,28 +146,6 @@ export const CliToolDetectionSchema = z
     }
   });
 export type CliToolDetection = z.infer<typeof CliToolDetectionSchema>;
-
-export const PlannerCompatibilitySchema = z
-  .object({
-    kind: z.literal('major-version-mismatch'),
-    installedVersion: z.string(),
-    testedVersion: z.string(),
-  })
-  .strict();
-export type PlannerCompatibility = z.infer<typeof PlannerCompatibilitySchema>;
-
-export const PlannerDetectionSchema = z
-  .object({
-    tool: z.enum(PLANNER_TOOL_IDS),
-    type: z.enum(['cli', 'api', 'shell']),
-    available: z.boolean(),
-    version: z.string().optional(),
-    compatibility: PlannerCompatibilitySchema.optional(),
-    description: z.string().optional(),
-    error: z.string().optional(),
-  })
-  .strict();
-export type PlannerDetection = z.infer<typeof PlannerDetectionSchema>;
 
 export const ProviderDetectionSchema = z
   .object({

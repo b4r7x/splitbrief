@@ -2,22 +2,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import type { CliReadinessFacts } from '../../core/schemas/readiness.js';
 import { createDetectionService } from './service.js';
 import type { DetectionDeps } from './service.js';
 
-const makeCliTool = (overrides?: Partial<CliToolDetection>): CliToolDetection => ({
-  tool: 'claude-code',
-  executable: null,
-  trust: 'trusted',
-  installedVersion: '1.0.0',
-  testedVersion: '1.0.0',
-  compatibility: 'compatible',
-  auth: 'authenticated',
-  diagnostic: { state: 'ready', remediation: null },
-  probedAt: 1_700_000_000_000,
-  ...overrides,
-});
+const makeCliTool = (
+  overrides: { tool?: CliToolDetection['tool'] } & Partial<CliReadinessFacts> = {},
+): CliToolDetection => {
+  const { tool = 'claude-code', ...facts } = overrides;
+  return cliDetectionFor('ready', tool, facts);
+};
 
 const makeProvider = (overrides?: Partial<ProviderDetection>): ProviderDetection => ({
   provider: 'ollama',

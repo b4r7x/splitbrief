@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useInput } from 'ink';
 import { filterByFields, type FilterableItem } from '../../../components/pickers/filtering.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
@@ -45,6 +45,7 @@ export interface RightColumnProps<L, R> {
   customRow?: CustomRowOptions<L, R> | undefined;
   onLeftChange?: ((item: L) => void) | undefined;
   initialIndex?: number | undefined;
+  resolveInitialIndex?: ((left: L | undefined) => number | undefined) | undefined;
 }
 
 export interface ColumnState<T> {
@@ -98,7 +99,9 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const isRightItemCustom = rightProps.customRow?.isCustom;
   const initialLeftIndex = leftProps.initialIndex ?? 0;
   const allowCustomRight = !!rightProps.customRow;
-  const initialRightIndex = rightProps.initialIndex ?? (allowCustomRight ? 1 : 0);
+  const defaultRightIndex = allowCustomRight ? 1 : 0;
+  const initialRightIndex = rightProps.initialIndex ?? defaultRightIndex;
+  const resolveInitialRightIndex = rightProps.resolveInitialIndex;
   const rightPlaceholder = rightProps.placeholder;
   const onLeftChange = rightProps.onLeftChange ?? noop;
   const onCustomRightOverlay = rightProps.customRow?.onSelect;
@@ -117,11 +120,16 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
   const leftCol = useColumnState<L>({
     source: leftItems,
     filterFn: leftProps.filterBy ?? defaultLeftFilter,
+    getKey: leftGetKey,
     initialIndex: initialLeftIndex,
+    onCurrentItemChange: (item) => {
+      if (item) onLeftChange(item);
+    },
   });
   const rightCol = useColumnState<R>({
     source: rightItems,
     filterFn: rightProps.filterBy ?? defaultRightFilter,
+    getKey: rightProps.getKey,
     initialIndex: initialRightIndex,
   });
 
@@ -147,25 +155,18 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     isRealRightItem(rightCurrentItem) &&
     (isRightItemCustom?.(rightCurrentItem) ?? false);
 
-  const currentLeftKey = leftCol.currentItem ? leftGetKey(leftCol.currentItem) : null;
-  const syncLeftItem = useEffectEvent(() => {
-    if (!leftCol.currentItem) return;
-    onLeftChange(leftCol.currentItem);
-  });
-
-  useEffect(() => {
-    if (currentLeftKey === null) return;
-    syncLeftItem();
-  }, [currentLeftKey]);
-
-  const resetRight = () => rightCol.reset(allowCustomRight ? 1 : 0);
+  // The reset destination has to follow the highlighted left item: with a
+  // synthesized Auto row at index 0, a constant reset would land on it and
+  // confirming would silently rewrite an explicitly configured model.
+  const resetRight = (left?: L) =>
+    rightCol.reset(resolveInitialRightIndex?.(left) ?? defaultRightIndex);
 
   const activateLeft = (index: number) => {
     if (params.maxVisible <= 0) return;
     const item = leftCol.items[index];
     if (!item) return;
     leftCol.setIndex(index);
-    resetRight();
+    resetRight(item);
     setActiveColumn('left');
     const disabled = isLeftItemDisabled?.(item) ?? false;
     const special = isLeftItemSpecial?.(item) ?? false;

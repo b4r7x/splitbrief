@@ -1,8 +1,13 @@
 import type { Config } from '../../core/schemas/config.js';
+import {
+  IMPLEMENTER_CLI_TOOL_IDS,
+  PLANNER_CLI_TOOL_IDS,
+} from '../../core/runners/cli-tool-catalog.js';
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
 import { warnStderr } from '../../lib/warn.js';
-import { assertNever } from '../../utils/type-guards.js';
+import { assertNever, includes } from '../../utils/type-guards.js';
+import { runnerConfigError } from './errors.js';
 
 function lazy<T>(load: () => Promise<T>): () => Promise<T> {
   let p: Promise<T> | undefined;
@@ -20,6 +25,18 @@ const loadApiImplementer = lazy(() => import('../implementers/api.js'));
 const loadShellImplementer = lazy(() => import('../implementers/shell.js'));
 const loadAgentImplementer = lazy(() => import('../implementers/agent.js'));
 const loadAgentSdkImplementer = lazy(() => import('../implementers/agent-sdk.js'));
+
+function assertCliPlannerTool(tool: string): void {
+  if (!includes(PLANNER_CLI_TOOL_IDS, tool)) {
+    throw runnerConfigError.missingToolConfig(tool, 'planner');
+  }
+}
+
+function assertCliImplementerTool(tool: string): void {
+  if (!includes(IMPLEMENTER_CLI_TOOL_IDS, tool)) {
+    throw runnerConfigError.missingToolConfig(tool, 'implementer');
+  }
+}
 
 async function loadPlanner(
   config: Config,
@@ -79,6 +96,9 @@ export async function createPlanner(
   initialSessionId?: string | null,
   options?: PlannerFactoryOptions,
 ): Promise<Planner> {
+  if (config.planner.kind === 'cli') {
+    assertCliPlannerTool(config.planner.tool);
+  }
   const planner = await loadPlanner(config, initialSessionId, options);
   if (config.planner.effort && !planner.capabilities.supportsEffort) {
     warnStderr(`planner-effort: dropped (${config.planner.kind} backend has no reasoning control)`);
@@ -96,6 +116,9 @@ export async function createImplementer(
   options?: ImplementerFactoryOptions,
 ): Promise<Implementer> {
   const kind = config.implementer.kind;
+  if (kind === 'cli') {
+    assertCliImplementerTool(config.implementer.tool);
+  }
   if (config.implementer.temperature !== undefined && kind !== 'api') {
     warnStderr(
       `implementer-temperature: dropped (${kind} backend does not accept sampling temperature)`,

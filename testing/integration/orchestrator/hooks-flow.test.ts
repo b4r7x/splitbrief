@@ -76,7 +76,7 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
         temperature: 0,
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', commitStrategy: 'none', persistTranscript: false, maxRetries: 1 },
+      workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
       hooks: DENY_PRE_TASK_HOOKS,
     });
 
@@ -127,7 +127,7 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
         temperature: 0,
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', commitStrategy: 'none', persistTranscript: false, maxRetries: 1 },
+      workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
       hooks: postTaskMarkerHooks(projectDir),
     });
 

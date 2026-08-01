@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -17,7 +17,6 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../schemas/task.js';
-import { makeLegacySessionSummaryWithoutContextDetected } from '#testing/helpers/factories/legacy-session-summary.js';
 
 let tmp: string;
 
@@ -166,26 +165,6 @@ describe('listSessions', () => {
     const sessions = listSessions(tmp);
     expect(sessions).toHaveLength(1);
     expect(sessions[0]?.id).toBe('2024-01-02-good');
-  });
-
-  it('loads legacy summaries missing contextDetected without warning', () => {
-    tmp = createTempDir('sessions-io-test');
-    const sessionId = '2024-01-01-legacy-cost-prediction';
-    mkdirSync(join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId), { recursive: true });
-    writeFileSync(
-      join(tmp, SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, 'summary.json'),
-      JSON.stringify(makeLegacySessionSummaryWithoutContextDetected({ sessionId })),
-    );
-    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    try {
-      const sessions = listSessions(tmp);
-      expect(sessions).toHaveLength(1);
-      const counts = sessions[0]?.summary?.costPrediction?.deterministic?.contextConfidenceCounts;
-      expect(counts?.contextDetected).toBe(1);
-      expect(String(stderr.mock.calls.flat().join(''))).not.toContain('invalid session');
-    } finally {
-      stderr.mockRestore();
-    }
   });
 
   it('ignores non-directory entries', () => {

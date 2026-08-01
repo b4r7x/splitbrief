@@ -95,10 +95,10 @@ Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnEr
 ### "Configuration errors in .splitbrief/config.yaml"
 
 Cause: YAML failed zod validation. The message lists each failing path. Check:
-- `version: 3` is present (2 accepted but deprecated).
+- `version: 3` is present — no other version loads.
 - Top-level `planner` / `implementer` have a valid `kind`.
 - Per-kind required fields are set (e.g. `kind: api` requires `provider` and `apiBase`).
-- No unknown keys in `codebase`, `hooks`, `otel` — those sections are `.strict()`.
+- No unknown keys in `workflow`, `codebase`, `hooks`, `otel` — those sections are strict. Removed fields (`workflow.autoApproveSpec`, `workflow.autoApprovePlan`, top-level `workflow.commitStrategy`) fail here rather than being ignored.
 
 See [CONFIGURATION.md](./CONFIGURATION.md) for the full schema. The loader throws `ConfigError` (`src/core/config/errors.ts`) and `loadConfigOrExit` in `src/cli/setup.ts` exits with code 1.
 
@@ -146,10 +146,10 @@ See [PRINCIPLES.md](./PRINCIPLES.md) — ESM rule.
 
 ### "No active workflow" on `resume`
 
-Cause: `.splitbrief/active` is missing, or the pointed-to session has no `state.json`, or `stateVersion` is from a pre-v3 layout.
+Cause: `.splitbrief/active` is missing, or the pointed-to session has no `state.json`, or `stateVersion` does not match the current version.
 
 Fix:
-- Stale pre-v3 state: run `splitbrief migrate` (see `src/cli/commands/migrate.ts`).
+- Incompatible `stateVersion`: the state file is ignored with a warning — start a fresh workflow with `splitbrief start`.
 - Unresumable phase (e.g. `complete`): start a fresh workflow with `splitbrief start`.
 - The `resume` command's exact error messages are in `src/cli/commands/resume.ts`.
 

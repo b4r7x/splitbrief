@@ -76,7 +76,6 @@ export async function runPtyChild(
         workflow: {
           ...defaults.workflow,
           persistTranscript: false,
-          commitStrategy: 'none',
         },
       },
       projectDir,

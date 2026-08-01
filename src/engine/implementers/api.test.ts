@@ -8,6 +8,13 @@ import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { createApiImplementer } from './api.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
 
+const temperatureCapableImplementer = {
+  provider: 'deepseek',
+  apiBase: 'https://api.deepseek.com/v1',
+  apiKey: 'sk-test-key',
+  model: 'deepseek-chat',
+} as const;
+
 let projectDir: string;
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -165,7 +172,9 @@ describe('api implementer — OpenAI-compatible path', () => {
     const code = '```ts\nexport const x = 1;\n```';
     fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
 
-    const cfg = makeConfig({ implementer: { temperature: undefined } });
+    const cfg = makeConfig({
+      implementer: { ...temperatureCapableImplementer, temperature: undefined },
+    });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T016', file: 'src/temperature.ts', action: 'create' });
 
@@ -191,7 +200,9 @@ describe('api implementer — OpenAI-compatible path', () => {
       ]),
     );
 
-    const cfg = makeConfig({ implementer: { temperature: 0.2 } });
+    const cfg = makeConfig({
+      implementer: { ...temperatureCapableImplementer, temperature: 0.2 },
+    });
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T005', file: 'src/retry.ts', action: 'create' });
     const baseRetry = {
@@ -227,15 +238,20 @@ describe('api implementer — OpenAI-compatible path', () => {
     expect(hintBody.temperature).toBe(0.2);
   });
 
+  // The schema rejects this config at load (a custom provider has no catalog
+  // default for `auto` to resolve to). The runtime guard is the backstop for
+  // programmatically-built configs that never passed through the schema, so the
+  // sentinel is assigned after parsing.
   it('returns failure when model is "auto" for an unknown provider', async () => {
     const cfg = makeConfig({
       implementer: {
-        model: 'auto',
+        model: 'placeholder-model',
         provider: 'custom-unknown-provider' as never,
         apiBase: 'http://localhost:9999',
         apiKey: 'x',
       },
     });
+    cfg.implementer.model = 'auto';
     const implementer = createApiImplementer(cfg);
     const task = makeTask({ id: 'T006', file: 'src/auto.ts', action: 'create' });
 

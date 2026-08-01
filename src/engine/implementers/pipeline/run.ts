@@ -31,6 +31,7 @@ import {
   defaultShouldThrow,
   errorOutput,
   runnerCallFailureMessage,
+  runnerCallOutcome,
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
@@ -196,10 +197,12 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         implBuffer?.flush();
         failTask();
       }
+      const outcome = runnerCallOutcome(callResult);
       return {
         success: false,
         output: outputText,
         error: runnerCallFailureMessage(callResult, opts.signal),
+        ...(outcome.state !== 'success' && { outcome: outcome.state }),
         ...usageField,
       };
     }
@@ -241,6 +244,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
             success: false,
             output: outputText,
             error: changes.output,
+            outcome: 'no-staged-change',
             ...usageField,
           };
         }

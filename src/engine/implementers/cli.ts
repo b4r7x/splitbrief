@@ -1,28 +1,38 @@
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import { createChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
-import { parseTextLine } from '../streaming/parse-text.js';
-import { getLineParser } from '../streaming/output-parsers.js';
 import { processError } from '../../lib/process/errors.js';
 import {
   CLI_NO_DEADLINE_MS,
   CLI_PROMPT_PLACEHOLDER,
-  CLI_TOOLS,
-  createCliImplementerAdapter,
   invokeCliAdapter,
   toCliEnvironment,
-} from '../runners/cli-tools.js';
+} from '../runners/invoke-cli-adapter.js';
 import { createCommandExistsAvailability } from '../availability.js';
-import { runClaudeOneShot } from '../runners/claude/invoke.js';
-import { resolveAutoModel } from '../../core/providers/model-selection.js';
-import { runnerConfigError } from '../runners/errors.js';
+import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js';
 import { matches } from '../../utils/error.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
+import { withOutputFormat } from '../runners/cli-tools/output-format.js';
+import { lookupCliImplementerAdapter } from '../runners/cli-tools/registry.js';
+import type { CliImplementerAdapter } from '../runners/cli-tools/contract.js';
 
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
+
+function cliNotFoundMessage(displayName: string, installUrl: string): string {
+  return `${displayName} not found. Install it from ${installUrl}`;
+}
+
+function resolveImplementerAdapter(
+  toolName: CliImplementerConfig['tool'],
+  outputFormat: OutputFormat | undefined,
+): CliImplementerAdapter {
+  const adapter = lookupCliImplementerAdapter(toolName);
+  return outputFormat === undefined ? adapter : withOutputFormat(adapter, outputFormat);
+}
 
 export function createCliImplementer(
   config: CliImplementerConfig,
@@ -31,7 +41,13 @@ export function createCliImplementer(
   const toolName = config.tool;
   resolveCliRunnerAuth(config);
   const trustedCli: CliStartGate | undefined = options?.trustedCli;
-  const tool = CLI_TOOLS[toolName];
+  const registryAdapter = lookupCliImplementerAdapter(toolName);
+  const descriptor = registryAdapter.descriptor;
+  const command = descriptor.command;
+  const notFoundMessage = cliNotFoundMessage(
+    descriptor.displayName,
+    descriptor.compatibility.installUrl,
+  );
   const timeout = config.timeout;
 
   return createImplementerBase({
@@ -41,70 +57,44 @@ export function createCliImplementer(
 
     async invoke(opts: InvokeOpts) {
       const { prompt, projectDir, onOutput, signal, callContext } = opts;
-      const effectiveModel = resolveAutoModel(config.model, toolName);
+      const effectiveModel = resolveCliModel(config.model, toolName);
       const timeoutSignal = timeout !== undefined ? AbortSignal.timeout(timeout) : undefined;
       const composedSignal =
         signal && timeoutSignal
           ? AbortSignal.any([signal, timeoutSignal])
           : (timeoutSignal ?? signal);
       const env = opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config));
+      const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
 
       try {
-        if (toolName === 'claude-code') {
-          const trustedExecutable = assertCliStartGate(toolName, trustedCli);
-          return await runClaudeOneShot({
-            prompt,
-            projectDir,
-            onOutput,
-            onCallEvent: opts.onCallEvent,
-            callContext,
-            model: effectiveModel,
-            authChannel: config.authChannel,
-            permissionMode: 'acceptEdits',
-            signal: composedSignal,
-            env,
-            executable: trustedExecutable,
-            idleWarnMs: config.idleWarnMs,
-            idleKillMs: config.idleKillMs,
-          });
-        }
-
-        if (!tool.implementer) throw runnerConfigError.missingToolConfig(toolName, 'implementer');
         let executable: Awaited<ReturnType<typeof resolveCliExecutable>>;
         try {
           executable = await resolveCliExecutable(
-            tool.command,
+            command,
             projectDir,
             assertCliStartGate(toolName, trustedCli),
           );
         } catch (err) {
           if (isCliExecutableUnavailable(err)) {
-            throw processError.notFound(tool.command, tool.notFoundMessage);
+            throw processError.notFound(command, notFoundMessage);
           }
           throw err;
         }
-        const parseLine = config.outputFormat
-          ? getLineParser(config.outputFormat)
-          : (tool.implementer.parseLine ?? parseTextLine);
-        // Build through the adapter with one standalone sentinel. The executor
-        // replaces it losslessly (or rejects an over-limit argv before spawn).
-        const adapter = createCliImplementerAdapter({
-          toolName,
-          implementer: tool.implementer,
-          parseLine,
-        });
-        const args = adapter.buildArgs({
+
+        const configuredArgs = config.args ?? [];
+        const baseArgs = adapter.baseArgs({
           prompt: CLI_PROMPT_PLACEHOLDER,
           model: effectiveModel,
           projectDir,
-          configuredArgs: config.args ?? [],
+          configuredArgs,
         });
 
         const result = await invokeCliAdapter({
           adapter,
           invocation: {
             executable,
-            args,
+            args: [...baseArgs, ...configuredArgs],
+            baseArgs,
             promptTransport: adapter.promptTransport,
             environment: toCliEnvironment(env),
             cwd: projectDir,
@@ -144,6 +134,6 @@ export function createCliImplementer(
 
     detectChanges: createChangeDetector(`Tool implementer (${toolName})`),
 
-    ...createCommandExistsAvailability(tool.command),
+    ...createCommandExistsAvailability(command),
   });
 }
