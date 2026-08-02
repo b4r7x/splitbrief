@@ -122,5 +122,5 @@ export async function runE2eWorkflow(
 
 function loadAndOverrideConfig(projectDir: string, mode: WorkflowMode): Config {
   const { config } = loadConfig(projectDir);
-  return applyCLIOverrides(config, { mode, autoApprove: true });
+  return applyCLIOverrides(config, { mode, approve: 'none' });
 }

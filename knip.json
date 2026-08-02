@@ -1,6 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/engine/ipc/server-entry.ts", "testing/e2e/scenarios/**/*.test.ts"],
+  "entry": [
+    "src/engine/ipc/server-entry.ts",
+    "scripts/cli-conformance.ts",
+    "scripts/provider-conformance.ts",
+    "testing/e2e/scenarios/**/*.test.ts"
+  ],
   "project": [
     "src/**/*.{ts,tsx}",
     "scripts/**/*.ts",

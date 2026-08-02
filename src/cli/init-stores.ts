@@ -5,7 +5,7 @@ import { installHistoryPersistence } from '../stores/ui/persistence.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { detectionStore } from '../stores/project/detection.js';
-import { warnError, warnStderr } from '../lib/warn.js';
+import { warnError } from '../lib/warn.js';
 import { detectCapabilities } from '../engine/providers/capabilities.js';
 import { detectAll } from '../engine/detection/detect.js';
 import { getDefaultDetectionService, type DetectionDeps } from '../engine/detection/service.js';
@@ -51,10 +51,6 @@ function initUIChrome(): void {
 }
 
 function loadProjectState(projectDir: string, opts: WorkflowOpts): void {
-  const rawMode = opts.mode as string | undefined;
-  if (rawMode === 'full' && process.env.SPLITBRIEF_QUIET !== '1') {
-    warnStderr('--mode full is deprecated; use --mode speckit');
-  }
   const overrides = workflowOptsToCLIOverrides(opts);
   configStore.load(projectDir, overrides);
   const storeConfig = configStore.get().config;

@@ -147,8 +147,7 @@ describe('validateConfig', () => {
   });
 
   it('blocks the selected implementer profile when required credentials are missing', () => {
-    const config = {
-      ...makeConfig(),
+    const config = makeConfig({
       implementerProfiles: {
         default: 'cheap-cloud',
         profiles: {
@@ -166,7 +165,7 @@ describe('validateConfig', () => {
           },
         },
       },
-    };
+    });
 
     const { errors, warnings } = validateConfig(config);
 
@@ -181,8 +180,7 @@ describe('validateConfig', () => {
   });
 
   it('blocks non-default implementer profiles when required credentials are missing', () => {
-    const config = {
-      ...makeConfig(),
+    const config = makeConfig({
       implementerProfiles: {
         default: 'local-qwen',
         profiles: {
@@ -200,7 +198,7 @@ describe('validateConfig', () => {
           },
         },
       },
-    };
+    });
 
     const { errors, warnings } = validateConfig(config);
 
@@ -310,8 +308,7 @@ describe('validateConfig', () => {
 
   it('rejects unknown implementer profile env apiKey references with arbitrary apiBase', () => {
     process.env.OPENAI_API_KEY = 'sk-test-env';
-    const config = {
-      ...makeConfig(),
+    const config = makeConfig({
       implementerProfiles: {
         default: 'custom-remote',
         profiles: {
@@ -324,7 +321,7 @@ describe('validateConfig', () => {
           },
         },
       },
-    };
+    });
 
     expect(validateConfig(config).errors).toContainEqual({
       path: 'implementerProfiles.profiles.custom-remote.apiKey',
@@ -363,10 +360,40 @@ describe('validateConfig', () => {
     const { errors } = validateConfig(config);
 
     expect(errors).toEqual([
-      { path: 'planner.apiBase', message: 'Invalid apiBase: must not include credentials' },
+      {
+        path: 'planner.apiBase',
+        message: 'Invalid apiBase: must not include credentials',
+        diagnosticState: 'endpoint-invalid',
+      },
     ]);
     expect(JSON.stringify(errors)).not.toContain('alice');
     expect(JSON.stringify(errors)).not.toContain('secret');
+  });
+
+  it.each([
+    { key: 'autoApproveSpec', value: true },
+    { key: 'autoApprovePlan', value: true },
+    { key: 'commitStrategy', value: 'per-task' },
+  ])('reports the removed workflow.$key field at its own path', ({ key, value }) => {
+    const config = makeConfig();
+
+    const { errors, data } = validateConfig({
+      ...config,
+      workflow: { ...config.workflow, [key]: value },
+    });
+
+    expect(errors).toContainEqual({
+      path: `workflow.${key}`,
+      message: expect.stringContaining('Unknown config key'),
+    });
+    expect(data).toBeUndefined();
+  });
+
+  it('keeps sessions.scope open for forward compatibility', () => {
+    const { errors, data } = validateConfig(makeConfig({ sessions: { scope: 'global' } }));
+
+    expect(errors).toEqual([]);
+    expect(data?.sessions?.scope).toBe('global');
   });
 
   it('rejects {prompt} in command strings', () => {

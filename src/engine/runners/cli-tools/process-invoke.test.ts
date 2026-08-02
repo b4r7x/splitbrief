@@ -14,10 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  RUNNER_CALL_OUTPUT_MAX_BYTES,
-  RUNNER_CALL_STDERR_MAX_BYTES,
-} from '../../calls/output-limit.js';
+import { RUNNER_CALL_STDERR_MAX_BYTES } from '../../calls/output-limit.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 import type {
   CliImplementerAdapter,
@@ -25,8 +22,12 @@ import type {
   CliPromptTransport,
   CliProtocolEvent,
 } from './contract.js';
-import { invokeProcessCli } from './process-invoke.js';
-import { toCliEnvironment } from '../cli-tools.js';
+import {
+  CLI_RAW_OUTPUT_MAX_BYTES,
+  CLI_RAW_PROTOCOL_MAX_EVENTS,
+  invokeProcessCli,
+} from './process-invoke.js';
+import { toCliEnvironment } from '../invoke-cli-adapter.js';
 import { createRunnerSandboxEnv } from '../sandbox-env.js';
 
 const callContext = {
@@ -76,6 +77,7 @@ function adapter(
     descriptor: CLI_TOOL_CATALOG.codex,
     role: 'implementer',
     promptTransport,
+    baseArgs: () => [],
     buildArgs: () => [],
     validateArgs:
       opts.validateArgs ??
@@ -89,6 +91,11 @@ function adapter(
       if (opts.output === 'text') return [];
       if (line === 'RESULT') return [completed];
       if (line === 'ERROR') return [failed];
+      // Envelope frames a verbose protocol emits without producing recorded output.
+      if (line.startsWith('NOISE:')) return [];
+      if (line.startsWith('RESULT:')) {
+        return [{ ...completed, text: Buffer.from(line.slice(7), 'base64').toString('utf8') }];
+      }
       if (line.startsWith('TEXT:')) {
         return [
           {
@@ -214,9 +221,9 @@ describe('invokeProcessCli', () => {
     );
     const argvPrompt = `${'é'.repeat(40_000)}FINAL-SENTINEL`;
     const argvResult = await run(
-      adapter({ kind: 'argv', maxBytes: 120_000 }),
+      adapter({ kind: 'argv', maxBytes: 120_000, placement: 'positional' }),
       invocation({
-        promptTransport: { kind: 'argv', maxBytes: 120_000 },
+        promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
         args: ['<PROMPT>'],
         script: emitPromptScript('const v=process.argv[1];emit(v)'),
       }),
@@ -250,10 +257,10 @@ describe('invokeProcessCli', () => {
   it('rejects transport overflow, malformed placeholders, and configured argument conflicts before spawn', async () => {
     const missingExecutable = missingExecutableIdentity();
     const overflow = await run(
-      adapter({ kind: 'argv', maxBytes: 120_000 }),
+      adapter({ kind: 'argv', maxBytes: 120_000, placement: 'positional' }),
       invocation({
         executable: missingExecutable,
-        promptTransport: { kind: 'argv', maxBytes: 120_000 },
+        promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
         args: ['<PROMPT>'],
         script: '',
       }),
@@ -271,6 +278,37 @@ describe('invokeProcessCli', () => {
     expect(overflow.error?.code).toBe('prompt-transport-error');
     expect(placeholder.error?.code).toBe('prompt-transport-error');
     expect(conflict.error?.code).toBe('argument-conflict');
+  });
+
+  it('refuses an option-looking prompt only where argv places it positionally', async () => {
+    const optionPrompt = '--sandbox danger-full-access';
+    const positional = await run(
+      adapter({ kind: 'argv', maxBytes: 120_000, placement: 'positional' }),
+      invocation({
+        executable: missingExecutableIdentity(),
+        promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'positional' },
+        args: ['<PROMPT>'],
+        script: '',
+      }),
+      optionPrompt,
+    );
+    const flagValue = await run(
+      adapter({ kind: 'argv', maxBytes: 120_000, placement: 'flag-value' }),
+      invocation({
+        promptTransport: { kind: 'argv', maxBytes: 120_000, placement: 'flag-value' },
+        // `--` keeps node from claiming the fixture's own flag, mirroring a CLI
+        // whose prompt fills the value slot of the flag before it.
+        args: ['--', '--message', '<PROMPT>'],
+        script: emitPromptScript('const v=process.argv[2];emit(v)'),
+      }),
+      optionPrompt,
+    );
+
+    expect(positional).toMatchObject({
+      status: 'failed',
+      error: { code: 'prompt-transport-error' },
+    });
+    expect(flagValue).toMatchObject({ status: 'completed', text: optionPrompt });
   });
 
   it('normalizes adapter validation throws and malformed results before spawning', async () => {
@@ -453,6 +491,41 @@ describe('invokeProcessCli', () => {
     expect(result.error?.code).toBe(expectedCode);
   });
 
+  it('completes a long protocol session past the recorded-delta event budget', async () => {
+    const deltas = 5_000;
+    const script = [
+      'const frames=[]',
+      `for(let i=0;i<${deltas};i++)frames.push('TEXT:'+Buffer.from('delta '+i).toString('base64'))`,
+      "frames.push('RESULT:'+Buffer.from('final answer').toString('base64'))",
+      "process.stdout.write(frames.join('\\n')+'\\n')",
+    ].join(';');
+    const events: RunnerCallEvent[] = [];
+
+    const result = await run(adapter({ kind: 'stdin' }), invocation({ script }), '', (event) =>
+      events.push(event),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', text: 'final answer' });
+    expect(events.filter((event) => event.type === 'call_text_delta').length).toBeGreaterThan(
+      4_096,
+    );
+  }, 20_000);
+
+  it('terminates a protocol stream that exceeds the raw event budget', async () => {
+    const script = [
+      `const line='TEXT:'+Buffer.from('d').toString('base64')+'\\n'`,
+      `const block=line.repeat(1_000)`,
+      `for(let i=0;i<${CLI_RAW_PROTOCOL_MAX_EVENTS / 1_000 + 1};i++)process.stdout.write(block)`,
+    ].join(';');
+
+    const result = await run(adapter({ kind: 'stdin' }), invocation({ script, timeoutMs: 60_000 }));
+
+    expect(result).toMatchObject({
+      status: 'truncated',
+      error: { code: 'output-budget-breach', message: 'CLI protocol event budget was exceeded' },
+    });
+  }, 60_000);
+
   it.skipIf(process.platform === 'win32')(
     'reports fatal output-budget breach only after reaping the producer group',
     async () => {
@@ -463,16 +536,18 @@ describe('invokeProcessCli', () => {
       let descendantPid = 0;
       let aliveBeforeTerminal: { leader: boolean; descendant: boolean } | undefined;
       let absentAtCallError: { leader: boolean; descendant: boolean } | undefined;
+      const noiseFrames = Math.ceil(CLI_RAW_OUTPUT_MAX_BYTES / 1_000_000) + 2;
       const script = [
         "const {spawn}=require('node:child_process')",
         "const child=spawn(process.execPath,['-e','setTimeout(()=>{},10000)'],{stdio:'ignore'})",
         "const pids=String(process.pid)+':'+String(child.pid)",
         "process.stdout.write('TEXT:'+Buffer.from(pids).toString('base64')+'\\n')",
-        `setTimeout(()=>process.stdout.write('x'.repeat(${RUNNER_CALL_OUTPUT_MAX_BYTES + 2})),25)`,
+        "const frame='NOISE:'+'x'.repeat(999_993)+'\\n'",
+        `setTimeout(()=>{for(let i=0;i<${noiseFrames};i++)process.stdout.write(frame)},25)`,
       ].join(';');
       const result = await run(
         adapter({ kind: 'stdin' }),
-        invocation({ script, environment: { OPENAI_API_KEY: credential } }),
+        invocation({ script, environment: { OPENAI_API_KEY: credential }, timeoutMs: 60_000 }),
         promptMarker,
         (event) => {
           events.push(event);
@@ -509,6 +584,7 @@ describe('invokeProcessCli', () => {
       expect(JSON.stringify({ result, events })).not.toContain(promptMarker);
       expect(JSON.stringify({ result, events })).not.toContain(credential);
     },
+    60_000,
   );
 
   it('distinguishes timeout, user abort, and callback failure', async () => {

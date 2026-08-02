@@ -12,6 +12,7 @@ import {
   removeCustomModel,
 } from '../../../features/runners/config-transforms.js';
 import { optionalSectionsYaml, writeConfigYaml } from '#testing/helpers/config-io.js';
+import { realPickerOption } from '#testing/helpers/runner-picker.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-io-roundtrip');
 
@@ -41,6 +42,34 @@ describe('config roundtrip', () => {
       const { config, warnings } = loadConfig(dir);
       expect(warnings).toEqual([]);
       expect(config).toEqual(createDefaultConfig());
+    });
+
+    // The shipped shape of a subscription-CLI project: both runners delegate to
+    // the tool's own configured model via the explicit `auto` sentinel.
+    it('loads and re-saves a CLI auto config without rewriting the model lines', () => {
+      const dir = join(TMP, 'cli-automatic-model');
+      writeConfigYaml(dir, {
+        planner: { kind: 'cli', tool: 'codex', model: 'auto' },
+        implementer: { kind: 'cli', tool: 'codex', model: 'auto' },
+        workflow: { mode: 'standard' },
+      });
+
+      const { config, warnings } = loadConfig(dir);
+      expect(warnings).toEqual([]);
+      expect(config.planner).toMatchObject({ kind: 'cli', tool: 'codex', model: 'auto' });
+      expect(config.implementer).toMatchObject({ kind: 'cli', tool: 'codex', model: 'auto' });
+
+      writeConfig(dir, { ...config, workflow: { ...config.workflow, mode: 'quick' } });
+
+      const rawYaml = readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8');
+      expect(yamlBlock(rawYaml, 'planner')).toContain('model: auto');
+      expect(yamlBlock(rawYaml, 'implementer')).toContain('model: auto');
+
+      const reloaded = loadConfig(dir);
+      expect(reloaded.warnings).toEqual([]);
+      expect(reloaded.config.planner).toEqual(config.planner);
+      expect(reloaded.config.implementer).toEqual(config.implementer);
+      expect(reloaded.config.workflow.mode).toBe('quick');
     });
 
     it('writes loaded optional top-level sections back to YAML', () => {
@@ -81,6 +110,8 @@ describe('config roundtrip', () => {
             'local-qwen': {
               kind: 'api',
               provider: 'ollama',
+              service: 'ollama',
+              offering: 'local',
               api_base: 'http://localhost:11434/v1',
               model: 'qwen2.5-coder:7b',
               context_length: 32768,
@@ -125,6 +156,8 @@ describe('config roundtrip', () => {
             'active-cloud': {
               kind: 'api',
               provider: 'together',
+              service: 'together',
+              offering: 'payg',
               api_base: 'https://api.together.xyz/v1',
               api_key: 'env:PATH',
               model: 'existing-model',
@@ -161,13 +194,7 @@ describe('config roundtrip', () => {
 
       configStore.load(dir);
       let current = loadConfig(dir).config;
-      const together = {
-        id: 'together',
-        displayName: 'Together AI',
-        kind: 'api' as const,
-        available: true,
-        badge: 'API',
-      };
+      const together = realPickerOption('implementer', 'together');
 
       current = commitImplementerSelection(current, together, { id: 'selected-model' });
       expect(configStore.save(current).ok).toBe(true);
@@ -226,17 +253,9 @@ describe('config roundtrip', () => {
         cost_tier: 'cheap',
       });
 
-      current = commitImplementerSelection(
-        current,
-        {
-          id: 'codex',
-          displayName: 'Codex',
-          kind: 'cli',
-          available: true,
-          badge: 'CLI',
-        },
-        { id: 'gpt-5.4-mini' },
-      );
+      current = commitImplementerSelection(current, realPickerOption('implementer', 'codex'), {
+        id: 'gpt-5.4-mini',
+      });
       expect(configStore.save(current).ok).toBe(true);
       const reloaded = loadConfig(dir).config;
       expect(reloaded.implementerProfiles?.profiles['active-cloud']).toMatchObject({
@@ -252,19 +271,19 @@ describe('config roundtrip', () => {
       expect(yamlBlock(readFileSync(path, 'utf-8'), 'codebase')).toBe(unrelatedBlock);
     });
 
-    it('converts snake_case keys to camelCase and migrates commitPerTask', () => {
+    it('converts snake_case keys to camelCase', () => {
       const dir = join(TMP, 'snake-case');
       writeConfigYaml(dir, {
         planner_estimate_review: true,
         auto_split_overflow: true,
-        workflow: { max_retries: 5, commit_per_task: false },
+        workflow: { max_retries: 5, git: { commit_strategy: 'checkpoint' } },
       });
 
       const { config } = loadConfig(dir);
       expect(config.plannerEstimateReview).toBe(true);
       expect(config.autoSplitOverflow).toBe(true);
       expect(config.workflow.maxRetries).toBe(5);
-      expect(config.workflow.commitStrategy).toBe('none');
+      expect(config.workflow.git?.commitStrategy).toBe('checkpoint');
 
       writeConfig(dir, config);
       const written = YAML.parse(

@@ -10,22 +10,27 @@ import type { CliExecutableIdentity } from '../../../core/discovery/detection.js
 import { INTERNAL_SKIP_DIRS } from '../../../core/paths.js';
 import { RunnerCallResultSchema } from '../../calls/schema.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
+import { createBoundedOutput, type BoundedOutput } from '../../../lib/process/bounded-output.js';
+import { isFatalSignal, spawnPipe } from '../../../lib/process/spawn/lifecycle.js';
 import { createSandboxEnv } from '../sandbox-env.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
+import { toCliEnvironment } from '../invoke-cli-adapter.js';
 import { invokeProcessCli } from './process-invoke.js';
-import type { CliPromptTransport } from './contract.js';
+import type { CliProcessAdapter } from './contract.js';
 import {
   CLI_PROMPT_SENTINEL,
   RawCliCandidateContract,
   type UnregisteredCliAdapter,
   type UnregisteredCliCandidate,
   candidateEvidenceWithCliCapture,
-  cliContractSha256,
   parseCliConformanceCandidates,
   replacePromptSentinel,
 } from './candidate-contract.js';
 import {
   CandidateEvidence,
+  CONFORMANCE_EXIT_CODES,
+  CONFORMANCE_PROMPT,
+  MAX_EVIDENCE_OUTPUT_BYTES,
   contractSha256,
   sanitizeCandidateOutput,
 } from '../../providers/candidate-contract.js';
@@ -33,19 +38,12 @@ import { isRecord } from '../../../utils/type-guards.js';
 import { error as createError } from '../../../utils/error.js';
 
 const execFileAsync = promisify(execFile);
-const MAX_CAPTURE_BYTES = 32_768;
 const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
 const PROBE_TIMEOUT_MS = 5_000;
 const INVOCATION_TIMEOUT_MS = 30_000;
 const PROJECT_FINGERPRINT_SKIP_DIRS = new Set([...INTERNAL_SKIP_DIRS, '.nuke']);
-const CONFORMANCE_PROMPT =
-  'Implement the requested change in the staged project.\n\nFiles:\n- src/example.ts\n- tests/example.test.ts\n\nReturn a concise result.';
 
-export const CLI_CONFORMANCE_EXIT_CODES = Object.freeze({
-  PASS: 0,
-  HARNESS_FAILURE: 1,
-  OMIT: 2,
-} as const);
+export const CLI_CONFORMANCE_EXIT_CODES = CONFORMANCE_EXIT_CODES;
 
 export type CliConformanceExitCode =
   (typeof CLI_CONFORMANCE_EXIT_CODES)[keyof typeof CLI_CONFORMANCE_EXIT_CODES];
@@ -134,7 +132,7 @@ function throwConformance(code: ConformanceErrorCode, message: string): never {
 
 function safeReason(value: unknown): string {
   const message = value instanceof Error ? value.message : 'CLI conformance failed';
-  return sanitizeCandidateOutput(message, MAX_CAPTURE_BYTES);
+  return sanitizeCandidateOutput(message, MAX_EVIDENCE_OUTPUT_BYTES);
 }
 
 function redactOutput(value: string, credentials: readonly string[]): string {
@@ -142,13 +140,7 @@ function redactOutput(value: string, credentials: readonly string[]): string {
   for (const credential of credentials) {
     if (credential.length > 0) redacted = redacted.replaceAll(credential, '[REDACTED]');
   }
-  return sanitizeCandidateOutput(redacted, MAX_CAPTURE_BYTES);
-}
-
-function bounded(value: string): string {
-  const sanitized = sanitizeCandidateOutput(value, MAX_CAPTURE_BYTES);
-  if (Buffer.byteLength(sanitized, 'utf8') <= MAX_CAPTURE_BYTES) return sanitized;
-  return `${Buffer.from(sanitized, 'utf8').subarray(0, MAX_CAPTURE_BYTES).toString('utf8')}…`;
+  return sanitizeCandidateOutput(redacted, MAX_EVIDENCE_OUTPUT_BYTES);
 }
 
 function environmentValue(
@@ -187,13 +179,6 @@ function isProcessResult(value: unknown): value is CliProcessResult {
   );
 }
 
-function appendBounded(current: string, chunk: string, maxBytes: number): string {
-  const remaining = maxBytes - Buffer.byteLength(current, 'utf8');
-  if (remaining <= 0) return current;
-  const bytes = Buffer.from(chunk, 'utf8');
-  return current + bytes.subarray(0, remaining).toString('utf8');
-}
-
 async function runBoundedProcess(
   options: Parameters<CliProcessRunner>[0],
 ): Promise<CliProcessResult> {
@@ -206,68 +191,54 @@ async function runBoundedProcess(
   const signal = options.signal
     ? AbortSignal.any([options.signal, timeoutController.signal])
     : timeoutController.signal;
-  let stdout = '';
-  let stderr = '';
+  const stdout = createBoundedOutput({ maxBytes: options.maxOutputBytes, policy: 'tail' });
+  const stderr = createBoundedOutput({ maxBytes: options.maxOutputBytes, policy: 'tail' });
   let outputExceeded = false;
   let outputBytesSeen = 0;
+  const collect = (output: BoundedOutput, chunk: string): undefined => {
+    outputBytesSeen += Buffer.byteLength(chunk, 'utf8');
+    if (outputBytesSeen > options.maxOutputBytes) outputExceeded = true;
+    output.append(chunk);
+    return undefined;
+  };
+  const captured = (
+    exitCode: number | null,
+    processSignal: string | null,
+    timedOut: boolean,
+  ): CliProcessResult => ({
+    stdout: stdout.snapshot().text,
+    stderr: stderr.snapshot().text,
+    exitCode,
+    signal: processSignal,
+    timedOut,
+    outputExceeded,
+  });
+
   try {
-    const result = await import('../../../lib/process/spawn/lifecycle.js').then(({ spawnPipe }) =>
-      spawnPipe<CliProcessResult>({
-        command: options.command,
-        args: [...options.args],
-        cwd: options.cwd,
-        env: { ...options.env },
-        detached: true,
-        stdin: options.stdin,
-        signal,
-        outputBudgetBytes: options.maxOutputBytes * 2,
-        partialStdoutMaxBytes: options.maxOutputBytes,
-        partialStderrMaxBytes: options.maxOutputBytes,
-        onStdout: (chunk) => {
-          outputBytesSeen += Buffer.byteLength(chunk, 'utf8');
-          if (outputBytesSeen > options.maxOutputBytes) outputExceeded = true;
-          stdout = appendBounded(stdout, chunk, options.maxOutputBytes);
-          return undefined;
-        },
-        onStderr: (chunk) => {
-          outputBytesSeen += Buffer.byteLength(chunk, 'utf8');
-          if (outputBytesSeen > options.maxOutputBytes) outputExceeded = true;
-          stderr = appendBounded(stderr, chunk, options.maxOutputBytes);
-          return undefined;
-        },
-        onClose: (exitCode, processSignal) => ({
-          stdout,
-          stderr,
-          exitCode,
-          signal: processSignal,
-          timedOut: timeoutController.signal.aborted,
-          outputExceeded,
-        }),
-      }),
-    );
+    const result = await spawnPipe<CliProcessResult>({
+      command: options.command,
+      args: [...options.args],
+      cwd: options.cwd,
+      env: { ...options.env },
+      detached: true,
+      stdin: options.stdin,
+      signal,
+      outputBudgetBytes: options.maxOutputBytes * 2,
+      partialStdoutMaxBytes: options.maxOutputBytes,
+      partialStderrMaxBytes: options.maxOutputBytes,
+      onStdout: (chunk) => collect(stdout, chunk),
+      onStderr: (chunk) => collect(stderr, chunk),
+      onClose: (exitCode, processSignal) =>
+        captured(exitCode, processSignal, timeoutController.signal.aborted),
+    });
     return isProcessResult(result)
       ? result
       : throwConformance('harness-failure', 'CLI process runner returned an invalid result');
   } catch (cause) {
-    if (timeoutController.signal.aborted) {
-      return {
-        stdout,
-        stderr,
-        exitCode: null,
-        signal: null,
-        timedOut: true,
-        outputExceeded,
-      };
-    }
-    if (isRecord(cause) && cause.state === 'output-budget-breach') {
-      return {
-        stdout,
-        stderr,
-        exitCode: null,
-        signal: null,
-        timedOut: false,
-        outputExceeded: true,
-      };
+    if (timeoutController.signal.aborted) return captured(null, null, true);
+    if (isFatalSignal(cause) && cause.state === 'output-budget-breach') {
+      outputExceeded = true;
+      return captured(null, null, false);
     }
     throw cause;
   } finally {
@@ -323,8 +294,8 @@ function captureFor(
     candidateId: contract.id,
     role: contract.role,
     contractSha256: contractSha256(contract),
-    stdout: bounded(redactOutput(stdout, credentials)),
-    stderr: bounded(redactOutput(stderr, credentials)),
+    stdout: redactOutput(stdout, credentials),
+    stderr: redactOutput(stderr, credentials),
   };
 }
 
@@ -616,53 +587,31 @@ function selectCandidate(
   if (candidate.rawContract.role !== role || candidate.rawContract.id !== rawCapture.candidateId) {
     throwConformance('harness-failure', 'CLI candidate role or id does not match raw evidence');
   }
-  const expectedHash = cliContractSha256(candidate.rawContract);
+  const expectedHash = contractSha256(candidate.rawContract);
   if (expectedHash !== rawCapture.contractSha256 || candidate.contractSha256 !== expectedHash) {
     throwConformance('harness-failure', 'CLI contract hash does not match raw evidence');
   }
   return candidate;
 }
 
-function adapterTransportKind(adapter: UnregisteredCliAdapter): CliPromptTransport['kind'] | null {
-  const value = adapter.promptTransport;
-  if (!isRecord(value) || typeof value.kind !== 'string') return null;
-  return value.kind === 'stdin' || value.kind === 'argv' || value.kind === 'file'
-    ? value.kind
-    : null;
-}
-
-function descriptorForProcess(
-  adapter: UnregisteredCliAdapter,
-  contract: RawCliCandidateContract,
-): Record<string, unknown> {
-  const descriptor: unknown = adapter.descriptor;
-  if (isRecord(descriptor) && isRecord(descriptor.auth)) return descriptor;
-  return {
-    id: contract.id,
-    auth: {
-      channels: [{ env: [...contract.auth.env] }],
-    },
-  };
-}
-
-function adapterArgs(
-  adapter: UnregisteredCliAdapter,
-  role: CliConformanceRole,
-  projectDir: string,
-): readonly string[] {
-  const input =
-    role === 'planner'
-      ? {
+function adapterArgs(adapter: UnregisteredCliAdapter, projectDir: string): readonly string[] {
+  const result =
+    adapter.role === 'planner'
+      ? adapter.buildArgs({
           prompt: CLI_PROMPT_SENTINEL,
           model: undefined,
           projectDir,
           configuredArgs: [],
-          mode: 'plan' as const,
+          mode: 'plan',
           sessionId: null,
           effort: undefined,
-        }
-      : { prompt: CLI_PROMPT_SENTINEL, model: undefined, projectDir, configuredArgs: [] };
-  const result = Reflect.apply(adapter.buildArgs, undefined, [input]);
+        })
+      : adapter.buildArgs({
+          prompt: CLI_PROMPT_SENTINEL,
+          model: undefined,
+          projectDir,
+          configuredArgs: [],
+        });
   if (!Array.isArray(result) || !result.every((value) => typeof value === 'string')) {
     throwConformance('harness-failure', 'CLI adapter returned invalid invocation arguments');
   }
@@ -672,10 +621,14 @@ function adapterArgs(
 function processAdapter(
   adapter: UnregisteredCliAdapter,
   contract: RawCliCandidateContract,
-): Record<string, unknown> {
+): CliProcessAdapter {
   return {
-    ...adapter,
-    descriptor: descriptorForProcess(adapter, contract),
+    descriptor: { id: contract.id, auth: { channels: [{ env: [...contract.auth.env] }] } },
+    promptTransport: adapter.promptTransport,
+    validateArgs: adapter.validateArgs,
+    outputContract: adapter.outputContract,
+    parse: adapter.parse,
+    terminal: adapter.terminal,
   };
 }
 
@@ -715,10 +668,10 @@ async function invokeCandidate(
 ): Promise<RunnerCallResult> {
   const contract = candidate.rawContract;
   const adapter = candidate.adapter;
-  if (adapterTransportKind(adapter) !== contract.promptTransport) {
+  if (adapter.promptTransport.kind !== contract.promptTransport) {
     throwConformance('harness-failure', 'CLI adapter prompt transport differs from raw contract');
   }
-  let args = adapterArgs(adapter, role, projectDir);
+  let args = adapterArgs(adapter, projectDir);
   if (contract.promptTransport === 'file' && !args.some((arg) => arg === CLI_PROMPT_SENTINEL)) {
     args = [...args, CLI_PROMPT_SENTINEL];
   }
@@ -726,7 +679,7 @@ async function invokeCandidate(
     executable,
     args,
     promptTransport: adapter.promptTransport,
-    environment: { ...environment, ...adapter.environment },
+    environment: toCliEnvironment({ ...environment, ...adapter.environment }),
     cwd: projectDir,
     timeoutMs: INVOCATION_TIMEOUT_MS,
     signal: undefined,
@@ -737,10 +690,11 @@ async function invokeCandidate(
     backendKind: 'cli',
     runnerName: contract.id,
   };
-  const result = await Reflect.apply(invokeProcessCli, undefined, [
-    processAdapter(adapter, contract),
-    { invocation: processInvocation, prompt: CONFORMANCE_PROMPT, callContext },
-  ]);
+  const result = await invokeProcessCli(processAdapter(adapter, contract), {
+    invocation: processInvocation,
+    prompt: CONFORMANCE_PROMPT,
+    callContext,
+  });
   return RunnerCallResultSchema.parse(result);
 }
 
@@ -897,18 +851,4 @@ export async function runProductionCliConformance(
   } finally {
     await project.cleanup();
   }
-}
-
-export async function runCliConformance(
-  options:
-    | ({ readonly mode: 'raw' } & RawCliConformanceOptions)
-    | ({ readonly mode: 'production' } & ProductionCliConformanceOptions),
-): Promise<CliConformanceOutcome> {
-  return options.mode === 'raw'
-    ? runRawCliConformance(options)
-    : runProductionCliConformance(options);
-}
-
-export function cliConformanceRecordJson(value: unknown): string {
-  return JSON.stringify(value);
 }

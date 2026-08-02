@@ -177,7 +177,7 @@ These are SPLITBRIEF-only features that no comparable tool offers:
 | Mode system | `instant`/`quick`/`standard`/`speckit` — adjusts ceremony to task complexity |
 | Drift detection | Detects when implementation diverges from plan |
 | Worktree integration | Auto-creates git worktrees for isolated work |
-| 114 typed events + `--json` | NDJSON event stream for CI/automation |
+| 89 typed events + `--json` | NDJSON event stream for CI/automation |
 | Tiered approval | Sticky session/always scopes with per-action classification |
 | Task Brief contract | Precise, structured handoff artifact between planner and implementer |
 
@@ -227,7 +227,7 @@ These were specced in DIRECTION but not yet built as of the audit. Each is a sta
 | Contextual footer keybindings | Footer changes based on cursor position | ✅ |
 | Recovery consequence text | "retry-task: re-runs prompt, costs ~$0.02" | — |
 | Auto-expand active diffs | Diffs expanded for running task, collapsed for completed | — |
-| Unify approval flags | `--auto` / `--approve none` / `--yolo` → one concept | — |
+| Unify approval flags | `--auto` removed; `--approve none` and `--yolo` remain distinct concepts (document gates vs file-write gates) | ✅ |
 | Session numeric aliases | `splitbrief attach 1` instead of `splitbrief attach 20250412-143022-abc` | ✅ |
 | HTML/Markdown session export | Export workflow results as shareable artifact | — |
 | External `$EDITOR` integration | Open editor for long feature descriptions | — |

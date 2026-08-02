@@ -3,7 +3,11 @@ import { formatCost, formatCostFact, formatKnownCost } from '../../../core/forma
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
-import { costKnownFlags, type CostBreakdown } from '../../../core/schemas/summary.js';
+import {
+  costKnownFlags,
+  unmeteredRunCostLabel,
+  type CostBreakdown,
+} from '../../../core/schemas/summary.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
 import type { Theme } from '../../../components/theme.js';
 
@@ -16,6 +20,8 @@ interface BuildCostBreakdownRowsInput {
 function formatSavingsLabel(costBreakdown: CostBreakdown): string {
   if (costBreakdown.hasSavingsEstimate === false) return 'Unknown price';
   if (costBreakdown.savingsAmount < 0) {
+    const unmetered = unmeteredRunCostLabel(costBreakdown);
+    if (unmetered !== null) return unmetered;
     return `Extra ${formatCostFact(Math.abs(costBreakdown.savingsAmount))} (${costBreakdown.savingsPercentage.toFixed(0)}%)`;
   }
   if (costBreakdown.savingsAmount === 0) {
@@ -31,8 +37,19 @@ function savingsColor(costBreakdown: CostBreakdown, theme: Theme): string {
 }
 
 function savingsRowLabel(costBreakdown: CostBreakdown): string {
-  if (costBreakdown.savingsAmount < 0) return 'Extra cost';
+  if (costBreakdown.savingsAmount < 0)
+    return unmeteredRunCostLabel(costBreakdown) !== null ? 'Billing' : 'Extra cost';
   return 'Saved';
+}
+
+function meteredCostLabel(costBreakdown: CostBreakdown, amount: number, known: boolean): string {
+  return (
+    unmeteredRunCostLabel(costBreakdown) ?? formatKnownCost(amount, known ? 'known' : 'partial')
+  );
+}
+
+function providerCostLabel(costBreakdown: CostBreakdown, provider: string, cost: number): string {
+  return costBreakdown.offeringPresentations?.[provider]?.costLabel ?? formatCost(cost);
 }
 
 export function buildCostBreakdownRows({
@@ -59,7 +76,7 @@ export function buildCostBreakdownRows({
       node: (
         <LabeledRow label="Actual cost" labelWidth={labelWidth}>
           <Text bold>
-            {formatKnownCost(costBreakdown.totalActualCost, totalCostKnown ? 'known' : 'partial')}
+            {meteredCostLabel(costBreakdown, costBreakdown.totalActualCost, totalCostKnown)}
           </Text>
         </LabeledRow>
       ),
@@ -69,10 +86,7 @@ export function buildCostBreakdownRows({
       node: (
         <LabeledRow label="Planner cost" labelWidth={labelWidth}>
           <Text color={theme.textDim}>
-            {formatKnownCost(
-              costBreakdown.actualPlannerCost,
-              plannerCostKnown ? 'known' : 'partial',
-            )}
+            {meteredCostLabel(costBreakdown, costBreakdown.actualPlannerCost, plannerCostKnown)}
           </Text>
         </LabeledRow>
       ),
@@ -82,9 +96,10 @@ export function buildCostBreakdownRows({
       node: (
         <LabeledRow label="Implementer cost" labelWidth={labelWidth}>
           <Text color={theme.textDim}>
-            {formatKnownCost(
+            {meteredCostLabel(
+              costBreakdown,
               costBreakdown.actualImplementerCost,
-              implementerCostKnown ? 'known' : 'partial',
+              implementerCostKnown,
             )}
           </Text>
         </LabeledRow>
@@ -134,7 +149,9 @@ export function buildCostBreakdownRows({
           label={stripTerminalControls(getProviderDisplayName(provider))}
           labelWidth={labelWidth}
         >
-          <Text color={theme.textDim}>{formatCost(providerCost.cost)}</Text>
+          <Text color={theme.textDim}>
+            {providerCostLabel(costBreakdown, provider, providerCost.cost)}
+          </Text>
         </LabeledRow>
       ),
     });

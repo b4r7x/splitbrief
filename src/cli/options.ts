@@ -62,7 +62,6 @@ export function assertWorktreeStartOnly(opts: { worktree?: string }): void {
 
 export function addWorkflowOptions(cmd: Command): Command {
   return cmd
-    .option('--auto', 'Auto-approve spec and plan (alias for --approve none)')
     .option('--approve <level>', 'Approval gates: none, spec, plan, all, default (follows mode)')
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
@@ -120,10 +119,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--no-fullscreen', 'Disable fullscreen alternate screen buffer')
     .option('--no-mouse', 'Disable mouse tracking')
     .option('--hover', 'Enable hover highlight (opt-in; requires mouse + fullscreen)', false)
-    .option(
-      '--mode <mode>',
-      'Workflow mode: instant, quick, standard, or speckit (full=speckit alias)',
-    )
+    .option('--mode <mode>', 'Workflow mode: instant, quick, standard, or speckit')
     .option('--budget <amount>', 'Maximum budget in dollars (e.g., 2.00)', parseBudgetOption)
     .option(
       '--planner-effort <level>',

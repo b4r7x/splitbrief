@@ -5,6 +5,7 @@ import {
   DEFAULT_PROCESS_LINE_MAX_BYTES,
   DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
   DEFAULT_PROCESS_STDERR_MAX_BYTES,
+  isFatalSignal,
   type SpawnIdleOptions,
   type SpawnPipeFatalSignal,
   spawnPipe,
@@ -13,17 +14,6 @@ import {
 type LineStreamCallback<T> =
   | ((value: T) => void)
   | ((value: T) => SpawnPipeFatalSignal | undefined);
-
-function isFatalSignal(value: unknown): value is SpawnPipeFatalSignal {
-  if (typeof value !== 'object' || value === null) return false;
-  if (!('state' in value) || !('remediation' in value)) return false;
-  return (
-    (value.state === 'output-budget-breach' ||
-      value.state === 'protocol-failure' ||
-      value.state === 'callback-failure') &&
-    typeof value.remediation === 'string'
-  );
-}
 
 export async function spawnWithStdin(opts: {
   command: string;
@@ -44,6 +34,13 @@ export async function spawnWithStdin(opts: {
   stderrMaxBytes?: number | undefined;
   stdoutLineMaxBytes?: number | undefined;
   outputBudgetBytes?: number | undefined;
+  /**
+   * Tear the child down once a channel outgrows its retention bound (default).
+   * Callers that keep collecting past the bound — they forward every chunk
+   * through their own bounded sink — turn this off; retention stays bounded
+   * either way.
+   */
+  abortOnByteLimit?: boolean | undefined;
 }): Promise<{
   text: string;
   stderrOutput: string;
@@ -76,6 +73,7 @@ export async function spawnWithStdin(opts: {
   );
   let stdoutBytesSeen = 0;
   let stderrBytesSeen = 0;
+  const abortOnByteLimit = opts.abortOnByteLimit ?? true;
 
   const byteLimitSignal = (channel: 'stdout' | 'stderr', maxBytes: number) => ({
     state: 'output-budget-breach' as const,
@@ -99,7 +97,9 @@ export async function spawnWithStdin(opts: {
       stdoutBytesSeen += Buffer.byteLength(chunk, 'utf8');
       const callbackResult = stdoutBuf.push(chunk);
       if (isFatalSignal(callbackResult)) return callbackResult;
-      if (stdoutBytesSeen > stdoutMaxBytes) return byteLimitSignal('stdout', stdoutMaxBytes);
+      if (abortOnByteLimit && stdoutBytesSeen > stdoutMaxBytes) {
+        return byteLimitSignal('stdout', stdoutMaxBytes);
+      }
       return undefined;
     },
     onStderr: (chunk) => {
@@ -107,7 +107,9 @@ export async function spawnWithStdin(opts: {
       stderrBytesSeen += Buffer.byteLength(chunk, 'utf8');
       const callbackResult = opts.onStderr?.(chunk);
       if (isFatalSignal(callbackResult)) return callbackResult;
-      if (stderrBytesSeen > stderrMaxBytes) return byteLimitSignal('stderr', stderrMaxBytes);
+      if (abortOnByteLimit && stderrBytesSeen > stderrMaxBytes) {
+        return byteLimitSignal('stderr', stderrMaxBytes);
+      }
       return undefined;
     },
     onError: (err) =>

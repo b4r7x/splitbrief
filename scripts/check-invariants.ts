@@ -150,7 +150,7 @@ const gates: readonly Gate[] = [
     id: '17c',
     description:
       'No incidental broad as-casts (type token must be followed by a terminator, excluding as const/as unknown/as Extract and sanctioned files)',
-    command: `{ rg -n -P "[)\\]A-Za-z0-9_>] as [A-Z][A-Za-z0-9_]*(?=[;),<\\].}>]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error)\\.ts:" || true; } | wc -l`,
+    command: `{ rg -n -P "[)\\]}A-Za-z0-9_>'] as [A-Z][A-Za-z0-9_]*(?=\\s*[;),<\\].}>&|]|$|\\[)" src/ -g "*.ts" -g "*.tsx" -g "!**/*.test.ts" -g "!**/*.test.tsx" | rg -v "\\bas const\\b|\\bas unknown\\b| as Extract<" | rg -v "^src/(stores/use-stores|engine/hooks/substitute|utils/error)\\.ts:" || true; } | wc -l`,
     expected: 0,
   },
   {
@@ -222,6 +222,61 @@ const gates: readonly Gate[] = [
     id: '27',
     description: 'Maintained tree uses only canonical SPLITBRIEF identity',
     command: "tsx scripts/check-brand.ts >/dev/null && printf '0\\n'",
+    expected: 0,
+  },
+  {
+    id: '28',
+    description: 'Zero legacy CLI_TOOLS / cli-tools.ts / clampPromptForArgv',
+    command:
+      '{ rg -n "cli-tools\\.js|CLI_TOOLS|clampPromptForArgv" src testing || true; test -e src/engine/runners/cli-tools.ts && printf \'1\\n\' || true; } | wc -l',
+    expected: 0,
+  },
+  {
+    id: '29',
+    description: 'Exhaustive CLI and API role registries match catalog tuples',
+    command:
+      "node --import tsx/esm --input-type=module -e \"import { CLI_PLANNER_ADAPTERS, CLI_IMPLEMENTER_ADAPTERS } from './src/engine/runners/cli-tools/registry.ts'; import { PLANNER_CLI_TOOL_IDS, IMPLEMENTER_CLI_TOOL_IDS } from './src/core/runners/cli-tool-catalog.ts'; import { API_PROVIDER_CATALOG } from './src/core/providers/api-provider-catalog.ts'; import { KNOWN_PROVIDERS } from './src/engine/providers/registry.ts'; let n=0; if (JSON.stringify(Object.keys(CLI_PLANNER_ADAPTERS)) !== JSON.stringify([...PLANNER_CLI_TOOL_IDS])) n++; if (JSON.stringify(Object.keys(CLI_IMPLEMENTER_ADAPTERS)) !== JSON.stringify([...IMPLEMENTER_CLI_TOOL_IDS])) n++; if (JSON.stringify(Object.keys(KNOWN_PROVIDERS).toSorted()) !== JSON.stringify(Object.keys(API_PROVIDER_CATALOG).toSorted())) n++; process.stdout.write(String(n));\"",
+    expected: 0,
+  },
+  {
+    id: '30',
+    description: 'Engine must not import react, react-dom, or ink',
+    command:
+      "{ rg -ln \"from 'react'|from 'react-dom'|from 'ink'\" src/engine/ --glob '!**/*.test.ts' --glob '!**/*.test.tsx' || true; } | wc -l",
+    expected: 0,
+  },
+  {
+    id: '31',
+    description: 'No vendor-ID JSX branches in runner picker surfaces',
+    command:
+      "{ rg -i \"\\\\b(cursor|antigravity|mimo-token-plan|mistral|gemini|cerebras|zai|minimax|moonshot|dashscope|llama-cpp)\\\\b\" src/features/runners src/app/overlays/runners.tsx --glob '*.tsx' --glob '!**/*.test.tsx' || true; } | wc -l",
+    expected: 0,
+  },
+  {
+    id: '32',
+    description: 'One OpenAI-compatible stream transport (openai-stream only)',
+    command:
+      "{ { [ -e src/engine/providers/candidates ] && rg -n 'fetch\\(|ReadableStream|EventSource|for await|\\[DONE\\]' src/engine/providers/candidates --glob '!*.test.*' 2>/dev/null || true; [ -f src/engine/providers/llama-cpp.ts ] && rg -n 'fetch\\(|ReadableStream|EventSource|for await|\\[DONE\\]' src/engine/providers/llama-cpp.ts --glob '!*.test.*' 2>/dev/null || true; rg -ln \"chat\\.completions\\.create\" src/engine/providers/ --glob '!**/*.test.*' 2>/dev/null | rg -v '^src/engine/providers/openai-stream/' || true; } | wc -l; }",
+    expected: 0,
+  },
+  {
+    id: '33',
+    description: 'No runtime commercial metadata URL fetch outside models.dev module',
+    command:
+      '{ { rg -n "fetch(Json)?WithTimeout\\(" src/ --glob \'!**/*.test.*\' | rg -i "privacy|/terms|pricing|marketing|quota" | rg -v "^src/engine/providers/models-dev\\.ts:" || true; rg -n "privacyURL|termsURL" src/ --glob \'!**/*.test.*\' | rg -v "^src/core/providers/" | rg -v "^src/engine/providers/candidate-contract.ts:" || true; } | wc -l; }',
+    expected: 0,
+  },
+  {
+    id: '34',
+    description: 'Zero excluded first-class CLI/API IDs in runtime tuples or catalogs',
+    command:
+      "node --import tsx/esm --input-type=module -e \"import { EXCLUDED_CLI_TOOL_IDS, CLI_TOOL_CATALOG } from './src/core/runners/cli-tool-catalog.ts'; import { FORBIDDEN_API_PROVIDER_IDS, API_PROVIDER_CATALOG } from './src/core/providers/api-provider-catalog.ts'; import { PROVIDER_IDS, PLANNER_TOOL_IDS } from './src/core/schemas/enums.ts'; let n=0; const admitted=new Set([...PROVIDER_IDS,...PLANNER_TOOL_IDS,...Object.keys(CLI_TOOL_CATALOG),...Object.keys(API_PROVIDER_CATALOG)]); for (const id of EXCLUDED_CLI_TOOL_IDS) if (admitted.has(id)) n++; for (const id of FORBIDDEN_API_PROVIDER_IDS) if (admitted.has(id)) n++; process.stdout.write(String(n));\"",
+    expected: 0,
+  },
+  {
+    id: '35',
+    description: 'Zero source index.ts barrels',
+    command: "find src -name 'index.ts' | wc -l",
     expected: 0,
   },
 ];

@@ -10,10 +10,10 @@ import { compactOperationsState } from './retention.js';
 import { replaceOperation, terminalizeRunningOperation } from './runner.js';
 import type { OperationsState, RunningOperation } from './state.js';
 
-export const LEGACY_PLANNER_STATUS_PREFIX = 'planner-status:';
+const PLANNER_STATUS_FALLBACK_PREFIX = 'planner-status:';
 
-export function legacyPlannerStatusCallId(phase: Phase): string {
-  return `${LEGACY_PLANNER_STATUS_PREFIX}${phase}`;
+function plannerStatusFallbackCallId(phase: Phase): string {
+  return `${PLANNER_STATUS_FALLBACK_PREFIX}${phase}`;
 }
 
 export function closePlannerStatusFallbacks(state: OperationsState, ts: number): OperationsState {
@@ -21,7 +21,7 @@ export function closePlannerStatusFallbacks(state: OperationsState, ts: number):
   for (const operation of state.byCallId.values()) {
     if (
       operation.status !== 'running' ||
-      !operation.callId.startsWith(LEGACY_PLANNER_STATUS_PREFIX)
+      !operation.callId.startsWith(PLANNER_STATUS_FALLBACK_PREFIX)
     ) {
       continue;
     }
@@ -48,7 +48,7 @@ export function updatePlannerStatusFallback(
     return closePlannerStatusFallbacks(state, event.ts);
   }
 
-  const callId = legacyPlannerStatusCallId(event.phase);
+  const callId = plannerStatusFallbackCallId(event.phase);
   if (event.status === 'done') {
     const operation = state.byCallId.get(callId);
     if (!operation || operation.status !== 'running') return state;
@@ -67,7 +67,7 @@ export function updatePlannerStatusFallback(
 
   if (
     state.active?.status === 'running' &&
-    !state.active.callId.startsWith(LEGACY_PLANNER_STATUS_PREFIX)
+    !state.active.callId.startsWith(PLANNER_STATUS_FALLBACK_PREFIX)
   ) {
     return state;
   }

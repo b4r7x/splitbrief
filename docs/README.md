@@ -83,5 +83,5 @@ Specialized subsystem docs linked from the main chapters above.
 ## Project-level
 
 - [`../README.md`](../README.md) — Install and quick start
-- [`../CLAUDE.md`](../CLAUDE.md) — Agent instructions
-- [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — Development setup
+- [`CLAUDE.md`](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) — Agent instructions
+- [`CONTRIBUTING.md`](https://github.com/b4r7x/splitbrief/blob/main/CONTRIBUTING.md) — Development setup

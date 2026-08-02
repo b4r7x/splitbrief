@@ -275,14 +275,9 @@ describe('runPlanningPhase — rewindPending', () => {
       prompts: false,
     },
     {
-      name: "approve 'spec' overrides a hand-set autoApproveSpec flag",
-      workflow: { approve: 'spec', autoApproveSpec: true },
+      name: "approve 'spec' keeps the rewound spec gate",
+      workflow: { approve: 'spec' },
       prompts: true,
-    },
-    {
-      name: 'both legacy auto flags skip the rewound spec gate',
-      workflow: { autoApproveSpec: true, autoApprovePlan: true },
-      prompts: false,
     },
   ];
 

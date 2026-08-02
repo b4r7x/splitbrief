@@ -81,7 +81,6 @@ The `workflow.mode` config field controls how many planner calls run before impl
 | `standard` (default) | 4 (research → supporting spec → plan → Task Brief transport) | 2 (supporting spec + briefs) | Normal features |
 | `speckit` | 7 (research → supporting spec → clarify → constitution-check → plan → analyze → Task Brief transport) | 3 (supporting spec + plan + briefs) | Large, risky, or audited work |
 
-`full` is a legacy alias for `speckit` at the CLI/config boundary.
 
 The dispatch happens in `src/engine/orchestrator/planning/run.ts` on `config.workflow.mode`.
 
@@ -350,7 +349,7 @@ Typed event schema: `src/engine/events/schema.ts` (`EngineEventSchema`; the `Eng
 
 ## Two-layer config
 
-`.splitbrief/config.yaml` has **`version: 3`** in current configs. `version: 2` is accepted and migrated for backwards compatibility, but new examples should use v3. Two top-level role blocks matter:
+`.splitbrief/config.yaml` declares **`version: 3`** — the only accepted version. Two top-level role blocks matter:
 
 ```yaml
 version: 3
@@ -366,4 +365,4 @@ implementer: # same five kinds
   apiBase: http://localhost:11434/v1
 ```
 
-Optional `implementerProfiles` add named cheap/local/fallback implementer configs for routing while preserving the same single implementer role. Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. `version: 1` and `version: 2` configs are migrated automatically by `src/core/config/load/migrate.ts`.
+Optional `implementerProfiles` add named cheap/local/fallback implementer configs for routing while preserving the same single implementer role. Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. Any config version other than 3 is rejected at load.

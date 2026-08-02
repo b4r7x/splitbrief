@@ -54,7 +54,6 @@ function writeConfig(projectDir: string, persistTranscript = false): void {
       'workflow:',
       '  approve: default',
       '  max_retries: 3',
-      '  commit_strategy: none',
       '  mode: standard',
       `  persist_transcript: ${persistTranscript ? 'true' : 'false'}`,
     ].join('\n'),

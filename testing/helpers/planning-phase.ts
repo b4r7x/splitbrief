@@ -156,14 +156,11 @@ export function sequencedApproval(
 }
 
 export const auto = (mode?: Config['workflow']['mode']): Partial<Config['workflow']> => ({
-  autoApproveSpec: true,
-  autoApprovePlan: true,
+  approve: 'none',
   ...(mode ? { mode } : {}),
 });
 
 export const manual = (mode?: Config['workflow']['mode']): Partial<Config['workflow']> => ({
-  autoApproveSpec: false,
-  autoApprovePlan: false,
   ...(mode ? { mode } : {}),
 });
 

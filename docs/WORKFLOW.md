@@ -185,7 +185,6 @@ Mode selection: `src/engine/orchestrator/planning/run.ts` → `resolveMode()`. M
 | `standard` | 4 | idle → researching → specifying → reviewing-spec → planning → reviewing-plan → reviewing-briefs → implementing | `spec` | research, spec.md, plan.md, tasks.md |
 | `speckit` | 6-7 | idle → researching → specifying → reviewing-spec → clarifying → constitution-check → planning → reviewing-plan → reviewing-briefs → analyzing → implementing | `all` | research, spec.md, clarifications.md, constitution-check.json, plan.md, tasks.md, analyze.json |
 
-`full` is a legacy alias for `speckit` at the CLI/config boundary.
 
 ### Approval gates
 
@@ -206,7 +205,7 @@ Briefs review is separate from `workflow.approve`: `standard` and `speckit` ente
 
 Upgrade and downgrade advice fire only when `confidence >= 0.65`. Missing-context fires below that threshold when the prompt is obviously vague.
 
-The advisor never auto-switches the mode. It publishes a `mode_advice` event and the footer displays the suggestion. On downgrade it also publishes `mode_downgrade_advised` for backward compatibility.
+The advisor never auto-switches the mode. It publishes a `mode_advice` event and the footer displays the suggestion.
 
 ### Clarification questions
 

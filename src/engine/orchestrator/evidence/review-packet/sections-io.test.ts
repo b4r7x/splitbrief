@@ -14,11 +14,16 @@ afterEach(() => {
   dirs = [];
 });
 
-function makeProject(): string {
+function makeProject(): { projectDir: string; runStartHead: string } {
   const projectDir = createTempDir('sections-io-test');
   dirs.push(projectDir);
   createTestGitRepo(projectDir);
-  return projectDir;
+  const runStartHead = execSync('git rev-parse HEAD', {
+    cwd: projectDir,
+    stdio: 'pipe',
+    encoding: 'utf8',
+  }).trim();
+  return { projectDir, runStartHead };
 }
 
 function driftWith(changedFiles: string[]): DriftReport {
@@ -35,13 +40,14 @@ function driftWith(changedFiles: string[]): DriftReport {
 
 describe('resolveChangedFiles', () => {
   it('uses the drift report changed files (deduped, sorted) without consulting git or reporting missing', async () => {
-    const projectDir = makeProject();
+    const { projectDir, runStartHead } = makeProject();
     const missing: string[] = [];
 
     const files = await resolveChangedFiles({
       projectDir,
       drift: driftWith(['src/b.ts', 'src/a.ts', 'src/a.ts']),
       missing,
+      baseline: { head: runStartHead },
     });
 
     expect(files).toEqual(['src/a.ts', 'src/b.ts']);
@@ -49,17 +55,42 @@ describe('resolveChangedFiles', () => {
   });
 
   it('reports "changed files" missing instead of an empty-but-confident list when no drift report and the tree is clean', async () => {
-    const projectDir = makeProject();
+    const { projectDir, runStartHead } = makeProject();
     const missing: string[] = [];
 
-    const files = await resolveChangedFiles({ projectDir, drift: null, missing });
+    const files = await resolveChangedFiles({
+      projectDir,
+      drift: null,
+      missing,
+      baseline: { head: runStartHead },
+    });
 
     expect(files).toEqual([]);
     expect(missing).toContain('changed files');
   });
 
+  it('reports the run-start baseline missing instead of guessing the run boundary from git history', async () => {
+    const { projectDir } = makeProject();
+    const git = (args: string) => execSync(`git ${args}`, { cwd: projectDir, stdio: 'pipe' });
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/feature.ts'), 'export const x = 1;\n');
+    git('add src/feature.ts');
+    git('commit -m "feat(splitbrief): T1 - add feature"');
+
+    const missing: string[] = [];
+    const files = await resolveChangedFiles({
+      projectDir,
+      drift: null,
+      missing,
+      baseline: undefined,
+    });
+
+    expect(files).toEqual([]);
+    expect(missing).toEqual(['run-start baseline']);
+  });
+
   it('surfaces files committed since run-start when per-task commits leave a clean working tree', async () => {
-    const projectDir = makeProject();
+    const { projectDir, runStartHead } = makeProject();
     const git = (args: string) => execSync(`git ${args}`, { cwd: projectDir, stdio: 'pipe' });
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     // A per-task commit (prefixed `feat(splitbrief):`) moves the run's change out of
@@ -69,14 +100,19 @@ describe('resolveChangedFiles', () => {
     git('commit -m "feat(splitbrief): T1 - add feature"');
 
     const missing: string[] = [];
-    const files = await resolveChangedFiles({ projectDir, drift: null, missing });
+    const files = await resolveChangedFiles({
+      projectDir,
+      drift: null,
+      missing,
+      baseline: { head: runStartHead },
+    });
 
     expect(files).toEqual(['src/feature.ts']);
     expect(missing).not.toContain('changed files');
   });
 
   it('routes the no-drift fallback through the run-baseline filter, dropping splitbrief-internal paths', async () => {
-    const projectDir = makeProject();
+    const { projectDir, runStartHead } = makeProject();
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/feature.ts'), 'export const x = 1;\n');
     // An internal control-plane write that must NOT surface as a changed file.
@@ -84,7 +120,12 @@ describe('resolveChangedFiles', () => {
     writeFileSync(join(projectDir, '.splitbrief', 'sessions', 'state.json'), '{}\n');
 
     const missing: string[] = [];
-    const files = await resolveChangedFiles({ projectDir, drift: null, missing });
+    const files = await resolveChangedFiles({
+      projectDir,
+      drift: null,
+      missing,
+      baseline: { head: runStartHead },
+    });
 
     expect(files).toContain('src/feature.ts');
     expect(files.some((f) => f.startsWith('.splitbrief'))).toBe(false);
@@ -92,7 +133,7 @@ describe('resolveChangedFiles', () => {
   });
 
   it('uses the persisted run boundary for no-drift review packets', async () => {
-    const projectDir = makeProject();
+    const { projectDir } = makeProject();
     const git = (args: string) =>
       execSync(`git ${args}`, { cwd: projectDir, stdio: 'pipe', encoding: 'utf8' }).trim();
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -118,7 +159,7 @@ describe('resolveChangedFiles', () => {
   });
 
   it('includes commits from an explicitly captured unborn boundary', async () => {
-    const projectDir = makeProject();
+    const { projectDir } = makeProject();
     const git = (args: string) => execSync(`git ${args}`, { cwd: projectDir, stdio: 'pipe' });
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/from-unborn.ts'), 'export const value = true;\n');

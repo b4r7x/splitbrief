@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { TASK_CONTEXT_FITS, WorkflowModeSchema } from './enums.js';
 import { TaskIdSchema } from './task.js';
+import { API_OFFERINGS, type ApiOffering } from '../providers/api-provider-catalog.js';
+import { RunnerBillingPostureSchema } from '../runners/runner-billing.js';
 
 export const ESTIMATE_CONTEXT_CONFIDENCES = [
   'context-explicit',
@@ -57,6 +59,21 @@ export const ProviderCostSchema = z.object({
   cacheCreateTokens: z.number().nonnegative().optional(),
 });
 
+export const ProviderRunMetadataSchema = z.object({
+  service: z.string(),
+  offering: z.enum(API_OFFERINGS),
+  normalizedEndpoint: z.string(),
+  billing: RunnerBillingPostureSchema,
+  asOf: z.string(),
+});
+
+export const OfferingBillingPresentationSchema = z.object({
+  costLabel: z.string(),
+  billingLabel: z.string(),
+});
+export type ProviderRunMetadata = z.infer<typeof ProviderRunMetadataSchema>;
+export type OfferingBillingPresentation = z.infer<typeof OfferingBillingPresentationSchema>;
+
 export const CostBreakdownSchema = z.object({
   hypotheticalCost: z.number().nonnegative(),
   actualPlannerCost: z.number().nonnegative(),
@@ -73,6 +90,10 @@ export const CostBreakdownSchema = z.object({
   isTotalActualCostKnown: z.boolean().optional(),
   isAllPlannerBaselineKnown: z.boolean().optional(),
   providerCosts: z.record(z.string(), ProviderCostSchema).optional(),
+  /** Billing identity of every runner the run used, keyed by tool/provider id. */
+  providerRunMetadata: z.record(z.string(), ProviderRunMetadataSchema).optional(),
+  /** Offering-correct cost and billing labels for those runners. */
+  offeringPresentations: z.record(z.string(), OfferingBillingPresentationSchema).optional(),
   cacheReadSavings: z.number().nonnegative().optional(),
   cacheReadTokens: z.number().nonnegative().optional(),
   cacheWriteTokens: z.number().nonnegative().optional(),
@@ -240,4 +261,25 @@ export function costKnownFlags(breakdown: CostBreakdown): CostKnownFlags {
   const allPlannerBaselineKnown =
     breakdown.isAllPlannerBaselineKnown ?? breakdown.hasSavingsEstimate ?? true;
   return { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown };
+}
+
+const UNMETERED_OFFERINGS = new Set<ApiOffering>(['coding-subscription', 'local']);
+
+/**
+ * The single cost label that describes a whole run, available only when every
+ * runner it used bills outside per-token metering and they agree on one label.
+ * A dollar figure would misreport those runs as a charge that never happened;
+ * any metered runner makes the dollar figure the honest answer again.
+ */
+export function unmeteredRunCostLabel(breakdown: CostBreakdown): string | null {
+  const entries = Object.entries(breakdown.providerRunMetadata ?? {});
+  if (entries.length === 0) return null;
+  const labels = new Set<string>();
+  for (const [tool, metadata] of entries) {
+    if (!UNMETERED_OFFERINGS.has(metadata.offering)) return null;
+    const label = breakdown.offeringPresentations?.[tool]?.costLabel;
+    if (label === undefined) return null;
+    labels.add(label);
+  }
+  return labels.size === 1 ? ([...labels][0] ?? null) : null;
 }

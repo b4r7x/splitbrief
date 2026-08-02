@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "mimo",
+    "role": "implementer",
+    "contractSha256": "7b537b7259c8c61059f31daa20fe92857e6a96ed7968d67730c2e20b6dd1e005",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing credential for MIMO_API_KEY"
+  },
+  "productionConformance": {
+    "candidateId": "mimo",
+    "role": "implementer",
+    "contractSha256": "7b537b7259c8c61059f31daa20fe92857e6a96ed7968d67730c2e20b6dd1e005",
+    "stdout": "",
+    "stderr": "missing credential for MIMO_API_KEY"
+  },
+  "verdict": "OMIT"
+}

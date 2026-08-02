@@ -101,7 +101,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 1, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         planner,
         callbacks,
         implementer,
@@ -149,7 +149,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          workflow: { maxRetries: 1, commitStrategy: 'none' },
+          workflow: { maxRetries: 1 },
           escalation: {
             intermediateProvider: 'openrouter',
             intermediateModel: 'x-ai/grok-4',
@@ -175,15 +175,21 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
     // Build a cli-only implementer config (no apiBase at all) so the fallback
     // path has nothing to fall back to.
     const cliOnlyConfig = {
-      version: 2 as const,
-      planner: { kind: 'cli' as const, tool: 'claude-code' as const },
-      implementer: { kind: 'cli' as const, tool: 'aider' as const, model: 'gpt-4' },
+      version: 3 as const,
+      planner: {
+        kind: 'cli' as const,
+        tool: 'claude-code' as const,
+        authChannel: 'session' as const,
+      },
+      implementer: {
+        kind: 'cli' as const,
+        tool: 'aider' as const,
+        model: 'gpt-4',
+        authChannel: 'provider-dependent' as const,
+      },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       workflow: {
-        autoApproveSpec: false,
-        autoApprovePlan: false,
         maxRetries: 1,
-        commitStrategy: 'none' as const,
         persistTranscript: true,
         compactionFormat: 'auto' as const,
         mode: 'standard' as const,
@@ -282,7 +288,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          workflow: { maxRetries: 1, commitStrategy: 'none' },
+          workflow: { maxRetries: 1 },
           escalation: {
             intermediateProvider: 'openrouter',
             intermediateModel: 'x-ai/grok-4-fast',
@@ -357,7 +363,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig({
-          workflow: { maxRetries: 1, commitStrategy: 'none' },
+          workflow: { maxRetries: 1 },
           escalation: {
             intermediateProvider: 'openrouter',
             intermediateModel: 'x-ai/grok-4-fast',
@@ -402,7 +408,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 3 } }),
         planner: makePlanner(),
         callbacks,
         implementer,
@@ -449,7 +455,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 3, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 3 } }),
         planner,
         callbacks,
         implementer,
@@ -506,7 +512,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { maxRetries: 2, commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 2 } }),
         planner,
         callbacks,
         implementer,

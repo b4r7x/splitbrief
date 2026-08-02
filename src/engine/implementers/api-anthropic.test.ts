@@ -47,7 +47,7 @@ describe('api implementer — Anthropic path', () => {
       implementer: {
         provider: 'anthropic',
         apiBase: 'https://api.anthropic.com/v1',
-        apiKey: 'test-key',
+        apiKey: 'sk-ant-test-key',
         model: 'claude-sonnet-4-6',
       },
     });
@@ -76,7 +76,7 @@ describe('api implementer — Anthropic path', () => {
       implementer: {
         provider: 'anthropic',
         apiBase: 'https://api.anthropic.com/v1',
-        apiKey: 'test-key',
+        apiKey: 'sk-ant-test-key',
         model: 'claude-sonnet-4-6',
       },
     });
@@ -145,7 +145,7 @@ describe('api implementer — Anthropic path', () => {
       implementer: {
         provider: 'anthropic',
         apiBase: 'https://api.anthropic.com/v1',
-        apiKey: 'test-key',
+        apiKey: 'sk-ant-test-key',
         model: 'claude-sonnet-4-6',
         effort: 'high',
       },
@@ -188,7 +188,7 @@ describe('api implementer — Anthropic path', () => {
       implementer: {
         provider: 'anthropic',
         apiBase: 'https://api.anthropic.com/v1',
-        apiKey: 'test-key',
+        apiKey: 'sk-ant-test-key',
         model: 'claude-sonnet-4-6',
         timeout: 50,
       },
@@ -231,7 +231,7 @@ describe('api implementer — Anthropic path', () => {
       });
 
       expect(result.success).toBe(false);
-      if (!result.success) expect(result.error).toMatch(/exfiltrat/i);
+      if (!result.success) expect(result.error).toMatch(/endpoint policy|exfiltrat/i);
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       if (orig === undefined) delete process.env['ANTHROPIC_API_KEY'];

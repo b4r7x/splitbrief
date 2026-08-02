@@ -126,6 +126,33 @@ describe('spawnWithStdin', () => {
     });
   });
 
+  it('bounds retention without tearing the child down when byte-limit aborts are off', async () => {
+    const stderrChunks: string[] = [];
+    const result = await spawnWithStdin({
+      command: 'node',
+      args: [
+        '-e',
+        [
+          'process.stderr.write("stderr-head\\n");',
+          'process.stderr.write("e".repeat(4096));',
+          'process.stderr.write("\\nstderr-tail\\n");',
+        ].join(''),
+      ],
+      cwd: '.',
+      onLine: () => {},
+      onStderr: (chunk) => stderrChunks.push(chunk),
+      stderrMaxBytes: 128,
+      abortOnByteLimit: false,
+    });
+
+    expect(result.code).toBe(0);
+    expect(stderrChunks.join('')).toContain('stderr-head');
+    expect(stderrChunks.join('')).toContain('stderr-tail');
+    expect(result.stderrOutput).toContain('stderr-tail');
+    expect(result.stderrMetadata).toMatchObject({ truncated: true, maxBytes: 128 });
+    expect(result.stderrMetadata?.bytesStored ?? 0).toBeLessThanOrEqual(128);
+  });
+
   it('rejects with notFoundMessage for missing command', async () => {
     await expect(
       spawnWithStdin({

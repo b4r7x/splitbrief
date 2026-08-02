@@ -2,6 +2,10 @@ import type { DetectedModel } from '../../../core/discovery/detection.js';
 import type { ProviderId } from '../../../core/schemas/enums.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
 import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
+import {
+  AUTOMATIC_MODEL,
+  normalizeConfiguredModel,
+} from '../../../core/providers/automatic-model.js';
 import { getModelsForProvider } from '../models-dev.js';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { idsMatch } from './parsing.js';
@@ -137,8 +141,8 @@ function getDefaultKnownModel(providerId: ProviderId): KnownModel | undefined {
 }
 
 export function getEffectiveModelId(providerId: ProviderId, modelId?: string): string | undefined {
-  const selected = modelId?.trim();
-  if (selected) {
+  const selected = normalizeConfiguredModel(modelId);
+  if (selected !== undefined && selected !== AUTOMATIC_MODEL) {
     const known = findKnownModel(providerId, selected);
     return known?.catalogModelId ?? known?.name ?? selected;
   }

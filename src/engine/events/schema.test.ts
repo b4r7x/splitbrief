@@ -328,7 +328,7 @@ describe('parseEngineEvent', () => {
     );
   });
 
-  it('normalizes legacy runner text deltas without a channel as stdout', () => {
+  it('rejects runner text deltas without a channel', () => {
     expect(
       parseEngineEvent({
         type: 'runner_call_text_delta',
@@ -338,17 +338,12 @@ describe('parseEngineEvent', () => {
         role: 'planner',
         backendKind: 'cli',
         sequence: 1,
-        text: 'legacy output',
+        text: 'output',
       }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'runner_call_text_delta',
-        channel: 'stdout',
-      }),
-    );
+    ).toBeNull();
   });
 
-  it('normalizes legacy runner tool-use events without a lifecycle stage', () => {
+  it('parses runner tool-use events by lifecycle stage', () => {
     const base = {
       type: 'runner_call_tool_use',
       ts: 1,
@@ -390,24 +385,14 @@ describe('parseEngineEvent', () => {
         ...base,
         toolUse: { id: 'tool-1', name: 'Bash', input: { command: 'npm test' } },
       }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'runner_call_tool_use',
-        stage: 'done',
-      }),
-    );
+    ).toBeNull();
     expect(
       parseEngineEvent({
         ...base,
         name: 'Bash',
         inputDelta: '{"command":"npm',
       }),
-    ).toEqual(
-      expect.objectContaining({
-        type: 'runner_call_tool_use',
-        stage: 'delta',
-      }),
-    );
+    ).toBeNull();
     expect(
       parseEngineEvent({
         ...base,

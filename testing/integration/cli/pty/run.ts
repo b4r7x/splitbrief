@@ -146,7 +146,6 @@ export function safeChildEnvironment(environmentRoot: string): Readonly<Record<s
     TZ: 'UTC',
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_TERMINAL_PROMPT: '0',
-    SPLITBRIEF_QUIET: '1',
     NODE_NO_WARNINGS: '1',
     VISUAL: `${quoteCommandToken(process.execPath)} --import tsx ${quoteCommandToken(editorChildEntrypoint())}`,
     [PTY_CHILD_PROJECT_ENV]: join(environmentRoot, 'project'),

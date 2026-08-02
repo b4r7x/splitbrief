@@ -10,11 +10,13 @@ import {
   type CliProcessResult,
   type CliProcessRunner,
 } from './contract-harness.js';
+import { replacePromptSentinel, type RawCliCandidateContract } from './candidate-contract.js';
 import {
-  cliContractSha256,
-  replacePromptSentinel,
-  type RawCliCandidateContract,
-} from './candidate-contract.js';
+  CandidateEvidence,
+  CONFORMANCE_PROMPT,
+  MAX_EVIDENCE_OUTPUT_BYTES,
+  contractSha256,
+} from '../../providers/candidate-contract.js';
 import { invokeProcessCli } from './process-invoke.js';
 import type { CliImplementerAdapter } from './contract.js';
 
@@ -64,7 +66,7 @@ async function moduleWithCandidate(
   role: 'planner' | 'implementer' = 'planner',
 ): Promise<string> {
   const candidate = { ...contract, role };
-  const hash = cliContractSha256(candidate);
+  const hash = contractSha256(candidate);
   const path = join(directory, 'candidate.mjs');
   const source = `
 export const CLI_CONFORMANCE_CANDIDATES = [{
@@ -75,7 +77,7 @@ export const CLI_CONFORMANCE_CANDIDATES = [{
   adapter: {
     descriptor: { id: ${JSON.stringify(candidate.id)} },
     role: ${JSON.stringify(role)},
-    promptTransport: { kind: 'argv', maxBytes: 120000 },
+    promptTransport: { kind: 'argv', maxBytes: 120000, placement: 'positional' },
     buildArgs: () => ['-e', 'process.stdout.write("ok")', '<PROMPT>'],
     validateArgs: () => ({ valid: true }),
     environment: {},
@@ -106,7 +108,7 @@ async function moduleWithCustomCandidate(
   options: CandidateModuleOptions = {},
 ): Promise<string> {
   const candidate = { ...contract };
-  const hash = cliContractSha256(candidate);
+  const hash = contractSha256(candidate);
   const buildArgs =
     options.buildArgs ??
     `() => ['-e', ${JSON.stringify('process.stdout.write("ok")')}, '<PROMPT>']`;
@@ -114,7 +116,7 @@ async function moduleWithCustomCandidate(
   const promptTransport =
     options.promptTransport ??
     (candidate.promptTransport === 'argv'
-      ? `{ kind: 'argv', maxBytes: 120000 }`
+      ? `{ kind: 'argv', maxBytes: 120000, placement: 'positional' }`
       : candidate.promptTransport === 'stdin'
         ? `{ kind: 'stdin' }`
         : `{ kind: 'file', mode: 0o600 }`);
@@ -241,6 +243,31 @@ describe('CLI conformance harness', () => {
     }
   });
 
+  it('bounds an oversized capture inside the evidence byte budget', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
+    try {
+      const recordPath = join(directory, 'raw.json');
+      const flood = 'x'.repeat(MAX_EVIDENCE_OUTPUT_BYTES + 8_192);
+      const outcome = await runRawCliConformance(
+        rawOptions(baseContract, async () => processResult(flood), recordPath),
+      );
+
+      expect(outcome.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
+      const record = JSON.parse(await readFile(recordPath, 'utf8')) as { rawCapture: unknown };
+      const evidence = CandidateEvidence.safeParse({
+        rawCapture: record.rawCapture,
+        productionConformance: null,
+        verdict: 'OMIT',
+      });
+      expect(evidence.success).toBe(true);
+      expect(
+        Buffer.byteLength(evidence.success ? evidence.data.rawCapture.stdout : '', 'utf8'),
+      ).toBeLessThanOrEqual(MAX_EVIDENCE_OUTPUT_BYTES);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('reuses raw evidence and selects the explicit role from the named export', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
     try {
@@ -284,7 +311,7 @@ describe('CLI conformance harness', () => {
           rawCapture: {
             candidateId: baseContract.id,
             role: baseContract.role,
-            contractSha256: cliContractSha256(baseContract),
+            contractSha256: contractSha256(baseContract),
             stdout: '',
             stderr: '',
           },
@@ -315,8 +342,7 @@ describe('CLI conformance harness', () => {
 
   it('delivers the final-line prompt through argv, stdin, and mode-0600 file transport', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'splitbrief-cli-harness-'));
-    const expectedPrompt =
-      'Implement the requested change in the staged project.\n\nFiles:\n- src/example.ts\n- tests/example.test.ts\n\nReturn a concise result.';
+    const expectedPrompt = CONFORMANCE_PROMPT;
     const multibytePrompt = 'Zażółć gęślą jaźń — 日本語 🧪\nfinál';
     try {
       const replaced = replacePromptSentinel(['--prompt', '<PROMPT>'], multibytePrompt, 'argv');
@@ -422,7 +448,7 @@ describe('CLI conformance harness', () => {
       expect(raw.exitCode).toBe(CLI_CONFORMANCE_EXIT_CODES.PASS);
       const marker = join(directory, 'spawned.txt');
       const modulePath = await moduleWithCustomCandidate(directory, baseContract, {
-        promptTransport: `{ kind: 'argv', maxBytes: 1 }`,
+        promptTransport: `{ kind: 'argv', maxBytes: 1, placement: 'positional' }`,
         buildArgs: `() => ['-e', ${JSON.stringify(`require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'spawned')`)}, '<PROMPT>']`,
       });
       const production = await runProductionCliConformance({

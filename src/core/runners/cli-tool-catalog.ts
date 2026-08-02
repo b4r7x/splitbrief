@@ -1,4 +1,7 @@
 import { typedEntries } from '../../utils/type-guards.js';
+import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
+import { assertCandidateFilesAbsent } from './candidate-admission.js';
+import { cliAdmissionError } from './cli-admission-error.js';
 import type { RunnerBillingPosture } from './runner-billing.js';
 
 export type RunnerRole = 'planner' | 'implementer';
@@ -24,7 +27,13 @@ export type CliModelPolicyViolation = Readonly<{
   message: string;
 }>;
 
-export type CliAuthChannelId = 'api-key' | 'session' | 'provider-dependent';
+export const CLI_AUTH_CHANNEL_IDS = Object.freeze([
+  'api-key',
+  'session',
+  'provider-dependent',
+] as const);
+
+export type CliAuthChannelId = (typeof CLI_AUTH_CHANNEL_IDS)[number];
 
 export type CliAuthChannel = Readonly<{
   id: CliAuthChannelId;
@@ -35,11 +44,13 @@ export type CliAuthChannel = Readonly<{
 
 export type CliAuthSelection = Readonly<{ channel: CliAuthChannelId }>;
 
+export type CliAuthChannels = readonly [CliAuthChannel, ...CliAuthChannel[]];
+
 export type CliAuthPolicy = Readonly<{
   kind: 'api-key-or-session' | 'session' | 'provider-dependent';
   env: readonly string[];
   stateBridge: 'host-cli-state' | 'none';
-  channels: readonly CliAuthChannel[];
+  channels: CliAuthChannels;
 }>;
 
 export type CliCompatibility = Readonly<{
@@ -50,6 +61,41 @@ export type CliCompatibility = Readonly<{
 
 type RolePolicy<T> = Readonly<Record<RunnerRole, T>>;
 type CliSandboxPosture = 'none' | 'cli-managed' | 'mode-dependent';
+
+export type CliAdmissionVerdict = 'PASS' | 'OMIT';
+
+export type CursorCliAdmissionVerdict = typeof CURSOR_CLI_ADMISSION_VERDICT;
+export const CURSOR_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
+
+export type AntigravityCliAdmissionVerdict = typeof ANTIGRAVITY_CLI_ADMISSION_VERDICT;
+export const ANTIGRAVITY_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
+
+export const EXCLUDED_CLI_TOOL_IDS = Object.freeze([
+  'kiro',
+  'gemini',
+  'auggie',
+  'junie',
+  'cline',
+  'qwen',
+] as const);
+
+export const CURSOR_CLI_CANDIDATE_PATHS = Object.freeze([
+  'src/engine/runners/cli-tools/cursor-parser.ts',
+  'src/engine/runners/cli-tools/cursor.ts',
+  'src/engine/runners/cli-tools/cursor.test.ts',
+] as const);
+
+export const ANTIGRAVITY_CLI_CANDIDATE_PATHS = Object.freeze([
+  'src/engine/runners/cli-tools/antigravity.ts',
+  'src/engine/runners/cli-tools/antigravity.test.ts',
+] as const);
+
+type ExistingCliToolId = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'copilot' | 'kilo-code';
+
+type CursorCliToolId = CursorCliAdmissionVerdict extends 'PASS' ? 'cursor' : never;
+type AntigravityCliToolId = AntigravityCliAdmissionVerdict extends 'PASS' ? 'antigravity' : never;
+
+export type CliToolId = ExistingCliToolId | CursorCliToolId | AntigravityCliToolId;
 
 export type CliToolDescriptor = Readonly<{
   id: CliToolId;
@@ -80,6 +126,7 @@ const CLI_IMPLEMENTER_TRUST = Object.freeze({
   mayWriteFilesDirectly: true,
   autoAllowFlags: Object.freeze([]),
 });
+
 function rolePolicy<T>(planner: T, implementer: T): RolePolicy<T> {
   return Object.freeze({ planner, implementer });
 }
@@ -94,7 +141,7 @@ function cliToolTrust(implementerAutoAllowFlags: readonly string[]): RunnerRoleT
   });
 }
 
-export const CLI_TOOL_TRUST = Object.freeze({
+const BASE_CLI_TOOL_TRUST = Object.freeze({
   'claude-code': cliToolTrust(['--permission-mode acceptEdits']),
   codex: cliToolTrust(['--sandbox workspace-write']),
   opencode: cliToolTrust([]),
@@ -102,10 +149,6 @@ export const CLI_TOOL_TRUST = Object.freeze({
   copilot: cliToolTrust(['--allow-all']),
   'kilo-code': cliToolTrust(['--auto']),
 });
-
-export type CliToolId = keyof typeof CLI_TOOL_TRUST;
-
-export const CLI_TOOL_IDS = Object.freeze(typedEntries(CLI_TOOL_TRUST).map(([id]) => id));
 
 function authChannel(
   id: CliAuthChannelId,
@@ -116,10 +159,7 @@ function authChannel(
   return Object.freeze({ id, env: Object.freeze([...env]), stateBridge, billing });
 }
 
-function authPolicy(
-  kind: CliAuthPolicy['kind'],
-  channels: readonly CliAuthChannel[],
-): CliAuthPolicy {
+function authPolicy(kind: CliAuthPolicy['kind'], channels: CliAuthChannels): CliAuthPolicy {
   const env = [
     ...new Set(
       channels
@@ -134,7 +174,7 @@ function authPolicy(
     kind,
     env: Object.freeze(env),
     stateBridge,
-    channels: Object.freeze([...channels]),
+    channels: Object.freeze(channels),
   });
 }
 
@@ -154,21 +194,24 @@ function trustPolicy(
 }
 
 function descriptor<
-  const Id extends CliToolId,
+  const Id extends string,
   const Roles extends readonly RunnerRole[],
   const ModelPolicy extends RolePolicy<CliModelPolicy>,
->(input: {
-  id: Id;
-  displayName: string;
-  command: string;
-  roles: Roles;
-  modelPolicy: ModelPolicy;
-  auth: CliAuthPolicy;
-  billing: RunnerBillingPosture;
-  sandbox: RolePolicy<CliSandboxPosture>;
-  compatibility: CliCompatibility;
-}) {
-  const trust = CLI_TOOL_TRUST[input.id];
+>(
+  trust: Readonly<Record<Id, RunnerRoleTrustMetadata>>,
+  input: {
+    id: Id;
+    displayName: string;
+    command: string;
+    roles: Roles;
+    modelPolicy: ModelPolicy;
+    auth: CliAuthPolicy;
+    billing: RunnerBillingPosture;
+    sandbox: RolePolicy<CliSandboxPosture>;
+    compatibility: CliCompatibility;
+  },
+) {
+  const toolTrust = trust[input.id];
 
   return Object.freeze({
     id: input.id,
@@ -178,124 +221,154 @@ function descriptor<
     modelPolicy: input.modelPolicy,
     auth: input.auth,
     billing: input.billing,
-    directWrite: trustPolicy(trust, 'mayWriteFilesDirectly'),
-    network: trustPolicy(trust, 'mayUseNetwork'),
-    shell: trustPolicy(trust, 'executesLocalCommand'),
+    directWrite: trustPolicy(toolTrust, 'mayWriteFilesDirectly'),
+    network: trustPolicy(toolTrust, 'mayUseNetwork'),
+    shell: trustPolicy(toolTrust, 'executesLocalCommand'),
     automaticApproval: rolePolicy(
-      trust.planner.autoAllowFlags.length > 0,
-      trust.implementer.autoAllowFlags.length > 0,
+      toolTrust.planner.autoAllowFlags.length > 0,
+      toolTrust.implementer.autoAllowFlags.length > 0,
     ),
     sandbox: input.sandbox,
     compatibility: input.compatibility,
   });
 }
 
-export const CLI_TOOL_CATALOG = Object.freeze({
-  'claude-code': descriptor({
-    id: 'claude-code',
-    displayName: 'Claude Code CLI',
-    command: 'claude',
-    roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
-    auth: authPolicy('api-key-or-session', [
-      authChannel('session', [], 'host-cli-state', 'subscription-included'),
-      authChannel('api-key', ['ANTHROPIC_API_KEY'], 'none', 'api-metered'),
-    ]),
-    billing: 'subscription-included',
-    sandbox: rolePolicy('none', 'none'),
-    compatibility: compatibility('https://claude.ai/code', '2.0.0', '2026-07-31'),
-  }),
-  codex: descriptor({
-    id: 'codex',
-    displayName: 'OpenAI Codex CLI',
-    command: 'codex',
-    roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
-    auth: authPolicy('api-key-or-session', [
-      authChannel('session', [], 'host-cli-state', 'subscription-included'),
-      authChannel('api-key', ['OPENAI_API_KEY'], 'none', 'api-metered'),
-    ]),
-    billing: 'subscription-included',
-    sandbox: rolePolicy('mode-dependent', 'cli-managed'),
-    compatibility: compatibility('https://github.com/openai/codex', '0.40.0', '2026-07-31'),
-  }),
-  opencode: descriptor({
-    id: 'opencode',
-    displayName: 'OpenCode CLI',
-    command: 'opencode',
-    roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
-    auth: authPolicy('provider-dependent', [
-      authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
-    ]),
-    billing: 'provider-dependent',
-    sandbox: rolePolicy('none', 'none'),
-    compatibility: compatibility('https://opencode.ai', '0.5.0', '2026-07-31'),
-  }),
-  aider: descriptor({
-    id: 'aider',
-    displayName: 'Aider CLI',
-    command: 'aider',
-    roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
-    auth: authPolicy('provider-dependent', [
-      authChannel('provider-dependent', [], 'none', 'provider-dependent'),
-    ]),
-    billing: 'provider-dependent',
-    sandbox: rolePolicy('none', 'none'),
-    compatibility: compatibility('https://aider.chat', '0.86.0', '2026-07-31'),
-  }),
-  copilot: descriptor({
-    id: 'copilot',
-    displayName: 'GitHub Copilot CLI',
-    command: 'copilot',
-    roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
-    auth: authPolicy('session', [
-      authChannel(
-        'session',
-        ['GH_TOKEN', 'GITHUB_TOKEN'],
-        'host-cli-state',
-        'subscription-included',
-      ),
-    ]),
-    billing: 'subscription-included',
-    sandbox: rolePolicy('none', 'none'),
-    compatibility: compatibility('https://github.com/github/copilot-cli', '0.3.0', '2026-07-31'),
-  }),
-  'kilo-code': descriptor({
-    id: 'kilo-code',
-    displayName: 'Kilo Code CLI',
-    command: 'kilo',
-    roles: ALL_ROLES,
-    modelPolicy: rolePolicy('optional', 'optional'),
-    auth: authPolicy('provider-dependent', [
-      authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
-    ]),
-    billing: 'provider-dependent',
-    sandbox: rolePolicy('none', 'none'),
-    compatibility: compatibility('https://kilo.ai', '0.1.0', '2026-07-31'),
-  }),
-} satisfies Readonly<Record<CliToolId, CliToolDescriptor>>);
+function buildBaseCatalog(trust: Readonly<Record<CliToolId, RunnerRoleTrustMetadata>>) {
+  return {
+    'claude-code': descriptor(trust, {
+      id: 'claude-code',
+      displayName: 'Claude Code CLI',
+      command: 'claude',
+      roles: ALL_ROLES,
+      modelPolicy: rolePolicy('optional', 'optional'),
+      auth: authPolicy('api-key-or-session', [
+        authChannel('session', [], 'host-cli-state', 'subscription-included'),
+        authChannel('api-key', ['ANTHROPIC_API_KEY'], 'none', 'api-metered'),
+      ]),
+      billing: 'subscription-included',
+      sandbox: rolePolicy('none', 'none'),
+      compatibility: compatibility('https://claude.ai/code', '2.0.0', '2026-07-31'),
+    }),
+    codex: descriptor(trust, {
+      id: 'codex',
+      displayName: 'OpenAI Codex CLI',
+      command: 'codex',
+      roles: ALL_ROLES,
+      modelPolicy: rolePolicy('optional', 'optional'),
+      auth: authPolicy('api-key-or-session', [
+        authChannel('session', [], 'host-cli-state', 'subscription-included'),
+        authChannel('api-key', ['OPENAI_API_KEY'], 'none', 'api-metered'),
+      ]),
+      billing: 'subscription-included',
+      sandbox: rolePolicy('mode-dependent', 'cli-managed'),
+      compatibility: compatibility('https://github.com/openai/codex', '0.40.0', '2026-07-31'),
+    }),
+    opencode: descriptor(trust, {
+      id: 'opencode',
+      displayName: 'OpenCode CLI',
+      command: 'opencode',
+      roles: ALL_ROLES,
+      modelPolicy: rolePolicy('optional', 'optional'),
+      auth: authPolicy('provider-dependent', [
+        authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
+      ]),
+      billing: 'provider-dependent',
+      sandbox: rolePolicy('none', 'none'),
+      compatibility: compatibility('https://opencode.ai', '0.5.0', '2026-07-31'),
+    }),
+    aider: descriptor(trust, {
+      id: 'aider',
+      displayName: 'Aider CLI',
+      command: 'aider',
+      roles: ALL_ROLES,
+      modelPolicy: rolePolicy('optional', 'optional'),
+      auth: authPolicy('provider-dependent', [
+        authChannel('provider-dependent', [], 'none', 'provider-dependent'),
+      ]),
+      billing: 'provider-dependent',
+      sandbox: rolePolicy('none', 'none'),
+      compatibility: compatibility('https://aider.chat', '0.86.0', '2026-07-31'),
+    }),
+    copilot: descriptor(trust, {
+      id: 'copilot',
+      displayName: 'GitHub Copilot CLI',
+      command: 'copilot',
+      roles: ALL_ROLES,
+      modelPolicy: rolePolicy('optional', 'optional'),
+      auth: authPolicy('session', [
+        authChannel(
+          'session',
+          ['GH_TOKEN', 'GITHUB_TOKEN'],
+          'host-cli-state',
+          'subscription-included',
+        ),
+      ]),
+      billing: 'subscription-included',
+      sandbox: rolePolicy('none', 'none'),
+      compatibility: compatibility('https://github.com/github/copilot-cli', '0.3.0', '2026-07-31'),
+    }),
+    'kilo-code': descriptor(trust, {
+      id: 'kilo-code',
+      displayName: 'Kilo Code CLI',
+      command: 'kilo',
+      roles: ALL_ROLES,
+      modelPolicy: rolePolicy('optional', 'optional'),
+      auth: authPolicy('provider-dependent', [
+        authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
+      ]),
+      billing: 'provider-dependent',
+      sandbox: rolePolicy('none', 'none'),
+      compatibility: compatibility('https://kilo.ai', '0.1.0', '2026-07-31'),
+    }),
+  };
+}
+
+function assertOmittedCandidatesAbsent(): void {
+  assertCandidateFilesAbsent(
+    [...CURSOR_CLI_CANDIDATE_PATHS, ...ANTIGRAVITY_CLI_CANDIDATE_PATHS],
+    cliAdmissionError.omitRequiresAbsentSource,
+  );
+}
+
+function assembleCliToolTrust(): Readonly<Record<CliToolId, RunnerRoleTrustMetadata>> {
+  assertOmittedCandidatesAbsent();
+  const trust: Record<ExistingCliToolId, RunnerRoleTrustMetadata> = { ...BASE_CLI_TOOL_TRUST };
+  return Object.freeze(trust);
+}
+
+function assembleCliToolCatalog(
+  trust: Readonly<Record<CliToolId, RunnerRoleTrustMetadata>>,
+): Readonly<Record<CliToolId, CliToolDescriptor>> {
+  const catalog: Record<ExistingCliToolId, CliToolDescriptor> = {
+    ...buildBaseCatalog(trust),
+  };
+  return Object.freeze(catalog);
+}
+
+export const CLI_TOOL_TRUST = assembleCliToolTrust();
+export const CLI_TOOL_CATALOG = assembleCliToolCatalog(CLI_TOOL_TRUST);
+export const CLI_TOOL_IDS = Object.freeze(typedEntries(CLI_TOOL_CATALOG).map(([id]) => id));
 
 export function cliModelPolicyViolations(
   policy: CliModelPolicy,
   selection: CliModelSelection,
 ): readonly CliModelPolicyViolation[] {
   const violations: CliModelPolicyViolation[] = [];
-  const model = selection.model;
+  const model = normalizeConfiguredModel(selection.model);
+  const automatic = model === undefined || model === AUTOMATIC_MODEL;
 
-  if (model?.trim().toLowerCase() === 'auto') {
+  if (policy === 'required' && automatic) {
     violations.push({
       field: 'model',
-      message: 'model "auto" is not a model ID; omit model to use automatic selection',
+      message:
+        model === undefined
+          ? 'model is required by this CLI model policy'
+          : 'model "auto" delegates to the tool default, but this CLI model policy requires an explicit model ID',
     });
-  } else if (policy === 'required' && model === undefined) {
-    violations.push({ field: 'model', message: 'model is required by this CLI model policy' });
-  } else if ((policy === 'backend-default' || policy === 'auto-only') && model !== undefined) {
+  } else if ((policy === 'backend-default' || policy === 'auto-only') && !automatic) {
     violations.push({
       field: 'model',
-      message: `model must be omitted for the "${policy}" CLI model policy`,
+      message: `model must be omitted or "auto" for the "${policy}" CLI model policy`,
     });
   }
 
@@ -326,6 +399,16 @@ export function selectCliAuthChannel(
 ): CliAuthChannel | undefined {
   if (selection === undefined) return undefined;
   return CLI_TOOL_CATALOG[id].auth.channels.find((channel) => channel.id === selection.channel);
+}
+
+/**
+ * The channel a runner takes when its configuration names none: the declared
+ * channel that needs no host state bridge, so an unset selection never copies
+ * host credential files into the staged sandbox on its own.
+ */
+export function defaultCliAuthChannel(id: CliToolId): CliAuthChannel {
+  const { channels } = CLI_TOOL_CATALOG[id].auth;
+  return channels.find((channel) => channel.stateBridge === 'none') ?? channels[0];
 }
 
 function cliToolIdsForRole(role: RunnerRole): readonly CliToolId[] {

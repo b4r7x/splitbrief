@@ -160,7 +160,7 @@ describe('resolveIntermediateConfig', () => {
         },
         escalation: {
           intermediateProvider: 'deepseek',
-          intermediateModel: 'deepseek-chat',
+          intermediateModel: 'deepseek-v4-flash',
           enabled: true,
         },
       }),
@@ -188,8 +188,8 @@ describe('resolveIntermediateConfig', () => {
       provider: 'deepseek',
       service: 'deepseek',
       offering: 'payg',
-      model: 'deepseek-chat',
-      contextLength: 128_000,
+      model: 'deepseek-v4-flash',
+      contextLength: 1_000_000,
     });
   });
 

@@ -102,12 +102,28 @@ describe('CLI runner readiness', () => {
     ).toBe('unverified');
   });
 
+  it('remediates unknown authentication without pointing at the tested version', () => {
+    expect(deriveCliReadiness(readyFacts({ auth: 'unknown' })).remediation).toBe(
+      'Verify codex authentication in the staged runner environment, then run runner readiness again.',
+    );
+    expect(deriveCliReadiness(readyFacts({ auth: 'not-checked' })).remediation).toBe(
+      'Verify codex authentication in the staged runner environment, then run runner readiness again.',
+    );
+    expect(deriveCliReadiness(readyFacts({ compatibility: 'unverified' })).remediation).toBe(
+      'Verify codex against tested version 0.40.0, then run runner readiness again.',
+    );
+    expect(deriveCliReadiness(readyFacts({ installedVersion: null })).remediation).toBe(
+      'Verify codex against tested version 0.40.0, then run runner readiness again.',
+    );
+  });
+
   it('rejects a result whose status or stable ID contradicts its facts', () => {
     const result = deriveCliReadiness(readyFacts());
 
     expect(CliReadinessResultSchema.safeParse({ ...result, status: 'unavailable' }).success).toBe(
       false,
     );
+    expect(CliReadinessResultSchema.safeParse({ ...result, status: 'bogus' }).success).toBe(false);
     expect(CliReadinessResultSchema.safeParse({ ...result, checkId: 'random-id' }).success).toBe(
       false,
     );

@@ -1,4 +1,5 @@
 import { ensureGitAndConfig } from '../../setup.js';
+import { serializeReadinessReportJson } from '../../../core/readiness/format.js';
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
 import { createResponseWriter } from '../../rpc/writer.js';
 import { bootstrapSession } from './readiness.js';
@@ -12,12 +13,15 @@ export async function runJsonStart(args: RequiredFeatureDispatchArgs): Promise<v
     feature,
     opts,
     assertJson: true,
-    defaultAutoApprove: true,
+    defaultApprove: 'none',
     ...(deps.detectCliReadiness !== undefined && {
       detectCliReadiness: deps.detectCliReadiness,
     }),
     emitReadiness: (report) => {
-      writeHeadlessJsonRecord({ type: 'readiness_report', report });
+      writeHeadlessJsonRecord({
+        type: 'readiness_report',
+        report: serializeReadinessReportJson(report),
+      });
     },
   });
   await deps.runHeadless({
@@ -44,7 +48,7 @@ export async function runRpcStart(args: RequiredFeatureDispatchArgs): Promise<vo
     emitReadiness: (report) => {
       createResponseWriter({ stream: process.stdout, onClose: () => {} }).status({
         type: 'readiness_report',
-        report,
+        report: serializeReadinessReportJson(report),
       });
     },
   });

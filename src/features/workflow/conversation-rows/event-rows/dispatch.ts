@@ -145,13 +145,6 @@ export function eventRowBlock(options: {
         labelTone: event.passed ? 'success' : 'textDim',
         valueTone: 'textDim',
       });
-    case 'mode_downgrade_advised':
-      return wrappedTextBlock({
-        keyPrefix,
-        text: `This looks trivial. Consider --mode ${event.suggestedMode} instead of --mode ${event.currentMode}.`,
-        width: ctx.width,
-        tone: 'textDim',
-      });
     case 'task_started':
       return taskStartedRowBlock({
         keyPrefix,

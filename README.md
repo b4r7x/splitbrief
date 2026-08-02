@@ -60,13 +60,10 @@ The TUI shows planner and implementer working together as a conversation flow �
 
 ## Quick start
 
+Requires Node.js 22 or newer.
+
 ```bash
-# Not yet published on npm. Install from source:
-git clone https://github.com/b4r7x/splitbrief.git
-cd splitbrief
-npm install
-npm run build
-npm link
+npm install -g splitbrief   # or run it ad hoc with: npx splitbrief
 
 # Have a planner ready (pick one):
 #   Claude Code (default) — uses existing subscription, $0 extra
@@ -83,6 +80,16 @@ npm link
 cd your-project
 splitbrief init        # auto-detects running models
 splitbrief start "add user authentication with JWT"
+```
+
+To hack on SPLITBRIEF itself, install from source instead:
+
+```bash
+git clone https://github.com/b4r7x/splitbrief.git
+cd splitbrief
+npm install
+npm run build
+npm link               # exposes the `splitbrief` binary on your PATH
 ```
 
 After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `.splitbrief/` folder in your project:
@@ -131,9 +138,8 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | `splitbrief init` | Create config, auto-detect available models |
 | `splitbrief resume` | Resume an interrupted workflow |
 | `splitbrief status` | Show current workflow state |
-| `splitbrief migrate` | Migrate pre-v3 `.splitbrief/current/` state to new layout |
 
-`--auto` auto-approves spec/plan review gates only. Briefs review and file-write tiered approvals still follow workflow and approval config; use `--yolo` or approval tiers for unattended file writes.
+`--approve none` auto-approves spec/plan review gates only. Briefs review and file-write tiered approvals still follow workflow and approval config; use `--yolo` or approval tiers for unattended file writes.
 
 ## Slash commands
 
@@ -149,6 +155,7 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 
 `splitbrief init` creates `.splitbrief/config.yaml`:
 
+<!-- config-example: readme-init -->
 ```yaml
 version: 3
 
@@ -158,7 +165,7 @@ planner:
 
 implementer:
   kind: api
-  provider: ollama           # any string — see Custom Providers below
+  provider: ollama           # catalog ID; custom names also need service + offering, see below
   model: qwen2.5-coder:7b
   apiBase: http://localhost:11434/v1
   contextLength: 32768
@@ -184,18 +191,27 @@ Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves ch
 
 ### Planner backends
 
-Eight built-in, plus anything via shell:
+Fifteen admitted planner IDs — six CLI tools, six API providers, plus `agent-sdk`, `shell`, and `agent`:
 
-| Tool | Output Format | Notes |
-|------|---------------|-------|
-| `claude-code` | stream-json | Default. Uses existing subscription |
-| `codex` | jsonl | OpenAI Codex CLI |
-| `opencode` | jsonl | OpenCode CLI |
-| `aider` | text | Parses `Tokens: Xk sent, Yk received` |
-| `copilot` | json | GitHub Copilot CLI |
-| `kilo-code` | json | Kilo Code CLI |
-| `agent-sdk` | — | Requires `ANTHROPIC_API_KEY` |
-| `shell` | configurable | Any command, see below |
+| Tool | Kind | Output Format | Notes |
+|------|------|---------------|-------|
+| `claude-code` | cli | stream-json | Default. Uses existing subscription |
+| `codex` | cli | jsonl | OpenAI Codex CLI |
+| `opencode` | cli | jsonl | OpenCode CLI |
+| `aider` | cli | text | Parses `Tokens: Xk sent, Yk received` |
+| `copilot` | cli | json | GitHub Copilot CLI |
+| `kilo-code` | cli | json | Kilo Code CLI |
+| `anthropic` | api | — | Endpoints and keys in the Implementer providers table below |
+| `openrouter` | api | — | |
+| `deepseek` | api | — | |
+| `openai` | api | — | |
+| `groq` | api | — | |
+| `together` | api | — | |
+| `agent-sdk` | agent-sdk | — | Requires `ANTHROPIC_API_KEY` |
+| `shell` | shell | configurable | Any stdin/stdout command, see below |
+| `agent` | agent | configurable | Subprocess that writes files directly |
+
+Any of these is valid as `--planner <tool>`, for example `splitbrief start "add tests" --planner anthropic --implementer ollama`. The local-only providers `ollama` and `lm-studio` are implementer-only.
 
 #### Shell planner
 
@@ -230,12 +246,14 @@ Anything that speaks the OpenAI chat completions protocol works.
 
 #### Custom providers
 
-Any string works as `provider` when you set both `apiBase` and `apiKey`:
+Any string works as `provider` when you set `service`, `offering`, `apiBase`, and `apiKey`. Built-in providers get `service` and `offering` back-filled from the catalog; custom ones are not auto-filled, so declare both:
 
 ```yaml
 implementer:
   kind: api
   provider: custom-openai
+  service: custom-openai
+  offering: payg          # payg | free-quota | coding-subscription | local
   model: Qwen/Qwen2.5-Coder-32B-Instruct
   apiBase: https://api.together.xyz/v1
   apiKey: your-key
@@ -251,7 +269,7 @@ Any planner CLI tool can also be used as an implementer:
 implementer:
   kind: cli
   tool: claude-code           # or codex, opencode, aider, copilot, kilo-code
-  model: auto
+                              # omit model to let the tool pick its own default
 ```
 
 #### Shell implementer
@@ -273,8 +291,8 @@ SPLITBRIEF loads model metadata from [models.dev](https://models.dev) first. Run
 
 ### Catalog notes
 
-- Claude Code uses `auto`, `sonnet`, `opus`, and `opusplan` in the picker. A stored `default` resolves to `auto` for compatibility.
-- For `opencode` and `kilo-code`, prefer `auto` and configure the real default model in the tool itself before launching SPLITBRIEF.
+- Claude Code offers `auto`, `sonnet`, `opus`, and `opusplan` in the picker. Picking `auto` stores `model: auto`, which means the same thing as omitting `model`: no `--model` flag is passed and the tool uses its own default. Claude Code's older `default` spelling is read the same way.
+- For `opencode` and `kilo-code`, prefer automatic selection — leave `model` unset and configure the real default model in the tool itself before launching SPLITBRIEF.
 - Dollar pricing is shown only for real API providers. CLI tools, subscriptions, and local backends are intentionally unpriced.
 
 ### By VRAM

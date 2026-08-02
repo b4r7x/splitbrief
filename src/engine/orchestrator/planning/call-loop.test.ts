@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
@@ -10,6 +12,7 @@ import { createTestSinks } from '#testing/helpers/planning-phase.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { SANDBOX_DIR } from '../../../core/paths.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import type { PlannerCallbacks } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
@@ -88,8 +91,9 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'ollama',
-          apiBase: 'http://localhost:11434/v1',
+          provider: 'openrouter',
+          apiBase: 'https://openrouter.ai/api/v1',
+          apiKey: 'test-key',
           model: 'test',
         },
       }),
@@ -144,8 +148,9 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       config: makeConfig({
         planner: {
           kind: 'api',
-          provider: 'ollama',
-          apiBase: 'http://localhost:11434/v1',
+          provider: 'openrouter',
+          apiBase: 'https://openrouter.ai/api/v1',
+          apiKey: 'test-key',
           model: 'test',
         },
       }),
@@ -215,9 +220,11 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
 });
 
 describe('runPlannerCallInContinuationLoop — runner auth', () => {
-  it('fails before calling a CLI planner when legacy config has no selected auth channel', async () => {
+  it('runs a legacy CLI planner config on its descriptor default auth channel', async () => {
     const { projectDir, sessionId } = setupSession();
-    const quickPlan = vi.fn();
+    const quickPlan = vi
+      .fn()
+      .mockResolvedValue({ spec: '', plan: '', tasks: [makeTask()], usage: null });
     const planner = makePlanner({ quickPlan });
     const current = makeConfig();
     const config = {
@@ -226,16 +233,18 @@ describe('runPlannerCallInContinuationLoop — runner auth', () => {
     } as Config;
     const wctx = makeWctx(projectDir, sessionId, { config });
 
-    await expect(
-      runPlannerCallInContinuationLoop({
-        wctx,
-        state: planningState(),
-        planner,
-        feature: 'test feature',
-        mode: 'quick',
-      }),
-    ).rejects.toMatchObject({ kind: 'runner-auth-channel-required' });
-    expect(quickPlan).not.toHaveBeenCalled();
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    expect(quickPlan).toHaveBeenCalled();
+    // The default channel is the non-bridging one, so no host login state is
+    // copied into the sandbox for a configuration that selected nothing.
+    expect(existsSync(join(projectDir, SANDBOX_DIR, 'home', '.codex'))).toBe(false);
   });
 });
 

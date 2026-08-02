@@ -1,5 +1,6 @@
 import { formatEffectiveConfigWarning } from '../../config/runtime/effective-config.js';
 import type { EffectiveConfigWarning } from '../../config/runtime/effective-config.js';
+import type { ReadinessDiagnosticStateId } from '../../schemas/readiness.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface ConfigReadinessInput {
@@ -7,7 +8,7 @@ export interface ConfigReadinessInput {
   path: string;
   warnings: readonly EffectiveConfigWarning[];
   error?: string | undefined;
-  migratedInMemory?: boolean | undefined;
+  diagnosticState?: ReadinessDiagnosticStateId | undefined;
 }
 
 export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCheck[] {
@@ -30,8 +31,11 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
         id: 'config.invalid',
         severity: 'blocker',
         summary: 'Config could not be loaded.',
-        details: configLoad.error ? [configLoad.error] : undefined,
+        details: configLoad.error ? configLoad.error.split('\n') : undefined,
         fix: 'Fix .splitbrief/config.yaml or run `splitbrief init --reconfigure`.',
+        ...(configLoad.diagnosticState !== undefined && {
+          diagnosticState: configLoad.diagnosticState,
+        }),
         nextAction: 'fix-config',
         metadata: { path: configLoad.path },
       },
@@ -44,10 +48,7 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
       severity: 'ok',
       summary: 'Config loaded.',
       details: [`Path: ${configLoad.path}`],
-      metadata: {
-        path: configLoad.path,
-        migratedInMemory: configLoad.migratedInMemory === true,
-      },
+      metadata: { path: configLoad.path },
     },
   ];
 
@@ -56,14 +57,7 @@ export function buildConfigChecks(configLoad: ConfigReadinessInput): ReadinessCh
     const message = formatEffectiveConfigWarning(warning);
     if (displayedWarnings.has(message)) continue;
     displayedWarnings.add(message);
-    const migration = warning.source === 'loader' && warning.diagnostic.kind === 'config-migration';
-    checks.push({
-      id: 'config.warning',
-      severity: 'warning',
-      summary: message,
-      fix: migration ? 'Run `splitbrief init --reconfigure` to write a current config.' : undefined,
-      nextAction: migration ? 'fix-config' : undefined,
-    });
+    checks.push({ id: 'config.warning', severity: 'warning', summary: message });
   }
 
   return checks;

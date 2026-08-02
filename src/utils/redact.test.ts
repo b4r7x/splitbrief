@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { redactSecrets, redactSecretsWithMetadata } from './redact.js';
+import { isCredentialEnvironmentName, redactSecrets, redactSecretsWithMetadata } from './redact.js';
 
 describe('redactSecrets', () => {
   const sendGridKey = `SG.${'A'.repeat(22)}.${'B'.repeat(43)}`;
@@ -235,5 +235,35 @@ describe('redactSecrets', () => {
         'following diagnostic',
       ].join('\n'),
     );
+  });
+});
+
+describe('isCredentialEnvironmentName', () => {
+  it.each([
+    'ANTHROPIC_API_KEY',
+    'OPENAI_API_KEY',
+    'GH_TOKEN',
+    'KEY',
+    'SESSION_AUTH',
+    'AUTHORIZATION',
+    'npm_config_token',
+    'MY_PASSWORD_FILE',
+    'CLIENTSECRET',
+    'AUTHTOKEN',
+    'PRIVATETOKEN',
+    'CLIENTTOKEN',
+  ])('treats %s as credential-bearing', (name) => {
+    expect(isCredentialEnvironmentName(name)).toBe(true);
+  });
+
+  it.each([
+    'PATH',
+    'HOME',
+    'TERM',
+    'KEYBOARD_LAYOUT',
+    'MONKEY',
+    'AUTHOR',
+  ])('leaves %s alone', (name) => {
+    expect(isCredentialEnvironmentName(name)).toBe(false);
   });
 });

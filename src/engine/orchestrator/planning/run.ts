@@ -18,8 +18,6 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
   const approveLevel = resolveApproveLevel({
     mode,
     configApprove: config.workflow.approve,
-    legacyAutoFlag:
-      config.workflow.autoApproveSpec === true && config.workflow.autoApprovePlan === true,
     savedApprove: opts.state.approve,
   });
 
@@ -59,15 +57,6 @@ export async function runPlanningPhase(opts: PlanningPhaseOptions): Promise<Plan
       factors: advisory.factors,
       missing: advisory.missing,
     });
-    if (advisory.kind === 'downgrade') {
-      wctx.bus.publish({
-        type: 'mode_downgrade_advised',
-        ts: Date.now(),
-        phase: opts.state.phase,
-        currentMode: advisory.currentMode,
-        suggestedMode: advisory.suggestedMode,
-      });
-    }
   }
 
   wctx.bus.publish({

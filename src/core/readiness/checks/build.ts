@@ -38,13 +38,7 @@ export function buildReadinessReport(input: BuildReadinessReportInput): Readines
   const mode = input.config ? resolveMode({ config: input.config }) : undefined;
   const approve =
     input.config && mode
-      ? resolveApproveLevel({
-          mode,
-          configApprove: input.config.workflow.approve,
-          legacyAutoFlag:
-            input.config.workflow.autoApproveSpec === true &&
-            input.config.workflow.autoApprovePlan === true,
-        })
+      ? resolveApproveLevel({ mode, configApprove: input.config.workflow.approve })
       : undefined;
 
   return {

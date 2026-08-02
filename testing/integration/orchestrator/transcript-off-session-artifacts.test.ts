@@ -32,7 +32,7 @@ describe('transcript-off session artifact privacy', () => {
         config: makeConfig({
           validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
           workflow: {
-            git: { createBranch: true, commitStrategy: 'none' },
+            git: { createBranch: true },
             mode: 'quick',
             persistTranscript: false,
           },

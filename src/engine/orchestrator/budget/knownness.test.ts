@@ -120,7 +120,7 @@ describe('getBudgetCostKnownness', () => {
           escalationTokens: 0,
           retryCount: 0,
           tool: 'deepseek',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
         },
       ],
     });
@@ -196,7 +196,7 @@ describe('getBudgetCostKnownness', () => {
           implementerCacheReadTokens: 1_000_000,
           retryCount: 0,
           tool: 'deepseek',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
         },
       ],
     });
@@ -206,7 +206,7 @@ describe('getBudgetCostKnownness', () => {
       isKnown: false,
       hasUnknownPaidUsage: true,
       hasLocalOnlyUnpricedUsage: false,
-      unknownReason: 'pricing unknown for deepseek/deepseek-chat',
+      unknownReason: 'pricing unknown for deepseek/deepseek-v4-flash',
     });
   });
 
@@ -223,7 +223,7 @@ describe('getBudgetCostKnownness', () => {
       escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [
         {
           taskId: taskId('T001'),

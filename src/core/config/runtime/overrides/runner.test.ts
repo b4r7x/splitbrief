@@ -8,13 +8,7 @@ import type { ImplementerConfig } from '../../../schemas/implementer-config.js';
 import { resolveImplementerProfiles } from '../../accessors/implementer-profiles.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
-function buildBaseConfig(): Config {
-  const c = makeConfig({ workflow: { approve: 'default' } });
-  delete (c.workflow as Record<string, unknown>).autoApproveSpec;
-  delete (c.workflow as Record<string, unknown>).autoApprovePlan;
-  return c;
-}
-const baseConfig: Config = buildBaseConfig();
+const baseConfig: Config = makeConfig({ workflow: { approve: 'default' } });
 
 const commonGeneration = {
   customModels: ['model-primary', 'model-fallback'],
@@ -259,7 +253,7 @@ describe('applyCLIOverrides — runner commands', () => {
     }
   });
 
-  it('rejects fake auto while resetting source state for a different target', () => {
+  it('carries auto to a different target while resetting source state', () => {
     const config = makeConfig({
       implementer: {
         kind: 'api',
@@ -274,15 +268,36 @@ describe('applyCLIOverrides — runner commands', () => {
       },
     });
 
-    expect(() =>
-      applyCLIOverrides(config, {
-        implementer: { tool: 'copilot', model: 'auto' },
-      }),
-    ).toThrow(/auto.*not a model ID/);
+    const automatic = applyCLIOverrides(config, {
+      implementer: { tool: 'copilot', model: 'auto' },
+    });
+
+    expect(automatic.implementer).toEqual({ kind: 'cli', tool: 'copilot', model: 'auto' });
 
     const result = applyCLIOverrides(config, { implementer: { tool: 'copilot' } });
 
     expect(result.implementer).toEqual({ kind: 'cli', tool: 'copilot' });
+  });
+
+  it('keeps every other field when --model auto lands on the current target', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'gpt-5.4',
+        customModels: ['gpt-5.4', 'gpt-5-codex'],
+        effort: 'high',
+        contextLength: 250_000,
+        outputFormat: 'jsonl',
+      },
+    });
+
+    const result = applyCLIOverrides(config, { implementer: { model: 'auto' } });
+
+    expect(result.implementer).toEqual({
+      ...config.implementer,
+      model: 'auto',
+    });
   });
 
   it('applies API base and env API key overrides to API implementers', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { configError } from './errors.js';
+import { configError, configErrorDiagnosticState } from './errors.js';
 
 describe('configError factories', () => {
   test('invalidYaml carries path and cause', () => {
@@ -17,7 +17,17 @@ describe('configError factories', () => {
     const err = configError.validationFailed('/tmp/config.yaml', issues);
     expect(err.kind).toBe('config-validation-failed');
     expect(err.message).toBe('planner.model required\nimplementer.apiBase required');
-    expect(err.data).toEqual({ path: '/tmp/config.yaml', issues });
+    expect(err.data).toEqual({ path: '/tmp/config.yaml', issues, diagnosticStates: [] });
+  });
+
+  test('validationFailed carries diagnostic states for readiness classification', () => {
+    const err = configError.validationFailed(
+      '/tmp/config.yaml',
+      ['implementer.apiBase: bad'],
+      ['endpoint-invalid'],
+    );
+    expect(configErrorDiagnosticState(err)).toBe('endpoint-invalid');
+    expect(configErrorDiagnosticState(configError.unreadable('/tmp/config.yaml'))).toBeUndefined();
   });
 
   test('loadNotCalled names the operation', () => {
@@ -46,7 +56,7 @@ describe('configError factories', () => {
     const err = configError.unsupportedVersion(9);
     expect(err.kind).toBe('config-unsupported-version');
     expect(err.message).toContain('9');
-    expect(err.message).toContain('Supported: 1 (migrated), 2 (deprecated), 3');
+    expect(err.message).toContain('Supported: 3');
     expect(err.data).toEqual({ version: 9 });
   });
 

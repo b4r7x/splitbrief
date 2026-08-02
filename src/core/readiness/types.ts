@@ -1,4 +1,5 @@
 import type {
+  ReadinessDiagnosticStateId,
   ReadinessMetadata,
   ReadinessNextActionKind,
   ReadinessSeverity,
@@ -18,6 +19,8 @@ export interface ReadinessCheck {
   summary: string;
   details?: string[] | undefined;
   fix?: string | undefined;
+  /** Stable failure family, set by the builder that knows why the check failed. */
+  diagnosticState?: ReadinessDiagnosticStateId | undefined;
   nextAction?: ReadinessNextActionKind | undefined;
   metadata?: Record<string, ReadinessMetadata> | undefined;
 }

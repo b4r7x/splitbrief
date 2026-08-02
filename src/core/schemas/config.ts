@@ -50,7 +50,7 @@ const EscalationConfigSchema = z
     }
   });
 
-const GitWorkflowConfigSchema = z.object({
+const GitWorkflowConfigSchema = z.strictObject({
   commitStrategy: CommitStrategySchema.optional(),
   createBranch: z.boolean().optional(),
 });
@@ -58,7 +58,7 @@ const GitWorkflowConfigSchema = z.object({
 export const TaskReviewModeSchema = z.enum(['none', 'failed', 'every']);
 export type TaskReviewMode = z.infer<typeof TaskReviewModeSchema>;
 
-const SpeckitWorkflowConfigSchema = z.object({
+const SpeckitWorkflowConfigSchema = z.strictObject({
   minCoverage: z.number().min(0).max(1).optional(),
 });
 
@@ -87,15 +87,10 @@ export function defaultApprovalConfig(): z.infer<typeof ApprovalConfigSchema> {
   return ApprovalConfigSchema.parse({});
 }
 
-/**
- * v3 ConfigSchema. Accepts both `version: 2` and `version: 3` on input for
- * backward compatibility. Deprecated v2 fields (`autoApproveSpec`,
- * `autoApprovePlan`, top-level `commitStrategy`) stay optional so existing
- * configs still load, but are superseded by their v3 replacements (`approve`,
- * `git.commitStrategy`) and are no longer written into new configs.
- */
+export const CONFIG_VERSION = 3;
+
 export const ConfigSchema = z.object({
-  version: z.union([z.literal(2), z.literal(3)]),
+  version: z.literal(CONFIG_VERSION),
   planner: PlannerConfigSchema,
   implementer: ImplementerConfigSchema,
   implementerProfiles: ImplementerProfilesConfigSchema.optional(),
@@ -109,12 +104,9 @@ export const ConfigSchema = z.object({
     testPattern: z.string().min(1).optional(),
     timeoutMs: z.number().int().min(1000).optional(),
   }),
-  workflow: z.object({
-    autoApproveSpec: z.boolean().optional(),
-    autoApprovePlan: z.boolean().optional(),
+  workflow: z.strictObject({
     approve: ApproveLevelSchema.optional(),
     maxRetries: z.number().int().min(0),
-    commitStrategy: CommitStrategySchema.optional(),
     git: GitWorkflowConfigSchema.optional(),
     speckit: SpeckitWorkflowConfigSchema.optional(),
     mode: WorkflowModeSchema.optional(),

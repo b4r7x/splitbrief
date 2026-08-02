@@ -1,21 +1,18 @@
 import { z } from 'zod';
 import type {
+  CliImplementerBuildArgsInput,
   CliOutputContract,
+  CliPlannerBuildArgsInput,
   CliProbeContract,
   CliPromptTransport,
   CliProtocolEvent,
+  CliTerminalInput,
 } from './contract.js';
-import {
-  CandidateEvidence,
-  canonicalJson,
-  contractSha256,
-} from '../../providers/candidate-contract.js';
+import { CandidateEvidence, contractSha256 } from '../../providers/candidate-contract.js';
 import { error } from '../../../utils/error.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 export const CLI_PROMPT_SENTINEL = '<PROMPT>' as const;
-export const PROMPT_SENTINEL = CLI_PROMPT_SENTINEL;
-export const CLI_PROMPT_PLACEHOLDER = CLI_PROMPT_SENTINEL;
 
 const CANDIDATE_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
@@ -90,24 +87,36 @@ export const RawCliCandidateContract = z
     }
   });
 export type RawCliCandidateContract = z.infer<typeof RawCliCandidateContract>;
-export const RawCliCandidateContractSchema = RawCliCandidateContract;
 
 type CliArgumentValidation =
   | Readonly<{ valid: true }>
   | Readonly<{ valid: false; conflicts: readonly string[] }>;
 
-export type UnregisteredCliAdapter = Readonly<{
+type UnregisteredCliAdapterCommon = Readonly<{
   descriptor: Readonly<{ id: string }>;
-  role: RawCliCandidateContract['role'];
   promptTransport: CliPromptTransport;
-  buildArgs: (input: never) => readonly string[];
-  validateArgs: (invocationArgs: readonly string[]) => CliArgumentValidation;
+  validateArgs: (
+    invocationArgs: readonly string[],
+    baseArgs: readonly string[],
+  ) => CliArgumentValidation;
   environment: Readonly<Record<string, string>>;
   outputContract: CliOutputContract;
   parse: (line: string) => readonly CliProtocolEvent[];
-  terminal: (input: never) => unknown;
+  terminal: (input: CliTerminalInput) => Extract<CliProtocolEvent, { type: 'result' }>;
   probe: CliProbeContract;
 }>;
+
+export type UnregisteredCliAdapter =
+  | (UnregisteredCliAdapterCommon &
+      Readonly<{
+        role: 'planner';
+        buildArgs: (input: CliPlannerBuildArgsInput) => readonly string[];
+      }>)
+  | (UnregisteredCliAdapterCommon &
+      Readonly<{
+        role: 'implementer';
+        buildArgs: (input: CliImplementerBuildArgsInput) => readonly string[];
+      }>);
 
 function isCompleteCliAdapter(value: unknown): value is UnregisteredCliAdapter {
   if (!isRecord(value)) return false;
@@ -179,7 +188,6 @@ export const UnregisteredCliCandidate = z
     }
   });
 export type UnregisteredCliCandidate = z.infer<typeof UnregisteredCliCandidate>;
-export const UnregisteredCliCandidateSchema = UnregisteredCliCandidate;
 
 export const CliConformanceCandidatesSchema = z
   .array(UnregisteredCliCandidate)
@@ -198,8 +206,6 @@ export const CliConformanceCandidatesSchema = z
     }
   });
 
-export const CLI_CONFORMANCE_CANDIDATES_SCHEMA = CliConformanceCandidatesSchema;
-
 export function parseCliConformanceCandidates(value: unknown): readonly UnregisteredCliCandidate[] {
   return CliConformanceCandidatesSchema.parse(value);
 }
@@ -215,23 +221,6 @@ export function replacePromptSentinel(
   return rawInvocation.map((argument) => (argument === CLI_PROMPT_SENTINEL ? prompt : argument));
 }
 
-export const replaceCliPromptSentinel = replacePromptSentinel;
-
-export function validatePromptSentinelContract(
-  rawInvocation: readonly string[],
-  promptTransport: RawCliPromptTransport,
-): boolean {
-  return promptTransportIssue(rawInvocation, promptTransport) === null;
-}
-
-export function canonicalCliContractJson(contract: RawCliCandidateContract): string {
-  return canonicalJson(contract);
-}
-
-export function cliContractSha256(contract: RawCliCandidateContract): string {
-  return contractSha256(contract);
-}
-
 export function candidateEvidenceWithCliCapture(
   rawCapture: CandidateEvidence['rawCapture'],
   productionConformance: CandidateEvidence['productionConformance'],
@@ -239,5 +228,3 @@ export function candidateEvidenceWithCliCapture(
 ): CandidateEvidence {
   return CandidateEvidence.parse({ rawCapture, productionConformance, verdict });
 }
-
-export type { CandidateEvidence };

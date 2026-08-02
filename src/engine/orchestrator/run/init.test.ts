@@ -33,7 +33,7 @@ describe('initializeWorkflow', () => {
       const sessionId = 'session-init-hooks';
       const config = makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        workflow: { mode: 'quick', persistTranscript: false },
         approval: { enabled: false, feedRejectionsToPlanner: true },
         codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
@@ -109,7 +109,7 @@ describe('initializeWorkflow', () => {
       const sessionId = 'session-init-skills';
       const config = makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        workflow: { mode: 'quick', persistTranscript: false },
         approval: { enabled: false, feedRejectionsToPlanner: true },
         codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
@@ -185,7 +185,7 @@ describe('initializeWorkflow', () => {
           apiKey: 'k',
         },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        workflow: { mode: 'quick', persistTranscript: false },
         approval: { enabled: false, feedRejectionsToPlanner: true },
         codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
@@ -244,7 +244,7 @@ describe('initializeWorkflow', () => {
       const sessionId = 'session-init-resume-implementing';
       const config = makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        workflow: { mode: 'quick', persistTranscript: false },
         approval: { enabled: false, feedRejectionsToPlanner: true },
         codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
@@ -304,7 +304,7 @@ describe('initializeWorkflow', () => {
       const config = makeConfig({
         planner: { kind: 'cli', tool: 'claude-code' },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        workflow: { mode: 'quick', persistTranscript: false },
         approval: { enabled: false, feedRejectionsToPlanner: true },
         codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
@@ -361,7 +361,7 @@ describe('initializeWorkflow', () => {
       const config = makeConfig({
         planner: { kind: 'cli', tool: 'claude-code' },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        workflow: { mode: 'quick', persistTranscript: false },
         approval: { enabled: false, feedRejectionsToPlanner: true },
         codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });
@@ -425,7 +425,7 @@ describe('initializeWorkflow', () => {
           test: false,
           typecheckCommand: 'node -e "process.exit(1)"',
         },
-        workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+        workflow: { mode: 'quick', persistTranscript: false },
         approval: { enabled: false, feedRejectionsToPlanner: true },
         codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
       });

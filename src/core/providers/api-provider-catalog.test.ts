@@ -1,20 +1,69 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
+  API_PROVIDER_VERDICT_CANDIDATE_PATHS,
+  EXISTING_API_PROVIDER_IDS,
+  FORBIDDEN_API_PROVIDER_IDS,
   IMPLEMENTER_API_PROVIDER_IDS,
   KNOWN_API_PROVIDER_IDS,
   LOCAL_API_PROVIDER_IDS,
+  PASS_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
   REMOTE_API_PROVIDER_IDS,
+  getApiProviderDescriptor,
+  isApiProviderId,
 } from './api-provider-catalog.js';
+
+const projectRoot = join(import.meta.dirname, '../../..');
+
+function projectPath(relativePath: string): string {
+  return join(projectRoot, relativePath);
+}
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe('API provider catalog', () => {
+  it('assembles exactly existing IDs plus PASS verdict IDs', () => {
+    expect([...ADMITTED_API_PROVIDER_IDS]).toEqual([
+      ...EXISTING_API_PROVIDER_IDS,
+      ...PASS_API_PROVIDER_IDS,
+    ]);
+    expect(Object.keys(API_PROVIDER_CATALOG).toSorted()).toEqual(
+      [...ADMITTED_API_PROVIDER_IDS].toSorted(),
+    );
+    expect(KNOWN_API_PROVIDER_IDS).toEqual(ADMITTED_API_PROVIDER_IDS);
+  });
+
+  it('returns zero forbidden descriptor IDs from the exclusion list', () => {
+    const catalogKeys = Object.keys(API_PROVIDER_CATALOG);
+    const forbiddenPresent = FORBIDDEN_API_PROVIDER_IDS.filter((id) => catalogKeys.includes(id));
+    expect(forbiddenPresent).toEqual([]);
+  });
+
+  it('keeps OMIT verdict candidate source and tests absent with no catalog IDs', () => {
+    for (const candidate of API_PROVIDER_VERDICT_CANDIDATE_PATHS) {
+      expect(existsSync(projectPath(candidate.source))).toBe(false);
+      expect(existsSync(projectPath(candidate.test))).toBe(false);
+      expect(API_PROVIDER_CATALOG).not.toHaveProperty(candidate.id);
+    }
+  });
+
+  it('requires retained candidate source for every PASS verdict ID', () => {
+    for (const id of PASS_API_PROVIDER_IDS) {
+      const candidate = API_PROVIDER_VERDICT_CANDIDATE_PATHS.find((entry) => entry.id === id);
+      expect(candidate).toBeDefined();
+      if (candidate === undefined) continue;
+      expect(existsSync(projectPath(candidate.source))).toBe(true);
+      expect(existsSync(projectPath(candidate.test))).toBe(true);
+    }
+  });
+
   it('contains exactly the existing API provider IDs with their current roles', () => {
-    expect(Object.keys(API_PROVIDER_CATALOG)).toEqual(KNOWN_API_PROVIDER_IDS);
     expect(PLANNER_API_PROVIDER_IDS).toEqual(
       KNOWN_API_PROVIDER_IDS.filter((id) =>
         API_PROVIDER_CATALOG[id].roles.some((role) => role === 'planner'),
@@ -69,9 +118,22 @@ describe('API provider catalog', () => {
     }
   });
 
+  it('resolves descriptors by id without matching inherited or service-alias keys', () => {
+    for (const id of KNOWN_API_PROVIDER_IDS) {
+      expect(isApiProviderId(id)).toBe(true);
+      expect(getApiProviderDescriptor(id)).toBe(API_PROVIDER_CATALOG[id]);
+    }
+
+    for (const id of ['toString', 'constructor', '__proto__', 'unknown-provider']) {
+      expect(isApiProviderId(id)).toBe(false);
+      expect(getApiProviderDescriptor(id)).toBeUndefined();
+    }
+  });
+
   it('discloses DeepSeek training use under the reviewed terms', () => {
     expect(API_PROVIDER_CATALOG.deepseek).toMatchObject({
       offering: 'payg',
+      compatibility: 'unverified',
       dataUse: 'allowed-training',
       privacyURL: 'https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html',
       termsURL:

@@ -9,7 +9,6 @@ import { printCrashDiagnostic } from '../../crash-diagnostic.js';
 import { sessionDir, IPC_SOCK_FILE } from '../../../core/paths.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { assertModeFlagsExclusive, assertWorktreeStartOnly } from '../../options.js';
-import { maybeMigrateAndReport } from '../migrate.js';
 import { renderAttachClient } from '../attach.js';
 import { runHeadless } from '../../headless.js';
 import { runRpc } from '../../rpc/run/host.js';
@@ -34,7 +33,7 @@ export interface ContinueDeps {
   detectCliReadiness?: DetectCliReadiness | undefined;
 }
 
-const defaultContinueDeps: ContinueDeps = {
+export const defaultContinueDeps: ContinueDeps = {
   checkServerStatus,
   initStores,
   renderApp,
@@ -77,8 +76,6 @@ export async function continueCommand(
 ): Promise<void> {
   assertModeFlagsExclusive(opts);
   assertWorktreeStartOnly(opts);
-
-  await maybeMigrateAndReport(opts.projectDir, opts);
 
   const sessionId = await resolveTargetSession(sessionInput, opts.projectDir, deps);
   const sessDir = sessionDir(opts.projectDir, sessionId);

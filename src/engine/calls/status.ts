@@ -7,27 +7,45 @@ import type {
 } from './types.js';
 import { RUNNER_CALL_MESSAGE_MAX_LENGTH } from './schema.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { escapeRegExp } from '../../utils/regexp.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 const RUNNER_CALL_CREDENTIAL_REDACTION_MARKER = '***REDACTED***';
 
+/**
+ * A credential shorter than this can also be an ordinary word ("max", "pro",
+ * "oauth"), so it is matched only between non-word characters — the same rule
+ * `sanitizeProviderDiagnostic` applies to short provider credentials. Longer
+ * values are opaque enough to replace wherever they appear.
+ */
+const CREDENTIAL_WORD_BOUNDARY_MAX_LENGTH = 12;
+
 export type RunnerCallCredentialRedactor = (value: string) => string;
+
+function credentialPattern(credential: string): RegExp {
+  const escaped = escapeRegExp(credential);
+  return credential.length < CREDENTIAL_WORD_BOUNDARY_MAX_LENGTH
+    ? new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'g')
+    : new RegExp(escaped, 'g');
+}
 
 export function createRunnerCallCredentialRedactor(
   credentialValues: readonly string[],
 ): RunnerCallCredentialRedactor {
-  const values = [
+  const patterns = [
     ...new Set(
       credentialValues.filter(
         (value) => value.length > 0 && value !== RUNNER_CALL_CREDENTIAL_REDACTION_MARKER,
       ),
     ),
-  ].sort((left, right) => right.length - left.length);
+  ]
+    .sort((left, right) => right.length - left.length)
+    .map(credentialPattern);
 
   return (value) => {
     let redacted = value;
-    for (const credential of values) {
-      redacted = redacted.split(credential).join(RUNNER_CALL_CREDENTIAL_REDACTION_MARKER);
+    for (const pattern of patterns) {
+      redacted = redacted.replace(pattern, RUNNER_CALL_CREDENTIAL_REDACTION_MARKER);
     }
     return redacted;
   };

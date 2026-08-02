@@ -8,7 +8,6 @@ import type {
 } from '../schemas/enums.js';
 
 export interface WorkflowOpts {
-  auto?: boolean;
   model?: string;
   provider?: ProviderId;
   planner?: PlannerToolId;

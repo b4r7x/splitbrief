@@ -50,6 +50,7 @@ import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
 
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
+import { clearBridgedCliState } from '../../runners/sandbox-env.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 import { runPlanningPhases, runTasksAndReview } from './phases.js';
 
@@ -556,6 +557,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     // teardown executes — a bare setProcessLedger(null) would silently disable
     // the successor's runner-pid recording (and with it orphan reaping).
     clearProcessLedger(runProcessLedger);
+    // A host credential bridged into the project sandbox must not outlive the
+    // run that admitted it; the next run re-bridges whatever it needs.
+    await clearBridgedCliState(projectDir).catch((err: unknown) => {
+      warnError('sandbox bridged state cleanup', err);
+    });
     await releaseLiveness();
   }
 }

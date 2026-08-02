@@ -3,11 +3,7 @@ import { chmod, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
-import {
-  RUNNER_CALL_OUTPUT_MAX_BYTES,
-  RUNNER_CALL_OUTPUT_MAX_EVENTS,
-  RUNNER_CALL_STDERR_MAX_BYTES,
-} from '../../calls/output-limit.js';
+import { RUNNER_CALL_STDERR_MAX_BYTES } from '../../calls/output-limit.js';
 import { runnerCallErrorFromUnknown, runnerCallInterruptedStatus } from '../../calls/status.js';
 import type {
   RunnerCallContext,
@@ -20,22 +16,29 @@ import {
   spawnPipe,
   spawnPipeError,
 } from '../../../lib/process/spawn/lifecycle.js';
+import { createLineBuffer } from '../../../lib/process/line-buffer.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
+import { isCredentialEnvironmentName } from '../../../utils/redact.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { sandboxCredentialValues } from '../sandbox-env.js';
-import type {
-  CliImplementerAdapter,
-  CliInvocation,
-  CliPlannerAdapter,
-  CliProtocolEvent,
-} from './contract.js';
+import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import type { CliInvocation, CliProcessAdapter, CliProtocolEvent } from './contract.js';
 
-const PROMPT_PLACEHOLDER = '<PROMPT>';
 const PROMPT_FILE_NAME = 'prompt.txt';
 
-type CliAdapter = CliPlannerAdapter | CliImplementerAdapter;
+/**
+ * Raw protocol traffic is not the text the recorder retains: a verbose
+ * stream-json session carries envelope frames, partial-message deltas, and tool
+ * result echoes that are a large multiple of the assistant text one call
+ * produces. These ceilings only stop a runaway process; recorded output keeps
+ * its own `RUNNER_CALL_OUTPUT_*` limits, which truncate instead of killing.
+ */
+export const CLI_RAW_OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
+export const CLI_RAW_PROTOCOL_MAX_EVENTS = 262_144;
+
+type CliAdapter = CliProcessAdapter;
 
 export type InvokeProcessCliContext = Readonly<{
   invocation: CliInvocation;
@@ -61,11 +64,6 @@ type ProcessClose = Readonly<{
   signal: string | null;
   stdout: string;
   stderr: string;
-}>;
-
-type LineAccumulator = Readonly<{
-  push: (chunk: string) => void;
-  finish: () => void;
 }>;
 
 export async function invokeProcessCli(
@@ -122,7 +120,12 @@ export async function invokeProcessCli(
 
   let validation: unknown;
   try {
-    validation = adapter.validateArgs(invocationArgs);
+    // An invocation that declares no adapter-owned prefix carries no configured
+    // arguments, so the whole argv is the prefix and nothing needs scrutiny.
+    validation = adapter.validateArgs(
+      invocationArgs,
+      context.invocation.baseArgs ?? invocationArgs,
+    );
   } catch {
     return finishFailureSafely(
       recorder,
@@ -191,7 +194,7 @@ export async function invokeProcessCli(
       throw fatal('protocol-failure', 'CLI emitted output after its terminal result');
     }
     eventCount += 1;
-    if (eventCount > RUNNER_CALL_OUTPUT_MAX_EVENTS) {
+    if (eventCount > CLI_RAW_PROTOCOL_MAX_EVENTS) {
       throw fatal('output-budget-breach', 'CLI protocol event budget was exceeded');
     }
     protocolEvents.push(event);
@@ -222,7 +225,6 @@ export async function invokeProcessCli(
         });
         return;
       case 'result':
-        if (terminalSeen) throw fatal('protocol-failure', 'CLI emitted multiple terminal results');
         terminalSeen = true;
         return;
       default: {
@@ -232,15 +234,23 @@ export async function invokeProcessCli(
     }
   };
 
-  const lineAccumulator = createLineAccumulator((line) => {
-    let parsed: readonly CliProtocolEvent[];
-    try {
-      parsed = adapter.parse(line);
-    } catch {
-      throw fatal('protocol-failure', 'CLI output did not match its structured protocol');
-    }
-    for (const event of parsed) applyProtocolEvent(event);
-  });
+  const lineBuffer = createLineBuffer(
+    (line) => {
+      let parsed: readonly CliProtocolEvent[];
+      try {
+        parsed = adapter.parse(line);
+      } catch {
+        throw fatal('protocol-failure', 'CLI output did not match its structured protocol');
+      }
+      for (const event of parsed) applyProtocolEvent(event);
+    },
+    {
+      maxLineBytes: DEFAULT_PROCESS_LINE_MAX_BYTES,
+      onOverflow: () => {
+        throw fatal('output-budget-breach', 'CLI output line exceeded the line byte budget');
+      },
+    },
+  );
 
   try {
     const executableState = await revalidateCliExecutableIdentity(context.invocation.executable);
@@ -262,14 +272,17 @@ export async function invokeProcessCli(
       detached: process.platform !== 'win32',
       stdin: prepared.stdin,
       signal,
-      outputBudgetBytes: RUNNER_CALL_OUTPUT_MAX_BYTES + 1,
-      partialStdoutMaxBytes: RUNNER_CALL_OUTPUT_MAX_BYTES,
+      outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
+      // The recorder owns every retained byte of this call and nothing here
+      // reads the spawn-level stdout snapshot, so a rolling megabyte tail of a
+      // multi-megabyte protocol stream would be pure cost.
+      partialStdoutMaxBytes: 0,
       partialStderrMaxBytes: RUNNER_CALL_STDERR_MAX_BYTES,
       ...(context.onSpawned !== undefined && { onSpawned: context.onSpawned }),
       onStdout(chunk) {
         stdout += chunk;
         try {
-          lineAccumulator.push(chunk);
+          lineBuffer.push(chunk);
         } catch (cause) {
           return fatalSignal(cause, 'protocol-failure');
         }
@@ -280,7 +293,7 @@ export async function invokeProcessCli(
         recorder.stderr({ text: chunk });
       },
       onClose(exitCode, processSignal) {
-        lineAccumulator.finish();
+        lineBuffer.flush();
         return { exitCode, signal: processSignal, stdout, stderr };
       },
     });
@@ -401,7 +414,9 @@ export async function invokeProcessCli(
     );
   } finally {
     clearTimeout(timeout);
-    await prepared.cleanup();
+    // The terminal result is already recorded; a scratch-directory removal failure
+    // must not replace it with a throw.
+    await prepared.cleanup().catch(() => {});
   }
 }
 
@@ -494,16 +509,10 @@ function selectedCredentialValues(
   const declaredNames = new Set(adapter.descriptor.auth.channels.flatMap((channel) => channel.env));
   const values: string[] = [];
   for (const [name, value] of Object.entries(environment)) {
-    if (declaredNames.has(name) || looksLikeCredentialEnvironmentName(name)) values.push(value);
+    if (declaredNames.has(name) || isCredentialEnvironmentName(name)) values.push(value);
   }
   values.push(...sandboxCredentialValues(environment));
   return [...new Set(values)];
-}
-
-function looksLikeCredentialEnvironmentName(name: string): boolean {
-  return /(?:^|[_.-])(?:API[_.-]?KEY|KEY|TOKEN|PASSWORD|PASSWD|SECRET|CREDENTIAL|AUTH(?:ORIZATION)?)(?:$|[_.-])/i.test(
-    name,
-  );
 }
 
 async function preparePrompt(
@@ -530,6 +539,11 @@ async function preparePrompt(
         `CLI prompt is ${bytes} bytes and exceeds the ${transport.maxBytes}-byte argv limit`,
       );
     }
+    if (transport.placement === 'positional' && prompt.startsWith('-')) {
+      // The tool's own parser would read the prompt as an option and silently
+      // change its model, sandbox, or permission semantics.
+      throw transportError('CLI prompt taken as a positional argument cannot start with "-"');
+    }
     return {
       args: replacePromptArgument(invocationArgs, prompt),
       stdin: undefined,
@@ -554,48 +568,16 @@ async function preparePrompt(
 }
 
 function replacePromptArgument(args: readonly string[], replacement: string): string[] {
-  const matches = args.filter((arg) => arg === PROMPT_PLACEHOLDER).length;
+  const matches = args.filter((arg) => arg === CLI_PROMPT_SENTINEL).length;
   if (matches !== 1) {
     throw transportError('Prompt transport requires exactly one standalone <PROMPT> argument');
   }
-  return args.map((arg) => (arg === PROMPT_PLACEHOLDER ? replacement : arg));
+  return args.map((arg) => (arg === CLI_PROMPT_SENTINEL ? replacement : arg));
 }
 
 function rejectPlaceholder(args: readonly string[]): void {
-  if (args.some((arg) => arg.includes(PROMPT_PLACEHOLDER))) {
+  if (args.some((arg) => arg.includes(CLI_PROMPT_SENTINEL))) {
     throw transportError('stdin prompt transport cannot include a prompt placeholder in argv');
-  }
-}
-
-function createLineAccumulator(onLine: (line: string) => void): LineAccumulator {
-  let pending = '';
-  return {
-    push(chunk) {
-      pending += chunk;
-      let newline = pending.indexOf('\n');
-      while (newline >= 0) {
-        const framed = pending.slice(0, newline);
-        const line = framed.endsWith('\r') ? framed.slice(0, -1) : framed;
-        enforceLineLimit(line);
-        onLine(line);
-        pending = pending.slice(newline + 1);
-        newline = pending.indexOf('\n');
-      }
-      enforceLineLimit(pending);
-    },
-    finish() {
-      if (pending.length === 0) return;
-      const line = pending.endsWith('\r') ? pending.slice(0, -1) : pending;
-      enforceLineLimit(line);
-      pending = '';
-      onLine(line);
-    },
-  };
-}
-
-function enforceLineLimit(line: string): void {
-  if (Buffer.byteLength(line, 'utf8') > DEFAULT_PROCESS_LINE_MAX_BYTES) {
-    throw fatal('output-budget-breach', 'CLI output line exceeded the line byte budget');
   }
 }
 

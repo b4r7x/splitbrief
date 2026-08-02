@@ -2,15 +2,21 @@
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-01
+
+First published release. The entries below describe how this version differs from the
+unpublished pre-release layout that earlier sections of this file document.
+
 ### Breaking
 
+- The tool is named SPLITBRIEF: the binary is `splitbrief` and project state lives in `.splitbrief/`.
 - `.splitbrief/current/` removed; each session now lives in `.splitbrief/sessions/<id>/`. State schema bumped to v3.
 - `events.jsonl` renamed to `session.jsonl`; entries are tagged with `kind: "event" | "message"`.
 - `sessionId` on `WorkflowState` renamed to `plannerSessionId`.
+- `kind: api` runners now require `service` and `offering`. Admitted catalog providers get both back-filled on load; custom providers must declare them explicitly.
 
 ### Added
 
-- `splitbrief migrate` command for upgrading pre-v3 `.splitbrief/current/` state to the new layout.
 - `PlannerCapabilities` struct declares backend features; `shell` and `agent` kinds support config override.
 - Ctrl-C interaction model: single press aborts current turn (enters awaiting-continue); double press exits workflow.
 - `workflowStore.messageQueue` for non-destructive mid-phase user messages; parallel native-session injection for Claude Code / agent-sdk backends.
@@ -25,6 +31,7 @@
 
 - Workflow transcript redesigned: one column model (glyph slot at column 0, content at column 2), full-width conversation with a 2-column sidebar gap, always-on activity batch headers with Capitalized labels (`Run`, `Read`, `Search`, …), and a conservative shell-command prettifier (`cat`/`sed`/`head`/`tail` → Read, `rg`/`grep` → Search, `ls` → List).
 - Live stage status moved from the transcript into the composer byline (braille spinner on unicode terminals). Scroll counts now render on the chrome dividers, and question prompts render as a bordered panel above the composer instead of replacing the transcript.
+- CLI runners express automatic model selection by omitting `model`; `auto` is no longer a model ID and is rejected at config load with `model "auto" is not a model ID; omit model to use automatic selection`.
 
 ### Fixed
 
@@ -95,7 +102,7 @@ SPLITBRIEF treats [models.dev](https://models.dev) as the primary model catalog 
 **Behavior:**
 
 - CLI tools and subscriptions stay unpriced. We no longer proxy-price `claude-code`, `codex`, `copilot`, `opencode`, `kilo-code`, or `aider` through upstream APIs.
-- Claude Code uses tool-native aliases: `auto`, `sonnet`, `opus`, `opusplan`.
-- Legacy stored `claude-code: default` still works and normalizes to `auto`.
-- `opencode` and `kilo-code` should usually stay on `auto`; configure the real model in the tool itself.
+- Claude Code uses tool-native aliases: `auto`, `sonnet`, `opus`, `opusplan`. **Superseded in 0.1.0** — `auto` is no longer a model ID; automatic selection is expressed by omitting `model`.
+- Legacy stored `claude-code: default` still works and normalizes to `auto`. **Superseded in 0.1.0** — it normalizes to the omission instead.
+- `opencode` and `kilo-code` should usually stay on `auto`; configure the real model in the tool itself. **Superseded in 0.1.0** — leave `model` unset instead.
 - `models.dev` prices are already expressed in USD per 1M tokens. Do not multiply them again.

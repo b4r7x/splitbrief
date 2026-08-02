@@ -23,10 +23,8 @@ export function resolveApproveLevel(opts: {
   mode: WorkflowMode;
   configApprove?: ApproveLevel | undefined;
   cliOverride?: ApproveLevel | undefined;
-  legacyAutoFlag?: boolean | undefined;
   savedApprove?: ApproveLevel | undefined;
 }): ApproveLevel {
-  if (opts.legacyAutoFlag) return 'none';
   if (opts.cliOverride && opts.cliOverride !== 'default') return opts.cliOverride;
   if (opts.configApprove && opts.configApprove !== 'default') return opts.configApprove;
   if (opts.savedApprove && opts.savedApprove !== 'default') return opts.savedApprove;

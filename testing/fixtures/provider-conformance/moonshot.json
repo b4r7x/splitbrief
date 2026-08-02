@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "moonshot",
+    "role": "implementer",
+    "contractSha256": "d8ef6c7440ebc8761d1f81bcec1197cd242228327a364ea3fad743b481d53af4",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing credential for MOONSHOT_API_KEY"
+  },
+  "productionConformance": {
+    "candidateId": "moonshot",
+    "role": "implementer",
+    "contractSha256": "d8ef6c7440ebc8761d1f81bcec1197cd242228327a364ea3fad743b481d53af4",
+    "stdout": "",
+    "stderr": "missing credential for MOONSHOT_API_KEY"
+  },
+  "verdict": "OMIT"
+}

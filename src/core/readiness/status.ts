@@ -2,9 +2,15 @@ import type {
   ReadinessCheck,
   ReadinessCounts,
   ReadinessNextAction,
+  ReadinessReport,
   ReadinessSection,
 } from './types.js';
-import type { ReadinessNextActionKind, ReadinessStatus } from '../schemas/readiness.js';
+import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import {
+  cliReadinessCheckId,
+  type ReadinessNextActionKind,
+  type ReadinessStatus,
+} from '../schemas/readiness.js';
 
 const EMPTY_COUNTS: ReadinessCounts = {
   ok: 0,
@@ -36,8 +42,25 @@ const NEXT_ACTION_PRIORITY: ReadinessNextActionKind[] = [
   'exit',
 ];
 
+const CLI_READINESS_CHECK_IDS: ReadonlySet<string> = new Set(
+  CLI_TOOL_IDS.map((tool) => cliReadinessCheckId(tool)),
+);
+
 export function flattenReadinessChecks(sections: ReadinessSection[]): ReadinessCheck[] {
   return sections.flatMap((section) => section.checks);
+}
+
+/**
+ * Readiness checks for configured CLI runners whose probe did not reach
+ * `ready`. Only a `ready` probe yields a trusted start gate, so a run started
+ * with any of these has no trusted executable identity and the orchestrator
+ * refuses it at init. Start must refuse here instead — even when the check is
+ * only a warning — and each check already carries the tool's remediation.
+ */
+export function ungatedCliReadinessChecks(report: ReadinessReport): ReadinessCheck[] {
+  return flattenReadinessChecks(report.sections).filter(
+    (check) => CLI_READINESS_CHECK_IDS.has(check.id) && check.metadata?.status !== 'ready',
+  );
 }
 
 export function countReadinessChecks(checks: ReadinessCheck[]): ReadinessCounts {

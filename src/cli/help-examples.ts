@@ -29,7 +29,7 @@ Examples:
     $ splitbrief "run migration" --json | jq .
 
   Explicit start (equivalent to shorthand):
-    $ splitbrief start "add feature" --mode standard --auto
+    $ splitbrief start "add feature" --mode standard --approve none
 
   Other commands:
     $ splitbrief status

@@ -30,7 +30,6 @@ export function workflowOptsToCLIOverrides(opts: WorkflowOpts): CLIOverrides {
       outputFormat: opts.implementerOutputFormat,
       contextLength: opts.implementerContextLength,
     },
-    autoApprove: opts.auto,
     approve: opts.approve,
     mode: opts.mode,
     budget: opts.budget,

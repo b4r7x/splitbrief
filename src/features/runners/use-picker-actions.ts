@@ -4,8 +4,10 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { CHEVRON_SEP } from '../../components/separators.js';
 import { error } from '../../utils/error.js';
 import { formatModelName } from '../../core/model-display.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { PickerOption, ModelOption } from './model-catalog.js';
+import type { PickerOption } from './model-catalog/options.js';
+import type { ModelOption } from './model-catalog/recency.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
 import {
   commitPlannerSelection,
@@ -106,6 +108,10 @@ export function usePickerActions(opts: {
     },
     customModel(modelName: string) {
       if (viewState.view.kind !== 'custom-model') return;
+      if (isAutomaticModel(modelName)) {
+        feedbackStore.setError('"auto" is already offered as the Auto row — select it there.');
+        return;
+      }
       const customModelItem = viewState.view.item;
       const updated = commitCustomModel({
         config,

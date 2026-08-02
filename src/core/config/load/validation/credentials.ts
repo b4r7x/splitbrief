@@ -53,7 +53,11 @@ function runnerBoundaryErrors(opts: {
   if (opts.config.kind === 'api' && opts.config.apiBase) {
     const apiBaseError = apiBaseValidationError(opts.config.apiBase);
     if (apiBaseError) {
-      errors.push({ path: `${opts.path}.apiBase`, message: apiBaseError });
+      errors.push({
+        path: `${opts.path}.apiBase`,
+        message: apiBaseError,
+        diagnosticState: 'endpoint-invalid',
+      });
     }
   }
 

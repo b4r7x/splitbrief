@@ -26,7 +26,7 @@ export const providerError = {
   missingModel: (role: 'planner' | 'implementer') =>
     error(
       'provider-missing-model',
-      `API ${role} requires an explicit model name — 'auto' is not supported for API backends. Set ${role}.model in your config.`,
+      `API ${role} requires an explicit model ID. Set ${role}.model, or use "auto" only with a provider that has a catalog default.`,
       { role },
     ),
   promptExceedsContext: (
@@ -72,4 +72,30 @@ export const providerError = {
         `or set the API key explicitly in the same config (not via environment variable).`,
       { provider, envVar },
     ),
+  admissionOmitRequiresAbsentSource: (relativePath: string) =>
+    error(
+      'provider-admission-omit-absent-source',
+      `Provider admission OMIT requires absent candidate source: ${relativePath}`,
+      { relativePath },
+    ),
+  admissionPassRequiresRetainedSource: (relativePath: string) =>
+    error(
+      'provider-admission-pass-retained-source',
+      `Provider admission PASS requires retained candidate source: ${relativePath}`,
+      { relativePath },
+    ),
+  passCandidateMissingImport: (id: string) =>
+    error(
+      'provider-pass-candidate-missing-import',
+      `PASS verdict ${id} requires a static candidate import in registry.ts`,
+      { id },
+    ),
+  passCandidateMissingCatalog: (id: string) =>
+    error(
+      'provider-pass-candidate-missing-catalog',
+      `PASS verdict ${id} is missing from API_PROVIDER_CATALOG`,
+      { id },
+    ),
+  candidateCatalogMismatch: (message: string, id: string) =>
+    error('provider-candidate-catalog-mismatch', message, { id }),
 } as const;

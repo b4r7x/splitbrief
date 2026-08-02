@@ -14,7 +14,6 @@ import {
   type CliReadinessState,
   type CliTrustState,
   type DetectedPricingProvenance,
-  type PlannerCompatibility,
 } from './detection.js';
 import { cloneDetectedModel } from './clone-model.js';
 
@@ -307,16 +306,5 @@ describe('detection schemas', () => {
         auth: 'not-required',
       }).success,
     ).toBe(true);
-  });
-
-  it('retains the planner compatibility contract as a typed diagnostic payload', () => {
-    const compatibility: PlannerCompatibility = {
-      kind: 'major-version-mismatch',
-      installedVersion: '0.39.0',
-      testedVersion: '0.40.0',
-    };
-
-    expect(compatibility.kind).toBe('major-version-mismatch');
-    expect(compatibility.installedVersion).toBe('0.39.0');
   });
 });

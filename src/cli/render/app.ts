@@ -137,13 +137,16 @@ export async function renderApp(
   // own signal-driven shutdown; exiting the process here would race it to completion and
   // skip the mid-task rollback. Await cleanup before exiting so the TUI discards a partially
   // applied task exactly like the headless host does.
+  const reportTerminationCleanupFailure = (error: unknown) =>
+    warnError('TUI cleanup failed during termination', error);
   const onTerminationSignal = createTerminationHandler({
     cleanup,
+    reportCleanupFailure: reportTerminationCleanupFailure,
     exit: (code) => process.exit(code),
   });
   const settleTerminationSignal = createTerminationSignalListener({
     handle: onTerminationSignal,
-    reportCleanupFailure: (error) => warnError('TUI cleanup failed during termination', error),
+    reportCleanupFailure: reportTerminationCleanupFailure,
   });
   process.on('SIGINT', settleTerminationSignal);
   process.on('SIGTERM', settleTerminationSignal);
@@ -152,15 +155,18 @@ export async function renderApp(
   const reportCrash = (reason: unknown) => {
     process.stderr.write(`SPLITBRIEF crashed: ${toErrorMessage(reason)}\n`);
   };
+  const reportCrashCleanupFailure = (error: unknown) =>
+    warnError('TUI cleanup failed during crash handling', error);
   const onCrash = createCrashHandler({
     cleanup,
     report: reportCrash,
+    reportCleanupFailure: reportCrashCleanupFailure,
     exit: (code) => process.exit(code),
   });
   const settleCrash = createCrashListener({
     handle: onCrash,
     reportCrash,
-    reportCleanupFailure: (error) => warnError('TUI cleanup failed during crash handling', error),
+    reportCleanupFailure: reportCrashCleanupFailure,
   });
   process.on('uncaughtException', settleCrash);
   process.on('unhandledRejection', settleCrash);

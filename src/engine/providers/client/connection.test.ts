@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  createEndpointPolicyFetch,
+  endpointPolicyError,
   endpointPolicyFetch,
 } from '../../../core/providers/endpoint-policy.js';
+import { createEndpointPolicyFetch } from '../../../lib/http/policy-fetch.js';
 import { createClientFromProvider } from './connection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
@@ -25,6 +26,23 @@ describe('createClientFromProvider', () => {
     expect(apiKey).not.toHaveBeenCalled();
   });
 
+  it('fails closed when the policy transport slot holds a non-callable value', () => {
+    const apiKey = vi.fn(() => 'secret');
+    const provider = {
+      name: 'unregistered',
+      baseURL: 'https://api.example.com/v1',
+      apiKey,
+      isLocal: false,
+      listModels: async () => [],
+      [endpointPolicyFetch]: null as unknown as ReturnType<typeof createEndpointPolicyFetch>,
+    };
+
+    expect(() => createClientFromProvider(provider)).toThrow(
+      expect.objectContaining({ kind: 'provider-endpoint-policy-unsupported' }),
+    );
+    expect(apiKey).not.toHaveBeenCalled();
+  });
+
   it('uses the provider policy fetch for OpenAI client requests', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(null, {
@@ -38,7 +56,10 @@ describe('createClientFromProvider', () => {
       apiKey: () => 'secret',
       isLocal: false,
       listModels: async () => [],
-      [endpointPolicyFetch]: createEndpointPolicyFetch('https://api.example.com/v1'),
+      [endpointPolicyFetch]: createEndpointPolicyFetch(
+        'https://api.example.com/v1',
+        endpointPolicyError.invalid,
+      ),
     };
 
     const client = createClientFromProvider(provider);

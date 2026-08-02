@@ -4,12 +4,7 @@ import {
   OPENAI_COMPAT_STANDARD_FINISH_REASONS,
   type OpenAICompatPolicy,
 } from './openai-compat-policy.js';
-import type { KnownModel } from '../../core/providers/known-models.js';
-import type {
-  ApiProviderDescriptor,
-  ApiRunnerRole,
-} from '../../core/providers/api-provider-catalog.js';
-import type { EndpointPolicy } from '../../core/providers/endpoint-policy.js';
+import type { ApiRunnerRole } from '../../core/providers/api-provider-catalog.js';
 import { RunnerBillingPostureSchema } from '../../core/runners/runner-billing.js';
 import { isRecord } from '../../utils/type-guards.js';
 
@@ -18,7 +13,20 @@ const ENV_NAME_PATTERN = /^[A-Z][A-Z0-9_]*$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const HOST_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const WORKSPACE_HOST_PREFIX = '{workspaceId}.';
-const MAX_EVIDENCE_OUTPUT_BYTES = 32_768;
+export const MAX_EVIDENCE_OUTPUT_BYTES = 32_768;
+
+/** The single staged-project instruction every conformance harness sends. */
+export const CONFORMANCE_PROMPT =
+  'Implement the requested change in the staged project.\n\nFiles:\n- src/example.ts\n- tests/example.test.ts\n\nReturn a concise result.';
+
+export const CONFORMANCE_EXIT_CODES = Object.freeze({
+  PASS: 0,
+  HARNESS_FAILURE: 1,
+  OMIT: 2,
+} as const);
+
+const TRUNCATION_MARKER = '…';
+const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, 'utf8');
 const ANSI_ESCAPE_PATTERN = new RegExp(
   `${String.fromCharCode(27)}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${String.fromCharCode(7)}]*(?:${String.fromCharCode(7)}|${String.fromCharCode(27)}\\\\))`,
   'g',
@@ -150,7 +158,6 @@ export const EndpointPolicySchema = z.discriminatedUnion('kind', [
   AllowedHttpsEndpointSchema,
   LoopbackEndpointSchema,
 ]);
-export type CandidateEndpointPolicy = z.infer<typeof EndpointPolicySchema>;
 
 const RawRequestSchema = z
   .strictObject({
@@ -217,7 +224,6 @@ export const RawProviderCandidateContract = z
     }
   });
 export type RawProviderCandidateContract = z.infer<typeof RawProviderCandidateContract>;
-export const RawProviderCandidateContractSchema = RawProviderCandidateContract;
 
 const ApiProviderDescriptorSchema = z
   .strictObject({
@@ -374,7 +380,6 @@ export const UnregisteredProviderCandidate = z
     }
   });
 export type UnregisteredProviderCandidate = z.infer<typeof UnregisteredProviderCandidate>;
-export const UnregisteredProviderCandidateSchema = UnregisteredProviderCandidate;
 
 export type CandidateEvidenceRole = ApiRunnerRole;
 
@@ -447,7 +452,6 @@ export const CandidateEvidence = z
     }
   });
 export type CandidateEvidence = z.infer<typeof CandidateEvidence>;
-export const CandidateEvidenceSchema = CandidateEvidence;
 
 export function canonicalJson(value: unknown): string {
   if (value === null) return 'null';
@@ -468,8 +472,6 @@ export function contractSha256(contract: unknown): string {
   return createHash('sha256').update(canonicalJson(contract), 'utf8').digest('hex');
 }
 
-export const canonicalContractSha256 = contractSha256;
-
 export function baseUrlEnvironmentName(id: string): string {
   return `${id.replace(/[^a-zA-Z0-9]+/g, '_').toUpperCase()}_BASE_URL`;
 }
@@ -478,6 +480,15 @@ export function requiresLiveModelDiscovery(
   contract: Pick<RawProviderCandidateContract, 'modelIds'>,
 ): boolean {
   return contract.modelIds.length === 0;
+}
+
+function truncateToCharacterBoundary(value: string, maxBytes: number): string {
+  if (maxBytes <= 0) return '';
+  const bytes = Buffer.from(value, 'utf8');
+  if (bytes.byteLength <= maxBytes) return value;
+  let end = maxBytes;
+  while (end > 0 && ((bytes.at(end) ?? 0) & 0b1100_0000) === 0b1000_0000) end -= 1;
+  return bytes.subarray(0, end).toString('utf8');
 }
 
 export function sanitizeCandidateOutput(
@@ -489,9 +500,10 @@ export function sanitizeCandidateOutput(
     .replace(BEARER_PATTERN, '[REDACTED]')
     .replace(SECRET_ASSIGNMENT_PATTERN, '$1[REDACTED]')
     .replace(ABSOLUTE_USER_PATH_PATTERN, '/[PATH]');
-  return Buffer.byteLength(redacted, 'utf8') <= maxBytes
-    ? redacted
-    : `${Buffer.from(redacted, 'utf8').subarray(0, maxBytes).toString('utf8')}…`;
+  if (Buffer.byteLength(redacted, 'utf8') <= maxBytes) return redacted;
+  return maxBytes <= TRUNCATION_MARKER_BYTES
+    ? truncateToCharacterBoundary(redacted, maxBytes)
+    : `${truncateToCharacterBoundary(redacted, maxBytes - TRUNCATION_MARKER_BYTES)}${TRUNCATION_MARKER}`;
 }
 
 export function createCandidateEvidenceCapture(input: {
@@ -524,11 +536,3 @@ export function normalizeCandidateEvidence(input: {
     verdict: input.verdict,
   });
 }
-
-export type {
-  ApiProviderDescriptor,
-  ApiRunnerRole,
-  EndpointPolicy,
-  KnownModel,
-  OpenAICompatPolicy,
-};

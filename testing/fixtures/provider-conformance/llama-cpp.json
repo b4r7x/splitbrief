@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "llama-cpp",
+    "role": "implementer",
+    "contractSha256": "db64cb827ba96c32a65dc2292f1a992709ca0794dfea94bd973396256e3180d0",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "fetch failed"
+  },
+  "productionConformance": {
+    "candidateId": "llama-cpp",
+    "role": "implementer",
+    "contractSha256": "db64cb827ba96c32a65dc2292f1a992709ca0794dfea94bd973396256e3180d0",
+    "stdout": "",
+    "stderr": "fetch failed"
+  },
+  "verdict": "OMIT"
+}

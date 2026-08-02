@@ -9,16 +9,16 @@ import type { Planner, PlannerCallbacks, PlannerFactoryOptions } from './types.j
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
-import { getLineParser } from '../streaming/output-parsers.js';
 import {
   CLI_NO_DEADLINE_MS,
   CLI_PROMPT_PLACEHOLDER,
-  CLI_TOOLS,
-  createCliPlannerAdapter,
   invokeCliAdapter,
   toCliEnvironment,
-} from '../runners/cli-tools.js';
-import { resolveAutoModel } from '../../core/providers/model-selection.js';
+} from '../runners/invoke-cli-adapter.js';
+import { withOutputFormat } from '../runners/cli-tools/output-format.js';
+import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
+import type { CliPlannerAdapter } from '../runners/cli-tools/contract.js';
+import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import { assertPlannerKind } from '../config-assertions.js';
 import {
   createSessionAttemptCallContext,
@@ -28,7 +28,6 @@ import {
   sessionResumeExpiredError,
   sessionResumeMismatchError,
 } from '../session-expiry.js';
-import { runnerConfigError } from '../runners/errors.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import { escapeRegExp } from '../../utils/regexp.js';
 import {
@@ -43,8 +42,11 @@ import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
-
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
+
+function cliNotFoundMessage(descriptor: CliPlannerAdapter['descriptor']): string {
+  return `${descriptor.displayName} not found. See ${descriptor.compatibility.installUrl}`;
+}
 
 function readArtifactPath(projectDir: string, filename: string, candidate: string): string | null {
   if (basename(candidate) !== filename) return null;
@@ -115,21 +117,20 @@ export function createCliPlanner(
   const plannerCfg = assertPlannerKind(config, 'cli');
   resolveCliRunnerAuth(plannerCfg);
   const trustedCli: CliStartGate | undefined = options?.trustedCli;
-  const resolvedModel = resolveAutoModel(plannerCfg.model, plannerCfg.tool);
-  const tool = CLI_TOOLS[plannerCfg.tool];
-  if (!tool.planner) throw runnerConfigError.missingToolConfig(plannerCfg.tool, 'planner');
-  const planner = tool.planner;
-  const supportsSessionResume = planner.supportsSessionResume === true;
+  const resolvedModel = resolveCliModel(plannerCfg.model, plannerCfg.tool);
+  const baseAdapter = lookupCliPlannerAdapter(plannerCfg.tool);
+  const adapter = plannerCfg.outputFormat
+    ? withOutputFormat(baseAdapter, plannerCfg.outputFormat)
+    : baseAdapter;
+  const command = adapter.descriptor.command;
+  const notFoundMessage = cliNotFoundMessage(adapter.descriptor);
+  const { supportsSessionResume, supportsEffort } = adapter;
 
   const session = createSessionResumeState();
   if (supportsSessionResume) session.capture(initialSessionId ?? null);
   const effort = plannerCfg.effort;
-  const supportsEffort = planner.supportsEffort === true;
   const timeout = plannerCfg.timeout;
   const extraArgs = plannerCfg.args ?? [];
-  const parseLine = plannerCfg.outputFormat
-    ? getLineParser(plannerCfg.outputFormat)
-    : planner.parseLine;
 
   async function runOnce(opts: {
     prompt: string;
@@ -146,14 +147,6 @@ export function createCliPlanner(
     let stderrOutput = '';
     const callbackBuffer = resumeId === null ? null : createRunnerAttemptCallbackBuffer(callbacks);
     const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
-    const buildOpts: Parameters<typeof planner.buildArgs>[0] = {
-      prompt,
-      projectDir,
-      mode,
-      ...(resolvedModel !== undefined && { model: resolvedModel }),
-      ...(supportsSessionResume && resumeId ? { sessionId: resumeId } : {}),
-      ...(supportsEffort && effort !== undefined ? { effort } : {}),
-    };
 
     const effectiveSignal = composeAbortSignal(signal, timeout);
     const onCallEvent = (event: RunnerCallEvent): void => {
@@ -168,35 +161,31 @@ export function createCliPlanner(
       let executable: Awaited<ReturnType<typeof resolveCliExecutable>>;
       try {
         executable = await resolveCliExecutable(
-          tool.command,
+          command,
           projectDir,
           assertCliStartGate(plannerCfg.tool, trustedCli),
         );
       } catch (err) {
         if (isCliExecutableUnavailable(err)) {
-          throw processError.notFound(tool.command, tool.notFoundMessage);
+          throw processError.notFound(command, notFoundMessage);
         }
         throw err;
       }
-      const adapter = createCliPlannerAdapter({
-        toolName: plannerCfg.tool,
-        planner,
-        parseLine,
-        postProcess: planner.postProcess,
-      });
-      const args = adapter.buildArgs({
-        ...buildOpts,
+      const baseArgs = adapter.baseArgs({
         prompt: CLI_PROMPT_PLACEHOLDER,
         model: resolvedModel,
-        sessionId: resumeId,
-        effort: supportsEffort ? effort : undefined,
+        projectDir,
         configuredArgs: extraArgs,
+        mode,
+        sessionId: supportsSessionResume ? resumeId : null,
+        effort: supportsEffort ? effort : undefined,
       });
       const result = await invokeCliAdapter({
         adapter,
         invocation: {
           executable,
-          args,
+          args: [...baseArgs, ...extraArgs],
+          baseArgs,
           promptTransport: adapter.promptTransport,
           environment: toCliEnvironment(
             sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg)),
@@ -325,7 +314,7 @@ export function createCliPlanner(
     hintSuccessMode: 'files',
     readPhaseOutput: readCliPhaseOutput,
 
-    ...createCommandAvailability(tool.command, planner.isAvailableOpts),
+    ...createCommandAvailability(command, { timeout: baseAdapter.probe.version.timeoutMs }),
 
     capabilities: { ...ONE_SHOT_API_CAPS, supportsSessionResume, supportsEffort },
   });

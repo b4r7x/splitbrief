@@ -2,9 +2,14 @@ import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import { toTokenDelta } from '../calls/projection.js';
-import { runnerCallIdleTimeoutError, runnerCallInterruptedStatus } from '../calls/status.js';
+import {
+  boundedRunnerCallMessage,
+  createRunnerCallCredentialRedactor,
+  runnerCallIdleTimeoutError,
+  runnerCallInterruptedStatus,
+} from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
-import { spawnAndCollect } from '../streaming/spawn-collect.js';
+import { credentialValuesFromEnvironment, spawnAndCollect } from '../streaming/spawn-collect.js';
 import { getLineParser } from '../streaming/output-parsers.js';
 import { createParsedLineRecorder } from '../streaming/parsed-line-recorder.js';
 import { createRunnerCallStderrBuffer } from '../streaming/stderr-lines.js';
@@ -17,6 +22,7 @@ import { spawnWithShellFallback } from '../../lib/process/spawn/progress.js';
 import { createLineBuffer } from '../../lib/process/line-buffer.js';
 import { processError } from '../../lib/process/errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { redactSecrets } from '../../utils/redact.js';
 import { error } from '../../utils/error.js';
 import { finishRunnerCallOutputLimit, runnerCallLineOutputLimit } from '../calls/output-limit.js';
 import { commandName, isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
@@ -145,11 +151,18 @@ export async function invokeCommandBasedRunner(
 
   if (opts.timeout !== undefined) {
     const parseLine = getLineParser(format);
-    const recorder = createRunnerCallRecorder({ context, onEvent: opts.onCallEvent });
+    const credentialValues = credentialValuesFromEnvironment(opts.env ?? process.env);
+    const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
+    const redactCredential = (value: string): string => redactSecrets(explicitRedactor(value));
+    const recorder = createRunnerCallRecorder({
+      context,
+      credentialValues,
+      onEvent: opts.onCallEvent,
+    });
     const parsedRecorder = createParsedLineRecorder({
       recorder,
-      onText: onOutput,
-      onSessionId: opts.onSessionId,
+      onText: (text) => onOutput?.(redactCredential(text)),
+      onSessionId: (id) => opts.onSessionId?.(redactCredential(id)),
     });
     const stderrBuffer = createRunnerCallStderrBuffer(recorder);
     const liveOutputBuffer = createLineBuffer(
@@ -209,7 +222,7 @@ export async function invokeCommandBasedRunner(
           command: 'Command',
           label: 'Command',
           timeoutMs: opts.timeout,
-          output: result.output,
+          output: redactCredential(result.output),
         });
       }
 
@@ -225,12 +238,15 @@ export async function invokeCommandBasedRunner(
         if (processError.isIdleTimeout(err)) {
           recorder.finishFailed({
             status: 'failed',
-            error: runnerCallIdleTimeoutError(err),
+            error: runnerCallIdleTimeoutError(err, credentialValues),
           });
         } else {
           recorder.finishFailed({
             status: signal?.aborted ? runnerCallInterruptedStatus(signal) : 'failed',
-            error: { code: 'command_failed', message: toErrorMessage(err) },
+            error: {
+              code: 'command_failed',
+              message: boundedRunnerCallMessage(toErrorMessage(err), credentialValues),
+            },
           });
         }
       }
@@ -255,6 +271,7 @@ export async function invokeCommandBasedRunner(
       callContext: context,
       signal,
       idle: { warnMs: idleWarnMs, killMs: idleKillMs },
+      abortOnOutputLimits: false,
       onStderr: (chunk) => {
         stderrOutput.append(chunk);
       },

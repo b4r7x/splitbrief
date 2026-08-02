@@ -3,26 +3,26 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, assert, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { migrateConfig } from './config/load/migrate.js';
+import { ConfigSchema } from './schemas/config.js';
 import { SPLITBRIEF_IDENTITY } from './identity.js';
-import { migrateCommand } from './migration/executor.js';
 import { SPLITBRIEF_DIR } from './paths.js';
 import { readPackageJson } from './project-meta.js';
-import { normalizeLegacyMode } from './schemas/enums.js';
+import { WorkflowModeSchema } from './schemas/enums.js';
+import { readActive } from './sessions/lifecycle.js';
+import { listSessions } from './sessions/io.js';
 
 const ROOT = join(import.meta.dirname, '..', '..');
 const CLI_ENTRY = join(ROOT, 'src', 'cli.ts');
 const TSX = join(ROOT, 'node_modules', '.bin', 'tsx');
-const REQUIRED_COMMANDS = ['start', 'spec', 'init', 'status', 'resume', 'migrate'] as const;
+const REQUIRED_COMMANDS = ['start', 'spec', 'init', 'status', 'resume'] as const;
 const IDENTITY_LABELS = [
   'package',
   'bin',
   'commands',
-  'migrate-canonical-only',
   'prior-state-ignored',
   'v3',
-  'v2',
-  'full',
+  'v2-rejected',
+  'full-rejected',
 ] as const;
 
 let tempDir: string | undefined;
@@ -33,7 +33,7 @@ afterEach(() => {
 });
 
 describe('SPLITBRIEF identity', () => {
-  it('identity contract matrix has exactly 8 labeled cases', async () => {
+  it('identity contract matrix has exactly 7 labeled cases', async () => {
     const workingRoot = createTempDir('splitbrief-identity');
     tempDir = workingRoot;
     const packageManifest = readPackageJson(ROOT, { throwOnInvalid: true });
@@ -80,22 +80,8 @@ describe('SPLITBRIEF identity', () => {
         },
       },
       {
-        label: 'migrate-canonical-only',
-        run: async () => {
-          const projectDir = join(workingRoot, 'canonical');
-          const currentDir = join(projectDir, SPLITBRIEF_DIR, 'current');
-          mkdirSync(currentDir, { recursive: true });
-          writeFileSync(join(currentDir, 'state.json'), '[]');
-
-          const result = await migrateCommand(projectDir);
-
-          expect(result).toMatchObject({ status: 'skipped', sourceDir: currentDir });
-          expect(existsSync(currentDir)).toBe(true);
-        },
-      },
-      {
         label: 'prior-state-ignored',
-        run: async () => {
+        run: () => {
           const projectDir = join(workingRoot, 'prior-only');
           const priorStateDirs = [
             '.diptych', // brand-contract-negative
@@ -103,12 +89,16 @@ describe('SPLITBRIEF identity', () => {
           ] as const;
           mkdirSync(projectDir, { recursive: true });
           for (const stateDir of priorStateDirs) {
-            mkdirSync(join(projectDir, stateDir, 'current'), { recursive: true });
+            mkdirSync(join(projectDir, stateDir, 'sessions', '2026-03-15-prior'), {
+              recursive: true,
+            });
+            writeFileSync(join(projectDir, stateDir, 'active'), '2026-03-15-prior\n');
           }
 
-          await expect(migrateCommand(projectDir)).resolves.toEqual({ status: 'not-needed' });
+          expect(readActive(projectDir)).toBeNull();
+          expect(listSessions(projectDir)).toEqual([]);
           for (const stateDir of priorStateDirs) {
-            expect(existsSync(join(projectDir, stateDir, 'current'))).toBe(true);
+            expect(existsSync(join(projectDir, stateDir, 'active'))).toBe(true);
           }
           expect(existsSync(join(projectDir, SPLITBRIEF_DIR))).toBe(false);
         },
@@ -116,30 +106,21 @@ describe('SPLITBRIEF identity', () => {
       {
         label: 'v3',
         run: () => {
-          const config = {
-            version: 3,
-            planner: { kind: 'cli', tool: 'claude-code' },
-            implementer: { kind: 'agent', command: 'local-implementer' },
-          };
-          expect(migrateConfig(config)).toEqual(config);
+          expect(ConfigSchema.shape.version.safeParse(3).success).toBe(true);
         },
       },
       {
-        label: 'v2',
+        label: 'v2-rejected',
         run: () => {
-          expect(
-            migrateConfig({
-              version: 2,
-              planner: { kind: 'cli', tool: 'claude-code' },
-              implementer: { kind: 'api', provider: 'ollama' },
-            }),
-          ).toMatchObject({ version: 3 });
+          expect(ConfigSchema.shape.version.safeParse(2).success).toBe(false);
+          expect(ConfigSchema.shape.version.safeParse(1).success).toBe(false);
         },
       },
       {
-        label: 'full',
+        label: 'full-rejected',
         run: () => {
-          expect(normalizeLegacyMode('full')).toBe('speckit');
+          expect(WorkflowModeSchema.safeParse('full').success).toBe(false);
+          expect(WorkflowModeSchema.safeParse('spec-kit').success).toBe(false);
         },
       },
     ] satisfies ReadonlyArray<{
@@ -147,7 +128,7 @@ describe('SPLITBRIEF identity', () => {
       run: () => void | Promise<void>;
     }>;
 
-    expect(cases).toHaveLength(8);
+    expect(cases).toHaveLength(7);
     expect(cases.map(({ label }) => label)).toEqual(IDENTITY_LABELS);
 
     for (const contractCase of cases) {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
@@ -10,6 +10,11 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import {
+  cliStartGatesFromArray,
+  type CliStartGate,
+} from '../../../src/engine/runners/start-gate.js';
+import { trustedCliGateFor } from '#testing/helpers/command-shim.js';
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
@@ -166,6 +171,10 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     const codexRunLogPath = installFakeCodexPlanner(binDir);
     const opencodeRunLogPath = installFakeOpencodeImplementer(binDir, marker);
     process.env.PATH = `${binDir}:${originalPath ?? ''}`;
+    const trustedCliGates = cliStartGatesFromArray([
+      trustedCliGateFor('codex', binDir),
+      trustedCliGateFor('opencode', binDir),
+    ] satisfies CliStartGate[]);
     const events: EngineEvent[] = [];
 
     const summary = await runWorkflow({
@@ -192,7 +201,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
         workflow: {
           mode: 'quick',
           approve: 'none',
-          commitStrategy: 'none',
           maxRetries: 1,
           persistTranscript: true,
         },
@@ -200,6 +208,7 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       sessionId: 'sess-cli-planner-cli-implementer',
+      trustedCliGates,
       _eventSink: (event) => events.push(event),
     });
 
@@ -234,7 +243,6 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     expect(readFileSync(join(projectDir, 'src/cli-planner-implementer.ts'), 'utf-8')).toContain(
       marker,
     );
-    expect(existsSync(join(projectDir, SANDBOX_DIR))).toBe(false);
     expect(summary).toMatchObject({
       totalTasks: 1,
       completedByLocal: 1,

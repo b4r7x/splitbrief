@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "zai",
+    "role": "implementer",
+    "contractSha256": "4582d4b5417697fdc8f2232ada3db9dc072c5adc0a37d1b63ffd8a22c5b6ba6f",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing credential for ZAI_API_KEY"
+  },
+  "productionConformance": {
+    "candidateId": "zai",
+    "role": "implementer",
+    "contractSha256": "4582d4b5417697fdc8f2232ada3db9dc072c5adc0a37d1b63ffd8a22c5b6ba6f",
+    "stdout": "",
+    "stderr": "missing credential for ZAI_API_KEY"
+  },
+  "verdict": "OMIT"
+}

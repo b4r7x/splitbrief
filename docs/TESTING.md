@@ -55,7 +55,7 @@ The flowchart covers `src/**` source. Three trees outside it also hold tests: `s
 | PTY terminal-boundary behavior | `testing/integration/cli/` | `.test.ts` |
 | Shared factories (pure TS constructors) | `testing/helpers/factories/<domain>.ts` — ≥ 2 consumers | n/a |
 | Shared test helpers (fakes, renderers, resetters) | `testing/helpers/*.ts` — ≥ 2 consumers, no `expect()` | n/a |
-| Static fixtures (YAML, JSON, recorded HTTP bodies, migration snapshots) | `testing/fixtures/<domain>/` | n/a |
+| Static fixtures (YAML, JSON, recorded HTTP bodies) | `testing/fixtures/<domain>/` | n/a |
 
 ## Performance harnesses
 
@@ -140,7 +140,7 @@ Full `npm test` is appropriate only when it is safe for the checkout and the val
 Integration tests live under `testing/integration/<layer>/`. One file per user-observable flow. Longer files with more assertions beat many short files (TkDodo: fewer, longer tests).
 
 **Pick the layer.**
-- Commander flow (`start`, `resume`, `init`, `migrate`, `status`) → `testing/integration/cli/`
+- Commander flow (`start`, `resume`, `init`, `status`) → `testing/integration/cli/`
 - `runWorkflow()` state-machine flow → `testing/integration/orchestrator/`
 - Feature screen that depends on engine-written store state → `testing/integration/ui/`
 
@@ -364,7 +364,7 @@ L1 faux (`planner.ts`, `implementer.ts`) is the default for new orchestrator tes
 
 **Component / feature tests.** Use `ink-testing-library`. Render with real stores (reset in `beforeEach`). Drive by setting store state or simulating input. Assert on `lastFrame()` text or observable store state. Never mock `ink`, `FilterableList`, or any internal component.
 
-**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.splitbrief/` contents (pattern: `src/cli/commands/status.test.ts`; config-migration logic itself is unit-tested in `src/core/config/load/migrate.test.ts`). Config load/write roundtrip (default shape, optional sections, snake_case migration) belongs in `src/core/config/load/io-roundtrip.test.ts`, not a CLI integration file. `init` without a TTY fails before any config write — `testing/integration/cli/init-non-tty.test.ts`. Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
+**CLI command tests.** Invoke the real commander handler. Use a real `tmpDir` with scripted `.splitbrief/` contents (pattern: `src/cli/commands/status.test.ts`; config load and version admission are unit-tested in `src/core/config/load/io.test.ts`). Config load/write roundtrip (default shape, optional sections, snake_case conversion) belongs in `src/core/config/load/io-roundtrip.test.ts`, not a CLI integration file. `init` without a TTY fails before any config write — `testing/integration/cli/init-non-tty.test.ts`. Treat stdin / stdout / exit code as the boundary. Assert on exit code and output *shape* (non-empty, contains command name) — never exact user-facing wording.
 
 ## Forbidden patterns
 
@@ -446,7 +446,9 @@ Why: real stores, real Ink render, observable output + observable store state.
 - Real subprocess via `spawn(...)` against `/bin/echo`, `node -e '...'`, or a canned script. Do not mock `node:child_process`. The login-shell fallback in agent tests has a 30 s timeout for a reason; do not lower it.
 - Real git binary via `createTestGitRepo` (`testing/helpers/git.ts`). Do not stub `simple-git`.
 - Real HTTP via `http.createServer` for provider tests.
-- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path — either resolved from `__dirname` (`src/core/migration/executor.test.ts`) or from `process.cwd()` via `resolve('testing/fixtures/…')` (`src/engine/codebase/parse.test.ts`, `src/engine/codebase/repomap.test.ts`, `src/engine/hooks/load-module.test.ts`, and the `testing/fixtures/hooks/*.mjs` references in `dispatch.test.ts` / `run-pre.test.ts`).
+- Data factories are TypeScript functions under `testing/helpers/factories/` — one file per domain (`factories/task.ts:makeTask`, `factories/config.ts:makeConfig`, `factories/session.ts:makeSession`, `factories/summary.ts:makeSummary`). On-disk artefacts live in `testing/fixtures/`; consumers reach them via a repo-root-relative path — either resolved from `import.meta.dirname` (`src/engine/hooks/dispatch.test.ts`) or from `process.cwd()` via `resolve('testing/fixtures/…')` (`src/engine/codebase/parse.test.ts`, `src/engine/codebase/repomap.test.ts`, `src/engine/hooks/load-module.test.ts`, and the `testing/fixtures/hooks/*.mjs` references in `dispatch.test.ts` / `run-pre.test.ts`).
+- Every config artefact this repository ships is loaded by the real `loadConfig` in `testing/ci/shipped-configs.test.ts`: the committed `evals/fixtures/*/.splitbrief/config.yaml` projects, the committed examples under `testing/fixtures/configs/`, and what `initConfig` / `writeConfig` themselves write. Add a new example by dropping a `.yaml` file into `testing/fixtures/configs/` — the glob picks it up.
+- A ```` ```yaml ```` fence in `docs/CONFIGURATION.md`, `README.md`, or `docs/USAGE-EXAMPLES.md` that carries a top-level `version:` key is a whole config and must be preceded by `<!-- config-example: <id> -->` (loaded by `testing/docs/configuration.test.ts`) or `<!-- config-shape-sketch -->` (pseudo-YAML, excluded). Untagged whole configs fail the gate.
 - Sanctioned `vi.mock` targets (whole repo): `@anthropic-ai/claude-agent-sdk` (optional peer dep), `node:fs/promises` (write-failure and `mkdtemp` interception — `engine/ipc/heartbeat.test.ts`, `engine/orchestrator/approval/staged-project-failure.test.ts`), `node:fs` (`statSync` ENOENT simulation — `core/state/persistence.test.ts`), `ink` + `fullscreen-ink` (CLI integration tests only — suppresses `waitUntilExit()` / `withFullScreen` so commander handlers run to completion without a TTY; all other exports preserved). Anything else is a bug.
 
 ## Pre-merge PR checklist

@@ -1,9 +1,8 @@
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
-import { formatTaskPrompt } from '../../spec/prompt-formatter.js';
+import { formatImplementerSystemPreamble, formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
-import { buildSystemPreamble } from '../../spec/prompts/system.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
 import { getEffectiveModelId } from '../../providers/model/resolution.js';
 import type { ProfileFit, RouteTaskOptions } from './types.js';
@@ -46,20 +45,24 @@ export function assessProfile(
     ? getEffectiveModelId(providerId, profile.config.model)
     : undefined;
   const languageContext = opts.languageContext ?? buildLanguageContext(undefined);
+  const writesFiles = profile.capabilities.writesFiles;
   const untruncatedEstimatedTokens = estimateFormattedTaskPromptTokens({
     task: opts.task,
     context: opts.context,
     languageContext,
     modelId,
+    writesFiles,
   });
   const prompt = formatTaskPrompt({
     task: opts.task,
     context: opts.context,
     contextLength,
     languageContext,
+    writesFiles,
   });
   const estimatedTokens =
-    estimateTokens(buildSystemPreamble(languageContext), modelId) + estimateTokens(prompt, modelId);
+    estimateTokens(formatImplementerSystemPreamble(languageContext, writesFiles), modelId) +
+    estimateTokens(prompt, modelId);
   const mode = currentCodeContextMode(opts.task, prompt);
   const currentCodeTruncated = mode === 'truncated';
   const formattedFit = classifyContextFit(estimatedTokens, contextLength, opts);

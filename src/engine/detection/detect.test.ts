@@ -1,19 +1,43 @@
-import { describe, expect, it, vi } from 'vitest';
+import { chmod, realpath, stat, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type {
+  CliAuthState,
   CliExecutableIdentity,
   CliToolDetection,
   ProviderDetection,
 } from '../../core/discovery/detection.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  CLI_TOOL_IDS,
+  defaultCliAuthChannel,
+} from '../../core/runners/cli-tool-catalog.js';
 import { deriveCliReadiness } from '../../core/schemas/readiness.js';
 import { error } from '../../utils/error.js';
 import type { ProbeCliReadinessOptions } from '../runners/cli-tools/readiness-probe.js';
+import { cliStartGateFor, cliStartGatesFromReadiness } from '../runners/start-gate.js';
 import { detectAll, detectAvailableCliReadiness, detectAvailableCliTools } from './detect.js';
 
 const executable: CliExecutableIdentity = {
   path: '/trusted/bin/tool',
   fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
 };
+
+async function installVersionShim(
+  directory: string,
+  output: string,
+): Promise<CliExecutableIdentity> {
+  const shim = join(directory, 'codex');
+  await writeFile(shim, `#!/bin/sh\necho '${output}'\n`);
+  await chmod(shim, 0o755);
+  const path = await realpath(shim);
+  const info = await stat(path);
+  return {
+    path,
+    fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
+  };
+}
 
 describe('role-neutral CLI detection', () => {
   it('detects every catalog CLI once without planner construction', async () => {
@@ -43,7 +67,7 @@ describe('role-neutral CLI detection', () => {
     }
   });
 
-  it('forwards only explicitly selected auth channels to the probe boundary', async () => {
+  it('forwards the named channel and falls back to the channel the runner itself would take', async () => {
     const probeReadiness = vi.fn(async (options: ProbeCliReadinessOptions) => deriveProbe(options));
 
     await detectAvailableCliTools({
@@ -57,12 +81,17 @@ describe('role-neutral CLI detection', () => {
       expect.objectContaining({ tool: 'codex', authChannel: 'api-key' }),
     );
     for (const call of probeReadiness.mock.calls) {
-      if (call[0].tool !== 'codex') expect(call[0].authChannel).toBeUndefined();
+      if (call[0].tool === 'codex') continue;
+      expect(call[0].authChannel).toBe(defaultCliAuthChannel(call[0].tool).id);
     }
   });
 
-  it('cannot claim readiness from a probe result when no auth channel was selected', async () => {
+  it('cannot claim readiness from a probe result when the channel selection was withheld', async () => {
     const [result] = await detectAvailableCliTools({
+      tools: ['claude-code'],
+      // A tool named with no channel is the conflicting-roles downgrade: the
+      // probe must stay channel-less rather than borrow an ambient credential.
+      authChannels: { 'claude-code': undefined },
       resolveExecutable: async () => executable,
       probeReadiness: async (options) =>
         deriveCliReadiness({
@@ -83,7 +112,27 @@ describe('role-neutral CLI detection', () => {
     expect(result).toMatchObject({ auth: 'unknown', diagnostic: { state: 'unverified' } });
   });
 
-  it('keeps unknown authentication explicit and fails readiness closed', async () => {
+  it('admits a best-case probe on the runner default channel as ready', async () => {
+    const results = await detectAvailableCliTools({
+      resolveExecutable: async () => executable,
+      probeReadiness: async (options) => deriveProbe(options, 'authenticated'),
+      now: () => 42,
+    });
+
+    for (const result of results) {
+      expect(result).toMatchObject({
+        executable,
+        trust: 'trusted',
+        installedVersion: CLI_TOOL_CATALOG[result.tool].compatibility.testedVersion,
+        compatibility: 'compatible',
+        auth: 'authenticated',
+        diagnostic: { state: 'ready', remediation: null },
+        probedAt: 42,
+      });
+    }
+  });
+
+  it('keeps an unchecked authentication fact explicit and fails readiness closed', async () => {
     const [result] = await detectAvailableCliTools({
       resolveExecutable: async () => executable,
       probeReadiness: async (options) => deriveProbe(options),
@@ -95,7 +144,7 @@ describe('role-neutral CLI detection', () => {
       trust: 'trusted',
       installedVersion: CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion,
       compatibility: 'compatible',
-      auth: 'unknown',
+      auth: 'not-checked',
       diagnostic: {
         state: 'unverified',
         remediation: expect.any(String),
@@ -129,7 +178,7 @@ describe('role-neutral CLI detection', () => {
 
     expect(result).toMatchObject({
       compatibility: 'incompatible',
-      auth: 'unknown',
+      auth: 'not-checked',
       diagnostic: { state: 'incompatible', remediation: expect.any(String) },
     });
   });
@@ -191,6 +240,76 @@ describe('role-neutral CLI detection', () => {
   });
 });
 
+describe('CLI readiness composed with the real probe', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.runIf(process.platform !== 'win32')(
+    'admits a healthy authenticated CLI to the trusted start gate',
+    async () => {
+      await withTempDir('detect-readiness-ready', async (directory) => {
+        const shim = await installVersionShim(
+          directory,
+          `codex ${CLI_TOOL_CATALOG.codex.compatibility.testedVersion}`,
+        );
+        vi.stubEnv('OPENAI_API_KEY', 'detect-readiness-key');
+
+        const [result] = await detectAvailableCliReadiness({
+          projectDir: directory,
+          tools: ['codex'],
+          authChannels: { codex: 'api-key' },
+          resolveExecutable: async () => shim,
+        });
+        if (result === undefined) throw new Error('expected one readiness result');
+
+        expect(result).toMatchObject({
+          tool: 'codex',
+          trust: 'trusted',
+          installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+          compatibility: 'compatible',
+          auth: 'authenticated',
+          status: 'ready',
+          remediation: null,
+        });
+        const gates = cliStartGatesFromReadiness([result]);
+        expect(gates.size).toBe(1);
+        expect(cliStartGateFor('codex', gates).executable).toEqual(shim);
+      });
+    },
+    20_000,
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'keeps an incompatible major version out of the start gate',
+    async () => {
+      await withTempDir('detect-readiness-incompatible', async (directory) => {
+        const testedMajor = Number(
+          CLI_TOOL_CATALOG.codex.compatibility.testedVersion.split('.')[0],
+        );
+        const shim = await installVersionShim(directory, `codex ${testedMajor + 1}.0.0`);
+        vi.stubEnv('OPENAI_API_KEY', 'detect-readiness-key');
+
+        const [result] = await detectAvailableCliReadiness({
+          projectDir: directory,
+          tools: ['codex'],
+          authChannels: { codex: 'api-key' },
+          resolveExecutable: async () => shim,
+        });
+        if (result === undefined) throw new Error('expected one readiness result');
+
+        expect(result).toMatchObject({
+          compatibility: 'incompatible',
+          auth: 'not-checked',
+          status: 'incompatible',
+        });
+        expect(cliStartGatesFromReadiness([result]).size).toBe(0);
+      });
+    },
+    20_000,
+  );
+});
+
 describe('detectAll', () => {
   it('returns only canonical provider and role-neutral CLI collections', async () => {
     const providers: ProviderDetection[] = [{ provider: 'ollama', available: true, isLocal: true }];
@@ -222,7 +341,7 @@ describe('detectAll', () => {
   });
 });
 
-function deriveProbe(options: ProbeCliReadinessOptions) {
+function deriveProbe(options: ProbeCliReadinessOptions, auth: CliAuthState = 'not-checked') {
   const testedVersion = CLI_TOOL_CATALOG[options.tool].compatibility.testedVersion;
   const compatibility = options.classifyVersion?.({
     installedVersion: testedVersion,
@@ -237,7 +356,7 @@ function deriveProbe(options: ProbeCliReadinessOptions) {
     installedVersion: testedVersion,
     testedVersion,
     compatibility: compatibility ?? 'unverified',
-    auth: 'not-checked',
+    auth,
     probedAt: options.now?.() ?? Date.now(),
   });
 }

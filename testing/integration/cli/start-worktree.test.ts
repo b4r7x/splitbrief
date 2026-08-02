@@ -9,6 +9,7 @@ import {
   setupStartCommandIntegration,
   spawnServerMock,
   writeConfigMarker,
+  writeReadyReadinessFixtures,
 } from '#testing/helpers/start-command.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, worktreePath } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
@@ -99,6 +100,7 @@ describe('start command — --worktree flag', () => {
 
   it('rolls back the worktree and branch when server spawn fails, so the same command can be retried', async () => {
     const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp);
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const spawnFailure: SpawnServerResult = { ok: false, reason: 'boom' };

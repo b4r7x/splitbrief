@@ -4,6 +4,71 @@ Symptom-driven guide. Find the line that matches what you see, follow the diagno
 
 Each entry is structured as **Symptom → Likely cause → Fix → Prevention → See also**. Entries are grouped by area; jump to the section that matches the failing surface.
 
+Stable `stateId` and runner `state` values with copyable remediations are indexed under [Run readiness and doctor diagnostics](#run-readiness-and-doctor-diagnostics). Use `splitbrief doctor --json` for automation.
+
+---
+
+## Run readiness and doctor diagnostics
+
+`splitbrief doctor` and the readiness gate on `start` emit the same remediation strings in human output and JSON. During workflow commands, runner subprocess failures normalize to `RunnerOutcome` `state` values in `session.jsonl` with the same copyable remediation pattern.
+
+The two commands share the strings but not the verdict: `doctor` diagnoses and exits `0` on warnings, while `start` fails closed on a configured `kind: cli` runner whose readiness is not `ready` — an unverified CLI has no trusted executable identity, so start refuses (exit `1`, remediation quoted) before creating a session instead of aborting mid-run.
+
+### `splitbrief doctor --json`
+
+`splitbrief doctor --json` writes one JSON object to stdout (not NDJSON):
+
+```json
+{ "type": "readiness_report", "report": { "status": "ready|blocked|warning", "nextAction": { ... }, "checks": [ ... ] } }
+```
+
+Each `report.checks[]` entry includes `id`, `severity`, `summary`, `stateId` (or `null`), and `remediation` (or `null`). Section titles from human output are omitted — parsers should use `stateId` and `remediation`, not decorative banners. `start --json` emits the same `readiness_report` shape as its first stdout line, and `start --rpc` emits it inside the first `status` envelope. `resume` re-probes CLI readiness for start gates but emits no `readiness_report`.
+
+```bash
+splitbrief doctor --json
+```
+
+Exit `0` when ready or ready-with-warnings; exit `1` when blocked (the JSON report is still written first). Full field reference: [CLI-REFERENCE.md](./CLI-REFERENCE.md#json-output-doctor---json).
+
+### Readiness `stateId` index
+
+Prefer these stable identifiers in automation and log correlation. Remediation strings match `src/core/readiness/format.ts`.
+
+| Symptom (what you see) | `stateId` | Copyable remediation |
+|---|---|---|
+| Configured CLI is not installed or not on `PATH` (`spawn-not-found`, executable was not found). | `missing-binary` | Install the configured CLI, then run `splitbrief doctor` again. |
+| Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | `untrusted-path` | Trust the exact CLI executable identity, then run `splitbrief doctor` again. |
+| Installed CLI version is outside the tested or qualified range. | `incompatible-version` | Install the tested CLI version, then run `splitbrief doctor` again. |
+| Required auth channel is not satisfied in the staged runner environment. | `unauthenticated` | Authenticate the CLI in the staged runner environment, then run `splitbrief doctor` again. |
+| Auth probe could not determine login state. | `auth-unknown` | Verify CLI authentication in the staged runner environment, then run `splitbrief doctor` again. |
+| Provider `apiBase` violates the declared endpoint policy (wrong scheme, origin, or redirect target). | `endpoint-invalid` | Fix the provider endpoint to match its declared policy, then run `splitbrief doctor` again. |
+| Environment credential prefix or family does not match the declared provider. | `credential-family-mismatch` | Use a credential that matches the declared provider family, then run `splitbrief doctor` again. |
+| CLI or API output protocol error, including a missing terminal result line. | `protocol-failure` | Check the CLI or provider version and output protocol, then run `splitbrief doctor` again. |
+| Provider returned quota or rate-limit pressure (for example HTTP 429). | `quota-rate-limit` | Wait for quota or rate limits to reset, reduce request volume, or switch providers, then run `splitbrief doctor` again. |
+| Runner configuration contains mutually exclusive CLI arguments. | `conflicting-args` | Remove conflicting runner arguments from the config, then run `splitbrief doctor` again. |
+
+### Runner `state` outcomes (workflow commands)
+
+During `start`, `spec`, `resume`, and other planner/implementer invocations, distinguishable subprocess outcomes use `state` (not readiness `stateId`). Remediation strings match `src/engine/runners/errors.ts`.
+
+| Symptom (what you see) | `state` | Copyable remediation |
+|---|---|---|
+| CLI stdout, stderr, or protocol event stream exceeded the configured byte or line budget. | `output-budget-breach` | Reduce the requested output or increase the configured output budget. |
+| Implementer completed without staging the expected working-tree change. | `no-staged-change` | Make the requested change in the staged project, then retry. |
+
+Other runner outcomes (`spawn-not-found`, `protocol-failure`, `incompatible-version`, `unauthenticated`, and others) overlap readiness families above or are documented in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
+
+### Canonical support documentation
+
+| Topic | Canonical doc |
+|---|---|
+| Admitted CLI tools, tested versions, readiness probes | [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) |
+| Endpoint policy, runner args, conflicting-flag validation | [CONFIGURATION.md](./CONFIGURATION.md) |
+| Credential resolution and provider families | [API-KEYS.md](./API-KEYS.md) |
+| `doctor --json` fields, exit codes, CLI flag reference | [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor) |
+
+Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`.
+
 ---
 
 ## Setup and install
@@ -20,7 +85,7 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 
 **Prevention:** Pin the engine in your shell profile via `nvm`/`fnm`. The `package.json` `engines.node` field already declares the minimum; add a `.nvmrc` if you frequently switch projects.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [CONTRIBUTING.md](../CONTRIBUTING.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [CONTRIBUTING.md](https://github.com/b4r7x/splitbrief/blob/main/CONTRIBUTING.md).
 
 ---
 
@@ -62,12 +127,12 @@ Each entry is structured as **Symptom → Likely cause → Fix → Prevention �
 **Fix:**
 1. Read the `Next action` line. It points to `splitbrief init`, config repair, or cleaning/isolating the repo.
 2. For doctor-only missing config warnings, run `splitbrief init` or `splitbrief init --reconfigure`.
-3. For invalid config, fix `.splitbrief/config.yaml` and re-run `splitbrief doctor --json` to verify.
+3. For invalid config, fix `.splitbrief/config.yaml` and re-run `splitbrief doctor --json` to verify (`stateId` / `remediation` per check).
 4. For active-session blockers, run `splitbrief status`, then `splitbrief resume` or `splitbrief attach <session-id>` if the run is still live.
 
 **Prevention:** Run `splitbrief doctor` after changing runner config or before CI starts a headless run.
 
-**See also:** [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor), [CONFIGURATION.md](./CONFIGURATION.md).
+**See also:** [Run readiness and doctor diagnostics](#run-readiness-and-doctor-diagnostics), [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor), [CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -919,7 +984,7 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 **Prevention:** Treat the post-session commit step as a manual review checkpoint, not a chore to automate away.
 
-**See also:** [CLAUDE.md](../CLAUDE.md) ("CRITICAL — NEVER COMMIT, NEVER STAGE"), `.claude/hooks/block-git-commits.sh`.
+**See also:** [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) ("CRITICAL — NEVER COMMIT, NEVER STAGE").
 
 ---
 
@@ -934,7 +999,7 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 **Prevention:** Agree on a commit convention up front and apply it consistently.
 
-**See also:** [CONTRIBUTING.md](../CONTRIBUTING.md).
+**See also:** [CONTRIBUTING.md](https://github.com/b4r7x/splitbrief/blob/main/CONTRIBUTING.md).
 
 ---
 
@@ -1002,21 +1067,20 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 ---
 
-## Config and migration
+## Config
 
 ### Symptom: Config rejected with a Zod schema error mentioning `version`
 
-**Likely cause:** Your `.splitbrief/config.yaml` has an unsupported `version` or an old field shape that cannot be migrated in memory.
+**Likely cause:** Your `.splitbrief/config.yaml` declares a version other than `3`, or uses a field shape the schema no longer accepts. There is no upgrade path — the load fails closed.
 
 **Fix:**
 1. Read the error — it states the expected `version` and the field that broke.
-2. For supported older shapes, start SPLITBRIEF normally; the loader migrates them in memory and later config writes use the current shape.
-3. If the version is unsupported, regenerate from scratch (`splitbrief init --reconfigure`) and merge your customizations back manually.
-4. Keep a copy of the old config under version control in case you need to diff.
+2. Regenerate from scratch (`splitbrief init --reconfigure`) and merge your customizations back manually.
+3. Keep a copy of the old config under version control in case you need to diff.
 
 **Prevention:** After a version bump, run `splitbrief doctor` and follow any config warning it reports.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/MIGRATION.md](./MIGRATION.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 

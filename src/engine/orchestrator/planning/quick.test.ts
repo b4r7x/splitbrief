@@ -265,7 +265,7 @@ describe('runQuickPlanning', () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'quick', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'quick', approve: 'none' },
     });
     const initial = createInitialState('feature');
 

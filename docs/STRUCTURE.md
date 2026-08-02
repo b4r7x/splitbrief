@@ -79,7 +79,6 @@ src/cli/
 │   ├── spec.ts
 │   ├── init.ts
 │   ├── status.ts
-│   ├── migrate.ts     # thin wrapper; business logic in core/migration/executor.ts
 │   └── …              # plus attach, continue, ps, doctor, mcp, and more — see the rg pointer above
 ├── rpc/               # attached-client RPC: reader/writer framing, gates, command dispatch, run loop
 │   ├── run/
@@ -215,16 +214,6 @@ src/core/sessions/
     ├── schemas.ts     # TreeEntryEnvelope + EntryId schemas
     └── store.ts       # in-memory tree store
 ```
-
-### `src/core/migration/` — pre-v3 state migration
-
-```
-src/core/migration/
-├── legacy.ts          # pure helpers: deriveSessionId, migrateState, migrateEvents
-└── executor.ts        # business logic for the migrate command (orchestrates legacy helpers + I/O)
-```
-
-The `migrate` subcommand handler in `cli/commands/migrate.ts` is a thin wrapper: it registers the command with commander and delegates to `executor.ts`. `maybeMigrate()` (used by start/resume) also lives in `executor.ts` — multiple consumers justify the domain placement.
 
 ### `src/utils/` — generic primitives
 
@@ -648,7 +637,7 @@ Instead, organize the file so that related exports are near each other — the o
 
 **Allowed comments**: non-obvious WHY, invariants, workarounds, TSDoc on public API, required legal notices. **Banned**: section banners, "// added for X flow", "// used by Y caller", restatements of what the code does.
 
-See [CLAUDE.md](../CLAUDE.md) for the full comment policy.
+See [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) for the full comment policy.
 
 ## References
 

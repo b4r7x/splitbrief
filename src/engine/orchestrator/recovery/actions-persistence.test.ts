@@ -327,7 +327,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
       action: 'route-bigger-worker',
       bus,
       config: {
-        version: 2,
+        version: 3,
         planner: { kind: 'cli', tool: 'claude-code' },
         implementer: {
           kind: 'api',
@@ -362,10 +362,7 @@ describe('applyRecoveryAction: persisted success effects', () => {
         },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: {
-          autoApproveSpec: false,
-          autoApprovePlan: false,
           maxRetries: 3,
-          commitStrategy: 'none',
           persistTranscript: true,
           compactionFormat: 'auto',
           mode: 'standard',

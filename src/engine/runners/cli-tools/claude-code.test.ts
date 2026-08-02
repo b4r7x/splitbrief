@@ -67,11 +67,13 @@ describe('Claude Code role adapters', () => {
       '--label',
       'fixture',
     ]);
-    expect(claudeCodePlannerAdapter.validateArgs(plannerArgs)).toEqual({ valid: true });
-    expect(claudeCodePlannerAdapter.validateArgs([...plannerArgs, '--model', 'other'])).toEqual({
-      valid: false,
-      conflicts: ['--model'],
+    const plannerBase = plannerArgs.slice(0, -2);
+    expect(claudeCodePlannerAdapter.validateArgs(plannerArgs, plannerBase)).toEqual({
+      valid: true,
     });
+    expect(
+      claudeCodePlannerAdapter.validateArgs([...plannerArgs, '--model', 'other'], plannerBase),
+    ).toEqual({ valid: false, conflicts: ['--model'] });
 
     const implementerArgs = claudeCodeImplementerAdapter.buildArgs({
       prompt: '<brief>',
@@ -90,9 +92,15 @@ describe('Claude Code role adapters', () => {
       '--label',
       'fixture',
     ]);
-    expect(claudeCodeImplementerAdapter.validateArgs(implementerArgs)).toEqual({ valid: true });
+    const implementerBase = implementerArgs.slice(0, -2);
+    expect(claudeCodeImplementerAdapter.validateArgs(implementerArgs, implementerBase)).toEqual({
+      valid: true,
+    });
     expect(
-      claudeCodeImplementerAdapter.validateArgs([...implementerArgs, '--permission-mode', 'skip']),
+      claudeCodeImplementerAdapter.validateArgs(
+        [...implementerArgs, '--permission-mode', 'skip'],
+        implementerBase,
+      ),
     ).toEqual({ valid: false, conflicts: ['--permission-mode'] });
   });
 });

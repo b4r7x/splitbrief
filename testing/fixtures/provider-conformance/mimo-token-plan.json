@@ -1,0 +1,17 @@
+{
+  "rawCapture": {
+    "candidateId": "mimo-token-plan",
+    "role": "implementer",
+    "contractSha256": "c7756d5b151cef25a5a5304594daf4fdef82865d548c5508c087a79615447385",
+    "stdout": "raw conformance omitted\n",
+    "stderr": "missing configured provider endpoint"
+  },
+  "productionConformance": {
+    "candidateId": "mimo-token-plan",
+    "role": "implementer",
+    "contractSha256": "c7756d5b151cef25a5a5304594daf4fdef82865d548c5508c087a79615447385",
+    "stdout": "",
+    "stderr": "missing configured provider endpoint"
+  },
+  "verdict": "OMIT"
+}

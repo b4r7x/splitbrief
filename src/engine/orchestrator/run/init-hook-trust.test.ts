@@ -52,7 +52,7 @@ function makeInitArgs(
   const sessionId = 'test-session';
   const config = makeConfig({
     validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-    workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+    workflow: { mode: 'quick', persistTranscript: false },
     ...(hooks !== undefined && { hooks }),
   });
   const { callbacks } = makeCallbacks();
@@ -121,7 +121,7 @@ describe('engine-level hook trust gate', () => {
         model: 'agent-default',
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+      workflow: { mode: 'quick', persistTranscript: false },
       hooks: HOOK,
     });
     const args = makeInitArgs(projectDir, HOOK, { allowHooks: true, config });
@@ -147,7 +147,7 @@ describe('engine-level hook trust gate', () => {
         model: 'agent-default',
       },
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false, commitStrategy: 'none' },
+      workflow: { mode: 'quick', persistTranscript: false },
       hooks: HOOK,
     });
     const args = makeInitArgs(projectDir, HOOK, {

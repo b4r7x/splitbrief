@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { getInvariantGates, runInvariantGates, type Gate } from './check-invariants.js';
 
 describe('check-invariants', () => {
@@ -140,5 +143,79 @@ describe('check-invariants', () => {
     expect(log).toHaveBeenCalledWith(
       '  ✗ [27] Maintained tree uses only canonical SPLITBRIEF identity: command failed (expected 0) FAIL',
     );
+  });
+
+  it('registers architecture and transport gates 28 through 35', () => {
+    const ids = ['28', '29', '30', '31', '32', '33', '34', '35'] as const;
+    for (const id of ids) {
+      expect(getInvariantGates(id)).toHaveLength(1);
+    }
+  });
+
+  it('runs legacy CLI gate 28 through the fail-closed command runner', () => {
+    const legacyGates = getInvariantGates('28');
+    const execCommand = vi.fn(() => {
+      throw new Error('rg failed');
+    });
+    const log = vi.fn();
+
+    expect(runInvariantGates(legacyGates, execCommand, log)).toBe(1);
+    expect(execCommand).toHaveBeenCalledWith(
+      '{ rg -n "cli-tools\\.js|CLI_TOOLS|clampPromptForArgv" src testing || true; test -e src/engine/runners/cli-tools.ts && printf \'1\\n\' || true; } | wc -l',
+    );
+    expect(log).toHaveBeenCalledWith(
+      '  ✗ [28] Zero legacy CLI_TOOLS / cli-tools.ts / clampPromptForArgv: command failed (expected 0) FAIL',
+    );
+  });
+
+  it('passes architecture gates 28 through 35 on the maintained tree', () => {
+    const architectureGates = [
+      ...getInvariantGates('28'),
+      ...getInvariantGates('29'),
+      ...getInvariantGates('30'),
+      ...getInvariantGates('31'),
+      ...getInvariantGates('32'),
+      ...getInvariantGates('33'),
+      ...getInvariantGates('34'),
+      ...getInvariantGates('35'),
+    ];
+    const log = vi.fn();
+
+    expect(runInvariantGates(architectureGates, undefined, log)).toBe(0);
+    for (const gate of architectureGates) {
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining(`[${gate.id}] ${gate.description}: 0 (expected 0) PASS`),
+      );
+    }
+  });
+
+  it('gate 33 detects a commercial metadata fetch retargeted at a synthetic tree', () => {
+    const root = mkdtempSync(join(tmpdir(), 'splitbrief-gate-33-'));
+    try {
+      mkdirSync(join(root, 'engine/providers'), { recursive: true });
+      writeFileSync(
+        join(root, 'engine/providers/pricing.ts'),
+        'const pricing = await fetchJsonWithTimeout(PRICING_URL, 5_000);\n',
+      );
+      writeFileSync(join(root, 'engine/providers/terms.ts'), 'export const termsURL = TERMS;\n');
+      const [gate] = getInvariantGates('33');
+      if (gate === undefined) throw new Error('gate 33 is not registered');
+      const log = vi.fn();
+
+      expect(
+        runInvariantGates(
+          [{ ...gate, command: gate.command.replaceAll('src/', `${root}/`) }],
+          undefined,
+          log,
+        ),
+      ).toBe(1);
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '[33] No runtime commercial metadata URL fetch outside models.dev module: 2 (expected 0) FAIL',
+        ),
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

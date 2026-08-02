@@ -7,6 +7,7 @@ import {
   parseOutputFormatOption,
   parsePositiveIntegerOption,
 } from './options.js';
+import { runCommand } from '#testing/helpers/commander.js';
 
 describe('parseNumberOption', () => {
   it('parses a finite numeric string', () => {
@@ -76,5 +77,20 @@ describe('assertModeFlagsExclusive', () => {
     {},
   ])('accepts %o', (opts) => {
     expect(() => assertModeFlagsExclusive(opts)).not.toThrow();
+  });
+});
+
+describe('removed --auto flag', () => {
+  it.each([
+    'start',
+    'spec',
+    'resume',
+    'continue',
+    'last',
+  ])('rejects --auto on the %s command', async (command) => {
+    const { exitCode, stderr } = await runCommand([command, '--auto', 'add health endpoint']);
+
+    expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/unknown option.*--auto/i);
   });
 });

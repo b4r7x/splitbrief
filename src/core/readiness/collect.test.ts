@@ -202,30 +202,29 @@ describe('collectReadiness config loader warnings', () => {
     expect(configWarnings[0]?.summary).toContain('overly permissive');
   });
 
-  it('surfaces a v2 migration warning exactly once', async () => {
+  it('reports an unsupported config version as a blocking invalid config', async () => {
     writeConfigYaml(tempDir, {
       version: 2,
       planner: { kind: 'cli', tool: 'claude-code' },
       implementer: {
         kind: 'api',
         provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
         apiBase: 'http://localhost:11434/v1',
         model: 'qwen2.5-coder:7b',
       },
       workflow: {
-        autoApproveSpec: false,
-        autoApprovePlan: false,
         maxRetries: 3,
-        commitStrategy: 'none',
       },
     });
 
     const { report } = await collectReadiness({ projectDir: tempDir });
-    const configWarnings = flattenReadinessChecks(report.sections).filter(
-      (check) => check.id === 'config.warning',
+    const invalid = flattenReadinessChecks(report.sections).find(
+      (check) => check.id === 'config.invalid',
     );
 
-    expect(configWarnings).toHaveLength(1);
-    expect(configWarnings[0]?.summary).toContain('config.version 2 is deprecated');
+    expect(invalid?.severity).toBe('blocker');
+    expect(invalid?.details?.[0]).toContain('Unsupported config version: 2');
   });
 });

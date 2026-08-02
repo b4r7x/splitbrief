@@ -211,7 +211,7 @@ Two complementary paths:
 
 **`saveState()`** (`src/core/state/persistence.ts`) — writes `state.json` on every phase transition via `transitionAndSave()`. This is the resume source of truth. `splitbrief resume` reads this file to know what phase, which tasks, and what progress. It's overwritten, not appended.
 
-A persisted changed-files baseline has three provenance states: absent uses legacy commit-subject discovery, `head: null` records a known unborn start, and a SHA records the exact run-start commit.
+A persisted changed-files baseline has two provenance states: `head: null` records a known unborn start, and a SHA records the exact run-start commit. State without a baseline is rejected at final review (`finalReviewError.missingRunBaseline`) rather than reconstructed from commit subjects.
 
 `runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones.
 

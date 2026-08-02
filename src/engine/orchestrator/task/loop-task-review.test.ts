@@ -32,7 +32,7 @@ function setupProject(): { projectDir: string; sessionId: string } {
   return { projectDir, sessionId };
 }
 
-const defaultWorkflow = { commitStrategy: 'none' as const, maxRetries: 2 };
+const defaultWorkflow = { maxRetries: 2 };
 
 describe('runTaskLoop', { timeout: 90_000 }, () => {
   it('default taskReview none does not emit task review gates after successful tasks', async () => {

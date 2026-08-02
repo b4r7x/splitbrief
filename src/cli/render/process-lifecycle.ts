@@ -21,20 +21,34 @@ interface RestoreTerminalOptions {
 
 type CleanupStep = () => void | Promise<void>;
 
-async function runCleanupStep(step: CleanupStep): Promise<void> {
+interface CleanupFailure {
+  error: unknown;
+}
+
+async function settleCleanupStep(step: CleanupStep): Promise<CleanupFailure | undefined> {
   try {
     await step();
-  } catch {
-    // Ancillary cleanup is best-effort, but every step must run before cleanup completes.
+    return undefined;
+  } catch (error) {
+    return { error };
   }
 }
 
+async function runCleanupStep(step: CleanupStep): Promise<void> {
+  // Ancillary cleanup is best-effort, but every step must run before cleanup completes.
+  await settleCleanupStep(step);
+}
+
+// A process group that survives reaping is reported to the caller, but it must not cost the user
+// the remaining owners: the terminal is restored and telemetry flushed first, then the failure is
+// surfaced.
 async function cleanupTuiProcess(restore: CleanupStep): Promise<void> {
   await runCleanupStep(teardownStores);
-  await killAllProcesses();
+  const reaping = await settleCleanupStep(killAllProcesses);
   await runCleanupStep(awaitActiveWorkflowShutdown);
   await runCleanupStep(restore);
   await runCleanupStep(flushOtel);
+  if (reaping !== undefined) throw reaping.error;
 }
 
 export function createTuiCleanup(deps: { restore: CleanupStep }): () => Promise<void> {
@@ -61,16 +75,23 @@ export function restoreTerminal(options: RestoreTerminalOptions): void {
 
 // Fires when Ctrl+C reaches the OS instead of Ink (a child owns the terminal, so raw
 // mode is off) or when an external `kill` arrives. Awaits the shared cleanup once, then exits
-// with the conventional 128+signal code.
+// with the conventional 128+signal code. A cleanup that fails is reported and still exits:
+// withholding the exit would leave the user on the alternate screen with a dead Ctrl+C, because
+// every later signal receives the same memoized promise.
 export function createTerminationHandler(deps: {
   cleanup: () => Promise<void>;
+  reportCleanupFailure: (error: unknown) => void;
   exit: (code: number) => void;
 }): (signal: TerminationSignal) => Promise<void> {
   let pending: Promise<void> | undefined;
   return (signal) => {
     pending ??= (async () => {
-      await deps.cleanup();
-      deps.exit(SIGNAL_EXIT_CODE[signal]);
+      const failure = await settleCleanupStep(deps.cleanup);
+      try {
+        if (failure !== undefined) deps.reportCleanupFailure(failure.error);
+      } finally {
+        deps.exit(SIGNAL_EXIT_CODE[signal]);
+      }
     })();
     return pending;
   };
@@ -83,13 +104,15 @@ export function createTerminationHandler(deps: {
 export function createCrashHandler(deps: {
   cleanup: () => Promise<void>;
   report: (reason: unknown) => void;
+  reportCleanupFailure: (error: unknown) => void;
   exit: (code: number) => void;
 }): (reason: unknown) => Promise<void> {
   let pending: Promise<void> | undefined;
   return (reason) => {
     pending ??= (async () => {
-      await deps.cleanup();
+      const failure = await settleCleanupStep(deps.cleanup);
       try {
+        if (failure !== undefined) deps.reportCleanupFailure(failure.error);
         deps.report(reason);
       } finally {
         deps.exit(1);

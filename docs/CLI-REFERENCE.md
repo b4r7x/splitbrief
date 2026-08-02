@@ -32,16 +32,15 @@ splitbrief — Cost-optimized AI coding orchestrator (v0.1.0)
 | 8 | `splitbrief last` | Attach or resume the most recent session. |
 | 9 | `splitbrief stats` | Show cumulative cost savings across all sessions. |
 | 10 | `splitbrief export` | Export a session as an HTML report. |
-| 11 | `splitbrief migrate` | Migrate pre-v3 `.splitbrief/current/` state to per-session folders. |
-| 12 | `splitbrief handoff` | Export a Handoff Pack for an external coding agent. |
-| 13 | `splitbrief snapshot` | Create / list / restore / diff working-tree snapshots. |
-| 14 | `splitbrief approval` | List or clear sticky approval grants. |
-| 15 | `splitbrief mcp` | Run the MCP resource and evidence-tool server. |
-| 16 | `splitbrief worktree` | List / switch / path / remove `.trees/<slug>` git worktrees. |
-| 17 | `splitbrief attach` | Attach a TUI client to a detached background session. |
-| 18 | `splitbrief detach` | Detach a TUI client without stopping the background server. |
-| 19 | `splitbrief ps` | List sessions in the current project with status. |
-| 20 | `splitbrief doctor` | Check run readiness without creating a workflow session. |
+| 11 | `splitbrief handoff` | Export a Handoff Pack for an external coding agent. |
+| 12 | `splitbrief snapshot` | Create / list / restore / diff working-tree snapshots. |
+| 13 | `splitbrief approval` | List or clear sticky approval grants. |
+| 14 | `splitbrief mcp` | Run the MCP resource and evidence-tool server. |
+| 15 | `splitbrief worktree` | List / switch / path / remove `.trees/<slug>` git worktrees. |
+| 16 | `splitbrief attach` | Attach a TUI client to a detached background session. |
+| 17 | `splitbrief detach` | Detach a TUI client without stopping the background server. |
+| 18 | `splitbrief ps` | List sessions in the current project with status. |
+| 19 | `splitbrief doctor` | Check run readiness without creating a workflow session. |
 
 ---
 
@@ -62,7 +61,7 @@ Launch a complete plan-and-implement workflow. Without a feature argument the TU
 ### Usage
 
 ```
-splitbrief start [feature] [--mode <mode>] [--auto] [--approve <level>] \
+splitbrief start [feature] [--mode <mode>] [--approve <level>] \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
   [--planner-output-format <format>] [--planner-context-length <tokens>] \
@@ -80,8 +79,7 @@ splitbrief start [feature] [--mode <mode>] [--auto] [--approve <level>] \
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
-| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. `full` is a legacy alias for `speckit`. See [WORKFLOW.md](./WORKFLOW.md). |
-| `--auto` | boolean | `false` | Auto-approve spec and plan document gates. Equivalent to `--approve none`. |
+| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. See [WORKFLOW.md](./WORKFLOW.md). |
 | `--approve <level>` | enum | `default` | Spec/plan document gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
 | `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `anthropic`, `openai`, `groq`, `together`, `deepseek`, `openrouter`, `shell`, `agent`, `agent-sdk`. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
@@ -135,7 +133,7 @@ splitbrief start "extract auth into module"
 splitbrief start --mode speckit --budget 2.00 "rewrite billing"
 
 # Headless / CI: stream NDJSON events
-splitbrief start --json --auto "fix flaky test in user.test.ts"
+splitbrief start --json --approve none "fix flaky test in user.test.ts"
 
 # RPC: external tool drives approvals and messages
 splitbrief start --rpc "add audit logging"
@@ -175,8 +173,7 @@ splitbrief start "sensitive customer migration" --worktree
 - `--detach` cannot be combined with `--json` or `--rpc`; `--json` and `--rpc` cannot be combined. `--detach`, `--json`, and `--rpc` each require a feature where they start a new workflow.
 - When `--detach` omits `--mode`, the workflow mode comes from `workflow.mode` in config (default `standard`), not a hard-coded CLI default.
 - After `start --detach`, the printed attach hint is a shell-safe argv line using `--project` (not a brittle `cd … && …` chain). Paths with spaces are quoted.
-- The startup pipeline calls `maybeMigrate(projectDir)` first, so a stale pre-v3 state is migrated on the fly.
-- Before planner or implementer calls, `start` computes Run Readiness. Blockers stop the run; warnings are shown in the TUI or emitted as JSON. The compact session artifact is `.splitbrief/sessions/<id>/readiness.json`.
+- Before planner or implementer calls, `start` computes Run Readiness. Blockers stop the run; warnings are shown in the TUI or emitted as JSON. The compact session artifact is `.splitbrief/sessions/<id>/readiness.json`. Stable `stateId` values and copyable remediations for missing-binary, untrusted-path, version, authentication, endpoint, credential-family, protocol, quota/rate, and conflicting-argument conditions are documented under `splitbrief doctor --json`.
 - Readiness inspects validation configuration and package-script posture only. It does not run `typecheck`, lint, tests, model calls, or network probes.
 - With `--json`, the first readiness line is `{ "type": "readiness_report", "report": ... }` before model-backed workflow events. With `--rpc`, readiness is wrapped as `{ "type": "status", "data": { "type": "readiness_report", "report": ... } }`.
 - `clearStaleSession()` runs before a new session begins. It blocks only a genuinely live active session; if the active session's lockfile has exited or the PID is gone, the stale `.splitbrief/active` pointer is cleared and start continues.
@@ -258,7 +255,7 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 splitbrief doctor [--project <dir>] [--json]
 ```
 
-Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. `doctor` is read-only: it does not create `.splitbrief/active`, session folders, worktrees, snapshots, migrations, config rewrites, validation subprocesses, planner calls, or implementer calls.
+Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. `doctor` is read-only: it does not create `.splitbrief/active`, session folders, worktrees, snapshots, config rewrites, validation subprocesses, planner calls, or implementer calls.
 
 ### Usage
 
@@ -271,31 +268,97 @@ splitbrief doctor [--project <dir>] [--json]
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
-| `--json` | boolean | `false` | Emit a stable JSON readiness report for automation. |
+| `--json` | boolean | `false` | Emit one stable JSON readiness object to stdout for automation (`doctor --json`). |
 
 ### Examples
 
 ```bash
 splitbrief doctor
 splitbrief doctor --project ../service-a
+
+# Automation: stable stateId + remediation per check
 splitbrief doctor --json
 ```
 
 ### Exit codes
 
 - `0` — ready or ready with warnings.
-- `1` — blocked by a hard local precondition such as no git repo, invalid config, missing config, or a live same-checkout session.
+- `1` — blocked by a hard local precondition such as no git repo, invalid config, missing config, or a live same-checkout session. With `--json`, the report is still written to stdout before exit.
 
 ### Files affected
 
 - **Reads:** git status, `.splitbrief/config.yaml` when present, `.splitbrief/active` when present, `package.json` when present.
 - **Writes:** none.
 
+### JSON output (`doctor --json`)
+
+`splitbrief doctor --json` writes a single JSON object to stdout (not NDJSON):
+
+```json
+{ "type": "readiness_report", "report": { "generatedAt": "...", "projectDir": "...", "status": "ready|blocked|warning", "counts": { ... }, "nextAction": { ... }, "checks": [ ... ], "metadata": { ... } } }
+```
+
+`report.checks` is a flat list; section titles from human output are omitted. Each check carries:
+
+| Field | Meaning |
+|---|---|
+| `id` | Stable check identifier (for example `runners.cli.claude-code.readiness`, `config.invalid`). |
+| `severity` | `ok`, `info`, `warning`, or `blocker`. |
+| `summary` | One-line human summary. |
+| `stateId` | Stable diagnostic state ID when the check maps to a known failure family; `null` otherwise. |
+| `remediation` | Copyable next action when `stateId` is set or the check supplies a fix; `null` otherwise. |
+| `details` | Optional detail lines (secret-redacted). |
+| `nextAction` | Optional structured pointer (`kind`, `label`, `command`). |
+| `modelSelection` | On `runners.<role>.configured`: `auto` (automatic selection), `explicit` (a model ID), or `unset` (no `model` key). Absent on other checks. |
+
+Human and JSON output share the same remediation strings. CLI executable identity paths and secrets are redacted from check text; `projectDir` is emitted verbatim as the absolute project directory.
+
+`start --json` emits the same `readiness_report` shape as its first stdout line before workflow events; `start --rpc` emits it inside the first `status` envelope. `resume` re-probes CLI readiness for start gates but emits no `readiness_report`. See [FEATURES.md](./FEATURES.md).
+
+### Readiness diagnostic state IDs
+
+CLI readiness, config validation, and provider posture checks map to stable `stateId` values. Prefer `stateId` and `remediation` in automation instead of parsing free-form text.
+
+| `stateId` | Condition | Copyable remediation |
+|---|---|---|
+| `missing-binary` | Configured CLI is not installed or not on PATH. | Install the configured CLI, then run `splitbrief doctor` again. |
+| `untrusted-path` | Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | Trust the exact CLI executable identity, then run `splitbrief doctor` again. |
+| `incompatible-version` | Installed CLI version is outside the tested or qualified range. | Install the tested CLI version, then run `splitbrief doctor` again. |
+| `unauthenticated` | Required auth channel is not satisfied in the staged runner environment. | Authenticate the CLI in the staged runner environment, then run `splitbrief doctor` again. |
+| `auth-unknown` | Auth probe could not determine login state. | Verify CLI authentication in the staged runner environment, then run `splitbrief doctor` again. |
+| `endpoint-invalid` | Provider `apiBase` violates the declared endpoint policy (wrong scheme, origin, or redirect target). | Fix the provider endpoint to match its declared policy, then run `splitbrief doctor` again. |
+| `credential-family-mismatch` | Environment credential prefix or family does not match the declared provider. | Use a credential that matches the declared provider family, then run `splitbrief doctor` again. |
+| `protocol-failure` | CLI or API output protocol error, including a missing terminal result line. | Check the CLI or provider version and output protocol, then run `splitbrief doctor` again. |
+| `quota-rate-limit` | Provider returned quota or rate-limit pressure (for example HTTP 429). | Wait for quota or rate limits to reset, reduce request volume, or switch providers, then run `splitbrief doctor` again. |
+| `conflicting-args` | Runner configuration contains mutually exclusive CLI arguments. | Remove conflicting runner arguments from the config, then run `splitbrief doctor` again. |
+
+CLI installation, trust, version, and auth mapping for admitted tools: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md). Endpoint and credential rules: [CONFIGURATION.md](./CONFIGURATION.md), [API-KEYS.md](./API-KEYS.md).
+
+### Runner outcome states (workflow commands)
+
+During `start`, `spec`, `resume`, and other commands that invoke planners or implementers, subprocess failures normalize to `RunnerOutcome` states in session events and `session.jsonl`. These differ from readiness `stateId` values but use the same copyable remediation pattern:
+
+| `state` | Condition | Copyable remediation |
+|---|---|---|
+| `output-budget-breach` | CLI stdout, stderr, or protocol event stream exceeded the configured byte or line budget. | Reduce the requested output or increase the configured output budget. |
+| `no-staged-change` | Implementer completed without staging the expected working-tree change. | Make the requested change in the staged project, then retry. |
+
+Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `incompatible-version`, `unauthenticated`, and others) are documented in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [ENGINE.md](./ENGINE.md). Symptom-oriented guidance: [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
+
+### See also
+
+- [FEATURES.md](./FEATURES.md) — when to run doctor and how readiness gates `start`.
+- [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) — admitted CLI readiness states and runner contracts.
+- [CONFIGURATION.md](./CONFIGURATION.md) — endpoint policy, runner args, and conflicting-flag validation.
+- [API-KEYS.md](./API-KEYS.md) — credential resolution and provider families.
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — symptom to state ID to remediation.
+
 ### Behavior notes
 
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
 - Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands.
 - Runner availability is conservative. Network/API and CLI auth probes are not required for a ready result.
+- `doctor --json` never prints decorative section banners; checks are serialized semantically for parsers.
 
 ---
 
@@ -415,7 +478,7 @@ splitbrief status --project ../other-repo --history
 
 ---
 
-## SPLITBRIEF explain
+## splitbrief explain
 
 **Synopsis**
 
@@ -493,7 +556,7 @@ Resume the current active interrupted session. Validates the saved state version
 ### Usage
 
 ```
-splitbrief resume [--mode <mode>] [--auto] [--approve <level>] \
+splitbrief resume [--mode <mode>] [--approve <level>] \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
   [--planner-output-format <format>] [--planner-context-length <tokens>] \
@@ -524,7 +587,7 @@ Resume accepts the same workflow override options as `start` except `--detach` a
 splitbrief resume
 
 # Resume in headless mode for CI re-runs
-splitbrief resume --json --auto
+splitbrief resume --json --approve none
 
 # Resume and drive gates programmatically
 splitbrief resume --rpc
@@ -551,7 +614,6 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 
 ### Behavior notes
 
-- `maybeMigrate(projectDir)` runs before state load, so legacy layouts are upgraded transparently.
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'splitbrief start'.`
 - `isResumable(state)` rejects any non-resumable phase (anything outside `RESUMABLE_PHASES` — `planning`, `implementing`, `final-review` — without `awaitingContinue`) with: `session '<id>' is in phase "<phase>" which cannot be resumed.`
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts.
@@ -575,7 +637,7 @@ Smart session continuity command. Figures out the right thing: attaches if the s
 |---|---|---|---|
 | `<session-id-or-number>` | string \| number (positional) | active/single running | Session ID, numeric alias from `ps`, or omitted to use `.splitbrief/active` or the only running session. |
 | `--project <dir>` | path | cwd | Project directory. |
-| `--auto` / `--approve <level>` | approval | mode default | Spec/plan document approval mode. |
+| `--approve <level>` | approval | mode default | Spec/plan document approval mode. |
 | `--allow-hooks` | boolean | `false` | Trust hook config without prompting. |
 | `--allow-repo-runners` | boolean | `false` | Trust repo-local shell/agent runner commands from project config for resumed workflow execution. |
 | `--json` | boolean | `false` | Resume an interrupted session in headless NDJSON mode. Live detached sessions still attach through the TUI. |
@@ -640,7 +702,7 @@ Attach or resume the newest lockfile-backed session. Use this when you want rece
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
-| Workflow flags | — | — | Same options as `continue`, including `--json`, `--rpc`, `--auto`, `--allow-hooks`, `--allow-repo-runners`, runner overrides, mode, budget, and approval controls. `--json` / `--rpc` apply only when the newest session resolves to interrupted resumable state. |
+| Workflow flags | — | — | Same options as `continue`, including `--json`, `--rpc`, `--approve`, `--allow-hooks`, `--allow-repo-runners`, runner overrides, mode, budget, and approval controls. `--json` / `--rpc` apply only when the newest session resolves to interrupted resumable state. |
 
 ### Examples
 
@@ -784,63 +846,6 @@ splitbrief export 2026-04-26-abcd1234 --out ./report.html
 
 ---
 
-## splitbrief migrate
-
-**Synopsis**
-
-```
-splitbrief migrate [-p <dir>]
-```
-
-One-shot migrator from the pre-v3 single-session layout (`.splitbrief/current/`) to the per-session layout (`.splitbrief/sessions/<id>/`). Idempotent — safe to run twice.
-
-### Usage
-
-```
-splitbrief migrate [-p <dir> | --project <dir>]
-```
-
-### Options
-
-| Flag | Type | Default | Description |
-|---|---|---|---|
-| `-p, --project <dir>` | path | `.` | Project directory to migrate. Resolved with `path.resolve()`. |
-
-### Examples
-
-```bash
-# Migrate the current repo
-splitbrief migrate
-
-# Migrate another checkout
-splitbrief migrate -p ../legacy-repo
-
-# Long-form
-splitbrief migrate --project /Users/me/code/app
-```
-
-### Exit codes
-
-- `0` — migration succeeded or nothing to migrate.
-- `1` — I/O failure during migration.
-
-### Files affected
-
-- **Reads:** `.splitbrief/current/` and any siblings.
-- **Writes:** new entries under `.splitbrief/sessions/<id>/`; cleans up legacy paths it no longer needs.
-
-### See also
-
-- [docs/CHANGELOG.md](./CHANGELOG.md) — schema versions.
-- `splitbrief start` and `splitbrief resume` — both call `maybeMigrate()` automatically; this command is for explicit, predictable migration.
-
-### Behavior notes
-
-- The `start` and `resume` commands invoke the same migration code via `maybeMigrate()`. Running `splitbrief migrate` directly is mostly useful for CI or for one-off cleanup before a manual sweep of `.splitbrief/`.
-- The default `--project` value is the literal `.`, then resolved via `path.resolve()`. Passing `--project ../foo` yields the absolute path of the parent.
-
----
-
 ## splitbrief handoff
 
 **Synopsis**
@@ -911,6 +916,7 @@ splitbrief handoff linear-ticket --allow-custom-renderer
 
 - [WORKFLOW.md](./WORKFLOW.md) — when to hand off vs. continue in SPLITBRIEF.
 - [TASK-CONTRACT.md](./TASK-CONTRACT.md) — contract every renderer must respect.
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — symptom to state ID to remediation; pre-export readiness via `splitbrief doctor --json` (`stateId` / `remediation`).
 
 ### Behavior notes
 
@@ -918,7 +924,7 @@ splitbrief handoff linear-ticket --allow-custom-renderer
 - The default target string is `spec-kit`. If you pass an unknown target without `--list`, the renderer factory throws and the command exits `1`.
 - `--mode default` refuses to clobber existing files. Use `append` for additive updates, `overwrite` to start clean.
 - `copilot-issue` writes `manifest.json` plus a single `issue.md` body. It does not emit per-task files.
-- Listing custom renderers does not trust them. Executing one requires `--allow-custom-renderer` or `trust.customRenderers: true`.
+- Listing custom renderers does not trust them. Executing one requires `--allow-custom-renderer` or `trust.customRenderers: true`. An untrusted renderer module fails with `handoff-custom-renderer-blocked` and exits `1`; it produces no readiness check. Remediation: pass `--allow-custom-renderer` after reviewing the module, or set `trust.customRenderers: true`.
 - Output prints `Handoff written to: <dir>` followed by every emitted relative file path, one per line.
 
 ---
@@ -1098,6 +1104,7 @@ splitbrief snapshot diff "before refactor" --no-color > /tmp/changes.diff
 
 - `splitbrief worktree` — physical isolation as an alternative to snapshots.
 - [DEBUGGING.md](./DEBUGGING.md) — reverting bad runs.
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — session recovery; readiness `stateId` / `remediation` via `splitbrief doctor --json`.
 
 ---
 
@@ -1242,6 +1249,7 @@ After binding, prints the URL, generated bearer token, listed sessions, and a re
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — MCP integration in the engine.
 - [Model Context Protocol specification](https://modelcontextprotocol.io/specification/draft) — protocol overview and safety guidance.
 - [MCP tools specification](https://modelcontextprotocol.io/specification/draft/server/tools) — tool surfaces are model-controlled and require explicit safety treatment; SPLITBRIEF's tool surface is limited to evidence ledger updates.
+- [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) — runner `state` outcomes; endpoint/credential policy in [CONFIGURATION.md](./CONFIGURATION.md).
 
 ### Behavior notes
 
@@ -1250,7 +1258,7 @@ After binding, prints the URL, generated bearer token, listed sessions, and a re
 - `tools/list` advertises five evidence tools: `report_evidence`, `report_progress`, `mark_task_done`, `report_validation_result`, and `report_error`. `tools/call` for these tools only mutates SPLITBRIEF's evidence ledger for existing sessions/tasks.
 - General tool execution stays inside the configured planner or implementer runner, where the user can review the runner's own tool UI and approval prompts.
 - `--port 0` is rejected (the validator requires `>= 1`); a free random port cannot be requested via this CLI.
-- MCP Streamable HTTP uses protocol version `2025-11-25`. Missing `MCP-Protocol-Version` request headers default to that version; unsupported versions return `400`.
+- MCP Streamable HTTP uses protocol version `2025-11-25`. Missing `MCP-Protocol-Version` request headers default to that version; unsupported versions return a `400` JSON error response. Remediation: align the client protocol version with `2025-11-25` or upgrade SPLITBRIEF.
 - `resources/list` always includes the sessions index and conditionally lists session resources that exist: `manifest.json` only when canonical `summary.json` and `state.json` are valid, plus `summary.json`, `state.json`, `spec.md`, `plan.md`, `tasks`, individual `tasks/<id>` blocks, `evidence.json`, and `drift-report.json`. When `workflow.persistTranscript: false`, the sessions index and `state.json` resource replace transcript-sensitive fields such as feature text, task prose, queued message text, and queued clarification questions.
 - Missing concrete session resources return MCP resource-not-found rather than empty success. The virtual `tasks` resource returns an empty JSON array when `tasks.md` is absent.
 
@@ -1395,6 +1403,7 @@ splitbrief worktree remove migration --force --delete-branch
 
 - `splitbrief start --worktree` — create one.
 - [WORKTREES.md](./WORKTREES.md) — design rationale.
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — symptom to state ID to remediation; pre-flight `splitbrief doctor --json` for `missing-binary`, `untrusted-path`, and `conflicting-args`.
 
 ### Behavior notes
 
@@ -1457,13 +1466,14 @@ splitbrief attach 2026-04-26-abcd1234 --project ../service-a
 
 - `splitbrief start --detach` — start a background session.
 - `splitbrief ps` — find running sessions.
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — symptom to state ID to remediation; runner `state` outcomes in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ### Behavior notes
 
 - Not supported on Windows: prints `splitbrief attach/detach/ps are not supported on Windows.` and exits `1`.
 - When the resolver finds zero running sessions: `no running sessions found; pass <session-id> explicitly`.
 - When more than one is running: `multiple running sessions (<a>, <b>); pass <session-id> explicitly`.
-- If the named session is dead, `showCrashDiagnostic()` prints the post-mortem before the exit.
+- If the named session is dead, `showCrashDiagnostic()` prints the post-mortem before the exit; cross-check with `splitbrief doctor --json` when readiness or runner `state` is in question.
 - Attach renders the workflow TUI as an IPC client, replays session events from disk, streams live events, forwards submitted input to the server, and detaches with Ctrl-D.
 
 ---
@@ -1512,6 +1522,7 @@ splitbrief detach 2026-04-26-abcd1234
 
 - `splitbrief attach` — connect to a running session.
 - `splitbrief ps` — find running sessions.
+- [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) — symptom to state ID to remediation.
 
 ---
 
@@ -1573,7 +1584,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 ### Behavior notes
 
 - Not supported on Windows: prints `splitbrief attach/detach/ps are not supported on Windows.` and exits `1`.
-- A session whose lockfile is missing reports `STATUS=unknown`, `PID=-`, `MODE=-`, `FEATURE=-`. This usually means the session crashed before writing the lock or was deleted manually.
+- A session whose lockfile is missing reports `STATUS=unknown`, `PID=-`, `MODE=-`, `FEATURE=-`. This usually means the session crashed before writing the lock or was deleted manually. For `STATUS=crashed` or `unknown`, use `splitbrief doctor --json` (`stateId` / `remediation`) and [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 - Sorting is by `startTimeMs DESC` — newest first, with sessions missing a start time anchored at `0`.
 - Column widths grow to fit content; very long feature descriptions push the table wider than the terminal (no truncation).
 
@@ -1581,14 +1592,17 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 
 ## Cross-cutting reference
 
+### Diagnostic state IDs and support
+
+Commands in this section share stable `stateId` / `state` identifiers and copyable `remediation` strings with `splitbrief doctor --json` (see [`splitbrief doctor`](#splitbrief-doctor)). Canonical references: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [CONFIGURATION.md](./CONFIGURATION.md), [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
+
 ### Common flags across multiple commands
 
 | Flag | Commands | Default | Notes |
 |---|---|---|---|
 | `--project <dir>` | most | cwd | Project directory. |
-| `-p, --project <dir>` | `migrate`, `export` | `.` / cwd | Short project-dir alias. |
+| `-p, --project <dir>` | `export` | `.` / cwd | Short project-dir alias. |
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | Accepts a session ID or numeric alias from `splitbrief ps`. When omitted, the active session is read from `.splitbrief/active`. |
-| `--auto` | `start`, `resume`, `continue`, `last` | `false` | Aliases spec/plan `--approve none`. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--allow-repo-runners` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Trust repo-local shell/agent runner execution from project config. Separate from hook trust. |
 | `--json` | `start`, `resume`, `continue`, `last`, `doctor`, `explain`, `stats` | `false` | Public NDJSON record stream for workflow commands; single JSON object for `doctor` / `explain` / `stats`. Workflow events are wrapped as `{ "type": "event", "data": ... }`. For `continue` / `last`, applies only when the target is an interrupted resumable session; live sessions attach through the TUI. |
@@ -1631,14 +1645,14 @@ When `start`, `resume`, or an interrupted resumable `continue` / `last` runs wit
 | `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work. |
 | `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work. |
 
-`full` is a legacy alias for `speckit`. Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
+Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
 
 ### Runner kinds (`--planner` / `--implementer`)
 
 | `kind` | What it is | Examples |
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
-| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio`, `openrouter`, `deepseek`, `groq`, `together`, `anthropic` |
+| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together` |
 | `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
 | `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |
 | `agent-sdk` | Anthropic Agent SDK library call | Via `@anthropic-ai/claude-agent-sdk` |

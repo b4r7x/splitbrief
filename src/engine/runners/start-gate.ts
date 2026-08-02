@@ -1,5 +1,4 @@
-import type { CliToolDetection } from '../../core/discovery/detection.js';
-import type { CliToolId } from '../../core/schemas/enums.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { CliReadinessResult } from '../../core/schemas/readiness.js';
 import { error } from '../../utils/error.js';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
@@ -38,30 +37,6 @@ export function assertCliStartGate(
 ): CliExecutableIdentity {
   if (gate === null || gate === undefined || gate.tool !== tool) return missingCliStartGate(tool);
   return gate.executable;
-}
-
-function gateFromDetection(tool: CliToolId, detection: CliToolDetection | undefined): CliStartGate {
-  if (
-    detection === undefined ||
-    detection.tool !== tool ||
-    detection.diagnostic.state !== 'ready' ||
-    detection.trust !== 'trusted' ||
-    detection.executable === null
-  ) {
-    throw error(
-      'cli-executable-untrusted',
-      `CLI runner "${tool}" has no trusted readiness identity; run readiness checks again before execution.`,
-      { tool },
-    );
-  }
-  return { tool, executable: detection.executable };
-}
-
-export function cliStartGateFromDetection(
-  tool: CliToolId,
-  detection: CliToolDetection | undefined,
-): CliStartGate {
-  return gateFromDetection(tool, detection);
 }
 
 export function cliStartGateFromReadiness(

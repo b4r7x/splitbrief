@@ -272,16 +272,19 @@ describe('process shutdown reaping', () => {
       stages.push(stage);
     };
     const cleanup = createTuiCleanup({ restore: () => afterReaping('terminal-restored') });
+    const reportCleanupFailure = (error: unknown) => stages.push(`cleanup-failed:${String(error)}`);
 
     if (scenario.kind === 'termination') {
       await createTerminationHandler({
         cleanup,
+        reportCleanupFailure,
         exit: (code) => afterReaping(`exit:${code}`),
       })('SIGTERM');
     } else {
       await createCrashHandler({
         cleanup,
         report: () => afterReaping('crash-reported'),
+        reportCleanupFailure,
         exit: (code) => afterReaping(`exit:${code}`),
       })(new Error('fixture crash'));
     }

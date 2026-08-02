@@ -12,9 +12,10 @@ import type { ParsedLine } from '../runners/types.js';
 import { processError } from '../../lib/process/errors.js';
 import { spawnWithStdin } from '../../lib/process/spawn/line-stream.js';
 import type { SpawnPipeFatalSignal } from '../../lib/process/spawn/lifecycle.js';
-import { redactSecrets } from '../../utils/redact.js';
+import { isCredentialEnvironmentName, redactSecrets } from '../../utils/redact.js';
 import {
   finishRunnerCallOutputLimit,
+  runnerCallLimitWarning,
   runnerCallLineOutputLimit,
   type RunnerCallOutputLimit,
 } from '../calls/output-limit.js';
@@ -45,14 +46,23 @@ interface SpawnAndCollectOptions {
   stderrMaxBytes?: number | undefined;
   stdoutLineMaxBytes?: number | undefined;
   outputBudgetBytes?: number | undefined;
+  /**
+   * Tear the child down when its output breaches a recorded limit or a channel
+   * retention bound (default). Callers that keep collecting past the bounds turn
+   * this off; the call is then warned about, not truncated.
+   */
+  abortOnOutputLimits?: boolean | undefined;
   /** Credential values are passed explicitly so callbacks never receive raw secrets. */
   credentialValues?: readonly string[] | undefined;
 }
 
 let callSequence = 0;
 
-function fatalLimitFromEvent(event: RunnerCallEvent): RunnerCallOutputLimit | null {
-  if (event.type !== 'call_warning') return null;
+function fatalLimitFromEvent(
+  event: RunnerCallEvent,
+  abortOnOutputLimits: boolean,
+): RunnerCallOutputLimit | null {
+  if (!abortOnOutputLimits || event.type !== 'call_warning') return null;
   const { code, message } = event.warning;
   if (
     code === 'runner_output_text_limit' ||
@@ -93,6 +103,7 @@ export async function spawnAndCollect(
 
   const credentialValues =
     opts.credentialValues ?? credentialValuesFromEnvironment(opts.env ?? process.env);
+  const abortOnOutputLimits = opts.abortOnOutputLimits ?? true;
   const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
   const redactCredential = (value: string): string => redactSecrets(explicitRedactor(value));
   let fatalLimit: RunnerCallOutputLimit | null = null;
@@ -100,7 +111,7 @@ export async function spawnAndCollect(
     context,
     credentialValues,
     onEvent: (event) => {
-      fatalLimit ??= fatalLimitFromEvent(event);
+      fatalLimit ??= fatalLimitFromEvent(event, abortOnOutputLimits);
       opts.onCallEvent?.(event);
     },
   });
@@ -148,6 +159,7 @@ export async function spawnAndCollect(
       stderrMaxBytes: opts.stderrMaxBytes,
       stdoutLineMaxBytes: opts.stdoutLineMaxBytes,
       outputBudgetBytes: opts.outputBudgetBytes,
+      abortOnByteLimit: abortOnOutputLimits,
       onStdoutLineOverflow: (overflow) => {
         const limit = runnerCallLineOutputLimit({
           code: 'stdout_line_overflow',
@@ -155,6 +167,12 @@ export async function spawnAndCollect(
           lineBytes: overflow.lineBytes,
           maxLineBytes: overflow.maxLineBytes,
         });
+        // The opt-out caller keeps collecting: only the overlong line is lost,
+        // and it asked for output limits not to tear its process down.
+        if (!abortOnOutputLimits) {
+          recorder.warning({ warning: runnerCallLimitWarning(limit) });
+          return undefined;
+        }
         fatalLimit = limit;
         finishRunnerCallOutputLimit(recorder, limit, {
           usage: parsedRecorder.usage,
@@ -212,18 +230,12 @@ export async function spawnAndCollect(
   return { ...result, sessionId: parsedRecorder.sessionId };
 }
 
-function credentialValuesFromEnvironment(environment: NodeJS.ProcessEnv): readonly string[] {
+export function credentialValuesFromEnvironment(environment: NodeJS.ProcessEnv): readonly string[] {
   const values = Object.entries(environment)
-    .filter(([name, value]) => value !== undefined && looksLikeCredentialEnvironmentName(name))
+    .filter(([name, value]) => value !== undefined && isCredentialEnvironmentName(name))
     .map(([, value]) => value)
     .filter((value): value is string => value !== undefined && value.length > 0);
   return [...new Set([...values, ...sandboxCredentialValues(environment)])];
-}
-
-function looksLikeCredentialEnvironmentName(name: string): boolean {
-  return /(?:^|[_.-])(?:API[_.-]?KEY|KEY|TOKEN|PASSWORD|PASSWD|SECRET|CREDENTIAL|AUTH(?:ORIZATION)?)(?:$|[_.-])/i.test(
-    name,
-  );
 }
 
 function redactThrownError(err: unknown, redactCredential: (value: string) => string): unknown {

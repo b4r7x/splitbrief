@@ -1,15 +1,20 @@
-import { createHash } from 'node:crypto';
 import { toTokenDelta } from '../../calls/usage.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
+import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
+import { validateCliArgs } from './validate-args.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { isRecord, optionalString } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 
 const CODEX_ID = 'codex' as const;
 const CODEX_COMMAND = 'codex' as const;
-const PROMPT_PLACEHOLDER = '<PROMPT>' as const;
-const CODEX_PROMPT_TRANSPORT = Object.freeze({ kind: 'argv', maxBytes: 120_000 } as const);
+const CODEX_PROMPT_TRANSPORT = Object.freeze({
+  kind: 'argv',
+  maxBytes: 120_000,
+  placement: 'positional',
+} as const);
 const CODEX_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 const CODEX_PROTECTED_FLAGS = new Set([
@@ -27,46 +32,13 @@ type CodexPlannerBuildInput = Parameters<CliPlannerAdapter<'codex'>['buildArgs']
 type CodexImplementerBuildInput = Parameters<CliImplementerAdapter<'codex'>['buildArgs']>[0];
 type CodexTerminalEvent = Extract<CliProtocolEvent, { type: 'result' }>;
 
-function promptPlaceholderConflict(value: string): boolean {
-  return value.includes(PROMPT_PLACEHOLDER) || /^<[^>]+>$/.test(value) || /\{prompt\}/i.test(value);
-}
-
-function protectedFlag(value: string): string | null {
-  if (CODEX_PROTECTED_FLAGS.has(value)) return value;
-  if (!value.startsWith('-')) return null;
-  const flag = value.split('=', 1)[0] ?? value;
-  return CODEX_PROTECTED_FLAGS.has(flag) ? flag : null;
-}
-
-function validateArgs(
-  invocationArgs: readonly string[],
-  baseArgs: readonly string[] | null,
-): Readonly<{ valid: true }> | Readonly<{ valid: false; conflicts: readonly string[] }> {
-  if (baseArgs === null) return { valid: false, conflicts: ['adapter-build-order'] };
-
-  const conflicts: string[] = [];
-  if (
-    invocationArgs.length < baseArgs.length ||
-    baseArgs.some((arg, index) => invocationArgs[index] !== arg)
-  ) {
-    conflicts.push('argument-order');
-  }
-
-  const promptCount = invocationArgs.filter((arg) => arg === PROMPT_PLACEHOLDER).length;
-  if (promptCount !== 1) conflicts.push('prompt-transport');
-  if (invocationArgs.some((arg) => arg !== PROMPT_PLACEHOLDER && promptPlaceholderConflict(arg))) {
-    conflicts.push('prompt-transport');
-  }
-
-  for (const arg of invocationArgs.slice(baseArgs.length)) {
-    const flag = protectedFlag(arg);
-    if (flag) conflicts.push(flag);
-  }
-
-  const uniqueConflicts = [...new Set(conflicts)];
-  return uniqueConflicts.length === 0
-    ? { valid: true }
-    : { valid: false, conflicts: uniqueConflicts };
+function validateArgs(invocationArgs: readonly string[], baseArgs: readonly string[]) {
+  return validateCliArgs({
+    invocationArgs,
+    baseArgs,
+    protectedFlags: CODEX_PROTECTED_FLAGS,
+    promptTransport: 'argv',
+  });
 }
 
 function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
@@ -107,17 +79,15 @@ function implementerBaseArgs(input: CodexImplementerBuildInput): string[] {
 }
 
 function createCodexPlannerAdapter(): CliPlannerAdapter<'codex'> {
-  let baseArgs: readonly string[] | null = null;
   return {
     descriptor: CLI_TOOL_CATALOG.codex,
     role: 'planner',
+    supportsSessionResume: true,
+    supportsEffort: false,
     promptTransport: CODEX_PROMPT_TRANSPORT,
-    buildArgs: (input) => {
-      const built = plannerBaseArgs(input);
-      baseArgs = built;
-      return [...built, ...input.configuredArgs];
-    },
-    validateArgs: (invocationArgs) => validateArgs(invocationArgs, baseArgs),
+    baseArgs: plannerBaseArgs,
+    buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
+    validateArgs,
     environment: {},
     outputContract: { kind: 'structured-terminal', terminalEvent: 'required' },
     parse: codexProtocolEvents,
@@ -140,17 +110,13 @@ function createCodexPlannerAdapter(): CliPlannerAdapter<'codex'> {
 }
 
 function createCodexImplementerAdapter(): CliImplementerAdapter<'codex'> {
-  let baseArgs: readonly string[] | null = null;
   return {
     descriptor: CLI_TOOL_CATALOG.codex,
     role: 'implementer',
     promptTransport: CODEX_PROMPT_TRANSPORT,
-    buildArgs: (input) => {
-      const built = implementerBaseArgs(input);
-      baseArgs = built;
-      return [...built, ...input.configuredArgs];
-    },
-    validateArgs: (invocationArgs) => validateArgs(invocationArgs, baseArgs),
+    baseArgs: implementerBaseArgs,
+    buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
+    validateArgs,
     environment: {},
     outputContract: { kind: 'structured-terminal', terminalEvent: 'required' },
     parse: codexProtocolEvents,
@@ -341,21 +307,6 @@ export type CodexCliConformanceCandidate = Readonly<{
   adapter: CliPlannerAdapter<'codex'> | CliImplementerAdapter<'codex'>;
 }>;
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (isRecord(value)) {
-    return `{${Object.keys(value)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
-
-function contractHash(contract: RawCodexCliContract): string {
-  return createHash('sha256').update(canonicalJson(contract), 'utf8').digest('hex');
-}
-
 function codexRawContract(role: 'planner' | 'implementer'): RawCodexCliContract {
   return {
     id: CODEX_ID,
@@ -365,7 +316,7 @@ function codexRawContract(role: 'planner' | 'implementer'): RawCodexCliContract 
     auth: { kind: 'env-or-native', env: ['OPENAI_API_KEY'] },
     rawInvocation:
       role === 'planner'
-        ? ['exec', '--json', '--cd', '.', PROMPT_PLACEHOLDER]
+        ? ['exec', '--json', '--cd', '.', CLI_PROMPT_SENTINEL]
         : [
             'exec',
             '--json',
@@ -374,7 +325,7 @@ function codexRawContract(role: 'planner' | 'implementer'): RawCodexCliContract 
             '--skip-git-repo-check',
             '--cd',
             '.',
-            PROMPT_PLACEHOLDER,
+            CLI_PROMPT_SENTINEL,
           ],
     promptTransport: 'argv',
     expectedRawTerminal: 'turn.completed',
@@ -390,14 +341,14 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly CodexCliConformanceCandidate[]
     id: CODEX_ID,
     role: 'planner',
     rawContract: codexPlannerRawContract,
-    contractSha256: contractHash(codexPlannerRawContract),
+    contractSha256: contractSha256(codexPlannerRawContract),
     adapter: codexPlannerAdapter,
   }),
   Object.freeze({
     id: CODEX_ID,
     role: 'implementer',
     rawContract: codexImplementerRawContract,
-    contractSha256: contractHash(codexImplementerRawContract),
+    contractSha256: contractSha256(codexImplementerRawContract),
     adapter: codexImplementerAdapter,
   }),
 ]);

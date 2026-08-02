@@ -214,7 +214,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |
 | `sessionsStore` | `project/sessions.ts` | `{ sessions, allSessions }` | `load()`, `loadAll()` |
 | `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()` |
-| `detectionStore` | `project/detection.ts` | `{ planners, implementers }` | `setDetection()` |
+| `detectionStore` | `project/detection.ts` | `{ cliTools, implementers }` | `setDetection()` |
 | `modelCacheStore` | `discovery/model-cache.ts` | `{ providers: Map, modelsDevCatalog, ... }` | `setProviderModels()`, `invalidateAll()` |
 
 ### Workflow actions module

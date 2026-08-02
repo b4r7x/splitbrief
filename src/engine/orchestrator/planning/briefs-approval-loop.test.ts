@@ -57,7 +57,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
     const initial = createInitialState('feature');
 
@@ -104,7 +104,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -151,7 +151,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const config = makeConfig({
       implementer: { contextLength: 200 },
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const { result, events } = await runPhase({ planner, callbacks, config });
@@ -182,7 +182,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       .mockResolvedValueOnce({ approved: true });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -230,7 +230,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
       implementer: { contextLength: 200 },
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -280,7 +280,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -334,7 +334,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     });
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -372,7 +372,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -408,7 +408,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
       .mockResolvedValueOnce({ approved: false });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -446,7 +446,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
     const initial = createInitialState('feature');
 
@@ -499,7 +499,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -550,7 +550,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -618,7 +618,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
 
     const result = await runPlanningPhase({
@@ -680,7 +680,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const { bus, events } = makeBusRecorder();
     const config = makeConfig({
-      workflow: { mode: 'standard', autoApproveSpec: true, autoApprovePlan: true },
+      workflow: { mode: 'standard', approve: 'none' },
     });
     const initial = createInitialState('feature');
 

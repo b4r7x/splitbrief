@@ -41,7 +41,7 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
     sessionId: proj.sessionId,
     config: makeConfig({
       validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { commitStrategy: 'none', maxRetries: 2 },
+      workflow: { maxRetries: 2 },
     }),
     callbacks,
     bus: makeBusRecorder().bus,

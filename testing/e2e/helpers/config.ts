@@ -41,13 +41,12 @@ export function makeE2eScenarioConfig(
   overrides: E2eScenarioConfigOverrides = {},
 ): Config {
   return {
-    version: 2,
+    version: 3,
     planner: e2ePlanner,
     implementer: e2eImplementer,
     ...overrides,
     workflow: {
       mode,
-      commitStrategy: 'none',
       maxRetries: 3,
       persistTranscript: true,
       taskReview: 'none',

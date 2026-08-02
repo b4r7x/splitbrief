@@ -18,7 +18,6 @@ import {
   CliConformanceCandidatesSchema,
   RawCliCandidateContract,
   UnregisteredCliCandidate,
-  cliContractSha256,
   replacePromptSentinel,
 } from '../../src/engine/runners/cli-tools/candidate-contract.js';
 
@@ -74,7 +73,7 @@ function adapter(role: 'planner' | 'implementer') {
   return {
     descriptor: { id: 'example-cli' },
     role,
-    promptTransport: { kind: 'argv' as const, maxBytes: 120_000 },
+    promptTransport: { kind: 'argv' as const, maxBytes: 120_000, placement: 'positional' as const },
     buildArgs: () => [CLI_PROMPT_SENTINEL],
     validateArgs: () => ({ valid: true as const }),
     environment: {},
@@ -231,7 +230,7 @@ describe('role-singular CLI contracts and prompt transport', () => {
       id: 'example-cli',
       role: 'implementer' as const,
       rawContract,
-      contractSha256: cliContractSha256(rawContract),
+      contractSha256: contractSha256(rawContract),
       adapter: adapter('implementer'),
     };
     expect(UnregisteredCliCandidate.parse(candidate)).toMatchObject({

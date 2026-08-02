@@ -33,7 +33,11 @@ describe('Aider role adapters', () => {
 
   it('keeps argv transport, text completion, and bounded probes explicit', () => {
     for (const adapter of [aiderPlannerAdapter, aiderImplementerAdapter]) {
-      expect(adapter.promptTransport).toEqual({ kind: 'argv', maxBytes: 120_000 });
+      expect(adapter.promptTransport).toEqual({
+        kind: 'argv',
+        maxBytes: 120_000,
+        placement: 'flag-value',
+      });
       expect(adapter.outputContract).toEqual({ kind: 'text-exit', successfulExitCodes: [0] });
       expect(adapter.probe.version).toEqual({
         command: ['aider', '--version'],
@@ -70,7 +74,7 @@ describe('Aider role adapters', () => {
       PROMPT,
       '--verbose',
     ]);
-    expect(aiderPlannerAdapter.validateArgs(args)).toEqual({ valid: true });
+    expect(aiderPlannerAdapter.validateArgs(args, args.slice(0, -1))).toEqual({ valid: true });
   });
 
   it('preserves implementer no-commit flags and appends an explicit model', () => {
@@ -90,28 +94,28 @@ describe('Aider role adapters', () => {
       '--verbose',
     ]);
     expect(args).not.toContain('--commit');
-    expect(aiderImplementerAdapter.validateArgs(args)).toEqual({ valid: true });
+    expect(aiderImplementerAdapter.validateArgs(args, args.slice(0, -1))).toEqual({ valid: true });
   });
 
   it('rejects reordered, protected, and alternate prompt arguments', () => {
-    const args = aiderPromptArgs({ role: 'implementer' });
-    expect(aiderImplementerAdapter.validateArgs([PROMPT, ...args])).toEqual({
+    const base = aiderPromptArgs({ role: 'implementer' });
+    expect(aiderImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...args, '--message', 'other'])).toEqual({
+    expect(aiderImplementerAdapter.validateArgs([...base, '--message', 'other'], base)).toEqual({
       valid: false,
       conflicts: ['--message'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...args, 'prefix-<PROMPT>'])).toEqual({
+    expect(aiderImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...args, '<OTHER>'])).toEqual({
+    expect(aiderImplementerAdapter.validateArgs([...base, '<OTHER>'], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });
-    expect(aiderImplementerAdapter.validateArgs([...args, PROMPT])).toEqual({
+    expect(aiderImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });

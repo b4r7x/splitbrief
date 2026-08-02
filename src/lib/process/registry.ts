@@ -280,80 +280,13 @@ export function abortProcess(
   signal: AbortSignal,
   options?: { group?: boolean },
 ): Promise<void> {
-  const group = options?.group ?? false;
-  const pid = activeProcesses.get(proc)?.pid ?? proc.pid;
-  if (signal.aborted) {
-    if (process.platform === 'win32') return Promise.reject(processTreeReapingLimitation());
-    return killProcess(proc, { group });
-  }
-  if (!usesProcessGroup(group, pid) && proc.exitCode !== null) return Promise.resolve();
-
+  const terminate = () =>
+    process.platform === 'win32'
+      ? Promise.reject(processTreeReapingLimitation())
+      : killProcess(proc, { group: options?.group ?? false });
+  if (signal.aborted) return terminate();
   return new Promise((resolve, reject) => {
-    let releasePoll: NodeJS.Timeout | undefined;
-    const cleanup = () => {
-      signal.removeEventListener('abort', onAbort);
-      proc.removeListener('close', onClose);
-      if (releasePoll !== undefined) clearInterval(releasePoll);
-    };
-    const finish = () => {
-      cleanup();
-      resolve();
-    };
-    const fail = (err: unknown) => {
-      cleanup();
-      reject(err);
-    };
-    const onAbort = () => {
-      if (process.platform === 'win32') {
-        fail(processTreeReapingLimitation());
-        return;
-      }
-      void killProcess(proc, { group }).then(finish, fail);
-    };
-    const onClose = () => {
-      if (!usesProcessGroup(group, pid)) {
-        finish();
-        return;
-      }
-      try {
-        if (!groupExists(pid)) {
-          finish();
-          return;
-        }
-      } catch (err) {
-        fail(
-          processError.platformLimitation(
-            {
-              operation: 'verify-absence',
-              target: 'process-group',
-              signal: null,
-            },
-            err,
-          ),
-        );
-        return;
-      }
-      releasePoll = setInterval(() => {
-        try {
-          if (!groupExists(pid)) finish();
-        } catch (err) {
-          fail(
-            processError.platformLimitation(
-              {
-                operation: 'verify-absence',
-                target: 'process-group',
-                signal: null,
-              },
-              err,
-            ),
-          );
-        }
-      }, REAP_POLL_MS);
-    };
-
-    signal.addEventListener('abort', onAbort, { once: true });
-    proc.once('close', onClose);
-    if (signal.aborted) onAbort();
+    signal.addEventListener('abort', () => void terminate().then(resolve, reject), { once: true });
   });
 }
 

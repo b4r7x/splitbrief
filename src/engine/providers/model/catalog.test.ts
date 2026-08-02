@@ -5,9 +5,32 @@ import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.j
 describe('resolveModelCatalog', () => {
   it('returns Claude Code aliases instead of stale pinned fallbacks', () => {
     const ids = resolveModelCatalog('claude-code').map((entry) => entry.id);
-    expect(ids).toEqual(expect.arrayContaining(['auto', 'sonnet', 'opus', 'opusplan']));
+    expect(ids).toEqual(expect.arrayContaining(['sonnet', 'opus', 'opusplan']));
+    expect(ids).not.toContain('auto');
     expect(ids).not.toContain('default');
     expect(ids).not.toContain('claude-opus-4-1-20250805');
+  });
+
+  it('keeps the openai default a real model id, never the automatic sentinel', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        openai: {
+          id: 'openai',
+          models: {
+            'gpt-5.4': {
+              id: 'gpt-5.4',
+              cost: { input: 2.5, output: 15 },
+              limit: { context: 400_000 },
+            },
+          },
+        },
+      },
+    });
+
+    const models = resolveModelCatalog('openai', cache);
+    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
+    expect(models[0]?.id).toBe('gpt-5.4');
+    expect(models[0]?.isDefault).toBe(true);
   });
 
   it('keeps Claude Code entries unpriced in the picker catalog', () => {
@@ -44,7 +67,7 @@ describe('resolveModelCatalog', () => {
     });
 
     const models = resolveModelCatalog('claude-code', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(true);
+    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
     expect(models.some((entry) => entry.id === 'claude-sonnet-4-6')).toBe(true);
     expect(models.some((entry) => entry.id === 'claude-opus-4-6')).toBe(true);
     expect(models.some((entry) => entry.id === 'claude-haiku-4-5')).toBe(false);
@@ -116,7 +139,7 @@ describe('resolveModelCatalog', () => {
     });
 
     const models = resolveModelCatalog('codex', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(true);
+    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
     expect(models.some((entry) => entry.id === 'gpt-5.1-codex-max')).toBe(true);
     expect(models.some((entry) => entry.id === 'text-embedding-3-large')).toBe(false);
   });
@@ -127,7 +150,7 @@ describe('resolveModelCatalog', () => {
     });
 
     const models = resolveModelCatalog('opencode', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(true);
+    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
     expect(models.some((entry) => entry.id === 'google/gemini-2.5-pro')).toBe(true);
   });
 
@@ -148,7 +171,7 @@ describe('resolveModelCatalog', () => {
     });
 
     const models = resolveModelCatalog('opencode', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(true);
+    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
     expect(models.some((entry) => entry.id === 'anthropic/claude-sonnet-4.6')).toBe(true);
     expect(models.find((entry) => entry.id === 'anthropic/claude-sonnet-4.6')?.source).toBe(
       'models-dev',

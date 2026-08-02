@@ -17,15 +17,11 @@ If you're new to SPLITBRIEF, read this in order: recipes 1–5 cover the basic w
 **Run:**
 
 ```bash
-# Not yet published on npm. Install from source:
-git clone https://github.com/b4r7x/splitbrief.git
-cd splitbrief
-npm install
-npm run build
-npm link
+npm install -g splitbrief               # or run it ad hoc with: npx splitbrief
 
 cd your-project
 splitbrief init                        # interactive wizard
+splitbrief doctor                      # verify config, CLI auth, and validation readiness
 splitbrief start "add a hello-world endpoint"
 ```
 
@@ -35,16 +31,16 @@ splitbrief start "add a hello-world endpoint"
 splitbrief init
   Detected: claude-code, codex, ollama
   Planner [claude-code] >  ↵
-  Implementer [ollama qwen2.5-coder:7b] >  ↵
+  Implementer [ollama qwen3-coder:30b] >  ↵
   Mode [standard] >  ↵
   Wrote .splitbrief/config.yaml
 ```
 
-`init` writes `.splitbrief/config.yaml` (`version: 3`) and creates `.splitbrief/`. The first `splitbrief start` then creates `.splitbrief/sessions/<session-id>/` and writes `.splitbrief/active`.
+`init` writes `.splitbrief/config.yaml` (`version: 3`) and creates `.splitbrief/`. The default planner is the admitted `claude-code` CLI (subscription-included billing; see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). The first `splitbrief start` then creates `.splitbrief/sessions/<session-id>/` and writes `.splitbrief/active`. Run `splitbrief doctor` after setup or runner changes — it is read-only and surfaces remediation copy for non-ready CLI/API states without starting a workflow.
 
 **Variations:** `splitbrief init --reconfigure` overwrites an existing config. To initialize another project, run `splitbrief init` from that project directory.
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/API-KEYS.md](./API-KEYS.md).
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/BOOTSTRAP.md](./BOOTSTRAP.md), [docs/API-KEYS.md](./API-KEYS.md).
 
 ---
 
@@ -220,10 +216,11 @@ Three events fire as spend grows: `budget_warning` at 80%, `budget_paused` at th
 
 ### 7. Use a cheap implementer
 
-**When:** you want an expensive planner (Claude / GPT) to compile briefs but a free local model to execute them.
+**When:** you want an expensive planner (Claude Code subscription) to compile briefs but a cheap hosted API model to execute them.
 
 **Setup (`.splitbrief/config.yaml`):**
 
+<!-- config-example: cheap-cloud-profiles -->
 ```yaml
 version: 3
 planner:
@@ -231,33 +228,52 @@ planner:
   tool: claude-code
 implementer:
   kind: api
-  provider: lm-studio
-  apiBase: http://localhost:1234/v1
-  model: qwen2.5-coder-7b-instruct
-  contextLength: 32768
-  temperature: 0.3
+  provider: groq
+  service: groq
+  offering: payg
+  apiBase: https://api.groq.com/openai/v1
+  model: openai/gpt-oss-120b
+implementerProfiles:
+  default: cheap-cloud
+  profiles:
+    cheap-cloud:
+      kind: api
+      provider: groq
+      service: groq
+      offering: payg
+      apiBase: https://api.groq.com/openai/v1
+      model: openai/gpt-oss-120b
+      label: Groq GPT OSS
+      costTier: cheap
+validation:
+  typecheck: true
+  lint: true
+  test: true
 ```
+
+`openai/gpt-oss-120b` on Groq is a bundled **`compatible-only`** row — T-080 recorded OMIT-NOT-APPLICABLE for it, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Set `GROQ_API_KEY` in your environment per [docs/API-KEYS.md](./API-KEYS.md) — never inline credentials in YAML. Named `implementerProfiles` persist in config; recovery can route a stuck task to another profile via `route-bigger-worker`. Groq is pay-as-you-go with provider-dependent billing; prompts leave your machine for hosted inference.
 
 **Run:**
 
 ```bash
-lms server start              # start LM Studio API
+splitbrief doctor              # verify claude-code auth and GROQ_API_KEY readiness
 splitbrief start "add a CSV exporter"
 ```
 
 **You'll see:**
 
 ```
-planner: claude-code
-implementer: lm-studio · qwen2.5-coder-7b-instruct (local)
-cost_update: planner $0.41 · implementer local
+planner: claude-code (cli)  · subscription, no API spend tracked
+implementer: groq · openai/gpt-oss-120b
+cost_update: planner unpriced · implementer $0.02
+validate · tsc ✓ lint ✓ test ✓
 ```
 
-The footer renders `local` instead of a dollar amount when the implementer is unpriced — SPLITBRIEF never invents fake savings.
+The planner bills through your Claude Code subscription, so its usage reads `unpriced` — never zero cost and never `local`, which is reserved for local backends. The implementer shows metered API spend when pricing metadata is available, and the session total reads `$0.02 + unpriced`.
 
-**Variations:** Swap `lm-studio` for `ollama` (`apiBase: http://localhost:11434/v1`) for an Ollama backend. Use Sonnet or Opus on the planner via `kind: api, provider: anthropic, model: claude-sonnet-4-6`.
+**Variations:** For local backends (`ollama`, `lm-studio`), see the [provider matrix](./CONFIGURATION.md#provider-matrix) and bundled catalog — like every bundled row, local defaults are **`compatible-only`**, not recommended. Swap the planner `tool` using the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
 
-**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §planner / §implementer.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §implementer / §implementerProfiles, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/API-KEYS.md](./API-KEYS.md).
 
 ---
 
@@ -267,7 +283,7 @@ The footer renders `local` instead of a dollar amount when the implementer is un
 
 **Run:**
 
-In the TUI, press `$` to open the cost drilldown. Or post-hoc:
+In the TUI, press `Ctrl+G` to open the cost drilldown. Or post-hoc:
 
 ```bash
 jq 'select(.type == "cost_update")' .splitbrief/sessions/<id>/session.jsonl | tail -20
@@ -276,7 +292,7 @@ splitbrief status --history
 
 **You'll see:**
 
-TUI `$` drilldown:
+TUI `Ctrl+G` drilldown:
 
 ```
 Cost breakdown
@@ -324,13 +340,22 @@ planner:
 implementer:
   kind: api
   provider: ollama
+  service: ollama
+  offering: local
   apiBase: http://localhost:11434/v1
-  model: qwen2.5-coder:7b
+  model: qwen3-coder:30b
+validation:
+  typecheck: true
+  lint: true
+  test: true
 ```
+
+`claude-code` is an admitted PASS CLI runner with subscription-included billing (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). The bundled Ollama default is **`compatible-only`** — selectable, but not a runtime recommendation (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Local implementers keep code on your machine; no API credential is required for default loopback Ollama.
 
 **Run:**
 
 ```bash
+splitbrief doctor              # verify claude-code session auth and ollama reachability
 splitbrief start "add input validation to the signup form"
 ```
 
@@ -338,13 +363,15 @@ splitbrief start "add input validation to the signup form"
 
 ```
 planner: claude-code (cli)  · subscription, no API spend tracked
+implementer: ollama · qwen3-coder:30b (local)
+validate · tsc ✓ lint ✓ test ✓
 ```
 
-`kind: cli` spawns `claude` as a subprocess with the brief on stdin. Spend goes through your subscription, so SPLITBRIEF shows `local` for planner cost too.
+`kind: cli` spawns `claude` as a subprocess with the brief on stdin. Spend goes through your subscription, so SPLITBRIEF shows the planner as `unpriced`; only the Ollama implementer reads `local`, and the session total reads `unpriced`.
 
-**Variations:** Other CLI tools: `tool: codex`, `opencode`, `aider`, `copilot`, `kilo-code`. Each is auto-detected by `splitbrief init`.
+**Variations:** Swap `tool` for any admitted CLI in the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix); `splitbrief init` auto-detects installed tools. For a hosted cloud implementer instead of local Ollama, use recipe 7.
 
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §7 Runner abstraction.
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md) §planner / §implementer, [docs/API-KEYS.md](./API-KEYS.md).
 
 ---
 
@@ -781,6 +808,8 @@ phase: planning  ← resumes with the message folded in
 
 ## Handoff to external agent
 
+Built-in handoff targets `claude-code` and `copilot-issue` correspond to admitted PASS CLI runners (`subscription-included` billing; see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). Tool-neutral targets (`spec-kit`, `agents-md`) export markdown packs without spawning a runner. Billing and API posture for mixed planner/implementer workflows: [CONFIGURATION.md](./CONFIGURATION.md).
+
 ### 23. Export brief to Claude Code
 
 **When:** you used SPLITBRIEF to compile the brief but want Claude Code to do the actual coding.
@@ -807,11 +836,11 @@ Handoff written to: .splitbrief/handoffs/claude-code
   tasks/T003.md
 ```
 
-The Claude Code renderer drops a `CLAUDE.md` and per-task `.md` files structured to be picked up by Claude's auto-context.
+The Claude Code renderer drops a `CLAUDE.md` and per-task `.md` files structured to be picked up by Claude's auto-context. The target name matches the admitted `claude-code` CLI id in the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
 
 **Variations:** `--out path/to/dir` redirects the output. `--mode overwrite` clobbers an existing pack; `--mode append` adds task files alongside.
 
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 Handoff packs, recipes 24–27.
+**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 Handoff packs, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), recipes 24–27.
 
 ---
 
@@ -836,7 +865,7 @@ Handoff written to: .splitbrief/handoffs/issue
   issue.md
 ```
 
-The `copilot-issue` renderer writes one Markdown issue body. It embeds selected task IDs, titles, files, acceptance criteria, constraints, and validation commands in `issue.md`; it does not emit `tasks/<id>.md` files.
+The `copilot-issue` renderer writes one Markdown issue body. It embeds selected task IDs, titles, files, acceptance criteria, constraints, and validation commands in `issue.md`; it does not emit `tasks/<id>.md` files. GitHub Copilot CLI (`copilot`) is an admitted runner in the [canonical CLI matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
 
 **Variations:** `--task T001,T003` only includes a subset of tasks. Pair with `gh issue edit` to update an existing issue.
 
@@ -951,9 +980,9 @@ Handoff written to: handoff/linear
   ticket.md
 ```
 
-Custom renderers are dynamically imported from `.splitbrief/handoff-renderers/` only after trust is enabled for that command or through `trust.customRenderers: true`. They can be sync or async; TypeScript renderers must be loadable by the current Node runtime or an already-registered loader.
+Custom renderers are dynamically imported from `.splitbrief/handoff-renderers/` only after trust is enabled for that command or through `trust.customRenderers: true`. They can be sync or async; TypeScript renderers must be loadable by the current Node runtime or an already-registered loader. Built-in CLI-backed targets (`claude-code`, `copilot-issue`) align with admitted tool ids in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix); run `splitbrief doctor` before handoff if auth readiness matters.
 
-**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §8 `engine/handoff/load-renderer.ts`.
+**See also:** [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §8 `engine/handoff/load-renderer.ts`, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ---
 
@@ -1103,11 +1132,11 @@ Session 2026-04-26-rewrite-billing started (pid 38291).
 Run: splitbrief attach 2026-04-26-rewrite-billing
 ```
 
-`--detach` spawns the workflow as a background server with its own IPC socket at `.splitbrief/sessions/<id>/ipc.sock`. Logs go to `.splitbrief/sessions/<id>/server.log`. The lockfile records pid + heartbeat for `splitbrief ps`.
+`--detach` spawns the workflow as a background server with its own IPC socket at `.splitbrief/sessions/<id>/ipc.sock`. Logs go to `.splitbrief/sessions/<id>/server.log`. The lockfile records pid + heartbeat for `splitbrief ps`. Planner runner billing follows the configured backend — subscription CLIs vs metered APIs: [CONFIGURATION.md](./CONFIGURATION.md), [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 **Variations:** `splitbrief ps` lists every running, exited, and crashed session in the project. `--detach` cannot be combined with `--json` or `--rpc`.
 
-**See also:** recipe 33, [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 IPC server.
+**See also:** recipe 33, [docs/ARCHITECTURE.md](./ARCHITECTURE.md) §1 IPC server, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ---
 
@@ -1260,11 +1289,11 @@ jq 'select(.type == "task_tokens") | {task: .taskId, method: .method, cost: .cos
 {"task":"T002","method":"escalation","cost":0.04}
 ```
 
-The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run finishes.
+The same data lives in `.splitbrief/sessions/<id>/summary.json` once the run finishes. `method: local` on implementer rows means subscription-included or loopback backends with no metered API line item; see billing posture in [CONFIGURATION.md](./CONFIGURATION.md) and the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
 
 **Variations:** Filter for failures: `jq 'select(.type == "task_full_fail" or .type == "error")' events.ndjson`.
 
-**See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, recipe 8.
+**See also:** [docs/DEBUGGING.md](./DEBUGGING.md) §Event log, [docs/CONFIGURATION.md](./CONFIGURATION.md), recipe 8.
 
 ---
 
@@ -1305,7 +1334,7 @@ exit $status
 
 **Variations:** Combine with `--approve none` for unattended runs that should skip spec and plan prompts. Standard and speckit still stop at briefs review; use quick mode if you need no brief-review prompt.
 
-**See also:** recipes 6, 35.
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) `workflow.maxBudget`, recipes 6, 35.
 
 ---
 
@@ -1492,9 +1521,10 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 **Notes:**
 - The palette is disabled while another overlay (help, settings, skills) is active.
 - Commands whose `validScreens` excludes your current screen are hidden from the list.
+- `/planner` and `/effort` select among admitted planner backends in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and API providers in [CONFIGURATION.md](./CONFIGURATION.md).
 - `Ctrl+K` is handled by `src/app/keys.ts:178`.
 
-**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md).
+**See also:** [docs/SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md), [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 ---
 
@@ -1539,7 +1569,7 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 
 ### 44. Adapt the plan from a rejection
 
-**When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run.
+**When:** the implementer proposed an action you rejected, and you want the planner to take that rejection into account on the next run. Planner and implementer roles: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
 
 **Setup (`.splitbrief/config.yaml`):**
 

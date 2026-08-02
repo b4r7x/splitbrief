@@ -45,6 +45,85 @@ describe('formatSpentText', () => {
       formatCost(12.5),
     );
   });
+
+  it('reports the subscription label instead of a dollar figure for a subscription-only run', () => {
+    const breakdown = makeCostBreakdown({
+      hasPricedUsage: false,
+      hasUnpricedUsage: true,
+      providerRunMetadata: {
+        'claude-code': {
+          service: 'claude-code',
+          offering: 'coding-subscription',
+          normalizedEndpoint: 'cli:claude',
+          billing: 'subscription-included',
+          asOf: '2026-07-31',
+        },
+      },
+      offeringPresentations: {
+        'claude-code': {
+          costLabel: 'subscription-included',
+          billingLabel: 'subscription-included',
+        },
+      },
+    });
+
+    expect(formatSpentText(breakdown, 'unpriced')).toBe('subscription-included');
+    expect(formatCostDisplay(100, breakdown, 'unpriced').showSpend).toBe(true);
+  });
+
+  it('reports the local label for a local-only run', () => {
+    const breakdown = makeCostBreakdown({
+      hasPricedUsage: false,
+      hasUnpricedUsage: true,
+      providerRunMetadata: {
+        ollama: {
+          service: 'ollama',
+          offering: 'local',
+          normalizedEndpoint: 'http://localhost:11434/v1',
+          billing: 'local',
+          asOf: '2026-07-31',
+        },
+      },
+      offeringPresentations: {
+        ollama: { costLabel: 'local', billingLabel: 'local' },
+      },
+    });
+
+    expect(formatSpentText(breakdown, 'local')).toBe('local');
+    expect(formatCostDisplay(100, breakdown, 'local').showSpend).toBe(true);
+  });
+
+  it('keeps the dollar figure when a metered runner shares the run', () => {
+    const breakdown = makeCostBreakdown({
+      ...pricedBreakdown,
+      isTotalActualCostKnown: true,
+      providerRunMetadata: {
+        'claude-code': {
+          service: 'claude-code',
+          offering: 'coding-subscription',
+          normalizedEndpoint: 'cli:claude',
+          billing: 'subscription-included',
+          asOf: '2026-07-31',
+        },
+        deepseek: {
+          service: 'deepseek',
+          offering: 'payg',
+          normalizedEndpoint: 'https://api.deepseek.com/v1',
+          billing: 'api-metered',
+          asOf: '2026-07-31',
+        },
+      },
+      offeringPresentations: {
+        'claude-code': {
+          costLabel: 'subscription-included',
+          billingLabel: 'subscription-included',
+        },
+        deepseek: { costLabel: formatCost(12.5), billingLabel: 'api-metered' },
+      },
+    });
+
+    expect(formatSpentText(breakdown, 'priced')).toBe(formatCost(12.5));
+  });
 });
 
 describe('readCostText', () => {
@@ -85,6 +164,41 @@ describe('readCostText', () => {
     ]);
 
     expect(readCostText()).toBe(formatCost(3));
+  });
+});
+
+describe('computeCostBreakdownStats offering presentation', () => {
+  it('carries the subscription label from the cost pipeline into the byline', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'cli', tool: 'claude-code' },
+    });
+    const modelCache = asReactiveModelCache(modelCacheStore.get());
+
+    const { costBreakdown, pricingState } = computeCostBreakdownStats({
+      config,
+      pricingContext: null,
+      perTask: {},
+      tokenUsage: {
+        plannerInput: 100_000,
+        plannerOutput: 50_000,
+        implementerInput: 200_000,
+        implementerOutput: 100_000,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      localCount: 1,
+      escalatedCount: 0,
+      totalTasks: 1,
+      modelCache,
+    });
+
+    expect(costBreakdown?.offeringPresentations?.['claude-code']?.costLabel).toBe(
+      'subscription-included',
+    );
+    const display = formatCostDisplay(100, costBreakdown, pricingState);
+    expect(display.showSpend).toBe(true);
+    expect(display.spentText).toBe('subscription-included');
   });
 });
 

@@ -1,17 +1,28 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  ANTIGRAVITY_CLI_ADMISSION_VERDICT,
+  ANTIGRAVITY_CLI_CANDIDATE_PATHS,
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   CLI_TOOL_TRUST,
+  CURSOR_CLI_ADMISSION_VERDICT,
+  CURSOR_CLI_CANDIDATE_PATHS,
+  EXCLUDED_CLI_TOOL_IDS,
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   cliModelPolicyViolations,
   cliToolSupportsRole,
+  getCliModelPolicy,
   selectCliAuthChannel,
   type CliModelPolicy,
 } from './cli-tool-catalog.js';
 
-const CURRENT_CLI_TOOL_IDS = [
+const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '../../..');
+
+const EXISTING_CLI_TOOL_IDS = [
   'claude-code',
   'codex',
   'opencode',
@@ -20,11 +31,17 @@ const CURRENT_CLI_TOOL_IDS = [
   'kilo-code',
 ] as const;
 
+function resolveRepoPath(relativePath: string): string {
+  return join(REPO_ROOT, relativePath);
+}
+
 describe('CLI tool catalog', () => {
-  it('describes the six current tools for both runner roles', () => {
-    expect(Object.keys(CLI_TOOL_CATALOG)).toEqual(CURRENT_CLI_TOOL_IDS);
-    expect(Object.keys(CLI_TOOL_TRUST)).toEqual(CURRENT_CLI_TOOL_IDS);
-    expect(CLI_TOOL_IDS).toEqual(CURRENT_CLI_TOOL_IDS);
+  it('assembles exactly the six existing tools when Cursor and Antigravity are OMIT', () => {
+    expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('OMIT');
+    expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
+    expect(Object.keys(CLI_TOOL_CATALOG)).toEqual(EXISTING_CLI_TOOL_IDS);
+    expect(Object.keys(CLI_TOOL_TRUST)).toEqual(EXISTING_CLI_TOOL_IDS);
+    expect(CLI_TOOL_IDS).toEqual(EXISTING_CLI_TOOL_IDS);
     expect(PLANNER_CLI_TOOL_IDS).toEqual(
       CLI_TOOL_IDS.filter((id) => CLI_TOOL_CATALOG[id].roles.includes('planner')),
     );
@@ -32,7 +49,7 @@ describe('CLI tool catalog', () => {
       CLI_TOOL_IDS.filter((id) => CLI_TOOL_CATALOG[id].roles.includes('implementer')),
     );
 
-    for (const id of CURRENT_CLI_TOOL_IDS) {
+    for (const id of EXISTING_CLI_TOOL_IDS) {
       const descriptor = CLI_TOOL_CATALOG[id];
 
       expect(descriptor.id).toBe(id);
@@ -46,6 +63,24 @@ describe('CLI tool catalog', () => {
       expect(descriptor.compatibility.installUrl).toMatch(/^https:\/\//);
       expect(descriptor.compatibility.testedVersion).toMatch(/^\d+\.\d+\.\d+$/);
       expect(descriptor.compatibility.evidence.asOf).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it('executes OMIT absence branches for Cursor and Antigravity candidate sources', () => {
+    for (const relativePath of CURSOR_CLI_CANDIDATE_PATHS) {
+      expect(existsSync(resolveRepoPath(relativePath))).toBe(false);
+    }
+    for (const relativePath of ANTIGRAVITY_CLI_CANDIDATE_PATHS) {
+      expect(existsSync(resolveRepoPath(relativePath))).toBe(false);
+    }
+    expect('cursor' in CLI_TOOL_CATALOG).toBe(false);
+    expect('antigravity' in CLI_TOOL_CATALOG).toBe(false);
+  });
+
+  it('excludes deferred and rejected CLI tool IDs from the assembled catalog', () => {
+    for (const id of EXCLUDED_CLI_TOOL_IDS) {
+      expect(CLI_TOOL_IDS).not.toContain(id);
+      expect(id in CLI_TOOL_CATALOG).toBe(false);
     }
   });
 
@@ -72,56 +107,87 @@ describe('CLI tool catalog', () => {
   });
 
   it('enforces required, optional, backend-default, and auto-only model policies', () => {
-    const policies = {
-      required: {
-        missing: ['model'],
-        concrete: [],
-        custom: ['model'],
-      },
-      optional: {
-        missing: [],
-        concrete: [],
-        custom: [],
-      },
-      'backend-default': {
-        missing: [],
-        concrete: ['model'],
-        custom: ['customModels'],
-      },
-      'auto-only': {
-        missing: [],
-        concrete: ['model'],
-        custom: ['customModels'],
-      },
-    } as const satisfies Record<
-      CliModelPolicy,
-      { missing: readonly string[]; concrete: readonly string[]; custom: readonly string[] }
-    >;
+    // Each rule is independent: one selection can trip more than one, so the
+    // expectations are explicit tuples rather than a derived cross-product.
+    const cases: Array<{
+      policy: CliModelPolicy;
+      selection: { model?: string; customModels?: string[] };
+      fields: readonly string[];
+    }> = [
+      { policy: 'required', selection: {}, fields: ['model'] },
+      { policy: 'required', selection: { model: 'auto' }, fields: ['model'] },
+      { policy: 'required', selection: { model: 'AUTO' }, fields: ['model'] },
+      { policy: 'required', selection: { model: 'fixture-model' }, fields: [] },
+      { policy: 'required', selection: { customModels: ['fixture-model'] }, fields: ['model'] },
 
-    for (const [policy, expected] of Object.entries(policies) as Array<
-      [CliModelPolicy, (typeof policies)[CliModelPolicy]]
-    >) {
-      expect(cliModelPolicyViolations(policy, {}).map(({ field }) => field)).toEqual(
-        expected.missing,
-      );
-      expect(
-        cliModelPolicyViolations(policy, { model: 'fixture-model' }).map(({ field }) => field),
-      ).toEqual(expected.concrete);
-      expect(
-        cliModelPolicyViolations(policy, { customModels: ['fixture-model'] }).map(
-          ({ field }) => field,
-        ),
-      ).toEqual(expected.custom);
-    }
+      { policy: 'optional', selection: {}, fields: [] },
+      { policy: 'optional', selection: { model: 'auto' }, fields: [] },
+      { policy: 'optional', selection: { model: 'AUTO' }, fields: [] },
+      { policy: 'optional', selection: { model: 'fixture-model' }, fields: [] },
+      { policy: 'optional', selection: { customModels: ['fixture-model'] }, fields: [] },
 
-    for (const policy of Object.keys(policies) as CliModelPolicy[]) {
-      expect(cliModelPolicyViolations(policy, { model: 'auto' })).toEqual([
-        {
-          field: 'model',
-          message: 'model "auto" is not a model ID; omit model to use automatic selection',
-        },
-      ]);
+      { policy: 'backend-default', selection: {}, fields: [] },
+      { policy: 'backend-default', selection: { model: 'auto' }, fields: [] },
+      { policy: 'backend-default', selection: { model: 'AUTO' }, fields: [] },
+      { policy: 'backend-default', selection: { model: 'fixture-model' }, fields: ['model'] },
+      {
+        policy: 'backend-default',
+        selection: { customModels: ['fixture-model'] },
+        fields: ['customModels'],
+      },
+
+      { policy: 'auto-only', selection: {}, fields: [] },
+      { policy: 'auto-only', selection: { model: 'auto' }, fields: [] },
+      { policy: 'auto-only', selection: { model: 'AUTO' }, fields: [] },
+      { policy: 'auto-only', selection: { model: 'fixture-model' }, fields: ['model'] },
+      {
+        policy: 'auto-only',
+        selection: { customModels: ['fixture-model'] },
+        fields: ['customModels'],
+      },
+    ];
+
+    for (const { policy, selection, fields } of cases) {
+      expect(cliModelPolicyViolations(policy, selection).map(({ field }) => field)).toEqual(fields);
     }
+  });
+
+  it('declares only policies that accept both spellings of automatic selection', () => {
+    const shipped = new Set(
+      CLI_TOOL_IDS.flatMap((id) => [
+        getCliModelPolicy(id, 'planner'),
+        getCliModelPolicy(id, 'implementer'),
+      ]),
+    );
+
+    // `required`, `backend-default` and `auto-only` are exercised above as pure
+    // policy branches; no shipped tool declares them, so the picker never has
+    // to reconcile a tool that refuses the automatic row it always offers.
+    expect([...shipped]).toEqual(['optional']);
+
+    for (const policy of shipped) {
+      expect(cliModelPolicyViolations(policy, {}), policy).toEqual([]);
+      expect(cliModelPolicyViolations(policy, { model: 'auto' }), policy).toEqual([]);
+    }
+  });
+
+  it('names the automatic sentinel in the messages that reject it', () => {
+    expect(cliModelPolicyViolations('required', { model: 'auto' })).toEqual([
+      {
+        field: 'model',
+        message:
+          'model "auto" delegates to the tool default, but this CLI model policy requires an explicit model ID',
+      },
+    ]);
+    expect(cliModelPolicyViolations('required', {})).toEqual([
+      { field: 'model', message: 'model is required by this CLI model policy' },
+    ]);
+    expect(cliModelPolicyViolations('auto-only', { model: 'fixture-model' })).toEqual([
+      {
+        field: 'model',
+        message: 'model must be omitted or "auto" for the "auto-only" CLI model policy',
+      },
+    ]);
   });
 
   it('selects auth and billing as one explicit channel', () => {

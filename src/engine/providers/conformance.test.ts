@@ -71,13 +71,32 @@ const streamBody = [
   'data: [DONE]\n\n',
 ].join('');
 
+const MAX_EVIDENCE_BYTES = 32_768;
+
+// A model list far past the evidence budget whose truncation offset falls inside a
+// multi-byte character, and a stream whose declared terminal only appears past the budget.
+const oversizedModelList = JSON.stringify({
+  data: [{ id: 'example-model' }, { id: '長'.repeat(12_000) }],
+});
+const oversizedStreamBody = [
+  `data: {"id":"chatcmpl-test","choices":[{"delta":{"content":"${'令'.repeat(20_000)}"}}]}\n\n`,
+  'data: {"id":"chatcmpl-test","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":8,"completion_tokens":2}}\n\n',
+  'data: [DONE]\n\n',
+].join('');
+
 const responseHeaders = { 'content-type': 'application/json' };
 
 function response(body: string, status = 200, headers = responseHeaders): Response {
   return new Response(body, { status, headers });
 }
 
-function fakeFetch(options: { readonly completionStatus?: number } = {}) {
+function fakeFetch(
+  options: {
+    readonly completionStatus?: number;
+    readonly modelsBody?: string;
+    readonly completionBody?: string;
+  } = {},
+) {
   const requests: Array<{ url: string; method: string; body: string }> = [];
   const fetchImplementation = async (
     input: string | URL | Request,
@@ -87,13 +106,15 @@ function fakeFetch(options: { readonly completionStatus?: number } = {}) {
     const body = request.method === 'POST' ? await request.text() : '';
     requests.push({ url: request.url, method: request.method, body });
     if (request.url.endsWith('/models')) {
-      return response(JSON.stringify({ data: [{ id: 'example-model' }] }));
+      return response(options.modelsBody ?? JSON.stringify({ data: [{ id: 'example-model' }] }));
     }
     if (request.url.endsWith('/chat/completions')) {
       if (options.completionStatus !== undefined) {
         return response('upstream failure', options.completionStatus);
       }
-      return response(streamBody, 200, { 'content-type': 'text/event-stream' });
+      return response(options.completionBody ?? streamBody, 200, {
+        'content-type': 'text/event-stream',
+      });
     }
     return response('not found', 404);
   };
@@ -145,6 +166,48 @@ describe('provider conformance harness', () => {
       'https://api.example.test/v1/models',
       'https://api.example.test/v1/chat/completions',
     ]);
+  });
+
+  it('judges the full model list and still bounds the recorded evidence', async () => {
+    const directory = await temporaryDirectory();
+    const recordPath = join(directory, 'evidence.json');
+    const fake = fakeFetch({ modelsBody: oversizedModelList });
+    const outcome = await runRawProviderConformance({
+      contractJson: JSON.stringify(contract),
+      recordPath,
+      environment: { EXAMPLE_API_KEY: credential },
+      fetchImplementation: fake.fetchImplementation,
+    });
+
+    expect(Buffer.byteLength(oversizedModelList, 'utf8')).toBeGreaterThan(MAX_EVIDENCE_BYTES);
+    expect(outcome.exitCode).toBe(PROVIDER_CONFORMANCE_EXIT_CODES.PASS);
+    const { rawCapture } = JSON.parse(await readFile(recordPath, 'utf8')) as {
+      rawCapture: { stdout: string };
+    };
+    expect(Buffer.byteLength(rawCapture.stdout, 'utf8')).toBeLessThanOrEqual(MAX_EVIDENCE_BYTES);
+    expect([...rawCapture.stdout].some((char) => char.codePointAt(0) === 0xfffd)).toBe(false);
+  });
+
+  it('detects a declared terminal that arrives past the evidence budget', async () => {
+    const directory = await temporaryDirectory();
+    const recordPath = join(directory, 'evidence.json');
+    const fake = fakeFetch({ completionBody: oversizedStreamBody });
+    const outcome = await runRawProviderConformance({
+      contractJson: JSON.stringify(contract),
+      recordPath,
+      environment: { EXAMPLE_API_KEY: credential },
+      fetchImplementation: fake.fetchImplementation,
+    });
+
+    const budgetedPrefix = Buffer.from(oversizedStreamBody, 'utf8')
+      .subarray(0, MAX_EVIDENCE_BYTES)
+      .toString('utf8');
+    expect(budgetedPrefix).not.toContain('finish_reason');
+    expect(outcome.exitCode).toBe(PROVIDER_CONFORMANCE_EXIT_CODES.PASS);
+    const { rawCapture } = JSON.parse(await readFile(recordPath, 'utf8')) as {
+      rawCapture: { stdout: string };
+    };
+    expect(Buffer.byteLength(rawCapture.stdout, 'utf8')).toBeLessThanOrEqual(MAX_EVIDENCE_BYTES);
   });
 
   it('omits missing or wrong-family credentials without making a request', async () => {

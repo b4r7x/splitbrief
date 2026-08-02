@@ -1,3 +1,4 @@
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
 import type { DetectedPricingTier } from '../../core/discovery/detection.js';
 import type { ResolvedPricing } from './pricing-resolver.js';
@@ -281,6 +282,7 @@ export function resolveTaskPricingModel(opts: {
   fallbackModel?: string | undefined;
 }): string | undefined {
   const { taskTool, fallbackTool, taskModel, fallbackModel } = opts;
+  if (isAutomaticModel(taskModel)) return resolveAutoModel(taskModel, taskTool);
   const trimmed = taskModel?.trim();
   if (trimmed) return resolveAutoModel(trimmed, taskTool) ?? trimmed;
   return taskTool === fallbackTool ? fallbackModel : undefined;

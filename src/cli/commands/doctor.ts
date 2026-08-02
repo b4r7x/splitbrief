@@ -1,6 +1,10 @@
 import type { Command } from 'commander';
 import { collectReadiness } from '../../core/readiness/collect.js';
-import { formatReadinessReport, readinessBlockerMessage } from '../../core/readiness/format.js';
+import {
+  formatReadinessReport,
+  readinessBlockerMessage,
+  serializeReadinessReportJson,
+} from '../../core/readiness/format.js';
 import { resolveProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { writeHeadlessJsonRecord } from '../../engine/events/public-json.js';
@@ -30,7 +34,10 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
       });
 
       if (opts.json) {
-        writeHeadlessJsonRecord({ type: 'readiness_report', report });
+        writeHeadlessJsonRecord({
+          type: 'readiness_report',
+          report: serializeReadinessReportJson(report),
+        });
       } else {
         console.log(formatReadinessReport(report));
       }

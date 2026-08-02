@@ -1,0 +1,26 @@
+version: 3
+planner:
+  kind: cli
+  tool: claude-code
+  model: opus
+  auth_channel: session
+implementer:
+  kind: cli
+  tool: claude-code
+  model: sonnet
+validation:
+  typecheck: true
+  lint: true
+  test: true
+workflow:
+  approve: default
+  max_retries: 3
+  git:
+    commit_strategy: none
+  mode: standard
+  task_review: none
+  persist_transcript: true
+  compaction_format: auto
+theme: terminal
+planner_estimate_review: false
+auto_split_overflow: false

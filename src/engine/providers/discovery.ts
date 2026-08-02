@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { DetectedModel } from '../../core/discovery/detection.js';
-import type { CliToolId } from '../../core/schemas/enums.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { runCommand } from '../../lib/process/spawn/run-command.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { fetchJsonWithTimeout } from './client/request.js';

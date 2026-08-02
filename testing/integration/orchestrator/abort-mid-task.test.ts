@@ -72,7 +72,7 @@ describe('abort during implementer phase terminates the task loop cleanly', {
       wctx: {
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { commitStrategy: 'none', maxRetries: 1 } }),
+        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         callbacks,
         planner: makePlanner(),
         implementer,

@@ -13,7 +13,6 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { runCommand } from '#testing/helpers/commander.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, SPEC_FILE } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../../engine/planners/types.js';
@@ -57,19 +56,6 @@ function writeConfig(config: Config): void {
 }
 
 describe('spec command', () => {
-  it('rejects the removed --auto flag', async () => {
-    const { exitCode, stderr } = await runCommand([
-      'spec',
-      '--auto',
-      '--project',
-      tmp,
-      'add health endpoint',
-    ]);
-
-    expect(exitCode).not.toBe(0);
-    expect(stderr).toMatch(/unknown option.*--auto/i);
-  });
-
   it('runs the planner and writes the spec artifact to the session folder', async () => {
     const program = new Command();
     program.exitOverride();

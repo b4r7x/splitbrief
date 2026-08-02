@@ -4,7 +4,7 @@ import type {
 } from 'openai/resources/chat/completions';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import { resolveOpenAICompatPolicy, type OpenAICompatPolicy } from '../openai-compat-policy.js';
+import type { OpenAICompatPolicy } from '../openai-compat-policy.js';
 
 export interface OpenAITextPart {
   type: 'text';
@@ -60,45 +60,10 @@ export type StreamCompletionEndpoint = {
   policy?: OpenAICompatPolicy | undefined;
 };
 
-function isCompatPolicy(value: unknown): value is OpenAICompatPolicy {
-  return typeof value === 'object' && value !== null && 'tokenField' in value;
-}
-
-function isEffortLevel(value: unknown): value is EffortLevel {
-  return value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh';
-}
-
-function policyForEndpoint(
-  endpoint: StreamCompletionEndpoint | undefined,
-  model: string,
-): OpenAICompatPolicy {
-  return (
-    endpoint?.policy ??
-    resolveOpenAICompatPolicy({
-      provider: endpoint?.provider ?? '',
-      model,
-      apiBase: endpoint?.apiBase,
-    })
-  );
-}
-
 export function toProviderMessages(
   messages: ChatMessage[],
   policy: OpenAICompatPolicy,
-): OpenAIRequestMessage[];
-export function toProviderMessages(
-  messages: ChatMessage[],
-  endpoint: StreamCompletionEndpoint | undefined,
-  model: string,
-): OpenAIRequestMessage[];
-export function toProviderMessages(
-  messages: ChatMessage[],
-  policyOrEndpoint: OpenAICompatPolicy | StreamCompletionEndpoint | undefined,
-  model?: string,
 ): OpenAIRequestMessage[] {
-  const policy = isCompatPolicy(policyOrEndpoint)
-    ? policyOrEndpoint
-    : policyForEndpoint(policyOrEndpoint, model ?? '');
   const useDeveloperRole = policy.reasoning === 'reasoning_effort';
   return messages.map((message) =>
     useDeveloperRole && message.role === 'system'
@@ -164,24 +129,7 @@ export function toOpenAIRequest(
 export function tokenLimitFields(
   policy: OpenAICompatPolicy,
   maxTokens: number | undefined,
-): Pick<StreamRequestBody, 'max_tokens' | 'max_completion_tokens'>;
-export function tokenLimitFields(
-  endpoint: StreamCompletionEndpoint | undefined,
-  model: string,
-  maxTokens: number | undefined,
-): Pick<StreamRequestBody, 'max_tokens' | 'max_completion_tokens'>;
-export function tokenLimitFields(
-  policyOrEndpoint: OpenAICompatPolicy | StreamCompletionEndpoint | undefined,
-  maxTokensOrModel: number | string | undefined,
-  legacyMaxTokens?: number | undefined,
 ): Pick<StreamRequestBody, 'max_tokens' | 'max_completion_tokens'> {
-  const policy = isCompatPolicy(policyOrEndpoint)
-    ? policyOrEndpoint
-    : policyForEndpoint(
-        policyOrEndpoint,
-        typeof maxTokensOrModel === 'string' ? maxTokensOrModel : '',
-      );
-  const maxTokens = typeof maxTokensOrModel === 'number' ? maxTokensOrModel : legacyMaxTokens;
   if (maxTokens === undefined) return {};
   if (policy.tokenField === 'max_completion_tokens') {
     return { max_completion_tokens: maxTokens };
@@ -192,26 +140,7 @@ export function tokenLimitFields(
 export function temperatureField(
   policy: OpenAICompatPolicy,
   temperature: number,
-): Pick<StreamRequestBody, 'temperature'>;
-export function temperatureField(
-  endpoint: StreamCompletionEndpoint | undefined,
-  model: string,
-  temperature: number,
-): Pick<StreamRequestBody, 'temperature'>;
-export function temperatureField(
-  policyOrEndpoint: OpenAICompatPolicy | StreamCompletionEndpoint | undefined,
-  temperatureOrModel: number | string,
-  legacyTemperature?: number,
 ): Pick<StreamRequestBody, 'temperature'> {
-  const policy = isCompatPolicy(policyOrEndpoint)
-    ? policyOrEndpoint
-    : policyForEndpoint(
-        policyOrEndpoint,
-        typeof temperatureOrModel === 'string' ? temperatureOrModel : '',
-      );
-  const temperature =
-    typeof temperatureOrModel === 'number' ? temperatureOrModel : legacyTemperature;
-  if (temperature === undefined) return {};
   if (policy.temperature === 'omit') return {};
   return { temperature };
 }
@@ -219,25 +148,7 @@ export function temperatureField(
 export function effortField(
   policy: OpenAICompatPolicy,
   effort: EffortLevel | undefined,
-): Pick<StreamRequestBody, 'reasoning_effort'>;
-export function effortField(
-  endpoint: StreamCompletionEndpoint | undefined,
-  model: string,
-  effort: EffortLevel | undefined,
-): Pick<StreamRequestBody, 'reasoning_effort'>;
-export function effortField(
-  policyOrEndpoint: OpenAICompatPolicy | StreamCompletionEndpoint | undefined,
-  effortOrModel: EffortLevel | string | undefined,
-  legacyEffort?: EffortLevel | undefined,
 ): Pick<StreamRequestBody, 'reasoning_effort'> {
-  const policy = isCompatPolicy(policyOrEndpoint)
-    ? policyOrEndpoint
-    : policyForEndpoint(policyOrEndpoint, typeof effortOrModel === 'string' ? effortOrModel : '');
-  const effort = isCompatPolicy(policyOrEndpoint)
-    ? isEffortLevel(effortOrModel)
-      ? effortOrModel
-      : undefined
-    : legacyEffort;
   if (effort === undefined || policy.effort === 'omit' || policy.reasoning === 'omit') return {};
   if (policy.effort === 'clamp-xhigh') {
     return { reasoning_effort: effort === 'xhigh' ? 'high' : effort };

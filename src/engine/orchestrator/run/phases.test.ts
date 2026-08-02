@@ -29,7 +29,7 @@ const DENY_HOOK_MODULE = 'export default () => ({ kind: "deny", message: "planni
 
 function denyPrePlanningConfig(): Config {
   return makeNoValidationConfig({
-    workflow: { commitStrategy: 'none' },
+    workflow: {},
     hooks: {
       pre_planning: [
         {
@@ -88,7 +88,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const implementer = makeImplementer();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const config = makeNoValidationConfig({ workflow: { commitStrategy: 'none' } });
+    const config = makeNoValidationConfig({ workflow: {} });
 
     const result = await runTasksAndReview({
       wctx: {
@@ -157,7 +157,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
       }),
       implementerProfiles: {
         default: 'cheap-worker',
@@ -169,7 +169,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
           },
@@ -191,7 +191,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
           implementerTool: 'deepseek',
-          implementerModel: 'deepseek-chat',
+          implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
         sinks: TEST_SINKS,
@@ -204,7 +204,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'anthropic',
         plannerModel: 'claude-opus-4-6',
         implementerTool: 'deepseek',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
       setTrackedState: vi.fn(),
@@ -255,7 +255,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
       }),
       implementerProfiles: {
         default: 'unknown-worker',
@@ -358,7 +358,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
       }),
       plannerEstimateReview: true,
       implementerProfiles: {
@@ -371,7 +371,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
           },
@@ -393,7 +393,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
           implementerTool: 'deepseek',
-          implementerModel: 'deepseek-chat',
+          implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
         sinks: TEST_SINKS,
@@ -406,7 +406,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'anthropic',
         plannerModel: 'claude-opus-4-6',
         implementerTool: 'deepseek',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
       setTrackedState: vi.fn(),
@@ -490,7 +490,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
       }),
       plannerEstimateReview: true,
       implementerProfiles: {
@@ -503,7 +503,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
           },
@@ -525,7 +525,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
           implementerTool: 'deepseek',
-          implementerModel: 'deepseek-chat',
+          implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
         sinks: TEST_SINKS,
@@ -538,7 +538,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'anthropic',
         plannerModel: 'claude-opus-4-6',
         implementerTool: 'deepseek',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
       setTrackedState: vi.fn(),
@@ -604,7 +604,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     });
     const config = {
       ...makeNoValidationConfig({
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
         autoSplitOverflow: true,
         plannerEstimateReview: true,
       }),
@@ -618,7 +618,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
           },
@@ -639,7 +639,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         metadata: {
           plannerTool: 'claude-code',
           implementerTool: 'deepseek',
-          implementerModel: 'deepseek-chat',
+          implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
         sinks: TEST_SINKS,
@@ -651,7 +651,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         startTime: Date.now(),
         plannerTool: 'claude-code',
         implementerTool: 'deepseek',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
       setTrackedState: vi.fn(),
@@ -719,7 +719,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     });
     const config = {
       ...makeNoValidationConfig({
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
         autoSplitOverflow: true,
         plannerEstimateReview: true,
       }),
@@ -828,7 +828,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     });
     const config = {
       ...makeNoValidationConfig({
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
         autoSplitOverflow: true,
         plannerEstimateReview: true,
       }),
@@ -922,7 +922,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { bus, events } = makeBusRecorder();
     const config = {
       ...makeNoValidationConfig({
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
         autoSplitOverflow: true,
         plannerEstimateReview: true,
       }),
@@ -935,7 +935,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             service: 'deepseek' as const,
             offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
           },
@@ -956,7 +956,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         metadata: {
           plannerTool: 'claude-code',
           implementerTool: 'deepseek',
-          implementerModel: 'deepseek-chat',
+          implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
         sinks: TEST_SINKS,
@@ -968,7 +968,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         startTime: Date.now(),
         plannerTool: 'claude-code',
         implementerTool: 'deepseek',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
       setTrackedState: vi.fn(),
@@ -999,7 +999,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const config = {
-      ...makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+      ...makeNoValidationConfig({ workflow: {} }),
       plannerEstimateReview: true,
     };
 
@@ -1076,7 +1076,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const config = {
-      ...makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+      ...makeNoValidationConfig({ workflow: {} }),
       plannerEstimateReview: true,
     };
 
@@ -1136,7 +1136,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const config = {
-      ...makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+      ...makeNoValidationConfig({ workflow: {} }),
       implementerProfiles: {
         profiles: {
           tiny: {
@@ -1200,7 +1200,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const planner = makePlanner();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
-    const config = makeNoValidationConfig({ workflow: { commitStrategy: 'none' } });
+    const config = makeNoValidationConfig({ workflow: {} });
 
     const result = await runTasksAndReview({
       wctx: {
@@ -1251,7 +1251,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       wctx: {
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: {} }),
         callbacks,
         bus,
         planner,
@@ -1300,7 +1300,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
       }),
       implementerProfiles: {
         default: 'cheap-worker',
@@ -1312,7 +1312,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
           },
@@ -1342,7 +1342,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
           implementerTool: 'deepseek',
-          implementerModel: 'deepseek-chat',
+          implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
         sinks: TEST_SINKS,
@@ -1355,7 +1355,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'anthropic',
         plannerModel: 'claude-opus-4-6',
         implementerTool: 'deepseek',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
       setTrackedState: vi.fn(),
@@ -1394,7 +1394,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           apiBase: 'https://api.anthropic.com/v1',
           model: 'claude-opus-4-6',
         },
-        workflow: { commitStrategy: 'none' },
+        workflow: {},
       }),
       implementerProfiles: {
         default: 'cheap-worker',
@@ -1406,7 +1406,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
             offering: 'payg' as const,
             apiBase: 'https://api.deepseek.com/v1',
             apiKey: 'test-key',
-            model: 'deepseek-chat',
+            model: 'deepseek-v4-flash',
             contextLength: 20_000,
             costTier: 'cheap' as const,
           },
@@ -1428,7 +1428,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
           plannerTool: 'anthropic',
           plannerModel: 'claude-opus-4-6',
           implementerTool: 'deepseek',
-          implementerModel: 'deepseek-chat',
+          implementerModel: 'deepseek-v4-flash',
           mode: 'standard',
         },
         sinks: TEST_SINKS,
@@ -1441,7 +1441,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         plannerTool: 'anthropic',
         plannerModel: 'claude-opus-4-6',
         implementerTool: 'deepseek',
-        implementerModel: 'deepseek-chat',
+        implementerModel: 'deepseek-v4-flash',
       },
       phaseTimings: {},
       setTrackedState: vi.fn(),
@@ -1459,9 +1459,13 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001', status: 'done' });
     // Persist a state stuck in 'final-review' (a previously failed gate): all tasks done,
     // currentTaskIndex past the end (as the task loop leaves it before ALL_DONE).
-    const savedState = transition(makeImplState([task], { currentTaskIndex: 1 }), {
-      type: 'ALL_DONE',
-    });
+    const savedState = transition(
+      makeImplState([task], {
+        currentTaskIndex: 1,
+        changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+      }),
+      { type: 'ALL_DONE' },
+    );
     expect(savedState.phase).toBe('final-review');
     saveState({ projectDir, sessionId }, savedState);
 
@@ -1473,7 +1477,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
       wctx: {
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({ workflow: { commitStrategy: 'none' } }),
+        config: makeNoValidationConfig({ workflow: {} }),
         callbacks,
         bus,
         planner,

@@ -5,6 +5,7 @@ import {
   CliExecutableIdentitySchema,
   type CliReadinessStateSchema,
   CliTrustStateSchema,
+  NON_READY_CLI_READINESS_STATES,
 } from '../discovery/detection.js';
 import { CliToolIdSchema } from './enums.js';
 
@@ -27,6 +28,23 @@ export const READINESS_NEXT_ACTION_KINDS = [
 ] as const;
 export const ReadinessNextActionKindSchema = z.enum(READINESS_NEXT_ACTION_KINDS);
 export type ReadinessNextActionKind = z.infer<typeof ReadinessNextActionKindSchema>;
+
+export const READINESS_DIAGNOSTIC_STATE_IDS = [
+  'missing-binary',
+  'untrusted-path',
+  'incompatible-version',
+  'unauthenticated',
+  'auth-unknown',
+  'endpoint-invalid',
+  'credential-family-mismatch',
+  'protocol-failure',
+  'quota-rate-limit',
+  'conflicting-args',
+] as const;
+export type ReadinessDiagnosticStateId = (typeof READINESS_DIAGNOSTIC_STATE_IDS)[number];
+
+export const READINESS_MODEL_SELECTIONS = ['auto', 'explicit', 'unset'] as const;
+export type ReadinessModelSelection = (typeof READINESS_MODEL_SELECTIONS)[number];
 
 export type ReadinessMetadata =
   | string
@@ -94,56 +112,14 @@ const CliReadinessReadyResultSchema = z
   })
   .strict();
 
-const CliReadinessNonReadyResultSchema = z.discriminatedUnion('status', [
-  z
-    .object({
-      ...CliReadinessFactsSchema.shape,
-      checkId: z.string().min(1),
-      status: z.literal('unavailable'),
-      remediation: CliReadinessRemediationSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...CliReadinessFactsSchema.shape,
-      checkId: z.string().min(1),
-      status: z.literal('untrusted'),
-      remediation: CliReadinessRemediationSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...CliReadinessFactsSchema.shape,
-      checkId: z.string().min(1),
-      status: z.literal('unauthenticated'),
-      remediation: CliReadinessRemediationSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...CliReadinessFactsSchema.shape,
-      checkId: z.string().min(1),
-      status: z.literal('incompatible'),
-      remediation: CliReadinessRemediationSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...CliReadinessFactsSchema.shape,
-      checkId: z.string().min(1),
-      status: z.literal('unverified'),
-      remediation: CliReadinessRemediationSchema,
-    })
-    .strict(),
-  z
-    .object({
-      ...CliReadinessFactsSchema.shape,
-      checkId: z.string().min(1),
-      status: z.literal('disabled'),
-      remediation: CliReadinessRemediationSchema,
-    })
-    .strict(),
-]);
+const CliReadinessNonReadyResultSchema = z
+  .object({
+    ...CliReadinessFactsSchema.shape,
+    checkId: z.string().min(1),
+    status: z.enum(NON_READY_CLI_READINESS_STATES),
+    remediation: CliReadinessRemediationSchema,
+  })
+  .strict();
 
 const CliReadinessResultBaseSchema = z.union([
   CliReadinessReadyResultSchema,
@@ -202,7 +178,10 @@ function cliReadinessRemediation(
     case 'incompatible':
       return `Install the tested ${facts.tool} version (${facts.testedVersion}), then run runner readiness again.`;
     case 'unverified':
-      return `Verify ${facts.tool} against tested version ${facts.testedVersion}, then run runner readiness again.`;
+      if (facts.installedVersion === null || facts.compatibility !== 'compatible') {
+        return `Verify ${facts.tool} against tested version ${facts.testedVersion}, then run runner readiness again.`;
+      }
+      return `Verify ${facts.tool} authentication in the staged runner environment, then run runner readiness again.`;
     case 'unauthenticated':
       return `Authenticate ${facts.tool} in the staged runner environment, then run runner readiness again.`;
   }

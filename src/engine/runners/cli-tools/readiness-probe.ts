@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
 import type { Dirent } from 'node:fs';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,18 +12,20 @@ import {
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { deriveCliReadiness, type CliReadinessResult } from '../../../core/schemas/readiness.js';
+import { createBoundedOutput, type BoundedOutput } from '../../../lib/process/bounded-output.js';
+import { killProcess } from '../../../lib/process/registry.js';
 import {
-  killProcess,
-  processTreeReapingLimitation,
-  registerProcess,
-  unregisterProcess,
-} from '../../../lib/process/registry.js';
+  isFatalSignal,
+  spawnPipe,
+  type SpawnPipeFatalSignal,
+} from '../../../lib/process/spawn/lifecycle.js';
 import { createSandboxEnv } from '../sandbox-env.js';
 import type { CliProbeCommand, CliProbeContract } from './contract.js';
 import { revalidateCliExecutableIdentity } from './process-invoke.js';
 
 const PROBE_TIMEOUT_CEILING_MS = 30_000;
 const PROBE_OUTPUT_CEILING_BYTES = 64 * 1024;
+const PROBE_TIMED_OUT = Symbol('splitbrief.probeTimedOut');
 export interface ProbeCliReadinessOptions {
   tool: CliToolId;
   executable: CliExecutableIdentity | null;
@@ -49,12 +51,6 @@ interface ProbeOutput {
   timedOut: boolean;
   outputExceeded: boolean;
 }
-
-type ProbeTermination =
-  | { status: 'idle' }
-  | { status: 'pending'; promise: Promise<void> }
-  | { status: 'succeeded' }
-  | { status: 'failed'; error: unknown };
 
 interface ProbeEnvironment {
   env: NodeJS.ProcessEnv;
@@ -85,7 +81,7 @@ async function probeEnvironment(
   const env = await createSandboxEnv(
     neutralDir,
     [...(channel?.env ?? [])],
-    channel?.stateBridge === 'host-cli-state' ? tool : false,
+    channel?.stateBridge === 'host-cli-state' ? tool : undefined,
   );
   let authAvailable = (channel?.env ?? []).some((key) => {
     const value = env[key];
@@ -111,107 +107,91 @@ async function probeEnvironment(
   };
 }
 
-function appendBounded(current: string, chunk: Buffer, maxBytes: number): string {
-  const remaining = maxBytes - Buffer.byteLength(current);
-  if (remaining <= 0) return current;
-  return current + chunk.subarray(0, remaining).toString('utf8');
-}
-
 async function runProbe(
   executable: CliExecutableIdentity,
   command: CliProbeCommand,
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Promise<ProbeOutput> {
-  return await new Promise((resolve, reject) => {
-    // Detached process groups are the only supported way to prove that a
-    // probe's descendants were reaped. Windows has no equivalent in this
-    // path; `detached: false` would let a timed-out child outlive readiness
-    // while the caller still receives a result. Refuse to spawn until a
-    // verified tree-safe Windows mechanism exists.
-    if (process.platform === 'win32') {
-      reject(processTreeReapingLimitation());
-      return;
-    }
+  const [, ...args] = command.command;
+  const timeoutMs =
+    Number.isFinite(command.timeoutMs) && command.timeoutMs > 0
+      ? Math.min(command.timeoutMs, PROBE_TIMEOUT_CEILING_MS)
+      : PROBE_TIMEOUT_CEILING_MS;
+  const maxOutputBytes =
+    Number.isSafeInteger(command.maxOutputBytes) && command.maxOutputBytes > 0
+      ? Math.min(command.maxOutputBytes, PROBE_OUTPUT_CEILING_BYTES)
+      : PROBE_OUTPUT_CEILING_BYTES;
+  const stdout = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'tail' });
+  const stderr = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'tail' });
+  const timeout = new AbortController();
+  let timer: NodeJS.Timeout | undefined;
+  let child: ChildProcess | undefined;
+  let spawnFailure: unknown;
+  let outputBytes = 0;
+  let outputExceeded = false;
 
-    const [, ...args] = command.command;
-    const timeoutMs =
-      Number.isFinite(command.timeoutMs) && command.timeoutMs > 0
-        ? Math.min(command.timeoutMs, PROBE_TIMEOUT_CEILING_MS)
-        : PROBE_TIMEOUT_CEILING_MS;
-    const maxOutputBytes =
-      Number.isSafeInteger(command.maxOutputBytes) && command.maxOutputBytes > 0
-        ? Math.min(command.maxOutputBytes, PROBE_OUTPUT_CEILING_BYTES)
-        : PROBE_OUTPUT_CEILING_BYTES;
-    const detached = true;
-    const child = spawn(executable.path, args, {
+  const collect = (output: BoundedOutput, chunk: string): SpawnPipeFatalSignal | undefined => {
+    output.append(chunk);
+    outputBytes += Buffer.byteLength(chunk, 'utf8');
+    if (outputBytes <= maxOutputBytes || outputExceeded) return undefined;
+    outputExceeded = true;
+    return {
+      state: 'output-budget-breach',
+      remediation: `Readiness probe exceeded its ${maxOutputBytes}-byte output budget.`,
+    };
+  };
+  const captured = (exitCode: number | null, timedOut: boolean): ProbeOutput => ({
+    stdout: stdout.snapshot().text,
+    stderr: stderr.snapshot().text,
+    exitCode,
+    timedOut,
+    outputExceeded,
+  });
+
+  try {
+    return await spawnPipe<ProbeOutput>({
+      command: executable.path,
+      args,
       cwd,
       env,
-      detached,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // The detached group is what lets a probe prove its descendants were
+      // reaped; `spawnPipe` refuses to launch where that guarantee is absent.
+      detached: true,
+      ledger: false,
+      signal: timeout.signal,
+      partialStdoutMaxBytes: maxOutputBytes,
+      partialStderrMaxBytes: maxOutputBytes,
+      onSpawned: (proc) => {
+        child = proc;
+        // The probe budget covers the child's own run, not the spawn that
+        // precedes it, so the clock starts once the child exists.
+        timer = setTimeout(() => timeout.abort(PROBE_TIMED_OUT), timeoutMs);
+        timer.unref?.();
+      },
+      onStdout: (chunk) => collect(stdout, chunk),
+      onStderr: (chunk) => collect(stderr, chunk),
+      onError: (err) => {
+        spawnFailure = err;
+        return null;
+      },
+      onClose: async (exitCode) => {
+        // A probe leader may exit while a descendant it spawned still holds the
+        // group, so reap the group before the readiness answer is returned.
+        if (child !== undefined) await killProcess(child, { group: true });
+        return captured(exitCode, false);
+      },
     });
-    registerProcess(child, { group: detached, ledger: false });
-    let stdout = '';
-    let stderr = '';
-    let outputBytes = 0;
-    let timedOut = false;
-    let outputExceeded = false;
-    let closed = false;
-    let exitCode: number | null = null;
-    let settled = false;
-    let termination: ProbeTermination = { status: 'idle' };
-    const settle = (): void => {
-      if (settled) return;
-      if (termination.status === 'failed') {
-        settled = true;
-        clearTimeout(timer);
-        reject(termination.error);
-        return;
-      }
-      if (!closed || termination.status !== 'succeeded') return;
-      settled = true;
-      resolve({ stdout, stderr, exitCode, timedOut, outputExceeded });
-    };
-    const terminate = (): void => {
-      if (termination.status !== 'idle') return;
-      const promise = killProcess(child, { group: detached }).then(
-        () => {
-          termination = { status: 'succeeded' };
-          settle();
-        },
-        (error: unknown) => {
-          termination = { status: 'failed', error };
-          settle();
-        },
-      );
-      termination = { status: 'pending', promise };
-    };
-    const timer = setTimeout(() => {
-      timedOut = true;
-      terminate();
-    }, timeoutMs);
-    timer.unref?.();
-    const collect = (channel: 'stdout' | 'stderr', chunk: Buffer): void => {
-      outputBytes += chunk.byteLength;
-      if (channel === 'stdout') stdout = appendBounded(stdout, chunk, maxOutputBytes);
-      else stderr = appendBounded(stderr, chunk, maxOutputBytes);
-      if (outputBytes > maxOutputBytes && !outputExceeded) {
-        outputExceeded = true;
-        terminate();
-      }
-    };
-    child.stdout?.on('data', (chunk: Buffer) => collect('stdout', chunk));
-    child.stderr?.on('data', (chunk: Buffer) => collect('stderr', chunk));
-    child.once('error', terminate);
-    child.once('close', (code) => {
-      clearTimeout(timer);
-      closed = true;
-      exitCode = code;
-      unregisterProcess(child);
-      terminate();
-      settle();
-    });
-  });
+  } catch (cause) {
+    if (cause === PROBE_TIMED_OUT) return captured(null, true);
+    if (isFatalSignal(cause) && cause.state === 'output-budget-breach')
+      return captured(null, false);
+    // A child that never started is a probe answer, not a harness failure.
+    if (cause === spawnFailure) return captured(null, false);
+    throw cause;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
 }
 
 function extractVersion(output: ProbeOutput): string | null {
@@ -363,7 +343,7 @@ export async function probeCliReadiness(
   }
 }
 
-function authChannelRequiresCredential(channel: CliAuthChannel): boolean {
+export function authChannelRequiresCredential(channel: CliAuthChannel): boolean {
   return channel.env.length > 0 || channel.stateBridge === 'host-cli-state';
 }
 

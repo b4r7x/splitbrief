@@ -250,7 +250,7 @@ export function Sidebar({ width }: SidebarProps) {
             <Text color={rateColor(cost.localRate, cost.routedTasks, t)}>
               {costFmt.localRatePct}
             </Text>
-            {costFmt.hasPricedUsage && (
+            {costFmt.showSpend && (
               <Text>
                 {SOFT_SEP}
                 {costFmt.spentText}

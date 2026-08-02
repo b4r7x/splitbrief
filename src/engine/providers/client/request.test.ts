@@ -1,6 +1,30 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { endpointPolicyFetch } from '../../../core/providers/endpoint-policy.js';
+import { createProviderConnection } from './connection.js';
 import { fetchJsonWithTimeout, fetchModelList } from './request.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
+
+const fixedOriginPolicy = {
+  kind: 'fixed-origin' as const,
+  baseURL: 'https://api.example.com/v1',
+};
+
+const attackerOrigin = 'https://evil.example.net';
+
+function assertZeroAttackerHostCredentialObservations(
+  fetchMock: ReturnType<typeof vi.fn>,
+  credential: string,
+): void {
+  for (const [input, init] of fetchMock.mock.calls) {
+    const request = input instanceof Request ? input : new Request(input, init as RequestInit);
+    const origin = new URL(request.url).origin;
+    if (origin === attackerOrigin) {
+      const authorization = request.headers.get('authorization') ?? '';
+      expect(authorization).not.toContain(credential);
+    }
+    expect(origin).not.toBe(attackerOrigin);
+  }
+}
 
 describe('fetchJsonWithTimeout', () => {
   setupFetchMock();
@@ -197,5 +221,129 @@ describe('fetchModelList', () => {
     });
     expect(result).toEqual([]);
     expect(errors).toContain('Invalid response payload');
+  });
+});
+
+describe('provider connection origin enforcement', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('normalizes the endpoint before resolving an env credential', () => {
+    vi.stubEnv('ORIGIN_TEST_KEY', 'sk-origin-canary-9f2a');
+    const connection = createProviderConnection({
+      requestedBaseURL: 'HTTPS://API.EXAMPLE.COM:443/v1/',
+      endpointPolicy: fixedOriginPolicy,
+      envKeyName: 'ORIGIN_TEST_KEY',
+      credentialPrefix: 'sk-',
+      offering: 'payg',
+    });
+
+    expect(connection.baseURL).toBe('https://api.example.com/v1');
+    expect(connection.apiKey()).toBe('sk-origin-canary-9f2a');
+  });
+
+  it('rejects a lookalike host before env credential resolution', () => {
+    vi.stubEnv('ORIGIN_TEST_KEY', 'sk-origin-canary-9f2a');
+    expect(() =>
+      createProviderConnection({
+        requestedBaseURL: 'https://api.example.com.evil.test/v1',
+        endpointPolicy: fixedOriginPolicy,
+        envKeyName: 'ORIGIN_TEST_KEY',
+        credentialPrefix: 'sk-',
+      }),
+    ).toThrow(expect.objectContaining({ kind: 'provider-endpoint-invalid' }));
+  });
+
+  it('accepts an explicit unregistered endpoint policy without registry lookup', () => {
+    const connection = createProviderConnection({
+      requestedBaseURL: 'https://candidate.example/v1',
+      endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://candidate.example/v1' },
+      credentialOverride: 'sk-unregistered-canary',
+      credentialPrefix: 'sk-',
+      offering: 'payg',
+    });
+
+    expect(connection.baseURL).toBe('https://candidate.example/v1');
+    expect(connection.offering).toBe('payg');
+  });
+});
+
+describe('provider connection redirect enforcement', () => {
+  setupFetchMock();
+
+  it('rejects a cross-origin redirect before the attacker host observes credentials', async () => {
+    const credential = 'sk-redirect-canary-4d8e';
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: { location: `${attackerOrigin}/collect` },
+      }),
+    );
+
+    const connection = createProviderConnection({
+      requestedBaseURL: fixedOriginPolicy.baseURL,
+      endpointPolicy: fixedOriginPolicy,
+      credentialOverride: credential,
+      credentialPrefix: 'sk-',
+    });
+
+    await expect(
+      connection[endpointPolicyFetch]('https://api.example.com/v1/models', {
+        headers: { Authorization: `Bearer ${credential}` },
+      }),
+    ).rejects.toMatchObject({ kind: 'provider-endpoint-invalid' });
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    assertZeroAttackerHostCredentialObservations(vi.mocked(globalThis.fetch), credential);
+  });
+});
+
+describe('provider connection credential prefix validation', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each([
+    ['sk-', 'tp-wrong-family-canary'],
+    ['tp-', 'sk-wrong-family-canary'],
+    ['sk-cp-', 'sk-wrong-family-canary'],
+  ])('rejects a %s credential family before network access', (prefix, credential) => {
+    expect(() =>
+      createProviderConnection({
+        requestedBaseURL: fixedOriginPolicy.baseURL,
+        endpointPolicy: fixedOriginPolicy,
+        credentialOverride: credential,
+        credentialPrefix: prefix,
+      }),
+    ).toThrow(expect.objectContaining({ kind: 'provider-credential-prefix-mismatch' }));
+  });
+});
+
+describe('provider connection offering policy', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('never selects offering from credential presence or prefix', () => {
+    vi.stubEnv('OFFERING_TEST_KEY', 'tp-present-canary');
+    expect(() =>
+      createProviderConnection({
+        requestedBaseURL: fixedOriginPolicy.baseURL,
+        endpointPolicy: fixedOriginPolicy,
+        offering: 'payg',
+        envKeyName: 'OFFERING_TEST_KEY',
+        credentialPrefix: 'sk-',
+      }),
+    ).toThrow(expect.objectContaining({ kind: 'provider-credential-prefix-mismatch' }));
+
+    const connection = createProviderConnection({
+      requestedBaseURL: fixedOriginPolicy.baseURL,
+      endpointPolicy: fixedOriginPolicy,
+      offering: 'coding-subscription',
+      credentialOverride: 'sk-valid-offering-canary',
+      credentialPrefix: 'sk-',
+    });
+    expect(connection.offering).toBe('coding-subscription');
   });
 });

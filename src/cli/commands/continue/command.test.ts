@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -13,12 +13,6 @@ import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
-
-const LEGACY_FIXTURE_DIR = join(
-  import.meta.dirname,
-  '../../../../testing/fixtures/legacy-splitbrief-current',
-);
-const EXPECTED_LEGACY_SESSION_ID = '2026-03-15-add-email-validator';
 
 type RpcRun = {
   feature: string;
@@ -100,14 +94,6 @@ function writeState(sessDir: string, phase: string, extra: Record<string, unknow
     ...extra,
   };
   writeFileSync(join(sessDir, 'state.json'), JSON.stringify(state));
-}
-
-function writeLegacyCurrent(projectDir: string): void {
-  const legacyDir = join(projectDir, SPLITBRIEF_DIR, 'current');
-  mkdirSync(legacyDir, { recursive: true });
-  for (const name of ['state.json', 'events.jsonl', 'spec.md']) {
-    writeFileSync(join(legacyDir, name), readFileSync(join(LEGACY_FIXTURE_DIR, name)));
-  }
 }
 
 function mockPlatform(value: NodeJS.Platform): () => void {
@@ -197,24 +183,6 @@ describe('continueCommand', () => {
 
     await expect(continueCommand(undefined, { projectDir }, deps)).rejects.toThrow(
       /no session to continue/,
-    );
-  });
-
-  it('migrates legacy current before resolving the implicit continue target', async () => {
-    const projectDir = makeTmpProject();
-    writeLegacyCurrent(projectDir);
-
-    await expect(continueCommand(undefined, { projectDir }, deps)).rejects.toThrow(
-      /cannot be resumed/,
-    );
-
-    expect(
-      existsSync(
-        join(projectDir, SPLITBRIEF_DIR, 'sessions', EXPECTED_LEGACY_SESSION_ID, 'state.json'),
-      ),
-    ).toBe(true);
-    expect(readFileSync(join(projectDir, SPLITBRIEF_DIR, 'active'), 'utf-8').trim()).toBe(
-      EXPECTED_LEGACY_SESSION_ID,
     );
   });
 

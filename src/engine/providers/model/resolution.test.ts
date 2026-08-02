@@ -115,9 +115,27 @@ describe('getEffectiveModelId', () => {
       expected: 'claude-sonnet-4-6',
     },
     {
-      name: 'default resolution follows catalogModelId when set',
+      name: 'default resolution returns the provider default model id',
       providerId: 'openai',
-      expected: 'gpt-5.4', // openai default is { name: 'auto', catalogModelId: 'gpt-5.4' }
+      expected: 'gpt-5.4', // openai default is the gpt-5.4 row itself
+    },
+    {
+      name: 'automatic selection resolves to the API provider default',
+      providerId: 'openai',
+      modelId: 'auto',
+      expected: 'gpt-5.4',
+    },
+    {
+      name: 'automatic selection is case-insensitive',
+      providerId: 'anthropic',
+      modelId: 'AUTO',
+      expected: 'claude-sonnet-4-6',
+    },
+    {
+      name: 'automatic selection on a CLI tool has no model id to resolve',
+      providerId: 'codex',
+      modelId: 'auto',
+      expected: undefined,
     },
     {
       name: 'Groq default resolves to its bundled model id',

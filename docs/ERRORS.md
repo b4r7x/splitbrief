@@ -12,7 +12,7 @@ This doc is the authority. If you are writing a new error type or reading code t
 
 No `class FooError extends Error`. Errors are built by a factory function that returns a plain `Error` object decorated with a discriminator field and a typed `data` payload.
 
-This aligns with the codebase-wide zero-class rule (see [`CLAUDE.md`](../CLAUDE.md)). `Error` subclasses used to be a sanctioned exception — that exception is removed.
+This aligns with the codebase-wide zero-class rule (see [`CLAUDE.md`](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md)). `Error` subclasses used to be a sanctioned exception — that exception is removed.
 
 ### Rule 2 — The discriminator is `kind: string`
 
@@ -334,7 +334,7 @@ Old `Error` subclasses migrate to domain bags such as `processError` in `src/lib
 
 ## References
 
-- [CLAUDE.md](../CLAUDE.md) — zero-class rule
+- [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) — zero-class rule
 - [LAYERS.md](./LAYERS.md) — which layer owns which error bag
 - [TYPES.md](./TYPES.md) — type placement (factory bags colocate with their producer, per three-case rule)
 - [TC39 — Error Cause](https://github.com/tc39/proposal-error-cause) — `cause` field spec

@@ -76,16 +76,6 @@ describe('resolveApproveLevel', () => {
   it('config approve beats mode default when CLI omitted', () => {
     expect(resolveApproveLevel({ mode: 'speckit', configApprove: 'plan' })).toBe('plan');
   });
-  it('legacy --auto flag forces "none"', () => {
-    expect(
-      resolveApproveLevel({
-        mode: 'speckit',
-        configApprove: 'all',
-        cliOverride: 'all',
-        legacyAutoFlag: true,
-      }),
-    ).toBe('none');
-  });
   it('CLI "default" falls through to config / mode default', () => {
     expect(resolveApproveLevel({ mode: 'speckit', cliOverride: 'default' })).toBe('all');
     expect(

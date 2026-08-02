@@ -6,8 +6,22 @@ import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
-import { deriveCliReadiness, type CliReadinessResult } from '../../core/schemas/readiness.js';
+import {
+  deriveCliReadiness,
+  READINESS_DIAGNOSTIC_STATE_IDS,
+  type CliReadinessResult,
+  type ReadinessDiagnosticStateId,
+} from '../../core/schemas/readiness.js';
+import {
+  deriveReadinessDiagnosticState,
+  formatReadinessReport,
+  READINESS_DIAGNOSTIC_REMEDIATION,
+  readinessCheckRemediation,
+  serializeReadinessReportJson,
+} from '../../core/readiness/format.js';
+import type { ReadinessCheck } from '../../core/readiness/types.js';
 import { isCliError } from '../errors.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { registerDoctorCommand } from './doctor.js';
 
 let tmp: string;
@@ -87,12 +101,14 @@ function deterministicCliReadiness(): readonly CliReadinessResult[] {
   ];
 }
 
-async function runDoctor(args: string[]): Promise<void> {
+async function runDoctor(
+  args: string[],
+  detectCliReadiness: () => Promise<readonly CliReadinessResult[]> = async () =>
+    deterministicCliReadiness(),
+): Promise<void> {
   const program = new Command();
   program.exitOverride();
-  registerDoctorCommand(program, {
-    detectCliReadiness: async () => deterministicCliReadiness(),
-  });
+  registerDoctorCommand(program, { detectCliReadiness });
   await program.parseAsync(['node', 'splitbrief', 'doctor', ...args]);
 }
 
@@ -104,6 +120,79 @@ function captureStdout(): string[] {
   });
   return writes;
 }
+
+interface DoctorJsonCheck {
+  id: string;
+  summary: string;
+  modelSelection?: string;
+}
+
+async function doctorJsonChecks(configYaml: string): Promise<DoctorJsonCheck[]> {
+  writeConfig(tmp, configYaml);
+  const writes = captureStdout();
+  await runDoctor(['--project', tmp, '--json']);
+  const parsed = JSON.parse(writes.join('').trim()) as {
+    report?: { checks?: DoctorJsonCheck[] };
+  };
+  return parsed.report?.checks ?? [];
+}
+
+function syntheticCheck(
+  stateId: ReadinessDiagnosticStateId,
+  overrides: Partial<ReadinessCheck> = {},
+): ReadinessCheck {
+  return {
+    id: overrides.id ?? `diagnostic.${stateId}`,
+    severity: overrides.severity ?? 'blocker',
+    summary: overrides.summary ?? `Diagnostic ${stateId}`,
+    diagnosticState: stateId,
+    ...overrides,
+  };
+}
+
+describe('readiness diagnostic states', () => {
+  it.each(
+    READINESS_DIAGNOSTIC_STATE_IDS,
+  )('maps %s to a stable state ID and copyable remediation', (stateId) => {
+    const check = syntheticCheck(stateId);
+    expect(deriveReadinessDiagnosticState(check)).toBe(stateId);
+    expect(readinessCheckRemediation(check)).toBe(READINESS_DIAGNOSTIC_REMEDIATION[stateId]);
+  });
+
+  it.each([
+    ['endpoint-invalid', 'provider-endpoint-invalid: host not allowed'],
+    ['credential-family-mismatch', 'provider-credential-prefix-mismatch for sk-ant-'],
+    ['protocol-failure', 'protocol-failure: missing terminal result'],
+    ['quota-rate-limit', 'HTTP 429 rate limit exceeded'],
+    ['conflicting-args', 'conflicting-args: --model and --agent'],
+  ] as const)('classifies %s from a quoted machine token', (stateId, detail) => {
+    const check: ReadinessCheck = {
+      id: 'runners.failure',
+      severity: 'blocker',
+      summary: 'Runner failed',
+      details: [detail],
+    };
+    expect(deriveReadinessDiagnosticState(check)).toBe(stateId);
+    expect(readinessCheckRemediation(check)).toBe(READINESS_DIAGNOSTIC_REMEDIATION[stateId]);
+  });
+
+  it.each([
+    'Provider endpoint policy rejected the configured host',
+    'The credential family does not match the declared provider',
+    'The runner produced no terminal result line',
+    'Provider quota exhausted; try again later',
+    'conflicting args: --model and --agent',
+  ])('does not classify prose without a machine token (%s)', (detail) => {
+    const check: ReadinessCheck = {
+      id: 'runners.failure',
+      severity: 'blocker',
+      summary: 'Runner failed',
+      details: [detail],
+    };
+    expect(deriveReadinessDiagnosticState(check)).toBeNull();
+    expect(readinessCheckRemediation(check)).toBeNull();
+  });
+});
 
 describe('doctor command', () => {
   it('prints human readiness without creating workflow artifacts', async () => {
@@ -133,15 +222,43 @@ describe('doctor command', () => {
 
     const parsed = JSON.parse(writes.join('').trim()) as {
       type?: string;
-      report?: { sections?: Array<{ checks: Array<{ severity: string }> }> };
+      report?: { checks?: Array<{ severity: string }> };
     };
-    const severities =
-      parsed.report?.sections?.flatMap((section) =>
-        section.checks.map((check) => check.severity),
-      ) ?? [];
+    const severities = parsed.report?.checks?.map((check) => check.severity) ?? [];
     expect(parsed.type).toBe('readiness_report');
     expect(severities).toContain('warning');
     expect(severities).toContain('info');
+  });
+
+  it('reports automatic CLI model selection as auto, not as an unset model', async () => {
+    initGitRepo(tmp);
+    const checks = await doctorJsonChecks(
+      validConfigYaml().replace('  tool: claude-code', '  tool: claude-code\n  model: auto'),
+    );
+
+    const planner = checks.find((check) => check.id === 'runners.planner.configured');
+    expect(planner?.summary).toContain('claude-code (auto)');
+    expect(planner?.modelSelection).toBe('auto');
+
+    const implementer = checks.find((check) => check.id === 'runners.implementer.default');
+    expect(implementer?.summary).toContain('ollama (qwen2.5-coder:7b)');
+  });
+
+  it.each([
+    { label: 'an explicit model', model: '\n  model: opus', expected: 'explicit' },
+    { label: 'no model key', model: '', expected: 'unset' },
+  ])('publishes $label as a JSON model selection distinct from auto', async ({
+    model,
+    expected,
+  }) => {
+    initGitRepo(tmp);
+    const checks = await doctorJsonChecks(
+      validConfigYaml().replace('  tool: claude-code', `  tool: claude-code${model}`),
+    );
+
+    const planner = checks.find((check) => check.id === 'runners.planner.configured');
+    expect(planner?.modelSelection).toBe(expected);
+    expect(planner?.summary).not.toContain('(auto)');
   });
 
   it('emits JSON and exits non-zero for missing config without writing setup files', async () => {
@@ -192,13 +309,63 @@ describe('doctor command', () => {
 
     expect(isCliError(captured)).toBe(true);
     const parsed = JSON.parse(writes.join('').trim()) as {
-      report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
+      report?: { status?: string; checks?: Array<{ id: string }> };
     };
     expect(parsed.report?.status).toBe('blocked');
-    expect(
-      parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
-    ).toContain('config.invalid');
+    expect(parsed.report?.checks?.map((check) => check.id)).toContain('config.invalid');
     expect(readFileSync(configFile, 'utf-8')).toBe(badConfig);
+  });
+
+  it('names a removed workflow key on its own detail line', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, `${validConfigYaml()}\n  auto_approve_spec: true`);
+    const writes = captureStdout();
+
+    let captured: unknown;
+    try {
+      await runDoctor(['--project', tmp, '--json']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { checks?: Array<{ id: string; details?: string[] }> };
+    };
+    const invalid = parsed.report?.checks?.find((check) => check.id === 'config.invalid');
+    expect(invalid?.details).toContainEqual(
+      expect.stringContaining('workflow.autoApproveSpec: Unknown config key'),
+    );
+  });
+
+  it('renders each blocker on its own line in the CLI error message', async () => {
+    const badConfig = [
+      'version: 3',
+      'planner:',
+      '  kind: cli',
+      '  tool: not-a-tool',
+      'implementer:',
+      '  kind: api',
+      '  provider: ollama',
+      '  apiBase: http://localhost:11434/v1',
+      '  model: qwen2.5-coder:7b',
+    ].join('\n');
+    writeConfig(tmp, badConfig);
+    captureStdout();
+
+    let captured: unknown;
+    try {
+      await runDoctor(['--project', tmp]);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    const rendered = toErrorMessage(captured, { preserveLineBreaks: true });
+    const lines = rendered.split('\n');
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('config.invalid');
+    expect(lines[1]).toContain('repo.not-git');
   });
 
   it('reports a non-git project as blocked', async () => {
@@ -214,11 +381,9 @@ describe('doctor command', () => {
 
     expect(isCliError(captured)).toBe(true);
     const parsed = JSON.parse(writes.join('').trim()) as {
-      report?: { sections?: Array<{ checks: Array<{ id: string }> }> };
+      report?: { checks?: Array<{ id: string }> };
     };
-    expect(
-      parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
-    ).toContain('repo.not-git');
+    expect(parsed.report?.checks?.map((check) => check.id)).toContain('repo.not-git');
   });
 
   it('reports a zero-commit repository as blocked', async () => {
@@ -235,11 +400,247 @@ describe('doctor command', () => {
 
     expect(isCliError(captured)).toBe(true);
     const parsed = JSON.parse(writes.join('').trim()) as {
-      report?: { status?: string; sections?: Array<{ checks: Array<{ id: string }> }> };
+      report?: { status?: string; checks?: Array<{ id: string }> };
     };
     expect(parsed.report?.status).toBe('blocked');
+    expect(parsed.report?.checks?.map((check) => check.id)).toContain('repo.no-commits');
+  });
+
+  it('reports endpoint-invalid in JSON for a config with a bad apiBase protocol', async () => {
+    initGitRepo(tmp);
+    writeConfig(
+      tmp,
+      [
+        'version: 3',
+        'planner:',
+        '  kind: cli',
+        '  tool: claude-code',
+        'implementer:',
+        '  kind: api',
+        '  provider: ollama',
+        '  apiBase: ftp://localhost:11434/v1',
+        '  model: qwen2.5-coder:7b',
+      ].join('\n'),
+    );
+    const writes = captureStdout();
+
+    let captured: unknown;
+    try {
+      await runDoctor(['--project', tmp, '--json']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { checks?: Array<{ stateId?: string; remediation?: string }> };
+    };
+    const endpointCheck = parsed.report?.checks?.find(
+      (check) => check.stateId === 'endpoint-invalid',
+    );
+    expect(endpointCheck?.stateId).toBe('endpoint-invalid');
+    expect(endpointCheck?.remediation).toBeTruthy();
+  });
+
+  it.each([
+    ['missing-binary', { installation: 'unavailable' as const, executable: null }],
+    ['untrusted-path', { trust: 'untrusted' as const }],
+    ['incompatible-version', { compatibility: 'incompatible' as const }],
+    ['unauthenticated', { auth: 'unauthenticated' as const }],
+    ['auth-unknown', { auth: 'unknown' as const }],
+  ] as const)('emits JSON stateId %s and human next action for CLI readiness', async (stateId, overrides) => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const writes = captureStdout();
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const cliResult = deriveCliReadiness({
+      tool: 'claude-code',
+      enabled: true,
+      installation: 'installed',
+      executable: {
+        path: '/usr/local/bin/claude',
+        fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
+      },
+      trust: 'trusted',
+      installedVersion: '2.0.0',
+      testedVersion: '2.0.0',
+      compatibility: 'compatible',
+      auth: 'authenticated',
+      probedAt: 1,
+      ...overrides,
+    });
+
+    let captured: unknown;
+    try {
+      await runDoctor(['--project', tmp, '--json'], async () => [cliResult]);
+    } catch (err) {
+      captured = err;
+    }
+
+    if (stateId !== 'auth-unknown') {
+      expect(isCliError(captured)).toBe(true);
+    }
+
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: {
+        checks?: Array<{
+          id: string;
+          stateId?: string | null;
+          remediation?: string | null;
+        }>;
+      };
+    };
+    const readinessCheck = parsed.report?.checks?.find(
+      (check) => check.id === 'runners.cli.claude-code.readiness',
+    );
+    expect(readinessCheck?.stateId).toBe(stateId);
+    expect(readinessCheck?.remediation).toBeTruthy();
+
+    writes.length = 0;
+    consoleSpy.mockClear();
+    try {
+      await runDoctor(['--project', tmp], async () => [cliResult]);
+    } catch {
+      // blocked readiness exits non-zero after printing human output
+    }
+    const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(human).toContain('Fix:');
+    expect(human).toContain(readinessCheck?.remediation ?? '');
+    expect(human.includes('\u001b')).toBe(false);
+    expect(human.includes('\u0007')).toBe(false);
+  });
+
+  // A CLI readiness the probe could not verify stays a warning — doctor
+  // diagnoses, it does not decide — but start refuses it, so the summary must
+  // not promise the operator that start can continue.
+  it('reports an unverified CLI readiness as a warning that still blocks start', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const unverified = deriveCliReadiness({
+      tool: 'claude-code',
+      enabled: true,
+      installation: 'installed',
+      executable: {
+        path: '/usr/local/bin/claude',
+        fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
+      },
+      trust: 'trusted',
+      installedVersion: CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion,
+      testedVersion: CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion,
+      compatibility: 'compatible',
+      auth: 'unknown',
+      probedAt: 1,
+    });
+
+    await runDoctor(['--project', tmp], async () => [unverified]);
+
+    const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(unverified.status).toBe('unverified');
+    expect(human).toContain('Run readiness: ready-with-warnings');
+    expect(human).not.toContain('start can continue');
+    expect(human).toContain('Start blocked: no trusted readiness identity for claude-code.');
+    expect(human).toContain(unverified.remediation ?? '');
+  });
+
+  it('serializes semantic JSON without decorative section layout or secrets', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const secretPath = '/Users/private-user/project/bin/claude';
+    const cliResult = deriveCliReadiness({
+      tool: 'claude-code',
+      enabled: true,
+      installation: 'installed',
+      executable: {
+        path: secretPath,
+        fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
+      },
+      trust: 'trusted',
+      installedVersion: CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion,
+      testedVersion: CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion,
+      compatibility: 'compatible',
+      auth: 'authenticated',
+      probedAt: 1,
+    });
+    const writes = captureStdout();
+
+    await runDoctor(['--project', tmp, '--json'], async () => [cliResult]);
+
+    const raw = writes.join('').trim();
+    expect(raw).not.toContain(secretPath);
+    const parsed = JSON.parse(raw) as {
+      report?: {
+        sections?: unknown;
+        checks?: Array<{ stateId?: string | null; remediation?: string | null }>;
+      };
+    };
+    expect(parsed.report?.sections).toBeUndefined();
+    expect(parsed.report?.checks?.some((check) => check.stateId === null)).toBe(true);
+    expect(raw).not.toMatch(/Config:|Repository:/);
+  });
+
+  it('keeps provider and protocol diagnostics stable in serialized JSON', () => {
+    const report = serializeReadinessReportJson({
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      projectDir: '/tmp/project',
+      status: 'blocked',
+      counts: { ok: 0, info: 0, warning: 0, blocker: 3 },
+      nextAction: {
+        kind: 'fix-config',
+        label: 'Fix config',
+        reason: 'Blocked',
+      },
+      sections: [
+        {
+          id: 'runners',
+          title: 'Runners',
+          checks: [
+            syntheticCheck('credential-family-mismatch', {
+              details: ['provider-credential-prefix-mismatch'],
+            }),
+            syntheticCheck('protocol-failure', { details: ['protocol-failure: missing terminal'] }),
+            syntheticCheck('quota-rate-limit', { details: ['HTTP 429 rate limit exceeded'] }),
+            syntheticCheck('conflicting-args', { details: ['conflicting args for --model'] }),
+          ],
+        },
+      ],
+      metadata: {},
+    });
+
+    expect(report.checks.map((check) => check.stateId)).toEqual([
+      'credential-family-mismatch',
+      'protocol-failure',
+      'quota-rate-limit',
+      'conflicting-args',
+    ]);
+    for (const check of report.checks) {
+      expect(check.remediation).toBe(
+        READINESS_DIAGNOSTIC_REMEDIATION[check.stateId as ReadinessDiagnosticStateId],
+      );
+    }
     expect(
-      parsed.report?.sections?.flatMap((section) => section.checks.map((check) => check.id)),
-    ).toContain('repo.no-commits');
+      formatReadinessReport({
+        generatedAt: report.generatedAt,
+        projectDir: report.projectDir,
+        status: report.status,
+        counts: report.counts,
+        nextAction: report.nextAction,
+        sections: [
+          {
+            id: 'runners',
+            title: 'Runners',
+            checks: report.checks.map((check) => ({
+              id: check.id,
+              severity: check.severity,
+              summary: check.summary,
+              details: check.details,
+              fix: check.remediation ?? undefined,
+            })),
+          },
+        ],
+        metadata: report.metadata,
+      }),
+    ).toContain(READINESS_DIAGNOSTIC_REMEDIATION['conflicting-args']);
   });
 });

@@ -8,7 +8,7 @@ import type { ModelCacheAccessor } from '../../engine/providers/model/resolution
 import { runPricingIdentity } from '../../core/providers/pricing-identity.js';
 import { formatCost } from '../../core/formatting.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { CostBreakdown } from '../../core/schemas/summary.js';
+import { unmeteredRunCostLabel, type CostBreakdown } from '../../core/schemas/summary.js';
 import type { TaskTokenUsage, TokenUsage } from '../../core/schemas/tokens.js';
 import { taskId } from '../../core/schemas/task.js';
 import type { PricingState } from './layout/cost-chrome.js';
@@ -17,7 +17,7 @@ interface CostDisplay {
   localRatePct: string;
   showSavings: boolean;
   savingsText: string;
-  hasPricedUsage: boolean;
+  showSpend: boolean;
   spentText: string;
 }
 
@@ -56,6 +56,8 @@ export function formatSpentText(
   costBreakdown: CostBreakdown | null,
   pricingState: PricingState,
 ): string {
+  const unmetered = costBreakdown === null ? null : unmeteredRunCostLabel(costBreakdown);
+  if (unmetered !== null) return unmetered;
   if (pricingState === 'priced') {
     const cost = formatCost(costBreakdown?.totalActualCost ?? 0);
     return costBreakdown?.isTotalActualCostKnown === false ? `${cost} + unknown` : cost;
@@ -72,12 +74,12 @@ export function formatCostDisplay(
 ): CostDisplay {
   const showSavings =
     (costBreakdown?.hasSavingsEstimate ?? false) && (costBreakdown?.savingsAmount ?? 0) > 0;
-  const hasPricedUsage = costBreakdown?.hasPricedUsage ?? false;
+  const isUnmetered = costBreakdown !== null && unmeteredRunCostLabel(costBreakdown) !== null;
   return {
     localRatePct: `${Math.round(localRate)}%`,
     showSavings,
     savingsText: `~${formatCost(costBreakdown?.savingsAmount ?? 0)}`,
-    hasPricedUsage,
+    showSpend: isUnmetered || (costBreakdown?.hasPricedUsage ?? false),
     spentText: formatSpentText(costBreakdown, pricingState),
   };
 }
@@ -152,7 +154,7 @@ export function computeCostBreakdownStats(inputs: CostBreakdownInputs): CostBrea
 
 // Non-reactive read of the cost figure shown in the sidebar footer (`formatSpentText`), for copy
 // affordances that run outside React (the `/copy cost` command and the `y` yank). Returns null when
-// no priced usage exists yet — matching the sidebar, which only paints the $ figure once priced.
+// the sidebar itself paints nothing — no priced usage and no unmetered billing label to report.
 export function readCostText(): string | null {
   const config = configStore.get().config;
   if (!config) return null;
@@ -168,5 +170,5 @@ export function readCostText(): string | null {
     modelCache: asReactiveModelCache(modelCacheStore.get()),
   });
   const display = formatCostDisplay(localRate, costBreakdown, pricingState);
-  return display.hasPricedUsage ? display.spentText : null;
+  return display.showSpend ? display.spentText : null;
 }

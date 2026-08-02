@@ -22,7 +22,7 @@ Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates
 ```bash
 npm run dev -- start "feature"   # Full workflow with TUI
 npm run dev -- start --mode instant|quick|standard|speckit "..."
-npm run dev -- spec|init|status|resume|migrate
+npm run dev -- spec|init|status|resume
 npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
@@ -105,7 +105,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 
 ## Runner kinds
 
-Both planner and implementer accept five runner kinds. The `kind` field is the discriminant and is always required. Current configs write `version: 3`; `version: 2` is accepted and migrated for backwards compatibility.
+Both planner and implementer accept five runner kinds. The `kind` field is the discriminant and is always required. Configs declare `version: 3` — the only accepted version; any other value fails the load.
 
 | `kind` | What it is | Example |
 |---|---|---|
@@ -128,7 +128,7 @@ Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTUR
 | `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work |
 | `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work |
 
-Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. `full` is only a legacy alias. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
+Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. Detailed semantics: [docs/WORKFLOW.md](./docs/WORKFLOW.md).
 
 ## Known limitations
 

@@ -18,6 +18,9 @@ export function createLineBuffer<T = void>(
 } {
   let buffer = '';
   let skipping = false;
+  // CRLF-terminated output frames to the same lines as LF output; every runner
+  // parses the framed line, never the carriage return.
+  const framed = (line: string) => (line.endsWith('\r') ? line.slice(0, -1) : line);
   let callbackResult: T | undefined;
   const captureResult = (result: T | undefined) => {
     if (callbackResult === undefined && result !== undefined) callbackResult = result;
@@ -61,17 +64,16 @@ export function createLineBuffer<T = void>(
         const line = buffer.slice(0, newlineIndex);
         buffer = buffer.slice(newlineIndex + 1);
         if (maxLineBytes === undefined) {
-          captureResult(onLine(line));
-          continue;
+          captureResult(onLine(framed(line)));
+        } else {
+          const lineBytes = Buffer.byteLength(line, 'utf8');
+          if (lineBytes > maxLineBytes) emitOverflow(lineBytes, maxLineBytes);
+          else captureResult(onLine(framed(line)));
         }
 
-        const lineBytes = Buffer.byteLength(line, 'utf8');
-        if (lineBytes > maxLineBytes) {
-          emitOverflow(lineBytes, maxLineBytes);
-          continue;
-        }
-
-        captureResult(onLine(line));
+        // A signaled result is terminal for the stream: the caller tears the producer down, so no
+        // later line of this chunk may reach the callback.
+        if (callbackResult !== undefined) return callbackResult;
       }
 
       if (maxLineBytes !== undefined && discardOversizedTail(maxLineBytes)) {
@@ -92,8 +94,9 @@ export function createLineBuffer<T = void>(
       }
 
       if (!buffer) return callbackResult;
-      captureResult(onLine(buffer));
+      const line = framed(buffer);
       buffer = '';
+      captureResult(onLine(line));
       return callbackResult;
     },
   };

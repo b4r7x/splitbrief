@@ -1,10 +1,6 @@
-import {
-  API_PROVIDER_IDS,
-  CLI_TOOL_IDS,
-  META_PROVIDER_IDS,
-  isProviderId,
-  type ProviderId,
-} from '../../core/schemas/enums.js';
+import { META_PROVIDER_IDS, isProviderId, type ProviderId } from '../../core/schemas/enums.js';
+import { REMOTE_API_PROVIDER_IDS } from '../../core/providers/api-provider-catalog.js';
+import { CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import { isProviderLocal, isProviderSubscription } from '../../core/providers/catalog.js';
 import {
   NULL_CACHE,
@@ -36,7 +32,7 @@ export interface ResolvedPricing {
   source: 'models-dev' | 'runtime' | 'bundled-fallback' | 'unpriced';
 }
 
-const PRICED_PROVIDER_IDS = new Set<ProviderId>(API_PROVIDER_IDS);
+const PRICED_PROVIDER_IDS = new Set<ProviderId>(REMOTE_API_PROVIDER_IDS);
 const UNPRICED_CLI_PROVIDER_IDS = new Set<string>(CLI_TOOL_IDS);
 const META_UNPRICED_IDS = new Set<string>(META_PROVIDER_IDS);
 

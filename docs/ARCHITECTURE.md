@@ -77,7 +77,7 @@ src/
 │   └── render/               Ink / fullscreen-ink render setup (`app.ts` entry)
 │
 ├── core/                     Shared domain (no React, no engine-ness)
-│   ├── config/               YAML load + validation + migration (v1 → v2 → v3)
+│   ├── config/               YAML load + validation
 │   ├── state/                Workflow state machine + disk persistence
 │   ├── phases.ts             Phase taxonomy (role, cancellable, resumable)
 │   ├── runtime/commands/     Runtime command registry, dispatch, lookup
@@ -458,7 +458,7 @@ src/
 ├── cli/                           Non-React CLI handlers
 │   ├── commands/                  approval, attach, continue, detach, doctor,
 │   │                              explain, export, handoff, init, last, mcp,
-│   │                              migrate, ps, resume, snapshot, spec, start,
+│   │                              ps, resume, snapshot, spec, start,
 │   │                              stats, status, worktree
 │   ├── errors.ts                  CliError type + exit-code helpers
 │   ├── headless.ts                runHeadless: --json mode without Ink
@@ -473,8 +473,7 @@ src/
 │   │                              — .splitbrief/approvals.json
 │   ├── config/
 │   │   ├── accessors/             runner-config, state accessors
-│   │   ├── load/                  load, migrate (v1→v2→v3), transform,
-│   │   │                          validate
+│   │   ├── load/                  load, transform, validate
 │   │   ├── runtime/               build-runner, overrides, resolve
 │   │   └── errors.ts              ConfigError types
 │   ├── formatting.ts              formatCost, formatDuration, etc.
@@ -484,7 +483,6 @@ src/
 │   │                              event-sections
 │   │                              (other layout math lives under
 │   │                              features/workflow/layout/)
-│   ├── migration/                 executor, legacy migration helpers
 │   ├── model-display.ts           formatToolModel, etc.
 │   ├── paths.ts                   All on-disk path constants + builders
 │   ├── paths-io.ts                Path-aware read/write helpers
@@ -678,9 +676,11 @@ src/
 │   │                              use-recent-sessions-focus
 │   ├── palette/                   sources + results (command-palette source
 │   │                              assembly + cross-store result aggregator)
-│   ├── runners/                   picker-view, tool-row, model-catalog,
+│   ├── runners/                   picker-view, tool-row, picker-format,
 │   │                              config-transforms, view-state,
 │   │                              use-picker-actions, use-picker-catalog,
+│   │                              model-catalog/{catalog, options, posture,
+│   │                              recency, status},
 │   │                              two-column-picker/{picker, keyboard,
 │   │                              use-column-state, use-nav-state,
 │   │                              virtual-items}
@@ -789,7 +789,7 @@ Sectioned picker display now lives in the picker display-window/ListViewport pat
 
 ## 4. Workflow modes
 
-Four modes are canonical (`'instant' | 'quick' | 'standard' | 'speckit'`), `'full'` is a legacy alias for `'speckit'` accepted on input only. Set via `--mode`, config `workflow.mode`, or `/mode` at runtime.
+Four modes are canonical (`'instant' | 'quick' | 'standard' | 'speckit'`); any other value is rejected. Set via `--mode`, config `workflow.mode`, or `/mode` at runtime.
 
 | Mode | Planner calls | Approval gates | Brief quality gate | Brief approval (`reviewing-briefs`) | Artifacts |
 |------|:---:|:---:|:---:|:---:|---|
@@ -803,7 +803,7 @@ Implementation: `src/engine/orchestrator/planning/{instant,quick,full,speckit}.t
 - `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Error codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `missing_implementation_steps`. Warning code: `missing_type_definitions`. Publishes `brief_quality_passed` or `brief_quality_failed`.
 - `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `full.ts` (standard), `speckit.ts`, and `rewind.ts`. Enters `reviewing-briefs` phase; awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
 
-A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` and the legacy `mode_downgrade_advised` for trivial requests in higher modes; user can /mode to switch.
+A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` for trivial requests in higher modes; user can /mode to switch.
 
 Auto-snapshot triggers are read from `config.snapshots.auto`:
 
@@ -841,8 +841,8 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`
 
-**Planning milestones (19):**
-`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_downgrade_advised`, `mode_advice`, `instant_plan_received`
+**Planning milestones (18):**
+`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`
 
 **Task lifecycle:**
 `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`
@@ -892,7 +892,7 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
 ```
 .splitbrief/
 ├── active                          plain text — single session-id (the lock)
-├── config.yaml                     Project config (version: 3; v2 accepted/migrated)
+├── config.yaml                     Project config (version: 3 — the only accepted version)
 ├── approvals.json                  Sticky approval grants (cross-session)
 ├── hook-trust.json                 Hook-trust state (created on first prompt)
 ├── handoff-renderers/              User-supplied custom renderers
@@ -1163,7 +1163,6 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 | `splitbrief stats` | — | Print aggregate cost and routing statistics. |
 | `splitbrief export` | — | Export a session report. |
 | `splitbrief explain` | — | Explain session artifacts and routing decisions. |
-| `splitbrief migrate` | — | Migrate pre-v3 `.splitbrief/current/` session state into the session-folder layout. |
 | `splitbrief handoff [target]` | — | Export Handoff Pack. Flags: `--session`, `--out`, `--task <ids>`, `--mode default\|append\|overwrite`, `--list`. Default target `spec-kit`. |
 | `splitbrief snapshot` | `create`, `list`, `restore <id-or-name>`, `diff <id-or-name>` | Working-tree snapshots. `restore` supports `--force` to overwrite conflicts. `diff` exits non-zero when changes detected. |
 | `splitbrief approval` | `list`, `clear --scope session\|always\|all` | Manage sticky approval grants in `.splitbrief/approvals.json`. |
@@ -1218,7 +1217,7 @@ Defined in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'
 
 ## 11. Configuration schema additions
 
-`.splitbrief/config.yaml` is written as `version: 3`; `version: 2` is accepted and migrated for backwards compatibility. The full schema lives in `src/core/schemas/config.ts`. The optional sections below are recognized:
+`.splitbrief/config.yaml` is written as `version: 3`, and no other version loads. The full schema lives in `src/core/schemas/config.ts`. The optional sections below are recognized:
 
 ```yaml
 workflow:

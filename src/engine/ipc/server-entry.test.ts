@@ -98,22 +98,20 @@ describe('emitConfigWarnings', () => {
     emitConfigWarnings([
       {
         source: 'loader',
-        diagnostic: { kind: 'config-migration', code: 'deprecated-v2' },
+        diagnostic: { kind: 'config-file-permissions', path: '/tmp/.splitbrief/config.yaml' },
       },
       { source: 'validation', message: 'budget override exceeds the configured ceiling.' },
     ]);
 
     const written = stderrChunks.join('');
-    expect(written).toContain(
-      '⚠ config.version 2 is deprecated; SPLITBRIEF migrated it in memory.',
-    );
+    expect(written).toContain('⚠ Config file /tmp/.splitbrief/config.yaml has overly permissive');
     expect(written).toContain('⚠ budget override exceeds the configured ceiling.');
   });
 
   it('prints matching loader and validation warnings once', () => {
     const diagnostic = {
-      kind: 'config-migration',
-      code: 'deprecated-v2',
+      kind: 'config-file-permissions',
+      path: '/tmp/.splitbrief/config.yaml',
     } satisfies ConfigLoaderDiagnostic;
     const message = formatConfigLoaderDiagnostic(diagnostic);
 
@@ -345,7 +343,7 @@ describe('detached server cleanup ordering', () => {
     expect(exits).toEqual([{ code: 1, grandchildExited: true }]);
   });
 
-  it('propagates an unreaped-group limitation before IPC finalization or exit', async () => {
+  function createUnreapedGroupProbe() {
     const limitation = processError.platformLimitation({
       operation: 'verify-absence',
       target: 'process-group',
@@ -370,11 +368,40 @@ describe('detached server cleanup ordering', () => {
       },
     });
     const exitProcess = vi.fn();
+    return { cleanup, exitProcess, limitation, stages };
+  }
+
+  it('finalizes IPC and surfaces an unreaped-group limitation to the caller', async () => {
+    const { cleanup, limitation, stages } = createUnreapedGroupProbe();
+
+    await expect(cleanup({ kind: 'signal', signal: 'SIGTERM' })).rejects.toBe(limitation);
+
+    expect(stages).toEqual([
+      'heartbeat-stopped',
+      'processes',
+      'bridge-closed',
+      'server-closed',
+      'terminalized',
+      'telemetry-flushed',
+    ]);
+  });
+
+  it('exits non-zero when a runner group cannot be reaped, on every later attempt too', async () => {
+    const { cleanup, exitProcess, limitation } = createUnreapedGroupProbe();
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     const handlers = createServerExitHandlers({ cleanup, exitProcess });
 
-    await expect(handlers.signal('SIGTERM')).rejects.toBe(limitation);
+    try {
+      await expect(handlers.signal('SIGTERM')).resolves.toBeUndefined();
+      await expect(handlers.crash(new Error('boom'))).resolves.toBeUndefined();
 
-    expect(stages).toEqual(['heartbeat-stopped', 'processes']);
-    expect(exitProcess).not.toHaveBeenCalled();
+      expect(exitProcess.mock.calls).toEqual([[1], [1]]);
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk))).toEqual([
+        `server-entry: cleanup failed: ${limitation.message}\n`,
+        `server-entry: cleanup failed: ${limitation.message}\n`,
+      ]);
+    } finally {
+      stderr.mockRestore();
+    }
   });
 });

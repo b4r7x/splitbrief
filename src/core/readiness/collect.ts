@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPackageJson } from '../project-meta.js';
+import { configErrorDiagnosticState } from '../config/errors.js';
 import { configPath, loadConfig } from '../config/load/io.js';
 import { workflowOptsToCLIOverrides } from '../config/runtime/overrides/from-options.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
@@ -24,7 +25,7 @@ import {
   selectNextAction,
 } from './status.js';
 import type { Config } from '../schemas/config.js';
-import type { CommitStrategy } from '../schemas/enums.js';
+import type { ApproveLevel, CommitStrategy } from '../schemas/enums.js';
 import type { CliReadinessResult } from '../schemas/readiness.js';
 import type { WorkflowOpts } from '../types/config-options.js';
 import type { BuildReadinessReportInput } from './checks/build.js';
@@ -57,7 +58,7 @@ export interface CollectReadinessOptions {
         opts: WorkflowOpts;
       }) => Promise<readonly CliReadinessResult[]>)
     | undefined;
-  defaultAutoApprove?: boolean | undefined;
+  defaultApprove?: ApproveLevel | undefined;
   probeValidation?: boolean | undefined;
 }
 
@@ -152,33 +153,25 @@ function loadReadinessConfig(
 
   try {
     const loaded = loadConfig(options.projectDir);
+    const cliOverrides = workflowOptsToCLIOverrides(options.opts ?? {});
     const { config, warnings: effectiveWarnings } = resolveEffectiveConfig({
       base: loaded.config,
-      overrides: {
-        ...workflowOptsToCLIOverrides(options.opts ?? {}),
-        autoApprove:
-          options.opts?.auto !== undefined ? options.opts.auto : options.defaultAutoApprove,
-      },
+      overrides: { ...cliOverrides, approve: cliOverrides.approve ?? options.defaultApprove },
       loaderDiagnostics: loaded.loaderDiagnostics,
     });
     return {
       config,
-      configLoad: {
-        state: 'loaded',
-        path: filePath,
-        warnings: effectiveWarnings,
-        migratedInMemory: loaded.loaderDiagnostics.some(
-          (diagnostic) => diagnostic.kind === 'config-migration',
-        ),
-      },
+      configLoad: { state: 'loaded', path: filePath, warnings: effectiveWarnings },
     };
   } catch (err) {
+    const diagnosticState = configErrorDiagnosticState(err);
     return {
       configLoad: {
         state: 'invalid',
         path: filePath,
         warnings: [],
-        error: toErrorMessage(err),
+        error: toErrorMessage(err, { preserveLineBreaks: true }),
+        ...(diagnosticState !== undefined && { diagnosticState }),
       },
     };
   }

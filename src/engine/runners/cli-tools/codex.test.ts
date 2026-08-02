@@ -46,8 +46,16 @@ describe('Codex role adapters', () => {
   });
 
   it('keeps argv and terminal contracts explicit for both roles', () => {
-    expect(codexPlannerAdapter.promptTransport).toEqual({ kind: 'argv', maxBytes: 120_000 });
-    expect(codexImplementerAdapter.promptTransport).toEqual({ kind: 'argv', maxBytes: 120_000 });
+    expect(codexPlannerAdapter.promptTransport).toEqual({
+      kind: 'argv',
+      maxBytes: 120_000,
+      placement: 'positional',
+    });
+    expect(codexImplementerAdapter.promptTransport).toEqual({
+      kind: 'argv',
+      maxBytes: 120_000,
+      placement: 'positional',
+    });
     expect(codexPlannerAdapter.outputContract).toEqual({
       kind: 'structured-terminal',
       terminalEvent: 'required',
@@ -82,7 +90,9 @@ describe('Codex role adapters', () => {
       'fixture',
     ]);
     expect(resumed).not.toContain('--reasoning-effort');
-    expect(codexPlannerAdapter.validateArgs(resumed)).toEqual({ valid: true });
+    expect(codexPlannerAdapter.validateArgs(resumed, resumed.slice(0, -2))).toEqual({
+      valid: true,
+    });
 
     const readOnly = codexPlannerAdapter.buildArgs({
       prompt: PROMPT,
@@ -138,12 +148,13 @@ describe('Codex role adapters', () => {
       '--label',
       'fixture',
     ]);
-    expect(codexImplementerAdapter.validateArgs(args)).toEqual({ valid: true });
-    expect(codexImplementerAdapter.validateArgs([...args, '--sandbox', 'danger'])).toEqual({
+    const base = args.slice(0, -2);
+    expect(codexImplementerAdapter.validateArgs(args, base)).toEqual({ valid: true });
+    expect(codexImplementerAdapter.validateArgs([...args, '--sandbox', 'danger'], base)).toEqual({
       valid: false,
       conflicts: ['--sandbox'],
     });
-    expect(codexImplementerAdapter.validateArgs([...args, 'prefix-<PROMPT>'])).toEqual({
+    expect(codexImplementerAdapter.validateArgs([...args, 'prefix-<PROMPT>'], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
     });

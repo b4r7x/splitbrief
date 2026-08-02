@@ -12,6 +12,7 @@ describe('app process listeners', () => {
     const signalListener = createTerminationSignalListener({
       handle: createTerminationHandler({
         cleanup: async () => {},
+        reportCleanupFailure,
         exit: signalExit,
       }),
       reportCleanupFailure,
@@ -20,6 +21,7 @@ describe('app process listeners', () => {
       handle: createCrashHandler({
         cleanup: async () => {},
         report: reportCrash,
+        reportCleanupFailure,
         exit: crashExit,
       }),
       reportCrash,
@@ -37,7 +39,7 @@ describe('app process listeners', () => {
     expect(reportCleanupFailure).not.toHaveBeenCalled();
   });
 
-  it('reports rejected cleanup without restoring exit behavior or leaking a rejection', async () => {
+  it('reports rejected cleanup, still exits, and leaks no rejection', async () => {
     const limitation = processError.platformLimitation({
       operation: 'verify-absence',
       target: 'process-group',
@@ -55,6 +57,7 @@ describe('app process listeners', () => {
       const signalListener = createTerminationSignalListener({
         handle: createTerminationHandler({
           cleanup: () => Promise.reject(limitation),
+          reportCleanupFailure: reportSignalCleanupFailure,
           exit: signalExit,
         }),
         reportCleanupFailure: reportSignalCleanupFailure,
@@ -64,6 +67,7 @@ describe('app process listeners', () => {
         handle: createCrashHandler({
           cleanup: () => Promise.reject(limitation),
           report: reportCrash,
+          reportCleanupFailure: reportCrashCleanupFailure,
           exit: crashExit,
         }),
         reportCrash,
@@ -74,13 +78,16 @@ describe('app process listeners', () => {
       crashListener(crashReason);
 
       await vi.waitFor(() => {
-        expect(reportSignalCleanupFailure).toHaveBeenCalledWith(limitation);
-        expect(reportCrashCleanupFailure).toHaveBeenCalledWith(limitation);
+        expect(signalExit).toHaveBeenCalledWith(143);
+        expect(crashExit).toHaveBeenCalledWith(1);
       });
       await new Promise<void>((resolve) => setImmediate(resolve));
 
-      expect(signalExit).not.toHaveBeenCalled();
-      expect(crashExit).not.toHaveBeenCalled();
+      expect(reportSignalCleanupFailure).toHaveBeenCalledOnce();
+      expect(reportSignalCleanupFailure).toHaveBeenCalledWith(limitation);
+      expect(reportCrashCleanupFailure).toHaveBeenCalledOnce();
+      expect(reportCrashCleanupFailure).toHaveBeenCalledWith(limitation);
+      expect(reportCrash).toHaveBeenCalledOnce();
       expect(reportCrash).toHaveBeenCalledWith(crashReason);
       expect(unhandledRejection).not.toHaveBeenCalled();
     } finally {

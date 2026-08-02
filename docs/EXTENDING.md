@@ -69,7 +69,9 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ## 5. New planner/implementer backend
 
-1. Add the kind name to the `RUNNER_KINDS` array and `RunnerKindSchema` in `src/core/schemas/enums.ts`
+Use an existing runner kind only (`cli`, `api`, `shell`, `agent`, `agent-sdk`). Do not add a sixth kind — see [section 13](#13-cli-and-provider-admission-checklists).
+
+1. Pick the kind in config (`RunnerKindSchema` in `src/core/schemas/enums.ts`); factory dispatch lives in `src/engine/runners/factory.ts`
 2. Create `src/engine/planners/<name>.ts` implementing the `Planner` interface from `src/engine/planners/types.ts`
    - Use `createPlannerBase()` from `src/engine/planners/base.ts` if it fits
 3. Create `src/engine/implementers/<name>.ts` implementing the `Implementer` interface from `src/engine/implementers/types.ts`
@@ -127,6 +129,8 @@ Factory: `src/stores/create-store.ts` (~45 LOC).
 
 ## 8. New provider (for api runner kind)
 
+Complete the [provider admission checklist](#provider-admission-checklist) before touching the registry.
+
 1. Create `src/engine/providers/<name>.ts`
    - Export a factory function: `createMyProvider(overrides?: ProviderOverrides): ProviderDef`
 2. Register in `src/engine/providers/registry.ts`
@@ -183,3 +187,64 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
    - Add a mapping case in `eventToHookKey()` inside `src/engine/hooks/sink.ts`
    - The hook sink subscribes to the EventBus and dispatches automatically when the matching EngineEvent fires
 4. Document in `docs/HOOKS-CONFIG.md`
+
+---
+
+## 13. CLI and provider admission checklists
+
+Canonical support matrices live in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md). Extension work must follow the closed architectural constraints and ordered checklists below — not independent exhaustive lists in secondary guides.
+
+### Architectural constraints
+
+- **One runner-kind set:** `cli`, `api`, `shell`, `agent`, `agent-sdk` (`RUNNER_KINDS` in `src/core/schemas/enums.ts`). New backends pick an existing kind; do not add a sixth runner kind.
+- **No argv DSL or plugin framework:** each CLI adapter owns its vendor argv grammar in a dedicated module. Do not build a generic argv insertion DSL or broad plugin loader.
+- **One OpenAI transport:** hosted API providers use `src/engine/providers/openai-stream/` only. Do not add a second generic OpenAI-compatible streaming transport.
+
+### CLI admission checklist
+
+Complete in order before registering in `CLI_PLANNER_ADAPTERS` / `CLI_IMPLEMENTER_ADAPTERS`:
+
+1. **Core descriptor** — add `CliToolDescriptor` to `src/core/runners/cli-tool-catalog.ts` with stable `id`, display name, install URL, and dated compatibility evidence (`asOf`).
+2. **Supported roles, model, auth, posture** — declare `roles`, per-role `CliModelPolicy`, `CliAuthPolicy`, direct-write/trust/permission posture, and shell/network/approval/sandbox facts. Unsupported role pairs fail schema validation.
+3. **Trusted identity** — `src/engine/runners/resolve-cli-executable.ts` resolves one absolute real path; probe and execution reuse that identity.
+4. **Probe** — bounded, non-billable version/auth probe with neutral cwd when the upstream contract allows it.
+5. **Lossless transport** — `CliPromptTransport` (`stdin`, byte-limited `argv` with `<PROMPT>` sentinel, or mode-0600 `file`). The Task Brief reaches the child byte-for-byte or execution fails before spawn.
+6. **Args conflicts** — user `args` have a documented insertion position; conflicts with prompt transport, output protocol, permission mode, model policy, or terminal behavior are rejected pre-spawn.
+7. **Parser/terminal** — structured protocols require the documented terminal event; text protocols may use process exit plus direct-change proof only when the admitted fixture documents no stable terminal envelope.
+8. **Env** — `src/engine/runners/sandbox-env.ts` allowlists runtime env plus only the descriptor auth channel; never copy ambient secrets or a real `HOME`.
+9. **Direct-change proof** — direct writers receive staged-cwd instructions; successful completion requires a real staged change, not stdout extraction alone.
+10. **Common/live/eval gates** — pass the common CLI contract suite, any required credentialed live smoke, and implementation-quality/privacy evaluation before registration.
+11. **Late registry/docs** — register in `src/engine/runners/cli-tools/registry.ts` and update [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) only after every gate above passes.
+
+#### Raw/production transaction (CLI)
+
+Admission evidence is a two-step transaction on the same role-singular `RawCliCandidateContract`:
+
+1. **Raw** — `npx tsx scripts/cli-conformance.ts raw --contract-json '<json>' --record <json>` captures bounded version/auth/native output in a staged git project without parser, adapter, or registry. Writes candidate `id`, `role`, canonical contract SHA-256, and sanitized `rawCapture`.
+2. **Production** — `npx tsx scripts/cli-conformance.ts production --module <module.ts> --role <planner|implementer> --record <same-json>` dynamically imports only the named adapter module, reuses the raw evidence, and appends `productionConformance`. Contract or identity mismatch fails the harness.
+
+`OMIT` verdicts delete vendor sources; `PASS` retains them. Registration and docs are late steps — never before the transaction completes.
+
+### Provider admission checklist
+
+Complete in order before registering in `src/engine/providers/registry.ts`:
+
+1. **Service/offering** — `ApiProviderDescriptor` with explicit `service` and `offering` (`payg`, `free-quota`, `coding-subscription`, `local`). Never infer offering from credential prefix alone.
+2. **Endpoint** — `EndpointPolicy` in `src/core/providers/endpoint-policy.ts`; normalize and validate origin before client creation. Cross-origin redirects must not receive credentials.
+3. **Credential** — `credentialEnv` and `credentialPrefix`; prefix or family mismatch fails before network access.
+4. **Billing/privacy/asOf** — dated `billing`, `dataUse`, privacy/terms URLs in the descriptor. No runtime fetch of pricing, terms, or marketing pages.
+5. **Policy** — `OpenAICompatPolicy` in `src/engine/providers/openai-compat-policy.ts` enables provider-specific request fields only when exact conformance fixtures prove them.
+6. **Production conformance** — credentialed harness in `src/engine/providers/conformance.ts` via `npx tsx scripts/provider-conformance.ts production …` reusing the same record as raw capture.
+7. **Eval** — implementation-quality/privacy evaluation verdict is applied to runtime recommendation state before docs label a model recommended.
+8. **Late registration** — register through `createUnregisteredOpenAICompatProvider` / `src/engine/providers/registry.ts` and document in [CONFIGURATION.md](./CONFIGURATION.md) and [API-KEYS.md](./API-KEYS.md) only after every gate above passes.
+
+#### Raw/production transaction (provider)
+
+Same two-step transaction on `RawProviderCandidateContract`:
+
+1. **Raw** — `npx tsx scripts/provider-conformance.ts raw --contract-json '<json>' --record <json>` captures the credentialed request/stream terminal in a neutral harness without registry registration.
+2. **Production** — `npx tsx scripts/provider-conformance.ts production --module <module.ts> --record <same-json>` imports only the named provider module and appends `productionConformance` to the same record.
+
+Fixed admission order for both CLI and API slices:
+
+`primary-source record → deterministic fixtures → credentialed production-path smoke → implementation-quality/privacy evaluation → central registration/docs`

@@ -2,6 +2,7 @@ import type { CliToolDetection, ProviderDetection } from '../../core/discovery/d
 import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
+  defaultCliAuthChannel,
   selectCliAuthChannel,
   type CliAuthChannelId,
   type CliToolId,
@@ -14,7 +15,10 @@ import { DETECTION_TIMEOUT_MS } from '../constants.js';
 import { parseMajorVersion } from '../availability.js';
 import { detectAvailableProviders } from '../providers/registry.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
-import { probeCliReadiness } from '../runners/cli-tools/readiness-probe.js';
+import {
+  authChannelRequiresCredential,
+  probeCliReadiness,
+} from '../runners/cli-tools/readiness-probe.js';
 
 const CLI_PROBE_OUTPUT_MAX_BYTES = 64 * 1024;
 
@@ -32,7 +36,7 @@ export interface DetectCliToolsOptions {
   now?: (() => number) | undefined;
 }
 
-function projectReadiness(result: CliReadinessResult): CliToolDetection {
+export function cliDetectionFromReadiness(result: CliReadinessResult): CliToolDetection {
   const diagnostic =
     result.remediation === null
       ? { state: 'ready' as const, remediation: null }
@@ -50,22 +54,37 @@ function projectReadiness(result: CliReadinessResult): CliToolDetection {
   };
 }
 
+/**
+ * A caller that names no channel for a tool gets the channel that tool's runner
+ * takes when its configuration names none, so readiness measures the channel
+ * execution will actually stage. A caller that names the tool but withholds its
+ * channel — conflicting roles — keeps the probe channel-less so readiness
+ * cannot claim authentication for a channel nobody selected.
+ */
+type AuthChannelSelection =
+  | Readonly<{ state: 'selected'; channel: CliAuthChannelId }>
+  | Readonly<{ state: 'withheld' }>;
+
 interface DetectCliToolDependencies {
   projectDir: string;
   resolveExecutable: ResolveCliExecutable;
   probeReadiness: ProbeCliReadiness;
-  authChannel?: CliAuthChannelId | undefined;
+  authChannel: AuthChannelSelection;
   now: () => number;
 }
 
 function selectedAuthChannel(
   options: DetectCliToolsOptions,
   tool: CliToolId,
-): CliAuthChannelId | undefined {
+): AuthChannelSelection {
   if (options.authChannels && Object.hasOwn(options.authChannels, tool)) {
-    return options.authChannels[tool];
+    const channel = options.authChannels[tool];
+    return channel === undefined ? { state: 'withheld' } : { state: 'selected', channel };
   }
-  return options.authChannel;
+  if (options.authChannel !== undefined) {
+    return { state: 'selected', channel: options.authChannel };
+  }
+  return { state: 'selected', channel: defaultCliAuthChannel(tool).id };
 }
 
 function classifyVersion(input: {
@@ -101,7 +120,7 @@ function unresolvedDetection(
     };
   }
 
-  return projectReadiness(
+  return cliDetectionFromReadiness(
     deriveCliReadiness({
       tool,
       enabled: true,
@@ -187,7 +206,16 @@ async function detectCliToolReadiness(
       timeoutMs: DETECTION_TIMEOUT_MS,
       maxOutputBytes: CLI_PROBE_OUTPUT_MAX_BYTES,
     };
-    let detectedCompatibility: 'compatible' | 'incompatible' | 'unverified' | null = null;
+    const selectedChannel =
+      options.authChannel.state === 'withheld'
+        ? undefined
+        : selectCliAuthChannel(tool, { channel: options.authChannel.channel });
+    // The probe only reaches the auth classifier once the selected channel's
+    // credential material is present in the staged environment and the tool ran
+    // under it, so a zero-exit auth probe is the strongest authentication fact a
+    // bounded, non-billable readiness command can produce.
+    const requiresCredential =
+      selectedChannel !== undefined && authChannelRequiresCredential(selectedChannel);
     const result = await options.probeReadiness({
       tool,
       executable,
@@ -195,17 +223,11 @@ async function detectCliToolReadiness(
         version: versionProbe,
         auth: versionProbe,
       },
-      authChannel: options.authChannel,
+      authChannel: selectedChannel?.id,
       now: options.now,
-      classifyVersion: (input) => {
-        detectedCompatibility = classifyVersion(input);
-        return 'unverified';
-      },
+      classifyVersion,
+      classifyAuth: () => (requiresCredential ? 'authenticated' : 'not-required'),
     });
-    const selectedChannel =
-      options.authChannel === undefined
-        ? undefined
-        : selectCliAuthChannel(tool, { channel: options.authChannel });
     return {
       executableResolution: 'resolved',
       readiness: deriveCliReadiness({
@@ -216,7 +238,7 @@ async function detectCliToolReadiness(
         trust: result.trust,
         installedVersion: result.installedVersion,
         testedVersion: result.testedVersion,
-        compatibility: detectedCompatibility ?? result.compatibility,
+        compatibility: result.compatibility,
         auth: selectedChannel === undefined ? 'unknown' : result.auth,
         probedAt: result.probedAt,
       }),
@@ -249,7 +271,7 @@ async function detectCliTool(
   if (outcome.executableResolution === 'untrusted') {
     return unresolvedDetection(tool, outcome.readiness.probedAt, true);
   }
-  return projectReadiness(outcome.readiness);
+  return cliDetectionFromReadiness(outcome.readiness);
 }
 
 /**
@@ -265,7 +287,6 @@ export async function detectAvailableCliReadiness(
     projectDir: options.projectDir ?? process.cwd(),
     resolveExecutable: options.resolveExecutable ?? resolveCliExecutable,
     probeReadiness: options.probeReadiness ?? probeCliReadiness,
-    authChannel: options.authChannel,
     now: options.now ?? Date.now,
   };
   const tools = options.tools ?? CLI_TOOL_IDS;
@@ -287,7 +308,6 @@ export async function detectAvailableCliTools(
     projectDir: options.projectDir ?? process.cwd(),
     resolveExecutable: options.resolveExecutable ?? resolveCliExecutable,
     probeReadiness: options.probeReadiness ?? probeCliReadiness,
-    authChannel: options.authChannel,
     now: options.now ?? Date.now,
   };
   const tools = options.tools ?? CLI_TOOL_IDS;

@@ -67,8 +67,8 @@ it('runtime hard-cut matrix has exactly 8 labeled cases', async () => {
         const cachePath = join(projectDir, SPLITBRIEF_DIR, 'detection-cache.json');
         expect(existsSync(cachePath)).toBe(true);
         expect(await loadDetectionCache(projectDir, 60_000)).toEqual({
-          planners: [],
-          implementers: [],
+          providers: [],
+          cliTools: [],
         });
         for (const priorDir of PRIOR_STATE_DIRS) {
           expect(existsSync(join(projectDir, priorDir))).toBe(false);

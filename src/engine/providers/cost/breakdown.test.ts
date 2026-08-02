@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { calculateCostBreakdown } from './breakdown.js';
+import {
+  calculateCostBreakdown,
+  describeOfferingBillingPresentation,
+  formatOfferingAwareExtraCost,
+  resolveProviderRunMetadata,
+} from './breakdown.js';
+import type { ProviderRunMetadata } from '../../../core/schemas/summary.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { CostBreakdownSchema } from '../../../core/schemas/summary.js';
 
 describe('calculateCostBreakdown', () => {
   it('all local (0 escalations) yields 100% localCompletionRate and positive savings', () => {
@@ -18,7 +25,7 @@ describe('calculateCostBreakdown', () => {
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
     expect(result.localCompletionRate).toBe(1);
     expect(result.savingsPercentage).toBeGreaterThan(0);
@@ -89,7 +96,7 @@ describe('calculateCostBreakdown', () => {
       plannerTool: 'anthropic',
       plannerModel: 'claude-sonnet-4-6',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
     expect(result.savingsAmount).toBeCloseTo(0.001022, 10);
     expect(result.savingsPercentage).toBeGreaterThan(0);
@@ -162,7 +169,7 @@ describe('calculateCostBreakdown', () => {
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
       plannerModel: 'claude-sonnet-4-6',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     expect(result.actualPlannerCost).toBeGreaterThan(0);
@@ -202,7 +209,7 @@ describe('calculateCostBreakdown', () => {
       totalTasks: 1,
       escalatedCount: 0,
       plannerTool: 'deepseek',
-      plannerModel: 'deepseek-chat',
+      plannerModel: 'deepseek-v4-flash',
       implementerTool: 'anthropic',
       implementerModel: 'claude-sonnet-4-6',
     });
@@ -223,7 +230,7 @@ describe('calculateCostBreakdown', () => {
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
       plannerModel: 'claude-sonnet-4-6',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     const high = calculateCostBreakdown({
@@ -237,7 +244,7 @@ describe('calculateCostBreakdown', () => {
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
       plannerModel: 'claude-sonnet-4-6',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     expect(high.hypotheticalCost).toBeGreaterThan(low.hypotheticalCost);
@@ -284,8 +291,8 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'deepseek',
       implementerTool: 'deepseek',
-      plannerModel: 'deepseek-chat',
-      implementerModel: 'deepseek-chat',
+      plannerModel: 'deepseek-v4-flash',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     expect(result.providerCosts).toEqual({
@@ -297,7 +304,7 @@ describe('calculateCostBreakdown', () => {
     });
   });
 
-  it('uses per-task implementer metadata for mixed local and paid profile costs', () => {
+  it('uses per-task implementer tool identity for mixed local and paid profile costs', () => {
     const usage = makeUsage({
       implementerInput: 1_000_000,
       implementerOutput: 1_000_000,
@@ -309,7 +316,7 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [
         {
           taskId: taskId('T001'),
@@ -329,7 +336,7 @@ describe('calculateCostBreakdown', () => {
           escalationTokens: 0,
           retryCount: 0,
           tool: 'deepseek',
-          model: 'deepseek-chat',
+          model: 'deepseek-v4-flash',
         },
       ],
     });
@@ -356,7 +363,7 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [
         {
           taskId: taskId('T001'),
@@ -420,7 +427,7 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [],
     });
 
@@ -446,7 +453,7 @@ describe('calculateCostBreakdown', () => {
       escalatedCount: 0,
       plannerTool: 'claude-code',
       implementerTool: 'deepseek',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
       taskBreakdowns: [
         {
           taskId: taskId('T001'),
@@ -540,6 +547,144 @@ describe('calculateCostBreakdown', () => {
   });
 });
 
+describe('offering billing metadata', () => {
+  it('meters PAYG when usage exists', () => {
+    const metadata = resolveProviderRunMetadata({
+      tool: 'deepseek',
+      normalizedEndpoint: 'https://api.deepseek.com/v1',
+    });
+    expect(metadata).toMatchObject({
+      service: 'deepseek',
+      offering: 'payg',
+      billing: 'api-metered',
+      normalizedEndpoint: 'https://api.deepseek.com/v1',
+      asOf: '2026-07-31',
+    });
+
+    const presentation = describeOfferingBillingPresentation(metadata!, {
+      hasUsage: true,
+      meteredCost: 0.21,
+    });
+    expect(presentation.costLabel).toBe('$0.21');
+    expect(presentation.billingLabel).toBe('api-metered');
+  });
+
+  it('labels subscription-included quota without a PAYG charge', () => {
+    const metadata = resolveProviderRunMetadata({ tool: 'claude-code' });
+    expect(metadata).toMatchObject({
+      service: 'claude-code',
+      offering: 'coding-subscription',
+      billing: 'subscription-included',
+      normalizedEndpoint: 'cli:claude',
+      asOf: '2026-07-31',
+    });
+
+    const presentation = describeOfferingBillingPresentation(metadata!, {
+      hasUsage: true,
+      meteredCost: 0,
+    });
+    expect(presentation.costLabel).toBe('subscription-included');
+    expect(presentation.billingLabel).toBe('subscription-included');
+    expect(presentation.costLabel).not.toMatch(/\$0 extra|free|local/i);
+    expect(formatOfferingAwareExtraCost(metadata!, 0)).toBeNull();
+    expect(formatOfferingAwareExtraCost(metadata!, 1.25)).toBeNull();
+  });
+
+  it('describes free quota as variable', () => {
+    const metadata: ProviderRunMetadata = {
+      service: 'gemini',
+      offering: 'free-quota',
+      normalizedEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
+      billing: 'provider-dependent',
+      asOf: '2026-07-31',
+    };
+
+    const presentation = describeOfferingBillingPresentation(metadata, { hasUsage: true });
+    expect(presentation.costLabel).toBe('variable quota');
+    expect(presentation.costLabel).not.toMatch(/free|unlimited|guaranteed/i);
+  });
+
+  it('labels local compute local', () => {
+    const metadata = resolveProviderRunMetadata({
+      tool: 'ollama',
+      normalizedEndpoint: 'http://localhost:11434/v1',
+    });
+    expect(metadata).toMatchObject({
+      service: 'ollama',
+      offering: 'local',
+      billing: 'local',
+      normalizedEndpoint: 'http://localhost:11434/v1',
+      asOf: '2026-07-31',
+    });
+
+    const presentation = describeOfferingBillingPresentation(metadata!, { hasUsage: true });
+    expect(presentation.costLabel).toBe('local');
+    expect(presentation.billingLabel).toBe('local');
+  });
+
+  it('carries offering metadata through calculateCostBreakdown', () => {
+    const usage = makeUsage({
+      plannerInput: 100_000,
+      plannerOutput: 50_000,
+      implementerInput: 500_000,
+      implementerOutput: 200_000,
+    });
+
+    const result = calculateCostBreakdown({
+      tokenUsage: usage,
+      totalTasks: 1,
+      escalatedCount: 0,
+      plannerTool: 'anthropic',
+      plannerModel: 'claude-sonnet-4-6',
+      implementerTool: 'ollama',
+      implementerModel: 'qwen-local',
+    });
+
+    expect(result.providerRunMetadata?.anthropic).toMatchObject({
+      service: 'anthropic',
+      offering: 'payg',
+      billing: 'api-metered',
+      asOf: '2026-07-31',
+    });
+    expect(result.providerRunMetadata?.ollama).toMatchObject({
+      service: 'ollama',
+      offering: 'local',
+      billing: 'local',
+      asOf: '2026-07-31',
+    });
+    expect(result.offeringPresentations?.anthropic?.costLabel).toMatch(/^\$/);
+    expect(result.offeringPresentations?.ollama?.costLabel).toBe('local');
+  });
+});
+
+describe('summary persistence', () => {
+  it('keeps run metadata and offering presentations through the summary schema', () => {
+    const result = calculateCostBreakdown({
+      tokenUsage: makeUsage({
+        plannerInput: 100_000,
+        plannerOutput: 50_000,
+        implementerInput: 200_000,
+        implementerOutput: 100_000,
+      }),
+      totalTasks: 2,
+      escalatedCount: 0,
+      plannerTool: 'claude-code',
+      implementerTool: 'deepseek',
+      implementerModel: 'deepseek-v4-flash',
+    });
+
+    const parsed = CostBreakdownSchema.parse(result);
+
+    expect(parsed.providerRunMetadata?.['claude-code']).toMatchObject({
+      offering: 'coding-subscription',
+      billing: 'subscription-included',
+    });
+    expect(parsed.offeringPresentations?.['claude-code']?.costLabel).toBe('subscription-included');
+    expect(parsed.providerRunMetadata).toEqual(result.providerRunMetadata);
+    expect(parsed.offeringPresentations).toEqual(result.offeringPresentations);
+  });
+});
+
 describe('cache pricing', () => {
   it('calculateCostBreakdown with cacheRead tokens + priced provider returns correct cacheReadSavings', () => {
     // Sonnet 4.6: input=$3/MTok, cacheRead=$0.30/MTok => savings=$2.70/MTok of cache reads
@@ -558,7 +703,7 @@ describe('cache pricing', () => {
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
       plannerModel: 'claude-sonnet-4-6',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     // 1_000_000 cache read tokens at (3.00 - 0.30) = $2.70/MTok = $2.70 savings
@@ -603,7 +748,7 @@ describe('cache pricing', () => {
       plannerTool: 'anthropic',
       implementerTool: 'deepseek',
       plannerModel: 'claude-sonnet-4-6',
-      implementerModel: 'deepseek-chat',
+      implementerModel: 'deepseek-v4-flash',
     });
 
     expect(result.cacheReadSavings).toBeUndefined();

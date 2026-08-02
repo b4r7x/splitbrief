@@ -97,7 +97,7 @@ A type stays in `src/core/types/` only if it meets **either** the cross-cutting 
 
 The current residents (TS-only, no Zod schema):
 
-- `core/types/config-options.ts` — `WorkflowOpts`, the CLI/run option bag (many consumers under `cli/`; carve-out — no single folder owns the option contract). The provider-detection types `DetectedModel` / `PlannerDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`, not here.
+- `core/types/config-options.ts` — `WorkflowOpts`, the CLI/run option bag (many consumers under `cli/`; carve-out — no single folder owns the option contract). The detection types `DetectedModel` / `CliToolDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`, not here.
 - `core/types/session-ref.ts` — `SessionRef`, the `{ projectDir, sessionId }` handle threaded across `cli/` + `engine/` (carve-out — a cross-folder reference with no producer folder).
 
 Inferred counterparts (`Config`, `Task`, `WorkflowState`, `Summary`, `TokenUsage`, etc.) live beside their Zod schema in `core/schemas/`. `z.infer` is forbidden inside `core/types/`.
@@ -247,7 +247,7 @@ If it turns out a type or value from `features/workflow/` is needed in `engine/`
 **Q: I'm adding a `ReviewAction` type used only by `features/workflow/review-parser.ts`.**
 A: Inline into `review-parser.ts` (Case A).
 
-**Q: I'm adding a `PlannerDetection` type produced in `core/discovery/detection.ts` and consumed across `engine/detection/`, `stores/project/`, and `features/runners/`.**
+**Q: I'm adding a `CliToolDetection` type produced in `core/discovery/detection.ts` and consumed across `engine/detection/`, `stores/project/`, and `features/runners/`.**
 A: Keep it with its producer in `core/discovery/detection.ts`; cross-folder consumers `import type` from there. (Case C — placing the contract in `core/` keeps `engine/`/`stores/`/`features/` from importing each other.)
 
 **Q: I'm adding a `ProviderMetadata` type created by `engine/providers/metadata.ts` and consumed by `engine/providers/registry.ts` + `stores/discovery/model-cache.ts`.**

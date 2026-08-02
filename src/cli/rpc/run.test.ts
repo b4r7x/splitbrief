@@ -36,7 +36,6 @@ function writeConfig(projectDir: string): void {
       'workflow:',
       '  approve: default',
       '  max_retries: 3',
-      '  commit_strategy: none',
       '  mode: standard',
     ].join('\n'),
   );
