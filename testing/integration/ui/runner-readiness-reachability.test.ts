@@ -5,14 +5,16 @@ import {
   type CliExecutableIdentity,
   type CliReadinessState,
 } from '../../../src/core/discovery/detection.js';
-import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  CLI_TOOL_IDS,
+  defaultCliAuthChannel,
+} from '../../../src/core/runners/cli-tool-catalog.js';
 import {
   deriveCliReadiness,
   deriveCliReadinessStatus,
 } from '../../../src/core/schemas/readiness.js';
 import { detectAll, detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
-import { createDetectionService } from '../../../src/engine/detection/service.js';
-import { loadDetectionIntoStores } from '../../../src/stores/discovery/detection-adapter.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import {
   assemblePickerDescriptors,
@@ -23,8 +25,8 @@ import { error } from '../../../src/utils/error.js';
 
 /**
  * Reachability is a property of the whole chain, so every step below is the
- * production one: `detectAll` → `detectAvailableCliTools` → `createDetectionService`
- * → `loadDetectionIntoStores` → `detectionStore` → `buildPickerOptions`. Only the
+ * production one: `detectAll` → `detectAvailableCliTools` → `detectionStore`
+ * → `buildPickerOptions`. Only the
  * two process-touching seams `detectAvailableCliTools` already exposes are
  * substituted, so the run needs no installed tool and no subprocess.
  */
@@ -39,27 +41,27 @@ async function cliPickerOptions(
 ): Promise<PickerOption[]> {
   const state = overrides.state ?? 'ready';
   const resolveExecutable = overrides.resolveExecutable ?? (async () => PROBE_EXECUTABLE);
+  const authChannels = Object.fromEntries(
+    CLI_TOOL_IDS.map((tool) => [tool, defaultCliAuthChannel(tool).id]),
+  );
   const detectCliTools = () =>
     detectAvailableCliTools({
       resolveExecutable,
       probeReadiness: async ({ tool }) => deriveCliReadiness(cliReadinessFactsFor(state, tool)),
+      authChannels,
     });
 
-  await loadDetectionIntoStores(
-    createDetectionService(),
-    {
-      detectAll: () => detectAll({ detectProviders: async () => [], detectCliTools }),
-      fetchModelsDevCatalog: async () => ({}),
-      discoverAllCliTools: async () => ({}),
-    },
-    detectionStore,
-  );
+  const detection = await detectAll({
+    detectProviders: async () => [],
+    detectCliTools,
+  });
+  detectionStore.setDetection(detection);
 
   const snapshot = detectionStore.get();
   return buildPickerOptions(
     role,
     assemblePickerDescriptors(),
-    { cliTools: snapshot.cliTools, providers: snapshot.implementers },
+    { cliTools: snapshot.cliTools, providers: snapshot.providers },
     undefined,
   ).filter((option) => option.kind === 'cli');
 }

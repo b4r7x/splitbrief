@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { taskId } from '../../core/schemas/task.js';
+import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { IPC_MAX_FRAME_BYTES, type ServerMessage } from './protocol.js';
 import { writeServerMessage } from './write-message.js';
 
@@ -102,6 +103,35 @@ describe('writeServerMessage', () => {
     const frames = received.lines.map((l) => JSON.parse(l) as ServerMessage);
     expect(frames.length).toBe(1);
     expect(frames[0]).toEqual(msg);
+  });
+
+  it('writes an exact-limit immutable artifact review frame without normalization', async () => {
+    const { server, client } = await connectedPair();
+    const received = collectLines(client);
+    const prefix = 'sk-artifact-secret-19827\u001b]0;control\u0007\n';
+    const text = `${prefix}${'\u0000'.repeat(
+      PLANNER_ARTIFACT_MAX_BYTES - Buffer.byteLength(prefix, 'utf8'),
+    )}`;
+    const msg: ServerMessage = {
+      kind: 'prompt_request',
+      request: {
+        requestId: 'artifact-review-1',
+        kind: 'artifact_review',
+        review: { label: 'Custom planner artifact', text },
+      },
+    };
+
+    const result = writeServerMessage(server, msg, { persistTranscript: false });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(typeof result).toBe('boolean');
+    expect(server.destroyed).toBe(false);
+    expect(received.lines).toHaveLength(1);
+    const line = received.lines[0];
+    expect(line).toBeDefined();
+    if (line === undefined) throw new Error('missing artifact review frame');
+    expect(Buffer.byteLength(`${line}\n`, 'utf8')).toBeLessThanOrEqual(IPC_MAX_FRAME_BYTES);
+    expect(JSON.parse(line) as ServerMessage).toEqual(msg);
   });
 
   it('replaces session metadata feature text when transcript persistence is disabled', async () => {

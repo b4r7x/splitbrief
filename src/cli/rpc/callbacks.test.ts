@@ -55,6 +55,28 @@ describe('createWorkflowCallbacks confirm-tier RPC approval', () => {
     });
   });
 
+  it('forwards immutable artifact review text to the RPC approval status without a path', async () => {
+    const review = Object.freeze({
+      label: 'Custom planner artifact',
+      text: '# exact artifact\n\u0000no pathname\n',
+    });
+    const waitForApproval = vi.fn(async () => ({ approved: true }) as const);
+    const callbacks = createWorkflowCallbacks({
+      waitForApproval,
+      waitForMessage: async () => 'continue',
+      reportError: () => undefined,
+    });
+
+    await expect(callbacks.onApprovalNeeded('artifact', review)).resolves.toEqual({
+      approved: true,
+    });
+    expect(waitForApproval).toHaveBeenCalledWith({
+      pending: 'approval',
+      approvalType: 'artifact',
+      review,
+    });
+  });
+
   it('passes targeted brief revision task ids through to the approval loop', async () => {
     const callbacks = createWorkflowCallbacks({
       waitForApproval: async () => ({

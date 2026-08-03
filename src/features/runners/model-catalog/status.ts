@@ -3,6 +3,7 @@ import type { ApiProviderDescriptor } from '../../../core/providers/api-provider
 import { hasApiKey } from '../../../core/providers/catalog.js';
 import type { CliToolDescriptor } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
+import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
 export type PickerStatusState =
   | 'ready'
@@ -14,7 +15,16 @@ export type PickerStatusState =
   | 'disabled';
 
 export type PickerOptionStatus =
-  | { state: 'ready'; remediation: null }
+  | {
+      state: 'ready';
+      remediation: null;
+      /**
+       * Deduplicated provider names from the tool's own credential listing.
+       * Present only when a provider oracle ran; absent for presence-derived
+       * readiness.
+       */
+      configuredProviders?: readonly string[] | undefined;
+    }
   | { state: Exclude<PickerStatusState, 'ready'>; remediation: string };
 
 /**
@@ -25,6 +35,8 @@ export type PickerOptionStatus =
 export type PickerDetectionSnapshot = Readonly<{
   cliTools: readonly CliToolDetection[];
   providers: readonly ProviderDetection[];
+  /** Memory-only role/provider outcomes for the active configured connections. */
+  providerOutcomes?: readonly ConfiguredProviderRuntime[] | undefined;
   hasApiKeyOverride?: (provider: string) => boolean;
 }>;
 
@@ -47,6 +59,47 @@ function findProviderDetection(
   return detections.providers.find((item) => item.provider === provider);
 }
 
+function findConfiguredProviderRuntime(
+  detections: PickerDetectionSnapshot,
+  input: Readonly<{ role: 'planner' | 'implementer'; provider: string }>,
+): ConfiguredProviderRuntime | null | undefined {
+  if (detections.providerOutcomes === undefined || detections.providerOutcomes.length === 0) {
+    return undefined;
+  }
+  return (
+    detections.providerOutcomes.find(
+      (entry) =>
+        entry.connection.role === input.role && entry.connection.provider === input.provider,
+    ) ?? null
+  );
+}
+
+const PROVIDER_SIGN_IN_REMEDIATION =
+  'Sign in or configure a provider - free models require sign-in.';
+
+/**
+ * A provider-dependent CLI's own credential listing outranks presence-derived
+ * auth, but only on the auth axis: trust, compatibility, and availability
+ * blockers stand. Absent facts (legacy cache, oracle fallback) resolve nothing
+ * so the presence-derived diagnostic keeps governing.
+ */
+function providerFactStatus(
+  descriptor: CliToolDescriptor,
+  detection: CliToolDetection,
+): PickerOptionStatus | undefined {
+  if (descriptor.auth.kind !== 'provider-dependent') return undefined;
+  const facts = detection.providerAuth;
+  if (facts === undefined) return undefined;
+  if (detection.diagnostic.state !== 'ready' && detection.diagnostic.state !== 'unauthenticated') {
+    return undefined;
+  }
+  const providers = [...new Set(facts.map((fact) => fact.provider))];
+  if (providers.length === 0) {
+    return { state: 'unauthenticated', remediation: PROVIDER_SIGN_IN_REMEDIATION };
+  }
+  return { state: 'ready', remediation: null, configuredProviders: providers };
+}
+
 export function deriveCliStatus(
   descriptor: CliToolDescriptor,
   detections: PickerDetectionSnapshot,
@@ -58,6 +111,8 @@ export function deriveCliStatus(
       remediation: `Install ${descriptor.displayName}, then run runner readiness.`,
     };
   }
+  const factStatus = providerFactStatus(descriptor, cliDetection);
+  if (factStatus !== undefined) return factStatus;
   if (cliDetection.diagnostic.state === 'ready') {
     return { state: 'ready', remediation: null };
   }
@@ -99,11 +154,25 @@ function compatibilityStatus(descriptor: ApiProviderDescriptor): PickerOptionSta
 export function deriveApiStatus(
   descriptor: ApiProviderDescriptor,
   detections: PickerDetectionSnapshot,
+  role?: 'planner' | 'implementer',
 ): PickerOptionStatus {
   const qualification = compatibilityStatus(descriptor);
   if (qualification) return qualification;
 
-  const providerDetection = findProviderDetection(detections, descriptor.id);
+  const configured =
+    role === undefined
+      ? undefined
+      : findConfiguredProviderRuntime(detections, { role, provider: descriptor.id });
+  if (configured !== undefined && configured !== null) {
+    return configuredProviderStatus({
+      descriptor,
+      runtime: configured,
+      fallbackCredential: () => resolveHasApiKey(detections, descriptor.id),
+    });
+  }
+
+  const providerDetection =
+    configured === null ? undefined : findProviderDetection(detections, descriptor.id);
   if (providerDetection?.available) {
     return { state: 'ready', remediation: null };
   }
@@ -112,6 +181,17 @@ export function deriveApiStatus(
     return {
       state: 'unavailable',
       remediation: providerDetection?.error ?? `Start ${descriptor.service} and refresh detection.`,
+    };
+  }
+
+  // A rejected credential is an auth problem, not reachability: the picker must
+  // say "replace the key", while offline/timeout stay unavailable below.
+  if (providerDetection?.failure === 'invalid-credential') {
+    return {
+      state: 'unauthenticated',
+      remediation: descriptor.credentialEnv
+        ? `Key found in ${descriptor.credentialEnv} but ${descriptor.service} rejected it.`
+        : `${descriptor.service} rejected the configured key.`,
     };
   }
 
@@ -132,23 +212,98 @@ export function deriveApiStatus(
   };
 }
 
-export function deriveMetaStatus(
-  kind: 'shell' | 'agent' | 'agent-sdk',
-  detections: PickerDetectionSnapshot,
+function credentialRemediation(descriptor: Pick<ApiProviderDescriptor, 'credentialEnv'>): string {
+  return descriptor.credentialEnv
+    ? `Set ${descriptor.credentialEnv} or configure an inline apiKey, then refresh detection.`
+    : 'Configure credentials and refresh detection.';
+}
+
+function configuredProviderStatus(
+  input: Readonly<{
+    descriptor: Pick<ApiProviderDescriptor, 'service' | 'credentialEnv'>;
+    runtime: ConfiguredProviderRuntime;
+    fallbackCredential: () => boolean;
+  }>,
 ): PickerOptionStatus {
-  if (kind === 'shell' || kind === 'agent') {
+  const { descriptor, runtime } = input;
+  if (runtime.state === 'fresh') return { state: 'ready', remediation: null };
+  if (runtime.state === 'stale') {
+    return {
+      state: 'unavailable',
+      remediation: `Last confirmed ${descriptor.service} catalog is stale. Refresh detection.`,
+    };
+  }
+
+  switch (runtime.failure) {
+    case 'missing-credential':
+    case 'invalid-credential':
+      return { state: 'unauthenticated', remediation: credentialRemediation(descriptor) };
+    case 'privacy-filtered':
+      return {
+        state: 'unavailable',
+        remediation: `${descriptor.service} privacy policy filtered catalog access. Review privacy settings and refresh detection.`,
+      };
+    case 'guardrail-filtered':
+      return {
+        state: 'unavailable',
+        remediation: `${descriptor.service} guardrails filtered catalog access. Review provider policy and refresh detection.`,
+      };
+    case 'endpoint-invalid':
+      return {
+        state: 'unavailable',
+        remediation: `Configure a valid ${descriptor.service} endpoint, then refresh detection.`,
+      };
+    case 'policy-denied':
+      return {
+        state: 'unavailable',
+        remediation: `${descriptor.service} policy denied catalog access. Review provider policy and refresh detection.`,
+      };
+    case 'offline':
+    case 'timeout':
+    case 'malformed':
+    case 'request-failed':
+    case undefined:
+      if (!input.fallbackCredential()) {
+        return { state: 'unauthenticated', remediation: credentialRemediation(descriptor) };
+      }
+      return {
+        state: 'unavailable',
+        remediation: runtime.diagnostic ?? `${descriptor.service} is not currently reachable.`,
+      };
+  }
+}
+
+export function deriveMetaStatus(
+  kind: 'custom-command' | 'agent-sdk',
+  detections: PickerDetectionSnapshot,
+  role?: 'planner' | 'implementer',
+  useConfiguredProviderOutcome = false,
+): PickerOptionStatus {
+  if (kind === 'custom-command') {
     return { state: 'ready', remediation: null };
   }
-  if (resolveHasApiKey(detections, 'agent-sdk')) {
-    return { state: 'ready', remediation: null };
+  const configured =
+    !useConfiguredProviderOutcome || role === undefined
+      ? undefined
+      : findConfiguredProviderRuntime(detections, { role, provider: 'anthropic' });
+  if (configured !== undefined && configured !== null) {
+    return configuredProviderStatus({
+      descriptor: { service: 'Agent SDK', credentialEnv: 'ANTHROPIC_API_KEY' },
+      runtime: configured,
+      fallbackCredential: () => resolveHasApiKey(detections, 'agent-sdk'),
+    });
   }
+  if (resolveHasApiKey(detections, 'agent-sdk')) return { state: 'ready', remediation: null };
   return {
     state: 'unauthenticated',
     remediation: 'Set ANTHROPIC_API_KEY or configure an inline apiKey for Agent SDK.',
   };
 }
 
-export function isSelectable(status: PickerOptionStatus, kind: RunnerKind): boolean {
-  if (kind === 'shell' || kind === 'agent') return true;
+export function isSelectable(
+  status: PickerOptionStatus,
+  kind: RunnerKind | 'custom-command',
+): boolean {
+  if (kind === 'custom-command') return true;
   return status.state === 'ready';
 }

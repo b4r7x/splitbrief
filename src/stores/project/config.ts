@@ -1,11 +1,12 @@
 import { createStore, storeBase } from '../create-store.js';
 import {
   loadConfig,
-  writeConfig,
-  writeConfigDocument,
-  rawDocumentHasVersion,
+  transactConfigDocument,
+  configRevisionsMatch,
   configPath,
 } from '../../core/config/load/io.js';
+import type { ConfigRevision, ExpectedConfigRevision } from '../../lib/confined-fs.js';
+import { toYaml } from '../../core/config/load/transform.js';
 import type { CLIOverrides } from '../../core/config/runtime/overrides/schema.js';
 import {
   emitEffectiveConfigWarnings,
@@ -29,6 +30,7 @@ interface ConfigState {
   config: Config | null;
   diskConfig: Config | null;
   rawYaml: string;
+  revision: ExpectedConfigRevision;
   projectDir: string;
   overrides: CLIOverrides;
   detectedContextLength: number | undefined;
@@ -38,6 +40,7 @@ const initial: ConfigState = {
   config: null,
   diskConfig: null,
   rawYaml: '',
+  revision: null,
   projectDir: '',
   overrides: {},
   detectedContextLength: undefined,
@@ -45,13 +48,25 @@ const initial: ConfigState = {
 
 const store = createStore<ConfigState>(initial);
 
-interface SaveResult {
-  ok: boolean;
-  error?: Error;
-}
+export type ConfigSaveResult =
+  | Readonly<{ kind: 'saved'; ok: true; revision: ConfigRevision }>
+  | Readonly<{
+      kind: 'conflict';
+      ok: false;
+      currentRevision: ExpectedConfigRevision;
+    }>
+  | Readonly<{
+      kind: 'durability-uncertain';
+      ok: false;
+      observedRevision: ConfigRevision;
+      warning: string;
+    }>
+  | Readonly<{ kind: 'failure'; ok: false; error: Error }>;
 
-function load(projectDir: string, overrides: CLIOverrides = {}) {
-  const { config: loaded, loaderDiagnostics, rawYaml } = loadConfig(projectDir);
+let saveQueue: Promise<void> = Promise.resolve();
+
+function loadedState(projectDir: string, overrides: CLIOverrides): ConfigState {
+  const { config: loaded, loaderDiagnostics, rawYaml, revision } = loadConfig(projectDir);
   const base = cloneConfig(loaded);
   const { config, warnings } = resolveEffectiveConfig({
     base,
@@ -59,43 +74,84 @@ function load(projectDir: string, overrides: CLIOverrides = {}) {
     loaderDiagnostics,
   });
   emitEffectiveConfigWarnings(warnings);
-  store.set({
+  return {
     config,
     diskConfig: cloneConfig(loaded),
     rawYaml,
+    revision,
     projectDir,
     overrides: cloneValue(overrides),
     detectedContextLength: undefined,
-  });
+  };
 }
 
-function save(updated: Config): SaveResult {
-  const { config, diskConfig, rawYaml, projectDir } = store.get();
+function load(projectDir: string, overrides: CLIOverrides = {}) {
+  store.set(loadedState(projectDir, overrides));
+}
+
+async function saveOnce(
+  updated: Config,
+  expectedRevision: ExpectedConfigRevision,
+  expectedProjectDir: string,
+): Promise<ConfigSaveResult> {
+  const { config, diskConfig, projectDir, overrides, revision } = store.get();
   if (!projectDir) throw configError.loadNotCalled('save');
   if (!config || !diskConfig) throw configError.loadNotCalled('save');
+  if (projectDir !== expectedProjectDir || !configRevisionsMatch(expectedRevision, revision)) {
+    return { kind: 'conflict', ok: false, currentRevision: revision };
+  }
   const persisted = persistedConfigForSave({
     persisted: diskConfig,
     effective: config,
     updated,
   });
-  const edits = editsForSave(diskConfig, persisted);
+  const edits =
+    revision === null
+      ? [{ path: [], value: toYaml(persisted) }]
+      : editsForSave(diskConfig, persisted);
   try {
-    let nextRaw = rawYaml;
-    if (rawDocumentHasVersion(rawYaml)) {
-      if (edits.length > 0) nextRaw = writeConfigDocument(projectDir, rawYaml, edits);
-    } else {
-      nextRaw = writeConfig(projectDir, persisted);
+    const result = await transactConfigDocument(projectDir, revision, edits);
+    if (result.kind === 'conflict') {
+      return {
+        kind: 'conflict',
+        ok: false,
+        currentRevision: result.currentRevision,
+      };
     }
-    store.set((s) => ({
-      ...s,
-      config: cloneConfig(updated),
-      diskConfig: cloneConfig(persisted),
-      rawYaml: nextRaw,
-    }));
-    return { ok: true };
+    const next = loadedState(projectDir, overrides);
+    if (result.kind === 'saved') {
+      if (!configRevisionsMatch(result.revision, next.revision)) {
+        return { kind: 'conflict', ok: false, currentRevision: next.revision };
+      }
+      store.set((state) => ({
+        ...state,
+        config: cloneConfig(updated),
+        diskConfig: cloneConfig(persisted),
+        rawYaml: next.rawYaml,
+        revision: next.revision,
+      }));
+      return { kind: 'saved', ok: true, revision: result.revision };
+    }
+    store.set(next);
+    return { ...result, ok: false };
   } catch (err) {
-    return { ok: false, error: configError.saveFailed(configPath(projectDir), err) };
+    return {
+      kind: 'failure',
+      ok: false,
+      error: configError.saveFailed(configPath(projectDir), err),
+    };
   }
+}
+
+function save(updated: Config): Promise<ConfigSaveResult> {
+  const { projectDir, revision } = store.get();
+  if (!projectDir) throw configError.loadNotCalled('save');
+  const operation = saveQueue.then(() => saveOnce(updated, revision, projectDir));
+  saveQueue = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  return operation;
 }
 
 function useConfig(): Config {
@@ -147,6 +203,7 @@ function setApprovalEnabled(enabled: boolean) {
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<ConfigState>): void {
+  saveQueue = Promise.resolve();
   const state = next ? { ...initial, ...next } : initial;
   store.set({
     ...state,

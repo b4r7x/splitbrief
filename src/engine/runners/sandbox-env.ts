@@ -1,5 +1,5 @@
 import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import {
@@ -33,6 +33,24 @@ type CliStatePath = Readonly<{
   destination: SandboxStateRoot;
   destinationPath: string;
 }>;
+
+/**
+ * Keeps a resolved CLI's directory first without discarding the sanitized
+ * runtime PATH its shebang interpreter needs.
+ */
+export function prependCliExecutableDirectory({
+  executablePath,
+  safeRuntimePath,
+}: Readonly<{ executablePath: string; safeRuntimePath: string }>): string {
+  if (!isAbsolute(executablePath)) {
+    throw error('cli-executable-path-invalid', 'Resolved CLI executable path must be absolute.');
+  }
+  const paths = new Set<string>([dirname(executablePath)]);
+  for (const entry of safeRuntimePath.split(delimiter)) {
+    if (entry.length > 0 && isAbsolute(entry)) paths.add(entry);
+  }
+  return [...paths].join(delimiter);
+}
 
 /**
  * A session channel gets a snapshot of the selected CLI's state, never the
@@ -102,6 +120,12 @@ const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
   ],
   aider: [],
   copilot: [
+    {
+      source: 'HOME',
+      relativePath: '.copilot/config.json',
+      destination: 'home',
+      destinationPath: '.copilot/config.json',
+    },
     {
       source: 'HOME',
       relativePath: '.config/github-copilot/apps.json',
@@ -174,6 +198,18 @@ const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
       source: 'APPDATA',
       relativePath: 'kilo/auth.json',
       destination: 'config',
+      destinationPath: 'kilo/auth.json',
+    },
+    {
+      source: 'HOME',
+      relativePath: '.local/share/kilo/auth.json',
+      destination: 'data',
+      destinationPath: 'kilo/auth.json',
+    },
+    {
+      source: 'XDG_DATA_HOME',
+      relativePath: 'kilo/auth.json',
+      destination: 'data',
       destinationPath: 'kilo/auth.json',
     },
     {
@@ -441,6 +477,9 @@ export async function createSandboxEnv(
       mkdir(dir, { recursive: true }),
     ),
   );
+  // A new child must never inherit a previous run's selected session state,
+  // including when this invocation selects an API-key channel instead.
+  await clearBridgedCliState(projectDir);
   const env = createSanitizedChildEnv(process.env, preserveEnvKeys);
   const sandboxState = {
     PATH: await sanitizedRuntimePath(projectDir),

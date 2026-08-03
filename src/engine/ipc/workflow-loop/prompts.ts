@@ -1,7 +1,11 @@
 import type { IpcPromptResponse } from '../protocol.js';
 import { error } from '../../../utils/error.js';
 import type { OrchestratorCallbacks } from '../../orchestrator/types.js';
-import { briefReviewCommandToApprovalReviewResult } from '../../../core/schemas/brief-review-command.js';
+import type { ApprovalReviewInput } from '../../runners/types.js';
+import {
+  briefReviewCommandToApprovalReviewResult,
+  type BriefReviewPromptKind,
+} from '../../../core/schemas/brief-review-command.js';
 import type { IpcServer } from '../server.js';
 
 const ipcWorkflowLoopError = {
@@ -16,6 +20,12 @@ const ipcWorkflowLoopError = {
       'ipc-non-settling-approval-command',
       `IPC approval command does not resolve the prompt: ${action}`,
       { action },
+    ),
+  invalidApprovalReviewInput: (approvalType: BriefReviewPromptKind) =>
+    error(
+      'ipc-invalid-approval-review-input',
+      `IPC approval review input has the wrong shape for ${approvalType}`,
+      { approvalType },
     ),
 } as const;
 
@@ -34,9 +44,28 @@ export function makeCallbacks(ipcServer: IpcServer): OrchestratorCallbacks {
   // (/revise-spec, /revise-plan, /redo-task) are not exposed to attach clients — send revision
   // text via user_input or settle at the next prompt instead.
   return {
-    onApprovalNeeded: async (approvalType: 'spec' | 'plan' | 'briefs', filePath: string) => {
+    onApprovalNeeded: async (approvalType: BriefReviewPromptKind, input: ApprovalReviewInput) => {
+      if (approvalType === 'artifact') {
+        if (typeof input === 'string') {
+          throw ipcWorkflowLoopError.invalidApprovalReviewInput(approvalType);
+        }
+        const response = assertPromptResponse(
+          await ipcServer.requestClientPrompt({ kind: 'artifact_review', review: input }),
+          'artifact_review',
+        );
+        return response.approved ? { approved: true } : { approved: false };
+      }
+
+      if (typeof input !== 'string') {
+        throw ipcWorkflowLoopError.invalidApprovalReviewInput(approvalType);
+      }
+
       const response = assertPromptResponse(
-        await ipcServer.requestClientPrompt({ kind: 'approval_needed', approvalType, filePath }),
+        await ipcServer.requestClientPrompt({
+          kind: 'approval_needed',
+          approvalType,
+          filePath: input,
+        }),
         'approval_needed',
       );
       if ('command' in response) {

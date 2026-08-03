@@ -5,12 +5,8 @@ import type { Config } from '../../../core/schemas/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import {
-  makeCallbacks,
-  makeImplementer,
-  makeBusRecorder,
-  makeWctx,
-} from '#testing/helpers/orchestrator-factories.js';
+import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { makeImplementer, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { runTaskLoop } from './loop.js';

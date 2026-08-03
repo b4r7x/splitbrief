@@ -181,6 +181,42 @@ describe('ambient secret stripping canary matrix', () => {
     expect(apiKey.OPENAI_API_KEY).toBe('canary-secret-isolation-openai-5e6f');
     expect(apiKey.ANTHROPIC_API_KEY).toBeUndefined();
   });
+
+  it('does not expose a previous session bridge to an API-key child process', async () => {
+    const hostHome = createTempDir('secret-isolation-channel-reset-host');
+    const projectDir = createTempDir('secret-isolation-channel-reset-project');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    writeFileSync(
+      join(hostHome, '.codex', 'auth.json'),
+      JSON.stringify({ token: 'canary-secret-isolation-session-bridge-7e8f' }),
+    );
+    setEnv('HOME', hostHome);
+    setEnv('OPENAI_API_KEY', 'canary-secret-isolation-api-key-8f9a');
+
+    const session = await createRunnerSandboxEnv(projectDir, {
+      kind: 'cli',
+      tool: 'codex',
+      authChannel: 'session',
+    });
+    expect(existsSync(join(session.HOME as string, '.codex', 'auth.json'))).toBe(true);
+
+    const apiKey = await createRunnerSandboxEnv(projectDir, {
+      kind: 'cli',
+      tool: 'codex',
+      authChannel: 'api-key',
+    });
+    const result = await run(
+      invocation({
+        environment: toCliEnvironment(apiKey),
+        script:
+          "const fs=require('node:fs');const path=require('node:path');const hasSession=fs.existsSync(path.join(process.env.HOME,'.codex','auth.json'));if(hasSession||process.env.OPENAI_API_KEY!=='canary-secret-isolation-api-key-8f9a')process.exit(23);process.stdout.write('RESULT\\n')",
+      }),
+    );
+
+    expect(result.status).toBe('completed');
+    expect(existsSync(join(apiKey.HOME as string, '.codex', 'auth.json'))).toBe(false);
+  });
 });
 
 describe('real-HOME invisibility canary matrix', () => {

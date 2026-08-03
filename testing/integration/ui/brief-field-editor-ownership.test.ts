@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { Box } from 'ink';
 import { createElement } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { ApprovalReviewResult } from '../../../src/core/approval/types.js';
 import type { EditorLayout } from '../../../src/core/editor/editor-state.js';
@@ -171,8 +171,9 @@ describe('BriefFieldEditor multi-field editing and save gate', () => {
 
     const owner = reviewStore.get().ownerToken;
 
+    await flushEffects();
     ui.stdin.write('Z');
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_O);
     await tick(20);
@@ -188,15 +189,15 @@ describe('BriefFieldEditor multi-field editing and save gate', () => {
     const task = validTask();
     const resolved: ApprovalReviewResult[] = [];
     const ui = open(task, sessionRef, resolved);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('Z');
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(TAB);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('Q');
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_S);
     await tick(20);
@@ -227,7 +228,7 @@ describe('BriefFieldEditor multi-field editing and save gate', () => {
     const task = validTask({ tests: ['works'] });
     const resolved: ApprovalReviewResult[] = [];
     const ui = open(task, sessionRef, resolved);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_S);
     await tick(20);
@@ -282,7 +283,7 @@ describe('BriefFieldEditor footer stays one controls row (F-201)', () => {
   it('keeps the controls hint on one row at a narrow inner width with a full field and save error', async () => {
     const task = validTask({ title: 'x'.repeat(300), tests: ['works'] });
     const ui = renderAtWidth(task, 54, 8);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_S);
     await tick(20);
@@ -298,7 +299,7 @@ describe('BriefFieldEditor footer stays one controls row (F-201)', () => {
   it('negative control: at a wide inner width the same hint already fits one row', async () => {
     const task = validTask({ tests: ['works'] });
     const ui = renderAtWidth(task, 120, 8);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_S);
     await tick(20);
@@ -354,7 +355,7 @@ describe('BriefFieldEditor field-save CAS write-gate', () => {
       sessionRef,
       resolve: (r) => resolved.push(r),
     });
-    await tick(20);
+    await flushEffects();
     stdin.write(CTRL_S);
     await tick(20);
 
@@ -384,7 +385,7 @@ describe('BriefFieldEditor field-save CAS write-gate', () => {
       sessionRef,
       resolve: () => {},
     });
-    await tick(20);
+    await flushEffects();
 
     stdin.write(BACKSPACE);
     await tick(20);
@@ -438,11 +439,13 @@ describe('BriefFieldEditor submit gate', () => {
 
     editorStore.dispatch({ kind: 'set-cursor', index: seeded.length });
 
+    await flushEffects();
     stdin.write(BACKSPACE);
     await tick(20);
     expect(editorStore.get()).toMatchObject({ value: seeded.slice(0, -1) });
 
     editorStore.beginSubmit();
+    await flushEffects();
     stdin.write(BACKSPACE);
     await tick(20);
     expect(editorStore.get()).toMatchObject({ value: seeded.slice(0, -1), submitting: true });

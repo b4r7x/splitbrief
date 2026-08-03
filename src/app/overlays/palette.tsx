@@ -25,7 +25,10 @@ import { configStore } from '../../stores/project/config.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
-import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type {
+  RuntimeCommandDef,
+  RuntimeConfigSaveResult,
+} from '../../core/runtime/commands/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
@@ -103,7 +106,7 @@ function isPaletteResultVisible(
 export interface CommandPaletteOverlayProps {
   commands: RuntimeCommandDef[];
   onRuntimeCommand: (raw: string) => unknown;
-  onWorkflowMode: (mode: WorkflowMode) => unknown;
+  onWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
 }
 
 export function CommandPaletteOverlay({
@@ -153,14 +156,40 @@ export function CommandPaletteOverlay({
     outerChromeRows: PROMPT_ROWS + HINT_ROWS,
   });
 
-  const runResult = (index: number) => {
+  const runResult = async (index: number) => {
     const item = results[index];
     if (!item) return;
     if (!isPaletteResultVisible(results, cursor, listBudget, index)) return;
-    commandPaletteMruStore.record(item.id);
-    overlayStore.close();
+    if (item.source !== 'mode') {
+      commandPaletteMruStore.record(item.id);
+      overlayStore.close();
+      try {
+        await item.action();
+      } catch (err) {
+        feedbackStore.setError(toErrorMessage(err));
+      }
+      return;
+    }
     try {
-      item.action();
+      const result = await item.action();
+      if (result.kind === 'saved') {
+        commandPaletteMruStore.record(item.id);
+        overlayStore.close();
+        return;
+      }
+      if (result.errorMessage) {
+        feedbackStore.setError(result.errorMessage);
+        return;
+      }
+      if (result.kind === 'conflict') {
+        feedbackStore.setError('Config changed on disk. Reload before saving again.');
+        return;
+      }
+      if (result.kind === 'durability-uncertain') {
+        feedbackStore.setError('Config save could not be confirmed.');
+        return;
+      }
+      feedbackStore.setError('Failed to save config.');
     } catch (err) {
       feedbackStore.setError(toErrorMessage(err));
     }
@@ -173,7 +202,7 @@ export function CommandPaletteOverlay({
         return;
       }
       if (key.return) {
-        runResult(cursor);
+        void runResult(cursor);
         return;
       }
       if (key.upArrow) {
@@ -228,7 +257,9 @@ export function CommandPaletteOverlay({
         key={result.id}
         zoneId={`palette:${result.id}`}
         z={ROW_ZONE_Z_OVERLAY}
-        onActivate={() => runResult(globalIndex)}
+        onActivate={() => {
+          void runResult(globalIndex);
+        }}
       >
         <ListRow
           label={result.label}

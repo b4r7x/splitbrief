@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { render } from 'ink-testing-library';
-import { tick } from '#testing/helpers/ink.js';
+import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
@@ -122,6 +122,7 @@ describe('useWorkflowKeys', () => {
     await tick(1);
     expect(overlayStore.get().active).toBe('none');
 
+    await flushEffects();
     ui.stdin.write('\x07');
     await tick(1);
     await tick(1);
@@ -138,12 +139,14 @@ describe('useWorkflowKeys', () => {
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(key)).toBe(false);
 
+    await flushEffects();
     ui.stdin.write(CTRL_A);
     await tick(1);
     await tick(1);
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(key)).toBe(true);
 
+    await flushEffects();
     ui.stdin.write(CTRL_A);
     await tick(1);
     await tick(1);
@@ -156,7 +159,7 @@ describe('useWorkflowKeys', () => {
     const key = seedExpandableActivityBatch();
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('\x1ba');
     await tick(1);
@@ -171,18 +174,20 @@ describe('useWorkflowKeys', () => {
     reviewStore.setScrollOffset(20);
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write(CTRL_B);
     await tick(1);
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBe(20);
 
+    await flushEffects();
     ui.stdin.write(CTRL_F);
     await tick(1);
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBe(20);
 
+    await flushEffects();
     ui.stdin.write(CTRL_E);
     await tick(1);
     await tick(1);
@@ -198,6 +203,7 @@ describe('useWorkflowKeys', () => {
 
     expect(conversationScrollStore.get().expandedDiffs.has(key)).toBe(false);
 
+    await flushEffects();
     ui.stdin.write(CTRL_D);
     await tick(1);
     await tick(1);
@@ -215,7 +221,7 @@ describe('useWorkflowKeys', () => {
     const key = seedDiff();
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write(CTRL_D);
     await tick(1);
@@ -229,10 +235,10 @@ describe('useWorkflowKeys', () => {
     const key = seedExpandableActivityBatch();
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('a');
-    await tick(1);
+    await flushEffects();
     ui.stdin.write('A');
     await tick(1);
     await tick(1);
@@ -244,7 +250,7 @@ describe('useWorkflowKeys', () => {
   it("plain '$' does not open the cost-drilldown overlay while composing", async () => {
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('$');
     await tick(1);
@@ -257,10 +263,10 @@ describe('useWorkflowKeys', () => {
   it('plain g and G leave every overlay closed so they stay composer text', async () => {
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('g');
-    await tick(1);
+    await flushEffects();
     ui.stdin.write('G');
     await tick(1);
     await tick(1);
@@ -277,6 +283,7 @@ describe('useWorkflowKeys', () => {
 
     expect(overlayStore.get().active).toBe('cost-drilldown');
 
+    await flushEffects();
     ui.stdin.write('x');
     await tick(1);
     await tick(1);
@@ -290,22 +297,23 @@ describe('useWorkflowKeys', () => {
     completionStore.setOpen(true);
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('\x07');
     await tick(1);
 
     expect(overlayStore.get().active).toBe('none');
 
+    await flushEffects();
     ui.stdin.write(SHIFT_UP);
     await tick(1);
     expect(conversationScrollStore.get().scrollOffset).toBe(0);
 
     completionStore.setOpen(false);
     overlayStore.open('help');
-    await tick(1);
+    await flushEffects();
     ui.stdin.write('\x07');
-    await tick(1);
+    await flushEffects();
     ui.stdin.write(SHIFT_UP);
     await tick(1);
 
@@ -313,7 +321,7 @@ describe('useWorkflowKeys', () => {
     expect(conversationScrollStore.get().scrollOffset).toBe(0);
 
     overlayStore.close();
-    await tick(1);
+    await flushEffects();
     ui.stdin.write(SHIFT_UP);
     await tick(1);
     await tick(1);
@@ -330,6 +338,7 @@ describe('useWorkflowKeys', () => {
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBe(0);
 
+    await flushEffects();
     ui.stdin.write(SHIFT_DOWN);
     await tick(1);
     await tick(1);
@@ -344,7 +353,7 @@ describe('useWorkflowKeys', () => {
     controlsStore.setInputMode('review');
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write(SHIFT_UP);
     await tick(1);
@@ -359,10 +368,10 @@ describe('useWorkflowKeys', () => {
     controlsStore.setInputMode('review');
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(1);
+    await flushEffects();
     ui.stdin.write(ARROW_UP);
     await tick(1);
     await tick(1);
@@ -376,7 +385,7 @@ describe('useWorkflowKeys', () => {
     controlsStore.setInputMode('review');
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write(PAGE_DOWN);
     await tick(1);
@@ -384,26 +393,31 @@ describe('useWorkflowKeys', () => {
     expect(reviewStore.get().scrollOffset).toBeGreaterThan(0);
 
     const afterPageDown = reviewStore.get().scrollOffset;
+    await flushEffects();
     ui.stdin.write(CTRL_B);
     await tick(1);
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBeLessThan(afterPageDown);
 
+    await flushEffects();
     ui.stdin.write(CTRL_F);
     await tick(1);
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBeGreaterThan(0);
 
+    await flushEffects();
     ui.stdin.write(END);
     await tick(1);
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBeGreaterThan(0);
 
+    await flushEffects();
     ui.stdin.write(HOME);
     await tick(1);
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBe(0);
 
+    await flushEffects();
     ui.stdin.write(PAGE_UP);
     await tick(1);
     await tick(1);
@@ -421,7 +435,7 @@ describe('useWorkflowKeys', () => {
     const maxTaskOffset = 20 - visibleTasks;
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write(PAGE_DOWN);
     await tick(1);
@@ -431,17 +445,20 @@ describe('useWorkflowKeys', () => {
     expect(reviewStore.get().scrollOffset).toBe(Math.min(visibleTasks, maxTaskOffset));
 
     for (let i = 0; i < 10; i += 1) {
+      await flushEffects();
       ui.stdin.write(PAGE_DOWN);
       await tick(1);
     }
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBe(maxTaskOffset);
 
+    await flushEffects();
     ui.stdin.write(HOME);
     await tick(1);
     await tick(1);
     expect(reviewStore.get().scrollOffset).toBe(0);
 
+    await flushEffects();
     ui.stdin.write(END);
     await tick(1);
     await tick(1);
@@ -469,7 +486,7 @@ describe('useWorkflowKeys', () => {
 
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
     ui.stdin.write(SHIFT_DOWN);
     await tick(1);
     await tick(1);
@@ -482,7 +499,7 @@ describe('useWorkflowKeys', () => {
     controlsStore.setInputMode('review');
     const reviewMaxOffset = 100 - readReviewContentHeight();
     reviewStore.setScrollOffset(reviewMaxOffset + 10);
-    await tick(1);
+    await flushEffects();
     ui.stdin.write(SHIFT_UP);
     await tick(1);
     await tick(1);
@@ -506,7 +523,7 @@ describe('useWorkflowKeys', () => {
     const ui = render(<Harness />);
     await tick(1);
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
-    await tick(1);
+    await flushEffects();
     ui.stdin.write(SHIFT_DOWN);
     await tick(1);
 
@@ -516,7 +533,7 @@ describe('useWorkflowKeys', () => {
     questionPromptStore.clearHint();
     const wide = readConversationScrollSnapshot();
     expect(wide.maxOffset).toBeLessThan(narrow.maxOffset);
-    await tick(1);
+    await flushEffects();
     ui.stdin.write(SHIFT_DOWN);
     await tick(1);
     await tick(1);
@@ -530,7 +547,7 @@ describe('useWorkflowKeys', () => {
     controlsStore.setInputMode('review');
     const ui = render(<Harness />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('G');
     await tick(1);
@@ -558,10 +575,10 @@ describe('useWorkflowKeys suspended while a prompt is pending', () => {
     seedLongConversation();
     const ui = render(<Harness isActive={false} />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('\x07');
-    await tick(1);
+    await flushEffects();
     ui.stdin.write(SHIFT_UP);
     await tick(1);
 
@@ -574,7 +591,7 @@ describe('useWorkflowKeys suspended while a prompt is pending', () => {
     overlayStore.open('cost-drilldown');
     const ui = render(<Harness isActive={false} />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('x');
     await tick(1);

@@ -29,7 +29,10 @@ import {
 import { AUTOMATIC_MODEL } from '../../../src/core/providers/automatic-model.js';
 import type { RunnerRole } from '../../../src/core/runners/cli-tool-catalog.js';
 import { buildRightModels } from '../../../src/features/runners/model-catalog/catalog.js';
-import type { PickerOption } from '../../../src/features/runners/model-catalog/options.js';
+import type {
+  PickerOption,
+  RunnerPickerOption,
+} from '../../../src/features/runners/model-catalog/options.js';
 
 const TMP = join(import.meta.dirname, '.tmp-runner-config-roundtrip');
 const dirs: string[] = [];
@@ -40,15 +43,6 @@ const commonGeneration = {
   temperature: 0.4,
   timeout: 240_000,
   effort: 'high' as const,
-};
-
-const plannerCapabilities = {
-  supportsConversationalPlanning: true,
-  supportsHintEscalation: true,
-  supportsSessionResume: false,
-  supportsEffort: false,
-  supportsImages: false,
-  supportsSelfSummarisation: true,
 };
 
 const watchdogs = { idleWarnMs: 90_000, idleKillMs: 600_000 };
@@ -86,32 +80,6 @@ const sameTargetCases: readonly (
   {
     role: 'planner',
     existing: {
-      kind: 'shell',
-      command: 'planner-shell',
-      args: ['--json'],
-      outputFormat: 'jsonl',
-      capabilities: plannerCapabilities,
-      model: 'shell-planner-model',
-      ...watchdogs,
-      ...commonGeneration,
-    },
-  },
-  {
-    role: 'planner',
-    existing: {
-      kind: 'agent',
-      command: 'planner-agent',
-      args: ['--verbose'],
-      outputFormat: 'text',
-      capabilities: plannerCapabilities,
-      model: 'agent-planner-model',
-      ...watchdogs,
-      ...commonGeneration,
-    },
-  },
-  {
-    role: 'planner',
-    existing: {
       kind: 'agent-sdk',
       apiKey: 'env:PATH',
       model: 'claude-opus-4-6',
@@ -141,30 +109,6 @@ const sameTargetCases: readonly (
       apiBase: 'https://openrouter.ai/api/v1',
       apiKey: 'env:PATH',
       model: 'qwen/qwen3-coder',
-      ...commonGeneration,
-    },
-  },
-  {
-    role: 'implementer',
-    existing: {
-      kind: 'shell',
-      command: 'implementer-shell',
-      args: ['--apply'],
-      outputFormat: 'text',
-      model: 'shell-implementer-model',
-      ...watchdogs,
-      ...commonGeneration,
-    },
-  },
-  {
-    role: 'implementer',
-    existing: {
-      kind: 'agent',
-      command: 'implementer-agent',
-      args: ['--apply'],
-      outputFormat: 'jsonl',
-      model: 'agent-implementer-model',
-      ...watchdogs,
       ...commonGeneration,
     },
   },
@@ -250,14 +194,17 @@ const crossTargetCases: readonly CrossTargetCase[] = [
  * Every cell the picker can actually emit: each role's real option list, each
  * option's real model list (the `auto` sentinel included, because the picker
  * offers it), plus model omission wherever the option's capability allows it.
- * Nothing here is hand-written, so a new tool, provider or model row joins the
- * matrix the moment the catalog admits it.
+ * When discovery is empty but the picker exposes the custom-model flow, the
+ * matrix follows that user path with a custom ID instead of inventing a bundled
+ * model. Nothing here is hand-written, so a new tool, provider or model row
+ * joins the matrix the moment the catalog admits it.
  */
 interface MatrixCell {
   role: RunnerRole;
   optionId: string;
   model: string | null;
   credentialEnv: string | undefined;
+  custom: boolean;
 }
 
 function credentialEnvFor(option: PickerOption): string | undefined {
@@ -271,9 +218,9 @@ function matrixCells(): MatrixCell[] {
   const cells: MatrixCell[] = [];
   for (const role of ['planner', 'implementer'] as const) {
     for (const option of realPickerOptions(role)) {
-      // Shell and agent runners carry a command, not a catalog id; the UI routes
-      // them through commitCustomCommand, which the named-profile suite covers.
-      if (option.kind === 'shell' || option.kind === 'agent') continue;
+      // The custom-command launcher carries a command, not a catalog id; the UI
+      // routes it through commitCustomCommand, which the named-profile suite covers.
+      if (option.kind === 'custom-command') continue;
       const credentialEnv = credentialEnvFor(option);
       const models = buildRightModels({
         isPlanner: role === 'planner',
@@ -283,7 +230,16 @@ function matrixCells(): MatrixCell[] {
       const offered: (string | null)[] = [...models];
       if (option.modelCapability.allowsOmit) offered.push(null);
       for (const model of offered) {
-        cells.push({ role, optionId: option.id, model, credentialEnv });
+        cells.push({ role, optionId: option.id, model, credentialEnv, custom: false });
+      }
+      if (offered.length === 0 && option.modelCapability.allowsCustom) {
+        cells.push({
+          role,
+          optionId: option.id,
+          model: `custom-${option.id}-model`,
+          credentialEnv,
+          custom: true,
+        });
       }
     }
   }
@@ -296,6 +252,16 @@ function commitCell(cell: MatrixCell): Config {
   const base = createDefaultConfig();
   const selection = realPickerOption(cell.role, cell.optionId);
   const model = cell.model === null ? null : { id: cell.model };
+  if (cell.custom) {
+    if (cell.model === null) throw new Error('custom matrix cells require a model ID');
+    return commitCustomModel({
+      config: base,
+      role: cell.role,
+      selection,
+      modelName: cell.model,
+      customModels: [],
+    });
+  }
   return cell.role === 'planner'
     ? commitPlannerSelection(base, selection, model)
     : commitImplementerSelection(base, selection, model);
@@ -320,7 +286,7 @@ function resolvedDefaultProfile(config: Config): ImplementerConfig {
 function pickerForRunner(
   role: RunnerRole,
   runner: PlannerConfig | ImplementerConfig,
-): PickerOption {
+): RunnerPickerOption {
   return realPickerOption(role, getRunnerDisplayName(runner));
 }
 
@@ -365,8 +331,8 @@ function writeRunnerConfigYaml(
   return join(dir, SPLITBRIEF_DIR, 'config.yaml');
 }
 
-function saveAndReload(dir: string, updated: Config): Config {
-  expect(configStore.save(updated).ok).toBe(true);
+async function saveAndReload(dir: string, updated: Config): Promise<Config> {
+  expect((await configStore.save(updated)).kind).toBe('saved');
   configStore.load(dir);
   return loadConfig(dir).config;
 }
@@ -383,7 +349,7 @@ afterEach(() => {
 
 describe('runner config roundtrip integration', () => {
   describe('named default implementer profile persistence', () => {
-    it('persists tool, model, custom model, endpoint, credential, and custom command through save/reload', () => {
+    it('persists tool, model, custom model, endpoint, credential, and custom command through save/reload', async () => {
       const dir = createTempDir('named-profile-roundtrip');
       dirs.push(dir);
       const configPath = writeRunnerConfigYaml(dir, {
@@ -392,7 +358,7 @@ describe('runner config roundtrip integration', () => {
           provider: 'together',
           service: 'together',
           offering: 'payg',
-          apiBase: 'https://api.together.xyz/v1',
+          apiBase: 'https://api.together.ai/v1',
           apiKey: 'env:PATH',
           model: 'existing-model',
           customModels: ['existing-model'],
@@ -414,17 +380,17 @@ describe('runner config roundtrip integration', () => {
       let current = loadConfig(dir).config;
       const together = realPickerOption('implementer', 'together');
 
-      current = saveAndReload(
+      current = await saveAndReload(
         dir,
         commitImplementerSelection(current, together, { id: 'selected-model' }),
       );
       expect(resolvedDefaultProfile(current)).toMatchObject({
-        apiBase: 'https://api.together.xyz/v1',
+        apiBase: 'https://api.together.ai/v1',
         apiKey: 'env:PATH',
         model: 'selected-model',
       });
 
-      current = saveAndReload(
+      current = await saveAndReload(
         dir,
         commitCustomModel({
           config: current,
@@ -439,13 +405,13 @@ describe('runner config roundtrip integration', () => {
         customModels: ['existing-model', 'custom-added'],
       });
 
-      current = saveAndReload(dir, removeCustomModel(current, 'implementer', 'custom-added'));
+      current = await saveAndReload(dir, removeCustomModel(current, 'implementer', 'custom-added'));
       expect(resolvedDefaultProfile(current)).toMatchObject({
         model: 'existing-model',
         customModels: ['existing-model'],
       });
 
-      current = saveAndReload(
+      current = await saveAndReload(
         dir,
         commitCustomCommand({
           config: current,
@@ -460,7 +426,7 @@ describe('runner config roundtrip integration', () => {
         model: 'existing-model',
       });
 
-      current = saveAndReload(
+      current = await saveAndReload(
         dir,
         commitImplementerSelection(current, realPickerOption('implementer', 'codex'), {
           id: 'gpt-5.4-mini',
@@ -479,7 +445,7 @@ describe('runner config roundtrip integration', () => {
       expect(yamlBlock(readFileSync(configPath, 'utf-8'), 'codebase')).toBe(unrelatedBlock);
     });
 
-    it('persists simultaneous top-level and named-profile changes in one save', () => {
+    it('persists simultaneous top-level and named-profile changes in one save', async () => {
       const dir = createTempDir('combined-profile-save');
       dirs.push(dir);
       writeRunnerConfigYaml(dir, {
@@ -488,7 +454,7 @@ describe('runner config roundtrip integration', () => {
           provider: 'together',
           service: 'together',
           offering: 'payg',
-          apiBase: 'https://api.together.xyz/v1',
+          apiBase: 'https://api.together.ai/v1',
           apiKey: 'env:PATH',
           model: 'existing-model',
           customModels: ['existing-model'],
@@ -509,7 +475,7 @@ describe('runner config roundtrip integration', () => {
           provider: 'together',
           service: 'together',
           offering: 'payg',
-          apiBase: 'https://api.together.xyz/v1',
+          apiBase: 'https://api.together.ai/v1',
           apiKey: 'env:PATH',
           model: 'roundtrip-model',
           customModels: ['existing-model', 'roundtrip-model'],
@@ -524,7 +490,7 @@ describe('runner config roundtrip integration', () => {
               provider: 'together',
               service: 'together',
               offering: 'payg',
-              apiBase: 'https://api.together.xyz/v1',
+              apiBase: 'https://api.together.ai/v1',
               apiKey: 'env:PATH',
               model: 'roundtrip-model',
               customModels: ['existing-model', 'roundtrip-model'],
@@ -533,11 +499,11 @@ describe('runner config roundtrip integration', () => {
         },
       };
 
-      const reloaded = saveAndReload(dir, updated);
+      const reloaded = await saveAndReload(dir, updated);
       expect(reloaded.theme).toBe('mono');
       expect(resolvedDefaultProfile(reloaded)).toMatchObject({
         provider: 'together',
-        apiBase: 'https://api.together.xyz/v1',
+        apiBase: 'https://api.together.ai/v1',
         apiKey: 'env:PATH',
         model: 'roundtrip-model',
         customModels: ['existing-model', 'roundtrip-model'],
@@ -574,7 +540,7 @@ implementer:
       expect(() => loadConfig(dir)).toThrow(/Unsupported config version: 2/);
     });
 
-    it('preserves explicit service and offering across save and reload', () => {
+    it('preserves explicit service and offering across save and reload', async () => {
       const dir = createTempDir('explicit-service-offering');
       dirs.push(dir);
       const splitbriefDir = join(dir, SPLITBRIEF_DIR);
@@ -605,7 +571,7 @@ implementer_profiles:
       provider: together
       service: together
       offering: payg
-      api_base: https://api.together.xyz/v1
+      api_base: https://api.together.ai/v1
       api_key: env:PATH
       model: existing-model
 codebase:
@@ -628,7 +594,7 @@ codebase:
         offering: 'payg',
       });
 
-      const saved = saveAndReload(dir, loaded);
+      const saved = await saveAndReload(dir, loaded);
       expect(saved.planner).toMatchObject({ service: 'anthropic', offering: 'payg' });
       expect(saved.implementer).toMatchObject({ service: 'ollama', offering: 'local' });
       expect(saved.implementerProfiles?.profiles['active-cloud']).toMatchObject({
@@ -644,7 +610,7 @@ codebase:
   describe('same-target matrix', () => {
     it.each(
       sameTargetCases,
-    )('changes only the model for $role $existing.kind through save/reload', (testCase) => {
+    )('changes only the model for $role $existing.kind through save/reload', async (testCase) => {
       const dir = createTempDir(`same-target-${testCase.role}-${testCase.existing.kind}`);
       dirs.push(dir);
       const modelOverride = 'same-target-model-override';
@@ -658,7 +624,7 @@ codebase:
           pickerForRunner('planner', testCase.existing),
           { id: modelOverride },
         );
-        const reloaded = saveAndReload(dir, updated);
+        const reloaded = await saveAndReload(dir, updated);
         expect(reloaded.planner).toEqual({ ...testCase.existing, model: modelOverride });
         return;
       }
@@ -671,7 +637,7 @@ codebase:
         pickerForRunner('implementer', testCase.existing),
         { id: modelOverride },
       );
-      const reloaded = saveAndReload(dir, updated);
+      const reloaded = await saveAndReload(dir, updated);
       expect(resolvedDefaultProfile(reloaded)).toEqual({
         ...testCase.existing,
         model: modelOverride,
@@ -683,7 +649,7 @@ codebase:
   });
 
   describe('cross-target matrix', () => {
-    it.each(crossTargetCases)('$label through save/reload', (testCase) => {
+    it.each(crossTargetCases)('$label through save/reload', async (testCase) => {
       const dir = createTempDir(`cross-target-${testCase.label.replace(/\s+/g, '-')}`);
       dirs.push(dir);
       const selection = realPickerOption('implementer', testCase.optionId);
@@ -697,7 +663,7 @@ codebase:
       const before = loadConfig(dir).config;
 
       const updated = commitImplementerSelection(before, selection, testCase.model);
-      const reloaded = saveAndReload(dir, updated);
+      const reloaded = await saveAndReload(dir, updated);
       expect(resolvedDefaultProfile(reloaded)).toEqual(testCase.expected);
       expect(reloaded.implementerProfiles?.profiles['dormant-local']).toEqual(
         before.implementerProfiles?.profiles['dormant-local'],
@@ -718,7 +684,7 @@ codebase:
       const offered = new Set(MATRIX_CELLS.map((cell) => `${cell.role}:${cell.optionId}`));
       for (const role of ['planner', 'implementer'] as const) {
         for (const option of realPickerOptions(role)) {
-          if (option.kind === 'shell' || option.kind === 'agent') continue;
+          if (option.kind === 'custom-command') continue;
           expect(offered).toContain(`${role}:${option.id}`);
         }
       }
@@ -731,18 +697,20 @@ codebase:
       optionId,
       model,
       credentialEnv,
+      custom,
     }) => {
       const dir = createTempDir(`matrix-${role}-${optionId}`);
       dirs.push(dir);
       clearRunnerCredentials();
       if (credentialEnv) vi.stubEnv(credentialEnv, 'matrix-credential');
 
-      writeConfig(dir, commitCell({ role, optionId, model, credentialEnv }));
+      writeConfig(dir, commitCell({ role, optionId, model, credentialEnv, custom }));
       const reloaded = loadConfig(dir).config;
 
       const runner = role === 'planner' ? reloaded.planner : resolvedDefaultProfile(reloaded);
       expect(getRunnerDisplayName(runner)).toBe(optionId);
       expect(runner.model ?? null).toBe(model);
+      if (custom && model !== null) expect(runner.customModels).toContain(model);
     });
 
     it('fails only for destinations whose credential is missing, and says which one', () => {
@@ -767,6 +735,7 @@ codebase:
         'anthropic',
         'deepseek',
         'groq',
+        'ollama-cloud',
         'openai',
         'openrouter',
         'together',

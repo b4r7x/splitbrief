@@ -1,4 +1,5 @@
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
 import { createChangeDetector } from '../change-detection.js';
@@ -12,7 +13,7 @@ import {
 } from '../runners/invoke-cli-adapter.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.js';
 import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js';
 import { matches } from '../../utils/error.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
@@ -67,13 +68,15 @@ export function createCliImplementer(
       const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
 
       try {
-        let executable: Awaited<ReturnType<typeof resolveCliExecutable>>;
+        let executable: CliExecutableIdentity;
         try {
-          executable = await resolveCliExecutable(
-            command,
-            projectDir,
-            assertCliStartGate(toolName, trustedCli),
-          );
+          executable = (
+            await resolveCliExecutableAliases({
+              commands: descriptor.executableAliases,
+              projectDir,
+              trust: assertCliStartGate(toolName, trustedCli),
+            })
+          ).executable;
         } catch (err) {
           if (isCliExecutableUnavailable(err)) {
             throw processError.notFound(command, notFoundMessage);
@@ -134,6 +137,6 @@ export function createCliImplementer(
 
     detectChanges: createChangeDetector(`Tool implementer (${toolName})`),
 
-    ...createCommandExistsAvailability(command),
+    ...createCommandExistsAvailability(descriptor.executableAliases),
   });
 }

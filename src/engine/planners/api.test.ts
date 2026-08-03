@@ -17,6 +17,7 @@ type RequestBody = {
 };
 let receivedBodies: RequestBody[];
 let receivedHeaders: http.IncomingHttpHeaders[];
+let receivedCatalogRequests: { pathname: string; limit: string | null }[];
 let projectDir: string;
 
 function admittedPlannerApiBase(provider: string): string {
@@ -59,7 +60,9 @@ function makeApiPlannerConfig(provider: string): Config {
       offering,
       model: 'test-model',
       apiBase: admittedPlannerApiBase(provider),
-      apiKey: `${getApiProviderDescriptor(provider)?.credentialPrefix ?? ''}test-key`,
+      ...(provider === 'ollama'
+        ? {}
+        : { apiKey: `${getApiProviderDescriptor(provider)?.credentialPrefix ?? ''}test-key` }),
     },
     implementer: {
       kind: 'api',
@@ -135,10 +138,16 @@ function streamAnthropicChunks(
 beforeEach(async () => {
   receivedBodies = [];
   receivedHeaders = [];
+  receivedCatalogRequests = [];
   projectDir = createTempDir('api-planner-test');
 
   server = http.createServer((req, res) => {
-    if (req.method === 'GET' && req.url === '/v1/models') {
+    const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
+    if (req.method === 'GET' && requestUrl.pathname === '/v1/models') {
+      receivedCatalogRequests.push({
+        pathname: requestUrl.pathname,
+        limit: requestUrl.searchParams.get('limit'),
+      });
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ data: [{ id: 'test-model' }] }));
       return;
@@ -352,6 +361,9 @@ describe('createApiPlanner', () => {
   ] as const)('isAvailable returns true for %s when endpoint responds', async (provider) => {
     const planner = createApiPlanner(makeApiPlannerConfig(provider));
     expect(await planner.isAvailable()).toBe(true);
+    if (provider === 'anthropic') {
+      expect(receivedCatalogRequests).toContainEqual({ pathname: '/v1/models', limit: '1000' });
+    }
   });
 
   it('isAvailable returns false when endpoint is unreachable', async () => {
@@ -402,7 +414,7 @@ describe('createApiPlanner', () => {
     expect(receivedBodies).toEqual([]);
   });
 
-  it('unavailabilityReason surfaces the tracked HTTP status for an auth-rejected key', async () => {
+  it('unavailabilityReason surfaces the typed catalog diagnostic for an auth-rejected key', async () => {
     server.removeAllListeners('request');
     server.on('request', (_req, res) => {
       res.writeHead(401);
@@ -412,7 +424,7 @@ describe('createApiPlanner', () => {
     const planner = createApiPlanner(cfg);
 
     expect(await planner.isAvailable()).toBe(false);
-    expect(planner.unavailabilityReason?.()).toBe('HTTP 401');
+    expect(planner.unavailabilityReason?.()).toBe('catalog-authentication-rejected');
   });
 
   it('unavailabilityReason surfaces a cause when the endpoint is unreachable', async () => {

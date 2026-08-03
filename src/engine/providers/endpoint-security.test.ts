@@ -32,20 +32,33 @@ const loopbackPolicy = {
 
 const attackerOrigin = 'https://evil.example.net';
 
+type RequestRecord = Readonly<{
+  method: string;
+  url: string;
+  authorization: string | undefined;
+}>;
+
+function recordRequest(input: RequestInfo | URL, init?: RequestInit): RequestRecord {
+  const request = new Request(input, init);
+  return {
+    method: request.method,
+    url: request.url,
+    authorization: request.headers.get('authorization') ?? undefined,
+  };
+}
+
 function catalogDescriptor(id: keyof typeof API_PROVIDER_CATALOG): ApiProviderDescriptor {
   return API_PROVIDER_CATALOG[id];
 }
 
 function assertZeroAttackerHostCredentialObservations(
-  fetchMock: ReturnType<typeof vi.fn>,
+  requests: readonly RequestRecord[],
   credential: string,
 ): void {
-  for (const [input, init] of fetchMock.mock.calls) {
-    const request = input instanceof Request ? input : new Request(input, init as RequestInit);
+  for (const request of requests) {
     const origin = new URL(request.url).origin;
     if (origin === attackerOrigin) {
-      const authorization = request.headers.get('authorization') ?? '';
-      expect(authorization).not.toContain(credential);
+      expect(request.authorization ?? '').not.toContain(credential);
     }
     expect(origin).not.toBe(attackerOrigin);
   }
@@ -101,6 +114,9 @@ describe('endpoint attack canary matrix', () => {
     ['extra path segment', 'https://api.example.com/v1/chat'],
     ['query injection', 'https://api.example.com/v1?target=elsewhere'],
     ['LAN IPv4 loopback escape', 'http://192.168.0.2:11434/v1'],
+    ['wildcard IPv4 listener', 'http://0.0.0.0:11434/v1'],
+    ['wildcard IPv6 listener', 'http://[::]:11434/v1'],
+    ['localhost DNS alias', 'http://localhost.:11434/v1'],
     ['localhost subdomain', 'http://localhost.example.com:11434/v1'],
   ])('rejects a %s before credential resolution', (_case, input) => {
     const policy = input.includes('11434') ? loopbackPolicy : fixedOriginPolicy;
@@ -137,12 +153,14 @@ describe('redirect credential canary matrix', () => {
 
   it('rejects a cross-origin redirect before the attacker host observes credentials', async () => {
     const credential = 'sk-canary-endpoint-matrix-redirect-4d8e';
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(null, {
+    const requests: RequestRecord[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(recordRequest(input, init));
+      return new Response(null, {
         status: 302,
         headers: { location: `${attackerOrigin}/collect` },
-      }),
-    );
+      });
+    });
 
     const connection = createProviderConnection({
       requestedBaseURL: fixedOriginPolicy.baseURL,
@@ -157,22 +175,31 @@ describe('redirect credential canary matrix', () => {
       }),
     ).rejects.toMatchObject({ kind: 'provider-endpoint-invalid' });
 
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-    assertZeroAttackerHostCredentialObservations(vi.mocked(globalThis.fetch), credential);
+    expect(requests).toEqual([
+      {
+        method: 'GET',
+        url: 'https://api.example.com/v1/models',
+        authorization: `Bearer ${credential}`,
+      },
+    ]);
+    assertZeroAttackerHostCredentialObservations(requests, credential);
   });
 
-  it('rejects an initial request on another origin without calling fetch', async () => {
-    const fetchImplementation = vi.fn();
+  it('rejects an initial request on another origin without sending network traffic', async () => {
+    const requests: RequestRecord[] = [];
     const policyFetch = createEndpointPolicyFetch(
       'https://api.example.com/v1',
       endpointPolicyError.invalid,
-      fetchImplementation,
+      async (input, init) => {
+        requests.push(recordRequest(input, init));
+        return new Response(JSON.stringify({ unexpected: true }), { status: 200 });
+      },
     );
 
     await expect(policyFetch('https://evil.example.net/collect')).rejects.toMatchObject({
       kind: 'provider-endpoint-invalid',
     });
-    expect(fetchImplementation).not.toHaveBeenCalled();
+    expect(requests).toEqual([]);
   });
 });
 
@@ -234,7 +261,11 @@ describe('readonly provider bridge', () => {
   });
 
   it('fails closed before reading credentials when the policy-owned transport bridge is absent', () => {
-    const apiKey = vi.fn(() => 'canary-endpoint-bridge-secret-0e1f');
+    let credentialRead = false;
+    const apiKey = (): string => {
+      credentialRead = true;
+      return 'canary-endpoint-bridge-secret-0e1f';
+    };
     const provider = {
       name: 'unregistered',
       baseURL: 'https://api.example.com/v1',
@@ -246,16 +277,18 @@ describe('readonly provider bridge', () => {
     expect(() => createClientFromProvider(provider)).toThrow(
       expect.objectContaining({ kind: 'provider-endpoint-policy-unsupported' }),
     );
-    expect(apiKey).not.toHaveBeenCalled();
+    expect(credentialRead).toBe(false);
   });
 
   it('routes credentialed requests only through the readonly policy fetch bridge', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(null, {
+    const requests: RequestRecord[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(recordRequest(input, init));
+      return new Response(null, {
         status: 302,
         headers: { location: 'https://evil.example.net/collect' },
-      }),
-    );
+      });
+    });
     const provider = getProvider('openai', {
       apiBase: 'https://api.openai.com/v1',
       apiKey: 'sk-canary-endpoint-bridge-1f2a',
@@ -266,9 +299,13 @@ describe('readonly provider bridge', () => {
     await expect(client.models.list()).rejects.toMatchObject({
       cause: { kind: 'provider-endpoint-invalid' },
     });
-    for (const [input] of vi.mocked(globalThis.fetch).mock.calls) {
-      const url = input instanceof Request ? input.url : input.toString();
-      expect(new URL(url).origin).toBe('https://api.openai.com');
+    expect(requests).not.toEqual([]);
+    for (const request of requests) {
+      expect(request).toEqual({
+        method: 'GET',
+        url: 'https://api.openai.com/v1/models',
+        authorization: 'Bearer sk-canary-endpoint-bridge-1f2a',
+      });
     }
   });
 });

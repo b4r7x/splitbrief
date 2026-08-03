@@ -1,4 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
+import type { BriefReviewPromptKind } from '../../core/schemas/brief-review-command.js';
 import type { Phase, UserEditConflictAction } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { ProjectContext } from '../../core/state/types.js';
@@ -24,6 +25,7 @@ import type { ModelCacheAccessor } from '../providers/model/resolution.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StreamingSink } from './task/streaming-feed.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
+import type { ApprovalReviewInput } from '../runners/types.js';
 import {
   WORKFLOW_CANCEL_REASONS,
   WORKFLOW_CANCEL_REASON_USER,
@@ -48,8 +50,8 @@ export type { WorkflowCancelledAbortReason, WorkflowCancelReason };
 
 export interface OrchestratorCallbacks {
   onApprovalNeeded: (
-    type: 'spec' | 'plan' | 'briefs',
-    filePath: string,
+    type: BriefReviewPromptKind,
+    input: ApprovalReviewInput,
   ) => Promise<ApprovalReviewResult>;
   onUserEditConflict?:
     | ((conflict: UserEditConflict) => Promise<UserEditConflictAction>)

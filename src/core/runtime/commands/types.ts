@@ -74,6 +74,67 @@ export type ToggleSidebarResult =
   | { status: 'toggled'; visible: boolean }
   | { status: 'unavailable'; message: string };
 
+export type RuntimeConfigSaveResult =
+  | Readonly<{ kind: 'saved'; ok: true }>
+  | Readonly<{ kind: 'conflict'; ok: false; errorMessage?: string | undefined }>
+  | Readonly<{ kind: 'durability-uncertain'; ok: false; errorMessage?: string | undefined }>
+  | Readonly<{ kind: 'failure'; ok: false; errorMessage?: string | undefined }>;
+
+export type DiscoveryRefreshLaneOutcome =
+  | 'cached'
+  | 'fresh'
+  | 'not-modified'
+  | 'stale'
+  | 'failed'
+  | 'not-run';
+
+export type DiscoveryRefreshNotRunReason = 'offline' | 'cancelled' | 'superseded' | 'uninitialized';
+
+export interface DiscoveryRefreshLaneSummary {
+  readonly outcome: DiscoveryRefreshLaneOutcome;
+  readonly reason?: DiscoveryRefreshNotRunReason | undefined;
+}
+
+export type DiscoveryRefreshStatus =
+  | 'fresh'
+  | 'partial'
+  | 'stale'
+  | 'failed'
+  | 'not-run'
+  | 'uninitialized'
+  | 'superseded';
+
+export interface DiscoveryRefreshSummary {
+  readonly status: DiscoveryRefreshStatus;
+  readonly published: boolean;
+  readonly lanes: Readonly<{
+    readiness: DiscoveryRefreshLaneSummary;
+    modelsDev: DiscoveryRefreshLaneSummary;
+    cliModels: DiscoveryRefreshLaneSummary;
+  }>;
+}
+
+export function formatDiscoveryRefreshFeedback(
+  input: Readonly<{ subject: string; summary: DiscoveryRefreshSummary }>,
+): { message: string; isError: boolean } {
+  switch (input.summary.status) {
+    case 'fresh':
+      return { message: `${input.subject} refreshed`, isError: false };
+    case 'partial':
+      return { message: `${input.subject} refresh completed with partial results`, isError: true };
+    case 'stale':
+      return { message: `${input.subject} refresh kept stale results`, isError: true };
+    case 'failed':
+      return { message: `${input.subject} refresh failed`, isError: true };
+    case 'not-run':
+      return { message: `${input.subject} refresh was not run`, isError: true };
+    case 'uninitialized':
+      return { message: `${input.subject} refresh is not initialized`, isError: true };
+    case 'superseded':
+      return { message: `${input.subject} refresh was superseded`, isError: true };
+  }
+}
+
 interface RuntimeCommandBase {
   name: string;
   aliases?: string[];
@@ -96,11 +157,11 @@ export interface RuntimeCommandContext {
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigate: (to: 'home') => void;
   quit: () => void;
-  setWorkflowMode: (mode: WorkflowMode) => boolean;
-  setPlannerEffort: (effort: EffortLevel) => boolean;
+  setWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
+  setPlannerEffort: (effort: EffortLevel) => Promise<RuntimeConfigSaveResult>;
   setFeedbackMessage: (msg: string) => void;
   setFeedbackError: (msg: string) => void;
-  refreshDetection: () => Promise<void>;
+  refreshDetection: () => Promise<DiscoveryRefreshSummary>;
   refreshProjectFiles: () => void;
   getCurrentPhase: () => Phase;
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;

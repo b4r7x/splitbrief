@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -148,6 +148,7 @@ describe('WorkflowFooter', () => {
       questionEpoch: 1,
       handleInput: (text) => submits.push(text),
     });
+    await flushEffects();
     ui.stdin.write('stale answer');
     await tick(20);
     expect(ui.lastFrame()).toContain('stale answer');
@@ -166,6 +167,7 @@ describe('WorkflowFooter', () => {
     await tick(20);
     expect(ui.lastFrame()).not.toContain('stale answer');
 
+    await flushEffects();
     ui.stdin.write('\r');
     await tick(20);
     expect(submits).not.toContain('stale answer');
@@ -174,6 +176,7 @@ describe('WorkflowFooter', () => {
 
   it('preserves a review draft across rerenders and clears it when the review owner changes', async () => {
     const ui = renderFooter({ mode: 'review', reviewEpoch: 1 });
+    await flushEffects();
     ui.stdin.write('owner one draft');
     await tick(20);
     expect(ui.lastFrame()).toContain('owner one draft');

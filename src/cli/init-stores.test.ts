@@ -86,22 +86,35 @@ describe('initStores', () => {
     expect(config.implementer.kind).toBe('cli');
   }, 30_000);
 
-  it('projects canonical cached detections into the existing stores during boot', async () => {
+  it('does not project a detection cache entry without active-runner context during boot', async () => {
     const providers: ProviderDetection[] = [
       {
         provider: 'ollama',
         available: true,
         isLocal: true,
-        models: [{ id: 'qwen', pricingTiers: [{ type: 'context', thresholdTokens: 0 }] }],
+        models: [{ id: 'contextless-cache-only-model' }],
       },
     ];
-    const cliTools: CliToolDetection[] = [cliDetectionFor('ready', 'claude-code')];
+    const cliTools: CliToolDetection[] = [
+      cliDetectionFor('ready', 'claude-code', {
+        installedVersion: 'contextless-cache-only-version',
+      }),
+    ];
     const dir = makeProjectDir({ providers, cliTools });
 
     await initStores(dir);
 
-    expect(detectionStore.get().cliTools).toEqual(cliTools);
-    expect(detectionStore.get().implementers).toEqual(providers);
+    expect(
+      detectionStore
+        .get()
+        .cliTools.some((tool) => tool.installedVersion === cliTools[0]?.installedVersion),
+    ).toBe(false);
+    expect(
+      detectionStore
+        .get()
+        .providers.flatMap((provider) => provider.models ?? [])
+        .some((model) => model.id === 'contextless-cache-only-model'),
+    ).toBe(false);
   }, 30_000);
 
   it('falls back to default config when no config file exists on disk', async () => {

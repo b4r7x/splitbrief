@@ -7,7 +7,7 @@ import { openCostApprovalPrompt } from '../../stores/cost-approval/prompt.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { CONTINUATION_PROMPT } from './prompt-callbacks.js';
+import { ARTIFACT_REVIEW_HINT, CONTINUATION_PROMPT } from './prompt-callbacks.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 import {
   formatUserEditConflictPrompt,
@@ -98,6 +98,16 @@ export function createIpcPromptDispatcher(
   opts: IpcPromptDispatcherOptions = {},
 ): (request: IpcPromptRequest) => Promise<IpcPromptResponse> {
   return async (request: IpcPromptRequest): Promise<IpcPromptResponse> => {
+    if (request.kind === 'artifact_review') {
+      const reviewOwner = reviewStore.setReviewArtifact(request.review.text);
+      try {
+        const result = await inputMode.setReviewMode(ARTIFACT_REVIEW_HINT);
+        return { kind: 'artifact_review', approved: result.approved };
+      } finally {
+        reviewStore.clearReviewIfOwner(reviewOwner);
+      }
+    }
+
     if (request.kind === 'approval_needed') {
       const filePath = resolveApprovalReviewPath(request.filePath, opts.sessionDirPath);
       if (filePath === null) return { kind: 'approval_needed', approved: false };

@@ -47,73 +47,210 @@ export type CliAuthSelection = Readonly<{ channel: CliAuthChannelId }>;
 export type CliAuthChannels = readonly [CliAuthChannel, ...CliAuthChannel[]];
 
 export type CliAuthPolicy = Readonly<{
-  kind: 'api-key-or-session' | 'session' | 'provider-dependent';
+  kind: 'api-key' | 'api-key-or-session' | 'session' | 'provider-dependent';
   env: readonly string[];
   stateBridge: 'host-cli-state' | 'none';
   channels: CliAuthChannels;
 }>;
 
+export type CliVersionCompatibility = 'compatible' | 'incompatible' | 'unverified';
+
+type CanonicalSemver = Readonly<{
+  major: number;
+  minor: number;
+  patch: number;
+}>;
+
+const CANONICAL_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+function parseCanonicalSemver(version: string): CanonicalSemver | null {
+  const match = CANONICAL_SEMVER.exec(version);
+  if (match === null) return null;
+
+  const [majorPart, minorPart, patchPart] = match.slice(1);
+  if (majorPart === undefined || minorPart === undefined || patchPart === undefined) return null;
+
+  const parsed = {
+    major: Number(majorPart),
+    minor: Number(minorPart),
+    patch: Number(patchPart),
+  };
+  return Number.isSafeInteger(parsed.major) &&
+    Number.isSafeInteger(parsed.minor) &&
+    Number.isSafeInteger(parsed.patch)
+    ? parsed
+    : null;
+}
+
+function compareCanonicalSemver(
+  input: Readonly<{ left: CanonicalSemver; right: CanonicalSemver }>,
+): number {
+  if (input.left.major !== input.right.major) {
+    return input.left.major < input.right.major ? -1 : 1;
+  }
+  if (input.left.minor !== input.right.minor) {
+    return input.left.minor < input.right.minor ? -1 : 1;
+  }
+  if (input.left.patch !== input.right.patch) {
+    return input.left.patch < input.right.patch ? -1 : 1;
+  }
+  return 0;
+}
+
+/**
+ * The sole descriptor-owned semantic-version compatibility decision.
+ * Forward-compatible: releases at or above the minimum admitted version are
+ * compatible; only older releases fail closed as incompatible. An unparseable
+ * version stays unverified.
+ */
+export function classifyCliAdmittedVersion(
+  input: Readonly<{
+    installedVersion: string;
+    minimumAdmittedVersion: string;
+  }>,
+): CliVersionCompatibility {
+  const installed = parseCanonicalSemver(input.installedVersion);
+  const minimum = parseCanonicalSemver(input.minimumAdmittedVersion);
+  if (installed === null || minimum === null) return 'unverified';
+  return compareCanonicalSemver({ left: installed, right: minimum }) < 0
+    ? 'incompatible'
+    : 'compatible';
+}
+
 export type CliCompatibility = Readonly<{
   installUrl: string;
   testedVersion: string;
+  minimumAdmittedVersion: string;
   evidence: Readonly<{ asOf: string }>;
 }>;
 
+export const CLI_COMPATIBILITY_TIERS = Object.freeze(['first-class', 'compatibility'] as const);
+
+export type CliCompatibilityTier = (typeof CLI_COMPATIBILITY_TIERS)[number];
+
+export const CLI_AUTH_DISCOVERY_MODES = Object.freeze([
+  'selected-channel',
+  'provider-dependent-unverified',
+  'static-unverified',
+  'status-unverified',
+] as const);
+
+export type CliAuthDiscoveryMode = (typeof CLI_AUTH_DISCOVERY_MODES)[number];
+
+export const CLI_MODEL_DISCOVERY_MODES = Object.freeze([
+  'native-aliases-and-custom',
+  'capability-gated-native',
+  'native-cli',
+  'static-catalog-unverified',
+  'account-visible-model-list',
+] as const);
+
+export type CliModelDiscoveryMode = (typeof CLI_MODEL_DISCOVERY_MODES)[number];
+
+export const CLI_PREFLIGHT_FACTS = Object.freeze([
+  'executable',
+  'trust',
+  'version',
+  'compatibility',
+  'authentication',
+  'model-catalog',
+  'model-runnability',
+] as const);
+
+export type CliPreflightFact = (typeof CLI_PREFLIGHT_FACTS)[number];
+
 type RolePolicy<T> = Readonly<Record<RunnerRole, T>>;
 type CliSandboxPosture = 'none' | 'cli-managed' | 'mode-dependent';
-
-export type CliAdmissionVerdict = 'PASS' | 'OMIT';
-
-export type CursorCliAdmissionVerdict = typeof CURSOR_CLI_ADMISSION_VERDICT;
-export const CURSOR_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
-
-export type AntigravityCliAdmissionVerdict = typeof ANTIGRAVITY_CLI_ADMISSION_VERDICT;
-export const ANTIGRAVITY_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
-
-export const EXCLUDED_CLI_TOOL_IDS = Object.freeze([
-  'kiro',
-  'gemini',
-  'auggie',
-  'junie',
-  'cline',
-  'qwen',
-] as const);
-
-export const CURSOR_CLI_CANDIDATE_PATHS = Object.freeze([
-  'src/engine/runners/cli-tools/cursor-parser.ts',
-  'src/engine/runners/cli-tools/cursor.ts',
-  'src/engine/runners/cli-tools/cursor.test.ts',
-] as const);
-
-export const ANTIGRAVITY_CLI_CANDIDATE_PATHS = Object.freeze([
-  'src/engine/runners/cli-tools/antigravity.ts',
-  'src/engine/runners/cli-tools/antigravity.test.ts',
-] as const);
-
 type ExistingCliToolId = 'claude-code' | 'codex' | 'opencode' | 'aider' | 'copilot' | 'kilo-code';
 
-type CursorCliToolId = CursorCliAdmissionVerdict extends 'PASS' ? 'cursor' : never;
-type AntigravityCliToolId = AntigravityCliAdmissionVerdict extends 'PASS' ? 'antigravity' : never;
+export type CliToolId = ExistingCliToolId;
 
-export type CliToolId = ExistingCliToolId | CursorCliToolId | AntigravityCliToolId;
-
-export type CliToolDescriptor = Readonly<{
-  id: CliToolId;
+export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
+  id: Id;
   displayName: string;
   command: string;
+  executableAliases: readonly string[];
+  category: 'cli';
   roles: readonly RunnerRole[];
   modelPolicy: RolePolicy<CliModelPolicy>;
   auth: CliAuthPolicy;
   billing: RunnerBillingPosture;
-  directWrite: RolePolicy<boolean>;
-  network: RolePolicy<boolean>;
-  shell: RolePolicy<boolean>;
-  automaticApproval: RolePolicy<boolean>;
+  isSubscription: boolean;
   sandbox: RolePolicy<CliSandboxPosture>;
   compatibility: CliCompatibility;
+  compatibilityTier: CliCompatibilityTier;
+  authDiscoveryMode: CliAuthDiscoveryMode;
+  modelDiscoveryMode: CliModelDiscoveryMode;
+  mandatoryPreflightFacts: readonly CliPreflightFact[];
 }>;
 
+export type ActiveCliToolDeclaration<Id extends string = string> = CliToolDeclarationBase<Id> &
+  Readonly<{ admission: Readonly<{ state: 'active' }> }>;
+
+export type CustomOnlyCliToolExclusion = Readonly<{
+  id: string;
+  displayName: string;
+  category: 'cli';
+  admission: Readonly<{
+    state: 'custom-only';
+    reason: string;
+  }>;
+}>;
+
+export type CliToolAdmissionDeclaration = ActiveCliToolDeclaration | CustomOnlyCliToolExclusion;
+
+export type CliToolDescriptor<Id extends string = CliToolId> = Readonly<
+  ActiveCliToolDeclaration<Id> & {
+    directWrite: RolePolicy<boolean>;
+    network: RolePolicy<boolean>;
+    shell: RolePolicy<boolean>;
+    automaticApproval: RolePolicy<boolean>;
+  }
+>;
+
+export type CliAdmissionVerdict = 'PASS' | 'OMIT';
+
+export const CURSOR_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
+
+export const ANTIGRAVITY_CLI_ADMISSION_VERDICT = 'OMIT' satisfies CliAdmissionVerdict;
+
+export type CursorCliCandidate = Readonly<{
+  id: 'cursor';
+  displayName: 'Cursor Agent CLI';
+  command: 'agent';
+  executableAliases: readonly ['agent', 'cursor-agent'];
+  category: 'cli';
+  admission: Readonly<{
+    state: 'not-admitted';
+    prerequisite: 'R7-008';
+    remediation: string;
+  }>;
+}>;
+
+export const CURSOR_CLI_CANDIDATE: CursorCliCandidate = Object.freeze({
+  id: 'cursor',
+  displayName: 'Cursor Agent CLI',
+  command: 'agent',
+  executableAliases: Object.freeze(['agent', 'cursor-agent'] as const),
+  category: 'cli',
+  admission: Object.freeze({
+    state: 'not-admitted',
+    prerequisite: 'R7-008',
+    remediation:
+      'Cursor Agent CLI is unavailable until R7-008 verifies an exact build-pinned protocol and a fresh filtered workspace.',
+  }),
+});
+
 const ALL_ROLES = Object.freeze(['planner', 'implementer'] as const);
+const CLI_REQUIRED_PREFLIGHT_FACTS = Object.freeze([
+  'executable',
+  'trust',
+  'version',
+  'compatibility',
+  'authentication',
+  'model-catalog',
+  'model-runnability',
+] as const satisfies readonly CliPreflightFact[]);
 const CLI_PLANNER_TRUST = Object.freeze({
   executesLocalCommand: true,
   mayUseNetwork: true,
@@ -140,15 +277,6 @@ function cliToolTrust(implementerAutoAllowFlags: readonly string[]): RunnerRoleT
     }),
   });
 }
-
-const BASE_CLI_TOOL_TRUST = Object.freeze({
-  'claude-code': cliToolTrust(['--permission-mode acceptEdits']),
-  codex: cliToolTrust(['--sandbox workspace-write']),
-  opencode: cliToolTrust([]),
-  aider: cliToolTrust(['--yes-always']),
-  copilot: cliToolTrust(['--allow-all']),
-  'kilo-code': cliToolTrust(['--auto']),
-});
 
 function authChannel(
   id: CliAuthChannelId,
@@ -178,176 +306,347 @@ function authPolicy(kind: CliAuthPolicy['kind'], channels: CliAuthChannels): Cli
   });
 }
 
-function compatibility(installUrl: string, testedVersion: string, asOf: string): CliCompatibility {
+function compatibility(
+  input: Readonly<{
+    installUrl: string;
+    testedVersion: string;
+    minimumAdmittedVersion: string;
+    asOf: string;
+  }>,
+): CliCompatibility {
   return Object.freeze({
-    installUrl,
-    testedVersion,
-    evidence: Object.freeze({ asOf }),
+    installUrl: input.installUrl,
+    testedVersion: input.testedVersion,
+    minimumAdmittedVersion: input.minimumAdmittedVersion,
+    evidence: Object.freeze({ asOf: input.asOf }),
   });
 }
 
+function activeCliToolDeclaration<Id extends CliToolId>(
+  input: CliToolDeclarationBase<Id>,
+): ActiveCliToolDeclaration<Id> {
+  return Object.freeze({
+    ...input,
+    executableAliases: Object.freeze([...input.executableAliases]),
+    roles: Object.freeze([...input.roles]),
+    mandatoryPreflightFacts: Object.freeze([...input.mandatoryPreflightFacts]),
+    admission: Object.freeze({ state: 'active' }),
+  });
+}
+
+export const CLI_TOOL_DECLARATIONS = Object.freeze({
+  'claude-code': activeCliToolDeclaration({
+    id: 'claude-code',
+    displayName: 'Claude Code CLI',
+    command: 'claude',
+    executableAliases: ['claude'],
+    category: 'cli',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy('optional', 'optional'),
+    auth: authPolicy('api-key-or-session', [
+      authChannel('session', [], 'host-cli-state', 'subscription-included'),
+      authChannel('api-key', ['ANTHROPIC_API_KEY'], 'none', 'api-metered'),
+    ]),
+    billing: 'subscription-included',
+    isSubscription: false,
+    sandbox: rolePolicy('none', 'none'),
+    compatibility: compatibility({
+      installUrl: 'https://claude.ai/code',
+      testedVersion: '2.0.0',
+      minimumAdmittedVersion: '2.0.0',
+      asOf: '2026-07-31',
+    }),
+    compatibilityTier: 'first-class',
+    authDiscoveryMode: 'selected-channel',
+    modelDiscoveryMode: 'native-aliases-and-custom',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
+  codex: activeCliToolDeclaration({
+    id: 'codex',
+    displayName: 'OpenAI Codex CLI',
+    command: 'codex',
+    executableAliases: ['codex'],
+    category: 'cli',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy('optional', 'optional'),
+    auth: authPolicy('api-key-or-session', [
+      authChannel('session', [], 'host-cli-state', 'subscription-included'),
+      authChannel('api-key', ['OPENAI_API_KEY'], 'none', 'api-metered'),
+    ]),
+    billing: 'subscription-included',
+    isSubscription: false,
+    sandbox: rolePolicy('mode-dependent', 'cli-managed'),
+    compatibility: compatibility({
+      installUrl: 'https://github.com/openai/codex',
+      testedVersion: '0.40.0',
+      minimumAdmittedVersion: '0.40.0',
+      asOf: '2026-07-31',
+    }),
+    compatibilityTier: 'first-class',
+    authDiscoveryMode: 'selected-channel',
+    modelDiscoveryMode: 'capability-gated-native',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
+  opencode: activeCliToolDeclaration({
+    id: 'opencode',
+    displayName: 'OpenCode CLI',
+    command: 'opencode',
+    executableAliases: ['opencode'],
+    category: 'cli',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy('optional', 'optional'),
+    auth: authPolicy('provider-dependent', [
+      authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
+    ]),
+    billing: 'provider-dependent',
+    isSubscription: false,
+    sandbox: rolePolicy('none', 'none'),
+    compatibility: compatibility({
+      installUrl: 'https://opencode.ai',
+      testedVersion: '0.5.0',
+      minimumAdmittedVersion: '0.5.0',
+      asOf: '2026-07-31',
+    }),
+    compatibilityTier: 'first-class',
+    authDiscoveryMode: 'provider-dependent-unverified',
+    modelDiscoveryMode: 'native-cli',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
+  aider: activeCliToolDeclaration({
+    id: 'aider',
+    displayName: 'Aider CLI',
+    command: 'aider',
+    executableAliases: ['aider'],
+    category: 'cli',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy('optional', 'optional'),
+    auth: authPolicy('provider-dependent', [
+      authChannel('provider-dependent', [], 'none', 'provider-dependent'),
+    ]),
+    billing: 'provider-dependent',
+    isSubscription: false,
+    sandbox: rolePolicy('none', 'none'),
+    compatibility: compatibility({
+      installUrl: 'https://aider.chat',
+      testedVersion: '0.86.0',
+      minimumAdmittedVersion: '0.86.0',
+      asOf: '2026-07-31',
+    }),
+    compatibilityTier: 'compatibility',
+    authDiscoveryMode: 'static-unverified',
+    modelDiscoveryMode: 'static-catalog-unverified',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
+  copilot: activeCliToolDeclaration({
+    id: 'copilot',
+    displayName: 'GitHub Copilot CLI',
+    command: 'copilot',
+    executableAliases: ['copilot'],
+    category: 'cli',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy('optional', 'optional'),
+    auth: authPolicy('session', [
+      authChannel(
+        'session',
+        ['GH_TOKEN', 'GITHUB_TOKEN'],
+        'host-cli-state',
+        'subscription-included',
+      ),
+    ]),
+    billing: 'subscription-included',
+    isSubscription: true,
+    sandbox: rolePolicy('none', 'none'),
+    compatibility: compatibility({
+      installUrl: 'https://github.com/github/copilot-cli',
+      testedVersion: '0.3.0',
+      minimumAdmittedVersion: '0.3.0',
+      asOf: '2026-07-31',
+    }),
+    compatibilityTier: 'compatibility',
+    authDiscoveryMode: 'static-unverified',
+    modelDiscoveryMode: 'static-catalog-unverified',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
+  'kilo-code': activeCliToolDeclaration({
+    id: 'kilo-code',
+    displayName: 'Kilo Code CLI',
+    command: 'kilo',
+    executableAliases: ['kilo'],
+    category: 'cli',
+    roles: ALL_ROLES,
+    modelPolicy: rolePolicy('optional', 'optional'),
+    auth: authPolicy('provider-dependent', [
+      authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
+    ]),
+    billing: 'provider-dependent',
+    isSubscription: true,
+    sandbox: rolePolicy('none', 'none'),
+    compatibility: compatibility({
+      installUrl: 'https://kilo.ai',
+      testedVersion: '0.1.0',
+      minimumAdmittedVersion: '0.1.0',
+      asOf: '2026-07-31',
+    }),
+    compatibilityTier: 'first-class',
+    authDiscoveryMode: 'provider-dependent-unverified',
+    modelDiscoveryMode: 'native-cli',
+    mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
+  }),
+  kiro: Object.freeze({
+    id: 'kiro',
+    displayName: 'Amazon Kiro CLI',
+    category: 'cli',
+    admission: Object.freeze({
+      state: 'custom-only',
+      reason: 'A structured session-scoped model and output adapter is not yet proven.',
+    }),
+  } satisfies CustomOnlyCliToolExclusion),
+  antigravity: Object.freeze({
+    id: 'antigravity',
+    displayName: 'Google Antigravity CLI',
+    category: 'cli',
+    admission: Object.freeze({
+      state: 'custom-only',
+      reason:
+        'Structured output, noninteractive authentication, and a safe auth probe are not proven.',
+    }),
+  } satisfies CustomOnlyCliToolExclusion),
+  gemini: Object.freeze({
+    id: 'gemini',
+    displayName: 'Gemini CLI',
+    category: 'cli',
+    admission: Object.freeze({
+      state: 'custom-only',
+      reason:
+        'Its auth, discovery, and permission contracts do not meet first-class-admission requirements.',
+    }),
+  } satisfies CustomOnlyCliToolExclusion),
+  cline: Object.freeze({
+    id: 'cline',
+    displayName: 'Cline CLI',
+    category: 'cli',
+    admission: Object.freeze({
+      state: 'custom-only',
+      reason:
+        'Its auth, discovery, and permission contracts do not meet first-class-admission requirements.',
+    }),
+  } satisfies CustomOnlyCliToolExclusion),
+  qwen: Object.freeze({
+    id: 'qwen',
+    displayName: 'Qwen Code',
+    category: 'cli',
+    admission: Object.freeze({
+      state: 'custom-only',
+      reason:
+        'Its auth, discovery, and permission contracts do not meet first-class-admission requirements.',
+    }),
+  } satisfies CustomOnlyCliToolExclusion),
+} satisfies Record<string, CliToolAdmissionDeclaration>);
+
+export const CUSTOM_ONLY_CLI_TOOL_DEFINITIONS = Object.freeze([
+  CLI_TOOL_DECLARATIONS.kiro,
+  CLI_TOOL_DECLARATIONS.antigravity,
+  CLI_TOOL_DECLARATIONS.gemini,
+  CLI_TOOL_DECLARATIONS.cline,
+  CLI_TOOL_DECLARATIONS.qwen,
+]);
+
+export const CUSTOM_ONLY_CLI_TOOL_IDS = Object.freeze(
+  CUSTOM_ONLY_CLI_TOOL_DEFINITIONS.map((tool) => tool.id),
+);
+
+export const EXCLUDED_CLI_TOOL_IDS = Object.freeze([
+  ...CUSTOM_ONLY_CLI_TOOL_IDS,
+  'auggie',
+  'junie',
+]);
+
+export const ANTIGRAVITY_CLI_CANDIDATE_PATHS = Object.freeze([
+  'src/engine/runners/cli-tools/antigravity.ts',
+  'src/engine/runners/cli-tools/antigravity.test.ts',
+] as const);
+
+export const CURSOR_CLI_RUNTIME_ADAPTER_PATHS = Object.freeze([
+  'src/engine/runners/cli-tools/cursor.ts',
+] as const);
+
+const BASE_CLI_TOOL_TRUST = Object.freeze({
+  'claude-code': cliToolTrust(['--permission-mode acceptEdits']),
+  codex: cliToolTrust(['--sandbox workspace-write']),
+  opencode: cliToolTrust([]),
+  aider: cliToolTrust(['--yes-always']),
+  copilot: cliToolTrust(['--allow-all']),
+  'kilo-code': cliToolTrust(['--auto']),
+} satisfies Record<CliToolId, RunnerRoleTrustMetadata>);
+
 function trustPolicy(
-  trust: Readonly<Record<RunnerRole, RunnerTrustMetadata>>,
+  trust: RunnerRoleTrustMetadata,
   field: 'mayWriteFilesDirectly' | 'mayUseNetwork' | 'executesLocalCommand',
 ): RolePolicy<boolean> {
   return rolePolicy(trust.planner[field], trust.implementer[field]);
 }
 
-function descriptor<
-  const Id extends string,
-  const Roles extends readonly RunnerRole[],
-  const ModelPolicy extends RolePolicy<CliModelPolicy>,
->(
-  trust: Readonly<Record<Id, RunnerRoleTrustMetadata>>,
-  input: {
-    id: Id;
-    displayName: string;
-    command: string;
-    roles: Roles;
-    modelPolicy: ModelPolicy;
-    auth: CliAuthPolicy;
-    billing: RunnerBillingPosture;
-    sandbox: RolePolicy<CliSandboxPosture>;
-    compatibility: CliCompatibility;
-  },
-) {
-  const toolTrust = trust[input.id];
-
+function descriptor<Id extends CliToolId>(
+  trust: RunnerRoleTrustMetadata,
+  input: ActiveCliToolDeclaration<Id>,
+): CliToolDescriptor<Id> {
   return Object.freeze({
-    id: input.id,
-    displayName: input.displayName,
-    command: input.command,
-    roles: input.roles,
-    modelPolicy: input.modelPolicy,
-    auth: input.auth,
-    billing: input.billing,
-    directWrite: trustPolicy(toolTrust, 'mayWriteFilesDirectly'),
-    network: trustPolicy(toolTrust, 'mayUseNetwork'),
-    shell: trustPolicy(toolTrust, 'executesLocalCommand'),
+    ...input,
+    directWrite: trustPolicy(trust, 'mayWriteFilesDirectly'),
+    network: trustPolicy(trust, 'mayUseNetwork'),
+    shell: trustPolicy(trust, 'executesLocalCommand'),
     automaticApproval: rolePolicy(
-      toolTrust.planner.autoAllowFlags.length > 0,
-      toolTrust.implementer.autoAllowFlags.length > 0,
+      trust.planner.autoAllowFlags.length > 0,
+      trust.implementer.autoAllowFlags.length > 0,
     ),
-    sandbox: input.sandbox,
-    compatibility: input.compatibility,
   });
-}
-
-function buildBaseCatalog(trust: Readonly<Record<CliToolId, RunnerRoleTrustMetadata>>) {
-  return {
-    'claude-code': descriptor(trust, {
-      id: 'claude-code',
-      displayName: 'Claude Code CLI',
-      command: 'claude',
-      roles: ALL_ROLES,
-      modelPolicy: rolePolicy('optional', 'optional'),
-      auth: authPolicy('api-key-or-session', [
-        authChannel('session', [], 'host-cli-state', 'subscription-included'),
-        authChannel('api-key', ['ANTHROPIC_API_KEY'], 'none', 'api-metered'),
-      ]),
-      billing: 'subscription-included',
-      sandbox: rolePolicy('none', 'none'),
-      compatibility: compatibility('https://claude.ai/code', '2.0.0', '2026-07-31'),
-    }),
-    codex: descriptor(trust, {
-      id: 'codex',
-      displayName: 'OpenAI Codex CLI',
-      command: 'codex',
-      roles: ALL_ROLES,
-      modelPolicy: rolePolicy('optional', 'optional'),
-      auth: authPolicy('api-key-or-session', [
-        authChannel('session', [], 'host-cli-state', 'subscription-included'),
-        authChannel('api-key', ['OPENAI_API_KEY'], 'none', 'api-metered'),
-      ]),
-      billing: 'subscription-included',
-      sandbox: rolePolicy('mode-dependent', 'cli-managed'),
-      compatibility: compatibility('https://github.com/openai/codex', '0.40.0', '2026-07-31'),
-    }),
-    opencode: descriptor(trust, {
-      id: 'opencode',
-      displayName: 'OpenCode CLI',
-      command: 'opencode',
-      roles: ALL_ROLES,
-      modelPolicy: rolePolicy('optional', 'optional'),
-      auth: authPolicy('provider-dependent', [
-        authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
-      ]),
-      billing: 'provider-dependent',
-      sandbox: rolePolicy('none', 'none'),
-      compatibility: compatibility('https://opencode.ai', '0.5.0', '2026-07-31'),
-    }),
-    aider: descriptor(trust, {
-      id: 'aider',
-      displayName: 'Aider CLI',
-      command: 'aider',
-      roles: ALL_ROLES,
-      modelPolicy: rolePolicy('optional', 'optional'),
-      auth: authPolicy('provider-dependent', [
-        authChannel('provider-dependent', [], 'none', 'provider-dependent'),
-      ]),
-      billing: 'provider-dependent',
-      sandbox: rolePolicy('none', 'none'),
-      compatibility: compatibility('https://aider.chat', '0.86.0', '2026-07-31'),
-    }),
-    copilot: descriptor(trust, {
-      id: 'copilot',
-      displayName: 'GitHub Copilot CLI',
-      command: 'copilot',
-      roles: ALL_ROLES,
-      modelPolicy: rolePolicy('optional', 'optional'),
-      auth: authPolicy('session', [
-        authChannel(
-          'session',
-          ['GH_TOKEN', 'GITHUB_TOKEN'],
-          'host-cli-state',
-          'subscription-included',
-        ),
-      ]),
-      billing: 'subscription-included',
-      sandbox: rolePolicy('none', 'none'),
-      compatibility: compatibility('https://github.com/github/copilot-cli', '0.3.0', '2026-07-31'),
-    }),
-    'kilo-code': descriptor(trust, {
-      id: 'kilo-code',
-      displayName: 'Kilo Code CLI',
-      command: 'kilo',
-      roles: ALL_ROLES,
-      modelPolicy: rolePolicy('optional', 'optional'),
-      auth: authPolicy('provider-dependent', [
-        authChannel('provider-dependent', [], 'host-cli-state', 'provider-dependent'),
-      ]),
-      billing: 'provider-dependent',
-      sandbox: rolePolicy('none', 'none'),
-      compatibility: compatibility('https://kilo.ai', '0.1.0', '2026-07-31'),
-    }),
-  };
 }
 
 function assertOmittedCandidatesAbsent(): void {
   assertCandidateFilesAbsent(
-    [...CURSOR_CLI_CANDIDATE_PATHS, ...ANTIGRAVITY_CLI_CANDIDATE_PATHS],
+    [...CURSOR_CLI_RUNTIME_ADAPTER_PATHS, ...ANTIGRAVITY_CLI_CANDIDATE_PATHS],
     cliAdmissionError.omitRequiresAbsentSource,
   );
 }
 
 function assembleCliToolTrust(): Readonly<Record<CliToolId, RunnerRoleTrustMetadata>> {
   assertOmittedCandidatesAbsent();
-  const trust: Record<ExistingCliToolId, RunnerRoleTrustMetadata> = { ...BASE_CLI_TOOL_TRUST };
-  return Object.freeze(trust);
+  return Object.freeze({ ...BASE_CLI_TOOL_TRUST });
 }
 
 function assembleCliToolCatalog(
   trust: Readonly<Record<CliToolId, RunnerRoleTrustMetadata>>,
 ): Readonly<Record<CliToolId, CliToolDescriptor>> {
-  const catalog: Record<ExistingCliToolId, CliToolDescriptor> = {
-    ...buildBaseCatalog(trust),
-  };
+  const catalog = {
+    'claude-code': descriptor(trust['claude-code'], CLI_TOOL_DECLARATIONS['claude-code']),
+    codex: descriptor(trust.codex, CLI_TOOL_DECLARATIONS.codex),
+    opencode: descriptor(trust.opencode, CLI_TOOL_DECLARATIONS.opencode),
+    aider: descriptor(trust.aider, CLI_TOOL_DECLARATIONS.aider),
+    copilot: descriptor(trust.copilot, CLI_TOOL_DECLARATIONS.copilot),
+    'kilo-code': descriptor(trust['kilo-code'], CLI_TOOL_DECLARATIONS['kilo-code']),
+  } satisfies Record<CliToolId, CliToolDescriptor>;
   return Object.freeze(catalog);
 }
 
 export const CLI_TOOL_TRUST = assembleCliToolTrust();
 export const CLI_TOOL_CATALOG = assembleCliToolCatalog(CLI_TOOL_TRUST);
 export const CLI_TOOL_IDS = Object.freeze(typedEntries(CLI_TOOL_CATALOG).map(([id]) => id));
+
+/**
+ * The only admitted CLIs with a structural, non-interactive native model
+ * catalog contract. This is intentionally narrower than `modelDiscoveryMode`:
+ * a display policy is not permission to execute a catalog subprocess.
+ */
+export const NATIVE_CLI_CATALOG_TOOL_IDS = Object.freeze([
+  'codex',
+  'opencode',
+  'aider',
+  'kilo-code',
+] as const satisfies readonly CliToolId[]);
+
+export function hasNativeCliCatalog(tool: string): boolean {
+  return NATIVE_CLI_CATALOG_TOOL_IDS.some((id) => id === tool);
+}
 
 export function cliModelPolicyViolations(
   policy: CliModelPolicy,
@@ -402,13 +701,20 @@ export function selectCliAuthChannel(
 }
 
 /**
- * The channel a runner takes when its configuration names none: the declared
- * channel that needs no host state bridge, so an unset selection never copies
- * host credential files into the staged sandbox on its own.
+ * The channel a runner takes when its configuration names none: the tool's
+ * declared session channel when it has one (a host login is the tool's
+ * primary auth), otherwise its first bridge-free channel, otherwise its
+ * first declared channel. Session bridging copies only the allowlisted
+ * state snapshot, never the host HOME; an explicit `authChannel` always
+ * overrides this default.
  */
 export function defaultCliAuthChannel(id: CliToolId): CliAuthChannel {
   const { channels } = CLI_TOOL_CATALOG[id].auth;
-  return channels.find((channel) => channel.stateBridge === 'none') ?? channels[0];
+  return (
+    channels.find((channel) => channel.id === 'session') ??
+    channels.find((channel) => channel.stateBridge === 'none') ??
+    channels[0]
+  );
 }
 
 function cliToolIdsForRole(role: RunnerRole): readonly CliToolId[] {

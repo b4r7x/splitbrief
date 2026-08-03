@@ -163,13 +163,6 @@ function ungatedCliStartPointer(checks: readonly ReadinessCheck[]): string {
   return `Start blocked: no trusted readiness identity for ${tools}.`;
 }
 
-export function formatUngatedCliStartRefusal(checks: readonly ReadinessCheck[]): string {
-  return [
-    ungatedCliStartPointer(checks),
-    ...renderSectionLines({ id: 'runners', title: 'Runner readiness', checks: [...checks] }),
-  ].join('\n');
-}
-
 export function formatReadinessReport(report: ReadinessReport): string {
   const lines: string[] = [];
   lines.push(

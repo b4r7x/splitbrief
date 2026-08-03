@@ -136,7 +136,7 @@ describe('removeWorktree', () => {
   it('removes without --force when the only dirt is in-worktree initConfig bookkeeping', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-bk-rm', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-bk-rm');
-    initConfig(wtPath);
+    await initConfig(wtPath);
 
     await removeWorktree({ projectDir: repoDir, slug: 'feat-bk-rm', git });
     expect(existsSync(wtPath)).toBe(false);

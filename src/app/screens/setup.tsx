@@ -62,7 +62,7 @@ function visibleInstallCommandCount(terminalRows: number): number {
 export interface SetupToolPickerArgs {
   role: 'planner' | 'implementer';
   stepLabel: string;
-  onConfirm: (updated: Config) => void;
+  onConfirm: (updated: Config) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -145,11 +145,17 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
     { isActive: step === 'no-planners' && !hasOverlay },
   );
 
-  const finalize = (finalConfig: Config) => {
+  const finalize = async (finalConfig: Config) => {
     if (!projectDir) return;
-    const result = configStore.save(finalConfig);
-    if (!result.ok) {
-      if (result.error) feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+    const result = await configStore.save(finalConfig);
+    if (result.kind !== 'saved') {
+      if (result.kind === 'failure') {
+        feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+      } else if (result.kind === 'durability-uncertain') {
+        feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
+      } else {
+        feedbackStore.setError('Config changed on disk. Reload before saving again.');
+      }
       return;
     }
     if (onComplete === 'workflow' && pendingFeature) {
@@ -214,12 +220,16 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
         {renderToolPicker({
           role: 'planner',
           stepLabel: `Choose planner${SOFT_SEP}1 of 2`,
-          onConfirm: (updated) => {
-            const result = configStore.save(updated);
-            if (result.ok) {
+          onConfirm: async (updated) => {
+            const result = await configStore.save(updated);
+            if (result.kind === 'saved') {
               setStep('implementer');
-            } else if (result.error) {
+            } else if (result.kind === 'failure') {
               feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+            } else if (result.kind === 'durability-uncertain') {
+              feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
+            } else {
+              feedbackStore.setError('Config changed on disk. Reload before saving again.');
             }
           },
           onCancel: exit,

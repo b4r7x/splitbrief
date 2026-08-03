@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Config } from '../../core/schemas/config.js';
+import { ConfigSchema, type Config } from '../../core/schemas/config.js';
+import { matches } from '../../utils/error.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { createImplementer, createPlanner } from './factory.js';
+import { customRunnerFactoryError, createImplementer, createPlanner } from './factory.js';
 import type { CliStartGate } from './start-gate.js';
+import type { CustomRunnerRuntimePort } from './types.js';
 
 function withPlanner(planner: Config['planner']): Config {
   return { ...makeConfig(), planner };
@@ -15,6 +17,77 @@ function withPlanner(planner: Config['planner']): Config {
 
 function withImplementer(implementer: Config['implementer']): Config {
   return { ...makeConfig(), implementer };
+}
+
+type CustomRunnerRole = 'planner' | 'implementer';
+type CustomCommandContract = 'output' | 'direct';
+
+const configuredRoutes = [
+  ['planner', 'output'],
+  ['planner', 'direct'],
+  ['implementer', 'output'],
+  ['implementer', 'direct'],
+] as const;
+
+function configuredRunnerConfig(role: CustomRunnerRole, contract: CustomCommandContract): Config {
+  const command = {
+    label: `Factory ${role} ${contract}`,
+    contract,
+    executable: process.execPath,
+    argv: [],
+    outputFormat: 'text' as const,
+    idleWarnMs: 300_000,
+    idleKillMs: 1_800_000,
+    env: [],
+  };
+  const runner = {
+    kind: contract === 'output' ? 'shell' : 'agent',
+    command: command.executable,
+    args: command.argv,
+    outputFormat: command.outputFormat,
+    idleWarnMs: command.idleWarnMs,
+    idleKillMs: command.idleKillMs,
+    env: command.env,
+  };
+  const customCommands = { [`factory-${role}-${contract}`]: command };
+
+  if (role === 'planner') {
+    return ConfigSchema.parse({ ...makeConfig(), planner: runner, customCommands });
+  }
+
+  const legacyImplementer =
+    contract === 'output'
+      ? { kind: 'agent', command: 'cat', outputFormat: 'text', model: 'legacy' }
+      : { kind: 'shell', command: 'cat', outputFormat: 'text', model: 'legacy' };
+  return ConfigSchema.parse({
+    ...makeConfig(),
+    implementer: legacyImplementer,
+    implementerProfiles: {
+      default: 'configured-custom',
+      profiles: {
+        'configured-custom': { ...runner, model: 'configured' },
+      },
+    },
+    customCommands,
+  });
+}
+
+function customRuntime(): CustomRunnerRuntimePort {
+  return {
+    sessionId: 'factory-custom-runner',
+    authorizationProjectDir: process.cwd(),
+    sourceEnv: {},
+    admission: { interaction: 'headless', allowRepoRunners: false },
+    createStage: async () => {
+      throw new Error('Factory construction must not create a custom runner stage.');
+    },
+    cleanupStaleArtifactReviews: async () => {
+      throw new Error('Factory construction must not clean planner artifact reviews.');
+    },
+    beginDeclaredArtifactReview: async () => {
+      throw new Error('Factory construction must not begin planner artifact review.');
+    },
+  };
 }
 
 afterEach(() => {
@@ -218,6 +291,74 @@ describe('createImplementer', () => {
 
     const written = stderrWrite.mock.calls.map(([chunk]) => String(chunk)).join('');
     expect(written).not.toContain('implementer-temperature');
+  });
+});
+
+describe('configured custom runner routing', () => {
+  it('preserves the typed missing-runtime error contract for both roles', () => {
+    const planner = customRunnerFactoryError.runtimeUnavailable('planner');
+    const implementer = customRunnerFactoryError.runtimeUnavailable('implementer');
+
+    expect(matches('custom-runner-runtime-unavailable')(planner)).toBe(true);
+    expect(matches('custom-runner-runtime-unavailable')(implementer)).toBe(true);
+    expect(planner).toMatchObject({
+      kind: 'custom-runner-runtime-unavailable',
+      message: 'Configured custom planner requires a custom runner runtime.',
+    });
+    expect(implementer).toMatchObject({
+      kind: 'custom-runner-runtime-unavailable',
+      message: 'Configured custom implementer requires a custom runner runtime.',
+    });
+    expect(planner.data).toBeUndefined();
+    expect(implementer.data).toBeUndefined();
+  });
+
+  it.each(
+    configuredRoutes,
+  )('rejects a configured %s %s runner without a runtime before legacy construction', async (role, contract) => {
+    const config = configuredRunnerConfig(role, contract);
+
+    if (role === 'planner') {
+      await expect(createPlanner(config)).rejects.toMatchObject({
+        kind: 'custom-runner-runtime-unavailable',
+      });
+      return;
+    }
+
+    await expect(createImplementer(config)).rejects.toMatchObject({
+      kind: 'custom-runner-runtime-unavailable',
+    });
+  });
+
+  it.each(
+    configuredRoutes,
+  )('constructs a configured %s %s runner through its runtime adapter', async (role, contract) => {
+    const config = configuredRunnerConfig(role, contract);
+
+    if (role === 'planner') {
+      const planner = await createPlanner(config, undefined, { customRuntime: customRuntime() });
+      expect(planner.capabilities).toMatchObject({
+        supportsSelfSummarisation: false,
+      });
+      return;
+    }
+
+    const implementer = await createImplementer(config, { customRuntime: customRuntime() });
+    expect(implementer.capabilities).toEqual({
+      writesFiles: contract === 'output' ? 'extracted-code' : 'direct',
+    });
+  });
+
+  it('keeps legacy shell and agent rows independent of a custom runtime', async () => {
+    const planner = await createPlanner(
+      withPlanner({ kind: 'shell', command: 'cat', outputFormat: 'text' }),
+    );
+    const implementer = await createImplementer(
+      withImplementer({ kind: 'agent', command: 'cat', outputFormat: 'text', model: 'test' }),
+    );
+
+    expect(planner).toBeDefined();
+    expect(implementer.capabilities).toEqual({ writesFiles: 'direct' });
   });
 });
 

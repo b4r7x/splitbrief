@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import http from 'node:http';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchModelsDevCatalog, getModelsForProvider } from './models-dev.js';
+import { getModelsDevEntries } from './model/resolution.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 const FIXTURE: ModelsDevCatalog = {
   anthropic: {
@@ -136,6 +140,47 @@ const FIXTURE: ModelsDevCatalog = {
     },
   },
 };
+
+type RequestRecord = Readonly<{
+  method: string;
+  pathname: string;
+  authorization: string | undefined;
+  ifNoneMatch: string | undefined;
+}>;
+
+async function withModelsDevServer(
+  handler: (request: http.IncomingMessage, response: http.ServerResponse) => void,
+  run: (input: Readonly<{ sourceUrl: string; requests: RequestRecord[] }>) => Promise<void>,
+): Promise<void> {
+  const requests: RequestRecord[] = [];
+  const server = http.createServer((request, response) => {
+    requests.push({
+      method: request.method ?? '',
+      pathname: new URL(request.url ?? '/', 'http://models-dev.invalid').pathname,
+      authorization:
+        typeof request.headers.authorization === 'string'
+          ? request.headers.authorization
+          : undefined,
+      ifNoneMatch:
+        typeof request.headers['if-none-match'] === 'string'
+          ? request.headers['if-none-match']
+          : undefined,
+    });
+    handler(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('Expected a TCP Models.dev test server address.');
+  }
+
+  try {
+    await run({ sourceUrl: `http://127.0.0.1:${address.port}/api.json`, requests });
+  } finally {
+    server.closeAllConnections();
+    if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
 
 describe('getModelsForProvider', () => {
   it('maps Models.dev models to DetectedModel[] with paid and sparse pricing fields', () => {
@@ -279,53 +324,216 @@ describe('getModelsForProvider', () => {
     expect(models.at(0)?.contextLength).toBeUndefined();
   });
 
-  it('computes releaseDate as max of release_date and last_updated', () => {
+  it('preserves models.dev metadata alongside pricing without conflating release and update dates', () => {
     const catalog: ModelsDevCatalog = {
       openai: {
         id: 'openai',
         models: {
-          'gpt-old': { id: 'gpt-old', release_date: '2024-06-01', last_updated: '2025-03-15' },
-          'gpt-new': { id: 'gpt-new', release_date: '2025-11-18', last_updated: '2025-01-01' },
-          'gpt-release-only': { id: 'gpt-release-only', release_date: '2025-05-01' },
-          'gpt-update-only': { id: 'gpt-update-only', last_updated: '2025-08-01' },
-          'gpt-no-dates': { id: 'gpt-no-dates' },
+          'openai/gpt-5.4-20260101': {
+            id: 'openai/gpt-5.4-20260101',
+            name: 'GPT 5.4 Pinned',
+            status: 'deprecated',
+            cost: { input: 2, output: 8 },
+            limit: { input: 128_000, context: 256_000, output: 32_768 },
+            modalities: { input: ['text', 'image'], output: ['text', 'audio'] },
+            tool_call: true,
+            structured_output: false,
+            release_date: '2025-12-01',
+            last_updated: '2026-02-14',
+          },
         },
       },
     };
+    const [model] = getModelsForProvider(catalog, 'openai');
+
+    expect(model).toMatchObject({
+      id: 'openai/gpt-5.4-20260101',
+      providerId: 'openai',
+      modelId: 'openai/gpt-5.4-20260101',
+      displayName: 'GPT 5.4 Pinned',
+      lifecycle: 'deprecated',
+      pricingInput: 2,
+      pricingOutput: 8,
+      maximumInputTokens: 128_000,
+      maximumContextTokens: 256_000,
+      maximumOutputTokens: 32_768,
+      inputModalities: ['text', 'image'],
+      outputModalities: ['text', 'audio'],
+      supportsToolCalls: true,
+      supportsStructuredOutput: false,
+      releaseDate: '2025-12-01',
+      updatedDate: '2026-02-14',
+    });
+    expect(model?.contextLength).toBe(256_000);
+    expect(model?.maxOutputTokens).toBe(32_768);
+  });
+
+  it('preserves metadata through the live resolver without rewriting a provider-qualified ID', () => {
+    const catalog: ModelsDevCatalog = {
+      openai: {
+        id: 'openai',
+        models: {
+          'openai/gpt-5.4-20260101': {
+            id: 'openai/gpt-5.4-20260101',
+            name: 'GPT 5.4 Pinned',
+            status: 'active',
+            limit: { input: 64_000, context: 128_000, output: 16_000 },
+            modalities: { input: ['text'], output: ['text'] },
+            tool_call: true,
+            structured_output: true,
+            release_date: '2025-11-18',
+            last_updated: '2026-02-14',
+          },
+        },
+      },
+    };
+
+    const [model] = getModelsDevEntries('openai', makeModelCacheAccessor({ catalog }));
+
+    expect(model).toMatchObject({
+      id: 'openai/gpt-5.4-20260101',
+      providerId: 'openai',
+      modelId: 'openai/gpt-5.4-20260101',
+      displayName: 'GPT 5.4 Pinned',
+      lifecycle: 'active',
+      maximumInputTokens: 64_000,
+      maximumContextTokens: 128_000,
+      maximumOutputTokens: 16_000,
+      inputModalities: ['text'],
+      outputModalities: ['text'],
+      supportsToolCalls: true,
+      supportsStructuredOutput: true,
+      releaseDate: '2025-11-18',
+      updatedDate: '2026-02-14',
+    });
+  });
+
+  it('keeps equal model IDs from distinct models.dev providers separate', () => {
+    const catalog: ModelsDevCatalog = {
+      opencode: {
+        id: 'opencode',
+        models: {
+          shared: { id: 'shared', name: 'OpenCode Shared' },
+        },
+      },
+      'opencode-go': {
+        id: 'opencode-go',
+        models: {
+          shared: { id: 'shared', name: 'OpenCode Go Shared' },
+        },
+      },
+    };
+
+    const models = getModelsForProvider(catalog, 'opencode');
+
+    expect(models).toEqual([
+      expect.objectContaining({
+        id: 'shared',
+        providerId: 'opencode',
+        modelId: 'shared',
+        displayName: 'OpenCode Shared',
+      }),
+      expect.objectContaining({
+        id: 'shared',
+        providerId: 'opencode-go',
+        modelId: 'shared',
+        displayName: 'OpenCode Go Shared',
+      }),
+    ]);
+  });
+
+  it('merges sparse records for one exact source identity without discarding metadata', () => {
+    const catalog: ModelsDevCatalog = {
+      openai: {
+        id: 'openai',
+        models: {
+          base: {
+            id: 'openai/acme/model:latest',
+            limit: { input: 128_000, context: 256_000 },
+            modalities: { input: ['text', 'image'] },
+            release_date: '2025-10-01',
+          },
+          details: {
+            id: 'openai/acme/model:latest',
+            name: 'Acme Latest',
+            status: 'active',
+            limit: { output: 32_768 },
+            modalities: { output: ['text'] },
+            tool_call: true,
+            structured_output: true,
+            last_updated: '2026-02-14',
+          },
+        },
+      },
+    };
+
     const models = getModelsForProvider(catalog, 'openai');
-    expect(models.find((m) => m.id === 'gpt-old')?.releaseDate).toBe('2025-03-15');
-    expect(models.find((m) => m.id === 'gpt-new')?.releaseDate).toBe('2025-11-18');
-    expect(models.find((m) => m.id === 'gpt-release-only')?.releaseDate).toBe('2025-05-01');
-    expect(models.find((m) => m.id === 'gpt-update-only')?.releaseDate).toBe('2025-08-01');
-    expect(models.find((m) => m.id === 'gpt-no-dates')?.releaseDate).toBeUndefined();
+    const [model] = models;
+
+    expect(models).toHaveLength(1);
+    expect(model).toMatchObject({
+      id: 'openai/acme/model:latest',
+      providerId: 'openai',
+      modelId: 'openai/acme/model:latest',
+      displayName: 'Acme Latest',
+      lifecycle: 'active',
+      maximumInputTokens: 128_000,
+      maximumContextTokens: 256_000,
+      maximumOutputTokens: 32_768,
+      inputModalities: ['text', 'image'],
+      outputModalities: ['text'],
+      supportsToolCalls: true,
+      supportsStructuredOutput: true,
+      releaseDate: '2025-10-01',
+      updatedDate: '2026-02-14',
+    });
   });
 });
 
 describe('fetchModelsDevCatalog', () => {
   setupFetchMock();
+  let cacheDir: string;
+
+  beforeEach(() => {
+    cacheDir = createTempDir('models-dev-fetch');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(cacheDir);
+  });
 
   it('returns parsed catalog on success', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify(FIXTURE), { status: 200 }),
-    );
-
-    const result = await fetchModelsDevCatalog();
-    expect(result).toEqual(FIXTURE);
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://models.dev/api.json',
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    vi.unstubAllGlobals();
+    await withModelsDevServer(
+      (_request, response) => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify(FIXTURE));
+      },
+      async ({ sourceUrl, requests }) => {
+        expect(await fetchModelsDevCatalog({ cacheDir, sourceUrl })).toEqual(FIXTURE);
+        expect(requests).toEqual([
+          {
+            method: 'GET',
+            pathname: '/api.json',
+            authorization: undefined,
+            ifNoneMatch: undefined,
+          },
+        ]);
+      },
     );
   });
 
   it('throws on non-ok response', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(new Response('error', { status: 500 }));
 
-    await expect(fetchModelsDevCatalog()).rejects.toThrow('500');
+    await expect(fetchModelsDevCatalog({ cacheDir })).rejects.toThrow('HTTP 500');
   });
 
   it('throws on network error', async () => {
     vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('network error'));
 
-    await expect(fetchModelsDevCatalog()).rejects.toThrow('network error');
+    await expect(fetchModelsDevCatalog({ cacheDir })).rejects.toThrow(
+      'Models.dev catalog request failed.',
+    );
   });
 });

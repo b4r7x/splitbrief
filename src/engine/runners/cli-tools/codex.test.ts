@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   CLI_CONFORMANCE_CANDIDATES,
+  CODEX_NATIVE_MODEL_CATALOG_PROBE,
   codexImplementerAdapter,
   codexPlannerAdapter,
   codexProtocolEvents,
@@ -65,7 +66,13 @@ describe('Codex role adapters', () => {
       terminalEvent: 'required',
     });
     expect(codexPlannerAdapter.probe.version.command).toEqual(['codex', '--version']);
-    expect(codexPlannerAdapter.probe.auth.command).toEqual(['codex', 'auth']);
+    expect(codexPlannerAdapter.probe.auth.command).toEqual(['codex', 'login', 'status']);
+    expect(CODEX_NATIVE_MODEL_CATALOG_PROBE).toEqual({
+      capability: 'debug-models-bundled-v1',
+      command: ['codex', 'debug', 'models', '--bundled'],
+      timeoutMs: 5_000,
+      maxOutputBytes: 2 * 1024 * 1024,
+    });
   });
 
   it('preserves planner exec/resume, model, cd, escalation, and configured argument order', () => {

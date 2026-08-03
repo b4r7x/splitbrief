@@ -278,11 +278,11 @@ function buildCliConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
   const args = opts.args ?? (existing?.kind === 'cli' ? existing.args : undefined);
   const outputFormat =
     opts.outputFormat ?? (existing?.kind === 'cli' ? existing.outputFormat : undefined);
-  const authChannel = destinationValue(
-    targetState(opts, target),
-    opts.authChannel,
-    opts.existing?.kind === 'cli' ? opts.existing.authChannel : undefined,
-  );
+  const state = targetState(opts, target);
+  const authChannel =
+    opts.authChannel ??
+    (state === 'same' && existing?.kind === 'cli' ? existing.authChannel : undefined) ??
+    (state !== 'same' && tool === 'claude-code' ? 'session' : undefined);
   const config: Record<string, unknown> = {
     kind: 'cli',
     tool,

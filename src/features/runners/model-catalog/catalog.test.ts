@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { KNOWN_MODELS } from '../../../core/providers/known-models.js';
-import { buildRightModels, modelsForImplementerProvider, modelsForPlannerTool } from './catalog.js';
+import {
+  buildRightModels,
+  countModelOptions,
+  modelsForImplementerProvider,
+  modelsForPlannerTool,
+} from './catalog.js';
 import type { PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
+import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
 
 function pickerItem(
   item: Omit<PickerOption, 'modelCapability'> & { modelPolicy: PickerOption['modelPolicy'] },
@@ -46,6 +52,49 @@ function uniqueModelIds(models: readonly { id: string }[]): string[] {
 }
 
 describe('right column models', () => {
+  it('preserves role-scoped stale runtime membership and counts it separately', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'planner', provider: 'openai', contextKey: 'planner-context' },
+        state: 'stale',
+        catalog: 'populated',
+        models: [{ id: 'last-confirmed-model' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+        failure: 'timeout',
+        diagnostic: 'Configured provider catalog refresh did not complete.',
+      }),
+    };
+
+    const models = modelsForPlannerTool('openai', cache);
+
+    expect(models.find((model) => model.id === 'last-confirmed-model')).toMatchObject({
+      membership: 'stale',
+      isStale: true,
+      isDetected: false,
+    });
+    expect(countModelOptions(models)).toMatchObject({
+      confirmed: 0,
+      stale: 1,
+      custom: 0,
+    });
+  });
+
+  it('keeps confirmed, stale, suggestion, bundled, and custom counts distinct', () => {
+    expect(
+      countModelOptions([
+        { id: 'confirmed', membership: 'confirmed', isDetected: true },
+        { id: 'stale', membership: 'stale', isStale: true, isDetected: false },
+        { id: 'suggestion', membership: 'catalog-suggestion' },
+        { id: 'bundled', membership: 'bundled-suggestion' },
+        { id: 'custom', membership: 'custom', isCustom: true },
+        { id: 'custom-stale', membership: 'stale', isStale: true, isCustom: true },
+      ]),
+    ).toEqual({ confirmed: 1, stale: 2, suggestions: 1, bundled: 1, custom: 2 });
+  });
+
   it('exposes bundled Agent SDK models for implementers', () => {
     const models = buildRightModels({
       isPlanner: false,

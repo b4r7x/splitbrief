@@ -2,7 +2,12 @@ import { clamp } from '../../utils/math.js';
 import { createStore, storeBase } from '../create-store.js';
 import { focusStore } from '../ui/focus.js';
 
+export type ReviewSource =
+  | Readonly<{ kind: 'file'; filePath: string }>
+  | Readonly<{ kind: 'artifact'; text: string }>;
+
 export interface ReviewState {
+  source: ReviewSource | null;
   filePath: string | null;
   scrollOffset: number;
   renderedLineCount: number;
@@ -15,6 +20,7 @@ export interface ReviewState {
 }
 
 const initial: ReviewState = {
+  source: null,
   filePath: null,
   scrollOffset: 0,
   renderedLineCount: 0,
@@ -31,13 +37,25 @@ const store = createStore<ReviewState>(initial);
 let nextOwnerToken = 1;
 
 function setReviewFile(path: string | null, renderedLineCount?: number): number {
+  return setReviewSource(
+    path === null ? null : { kind: 'file', filePath: path },
+    renderedLineCount,
+  );
+}
+
+function setReviewArtifact(text: string): number {
+  return setReviewSource({ kind: 'artifact', text });
+}
+
+function setReviewSource(source: ReviewSource | null, renderedLineCount?: number): number {
   const ownerToken = nextOwnerToken++;
   store.set((s) =>
-    s.filePath === path
+    sameReviewSource(s.source, source)
       ? { ...s, ownerToken }
       : {
           ...s,
-          filePath: path,
+          source: copyReviewSource(source),
+          filePath: reviewSourceFilePath(source),
           scrollOffset: 0,
           renderedLineCount: renderedLineCount ?? 0,
           briefSources: [],
@@ -49,6 +67,25 @@ function setReviewFile(path: string | null, renderedLineCount?: number): number 
         },
   );
   return ownerToken;
+}
+
+function sameReviewSource(left: ReviewSource | null, right: ReviewSource | null): boolean {
+  if (left === null || right === null) return left === right;
+  if (left.kind === 'file') {
+    return right.kind === 'file' && left.filePath === right.filePath;
+  }
+  return right.kind === 'artifact' && left.text === right.text;
+}
+
+function copyReviewSource(source: ReviewSource | null): ReviewSource | null {
+  if (source === null) return null;
+  return source.kind === 'file'
+    ? { kind: 'file', filePath: source.filePath }
+    : { kind: 'artifact', text: source.text };
+}
+
+function reviewSourceFilePath(source: ReviewSource | null): string | null {
+  return source?.kind === 'file' ? source.filePath : null;
 }
 
 export interface VisibleBriefWindow {
@@ -105,7 +142,7 @@ function setLoadError(loadError: string | null) {
 
 function reloadReviewFile() {
   store.set((s) =>
-    s.filePath === null
+    s.source?.kind !== 'file'
       ? s
       : {
           ...s,
@@ -122,7 +159,7 @@ function reloadReviewFile() {
 
 function clearReview() {
   focusStore.clear();
-  store.set((s) => (s.filePath === null ? s : initial));
+  store.set((s) => (s.source === null ? s : initial));
 }
 
 function clearReviewIfOwner(ownerToken: number) {
@@ -133,6 +170,7 @@ function clearReviewIfOwner(ownerToken: number) {
 export const reviewStore = {
   ...storeBase(store),
   setReviewFile,
+  setReviewArtifact,
   setScrollOffset,
   setRenderedLineCount,
   setBriefSources,

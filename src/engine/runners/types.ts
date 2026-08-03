@@ -1,4 +1,6 @@
+import type { TieredApprovalRequest, TieredApprovalResponse } from '../../core/approval/types.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
+import type { ChangedFilesSnapshot } from '../../core/schemas/workflow.js';
 import type {
   RunnerCallTextChannel,
   RUNNER_CALL_USAGE_SEMANTICS,
@@ -92,3 +94,61 @@ export interface RunnerRuntime {
   isAvailable(): Promise<boolean>;
   getVersion(): Promise<string | null>;
 }
+
+export type CustomRunnerStage = Readonly<{
+  projectDir: string;
+  snapshot: ChangedFilesSnapshot;
+  cleanup: () => void;
+}>;
+
+export type CustomRunnerAdmissionPolicy = Readonly<{
+  interaction: 'interactive' | 'headless';
+  allowRepoRunners: boolean;
+  stateDir?: string | undefined;
+  onTieredApproval?:
+    | ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>)
+    | undefined;
+}>;
+
+export const DECLARED_PLANNER_ARTIFACT_PATH = '.splitbrief-runner/output/result';
+export const PLANNER_ARTIFACT_MAX_BYTES = 131_072;
+
+/**
+ * Immutable canonical text for the direct-planner artifact approval surface.
+ * `label` is display-only: consumers must never interpret or reopen it as a
+ * filesystem path.
+ */
+export type ArtifactApprovalReview = Readonly<{
+  label: string;
+  text: string;
+}>;
+
+export type ApprovalReviewInput = string | ArtifactApprovalReview;
+
+export type BeginDeclaredArtifactReviewInput = Readonly<{
+  stagedProjectDir: string;
+  callId: string;
+  declaredRedactionValues: readonly string[];
+}>;
+
+export type PreparedDeclaredArtifactReview = Readonly<{
+  reviewAfterChild: () => Promise<string>;
+  dispose: () => Promise<void>;
+}>;
+
+export type CustomRunnerRuntimePort = Readonly<{
+  sessionId: string;
+  authorizationProjectDir: string;
+  sourceEnv: NodeJS.ProcessEnv;
+  authorizationPathEnv?: string | undefined;
+  authorizationPathExt?: string | undefined;
+  createStage: (
+    sourceProjectDir: string,
+    role: 'planner' | 'implementer',
+  ) => Promise<CustomRunnerStage>;
+  admission: CustomRunnerAdmissionPolicy;
+  cleanupStaleArtifactReviews: () => Promise<void>;
+  beginDeclaredArtifactReview: (
+    input: BeginDeclaredArtifactReviewInput,
+  ) => Promise<PreparedDeclaredArtifactReview>;
+}>;

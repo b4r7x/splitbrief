@@ -17,6 +17,13 @@ const CODEX_PROMPT_TRANSPORT = Object.freeze({
 } as const);
 const CODEX_VERSION_ARGS = Object.freeze(['--version'] as const);
 
+export const CODEX_NATIVE_MODEL_CATALOG_PROBE = Object.freeze({
+  capability: 'debug-models-bundled-v1',
+  command: Object.freeze([CODEX_COMMAND, 'debug', 'models', '--bundled'] as const),
+  timeoutMs: 5_000,
+  maxOutputBytes: 2 * 1024 * 1024,
+});
+
 const CODEX_PROTECTED_FLAGS = new Set([
   '--cd',
   '--json',
@@ -100,7 +107,7 @@ function createCodexPlannerAdapter(): CliPlannerAdapter<'codex'> {
         maxOutputBytes: 4_096,
       },
       auth: {
-        command: [CODEX_COMMAND, 'auth'],
+        command: [CODEX_COMMAND, 'login', 'status'],
         cwd: 'neutral',
         timeoutMs: 5_000,
         maxOutputBytes: 4_096,
@@ -129,7 +136,7 @@ function createCodexImplementerAdapter(): CliImplementerAdapter<'codex'> {
         maxOutputBytes: 4_096,
       },
       auth: {
-        command: [CODEX_COMMAND, 'auth'],
+        command: [CODEX_COMMAND, 'login', 'status'],
         cwd: 'neutral',
         timeoutMs: 5_000,
         maxOutputBytes: 4_096,

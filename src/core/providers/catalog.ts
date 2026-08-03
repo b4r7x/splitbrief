@@ -1,28 +1,120 @@
 import { isProviderId, type ProviderId } from '../schemas/enums.js';
+import { CLI_TOOL_CATALOG, type CliToolDescriptor } from '../runners/cli-tool-catalog.js';
+import { mapRecord } from '../../utils/type-guards.js';
+import {
+  API_PROVIDER_CATALOG,
+  isApiProviderId,
+  type ApiProviderDescriptor,
+  type ApiProviderId,
+} from './api-provider-catalog.js';
+import { endpointPolicyError } from './endpoint-policy.js';
+
+export type ProviderCategory = 'cli' | 'remote-api' | 'local-service' | 'sdk' | 'custom';
 
 export interface ProviderInfo {
-  id: ProviderId;
+  id: string;
   displayName: string;
+  category: ProviderCategory;
+  locality?: 'local' | 'remote';
   baseURL?: string;
   isLocal?: boolean;
   isSubscription?: boolean;
   apiKeyEnv?: string;
 }
 
-export const KNOWN_PROVIDER_BASE_URLS = {
-  ollama: 'http://localhost:11434/v1',
-  'lm-studio': 'http://localhost:1234/v1',
-  deepseek: 'https://api.deepseek.com/v1',
-  openrouter: 'https://openrouter.ai/api/v1',
-  openai: 'https://api.openai.com/v1',
-  groq: 'https://api.groq.com/openai/v1',
-  together: 'https://api.together.xyz/v1',
-  anthropic: 'https://api.anthropic.com/v1',
-} as const;
+function defaultBaseURL(descriptor: ApiProviderDescriptor): string | undefined {
+  switch (descriptor.endpointPolicy.kind) {
+    case 'fixed-origin':
+      return descriptor.endpointPolicy.baseURL;
+    case 'loopback':
+      return descriptor.endpointPolicy.defaultBaseURL;
+    case 'allowed-https':
+      return undefined;
+  }
+}
+
+function providerInfoFromApiDescriptor(descriptor: ApiProviderDescriptor): ProviderInfo {
+  const baseURL = defaultBaseURL(descriptor);
+  return Object.freeze({
+    id: descriptor.id,
+    displayName: descriptor.displayName,
+    category: descriptor.category,
+    locality: descriptor.locality,
+    ...(baseURL === undefined ? {} : { baseURL }),
+    ...(descriptor.locality === 'local' ? { isLocal: true } : {}),
+    ...(descriptor.credentialEnv === null ? {} : { apiKeyEnv: descriptor.credentialEnv }),
+  });
+}
+
+function providerInfoFromCliDescriptor(descriptor: CliToolDescriptor): ProviderInfo {
+  return Object.freeze({
+    id: descriptor.id,
+    displayName: descriptor.displayName,
+    category: descriptor.category,
+    ...(descriptor.isSubscription ? { isSubscription: true } : {}),
+  });
+}
+
+export type KnownProviderBaseURLs = Readonly<Record<ApiProviderId, string>>;
+
+function providerBaseURLs(): KnownProviderBaseURLs {
+  return Object.freeze(
+    mapRecord(API_PROVIDER_CATALOG, (descriptor) => {
+      const baseURL = defaultBaseURL(descriptor);
+      if (baseURL === undefined) throw endpointPolicyError.unsupported();
+      return baseURL;
+    }),
+  );
+}
+
+function apiProviderInfoCatalog(): Readonly<Record<ApiProviderId, ProviderInfo>> {
+  return Object.freeze(
+    mapRecord(API_PROVIDER_CATALOG, (descriptor) => providerInfoFromApiDescriptor(descriptor)),
+  );
+}
+
+export const KNOWN_PROVIDER_BASE_URLS = providerBaseURLs();
+
+export function getKnownProviderBaseURL(providerId: ApiProviderId): string {
+  const descriptor = API_PROVIDER_CATALOG[providerId];
+  if (descriptor === undefined) throw endpointPolicyError.unsupported();
+  const baseURL = defaultBaseURL(descriptor);
+  if (baseURL === undefined) throw endpointPolicyError.unsupported();
+  return baseURL;
+}
+
+const META_PROVIDER_INFO = Object.freeze({
+  'agent-sdk': Object.freeze({
+    id: 'agent-sdk',
+    displayName: 'Agent SDK',
+    category: 'sdk',
+    apiKeyEnv: 'ANTHROPIC_API_KEY',
+  }),
+  shell: Object.freeze({
+    id: 'shell',
+    displayName: 'Custom Shell',
+    category: 'custom',
+  }),
+  agent: Object.freeze({
+    id: 'agent',
+    displayName: 'Agent',
+    category: 'custom',
+  }),
+} satisfies Record<string, ProviderInfo>);
+
+export const PROVIDER_CATALOG: Readonly<Record<ProviderId, ProviderInfo>> = Object.freeze({
+  'claude-code': providerInfoFromCliDescriptor(CLI_TOOL_CATALOG['claude-code']),
+  codex: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.codex),
+  opencode: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.opencode),
+  aider: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.aider),
+  copilot: providerInfoFromCliDescriptor(CLI_TOOL_CATALOG.copilot),
+  'kilo-code': providerInfoFromCliDescriptor(CLI_TOOL_CATALOG['kilo-code']),
+  ...apiProviderInfoCatalog(),
+  ...META_PROVIDER_INFO,
+});
 
 export function resolveDefaultApiBase(providerId: string): string | null {
-  const urls: Record<string, string> = KNOWN_PROVIDER_BASE_URLS;
-  return urls[providerId] ?? null;
+  return isApiProviderId(providerId) ? getKnownProviderBaseURL(providerId) : null;
 }
 
 export function isSameOrigin(candidate: string, expected: string): boolean {
@@ -33,68 +125,35 @@ export function isSameOrigin(candidate: string, expected: string): boolean {
   }
 }
 
-type ProviderIdWithBaseURL = keyof typeof KNOWN_PROVIDER_BASE_URLS;
-
-function hasKnownBaseURL(id: ProviderId): id is ProviderId & ProviderIdWithBaseURL {
-  return id in KNOWN_PROVIDER_BASE_URLS;
-}
-
-function makeProvider(
-  id: ProviderId,
-  displayName: string,
-  extras: Omit<ProviderInfo, 'id' | 'displayName' | 'baseURL'> = {},
-): ProviderInfo {
-  return {
-    id,
-    displayName,
-    ...(hasKnownBaseURL(id) && { baseURL: KNOWN_PROVIDER_BASE_URLS[id] }),
-    ...extras,
-  };
-}
-
-export const PROVIDER_CATALOG: Record<ProviderId, ProviderInfo> = {
-  'claude-code': makeProvider('claude-code', 'Claude Code'),
-  codex: makeProvider('codex', 'Codex'),
-  opencode: makeProvider('opencode', 'OpenCode'),
-  aider: makeProvider('aider', 'Aider'),
-  copilot: makeProvider('copilot', 'Copilot', { isSubscription: true }),
-  'kilo-code': makeProvider('kilo-code', 'Kilo Code', { isSubscription: true }),
-  'agent-sdk': makeProvider('agent-sdk', 'Agent SDK', { apiKeyEnv: 'ANTHROPIC_API_KEY' }),
-  anthropic: makeProvider('anthropic', 'Anthropic', { apiKeyEnv: 'ANTHROPIC_API_KEY' }),
-  openrouter: makeProvider('openrouter', 'OpenRouter', { apiKeyEnv: 'OPENROUTER_API_KEY' }),
-  deepseek: makeProvider('deepseek', 'DeepSeek', { apiKeyEnv: 'DEEPSEEK_API_KEY' }),
-  openai: makeProvider('openai', 'OpenAI', { apiKeyEnv: 'OPENAI_API_KEY' }),
-  groq: makeProvider('groq', 'Groq', { apiKeyEnv: 'GROQ_API_KEY' }),
-  together: makeProvider('together', 'Together AI', { apiKeyEnv: 'TOGETHER_API_KEY' }),
-  ollama: makeProvider('ollama', 'Ollama', { isLocal: true, apiKeyEnv: 'OLLAMA_API_KEY' }),
-  'lm-studio': makeProvider('lm-studio', 'LM Studio', { isLocal: true }),
-  shell: makeProvider('shell', 'Custom Shell'),
-  agent: makeProvider('agent', 'Agent'),
-};
-
 export function getProviderDisplayName(id: string): string {
   if (!isProviderId(id)) return id;
-  return PROVIDER_CATALOG[id].displayName;
+  return providerInfo(id).displayName;
 }
 
 export function getProviderBaseURL(id: string): string {
   if (!isProviderId(id)) return '';
-  return PROVIDER_CATALOG[id].baseURL ?? '';
+  return providerInfo(id).baseURL ?? '';
 }
 
 export function isProviderLocal(id: string): boolean {
   if (!isProviderId(id)) return false;
-  return Boolean(PROVIDER_CATALOG[id].isLocal);
+  return Boolean(providerInfo(id).isLocal);
 }
 
 export function isProviderSubscription(id: string): boolean {
   if (!isProviderId(id)) return false;
-  return Boolean(PROVIDER_CATALOG[id].isSubscription);
+  return Boolean(providerInfo(id).isSubscription);
 }
 
 function getProviderApiKeyEnv(id: string): string | undefined {
   if (!isProviderId(id)) return undefined;
-  return PROVIDER_CATALOG[id].apiKeyEnv;
+  return providerInfo(id).apiKeyEnv;
+}
+
+function providerInfo(id: ProviderId): ProviderInfo {
+  const info = PROVIDER_CATALOG[id];
+  if (info === undefined) throw endpointPolicyError.unsupported();
+  return info;
 }
 
 export function hasApiKey(providerId: string): boolean {

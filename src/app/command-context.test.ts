@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   installClipboardExecFixture,
   readClipboardExecCalls,
@@ -42,7 +42,6 @@ import {
   type WorkflowCommandPorts,
 } from './command-context.js';
 import { detectionStore } from '../stores/project/detection.js';
-import { loadDetectionIntoStores } from '../stores/discovery/detection-adapter.js';
 import { getDefaultDetectionService, type DetectionDeps } from '../engine/detection/service.js';
 
 let projectDir = '';
@@ -221,7 +220,17 @@ describe('buildCommandContext', () => {
     expect(names).toContain('/copy');
   });
 
-  it('refreshDetection applies fresh detection to stores without mutating config runner picks', async () => {
+  it('refreshDetection derives current settings instead of reusing prior service dependencies', async () => {
+    // refreshDetection builds production deps and runs a real detection pass;
+    // an empty PATH keeps it off this machine's real CLI tools (and their
+    // now-all-admitted catalog probes) so the pass stays fast and hermetic.
+    const savedPath = process.env.PATH;
+    const emptyPathDir = createTempDir('app-command-context-empty-path');
+    process.env.PATH = emptyPathDir;
+    onTestFinished(() => {
+      if (savedPath === undefined) delete process.env.PATH;
+      else process.env.PATH = savedPath;
+    });
     projectDir = createTempDir('app-command-context-refresh');
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code', model: 'claude-opus-4' },
@@ -234,24 +243,46 @@ describe('buildCommandContext', () => {
       detectAll: async () => {
         detectCalls++;
         return {
-          providers: [{ provider: 'ollama', available: true, isLocal: true }],
+          providers: [
+            {
+              provider: 'ollama',
+              available: true,
+              isLocal: true,
+              models: [{ id: 'old-private-model' }],
+            },
+          ],
           cliTools: [
-            cliDetectionFor('ready', 'claude-code', { installedVersion: `gen-${detectCalls}` }),
+            cliDetectionFor('ready', 'claude-code', {
+              installedVersion: `old-dependency-${detectCalls}`,
+            }),
           ],
         };
       },
       fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
       discoverAllCliTools: vi.fn().mockResolvedValue({}),
+      sourceContexts: {
+        readiness: 'old-command-context-readiness',
+        modelsDev: 'old-command-context-models-dev',
+        cliModels: 'old-command-context-cli-models',
+      },
     };
 
-    await loadDetectionIntoStores(getDefaultDetectionService(), deps, detectionStore, projectDir);
+    await getDefaultDetectionService().loadDetection(deps, projectDir);
     detectionStore.reset();
     expect(detectionStore.get().cliTools).toEqual([]);
 
-    await build().refreshDetection();
+    const summary = await build().refreshDetection();
 
-    expect(detectionStore.get().cliTools[0]?.installedVersion).toBe('gen-2');
-    expect(detectionStore.get().implementers[0]?.provider).toBe('ollama');
+    expect(summary.status).not.toBe('uninitialized');
+    expect(
+      detectionStore.get().cliTools.some((tool) => tool.installedVersion === 'old-dependency-2'),
+    ).toBe(false);
+    expect(
+      detectionStore
+        .get()
+        .providers.flatMap((provider) => provider.models ?? [])
+        .some((model) => model.id === 'old-private-model'),
+    ).toBe(false);
     expect(configStore.get().config?.planner).toEqual(config.planner);
     expect(configStore.get().config?.implementer.model).toBe(config.implementer.model);
   });

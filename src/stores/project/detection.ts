@@ -1,46 +1,37 @@
-import { createStore, storeBase } from '../create-store.js';
+import type { DetectionServiceResult } from '../../engine/detection/service.js';
+import {
+  modelCacheStore,
+  type DetectionStoreHydration,
+  type DiscoveryRefreshRequest,
+  type DiscoverySourceContexts,
+} from '../discovery/model-cache.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
-import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
-
-interface DetectionState {
-  cliTools: CliToolDetection[];
-  implementers: ProviderDetection[];
-}
-
-const initial: DetectionState = {
-  cliTools: [],
-  implementers: [],
-};
-
-const store = createStore<DetectionState>(initial);
-
-function cloneCliTool(cliTool: CliToolDetection): CliToolDetection {
-  return {
-    ...cliTool,
-    executable: cliTool.executable
-      ? {
-          path: cliTool.executable.path,
-          fingerprint: { ...cliTool.executable.fingerprint },
-        }
-      : null,
-    diagnostic:
-      cliTool.diagnostic.state === 'ready'
-        ? { state: 'ready', remediation: null }
-        : { state: cliTool.diagnostic.state, remediation: cliTool.diagnostic.remediation },
-  };
-}
-
-function cloneDetection(detection: DetectionState): DetectionState {
-  return {
-    cliTools: detection.cliTools.map(cloneCliTool),
-    implementers: detection.implementers.map((implementer) => ({
-      ...implementer,
-      ...(implementer.models ? { models: implementer.models.map(cloneDetectedModel) } : {}),
-    })),
-  };
-}
+import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
 
 export const detectionStore = {
-  ...storeBase(store),
-  setDetection: (detection: DetectionState) => store.set(cloneDetection(detection)),
+  get: modelCacheStore.getDetection,
+  subscribe: modelCacheStore.subscribe,
+  use: <S>(selector: (state: ReturnType<typeof modelCacheStore.getDetection>) => S): S =>
+    modelCacheStore.use((state) => selector(state.detection)),
+  reset: modelCacheStore.resetDetection,
+
+  setDetection(input: {
+    providers: readonly ProviderDetection[];
+    cliTools: readonly CliToolDetection[];
+    providerOutcomes?: readonly ConfiguredProviderRuntime[] | undefined;
+  }): void {
+    modelCacheStore.setDetection(input);
+  },
+
+  beginRefresh(input: { contexts: DiscoverySourceContexts }): DiscoveryRefreshRequest {
+    return modelCacheStore.beginRefresh(input);
+  },
+
+  hydrate(input: DetectionStoreHydration): boolean {
+    return modelCacheStore.hydrateDetection(input);
+  },
+
+  publish(input: { result: DetectionServiceResult; request: DiscoveryRefreshRequest }): boolean {
+    return modelCacheStore.publish(input);
+  },
 };

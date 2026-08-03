@@ -35,6 +35,15 @@ function getCurrentConfig(): Config {
   return current;
 }
 
+// configStore.save is async with revision conflict detection, so each edit must
+// read the config only after the previous save has settled or it computes from a
+// stale snapshot and the save is rejected as a conflict.
+let saveQueue: Promise<void> = Promise.resolve();
+
+function enqueueSave(task: () => Promise<void>): void {
+  saveQueue = saveQueue.then(task).catch(() => undefined);
+}
+
 export function useSettingsEditor({
   config,
   focusSetting,
@@ -46,32 +55,44 @@ export function useSettingsEditor({
   const getValue = (def: SettingDef, source = config): unknown =>
     def.readValue ? def.readValue(source) : getConfigValue(source, def.id);
 
-  const saveValue = (dotPath: string, value: unknown) => {
+  const saveValue = async (dotPath: string, value: unknown) => {
     const current = getCurrentConfig();
     const updated = applyEdits(current, { [dotPath]: value });
-    const result = configStore.save(updated);
-    if (result.ok) {
+    const result = await configStore.save(updated);
+    if (result.kind === 'saved') {
       feedbackStore.setMessage('Saved');
-    } else if (result.error) {
-      feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+      return;
     }
+    if (result.kind === 'failure') {
+      feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+      return;
+    }
+    if (result.kind === 'durability-uncertain') {
+      feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
+      return;
+    }
+    feedbackStore.setError('Config changed on disk. Reload before saving again.');
   };
 
   const editor = useEditBuffer({
-    onCommit: (def, value) => saveValue(def.id, value),
+    onCommit: (def, value) => {
+      enqueueSave(() => saveValue(def.id, value));
+    },
   });
 
   const onSpaceToggle = (def: SettingDef) => {
-    const currentConfig = getCurrentConfig();
-    if (def.kind === 'boolean') {
-      saveValue(def.id, !getValue(def, currentConfig));
-    } else if (def.kind === 'enum' && def.options) {
-      const firstOption = def.options[0];
-      const current = String(getValue(def, currentConfig) ?? firstOption ?? '');
-      const idx = def.options.indexOf(current);
-      const next = def.options[(idx + 1) % def.options.length];
-      if (next !== undefined) saveValue(def.id, next);
-    }
+    enqueueSave(async () => {
+      const currentConfig = getCurrentConfig();
+      if (def.kind === 'boolean') {
+        await saveValue(def.id, !getValue(def, currentConfig));
+      } else if (def.kind === 'enum' && def.options) {
+        const firstOption = def.options[0];
+        const current = String(getValue(def, currentConfig) ?? firstOption ?? '');
+        const idx = def.options.indexOf(current);
+        const next = def.options[(idx + 1) % def.options.length];
+        if (next !== undefined) await saveValue(def.id, next);
+      }
+    });
   };
 
   const isListActive = !editor.isEditing;

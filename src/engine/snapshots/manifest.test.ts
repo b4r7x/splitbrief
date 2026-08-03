@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -41,6 +41,43 @@ describe('writeManifest / readManifest', () => {
     await writeManifest(tmp, 'sess-01', manifest);
     const loaded = await readManifest(tmp, 'sess-01', 'snap-01');
     expect(loaded).toEqual(manifest);
+  });
+
+  it('round-trips legal identity and file metadata without storing separate child output', async () => {
+    const childOutputCanary = 'custom-public-child-output-48152';
+    const manifest: SnapshotManifest = {
+      ...makeManifest('snap-identity'),
+      name: 'before-implementation',
+      fileHashes: { 'src/index.ts': 'sha256:abc123' },
+      fileEntries: [
+        {
+          path: 'src/index.ts',
+          hash: 'sha256:abc123',
+          encodedName: 'src__index.ts',
+        },
+      ],
+      trackedFileCount: 1,
+    };
+
+    await writeManifest(tmp, 'sess-01', manifest);
+    const serialized = await readFile(
+      join(
+        tmp,
+        '.splitbrief',
+        'sessions',
+        'sess-01',
+        'snapshots',
+        'snap-identity',
+        'manifest.json',
+      ),
+      'utf8',
+    );
+    const loaded = await readManifest(tmp, 'sess-01', 'snap-identity');
+
+    expect(serialized).toBe(`${JSON.stringify(manifest, null, 2)}\n`);
+    expect(loaded).toEqual(manifest);
+    expect(serialized).not.toContain(childOutputCanary);
+    expect(JSON.stringify(loaded)).not.toContain(childOutputCanary);
   });
 
   it('throws for missing file', async () => {

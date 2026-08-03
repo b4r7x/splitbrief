@@ -2,7 +2,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
-import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type {
+  RuntimeCommandDef,
+  RuntimeConfigSaveResult,
+} from '../../core/runtime/commands/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Screen } from '../../core/navigation/types.js';
 import { createInitialState } from '../../core/state/machine.js';
@@ -14,6 +17,7 @@ import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
+const savedMode = async (): Promise<RuntimeConfigSaveResult> => ({ kind: 'saved', ok: true });
 
 function buildCommandSources(
   commands: RuntimeCommandDef[],
@@ -29,7 +33,7 @@ function buildCommandSources(
     sessions: [],
     projectDir: '/tmp/splitbrief-test',
     onRuntimeCommand,
-    onWorkflowMode: noop,
+    onWorkflowMode: savedMode,
   }).commandItems;
 }
 
@@ -152,7 +156,7 @@ describe('buildPaletteSources attached-client boundary', () => {
       sessions: [],
       projectDir: '/tmp/splitbrief-test',
       onRuntimeCommand: noop,
-      onWorkflowMode: noop,
+      onWorkflowMode: savedMode,
       isAttached: true,
     });
 
@@ -173,7 +177,7 @@ describe('buildPaletteSources display descriptions', () => {
       sessions: [],
       projectDir: '/tmp/splitbrief-test',
       onRuntimeCommand: noop,
-      onWorkflowMode: noop,
+      onWorkflowMode: savedMode,
     });
 
     expect(sources.modeItems.find((item) => item.label === 'instant')?.description).toBe(
@@ -229,7 +233,7 @@ describe('buildPaletteSources session items', () => {
       sessions: [session],
       projectDir: tmp,
       onRuntimeCommand: noop,
-      onWorkflowMode: noop,
+      onWorkflowMode: savedMode,
     });
 
     sessionItems[0]?.action();
@@ -260,7 +264,7 @@ describe('buildPaletteSources session items', () => {
       sessions: [session],
       projectDir: tmp,
       onRuntimeCommand: noop,
-      onWorkflowMode: noop,
+      onWorkflowMode: savedMode,
     });
 
     sessionItems[0]?.action();

@@ -1,23 +1,33 @@
 import { executeRuntimeCommand as runRuntimeCommand } from '../../src/core/runtime/commands/dispatch.js';
 import type {
   RuntimeCommandDef,
+  RuntimeConfigSaveResult,
   RuntimeCommandContext,
 } from '../../src/core/runtime/commands/types.js';
 import type { Phase } from '../../src/core/schemas/enums.js';
 
 export const noop = () => {};
 export const noopTrue = () => true;
+const noopSaved = async (): Promise<RuntimeConfigSaveResult> => ({ kind: 'saved', ok: true });
 
 export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): RuntimeCommandContext {
   return {
     openOverlay: noop,
     navigate: noop,
     quit: noop,
-    setWorkflowMode: noopTrue,
-    setPlannerEffort: noopTrue,
+    setWorkflowMode: noopSaved,
+    setPlannerEffort: noopSaved,
     setFeedbackMessage: noop,
     setFeedbackError: noop,
-    refreshDetection: async () => {},
+    refreshDetection: async () => ({
+      status: 'fresh',
+      published: true,
+      lanes: {
+        readiness: { outcome: 'fresh' },
+        modelsDev: { outcome: 'fresh' },
+        cliModels: { outcome: 'fresh' },
+      },
+    }),
     refreshProjectFiles: noop,
     getCurrentPhase: () => 'idle',
     requestRewind: noopTrue,

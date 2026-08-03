@@ -424,6 +424,37 @@ describe('createOtelSink', () => {
     expect(exporter.getFinishedSpans()).toHaveLength(0);
   });
 
+  it('keeps runner-call child output out of traces without adding runner telemetry', () => {
+    const childOutputCanary = 'custom-public-child-output-48152';
+    const sink = createOtelSink({ provider });
+    sink({ type: 'workflow_started', ts: 1, phase: 'researching', feature: 'ordinary workflow' });
+    sink({
+      type: 'runner_call_text_delta',
+      ts: 2,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 1,
+      channel: 'assistant',
+      text: `helper output: ${childOutputCanary}`,
+    });
+    sink({ type: 'workflow_complete', ts: 3, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    const serializedTraceData = JSON.stringify(
+      spans.map((span) => ({
+        name: span.name,
+        attributes: span.attributes,
+        events: span.events,
+      })),
+    );
+
+    expect(serializedTraceData).not.toContain(childOutputCanary);
+    expect(spans.map((span) => span.name)).toEqual(['splitbrief.workflow']);
+    expect(spans.flatMap((span) => span.events)).toEqual([]);
+  });
+
   it('opens a workflow span on workflow_resumed so a resumed run emits a non-empty trace', () => {
     const sink = createOtelSink({ provider });
     sink({ type: 'workflow_resumed', ts: 1, phase: 'implementing' });

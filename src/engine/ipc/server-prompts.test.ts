@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { allowedSettlingBriefReviewCommandsForPrompt } from '../../core/schemas/brief-review-command.js';
 import type { EngineEvent } from '../events/types.js';
+import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { createIpcServerTestHarness } from '#testing/helpers/ipc-server.js';
+import { IPC_MAX_FRAME_BYTES } from './protocol.js';
 
 describe('startIpcServer — prompts', () => {
   let harness: ReturnType<typeof createIpcServerTestHarness>;
@@ -61,6 +63,84 @@ describe('startIpcServer — prompts', () => {
     );
 
     await expect(promptPromise).resolves.toEqual({ kind: 'approval_needed', approved: true });
+  });
+
+  it('round-trips an exact-limit immutable artifact review through an attached client', async () => {
+    const { srv } = await harness.makeServer();
+    const socket = await harness.connectAndAuth(srv.sockPath);
+    const text = `artifact-review-prefix\u001b]0;control\u0007${'\u0000'.repeat(
+      PLANNER_ARTIFACT_MAX_BYTES -
+        Buffer.byteLength('artifact-review-prefix\u001b]0;control\u0007', 'utf8'),
+    )}`;
+
+    const promptPromise = srv.requestClientPrompt({
+      kind: 'artifact_review',
+      review: { label: 'Custom planner artifact', text },
+    });
+    const msgs = await harness.readLines(socket, 1);
+    const msg = msgs[0];
+
+    expect(msg?.kind).toBe('prompt_request');
+    if (msg?.kind !== 'prompt_request' || msg.request.kind !== 'artifact_review') {
+      throw new Error('missing artifact_review prompt_request');
+    }
+    expect(msg.request.review).toEqual({ label: 'Custom planner artifact', text });
+    expect(Buffer.byteLength(JSON.stringify(msg) + '\n', 'utf8')).toBeLessThanOrEqual(
+      IPC_MAX_FRAME_BYTES,
+    );
+
+    socket.write(
+      JSON.stringify({
+        kind: 'prompt_response',
+        requestId: msg.request.requestId,
+        response: { kind: 'artifact_review', approved: true },
+      }) + '\n',
+    );
+
+    await expect(promptPromise).resolves.toEqual({ kind: 'artifact_review', approved: true });
+  });
+
+  it('rejects artifact-review response extras without settling the prompt', async () => {
+    const { srv } = await harness.makeServer();
+    const socket = await harness.connectAndAuth(srv.sockPath);
+    let settled = false;
+    const promptPromise = srv.requestClientPrompt({
+      kind: 'artifact_review',
+      review: { label: 'Custom planner artifact', text: '# candidate\n' },
+    });
+    promptPromise
+      .finally(() => {
+        settled = true;
+      })
+      .catch(() => undefined);
+    const msgs = await harness.readLines(socket, 1);
+    const msg = msgs[0];
+    if (msg?.kind !== 'prompt_request' || msg.request.kind !== 'artifact_review') {
+      throw new Error('missing artifact_review prompt_request');
+    }
+
+    socket.write(
+      JSON.stringify({
+        kind: 'prompt_response',
+        requestId: msg.request.requestId,
+        response: {
+          kind: 'artifact_review',
+          approved: true,
+          filePath: '.custom-runner-review/call-1/result',
+        },
+      }) + '\n',
+    );
+    await harness.tick();
+    expect(settled).toBe(false);
+
+    socket.write(
+      JSON.stringify({
+        kind: 'prompt_response',
+        requestId: msg.request.requestId,
+        response: { kind: 'artifact_review', approved: false },
+      }) + '\n',
+    );
+    await expect(promptPromise).resolves.toEqual({ kind: 'artifact_review', approved: false });
   });
 
   it('ignores prompt_response messages with invalid response payloads', async () => {

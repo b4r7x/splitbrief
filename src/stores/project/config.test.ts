@@ -192,25 +192,27 @@ describe('configStore.save', () => {
     );
   });
 
-  it('writes config to disk and updates store', () => {
+  it('writes config to disk and updates store', async () => {
     writeConfigYaml();
     configStore.load(tmpDir);
     const updated = { ...loadedConfig(), theme: 'mono' as const };
-    const result = configStore.save(updated);
+    const result = await configStore.save(updated);
 
     expect(result.ok).toBe(true);
-    expect(result.error).toBeUndefined();
+    expect(result.kind).toBe('saved');
     expect(loadedConfig().theme).toBe('mono');
     const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
     expect(written.theme).toBe('mono');
   });
 
-  it('does not persist an implementer model override when saving an unrelated setting', () => {
+  it('does not persist an implementer model override when saving an unrelated setting', async () => {
     writeConfigYaml();
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save(structuredClone({ ...loadedConfig(), theme: 'mono' as const }));
+    const result = await configStore.save(
+      structuredClone({ ...loadedConfig(), theme: 'mono' as const }),
+    );
 
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.model).toBe('cli-override');
@@ -219,12 +221,12 @@ describe('configStore.save', () => {
     expect(diskConfig.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
-  it('does not persist an implementer model override when saving a sibling implementer setting', () => {
+  it('does not persist an implementer model override when saving a sibling implementer setting', async () => {
     writeConfigYaml();
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save({
+    const result = await configStore.save({
       ...loadedConfig(),
       implementer: {
         ...loadedConfig().implementer,
@@ -240,12 +242,12 @@ describe('configStore.save', () => {
     expect(diskConfig.implementer.temperature).toBe(0.7);
   });
 
-  it('does not persist an unchanged implementer model override', () => {
+  it('does not persist an unchanged implementer model override', async () => {
     writeConfigYaml();
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
 
-    const result = configStore.save({
+    const result = await configStore.save({
       ...loadedConfig(),
       implementer: {
         ...loadedConfig().implementer,
@@ -258,13 +260,13 @@ describe('configStore.save', () => {
     expect(diskConfig.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
-  it('does not persist runtime context length detection when saving an unrelated setting', () => {
+  it('does not persist runtime context length detection when saving an unrelated setting', async () => {
     writeConfigYaml();
     configStore.load(tmpDir);
     expect(loadedConfig().implementer.contextLength).toBe(8192);
     configStore.setContextLength(16384);
 
-    const result = configStore.save({ ...loadedConfig(), theme: 'mono' as const });
+    const result = await configStore.save({ ...loadedConfig(), theme: 'mono' as const });
 
     expect(result.ok).toBe(true);
     expect(loadedConfig().implementer.contextLength).toBe(16384);
@@ -287,7 +289,7 @@ describe('configStore.save', () => {
     expect(configStore.getDetectedContextLength()).toBeUndefined();
   });
 
-  it('returns error result when write fails', () => {
+  it('returns error result when write fails', async () => {
     writeConfigYaml();
     configStore.load(tmpDir);
     // Replace projectDir with a path containing a null byte to force mkdirSync to throw
@@ -297,26 +299,27 @@ describe('configStore.save', () => {
       projectDir: '/tmp/\0invalid',
       overrides: loaded.overrides,
     });
-    const result = configStore.save({ ...loadedConfig(), theme: 'mono' });
+    const result = await configStore.save({ ...loadedConfig(), theme: 'mono' });
     expect(result.ok).toBe(false);
-    expect(result.error).toBeInstanceOf(Error);
+    expect(result.kind).toBe('failure');
+    if (result.kind === 'failure') expect(result.error).toBeInstanceOf(Error);
   });
 
-  it('save does not re-apply CLI overrides', () => {
+  it('save does not re-apply CLI overrides', async () => {
     writeConfigYaml();
     configStore.load(tmpDir, { implementer: { model: 'cli-override' } });
     expect(loadedConfig().implementer.model).toBe('cli-override');
     const before = loadedConfig();
     const updated = { ...before, implementer: { ...before.implementer, model: 'picker-choice' } };
-    configStore.save(updated);
+    await configStore.save(updated);
     expect(loadedConfig().implementer.model).toBe('picker-choice');
   });
 
-  it('writes a complete versioned config when saving with no existing file', () => {
+  it('writes a complete versioned config when saving with no existing file', async () => {
     configStore.load(tmpDir);
     const updated = { ...loadedConfig(), theme: 'mono' as const };
 
-    const result = configStore.save(updated);
+    const result = await configStore.save(updated);
 
     expect(result.ok).toBe(true);
     const written = YAML.parse(readFileSync(join(tmpDir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'));
@@ -326,6 +329,52 @@ describe('configStore.save', () => {
     expect(diskConfig.theme).toBe('mono');
     expect(diskConfig.version).toBe(3);
     expect(warnings.some((w) => w.includes('config.version is missing'))).toBe(false);
+  });
+
+  it('does not publish config state while the atomic save is pending', async () => {
+    writeConfigYaml();
+    configStore.load(tmpDir);
+    const beforeRaw = readFileSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8');
+    const save = configStore.save({ ...loadedConfig(), theme: 'mono' });
+
+    expect(loadedConfig().theme).toBe('terminal');
+    expect(readFileSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8')).toBe(beforeRaw);
+
+    await expect(save).resolves.toMatchObject({ kind: 'saved', ok: true });
+    expect(loadedConfig().theme).toBe('mono');
+  });
+
+  it('returns conflict without publishing stale attempted config or replacing external bytes', async () => {
+    writeConfigYaml();
+    configStore.load(tmpDir);
+    const path = join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE);
+    const external = readFileSync(path, 'utf8').replace('max_retries: 3', 'max_retries: 7');
+    writeFileSync(path, external);
+
+    const result = await configStore.save({ ...loadedConfig(), theme: 'mono' });
+
+    expect(result).toMatchObject({ kind: 'conflict', ok: false });
+    expect(loadedConfig().theme).toBe('terminal');
+    expect(readFileSync(path, 'utf8')).toBe(external);
+  });
+
+  it('serializes same-process saves so a stale queued request cannot overwrite the winner', async () => {
+    writeConfigYaml();
+    configStore.load(tmpDir);
+    const initial = loadedConfig();
+
+    const first = configStore.save({ ...initial, theme: 'mono' });
+    const second = configStore.save({
+      ...initial,
+      workflow: { ...initial.workflow, maxRetries: 9 },
+    });
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+
+    expect(firstResult.kind).toBe('saved');
+    expect(secondResult.kind).toBe('conflict');
+    const disk = loadConfig(tmpDir).config;
+    expect(disk.theme).toBe('mono');
+    expect(disk.workflow.maxRetries).toBe(3);
   });
 });
 
@@ -414,7 +463,7 @@ theme: terminal
 my_custom_key: keep-this-too
 `;
 
-  it('semantic diff persists simultaneous top-level and named-profile changes only', () => {
+  it('semantic diff persists simultaneous top-level and named-profile changes only', async () => {
     const beforeRaw = `# preserve this header exactly
 version: 3
 implementer_profiles:
@@ -446,7 +495,7 @@ my_custom_key: "keep: this # exactly"
       },
     };
 
-    expect(configStore.save(updated).ok).toBe(true);
+    expect((await configStore.save(updated)).ok).toBe(true);
 
     const afterRaw = readRawConfig();
     expect(
@@ -460,13 +509,13 @@ my_custom_key: "keep: this # exactly"
     expect(reloaded.implementerProfiles?.profiles.fast?.model).toBe('gpt-5.4-mini');
   });
 
-  it('preserves hand-edited document and creates .splitbrief/ and .splitbrief/trees/ gitignore entries once when absent', () => {
+  it('preserves hand-edited document and creates .splitbrief/ and .splitbrief/trees/ gitignore entries once when absent', async () => {
     expect(existsSync(join(tmpDir, '.gitignore'))).toBe(false);
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
     const updated = { ...loadedConfig(), theme: 'mono' as const };
-    const result = configStore.save(updated);
+    const result = await configStore.save(updated);
 
     expect(result.ok).toBe(true);
     const raw = readRawConfig();
@@ -479,12 +528,12 @@ my_custom_key: "keep: this # exactly"
     expect(gitignore.split('\n').filter((line) => line === `${TREES_DIR}/`)).toHaveLength(1);
   });
 
-  it('preserves comments, key order, and unknown keys when saving one setting', () => {
+  it('preserves comments, key order, and unknown keys when saving one setting', async () => {
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
     const updated = { ...loadedConfig(), theme: 'mono' as const };
-    const result = configStore.save(updated);
+    const result = await configStore.save(updated);
 
     expect(result.ok).toBe(true);
     const raw = readRawConfig();
@@ -495,11 +544,11 @@ my_custom_key: "keep: this # exactly"
     expect(raw.indexOf('implementer:')).toBeLessThan(raw.indexOf('theme:'));
   });
 
-  it('does not bake default-merged values into the file on save', () => {
+  it('does not bake default-merged values into the file on save', async () => {
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
-    configStore.save({ ...loadedConfig(), theme: 'mono' as const });
+    await configStore.save({ ...loadedConfig(), theme: 'mono' as const });
 
     const raw = readRawConfig();
     expect(raw).not.toContain('planner:');
@@ -512,7 +561,7 @@ my_custom_key: "keep: this # exactly"
     );
   });
 
-  it('writes the changed value with snake_case keys via the document path', () => {
+  it('writes the changed value with snake_case keys via the document path', async () => {
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
 
@@ -521,7 +570,7 @@ my_custom_key: "keep: this # exactly"
       ...before,
       workflow: { ...before.workflow, mode: 'speckit' as const },
     };
-    configStore.save(updated);
+    await configStore.save(updated);
 
     const parsed = YAML.parse(readRawConfig()) as Record<string, unknown>;
     expect((parsed.workflow as Record<string, unknown>).mode).toBe('speckit');
@@ -530,7 +579,7 @@ my_custom_key: "keep: this # exactly"
     expect(reloaded.implementer.model).toBe('qwen2.5-coder:7b');
   });
 
-  it('removes keys that no longer apply after a runner kind change', () => {
+  it('removes keys that no longer apply after a runner kind change', async () => {
     writeRawConfig(`version: 3
 implementer:
   kind: api
@@ -545,7 +594,7 @@ implementer:
       ...before,
       implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'gpt-5.4-mini' },
     };
-    configStore.save(updated);
+    await configStore.save(updated);
 
     const implementer = (YAML.parse(readRawConfig()) as Record<string, unknown>)
       .implementer as Record<string, unknown>;

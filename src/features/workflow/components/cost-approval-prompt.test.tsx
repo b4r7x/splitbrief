@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import {
@@ -84,6 +84,7 @@ describe('CostApprovalPrompt', () => {
       />,
     );
     await tick(PAST_GRACE);
+    await flushEffects();
     ui.stdin.write('y');
     expect(onApprove).toHaveBeenCalledOnce();
     expect(onReject).not.toHaveBeenCalled();
@@ -101,6 +102,7 @@ describe('CostApprovalPrompt', () => {
       />,
     );
     await tick(PAST_GRACE);
+    await flushEffects();
     ui.stdin.write('n');
     expect(onReject).toHaveBeenCalledOnce();
     expect(onApprove).not.toHaveBeenCalled();
@@ -119,11 +121,13 @@ describe('CostApprovalPrompt', () => {
     );
     // A 'y' buffered for the composer arrives the instant the cost prompt mounts. The grace
     // swallows it so a stray keystroke cannot auto-approve a spend the user never confirmed.
+    await flushEffects();
     ui.stdin.write('y');
     await tick(1);
     expect(onApprove).not.toHaveBeenCalled();
 
     await tick(PAST_GRACE);
+    await flushEffects();
     ui.stdin.write('y');
     expect(onApprove).toHaveBeenCalledOnce();
     ui.unmount();
@@ -144,13 +148,14 @@ describe('CostApprovalPrompt', () => {
 
     // The prompt is hidden behind the overlay; an approve key aimed at the overlay must not
     // confirm the buried spend.
+    await flushEffects();
     ui.stdin.write('y');
     await tick(1);
     expect(onApprove).not.toHaveBeenCalled();
 
     // Closing the overlay returns input to the prompt and the same key is honoured.
     overlayStore.close();
-    await tick(1);
+    await flushEffects();
     ui.stdin.write('y');
     expect(onApprove).toHaveBeenCalledOnce();
     ui.unmount();

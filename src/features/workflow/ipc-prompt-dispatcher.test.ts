@@ -85,13 +85,16 @@ function makeSessionDir(): string {
   return sessionDir;
 }
 
-function approvalRequest(filePath: string): IpcPromptRequest {
+function approvalRequest(
+  filePath: string,
+  approvalType: 'spec' | 'plan' | 'briefs' = 'spec',
+): IpcPromptRequest {
   return {
     requestId: 'approval-1',
     kind: 'approval_needed',
-    approvalType: 'spec',
+    approvalType,
     filePath,
-    allowedCommands: [],
+    allowedCommands: [...allowedSettlingBriefReviewCommandsForPrompt(approvalType)],
   };
 }
 
@@ -227,6 +230,37 @@ describe('createIpcPromptDispatcher approval_needed path confinement', () => {
 
     expect(response).toEqual({ kind: 'approval_needed', approved: true });
     expect(calls).toEqual([specPath]);
+    expect(reviewStore.get().filePath).toBeNull();
+  });
+
+  it('routes attached artifact reviews through in-memory content with no path lookup', async () => {
+    const seenSources: unknown[] = [];
+    const inputMode: UseInputModeResult = {
+      mode: 'normal',
+      hint: '',
+      questionEpoch: 0,
+      setReviewMode: async () => {
+        seenSources.push(reviewStore.get().source);
+        return { approved: true };
+      },
+      setQuestionMode: async () => '',
+      resolve: () => {},
+      resetMode: () => {},
+    };
+    const dispatch = createIpcPromptDispatcher(inputMode);
+    const text = '# candidate\n\u0000artifact-text-42891\n';
+
+    const response = await dispatch({
+      requestId: 'artifact-review-1',
+      kind: 'artifact_review',
+      review: {
+        label: '../../must-not-be-a-path',
+        text,
+      },
+    });
+
+    expect(response).toEqual({ kind: 'artifact_review', approved: true });
+    expect(seenSources).toEqual([{ kind: 'artifact', text }]);
     expect(reviewStore.get().filePath).toBeNull();
   });
 
@@ -371,6 +405,31 @@ describe('createIpcPromptDispatcher approval re-delivery', () => {
     ctl.resolveCurrent({ approved: true });
     expect(await live).toEqual({ kind: 'approval_needed', approved: true });
     expect(reviewStore.get().filePath).toBeNull();
+  });
+
+  it('keeps a re-delivered immutable artifact review when its stale handler completes', async () => {
+    const ctl = supersedingReviewInputMode();
+    const dispatch = createIpcPromptDispatcher(ctl.mode);
+    const first = {
+      requestId: 'artifact-review-1',
+      kind: 'artifact_review' as const,
+      review: { label: 'Custom planner artifact', text: '# first\n' },
+    };
+    const second = {
+      ...first,
+      review: { label: 'Custom planner artifact', text: '# second\n' },
+    };
+
+    const stale = dispatch(first);
+    expect(reviewStore.get().source).toEqual({ kind: 'artifact', text: '# first\n' });
+
+    const live = dispatch(second);
+    expect(await stale).toEqual({ kind: 'artifact_review', approved: false });
+    expect(reviewStore.get().source).toEqual({ kind: 'artifact', text: '# second\n' });
+
+    ctl.resolveCurrent({ approved: true });
+    expect(await live).toEqual({ kind: 'artifact_review', approved: true });
+    expect(reviewStore.get().source).toBeNull();
   });
 });
 

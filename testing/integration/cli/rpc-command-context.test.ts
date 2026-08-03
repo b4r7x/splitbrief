@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createRpcCommandContext } from '../../../src/cli/rpc/command-context.js';
+import {
+  resolveRunConfigWithBase,
+  type ResolvedRunConfig,
+} from '../../../src/cli/build-overrides.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { createJsonlSink } from '../../../src/engine/events/sinks/jsonl.js';
 import {
@@ -12,6 +16,7 @@ import {
 import type { Config } from '../../../src/core/schemas/config.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { WorkflowOpts } from '../../../src/core/types/config-options.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { SessionLogEventEntrySchema } from '../../../src/core/schemas/session-log.js';
@@ -21,40 +26,59 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
-function makeRpcContext(
-  getConfig: () => ReturnType<typeof createDefaultConfig> | null,
-  overrides: { projectDir?: string; setConfig?: (config: Config) => void } = {},
-) {
-  return createRpcCommandContext({
-    projectDir: overrides.projectDir ?? '/tmp/proj',
-    getSessionId: () => undefined,
-    getState: () => null,
-    getConfig,
-    setConfig: overrides.setConfig ?? (() => {}),
+function createMutableRpcContext(args: {
+  projectDir?: string;
+  opts?: WorkflowOpts;
+  initial?: ResolvedRunConfig | null;
+  getSessionId?: () => string | undefined;
+  getState?: () => WorkflowState | null;
+  bus?: ReturnType<typeof createEventBus>;
+  setRewindFeedback?: (feedback: string | undefined) => void;
+}) {
+  const projectDir = args.projectDir ?? process.cwd();
+  const opts = args.opts ?? {};
+  let runConfig =
+    args.initial === undefined ? resolveRunConfigWithBase({ projectDir, opts }) : args.initial;
+  const context = createRpcCommandContext({
+    projectDir,
+    getSessionId: args.getSessionId ?? (() => undefined),
+    getState: args.getState ?? (() => null),
+    getRunConfig: () => runConfig,
+    setRunConfig: (next) => {
+      runConfig = next;
+    },
+    reloadRunConfig: () => resolveRunConfigWithBase({ projectDir, opts }),
+    setEffectiveConfig: (config) => {
+      if (runConfig) runConfig = { ...runConfig, config };
+    },
     getPhase: () => 'implementing',
     queueHandler: () => null,
     clearQueueHandler: () => null,
     abort: () => {},
-    bus: createEventBus(),
+    bus: args.bus ?? createEventBus(),
+    ...(args.setRewindFeedback !== undefined && {
+      setRewindFeedback: args.setRewindFeedback,
+    }),
     messages: [],
     errors: [],
     pendingQueueDepth: () => 0,
   });
+  return { context, getRunConfig: () => runConfig };
 }
 
 describe('createRpcCommandContext integration', () => {
   it('reports a session-specific error for session-requiring commands without a session', () => {
-    const ctx = makeRpcContext(() => createDefaultConfig());
+    const { context: ctx } = createMutableRpcContext({});
     expect(() => ctx.acceptRunSnapshot()).toThrow(/No active session/);
   });
 
   it('reports a config-specific error (not the session error) when config is absent', () => {
-    const ctx = makeRpcContext(() => null);
+    const { context: ctx } = createMutableRpcContext({ initial: null });
     expect(() => ctx.compactTranscript()).toThrow(/No config loaded/);
   });
 
   it('reports UI-only conversation commands as unavailable', () => {
-    const ctx = makeRpcContext(() => createDefaultConfig());
+    const { context: ctx } = createMutableRpcContext({});
 
     expect(ctx.scrollConversation('top')).toEqual({
       status: 'unavailable',
@@ -77,91 +101,66 @@ describe('createRpcCommandContext integration', () => {
       cleanupTempDir(projectDir);
     });
 
-    it('persists config-mutating commands to disk', () => {
-      let inMemory: Config | null = createDefaultConfig();
-      const ctx = makeRpcContext(() => inMemory, {
-        projectDir,
-        setConfig: (config) => {
-          inMemory = config;
-        },
-      });
+    it('publishes the refreshed config snapshot after a saved command mutation', async () => {
+      const rpc = createMutableRpcContext({ projectDir });
+      const before = rpc.getRunConfig()?.persistenceSnapshot.revision;
 
-      const ok = ctx.setWorkflowMode('speckit');
+      const result = await rpc.context.setWorkflowMode('speckit');
 
-      expect(ok).toBe(true);
+      expect(result.kind).toBe('saved');
       expect(loadConfig(projectDir).config.workflow.mode).toBe('speckit');
-      expect(inMemory?.workflow.mode).toBe('speckit');
+      expect(rpc.getRunConfig()?.config.workflow.mode).toBe('speckit');
+      expect(rpc.getRunConfig()?.persistedConfig.workflow.mode).toBe('speckit');
+      expect(rpc.getRunConfig()?.persistenceSnapshot.rawYaml).toContain('mode: speckit');
+      expect(rpc.getRunConfig()?.persistenceSnapshot.revision).not.toBe(before);
     });
 
-    it('does not write one-shot invocation overrides back when saving a durable command edit', () => {
-      let persisted: Config | null = createDefaultConfig();
-      writeProjectConfig(projectDir, persisted);
-      let effective: Config | null = {
-        ...persisted,
-        implementer: { ...persisted.implementer, model: 'one-shot-rpc-model' },
-      };
-      const ctx = createRpcCommandContext({
+    it('does not write one-shot invocation overrides back when saving a durable command edit', async () => {
+      writeProjectConfig(projectDir, createDefaultConfig());
+      const rpc = createMutableRpcContext({
         projectDir,
-        getSessionId: () => undefined,
-        getState: () => null,
-        getConfig: () => effective,
-        getPersistedConfig: () => persisted,
-        setConfig: (config) => {
-          effective = config;
-        },
-        setPersistedConfig: (config) => {
-          persisted = config;
-        },
-        getPhase: () => 'implementing',
-        queueHandler: () => null,
-        clearQueueHandler: () => null,
-        abort: () => {},
-        bus: createEventBus(),
-        messages: [],
-        errors: [],
-        pendingQueueDepth: () => 0,
+        opts: { model: 'one-shot-rpc-model' },
       });
 
-      const ok = ctx.setWorkflowMode('speckit');
+      const result = await rpc.context.setWorkflowMode('speckit');
 
       const diskConfig = loadConfig(projectDir).config;
-      expect(ok).toBe(true);
-      expect(effective?.workflow.mode).toBe('speckit');
-      expect(persisted?.workflow.mode).toBe('speckit');
+      expect(result.kind).toBe('saved');
+      expect(rpc.getRunConfig()?.config.workflow.mode).toBe('speckit');
+      expect(rpc.getRunConfig()?.persistedConfig.workflow.mode).toBe('speckit');
       expect(diskConfig.workflow.mode).toBe('speckit');
       expect(diskConfig.implementer.model).not.toBe('one-shot-rpc-model');
     });
 
-    it('keeps RPC yolo approval state session-local instead of persisting config', () => {
-      let persisted: Config | null = createDefaultConfig();
-      writeProjectConfig(projectDir, persisted);
-      let effective: Config | null = persisted;
-      const ctx = createRpcCommandContext({
-        projectDir,
-        getSessionId: () => undefined,
-        getState: () => null,
-        getConfig: () => effective,
-        getPersistedConfig: () => persisted,
-        setConfig: (config) => {
-          effective = config;
-        },
-        setPersistedConfig: (config) => {
-          persisted = config;
-        },
-        getPhase: () => 'implementing',
-        queueHandler: () => null,
-        clearQueueHandler: () => null,
-        abort: () => {},
-        bus: createEventBus(),
-        messages: [],
-        errors: [],
-        pendingQueueDepth: () => 0,
+    it('rejects a stale RPC config edit without changing in-memory config or external bytes', async () => {
+      writeProjectConfig(projectDir, createDefaultConfig());
+      const rpc = createMutableRpcContext({ projectDir });
+      const external = loadConfig(projectDir).config;
+      writeProjectConfig(projectDir, {
+        ...external,
+        workflow: { ...external.workflow, mode: 'quick' },
       });
+      const externalBytes = readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8');
 
-      ctx.setApprovalEnabled(false);
+      const result = await rpc.context.setWorkflowMode('speckit');
 
-      expect(ctx.getApprovalEnabled()).toBe(false);
-      expect(effective?.approval?.enabled).toBe(false);
+      expect(result.kind).toBe('conflict');
+      expect(rpc.getRunConfig()?.config.workflow.mode).toBe('standard');
+      expect(rpc.getRunConfig()?.persistedConfig.workflow.mode).toBe('standard');
+      expect(loadConfig(projectDir).config.workflow.mode).toBe('quick');
+      expect(readFileSync(join(projectDir, '.splitbrief', 'config.yaml'), 'utf8')).toBe(
+        externalBytes,
+      );
+    });
+
+    it('keeps RPC yolo approval state session-local instead of persisting config', () => {
+      writeProjectConfig(projectDir, createDefaultConfig());
+      const rpc = createMutableRpcContext({ projectDir });
+
+      rpc.context.setApprovalEnabled(false);
+
+      expect(rpc.context.getApprovalEnabled()).toBe(false);
+      expect(rpc.getRunConfig()?.config.approval?.enabled).toBe(false);
       expect(loadConfig(projectDir).config.approval?.enabled).not.toBe(false);
     });
   });
@@ -197,25 +196,18 @@ describe('createRpcCommandContext integration', () => {
           persistTranscript: config.workflow.persistTranscript,
         }),
       );
-      const ctx = createRpcCommandContext({
+      const initial = resolveRunConfigWithBase({ projectDir, opts: {} });
+      const rpc = createMutableRpcContext({
         projectDir,
         getSessionId: () => sessionId,
         getState: () => state,
-        getConfig: () => config,
-        setConfig: () => {},
-        getPhase: () => state.phase,
-        queueHandler: () => null,
-        clearQueueHandler: () => null,
-        abort: () => {},
+        initial: { ...initial, config, persistedConfig: config },
         bus,
         ...(overrides.setRewindFeedback !== undefined && {
           setRewindFeedback: overrides.setRewindFeedback,
         }),
-        messages: [],
-        errors: [],
-        pendingQueueDepth: () => 0,
       });
-      return { ctx, published };
+      return { ctx: rpc.context, published };
     }
 
     function readSessionEvents() {

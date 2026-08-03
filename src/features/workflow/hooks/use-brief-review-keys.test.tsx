@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box, Text } from 'ink';
 import { useBriefReviewKeys, type BriefReviewNavigate } from './use-brief-review-keys.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
@@ -57,7 +57,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -79,7 +79,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -101,7 +101,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -119,7 +119,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('a');
     await tick();
@@ -133,7 +133,7 @@ describe('useBriefReviewKeys: y yank', () => {
     const copyTarget = vi.fn(async (_target: CopyTarget): Promise<CopyResult> => 'native');
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -150,7 +150,7 @@ describe('useBriefReviewKeys: y yank', () => {
     overlayStore.open('settings');
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -181,10 +181,12 @@ describe('useBriefReviewKeys: y yank', () => {
     await tick();
     expect(focusStore.get()).toEqual({ region: 'brief', index: 0 });
 
+    await flushEffects();
     ui.stdin.write('\x1b[B');
     await tick();
     expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
 
+    await flushEffects();
     ui.stdin.write('y');
     await tick();
     await Promise.resolve();
@@ -202,12 +204,13 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('\x1b[B');
     await tick();
     expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
 
+    await flushEffects();
     ui.stdin.write('x');
     await tick();
     expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
@@ -225,7 +228,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 4);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('\x1b[B');
     await tick();
@@ -233,6 +236,7 @@ describe('useBriefReviewKeys: y yank', () => {
     expect(focusStore.get()).toEqual({ region: 'brief', index: 5 });
     expect(reviewStore.get().scrollOffset).toBe(3);
 
+    await flushEffects();
     ui.stdin.write('\x1b[A');
     await tick();
 
@@ -271,6 +275,7 @@ describe('useBriefReviewKeys: y yank', () => {
     await tick();
     expect(focusStore.get()).toEqual({ region: 'brief', index: 4 });
 
+    await flushEffects();
     ui.stdin.write('y');
     await tick();
     await Promise.resolve();
@@ -320,7 +325,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -347,7 +352,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -375,7 +380,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -404,7 +409,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -434,7 +439,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write(input);
     await tick();
@@ -449,7 +454,7 @@ describe('useBriefReviewKeys: y yank', () => {
     focusStore.set('brief', 0);
 
     const ui = renderFeature(<Harness copyTarget={copyTarget} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();

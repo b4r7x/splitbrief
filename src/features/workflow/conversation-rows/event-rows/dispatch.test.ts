@@ -332,7 +332,7 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([
-      'Implementer activity  1 update  [Codex]',
+      'Implementer activity  1 update  [OpenAI Codex CLI]',
       activityLine('RUN', 'npm run typecheck'),
     ]);
     expect(rows[0]?.kind).toBe('activity');
@@ -371,7 +371,10 @@ describe('event row dispatch', () => {
       .join('\n');
 
     expect(text).toBe(
-      ['Plan activity  1 update  [Codex]', activityLine('READ', 'CLAUDE.md :1-260')].join('\n'),
+      [
+        'Plan activity  1 update  [OpenAI Codex CLI]',
+        activityLine('READ', 'CLAUDE.md :1-260'),
+      ].join('\n'),
     );
     expect(text).not.toContain('/bin/zsh -lc');
     expect(text).not.toContain('activity:');

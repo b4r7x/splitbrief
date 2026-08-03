@@ -4,7 +4,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   API_PROVIDER_CATALOG,
   API_PROVIDER_VERDICT_CANDIDATE_PATHS,
-  EXISTING_API_PROVIDER_IDS,
+  ADMITTED_API_PROVIDER_IDS,
   PASS_API_PROVIDER_IDS,
 } from '../../core/providers/api-provider-catalog.js';
 import { resolveRepoPath as productionResolveRepoPath } from '../../core/runners/candidate-admission.js';
@@ -13,29 +13,42 @@ import {
   REGISTRY_OMIT_CANDIDATE_IDS,
   REGISTRY_PASS_CANDIDATE_IDS,
   REGISTRY_PASS_CANDIDATE_WIRING_COUNT,
+  detectProviderCatalog,
   getProvider,
   detectAvailableProviders,
+  providerDetectionFromOutcome,
 } from './registry.js';
+import { PROVIDER_CATALOG_FAILURE_KINDS } from './types.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
-
-const ollamaControl = vi.hoisted(() => ({ failConstruction: false }));
-
-vi.mock('./ollama.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./ollama.js')>();
-  return {
-    ...actual,
-    createOllamaProvider: (...args: Parameters<typeof actual.createOllamaProvider>) => {
-      if (ollamaControl.failConstruction) throw new Error('ollama construction failed');
-      return actual.createOllamaProvider(...args);
-    },
-  };
-});
 
 const REPO_ROOT = join(import.meta.dirname, '../../..');
 
 function resolveRepoPath(relativePath: string): string {
   return join(REPO_ROOT, relativePath);
 }
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200 });
+}
+
+function mockFetchRoutes(
+  routes: Readonly<Record<string, unknown>>,
+  fallback: () => Response = () => new Response('', { status: 404 }),
+): void {
+  vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL | Request) => {
+    const urlStr = typeof url === 'string' ? url : url.toString();
+    for (const [needle, body] of Object.entries(routes)) {
+      if (urlStr.includes(needle)) return jsonResponse(body);
+    }
+    return fallback();
+  });
+}
+
+const ORIGINAL_ENV = { ...process.env };
+
+afterEach(() => {
+  process.env = { ...ORIGINAL_ENV };
+});
 
 describe('provider registry admission', () => {
   it('resolves production repo root to the workspace package.json', () => {
@@ -47,9 +60,7 @@ describe('provider registry admission', () => {
     expect(Object.keys(KNOWN_PROVIDERS).toSorted()).toEqual(
       Object.keys(API_PROVIDER_CATALOG).toSorted(),
     );
-    expect(Object.keys(KNOWN_PROVIDERS).length).toBe(
-      EXISTING_API_PROVIDER_IDS.length + PASS_API_PROVIDER_IDS.length,
-    );
+    expect(Object.keys(KNOWN_PROVIDERS).length).toBe(ADMITTED_API_PROVIDER_IDS.length);
   });
 
   it('derives the PASS allowlist from T-044–T-053 verdicts and keeps OMIT modules absent', () => {
@@ -109,6 +120,26 @@ describe('getProvider', () => {
     expect(typeof p.apiKey()).toBe('string');
   });
 
+  it('keeps local Ollama and Ollama Cloud as separate provider sources', () => {
+    const local = getProvider('ollama');
+    const cloud = getProvider('ollama-cloud', { apiKey: 'ollama-cloud-registry-key' });
+
+    expect(local).toMatchObject({
+      name: 'ollama',
+      baseURL: 'http://localhost:11434/v1',
+      isLocal: true,
+    });
+    expect(cloud).toMatchObject({
+      name: 'ollama-cloud',
+      baseURL: 'https://ollama.com',
+      isLocal: false,
+    });
+    expect(cloud.apiKey()).toBe('ollama-cloud-registry-key');
+    expect(() => getProvider('ollama', { apiKey: 'env:OLLAMA_API_KEY' })).toThrow(
+      expect.objectContaining({ kind: 'provider-ollama-local-credential-invalid' }),
+    );
+  });
+
   it('throws for unknown provider without apiBase', () => {
     expect(() => getProvider('unknown-provider')).toThrow(/apiBase/);
   });
@@ -127,12 +158,7 @@ describe('getProvider', () => {
 
   it('lists Anthropic models with Anthropic headers', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          data: [{ id: 'claude-sonnet-4-6', created_at: '2025-02-19T00:00:00Z' }],
-        }),
-        { status: 200 },
-      ),
+      jsonResponse({ data: [{ id: 'claude-sonnet-4-6', created_at: '2025-02-19T00:00:00Z' }] }),
     );
 
     const provider = getProvider('anthropic', {
@@ -146,12 +172,6 @@ describe('getProvider', () => {
 });
 
 describe('apiKey env references', () => {
-  const ORIGINAL_ENV = { ...process.env };
-
-  afterEach(() => {
-    process.env = { ...ORIGINAL_ENV };
-  });
-
   it('resolves env: apiKey overrides for known providers', () => {
     process.env.OPENROUTER_API_KEY = 'sk-or-env-key';
     const p = getProvider('openrouter', { apiKey: 'env:OPENROUTER_API_KEY' });
@@ -196,10 +216,6 @@ describe('apiKey env references', () => {
 
 describe('known provider endpoint policies', () => {
   setupFetchMock();
-  const ORIGINAL_ENV = { ...process.env };
-  afterEach(() => {
-    process.env = { ...ORIGINAL_ENV };
-  });
 
   it('rejects known provider with env-sourced key and custom apiBase', () => {
     process.env.OPENAI_API_KEY = 'sk-real-key';
@@ -274,43 +290,25 @@ describe('detectAvailableProviders', () => {
   setupFetchMock();
 
   it('returns results for ollama and lm-studio', async () => {
-    vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString();
-      if (urlStr.includes('11434')) {
-        return new Response(
-          JSON.stringify({ models: [{ name: 'qwen2.5-coder:7b' }, { name: 'llama3:8b' }] }),
-          { status: 200 },
-        );
-      }
-      if (urlStr.includes('1234')) {
-        return new Response(JSON.stringify({ data: [{ id: 'deepseek-coder-v2' }] }), {
-          status: 200,
-        });
-      }
-      return new Response('', { status: 404 });
+    mockFetchRoutes({
+      '11434': { models: [{ name: 'qwen2.5-coder:7b' }, { name: 'llama3:8b' }] },
+      '1234': { models: [{ key: 'deepseek-coder-v2', type: 'llm' }] },
     });
 
     const results = await detectAvailableProviders();
-    expect(results.length).toBeGreaterThanOrEqual(2);
-
     const ollama = results.find((r) => r.provider === 'ollama');
     expect(ollama).toMatchObject({
       available: true,
       models: [{ id: 'qwen2.5-coder:7b' }, { id: 'llama3:8b' }],
     });
+    expect(ollama).not.toHaveProperty('failure');
 
     const lmStudio = results.find((r) => r.provider === 'lm-studio');
     expect(lmStudio).toMatchObject({ available: true, models: [{ id: 'deepseek-coder-v2' }] });
   });
 
   it('handles ollama running but lm-studio not running', async () => {
-    vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString();
-      if (urlStr.includes('11434')) {
-        return new Response(JSON.stringify({ models: [{ name: 'codellama:7b' }] }), {
-          status: 200,
-        });
-      }
+    mockFetchRoutes({ '11434': { models: [{ name: 'codellama:7b' }] } }, () => {
       throw new Error('Connection refused');
     });
 
@@ -319,16 +317,16 @@ describe('detectAvailableProviders', () => {
     const lmStudio = results.find((r) => r.provider === 'lm-studio');
 
     expect(ollama).toMatchObject({ available: true, models: [{ id: 'codellama:7b' }] });
-    expect(lmStudio).toMatchObject({ available: false, error: 'Connection refused' });
+    expect(lmStudio).toMatchObject({
+      available: false,
+      failure: 'offline',
+      error: 'Connection refused',
+    });
     expect(lmStudio).not.toHaveProperty('models');
   });
 
   it('returns detection for each known provider', async () => {
-    vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString();
-      if (urlStr.includes('11434')) {
-        return new Response(JSON.stringify({ models: [{ name: 'qwen:7b' }] }), { status: 200 });
-      }
+    mockFetchRoutes({ '11434': { models: [{ name: 'qwen:7b' }] } }, () => {
       throw new Error('refused');
     });
 
@@ -342,35 +340,100 @@ describe('detectAvailableProviders', () => {
     expect(deepseek).toMatchObject({ available: false });
   });
 
-  it('keeps detecting every provider when one factory throws during construction', async () => {
-    vi.mocked(globalThis.fetch).mockImplementation(async (url: string | URL | Request) => {
-      const urlStr = typeof url === 'string' ? url : url.toString();
-      if (urlStr.includes('1234')) {
-        return new Response(JSON.stringify({ data: [{ id: 'deepseek-coder-v2' }] }), {
-          status: 200,
-        });
-      }
-      throw new Error('refused');
+  it('keeps successful metadata and valid empty inventories distinct', async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(
+        jsonResponse({ models: [{ name: 'qwen3-coder:30b', details: { family: 'qwen3' } }] }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ models: [] }));
+
+    const populated = await detectProviderCatalog({ provider: 'ollama' });
+    const empty = await detectProviderCatalog({ provider: 'ollama' });
+
+    expect(populated).toMatchObject({
+      kind: 'success',
+      source: 'provider-runtime',
+      provider: 'ollama',
+      catalog: 'populated',
+      models: [{ id: 'qwen3-coder:30b', providerId: 'ollama', capabilities: ['family:qwen3'] }],
     });
-    ollamaControl.failConstruction = true;
+    expect(empty).toEqual({
+      kind: 'success',
+      source: 'provider-runtime',
+      provider: 'ollama',
+      isLocal: true,
+      credential: 'not-required',
+      catalog: 'empty',
+      models: [],
+    });
+  });
 
-    try {
-      const results = await detectAvailableProviders();
+  it('projects a valid empty inventory as reachable rather than a failed discovery', async () => {
+    mockFetchRoutes({ '11434': { models: [] }, '1234': { models: [] } });
 
-      expect(results.length).toBe(Object.keys(KNOWN_PROVIDERS).length);
-      expect(results.find((r) => r.provider === 'ollama')).toEqual({
-        provider: 'ollama',
-        available: false,
-        isLocal: true,
-        error: 'ollama construction failed',
-      });
-      expect(results.find((r) => r.provider === 'lm-studio')).toMatchObject({
-        available: true,
-        models: [{ id: 'deepseek-coder-v2' }],
-      });
-    } finally {
-      ollamaControl.failConstruction = false;
-    }
+    const results = await detectAvailableProviders();
+    expect(results.find((result) => result.provider === 'ollama')).toEqual({
+      provider: 'ollama',
+      available: true,
+      isLocal: true,
+      models: [],
+    });
+  });
+
+  it('classifies exact sanitized HTTP 403 as policy denial instead of valid empty', async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('', { status: 403 }));
+
+    const outcome = await detectProviderCatalog({
+      provider: 'openai',
+      configOverrides: { apiKey: 'sk-registry-policy-denied' },
+    });
+
+    expect(outcome).toEqual({
+      kind: 'failed',
+      source: 'provider-runtime',
+      provider: 'openai',
+      isLocal: false,
+      credential: 'present',
+      failure: 'policy-denied',
+      diagnostic: 'HTTP 403',
+    });
+  });
+
+  it.each([
+    ['privacy_data_collection_restricted', 'privacy-filtered'],
+    ['guardrail_rejected', 'guardrail-filtered'],
+  ] as const)('preserves OpenRouter %s as a typed %s catalog failure', async (code, failure) => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(JSON.stringify({ error: { code } }), { status: 403 }),
+    );
+
+    const outcome = await detectProviderCatalog({
+      provider: 'openrouter',
+      configOverrides: { apiKey: 'sk-or-filtered' },
+    });
+
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      provider: 'openrouter',
+      failure,
+    });
+  });
+
+  it('validates a configured endpoint before attempting its credential reference', async () => {
+    const outcome = await detectProviderCatalog({
+      provider: 'openrouter',
+      configOverrides: {
+        apiBase: 'https://untrusted.example/api/v1',
+        apiKey: 'env:REGISTRY_MISSING_KEY',
+      },
+    });
+
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      provider: 'openrouter',
+      failure: 'endpoint-invalid',
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it('handles all providers failing', async () => {
@@ -382,24 +445,24 @@ describe('detectAvailableProviders', () => {
     }
   });
 
-  it('does not persist credential values from provider failures in detection', async () => {
-    const previous = process.env.OPENAI_API_KEY;
+  it('redacts configured credentials from typed catalog failures', async () => {
     const canary = 'sk-canary-registry-credential-6e2a';
-    process.env.OPENAI_API_KEY = canary;
     vi.mocked(globalThis.fetch).mockRejectedValue(
       new Error(`upstream Authorization: Bearer ${canary}`),
     );
 
-    try {
-      const results = await detectAvailableProviders();
-      const openai = results.find((result) => result.provider === 'openai');
-      expect(openai?.error).toBeDefined();
-      expect(JSON.stringify(openai)).not.toContain(canary);
-      expect(openai?.error).toContain('***REDACTED***');
-    } finally {
-      if (previous === undefined) delete process.env.OPENAI_API_KEY;
-      else process.env.OPENAI_API_KEY = previous;
-    }
+    const outcome = await detectProviderCatalog({
+      provider: 'openai',
+      configOverrides: { apiKey: canary },
+    });
+
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      provider: 'openai',
+      credential: 'present',
+      diagnostic: expect.stringContaining('***REDACTED***'),
+    });
+    expect(JSON.stringify(outcome)).not.toContain(canary);
   });
 
   it('handles timeout', { timeout: 30000 }, async () => {
@@ -409,5 +472,28 @@ describe('detectAvailableProviders', () => {
     for (const r of results) {
       expect(r.available).toBe(false);
     }
+  });
+});
+
+describe('providerDetectionFromOutcome', () => {
+  it.each(PROVIDER_CATALOG_FAILURE_KINDS)('carries a %s failure into the detection', (failure) => {
+    expect(
+      providerDetectionFromOutcome({
+        kind: 'failed',
+        source: 'provider-runtime',
+        provider: 'openai',
+        isLocal: false,
+        credential: 'present',
+        failure,
+        diagnostic: 'diagnostic under test',
+      }),
+    ).toEqual({
+      provider: 'openai',
+      available: false,
+      isLocal: false,
+      hasKey: true,
+      failure,
+      error: 'diagnostic under test',
+    });
   });
 });

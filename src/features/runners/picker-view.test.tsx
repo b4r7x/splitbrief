@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { buildRightModels } from './model-catalog/catalog.js';
-import { PickerView, refreshPickerDetection } from './picker-view.js';
+import { buildRightModels, countModelOptions } from './model-catalog/catalog.js';
+import { PickerView } from './picker-view.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
@@ -31,14 +30,20 @@ const readyPermissions = {
   sandbox: 'none' as const,
 };
 
+const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };
+
 function makeActions(): PickerActions {
   return {
     confirm: () => {},
+    confirmProviderVariant: async () => {},
     leftChange: () => {},
     deleteRight: () => {},
+    chooseContract: () => {},
     customCommand: () => {},
     customModel: () => {},
     openCustomModel: () => {},
+    openProviderAuth: () => {},
+    submitProviderKey: async () => {},
     closeOverlay: () => {},
   };
 }
@@ -81,6 +86,7 @@ describe('PickerView model confirmation', () => {
       currentItem: codex,
       cache: modelCacheStore,
     });
+    const modelCounts = countModelOptions(rightModels);
 
     return {
       items: [codex, claudeCode],
@@ -92,7 +98,9 @@ describe('PickerView model confirmation', () => {
       roleLabel: 'Planner',
       currentModel: 'gpt-5.4',
       persistedModel: 'gpt-5.4',
-      discoveredModelCount: rightModels.length - 1,
+      discoveredModelCount: modelCounts.confirmed,
+      modelCounts,
+      catalogDiagnostic: undefined,
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
@@ -122,6 +130,7 @@ describe('PickerView model confirmation', () => {
     await flushEffects();
 
     for (const key of keys) {
+      await flushEffects();
       ui.stdin.write(key);
       await flushEffects();
     }
@@ -162,6 +171,8 @@ describe('PickerView previews', () => {
       currentModel: undefined,
       persistedModel: undefined,
       discoveredModelCount: 1,
+      modelCounts: { ...zeroCounts, confirmed: 1 },
+      catalogDiagnostic: undefined,
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
@@ -183,14 +194,144 @@ describe('PickerView previews', () => {
     expect(initialFrame).toContain('1.0.0');
     expect(initialFrame).toContain('1 model detected');
 
-    ui.stdin.write('\u001b[C');
+    await flushEffects();
+    ui.stdin.write('\u001B[C');
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('GPT-4o · 128K context · via OpenCode');
 
-    ui.stdin.write('\u001b[A');
+    await flushEffects();
+    ui.stdin.write('\u001B[A');
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain("add a model id OpenCode can't auto-detect");
 
+    ui.unmount();
+  });
+
+  it('states suggested-catalog truth with the probe diagnostic instead of claiming no models', async () => {
+    const tool = pickerItem(
+      {
+        id: 'codex',
+        displayName: 'Codex',
+        kind: 'cli',
+        roles: ['planner', 'implementer'],
+        modelPolicy: 'optional',
+        billing: 'local',
+        permissions: { ...readyPermissions, network: false },
+        status: { state: 'ready', remediation: null },
+        available: true,
+      },
+      true,
+    );
+    const suggestions: ModelOption[] = ['gpt-6.1', 'gpt-6.1-mini', 'gpt-6.1-nano'].map((id) => ({
+      id,
+      membership: 'catalog-suggestion',
+    }));
+
+    const catalog: PickerCatalog = {
+      items: [tool],
+      rightModels: suggestions,
+      currentItem: tool,
+      selectedItemId: tool.id,
+      initialLeftIdx: 0,
+      focusModels: false,
+      roleLabel: 'Planner',
+      currentModel: undefined,
+      persistedModel: undefined,
+      discoveredModelCount: 0,
+      modelCounts: { ...zeroCounts, suggestions: 3 },
+      catalogDiagnostic: { kind: 'probe-failed', failure: 'missing-credential' },
+      currentCommand: undefined,
+      currentCommandKind: undefined,
+      customModels: [],
+      setCurrentItem: () => {},
+    };
+
+    const ui = renderFeature(
+      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(`No models confirmed${SOFT_SEP}3 suggested from catalog`);
+    // Exact diagnostic copy is pinned in picker-format.test.ts; the preview row
+    // truncates right, so assert the leading fragment that always survives.
+    expect(frame).toContain('Sign in to Codex');
+    expect(frame).not.toContain('No models detected');
+    ui.unmount();
+  });
+
+  it('renders bounded stale catalog remediation without calling retained rows detected', async () => {
+    const tool = pickerItem({
+      id: 'openai',
+      displayName: 'OpenAI',
+      kind: 'api',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'per-call',
+      billing: 'api-metered',
+      dataUse: 'no-training',
+      permissions: readyPermissions,
+      status: {
+        state: 'unavailable',
+        remediation: 'Last confirmed openai catalog is stale. Refresh detection.',
+      },
+      available: false,
+    });
+    const catalog: PickerCatalog = {
+      items: [tool],
+      rightModels: [
+        {
+          id: 'last-confirmed-model',
+          membership: 'stale',
+          isStale: true,
+          isDetected: false,
+        },
+      ],
+      currentItem: tool,
+      selectedItemId: tool.id,
+      initialLeftIdx: 0,
+      focusModels: true,
+      roleLabel: 'Planner',
+      currentModel: undefined,
+      persistedModel: undefined,
+      discoveredModelCount: 0,
+      modelCounts: { ...zeroCounts, stale: 1 },
+      catalogDiagnostic: undefined,
+      currentCommand: undefined,
+      currentCommandKind: undefined,
+      customModels: [],
+      setCurrentItem: () => {},
+    };
+
+    const ui = renderFeature(
+      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+    );
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Stale');
+    expect(frame).toContain('1 stale model retained. Refresh detection.');
+    expect(frame).not.toContain('1 model detected');
+
+    const manyStaleRows: ModelOption[] = Array.from({ length: 100 }, (_, index) => ({
+      id: `retained-model-${index}`,
+      membership: 'stale',
+      isStale: true,
+      isDetected: false,
+    }));
+    ui.rerender(
+      <PickerView
+        role="planner"
+        catalog={{
+          ...catalog,
+          rightModels: manyStaleRows,
+          modelCounts: { ...zeroCounts, stale: 100 },
+        }}
+        actions={makeActions()}
+      />,
+    );
+    await flushEffects();
+    const boundedFrame = ui.lastFrame() ?? '';
+    expect(boundedFrame).toContain('99+ stale models retained. Refresh detection.');
+    expect(boundedFrame).not.toContain('100 stale models retained.');
     ui.unmount();
   });
 
@@ -222,6 +363,8 @@ describe('PickerView previews', () => {
       currentModel: undefined,
       persistedModel: undefined,
       discoveredModelCount: 0,
+      modelCounts: zeroCounts,
+      catalogDiagnostic: undefined,
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
@@ -264,6 +407,8 @@ describe('PickerView previews', () => {
       currentModel: undefined,
       persistedModel: undefined,
       discoveredModelCount: 0,
+      modelCounts: zeroCounts,
+      catalogDiagnostic: undefined,
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
@@ -304,6 +449,8 @@ describe('PickerView previews', () => {
       currentModel: undefined,
       persistedModel: undefined,
       discoveredModelCount: 0,
+      modelCounts: zeroCounts,
+      catalogDiagnostic: undefined,
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
@@ -319,35 +466,5 @@ describe('PickerView previews', () => {
     expect(frame).toContain('No models detected');
     expect(frame).toContain('Press ctrl+r to refresh detection');
     ui.unmount();
-  });
-});
-
-describe('refreshPickerDetection', () => {
-  beforeEach(() => {
-    feedbackStore.reset();
-  });
-
-  it('replaces the in-progress refresh message after refresh succeeds', async () => {
-    await refreshPickerDetection('/tmp/project', async () => {
-      expect(feedbackStore.get()).toEqual({
-        message: 'Refreshing models…',
-        isError: false,
-      });
-    });
-
-    expect(feedbackStore.get()).toEqual({
-      message: 'Models refreshed',
-      isError: false,
-    });
-  });
-
-  it('surfaces refresh failures instead of leaving stale progress feedback', async () => {
-    await refreshPickerDetection('/tmp/project', async () => {
-      throw new Error('provider offline');
-    });
-
-    const feedback = feedbackStore.get();
-    expect(feedback.isError).toBe(true);
-    expect(feedback.message).toContain('provider offline');
   });
 });

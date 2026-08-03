@@ -405,6 +405,20 @@ describe('configuration documentation', () => {
     }
   });
 
+  it('distinguishes local Ollama credentials from Ollama Cloud credentials', () => {
+    expect(configurationDoc).toContain(
+      '`OLLAMA_API_KEY` is never resolved or sent to local Ollama',
+    );
+    expect(configurationDoc).toContain('`apiKey: env:OLLAMA_LOCAL_API_KEY`');
+    expect(configurationDoc).toContain('`ollama-cloud`');
+    expect(apiKeysDoc).toContain('| Local Ollama | `OLLAMA_LOCAL_API_KEY` |');
+    expect(apiKeysDoc).toContain('`apiKey: env:OLLAMA_LOCAL_API_KEY`');
+    expect(apiKeysDoc).toContain('`OLLAMA_API_KEY` is never accepted or sent locally');
+    expect(apiKeysDoc).toContain('| Ollama Cloud | `OLLAMA_API_KEY` |');
+    expect(apiKeysDoc).not.toContain('Optional for secured local/proxy deployments');
+    expect(apiKeysDoc).not.toContain('| Ollama | `OLLAMA_API_KEY` |');
+  });
+
   it('documents the required API identity triple and named implementer profiles', () => {
     expect(configurationDoc).toMatch(/service.*offering/i);
     expect(configurationDoc).toMatch(/implementerProfiles/);

@@ -107,12 +107,12 @@ export function trustPermissions(
   };
 }
 
-export function metaModelPolicy(kind: 'shell' | 'agent' | 'agent-sdk'): PickerModelPolicy {
+export function metaModelPolicy(kind: 'custom-command' | 'agent-sdk'): PickerModelPolicy {
   if (kind === 'agent-sdk') return 'per-call';
   return 'none';
 }
 
-export function metaBilling(kind: 'shell' | 'agent' | 'agent-sdk'): RunnerBillingPosture {
+export function metaBilling(kind: 'custom-command' | 'agent-sdk'): RunnerBillingPosture {
   if (kind === 'agent-sdk') return 'api-metered';
   return 'unknown';
 }

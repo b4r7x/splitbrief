@@ -42,6 +42,7 @@ export default defineConfig({
             'src/**/*.test.{ts,tsx}',
             'scripts/**/*.test.{ts,tsx}',
             'testing/{architecture,ci,docs,rebrand}/**/*.test.{ts,tsx}',
+            'testing/compat/**/*.test.{ts,tsx}',
             'testing/integration/**/*.test.{ts,tsx}',
             'testing/helpers/**/*.test.{ts,tsx}',
             'testing/visual/**/*.test.{ts,tsx}',

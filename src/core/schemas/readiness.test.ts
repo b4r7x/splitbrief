@@ -117,6 +117,24 @@ describe('CLI runner readiness', () => {
     );
   });
 
+  it('carries optional per-provider oracle facts through derivation and validation', () => {
+    const providerAuth = [
+      { provider: 'GitHub Copilot', source: 'oauth' as const },
+      { provider: 'OpenAI', source: 'env' as const, envVar: 'OPENAI_API_KEY' },
+    ];
+    const result = deriveCliReadiness(readyFacts({ providerAuth }));
+
+    expect(result.providerAuth).toEqual(providerAuth);
+    expect(CliReadinessResultSchema.parse(result)).toEqual(result);
+    expect(deriveCliReadiness(readyFacts()).providerAuth).toBeUndefined();
+    expect(
+      CliReadinessResultSchema.safeParse({
+        ...result,
+        providerAuth: [{ provider: 'OpenAI', source: 'stolen-token' }],
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects a result whose status or stable ID contradicts its facts', () => {
     const result = deriveCliReadiness(readyFacts());
 

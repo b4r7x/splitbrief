@@ -76,7 +76,7 @@ const CHILD_CONTROL_ENV_KEYS = new Set([
   'npm_config_userconfig',
 ]);
 
-function isSafePreservedEnvKey(key: string): boolean {
+export function isSafePreservedChildEnvKey(key: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(key) && !CHILD_CONTROL_ENV_KEYS.has(key);
 }
 
@@ -91,7 +91,7 @@ export function createSanitizedChildEnv(
   }
   for (const key of new Set(preserveKeys)) {
     const value = source[key];
-    if (value !== undefined && isSafePreservedEnvKey(key)) env[key] = value;
+    if (value !== undefined && isSafePreservedChildEnvKey(key)) env[key] = value;
   }
   return env;
 }
@@ -342,6 +342,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         env: opts.env,
         stdio: ['pipe', 'pipe', 'pipe'],
         detached: opts.detached ?? false,
+        shell: false,
       });
     } catch (err: unknown) {
       fail(err);

@@ -25,6 +25,7 @@ import { ToolModelPicker } from '../overlays/runners.js';
 import { configPath, loadConfig } from '../../core/config/load/io.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { SetupScreen } from './setup.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
@@ -41,13 +42,14 @@ function cliDetection(tool: CliToolDetection['tool'], ready: boolean): CliToolDe
 
 const INSTALLED_RUNNERS = {
   cliTools: [cliDetection('claude-code', true), cliDetection('codex', true)],
-  implementers: [],
+  providers: [],
 } satisfies Parameters<typeof detectionStore.setDetection>[0];
 
 async function chooseRunner(
   ui: ReturnType<typeof renderFeature>,
   runnerId: 'claude-code' | 'codex',
 ): Promise<void> {
+  await flushEffects();
   ui.stdin.write(runnerId);
   await flushEffects();
   ui.stdin.write(ENTER);
@@ -105,7 +107,7 @@ describe('SetupScreen', () => {
   it('shows the no-planners screen when no planner-capable CLI is ready', async () => {
     detectionStore.setDetection({
       cliTools: [cliDetection('claude-code', false), cliDetection('codex', false)],
-      implementers: [],
+      providers: [],
     });
 
     const ui = renderFeature(<SetupScreen renderToolPicker={() => null} />);
@@ -120,7 +122,7 @@ describe('SetupScreen', () => {
   it('renders the planner picker with the full step label when a planner-capable CLI is ready', async () => {
     detectionStore.setDetection({
       cliTools: [cliDetection('claude-code', true), cliDetection('codex', false)],
-      implementers: [],
+      providers: [],
     });
 
     const ui = renderFeature(
@@ -137,7 +139,7 @@ describe('SetupScreen', () => {
 
   it('copies the focused install command on y when no overlay is open', async () => {
     const ui = renderFeature(<SetupScreen renderToolPicker={() => null} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('y');
     await tick();
@@ -154,9 +156,10 @@ describe('SetupScreen', () => {
     await tick(20);
 
     overlayStore.open('settings');
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('\x1b');
+    await flushEffects();
     ui.stdin.write('y');
     await tick(20);
 
@@ -225,6 +228,7 @@ describe('SetupScreen', () => {
       expect(ui.lastFrame() ?? '').toContain('Choose planner · 1 of 2');
       expect(ui.lastFrame() ?? '').toContain('⏎ confirm');
 
+      await flushEffects();
       ui.stdin.write(ENTER);
       await flushEffects();
       expect(feedbackStore.get().isError).toBe(true);
@@ -262,16 +266,19 @@ describe('SetupScreen', () => {
       await flushEffects();
       await chooseRunner(ui, 'claude-code');
 
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('Choose model · 2 of 2');
+      });
+
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain('Implementer');
       expect(frame).toContain('Choose model · 2 of 2');
-      expect(frame).toContain('OpenAI Codex CLI');
-      // At 80x24 the Tools column is scrolled to the current implementer
-      // (Ollama), so the alphabetically-first rows — 'Claude Code CLI' among
-      // them — fall outside the window. The planner just chosen is proven by
-      // the persisted config below, never by this frame.
-      expect(frame).not.toContain('Claude Code');
+      expect(frame).toContain('Ollama · api');
+      expect(frame).toContain('Start o…');
+      expect(frame.split('\n').length).toBeLessThanOrEqual(24);
+      expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 80)).toBe(true);
 
+      await flushEffects();
       ui.stdin.write('\u001b');
       await flushEffects();
       expect(ui.lastFrame() ?? '').toContain('Choose planner · 1 of 2');
@@ -279,11 +286,13 @@ describe('SetupScreen', () => {
       await chooseRunner(ui, 'claude-code');
       await chooseRunner(ui, 'codex');
 
-      expect(routerStore.get()).toMatchObject({
-        screen: 'workflow',
-        feature: 'Keep setup behavior',
-        plannerContext: 'Use the selected planner',
-        allowRepoRunners: true,
+      await vi.waitFor(() => {
+        expect(routerStore.get()).toMatchObject({
+          screen: 'workflow',
+          feature: 'Keep setup behavior',
+          plannerContext: 'Use the selected planner',
+          allowRepoRunners: true,
+        });
       });
       expect(configPath(projectDir)).toBe(join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE));
       expect(existsSync(configPath(projectDir))).toBe(true);
@@ -303,9 +312,10 @@ describe('SetupScreen', () => {
   it('does not copy a hidden install command on y at a compact height', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 4, isSmall: false });
     const ui = renderFeature(<SetupScreen renderToolPicker={() => null} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\u001b[B');
+    await flushEffects();
     ui.stdin.write('y');
     await tick(20);
 

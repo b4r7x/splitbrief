@@ -35,7 +35,7 @@ import {
   sanitizeProviderDiagnostic,
   type ProviderDiagnosticOptions,
 } from './client/request.js';
-import type { ProviderDefWithMetadata } from './types.js';
+import type { ProviderDefWithMetadata, ProviderModelListOptions } from './types.js';
 import { toStreamClient } from './openai-stream/client.js';
 import type { StreamClient } from './openai-stream/request.js';
 import { streamCompletion } from './openai-stream/completion.js';
@@ -511,20 +511,23 @@ export function createUnregisteredOpenAICompatProvider(
     baseURL: endpoint,
     apiKey: () => credential,
     isLocal: candidate.rawContract.offering === 'local',
-    listModels: async () => {
+    listModels: async (options?: ProviderModelListOptions) => {
       const headers = createProviderHeaders(credential);
       return fetchModelList({
         endpoint: `${endpoint}/models`,
         ...(headers ? { headers } : {}),
         fetch: policyFetch,
+        signal: options?.signal,
         extractModels: (body) => {
           if (!isOpenAIModelList(body)) return null;
           return extractOpenAIModelList(body, (item) => item.id);
         },
       });
     },
-    listModelsWithMetadata: async (): Promise<DetectedModel[]> => {
-      const ids = await provider.listModels();
+    listModelsWithMetadata: async (
+      options?: ProviderModelListOptions,
+    ): Promise<DetectedModel[]> => {
+      const ids = await provider.listModels(options);
       return ids.map((id) => ({ id }));
     },
     detectContextLength: async (model: string): Promise<number | null> => {

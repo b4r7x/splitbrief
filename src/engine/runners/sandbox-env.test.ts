@@ -1,6 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
-  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -15,12 +14,12 @@ import {
   clearBridgedCliState,
   createRunnerSandboxEnv,
   createSandboxEnv,
+  prependCliExecutableDirectory,
   resolveCliRunnerAuth,
   runnerAuthEnvKeys,
   sandboxCredentialValues,
 } from './sandbox-env.js';
 import { createRunnerCallCredentialRedactor } from '../calls/status.js';
-import { resolveCliExecutable } from './resolve-cli-executable.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -43,167 +42,30 @@ afterEach(() => {
   dirs = [];
 });
 
-function makeExecutable(path: string, body = '#!/bin/sh\nexit 0\n'): void {
-  writeFileSync(path, body, { mode: 0o755 });
-  chmodSync(path, 0o755);
-}
+describe('prependCliExecutableDirectory', () => {
+  it('prepends the executable directory while preserving the safe runtime interpreter PATH', () => {
+    const executableDir = createTempDir('sandbox-path-executable');
+    const interpreterDir = createTempDir('sandbox-path-interpreter');
+    const utilityDir = createTempDir('sandbox-path-utility');
+    dirs.push(executableDir, interpreterDir, utilityDir);
 
-describe('resolver identity and trust', () => {
-  itUnix('resolver rejects a project-local PATH shadow instead of falling through', async () => {
-    const projectDir = createTempDir('sandbox-resolver-project');
-    const systemDir = createTempDir('sandbox-resolver-system');
-    dirs.push(projectDir, systemDir);
-    const projectBin = join(projectDir, 'bin');
-    mkdirSync(projectBin);
-    makeExecutable(join(projectBin, 'vendor-cli'));
-    makeExecutable(join(systemDir, 'vendor-cli'));
-    setEnv('PATH', [projectBin, systemDir].join(delimiter));
-
-    await expect(resolveCliExecutable('vendor-cli', projectDir)).rejects.toMatchObject({
-      kind: 'cli-executable-untrusted',
+    const path = prependCliExecutableDirectory({
+      executablePath: join(executableDir, 'runner-cli'),
+      safeRuntimePath: [interpreterDir, utilityDir, interpreterDir, 'relative-shadow'].join(
+        delimiter,
+      ),
     });
+
+    expect(path.split(delimiter)).toEqual([executableDir, interpreterDir, utilityDir]);
   });
 
-  itUnix('resolver rejects empty and relative PATH shadows', async () => {
-    const projectDir = createTempDir('sandbox-resolver-relative');
-    const relativeBin = join(projectDir, 'relative-bin');
-    dirs.push(projectDir);
-    mkdirSync(relativeBin);
-    makeExecutable(join(relativeBin, 'vendor-cli'));
-
-    setEnv('PATH', `relative-bin${delimiter}`);
-    await expect(resolveCliExecutable('vendor-cli', projectDir)).rejects.toMatchObject({
-      kind: 'cli-executable-untrusted',
-    });
-  });
-
-  itUnix('identity uses the absolute real executable behind a symlink', async () => {
-    const projectDir = createTempDir('sandbox-identity-project');
-    const realBin = createTempDir('sandbox-identity-real');
-    const linkBin = createTempDir('sandbox-identity-link');
-    dirs.push(projectDir, realBin, linkBin);
-    const executable = join(realBin, 'vendor-cli');
-    makeExecutable(executable);
-    symlinkSync(executable, join(linkBin, 'vendor-cli'));
-    setEnv('PATH', linkBin);
-
-    const identity = await resolveCliExecutable('vendor-cli', projectDir);
-
-    expect(identity.path).toBe(realpathSync(executable));
-    expect(identity.fingerprint).toMatchObject({
-      size: expect.any(Number),
-      mtimeMs: expect.any(Number),
-    });
-  });
-
-  itUnix('identity drift fails closed before reuse', async () => {
-    const projectDir = createTempDir('sandbox-identity-drift-project');
-    const binDir = createTempDir('sandbox-identity-drift-bin');
-    dirs.push(projectDir, binDir);
-    const executable = join(binDir, 'vendor-cli');
-    makeExecutable(executable);
-    setEnv('PATH', binDir);
-    const identity = await resolveCliExecutable('vendor-cli', projectDir);
-    makeExecutable(executable, '#!/bin/sh\necho changed identity\n');
-
-    await expect(resolveCliExecutable('vendor-cli', projectDir, identity)).rejects.toMatchObject({
-      kind: 'cli-executable-identity-drift',
-    });
-  });
-
-  itUnix('exact identity trust admits that project-local executable only', async () => {
-    const trustedRoot = createTempDir('sandbox-identity-trust');
-    const neutralProject = createTempDir('sandbox-identity-neutral');
-    dirs.push(trustedRoot, neutralProject);
-    const binDir = join(trustedRoot, 'bin');
-    mkdirSync(binDir);
-    makeExecutable(join(binDir, 'vendor-cli'));
-    setEnv('PATH', binDir);
-    const trust = await resolveCliExecutable('vendor-cli', neutralProject);
-
-    await expect(resolveCliExecutable('vendor-cli', trustedRoot)).rejects.toMatchObject({
-      kind: 'cli-executable-untrusted',
-    });
-    await expect(resolveCliExecutable('vendor-cli', trustedRoot, trust)).resolves.toEqual(trust);
-  });
-
-  itUnix('does not expose absolute paths in unavailable executable diagnostics', async () => {
-    const projectDir = createTempDir('sandbox-diagnostic-unavailable');
-    dirs.push(projectDir);
-    const command = join(projectDir, 'private', 'missing-cli');
-
-    let caught: unknown;
-    try {
-      await resolveCliExecutable(command, projectDir);
-    } catch (cause) {
-      caught = cause;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    const failure = caught as Error & { data?: unknown };
-    expect(failure.message).not.toContain(projectDir);
-    expect(JSON.stringify(failure.data)).not.toContain(projectDir);
-    expect(failure.message).toContain('missing-cli');
-    expect(failure.data).toMatchObject({ command: 'missing-cli' });
-  });
-
-  itUnix('does not expose absolute paths in untrusted executable diagnostics', async () => {
-    const projectDir = createTempDir('sandbox-diagnostic-untrusted');
-    dirs.push(projectDir);
-    const binDir = join(projectDir, 'private');
-    mkdirSync(binDir);
-    const command = join(binDir, 'shadow-cli');
-    makeExecutable(command);
-
-    let caught: unknown;
-    try {
-      await resolveCliExecutable(command, projectDir);
-    } catch (cause) {
-      caught = cause;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    const failure = caught as Error & { data?: unknown };
-    expect(failure.message).not.toContain(projectDir);
-    expect(JSON.stringify(failure.data)).not.toContain(projectDir);
-    expect(failure.message).toContain('shadow-cli');
-    expect(failure.data).toMatchObject({
-      command: 'shadow-cli',
-      identity: { fingerprint: { size: expect.any(Number) } },
-    });
-  });
-
-  itUnix('does not expose absolute paths while preserving drift fingerprints', async () => {
-    const projectDir = createTempDir('sandbox-diagnostic-drift');
-    dirs.push(projectDir);
-    const binDir = createTempDir('sandbox-diagnostic-drift-bin');
-    dirs.push(binDir);
-    const command = join(binDir, 'drift-cli');
-    makeExecutable(command);
-    const trusted = await resolveCliExecutable(command, projectDir);
-    makeExecutable(command, '#!/bin/sh\necho changed identity\n');
-
-    let caught: unknown;
-    try {
-      await resolveCliExecutable(command, projectDir, trusted);
-    } catch (cause) {
-      caught = cause;
-    }
-
-    expect(caught).toBeInstanceOf(Error);
-    const failure = caught as Error & { data?: unknown };
-    expect(failure.message).not.toContain(projectDir);
-    expect(JSON.stringify(failure.data)).not.toContain(projectDir);
-    expect(failure.message).toContain('drift-cli');
-    expect(failure.data).toMatchObject({
-      command: 'drift-cli',
-      expectedIdentity: { fingerprint: trusted.fingerprint },
-      actualIdentity: { fingerprint: expect.any(Object) },
-    });
-    expect((failure.data as { expectedIdentity: unknown }).expectedIdentity).not.toHaveProperty(
-      'path',
-    );
-    expect((failure.data as { actualIdentity: unknown }).actualIdentity).not.toHaveProperty('path');
+  it('rejects a non-absolute executable path', () => {
+    expect(() =>
+      prependCliExecutableDirectory({
+        executablePath: 'runner-cli',
+        safeRuntimePath: '/usr/bin',
+      }),
+    ).toThrow(/must be absolute/u);
   });
 });
 
@@ -394,18 +256,20 @@ describe('runnerAuthEnvKeys', () => {
     const claudeCode = { kind: 'cli', tool: 'claude-code', model: 'auto' } as const;
     const codex = { kind: 'cli', tool: 'codex' } as const;
 
-    expect(runnerAuthEnvKeys(claudeCode)).toEqual(['ANTHROPIC_API_KEY']);
-    expect(runnerAuthEnvKeys(codex)).toEqual(['OPENAI_API_KEY']);
+    expect(runnerAuthEnvKeys(claudeCode)).toEqual([]);
+    expect(runnerAuthEnvKeys(codex)).toEqual([]);
 
     setEnv('ANTHROPIC_API_KEY', 'sk-anthropic');
     setEnv('OPENAI_API_KEY', 'sk-openai');
 
-    expect(runnerAuthEnvKeys(claudeCode)).toEqual(['ANTHROPIC_API_KEY']);
-    expect(runnerAuthEnvKeys(codex)).toEqual(['OPENAI_API_KEY']);
-    // The default channel never bridges host CLI state; only an explicit
-    // session selection may reach the host login files.
-    expect(resolveCliRunnerAuth(claudeCode).stateBridge).toBe('none');
-    expect(resolveCliRunnerAuth(codex).stateBridge).toBe('none');
+    expect(runnerAuthEnvKeys(claudeCode)).toEqual([]);
+    expect(runnerAuthEnvKeys(codex)).toEqual([]);
+    // The default is the declared session channel, whose bridge copies only
+    // the allowlisted state snapshot - never env credentials, never host HOME.
+    expect(resolveCliRunnerAuth(claudeCode).id).toBe('session');
+    expect(resolveCliRunnerAuth(codex).id).toBe('session');
+    expect(resolveCliRunnerAuth(claudeCode).env).toEqual([]);
+    expect(resolveCliRunnerAuth(codex).env).toEqual([]);
   });
 
   it('maps only the explicitly selected CLI auth channel', () => {
@@ -458,6 +322,34 @@ describe('runnerAuthEnvKeys', () => {
     expect(apiKey.OPENAI_API_KEY).toBe('sk-openai');
   });
 
+  itUnix('clears a previous session bridge before selecting the API-key channel', async () => {
+    const hostHome = createTempDir('sandbox-channel-reset-host');
+    const projectDir = createTempDir('sandbox-channel-reset-project');
+    dirs.push(hostHome, projectDir);
+    const sessionToken = 'session-channel-reset-canary';
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), JSON.stringify({ token: sessionToken }));
+    setEnv('HOME', hostHome);
+    setEnv('OPENAI_API_KEY', 'api-channel-reset-canary');
+
+    const session = await createRunnerSandboxEnv(projectDir, {
+      kind: 'cli',
+      tool: 'codex',
+      authChannel: 'session',
+    });
+    expect(existsSync(join(session.HOME as string, '.codex', 'auth.json'))).toBe(true);
+
+    const apiKey = await createRunnerSandboxEnv(projectDir, {
+      kind: 'cli',
+      tool: 'codex',
+      authChannel: 'api-key',
+    });
+
+    expect(existsSync(join(apiKey.HOME as string, '.codex', 'auth.json'))).toBe(false);
+    expect(apiKey.OPENAI_API_KEY).toBe('api-channel-reset-canary');
+    expect(JSON.stringify(apiKey)).not.toContain(sessionToken);
+  });
+
   it('bridges host CLI state only for an explicit session channel', async () => {
     const hostHome = createTempDir('sandbox-host-cli-state');
     const projectDir = createTempDir('sandbox-auth-state-bridge');
@@ -474,11 +366,6 @@ describe('runnerAuthEnvKeys', () => {
       tool: 'codex',
       authChannel: 'session',
     });
-    const apiKey = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'api-key',
-    });
 
     expect(session.HOME).toBe(join(projectDir, SANDBOX_DIR, 'home'));
     expect(session.USERPROFILE).toBe(join(projectDir, SANDBOX_DIR, 'home'));
@@ -490,6 +377,13 @@ describe('runnerAuthEnvKeys', () => {
     expect(existsSync(join(session.HOME as string, '.claude'))).toBe(false);
     expect(Object.values(session)).not.toContain(hostHome);
     expect(session.OPENAI_API_KEY).toBeUndefined();
+
+    const apiKey = await createRunnerSandboxEnv(projectDir, {
+      kind: 'cli',
+      tool: 'codex',
+      authChannel: 'api-key',
+    });
+
     expect(apiKey.HOME).toBe(join(projectDir, SANDBOX_DIR, 'home'));
     expect(apiKey.OPENAI_API_KEY).toBe('sk-openai');
   });
@@ -537,7 +431,8 @@ describe('runnerAuthEnvKeys', () => {
     expect(readFileSync(bridgedAuth, 'utf8')).toBe('before-change');
     expect(existsSync(join(env.HOME as string, '.codex', 'unrelated.json'))).toBe(false);
     expect(existsSync(join(env.HOME as string, '.codex', 'escape'))).toBe(false);
-    expect(statSync(bridgedAuth).mode & 0o222).toBe(0);
+    expect(statSync(bridgedAuth).mode & 0o777).toBe(0o400);
+    expect(statSync(join(env.HOME as string, '.codex')).mode & 0o777).toBe(0o700);
     expect(() => writeFileSync(bridgedAuth, 'runner-mutation')).toThrow();
 
     writeFileSync(join(hostHome, '.codex', 'auth.json'), 'after-change');

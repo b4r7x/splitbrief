@@ -1,6 +1,8 @@
 import { ListRow } from '../../components/list-row.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { formatModelName } from '../../core/model-display.js';
 import { formatContextLength } from '../../core/formatting.js';
+import { modelRowMatchesId } from './model-catalog/catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { isCustomModel, type ModelOption } from './model-catalog/recency.js';
 import { formatPickerStatusLabel } from './picker-format.js';
@@ -14,10 +16,7 @@ interface ToolRowParams {
   currentCommandKind: 'shell' | 'agent' | undefined;
 }
 
-const COMMAND_LABELS = {
-  shell: '+ Add shell command…',
-  agent: '+ Add agent command…',
-} satisfies Record<'shell' | 'agent', string>;
+const ADD_COMMAND_LABEL = '+ Add custom command…';
 
 export function renderToolRow({
   item,
@@ -27,15 +26,12 @@ export function renderToolRow({
   currentCommand,
   currentCommandKind,
 }: ToolRowParams) {
-  const isCommandBased = item.kind === 'shell' || item.kind === 'agent';
-  const showConfiguredCommand =
-    isCommandBased && currentCommandKind === item.kind && currentCommand;
+  const isCommandBased = item.kind === 'custom-command';
+  const showConfiguredCommand = isCommandBased && currentCommandKind && currentCommand;
   const label = isCommandBased
     ? showConfiguredCommand
-      ? `${item.kind}: ${currentCommand}`
-      : item.kind === 'shell'
-        ? COMMAND_LABELS.shell
-        : COMMAND_LABELS.agent
+      ? `${currentCommandKind === 'shell' ? 'output' : 'direct'}${SOFT_SEP}${currentCommand}`
+      : ADD_COMMAND_LABEL
     : item.displayName;
   const statusLabel = formatPickerStatusLabel(item.status);
   const metadata =
@@ -61,15 +57,28 @@ interface ModelRowParams {
 }
 
 export function renderModelRow({ item, isCursor, maxWidth, currentModel }: ModelRowParams) {
-  const isCfgMatch = item.id === currentModel;
-  const modelName = formatModelName(item.id);
+  const isCfgMatch = currentModel !== undefined && modelRowMatchesId(item, currentModel);
   const contextStr = item.contextLength ? formatContextLength(item.contextLength) : '';
-  const badge = isCustomModel(item) ? 'Custom' : item.isDefault ? 'Default' : '';
-  const metadata = [contextStr, badge].filter(Boolean).join(' ') || undefined;
+  // A merged row spans several provider routes; the count signposts that Enter
+  // opens the provider chooser instead of confirming directly.
+  const providerCount =
+    item.variants !== undefined && item.variants.length > 1
+      ? `${item.variants.length} providers`
+      : '';
+  const metadata =
+    [
+      providerCount,
+      contextStr,
+      item.isStale || item.membership === 'stale' ? 'Stale' : '',
+      isCustomModel(item) ? 'Custom' : '',
+      item.isDefault ? 'Default' : '',
+    ]
+      .filter(Boolean)
+      .join(' ') || undefined;
 
   return (
     <ListRow
-      label={modelName}
+      label={formatModelName(item.id)}
       state={isCursor ? 'active' : 'default'}
       defaultLead="dot"
       metadata={metadata}

@@ -18,6 +18,6 @@ export async function withTempDir<T>(prefix: string, fn: (dir: string) => Promis
   try {
     return await fn(dir);
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   }
 }

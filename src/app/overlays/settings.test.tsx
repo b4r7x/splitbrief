@@ -3,7 +3,7 @@ import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SettingsOverlay } from './settings.js';
@@ -34,7 +34,7 @@ describe('SettingsOverlay edit mode', () => {
   it('strips terminal controls from the edit-buffer view while preserving the saved value', async () => {
     overlayStore.setFocus('validation.testCommand');
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(String.fromCharCode(13));
     await tick(20);
@@ -57,7 +57,7 @@ describe('SettingsOverlay edit mode', () => {
     expect(configStore.get().config?.validation.typecheck).toBe(true);
 
     const ui = renderFeature(<SettingsOverlay />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(' ');
     await tick(20);

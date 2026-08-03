@@ -231,6 +231,7 @@ describe('WorkflowScreen attached client', () => {
 
     await waitForAttachedApprovalPrompt(ui);
 
+    await flushEffects();
     ui.stdin.write('reject');
     await flushEffects();
     ui.stdin.write(ENTER);

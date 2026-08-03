@@ -32,6 +32,7 @@ describe('Composer blocking-question isolation', () => {
     await flushEffects();
 
     expect(ui.lastFrame()).not.toContain('NORMAL_HISTORY_SENTINEL');
+    await flushEffects();
     ui.stdin.write('\r');
     await flushEffects();
     expect(submissions).toEqual(['']);
@@ -60,6 +61,7 @@ describe('Composer blocking-question isolation', () => {
     await flushEffects();
     expect(ui.lastFrame()).not.toContain('unfinished answer');
 
+    await flushEffects();
     ui.stdin.write('\r');
     await flushEffects();
     expect(submissions).not.toContain('unfinished answer');

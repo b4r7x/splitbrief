@@ -51,11 +51,13 @@ describe('composer integration: completions', () => {
 
     expect(ui.lastFrame()).toContain('/mde');
 
+    await flushEffects();
     ui.stdin.write(TAB);
     await flushEffects();
 
     expect(ui.lastFrame()).toContain('/mode');
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
 
@@ -82,6 +84,7 @@ describe('composer integration: completions', () => {
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('/mode');
     });
+    await flushEffects();
     ui.stdin.write(DOWN);
     await flushEffects();
     ui.stdin.write(TAB);
@@ -93,6 +96,7 @@ describe('composer integration: completions', () => {
     expect(ui.lastFrame()).not.toContain('/help');
     expect(commandCalls).toEqual([]);
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
     await vi.waitFor(() => {
@@ -127,6 +131,7 @@ describe('composer integration: completions', () => {
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain('@src/app.ts');
       });
+      await flushEffects();
       ui.stdin.write(' done');
       await flushEffects();
       ui.stdin.write(ENTER);
@@ -174,12 +179,14 @@ describe('composer integration: completions', () => {
           new RegExp(`${glyph('cursor')}\\s+src/components/composer/composer\\.tsx`),
         );
       });
+      await flushEffects();
       ui.stdin.write(ENTER);
       await vi.waitFor(() => {
         expect(ui.lastFrame()).toContain('@src/components/composer/composer.tsx');
       });
       expect(submits).toEqual([]);
 
+      await flushEffects();
       ui.stdin.write(ENTER);
       await flushEffects();
 
@@ -211,6 +218,7 @@ describe('composer integration: completions', () => {
         expect(ui.lastFrame()).toContain('src/app.ts');
       }, FILE_SCAN_WAIT_MS);
 
+      await flushEffects();
       ui.stdin.write('\u001b');
       await flushEffects();
 
@@ -218,6 +226,7 @@ describe('composer integration: completions', () => {
       expect(dismissedFrame).toContain('@src');
       expect(dismissedFrame).not.toContain('src/app.ts');
 
+      await flushEffects();
       ui.stdin.write(ENTER);
       await flushEffects();
 
@@ -249,6 +258,7 @@ describe('composer integration: completions', () => {
       expect(frame).toContain('user@example.com');
       expect(frame).not.toContain('src/app.ts');
 
+      await flushEffects();
       ui.stdin.write(ENTER);
       await flushEffects();
 

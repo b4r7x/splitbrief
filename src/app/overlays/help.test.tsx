@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../stores/ui/controls.js';
@@ -130,13 +130,14 @@ describe('HelpOverlay', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 12, isSmall: true });
     const commands = Array.from({ length: 8 }, (_, i) => command(`/cmd-${i}`, ['home']));
     const ui = renderFeature(<HelpOverlay currentScreen="home" commands={commands} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(HOME);
     await tick(20);
 
     for (let i = 0; i < 3; i++) {
       if ((ui.lastFrame() ?? '').includes('/cmd-0')) break;
+      await flushEffects();
       ui.stdin.write(PAGE_DOWN);
       await tick(20);
     }
@@ -144,6 +145,7 @@ describe('HelpOverlay', () => {
 
     for (let i = 0; i < 10; i++) {
       if ((ui.lastFrame() ?? '').includes('/cmd-7')) break;
+      await flushEffects();
       ui.stdin.write(PAGE_DOWN);
       await tick(20);
     }
@@ -162,6 +164,7 @@ describe('HelpOverlay', () => {
     const initial = ui.lastFrame() ?? '';
     expect(initial).toContain('close');
 
+    await flushEffects();
     ui.stdin.write(END);
     await tick(20);
 

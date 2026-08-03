@@ -80,6 +80,7 @@ describe('home navigation flow (through real App)', () => {
     await tick(20);
 
     await focusRecentSessions(ui);
+    await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
@@ -110,6 +111,7 @@ describe('home navigation flow (through real App)', () => {
     await tick(20);
 
     await focusRecentSessions(ui);
+    await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('summary');
@@ -121,6 +123,7 @@ describe('home navigation flow (through real App)', () => {
       expect(route.summary).toEqual(summary);
     }
 
+    await flushEffects();
     ui.stdin.write(ESC);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('home');
@@ -138,6 +141,7 @@ describe('home navigation flow (through real App)', () => {
     await tick(20);
 
     await focusRecentSessions(ui);
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toMatch(/focus feature 1/);
@@ -190,7 +194,7 @@ describe('home navigation flow (through real App)', () => {
     inputHistoryStore.push('recalled prompt');
 
     const ui = renderFeature(<App />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_UP);
     await tick(20);

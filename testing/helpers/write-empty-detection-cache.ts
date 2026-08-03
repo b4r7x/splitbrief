@@ -10,7 +10,7 @@ export function writeEmptyDetectionCache(projectDir: string): void {
       version: 1,
       timestamp: Date.now(),
       planners: [],
-      implementers: [],
+      providers: [],
     }),
     'utf-8',
   );

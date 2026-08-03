@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Box, Text } from 'ink';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -197,6 +197,7 @@ describe('RecentSessions', () => {
     expect(frame).not.toContain('old-focus');
     expect(frame).not.toContain('oldest-focus');
 
+    await flushEffects();
     ui.stdin.write('oldest');
     await tick(20);
 

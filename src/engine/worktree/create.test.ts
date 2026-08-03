@@ -76,7 +76,7 @@ describe('createWorktree', () => {
   });
 
   it('succeeds on a committed repo whose only dirt is initConfig .gitignore bookkeeping', async () => {
-    initConfig(repoDir);
+    await initConfig(repoDir);
 
     await expect(
       createWorktree({ projectDir: repoDir, slug: 'feat-bookkeeping', git }),
@@ -85,7 +85,7 @@ describe('createWorktree', () => {
   });
 
   it('still names a user-edited .gitignore beyond the bookkeeping lines as dirty', async () => {
-    initConfig(repoDir);
+    await initConfig(repoDir);
     await writeFile(join(repoDir, '.gitignore'), '.splitbrief/\n.trees/\nnode_modules/\n');
 
     await expect(
@@ -140,7 +140,7 @@ describe('createWorktree', () => {
   });
 
   it('gitignores .splitbrief/ in the new worktree so a copied config secret stays untracked', async () => {
-    initConfig(repoDir);
+    await initConfig(repoDir);
 
     const wtPath = await createWorktree({ projectDir: repoDir, slug: 'feat-ignore', git });
 

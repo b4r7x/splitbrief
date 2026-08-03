@@ -11,6 +11,7 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import type { ApprovalReviewInput } from '../../runners/types.js';
 import { reviewAutoSplitOutput } from './auto-split-review.js';
 
 let dirs: string[] = [];
@@ -75,14 +76,20 @@ describe('reviewAutoSplitOutput', () => {
     const fixedTask = makePassingTask({ id: 'T010', file: 'src/parser.ts', title: 'Corrected' });
     const state = makeImplState([task]);
     const { bus, events } = makeBusRecorder();
-    const onApprovalNeeded = vi.fn(async (_type: 'spec' | 'plan' | 'briefs', filePath: string) => {
-      if (onApprovalNeeded.mock.calls.length === 1) {
-        await writeFile(filePath, `${formatTasks([task])}\n${malformedTaskLikeBlock}`, 'utf8');
-      } else {
-        await writeFile(filePath, formatTasks([fixedTask]), 'utf8');
-      }
-      return { approved: true as const };
-    });
+    const onApprovalNeeded = vi.fn(
+      async (_type: 'spec' | 'plan' | 'briefs' | 'artifact', input: ApprovalReviewInput) => {
+        if (typeof input !== 'string') {
+          throw new Error('Expected a task briefs file path');
+        }
+        const filePath = input;
+        if (onApprovalNeeded.mock.calls.length === 1) {
+          await writeFile(filePath, `${formatTasks([task])}\n${malformedTaskLikeBlock}`, 'utf8');
+        } else {
+          await writeFile(filePath, formatTasks([fixedTask]), 'utf8');
+        }
+        return { approved: true as const };
+      },
+    );
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const setTrackedState = vi.fn();
 
@@ -113,13 +120,19 @@ describe('reviewAutoSplitOutput', () => {
     const editedTask = makePassingTask({ id: 'T020', file: 'src/parser.ts', title: 'Edited' });
     const state = makeImplState([task]);
     const { bus } = makeBusRecorder();
-    const onApprovalNeeded = vi.fn(async (_type: 'spec' | 'plan' | 'briefs', filePath: string) => {
-      if (onApprovalNeeded.mock.calls.length === 1) {
-        await writeFile(filePath, formatTasks([editedTask]), 'utf8');
-        return { approved: false as const, action: 'edit' as const };
-      }
-      return { approved: true as const };
-    });
+    const onApprovalNeeded = vi.fn(
+      async (_type: 'spec' | 'plan' | 'briefs' | 'artifact', input: ApprovalReviewInput) => {
+        if (typeof input !== 'string') {
+          throw new Error('Expected a task briefs file path');
+        }
+        const filePath = input;
+        if (onApprovalNeeded.mock.calls.length === 1) {
+          await writeFile(filePath, formatTasks([editedTask]), 'utf8');
+          return { approved: false as const, action: 'edit' as const };
+        }
+        return { approved: true as const };
+      },
+    );
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
     const setTrackedState = vi.fn();
 

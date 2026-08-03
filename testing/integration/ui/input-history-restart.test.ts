@@ -82,6 +82,7 @@ describe('composer input history restart flow', () => {
       await vi.waitFor(() => {
         expect(firstUi.lastFrame()).toContain('persisted workflow prompt');
       }, COMPOSER_WAIT_MS);
+      await flushEffects();
       firstUi.stdin.write(ENTER);
       await flushEffects();
       await vi.waitFor(() => {

@@ -284,7 +284,7 @@ The implementer writes files directly (`writesFiles: 'direct'`). Change detectio
 
 Runtime source of truth: `src/core/runners/cli-tool-catalog.ts` (`CLI_TOOL_CATALOG`, `CLI_TOOL_TRUST`). This section is the canonical support matrix for admitted CLI runners. Parity is enforced by `testing/docs/planners-and-implementers.test.ts`.
 
-Each admitted tool carries a `testedVersion` — the upstream CLI release the flag, subcommand, and output contract was last verified against. `detectAvailablePlanners` (`src/engine/detection/detect.ts`) probes the installed version via `getVersion()`. When the installed **major** version differs from the tested one, detection still reports the tool as available and includes `compatibility: { kind: 'major-version-mismatch', installedVersion, testedVersion }` on that planner result. It does not print a startup stderr warning for unselected tools.
+Each admitted tool carries a `testedVersion` and a `minimumAdmittedVersion` — the upstream CLI release the flag, subcommand, and output contract were last verified against, and the oldest release admitted. `detectAvailablePlanners` (`src/engine/detection/detect.ts`) probes the installed version via the adapter-declared version command. Admission is forward-compatible: only versions below the minimum are incompatible; newer releases are admitted, and malformed or unproven versions remain unverified. It does not print a startup stderr warning for unselected tools.
 
 When you adjust a tool's adapter to track an upstream CLI change, bump that tool's `testedVersion` in the catalog and update this matrix.
 
@@ -322,7 +322,7 @@ Each admitted CLI exposes check ID `runners.cli.<tool>.readiness`. `deriveCliRea
 | `unavailable` | Binary not installed or not on trusted PATH |
 | `untrusted` | Executable identity does not match the trusted fingerprint |
 | `unverified` | Version probe failed or compatibility is unknown |
-| `incompatible` | Installed major version differs from tested version |
+| `incompatible` | Installed version is below the minimum admitted version |
 | `unauthenticated` | Required auth channel is not satisfied in the staged environment |
 | `ready` | Binary trusted, version compatible, auth satisfied |
 
@@ -352,10 +352,10 @@ These researched CLIs have **blocked verdicts** — they do not appear in the ad
 
 | candidate | verdict | as-of | evidence | route when gate passes |
 |---|---|---|---|---|
-| `cursor` | OMIT | 2026-07-31 | `.nuke/release-evidence/cursor.json` | implementer-only `cursor-agent`; stream-json terminal contract |
+| `cursor` | OMIT | 2026-08-02 | Candidate metadata only. R7-008 must prove an exact build-pinned protocol in a fresh filtered workspace; the prior project-cwd invocation, broad semver, synthetic fixtures, `--mode agent`, and invented JSON flags are not evidence. | No planner/implementer adapter, provider row, auth channel, catalog, run path, or picker row until R7-008 is accepted. |
 | `antigravity` | OMIT | 2026-07-31 | `.nuke/release-evidence/antigravity.json` | implementer-only `agy`; conditional consumer route replacing legacy Gemini CLI |
 
-`CURSOR_CLI_ADMISSION_VERDICT` and `ANTIGRAVITY_CLI_ADMISSION_VERDICT` are `OMIT` in `cli-tool-catalog.ts`. Candidate adapter sources must remain absent while the verdict is OMIT.
+`CURSOR_CLI_ADMISSION_VERDICT` and `ANTIGRAVITY_CLI_ADMISSION_VERDICT` are `OMIT` in `cli-tool-catalog.ts`. Candidate runtime adapter sources must remain absent while the verdict is OMIT. Cursor records `agent` as a primary candidate and `cursor-agent` as a fallback only for later, safe resolution testing; those aliases do not configure a runnable tool. No unverified-auth override can promote Cursor. `agent status --format json` is a current-build fact, but no model JSON flag, model catalog, or run protocol is admitted; planner `plan` mode and an implementer invocation without `--mode` remain R7-008 work, not active configuration.
 
 ##### Excluded researched candidates
 

@@ -1,15 +1,230 @@
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import type { CliProviderAuthFact } from '../../../core/discovery/detection.js';
 import type { Config } from '../../../core/schemas/config.js';
-import { resolveModelCatalog } from '../../../engine/providers/model/catalog.js';
+import {
+  resolveModelCatalog,
+  type ResolvedModelMembership,
+} from '../../../engine/providers/model/catalog.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
-import type { PickerOption } from './options.js';
-import { sortModelsByRecency, type ModelOption } from './recency.js';
+import {
+  compactProviderTag,
+  modelBareId,
+  modelProviderAuthKey,
+  modelProviderPrefix,
+  resolveProviderAuthState,
+  type PickerOption,
+} from './options.js';
+import { sortModelsByRecency, type ModelOption, type ModelVariant } from './recency.js';
 
 // A selection policy, not catalog data: it carries no context length, pricing,
 // release date or provenance, and is synthesized per render rather than merged.
 const AUTOMATIC_MODEL_OPTION: ModelOption = Object.freeze({ id: AUTOMATIC_MODEL });
+
+export interface PickerModelCounts {
+  readonly confirmed: number;
+  readonly stale: number;
+  readonly suggestions: number;
+  readonly bundled: number;
+  readonly custom: number;
+}
+
+/**
+ * Counts state enumeration truth: a provider-merged row contributes one tally
+ * per variant, so "N models detected" never deflates when rows collapse.
+ */
+export function countModelOptions(models: readonly ModelOption[]): PickerModelCounts {
+  let confirmed = 0;
+  let stale = 0;
+  let suggestions = 0;
+  let bundled = 0;
+  let custom = 0;
+
+  const tally = (
+    membership: ResolvedModelMembership | undefined,
+    isCustom: boolean | undefined,
+  ): void => {
+    if (isCustom === true || membership === 'custom') custom += 1;
+    switch (membership) {
+      case 'confirmed':
+        confirmed += 1;
+        break;
+      case 'stale':
+        stale += 1;
+        break;
+      case 'catalog-suggestion':
+        suggestions += 1;
+        break;
+      case 'bundled-suggestion':
+        bundled += 1;
+        break;
+      case 'custom':
+      case undefined:
+        break;
+    }
+  };
+
+  for (const model of models) {
+    if (model.variants === undefined || model.variants.length === 0) {
+      tally(model.membership, model.isCustom);
+      continue;
+    }
+    for (const variant of model.variants) {
+      tally(variant.membership ?? model.membership, variant.isCustom);
+    }
+  }
+
+  return { confirmed, stale, suggestions, bundled, custom };
+}
+
+const MEMBERSHIP_RANK = {
+  confirmed: 0,
+  stale: 1,
+  'catalog-suggestion': 2,
+  'bundled-suggestion': 3,
+  custom: 4,
+} as const satisfies Record<ResolvedModelMembership, number>;
+
+interface ProviderVariantSource {
+  readonly row: ModelOption;
+  readonly prefix: string;
+}
+
+interface ProviderMergeContext {
+  readonly persistedModel: string | undefined;
+  readonly customModels: readonly string[];
+  readonly authFacts: readonly CliProviderAuthFact[] | undefined;
+}
+
+function toVariant(source: ProviderVariantSource): ModelVariant {
+  return {
+    fullId: source.row.id,
+    providerPrefix: source.prefix,
+    tag: compactProviderTag(source.prefix),
+    ...(source.row.membership === undefined ? {} : { membership: source.row.membership }),
+    ...(source.row.isCustom ? { isCustom: true } : {}),
+  };
+}
+
+function sortVariantsConfiguredFirst(
+  variants: readonly ModelVariant[],
+  facts: readonly CliProviderAuthFact[] | undefined,
+): readonly ModelVariant[] {
+  // Absent facts mean the credential oracle was unreadable; the recency order
+  // stands because nothing may claim an auth state.
+  if (facts === undefined) return variants;
+  const needsSignIn = (variant: ModelVariant): number => {
+    const authKey = modelProviderAuthKey(variant.fullId);
+    if (authKey === undefined) return 1;
+    return resolveProviderAuthState(authKey, facts) === 'configured' ? 0 : 1;
+  };
+  return variants.toSorted((a, b) => needsSignIn(a) - needsSignIn(b));
+}
+
+function bestMembership(rows: readonly ModelOption[]): ResolvedModelMembership | undefined {
+  let best: ResolvedModelMembership | undefined;
+  for (const row of rows) {
+    if (row.membership === undefined) continue;
+    if (best === undefined || MEMBERSHIP_RANK[row.membership] < MEMBERSHIP_RANK[best]) {
+      best = row.membership;
+    }
+  }
+  return best;
+}
+
+function mergeGroupRows(
+  first: ProviderVariantSource,
+  rest: readonly ProviderVariantSource[],
+  ctx: ProviderMergeContext,
+): ModelOption {
+  const sources = [first, ...rest];
+  const variants = sortVariantsConfiguredFirst(sources.map(toVariant), ctx.authFacts);
+  if (rest.length === 0) return { ...first.row, variants };
+
+  const rows = sources.map((source) => source.row);
+  const representative =
+    sources.find((source) => source.row.id === ctx.persistedModel)?.row ??
+    sources.find((source) => ctx.customModels.includes(source.row.id))?.row ??
+    first.row;
+  const membership = bestMembership(rows);
+  let contextLength: number | undefined;
+  let releaseDate: string | undefined;
+  for (const row of rows) {
+    if (
+      row.contextLength !== undefined &&
+      (contextLength === undefined || row.contextLength > contextLength)
+    ) {
+      contextLength = row.contextLength;
+    }
+    if (
+      row.releaseDate !== undefined &&
+      (releaseDate === undefined || row.releaseDate > releaseDate)
+    ) {
+      releaseDate = row.releaseDate;
+    }
+  }
+
+  return {
+    id: representative.id,
+    ...(rows.some((row) => row.isDefault) ? { isDefault: true } : {}),
+    ...(membership === undefined ? {} : { membership }),
+    ...(membership !== undefined && membership !== 'custom'
+      ? { isDetected: membership === 'confirmed' }
+      : {}),
+    ...(membership === 'stale' ? { isStale: true } : {}),
+    ...(rows.some((row) => row.isCustom) ? { isCustom: true } : {}),
+    ...(contextLength === undefined ? {} : { contextLength }),
+    ...(releaseDate === undefined ? {} : { releaseDate }),
+    variants,
+  };
+}
+
+interface ProviderVariantGroup {
+  readonly kind: 'group';
+  readonly first: ProviderVariantSource;
+  readonly rest: ProviderVariantSource[];
+}
+
+type MergeSlot = Readonly<{ kind: 'row'; row: ModelOption }> | ProviderVariantGroup;
+
+/**
+ * Collapses same-bare-id rows of a provider-dependent tool into one row per
+ * model, keeping each group at its most-recent member's position. Unprefixed
+ * ids never join a group.
+ */
+function mergeProviderVariants(
+  models: readonly ModelOption[],
+  ctx: ProviderMergeContext,
+): ModelOption[] {
+  const groups = new Map<string, ProviderVariantGroup>();
+  const slots: MergeSlot[] = [];
+  for (const row of models) {
+    const prefix = modelProviderPrefix(row.id);
+    if (prefix === undefined) {
+      slots.push({ kind: 'row', row });
+      continue;
+    }
+    const bareId = modelBareId(row.id);
+    const existing = groups.get(bareId);
+    if (existing !== undefined) {
+      existing.rest.push({ row, prefix });
+      continue;
+    }
+    const slot: ProviderVariantGroup = { kind: 'group', first: { row, prefix }, rest: [] };
+    groups.set(bareId, slot);
+    slots.push(slot);
+  }
+  return slots.map((slot) =>
+    slot.kind === 'row' ? slot.row : mergeGroupRows(slot.first, slot.rest, ctx),
+  );
+}
+
+/** True when the row is, or one of its provider variants is, the given full id. */
+export function modelRowMatchesId(row: ModelOption, fullId: string): boolean {
+  if (row.id === fullId) return true;
+  return row.variants?.some((variant) => variant.fullId === fullId) ?? false;
+}
 
 function mergeModelOptions(custom: ModelOption[], known: ModelOption[]): ModelOption[] {
   const byId = new Map<string, ModelOption>();
@@ -30,16 +245,22 @@ function toModelOption(entry: ReturnType<typeof resolveModelCatalog>[number]): M
   return {
     id: entry.id,
     isDefault: entry.isDefault,
-    isDetected: entry.isDetected,
+    isDetected: entry.membership === 'confirmed',
+    membership: entry.membership,
+    ...(entry.isStale ? { isStale: true } : {}),
     contextLength: entry.contextLength,
     releaseDate: entry.releaseDate,
   };
 }
 
-function resolveAndSort(providerId: string, cache: ModelCacheAccessor = NULL_CACHE): ModelOption[] {
+function resolveAndSort(
+  providerId: string,
+  cache: ModelCacheAccessor = NULL_CACHE,
+  role?: 'planner' | 'implementer',
+): ModelOption[] {
   const seen = new Set<string>();
   const models: ModelOption[] = [];
-  for (const entry of resolveModelCatalog(providerId, cache)) {
+  for (const entry of resolveModelCatalog(providerId, { cache, role })) {
     if (seen.has(entry.id)) continue;
     seen.add(entry.id);
     models.push(toModelOption(entry));
@@ -51,7 +272,7 @@ export function modelsForPlannerTool(
   toolId: string,
   cache: ModelCacheAccessor = NULL_CACHE,
 ): ModelOption[] {
-  return resolveAndSort(toolId, cache);
+  return resolveAndSort(toolId, cache, 'planner');
 }
 
 export function modelsForImplementerProvider(
@@ -60,17 +281,22 @@ export function modelsForImplementerProvider(
   cache: ModelCacheAccessor = NULL_CACHE,
 ): ModelOption[] {
   if (providerKind === 'shell' || providerKind === 'agent') return [];
-  return resolveAndSort(providerId, cache);
+  return resolveAndSort(providerId, cache, 'implementer');
 }
 
 export function buildRightModels(params: {
   isPlanner: boolean;
-  customModels: string[];
+  role?: 'planner' | 'implementer';
+  customModels: readonly string[];
   currentItem: PickerOption | undefined;
   cache?: ModelCacheAccessor;
+  persistedModel?: string | undefined;
+  providerAuthFacts?: readonly CliProviderAuthFact[] | undefined;
 }): ModelOption[] {
   if (!params.currentItem) {
-    return params.customModels.map((id) => ({ id, isCustom: true }));
+    return params.customModels.map(
+      (id): ModelOption => ({ id, isCustom: true, membership: 'custom' }),
+    );
   }
 
   const capability = params.currentItem.modelCapability;
@@ -81,17 +307,25 @@ export function buildRightModels(params: {
   const cache = params.cache ?? NULL_CACHE;
   const knownModels = capability.showsDiscovered
     ? params.isPlanner
-      ? modelsForPlannerTool(params.currentItem.id, cache)
-      : modelsForImplementerProvider(params.currentItem.id, params.currentItem.kind, cache)
+      ? resolveAndSort(params.currentItem.id, cache, params.role ?? 'planner')
+      : resolveAndSort(params.currentItem.id, cache, params.role ?? 'implementer')
     : [];
-  const customOptions = capability.allowsCustom
+  const customOptions: ModelOption[] = capability.allowsCustom
     ? params.customModels
         .filter((id) => !isAutomaticModel(id))
-        .map((id) => ({ id, isCustom: true }))
+        .map((id): ModelOption => ({ id, isCustom: true, membership: 'custom' }))
     : [];
 
   const merged = mergeModelOptions(customOptions, knownModels);
-  return capability.allowsAutomatic ? [AUTOMATIC_MODEL_OPTION, ...merged] : merged;
+  const rows =
+    params.currentItem.providerDependent === true
+      ? mergeProviderVariants(merged, {
+          persistedModel: params.persistedModel,
+          customModels: params.customModels,
+          authFacts: params.providerAuthFacts,
+        })
+      : merged;
+  return capability.allowsAutomatic ? [AUTOMATIC_MODEL_OPTION, ...rows] : rows;
 }
 
 export function isCurrentConfig(
@@ -101,5 +335,8 @@ export function isCurrentConfig(
 ): boolean {
   const runnerConfig =
     role === 'planner' ? config.planner : resolveImplementerProfiles(config).defaultProfile.config;
+  if (item.kind === 'custom-command') {
+    return runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent';
+  }
   return item.id === getRunnerDisplayName(runnerConfig);
 }

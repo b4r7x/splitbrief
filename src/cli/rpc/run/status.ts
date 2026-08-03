@@ -1,10 +1,19 @@
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { BriefReviewPromptKind } from '../../../core/schemas/brief-review-command.js';
+import {
+  BriefReviewPromptKindSchema,
+  type BriefReviewPromptKind,
+} from '../../../core/schemas/brief-review-command.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { QueueHandler } from '../../../engine/orchestrator/types.js';
+import { error } from '../../../utils/error.js';
 import { isRecord } from '../../../utils/type-guards.js';
-import type { ApprovalGatePrompt, BriefReviewDraftSaveResult } from '../gates.js';
+import {
+  isArtifactApprovalStatus,
+  type ApprovalGatePrompt,
+  type ArtifactApprovalStatus,
+  type BriefReviewDraftSaveResult,
+} from '../gates.js';
 import type { createApprovalGate, createGate } from '../gates.js';
 import { rpcError } from '../errors.js';
 import type { createResponseWriter } from '../writer.js';
@@ -14,17 +23,21 @@ type MessageGate = ReturnType<typeof createGate<string>>;
 type RecoveryGate = ReturnType<typeof createGate<string>>;
 type ResponseWriter = ReturnType<typeof createResponseWriter>;
 
+const rpcStatusError = {
+  invalidArtifactApproval: () =>
+    error('rpc-artifact-approval-invalid', 'Artifact approval payload is invalid.'),
+  artifactApprovalUndeliverable: () =>
+    error('rpc-artifact-approval-undeliverable', 'Artifact approval could not be delivered.'),
+} as const;
+
 export function pendingQueueDepth(state: WorkflowState | null): number {
   return state?.messageQueue.filter(isQueuedMessagePendingDelivery).length ?? 0;
 }
 
 export function approvalTypeFromStatus(data: unknown): BriefReviewPromptKind | undefined {
   if (!isRecord(data)) return undefined;
-  const approvalType = data.approvalType;
-  if (approvalType === 'spec' || approvalType === 'plan' || approvalType === 'briefs') {
-    return approvalType;
-  }
-  return undefined;
+  const parsed = BriefReviewPromptKindSchema.safeParse(data.approvalType);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function approvalFilePathFromStatus(data: unknown): string | undefined {
@@ -32,11 +45,44 @@ export function approvalFilePathFromStatus(data: unknown): string | undefined {
   return typeof data.filePath === 'string' ? data.filePath : undefined;
 }
 
+function artifactApprovalStatusFromStatus(data: unknown): ArtifactApprovalStatus | undefined {
+  return isArtifactApprovalStatus(data) ? data : undefined;
+}
+
+function artifactApprovalStatusFromPrompt(
+  prompt: ApprovalGatePrompt | null,
+): ArtifactApprovalStatus | null {
+  if (prompt?.approvalType !== 'artifact' || prompt.artifactReview === undefined) return null;
+  const status: ArtifactApprovalStatus = {
+    pending: 'approval',
+    approvalType: 'artifact',
+    review: prompt.artifactReview,
+  };
+  return isArtifactApprovalStatus(status) ? status : null;
+}
+
+function approvalPromptStatus(prompt: ApprovalGatePrompt | null): object | null {
+  if (prompt === null) return null;
+  return {
+    promptId: prompt.promptId,
+    ...(prompt.approvalType !== undefined && { approvalType: prompt.approvalType }),
+    allowedCommands: prompt.allowedCommands,
+  };
+}
+
 export function withApprovalPromptStatus(
   data: unknown,
   prompt: ApprovalGatePrompt | null,
 ): unknown {
   if (!isRecord(data) || prompt === null) return data;
+  const artifactStatus = artifactApprovalStatusFromPrompt(prompt);
+  if (artifactStatus !== null) {
+    return {
+      ...artifactStatus,
+      promptId: prompt.promptId,
+      allowedCommands: prompt.allowedCommands,
+    };
+  }
   return {
     ...data,
     promptId: prompt.promptId,
@@ -73,29 +119,52 @@ export function createRpcStatusProjection(deps: RpcStatusProjectionDeps) {
   const writeStatus = () => {
     const state = deps.readCurrentState();
     const approvalPrompt = deps.approvalGate.pendingPrompt();
-    deps.writer.status({
+    const artifactStatus = artifactApprovalStatusFromPrompt(approvalPrompt);
+    const artifactPromptStatus =
+      artifactStatus === null || approvalPrompt === null
+        ? null
+        : {
+            ...artifactStatus,
+            promptId: approvalPrompt.promptId,
+            allowedCommands: approvalPrompt.allowedCommands,
+          };
+    const delivered = deps.writer.status({
       sessionId: deps.getActiveSessionId() ?? null,
       phase: state?.phase ?? deps.getCurrentPhase(),
       state,
       queueDepth: pendingQueueDepth(state),
       queueReady: deps.getQueueHandler() !== null,
       pending: pendingGateType(deps.approvalGate, deps.messageGate, deps.recoveryGate),
-      approvalPrompt,
+      approvalPrompt: approvalPromptStatus(approvalPrompt),
       aborted: deps.transportAborted(),
+      ...(artifactPromptStatus !== null && artifactPromptStatus),
     });
+    if (artifactPromptStatus !== null && !delivered) {
+      deps.approvalGate.reject(rpcStatusError.artifactApprovalUndeliverable());
+    }
   };
 
   const waitForApproval = async (data: unknown) => {
     if (deps.isRpcClosed()) throw rpcError.transportClosed();
     const approvalType = approvalTypeFromStatus(data);
+    const artifactStatus = artifactApprovalStatusFromStatus(data);
+    if (approvalType === 'artifact' && artifactStatus === undefined) {
+      throw rpcStatusError.invalidArtifactApproval();
+    }
     const filePath = approvalFilePathFromStatus(data);
     const pending = deps.approvalGate.wait({
       approvalType,
+      ...(artifactStatus !== undefined && { artifactReview: artifactStatus.review }),
       ...(approvalType === 'briefs' && filePath !== undefined
         ? { onSaveDraft: () => deps.saveBriefDraft(filePath) }
         : {}),
     });
-    deps.writer.status(withApprovalPromptStatus(data, deps.approvalGate.pendingPrompt()));
+    const delivered = deps.writer.status(
+      withApprovalPromptStatus(data, deps.approvalGate.pendingPrompt()),
+    );
+    if (artifactStatus !== undefined && !delivered) {
+      deps.approvalGate.reject(rpcStatusError.artifactApprovalUndeliverable());
+    }
     return pending;
   };
 

@@ -58,6 +58,7 @@ describe('SkillsPicker', () => {
       { timeout: 5000 },
     );
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => expect([...skillsStore.get().selected]).toEqual(['skill-7']), {
       timeout: 5000,
@@ -148,7 +149,7 @@ describe('SkillsPicker', () => {
     skillsStore.setAvailable([skill('alpha', 'project')]);
 
     const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('alpha-filter');
     await tick(20);
@@ -213,10 +214,10 @@ describe('SkillsPicker', () => {
     skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
 
     const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(SPACE);
     await tick(20);
 
@@ -231,10 +232,10 @@ describe('SkillsPicker', () => {
     skillsStore.setAvailable([skill('alpha'), skill('bravo')]);
 
     const ui = renderFeature(<SkillsPicker />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('a');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(SPACE);
     await tick(20);
 

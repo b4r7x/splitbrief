@@ -35,10 +35,10 @@ function exampleConfigFiles(): string[] {
   return readdirSync(EXAMPLE_CONFIG_ROOT).filter((file) => file.endsWith('.yaml'));
 }
 
-function withProject<T>(fn: (projectDir: string) => T): T {
+async function withProject<T>(fn: (projectDir: string) => T | Promise<T>): Promise<T> {
   const dir = createTempDir('shipped-config');
   try {
-    return fn(dir);
+    return await fn(dir);
   } finally {
     cleanupTempDir(dir);
   }
@@ -75,7 +75,7 @@ describe('committed eval fixture configs', () => {
 describe('committed example configs', () => {
   const files = exampleConfigFiles();
 
-  function loadExample(file: string): Config {
+  async function loadExample(file: string): Promise<Config> {
     const text = readFileSync(join(EXAMPLE_CONFIG_ROOT, file), 'utf-8');
     return withProject((projectDir) => {
       writeConfigYamlText(projectDir, text);
@@ -89,13 +89,15 @@ describe('committed example configs', () => {
     expect(files.length).toBeGreaterThan(0);
   });
 
-  it.each(files)('loads %s through the real loader', (file) => {
-    expect(loadExample(file).version).toBe(3);
+  it.each(files)('loads %s through the real loader', async (file) => {
+    expect((await loadExample(file)).version).toBe(3);
   });
 
-  it('covers both CLI model spellings the loader must accept', () => {
-    const cliPlannerModels = files
-      .map((file) => loadExample(file).planner)
+  it('covers both CLI model spellings the loader must accept', async () => {
+    const configs: Config[] = [];
+    for (const file of files) configs.push(await loadExample(file));
+    const cliPlannerModels = configs
+      .map((config) => config.planner)
       .flatMap((planner) => (planner.kind === 'cli' ? [planner.model] : []))
       .filter((model): model is string => model !== undefined);
 
@@ -105,17 +107,17 @@ describe('committed example configs', () => {
 });
 
 describe('the product writes what the product reads', () => {
-  it('loads back exactly what initConfig writes', () => {
-    withProject((projectDir) => {
-      initConfig(projectDir);
+  it('loads back exactly what initConfig writes', async () => {
+    await withProject(async (projectDir) => {
+      await initConfig(projectDir);
       const result = loadConfig(projectDir);
       expect(result.warnings).toEqual([]);
       expect(result.config).toStrictEqual(createDefaultConfig());
     });
   });
 
-  it('loads back exactly what writeConfig writes for the default config', () => {
-    withProject((projectDir) => {
+  it('loads back exactly what writeConfig writes for the default config', async () => {
+    await withProject((projectDir) => {
       writeConfig(projectDir, createDefaultConfig());
       expect(loadConfig(projectDir).config).toStrictEqual(createDefaultConfig());
     });
@@ -127,9 +129,13 @@ describe('the test config factory tracks the product writer', () => {
     expect(makeConfig().planner).toStrictEqual(createDefaultConfig().planner);
   });
 
-  it('leaves the auth channel unset so tests see the runtime resolution production sees', () => {
+  it('uses the selected Claude Code session channel while preserving unset channels in fixtures', () => {
     const cliImplementer = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer;
-    expect(Object.hasOwn(makeConfig().planner, 'authChannel')).toBe(false);
+    expect(makeConfig().planner).toMatchObject({
+      kind: 'cli',
+      tool: 'claude-code',
+      authChannel: 'session',
+    });
     expect(Object.hasOwn(cliImplementer, 'authChannel')).toBe(false);
   });
 });

@@ -11,6 +11,8 @@ import {
 import { projectRecoveryIssueForTranscriptPolicy } from '../../engine/events/public-json.js';
 import { userEditConflictSchema } from '../../engine/events/schema.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { isArtifactApprovalStatus } from './gates.js';
+import { RPC_MAX_FRAME_BYTES } from './types.js';
 import type { RpcResponse } from './types.js';
 
 export interface RpcErrorOptions {
@@ -38,8 +40,8 @@ export function createResponseWriter(deps: {
     deps.onClose('output stream closed');
   });
 
-  function write(response: RpcResponse): void {
-    if (broken) return;
+  function write(response: RpcResponse): boolean {
+    if (broken) return false;
     try {
       const protectedResponse = protectConsumerPayload({ context: 'rpc', payload: response });
       const output = protectedResponse.oversized
@@ -48,10 +50,57 @@ export function createResponseWriter(deps: {
             error: `omitted oversized ${response.type} response exceeding ${protectedResponse.maxBytes} bytes`,
           }
         : protectedResponse.payload;
-      deps.stream.write(`${JSON.stringify(output)}\n`);
+      const serialized = JSON.stringify(output);
+      if (serialized === undefined) return false;
+      return writeSerialized(serialized);
     } catch {
       broken = true;
       deps.onClose('output stream write failed');
+      return false;
+    }
+  }
+
+  function writeSerialized(serialized: string): boolean {
+    if (broken) return false;
+    try {
+      deps.stream.write(`${serialized}\n`);
+      return true;
+    } catch {
+      broken = true;
+      deps.onClose('output stream write failed');
+      return false;
+    }
+  }
+
+  function writeArtifactApprovalStatus(data: unknown, persistTranscript: boolean): boolean {
+    if (!isArtifactApprovalStatus(data)) return false;
+    try {
+      const { review, ...status } = data;
+      const protectedResponse = protectConsumerPayload({
+        context: 'rpc',
+        payload: { type: 'status', data: protectStatusData(status, persistTranscript) },
+      });
+      if (
+        protectedResponse.oversized ||
+        !isRecord(protectedResponse.payload) ||
+        protectedResponse.payload.type !== 'status' ||
+        !isRecord(protectedResponse.payload.data)
+      ) {
+        return false;
+      }
+      const serialized = JSON.stringify({
+        type: 'status',
+        data: { ...protectedResponse.payload.data, review },
+      });
+      if (
+        serialized === undefined ||
+        Buffer.byteLength(`${serialized}\n`, 'utf8') > RPC_MAX_FRAME_BYTES
+      ) {
+        return false;
+      }
+      return writeSerialized(serialized);
+    } catch {
+      return false;
     }
   }
 
@@ -67,8 +116,13 @@ export function createResponseWriter(deps: {
         ...(options.data !== undefined && { data: protectStatusData(options.data, persist) }),
       });
     },
-    status(data: unknown): void {
-      write({ type: 'status', data: protectStatusData(data, persistTranscript()) });
+    status(data: unknown): boolean {
+      const persist = persistTranscript();
+      if (isArtifactApprovalStatus(data)) {
+        return writeArtifactApprovalStatus(data, persist);
+      }
+      if (isRecord(data) && data.approvalType === 'artifact') return false;
+      return write({ type: 'status', data: protectStatusData(data, persist) });
     },
     event(engineEvent: EngineEvent): void {
       const protectedEvent = protectEngineEventForConsumer(engineEvent, {

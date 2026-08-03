@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { buildPromptCallbacks } from './prompt-callbacks.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ARTIFACT_REVIEW_HINT, buildPromptCallbacks } from './prompt-callbacks.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import {
@@ -11,6 +11,7 @@ import { taskId } from '../../core/schemas/task.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { markInterruptResumed } from '../../stores/workflow/actions/resume.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { reviewStore } from '../../stores/workflow/review.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
   const queue = Array.isArray(answers) ? [...answers] : [answers];
@@ -71,6 +72,10 @@ function makeReviewRequest(): TaskReviewRequest {
 }
 
 describe('buildPromptCallbacks onApprovalNeeded', () => {
+  afterEach(() => {
+    reviewStore.reset();
+  });
+
   it('uses the brief review hint for brief approvals', async () => {
     const setReviewMode = vi
       .fn<UseInputModeResult['setReviewMode']>()
@@ -100,6 +105,34 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
     await callbacks.onApprovalNeeded(type, '/tmp/review.md');
 
     expect(setReviewMode).toHaveBeenCalledWith(REVIEW_HINT);
+  });
+
+  it('uses the frozen artifact text without retaining its display label as a path', async () => {
+    const review = Object.freeze({
+      label: 'Custom planner artifact',
+      text: 'finalized artifact text',
+    });
+    const setReviewMode = vi
+      .fn<UseInputModeResult['setReviewMode']>()
+      .mockImplementation(async (hint) => {
+        expect(hint).toBe(ARTIFACT_REVIEW_HINT);
+        expect(reviewStore.get()).toMatchObject({
+          source: { kind: 'artifact', text: review.text },
+          filePath: null,
+        });
+        return { approved: true };
+      });
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode(''),
+      setReviewMode,
+    });
+
+    await expect(callbacks.onApprovalNeeded('artifact', review)).resolves.toEqual({
+      approved: true,
+    });
+
+    expect(setReviewMode).toHaveBeenCalledWith(ARTIFACT_REVIEW_HINT);
+    expect(reviewStore.get().source).toBeNull();
   });
 });
 

@@ -2,6 +2,9 @@ import { InvalidArgumentError, type Command } from 'commander';
 import { OutputFormatSchema } from '../core/schemas/enums.js';
 import { cliError } from './errors.js';
 
+export const ALLOW_REPO_RUNNERS_HELP =
+  'Grant repo-local legacy runners and configured custom commands in headless use';
+
 function collectOption(value: string, previous: string[] | undefined): string[] {
   return [...(previous ?? []), value];
 }
@@ -126,9 +129,10 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Planner effort hint: low, medium, high, xhigh. Dropped on unsupported backends.',
     )
     .option('--allow-hooks', 'Trust hook config without prompting (use in CI)', false)
+    .option('--allow-repo-runners', ALLOW_REPO_RUNNERS_HELP, false)
     .option(
-      '--allow-repo-runners',
-      'Trust repo-local shell/agent runner commands from project config',
+      '--allow-unverified-auth',
+      'Allow headless start when compatible CLI authentication is unverified',
       false,
     )
     .option('--json', 'Headless mode: emit public NDJSON records to stdout, skip TUI render', false)

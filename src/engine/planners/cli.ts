@@ -5,6 +5,7 @@ import { matches } from '../../utils/error.js';
 
 const isPathEscape = matches('path-confined-escape');
 import type { Config } from '../../core/schemas/config.js';
+import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { Planner, PlannerCallbacks, PlannerFactoryOptions } from './types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
@@ -38,7 +39,7 @@ import {
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
-import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.js';
 import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
@@ -158,13 +159,15 @@ export function createCliPlanner(
     };
 
     try {
-      let executable: Awaited<ReturnType<typeof resolveCliExecutable>>;
+      let executable: CliExecutableIdentity;
       try {
-        executable = await resolveCliExecutable(
-          command,
-          projectDir,
-          assertCliStartGate(plannerCfg.tool, trustedCli),
-        );
+        executable = (
+          await resolveCliExecutableAliases({
+            commands: adapter.descriptor.executableAliases,
+            projectDir,
+            trust: assertCliStartGate(plannerCfg.tool, trustedCli),
+          })
+        ).executable;
       } catch (err) {
         if (isCliExecutableUnavailable(err)) {
           throw processError.notFound(command, notFoundMessage);
@@ -314,7 +317,9 @@ export function createCliPlanner(
     hintSuccessMode: 'files',
     readPhaseOutput: readCliPhaseOutput,
 
-    ...createCommandAvailability(command, { timeout: baseAdapter.probe.version.timeoutMs }),
+    ...createCommandAvailability(baseAdapter.descriptor.executableAliases, {
+      timeout: baseAdapter.probe.version.timeoutMs,
+    }),
 
     capabilities: { ...ONE_SHOT_API_CAPS, supportsSessionResume, supportsEffort },
   });

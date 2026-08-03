@@ -97,7 +97,7 @@ function keyInfoWarnings(role: string, info: KeyInfo): string[] {
   const warnings: string[] = [];
   if (info.inConfig && info.envVar && info.envRecommended) {
     warnings.push(
-      `API key found in ${role} config. For better security, set ${info.envVar} environment variable and remove apiKey from config.`,
+      `Inline API key in ${role} config. Migrate it: export ${info.envVar} in your shell, then remove the apiKey entry from .splitbrief/config.yaml.`,
     );
   }
   if (info.key && info.provider && isInlineApiKey(info.key)) {

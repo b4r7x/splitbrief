@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -7,7 +7,6 @@ import type { Session } from '../../core/schemas/session.js';
 import type { CostBreakdown, Summary } from '../../core/schemas/summary.js';
 import { taskId } from '../../core/schemas/task.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { glyph } from '../../lib/glyphs.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -427,6 +426,7 @@ describe('SummaryScreen', () => {
     showSummaryRoute({ summary: makeSummary() });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    await flushEffects();
     ui.stdin.write('\r');
     await tick(20);
 
@@ -440,6 +440,7 @@ describe('SummaryScreen', () => {
     overlayStore.open('command-palette');
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    await flushEffects();
     ui.stdin.write('\r');
     await tick(20);
 
@@ -499,13 +500,16 @@ describe('SummaryScreen', () => {
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
+    const routeLines = frame.split('\n').filter((line) => line.includes('OpenAI Codex CLI'));
 
     expect(frame).toContain('SPLITBRIEF');
     expect(frame).toContain('failed');
-    expect(frame).toContain(`Codex ${glyph('connectorHandoff')} Codex`);
+    expect(routeLines.length).toBeGreaterThan(0);
+    expect(routeLines.some((line) => line.includes('…'))).toBe(true);
     const continueCount = frame.split('Press enter to continue').length - 1;
     expect(continueCount).toBe(1);
     expect(maxLineLength(frame)).toBeLessThanOrEqual(48);
+    expect(frame.split('\n').length).toBeLessThanOrEqual(28);
 
     ui.unmount();
   });
@@ -563,9 +567,11 @@ describe('SummaryScreen', () => {
     const frames: string[] = [];
     for (let page = 0; page < 20; page++) {
       frames.push(ui.lastFrame() ?? '');
+      await flushEffects();
       ui.stdin.write(PAGE_DOWN);
       await tick(20);
     }
+    await flushEffects();
     ui.stdin.write(END);
     await tick(20);
     frames.push(ui.lastFrame() ?? '');
@@ -600,7 +606,7 @@ describe('SummaryScreen', () => {
     });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(HOME);
     await tick(20);
@@ -611,10 +617,12 @@ describe('SummaryScreen', () => {
       for (const id of visibleTaskIds(ui.lastFrame() ?? '')) {
         seen.add(id);
       }
+      await flushEffects();
       ui.stdin.write(PAGE_DOWN);
       await tick(20);
     }
 
+    await flushEffects();
     ui.stdin.write(END);
     await tick(20);
     for (const id of visibleTaskIds(ui.lastFrame() ?? '')) {

@@ -133,6 +133,27 @@ describe('ReviewView', () => {
     });
   });
 
+  it('renders a custom planner artifact from its in-memory text without a path title', async () => {
+    const reviewedText = '# Finalized artifact\n\nThis exact text was approved.';
+    reviewStore.setReviewArtifact(reviewedText);
+
+    ui = renderFeature(<ReviewView height={10} width={80} />);
+
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui?.lastFrame() ?? '');
+      expect(frame).toContain('Custom planner artifact');
+      expect(frame).toContain('Finalized artifact');
+      expect(frame).toContain('This exact text was approved.');
+    });
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).not.toContain('.custom-runner-review');
+    expect(reviewStore.get()).toMatchObject({
+      source: { kind: 'artifact', text: reviewedText },
+      filePath: null,
+    });
+  });
+
   it('redacts review markdown display without changing the raw file', async () => {
     const rawToken = 'abcdefghijklmnopqrstuvwxyz1234567890abcdef';
     const file = openReviewFile(

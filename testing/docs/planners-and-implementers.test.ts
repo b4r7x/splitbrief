@@ -149,32 +149,34 @@ describe('canonical CLI runner matrix docs', () => {
     expect(readiness).toContain('deriveCliReadiness()');
   });
 
-  it('records OMIT blocked verdicts without support rows', () => {
+  it('records Cursor and Antigravity as non-admitted candidates without support rows', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('OMIT');
     expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
 
     const support = admittedSupportSection();
     const omit = omitSection();
 
-    for (const candidate of ['cursor', 'antigravity'] as const) {
-      expect(support).not.toMatch(new RegExp(`\\| \`${candidate}\` \\|`));
-      expect(omit).toContain(`| \`${candidate}\` |`);
-      expect(omit).toContain('OMIT');
-      expect(omit).toContain('2026-07-31');
-    }
+    expect(support).not.toMatch(/\| `cursor` \|/);
+    expect(omit).toContain('| `cursor` |');
+    expect(omit).toContain('| `antigravity` |');
+    expect(omit).toContain('OMIT');
+    expect(omit).toContain('2026-08-02');
+    expect(omit).toContain('2026-07-31');
+    expect(omit).toContain('R7-008');
+    expect(omit).toContain('fresh filtered workspace');
+    expect(omit).toContain('Candidate runtime adapter sources must remain absent');
 
-    expect(omit).toContain('.nuke/release-evidence/cursor.json');
     expect(omit).toContain('.nuke/release-evidence/antigravity.json');
     expect(omit).toContain('conditional consumer route replacing legacy Gemini CLI');
-    expect(DOC).toContain('CURSOR_CLI_ADMISSION_VERDICT');
     expect(DOC).toContain('ANTIGRAVITY_CLI_ADMISSION_VERDICT');
+    expect(DOC).toContain('CURSOR_CLI_ADMISSION_VERDICT');
   });
 
   it('records excluded candidate verdict wording without support rows', () => {
     const support = admittedSupportSection();
     const excluded = excludedSection();
 
-    for (const id of EXCLUDED_CLI_TOOL_IDS) {
+    for (const id of EXCLUDED_CLI_TOOL_IDS.filter((id) => id !== 'antigravity')) {
       expect(support).not.toMatch(new RegExp(`\\| \`${id}\` \\|`));
       expect(excluded).toContain(`| \`${id}\` |`);
     }

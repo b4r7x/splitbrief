@@ -1,8 +1,10 @@
 import { Writable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
 import type { EngineEvent } from '../../engine/events/types.js';
+import { PLANNER_ARTIFACT_MAX_BYTES } from '../../engine/runners/types.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { taskId } from '../../core/schemas/task.js';
+import { RPC_MAX_FRAME_BYTES } from './types.js';
 import { createResponseWriter } from './writer.js';
 
 function createCaptureStream(): { chunks: string[]; stream: Writable } {
@@ -61,6 +63,54 @@ describe('createResponseWriter', () => {
     expect(parseJsonLines(chunks)).toEqual([
       { type: 'status', data: { message: 'line one\nline two' } },
     ]);
+  });
+
+  it('writes at-limit immutable artifact text unchanged in one RPC status frame', () => {
+    const { chunks, stream } = createCaptureStream();
+    const writer = createResponseWriter({
+      stream,
+      onClose: () => {},
+      getPersistTranscript: () => false,
+    });
+    const text = '\u0000'.repeat(PLANNER_ARTIFACT_MAX_BYTES);
+
+    expect(
+      writer.status({
+        pending: 'approval',
+        approvalType: 'artifact',
+        review: { label: 'Custom planner artifact', text },
+      }),
+    ).toBe(true);
+
+    expect(chunks).toHaveLength(1);
+    expect(Buffer.byteLength(chunks[0] ?? '', 'utf8')).toBeLessThanOrEqual(RPC_MAX_FRAME_BYTES);
+    expect(parseJsonLines(chunks)).toEqual([
+      {
+        type: 'status',
+        data: {
+          pending: 'approval',
+          approvalType: 'artifact',
+          review: { label: 'Custom planner artifact', text },
+        },
+      },
+    ]);
+  });
+
+  it('fails closed without writing an oversized artifact review status', () => {
+    const { chunks, stream } = createCaptureStream();
+    const writer = createResponseWriter({ stream, onClose: () => {} });
+
+    expect(
+      writer.status({
+        pending: 'approval',
+        approvalType: 'artifact',
+        review: {
+          label: 'Custom planner artifact',
+          text: 'artifact-rpc-over-limit-91743'.padEnd(PLANNER_ARTIFACT_MAX_BYTES + 1, 'x'),
+        },
+      }),
+    ).toBe(false);
+    expect(chunks).toEqual([]);
   });
 
   it('protects live event responses with the RPC transcript policy', () => {

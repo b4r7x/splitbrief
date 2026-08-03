@@ -10,7 +10,20 @@ export function configForProfile(
   config: WorkflowContext['config'],
   profile: ResolvedImplementerProfile,
 ): WorkflowContext['config'] {
-  return { ...config, implementer: profile.config };
+  const profiles = config.implementerProfiles;
+
+  if (profiles === undefined) {
+    return { ...config, implementer: profile.config };
+  }
+
+  return {
+    ...config,
+    implementer: profile.config,
+    implementerProfiles: {
+      ...profiles,
+      default: profile.name,
+    },
+  };
 }
 
 export function selectedProfileFromDecision(

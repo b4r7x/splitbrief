@@ -65,7 +65,7 @@ export async function ensureGitAndConfig(projectDir: string): Promise<void> {
 
   if (!existsSync(configPath(projectDir))) {
     console.error(NO_CONFIG_MSG);
-    initConfig(projectDir);
+    await initConfig(projectDir);
   }
 }
 
@@ -99,7 +99,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   if (!existsSync(configPath(projectDir))) {
     if (hasOverrides) {
       console.log(NO_CONFIG_MSG);
-      initConfig(projectDir);
+      await initConfig(projectDir);
     } else {
       return { projectDir, useFullscreen, useMouse, useHover, needsSetup: true };
     }

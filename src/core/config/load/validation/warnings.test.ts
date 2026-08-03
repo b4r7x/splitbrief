@@ -11,6 +11,7 @@ beforeEach(() => {
     'OPENROUTER_API_KEY',
     'DEEPSEEK_API_KEY',
     'OLLAMA_API_KEY',
+    'OLLAMA_LOCAL_API_KEY',
   ]) {
     savedEnv[key] = process.env[key];
     delete process.env[key];
@@ -53,6 +54,25 @@ describe('securityWarnings', () => {
     );
   });
 
+  it('names the migration path in the inline-key warning', () => {
+    const config: Config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'anthropic',
+        model: 'm',
+        apiKey: 'sk-ant-test',
+        apiBase: 'https://api.anthropic.com',
+      },
+    });
+
+    const warning = securityWarnings(config).find(
+      (w) => w.includes('Inline API key') && w.includes('planner'),
+    );
+
+    expect(warning).toContain('export ANTHROPIC_API_KEY');
+    expect(warning).toContain('remove the apiKey entry');
+  });
+
   it('does not warn when API keys only come from env vars', () => {
     process.env['ANTHROPIC_API_KEY'] = 'sk-ant-env-key';
     const config: Config = makeConfig({
@@ -64,9 +84,7 @@ describe('securityWarnings', () => {
       },
     });
 
-    expect(
-      securityWarnings(config).filter((w) => w.includes('found in') && w.includes('config')),
-    ).toEqual([]);
+    expect(securityWarnings(config).filter((w) => w.includes('Inline API key'))).toEqual([]);
   });
 
   it('does not recommend env keys for known providers using custom apiBase', () => {
@@ -115,13 +133,14 @@ describe('securityWarnings', () => {
     );
   });
 
-  it('does not warn about key formats for providers without format hints', () => {
+  it('does not warn about a permitted local Ollama credential reference without a format hint', () => {
+    process.env['OLLAMA_LOCAL_API_KEY'] = 'local-daemon-key';
     const config: Config = makeConfig({
       implementer: {
         kind: 'api',
         provider: 'ollama',
         model: 'llama3',
-        apiKey: 'any-key',
+        apiKey: 'env:OLLAMA_LOCAL_API_KEY',
         apiBase: 'http://localhost:11434/v1',
       },
     });

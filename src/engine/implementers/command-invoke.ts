@@ -5,7 +5,18 @@ import type { RunnerCallContext } from '../calls/types.js';
 import type { ChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
 import { createCommandExistsAvailability } from '../availability.js';
-import { invokeCommandBasedRunner } from '../runners/command-based.js';
+import { createChangeDetector } from '../change-detection.js';
+import {
+  customRunnerSecurityPosture,
+  type ConfiguredCustomRunner,
+} from '../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
+import { customRunnerAdmissionError } from '../runners/trust.js';
+import type { CustomRunnerRuntimePort } from '../runners/types.js';
+import {
+  invokeCommandBasedRunner,
+  invokeCustomCommandBasedRunner,
+} from '../runners/command-based.js';
 
 export interface CommandBasedImplementerOpts {
   initialCommand: string;
@@ -66,5 +77,75 @@ export function createCommandBasedImplementer(
     ...(opts.detectChanges && { detectChanges: opts.detectChanges }),
     ...(opts.shouldThrow && { shouldThrow: opts.shouldThrow }),
     ...createCommandExistsAvailability(opts.initialCommand),
+  });
+}
+
+export interface ConfiguredCustomImplementerOptions {
+  readonly runner: ConfiguredCustomRunner;
+  readonly runtime: CustomRunnerRuntimePort;
+  readonly factoryOptions?: ImplementerFactoryOptions | undefined;
+}
+
+/**
+ * Adapts an already-configured custom implementer to the common implementer
+ * pipeline. Admission, executable identity, and child environment authority
+ * remain in the custom-runner boundary; this adapter only selects the correct
+ * project stage for the configured command contract.
+ */
+export function createConfiguredCustomImplementer({
+  runner,
+  runtime,
+  factoryOptions,
+}: ConfiguredCustomImplementerOptions): Implementer {
+  const extractsCode = runner.command.contract === 'output';
+
+  return createImplementerBase({
+    extractsCode,
+    backendKind: extractsCode ? 'shell' : 'agent',
+    publisher: factoryOptions?.publisher,
+
+    async invoke(invokeOpts: InvokeOpts) {
+      const admission = await prepareCustomRunnerAdmission({
+        ...runtime.admission,
+        projectDir: runtime.authorizationProjectDir,
+        runner,
+        posture: customRunnerSecurityPosture('implementer', runner.command.contract),
+        phase: 'implementing',
+        taskId: invokeOpts.task.id,
+        authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+        authorizationPathExt: runtime.authorizationPathExt ?? '',
+      });
+      if (admission.kind !== 'admitted') {
+        throw customRunnerAdmissionError.denied('implementer');
+      }
+
+      const invokeAdmittedRunner = (cwd: string) =>
+        invokeCustomCommandBasedRunner({
+          admission: admission.invocation,
+          prompt: invokeOpts.prompt,
+          authorizationProjectDir: runtime.authorizationProjectDir,
+          authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+          authorizationPathExt: runtime.authorizationPathExt ?? '',
+          cwd,
+          sourceEnv: runtime.sourceEnv,
+          onOutput: invokeOpts.onOutput,
+          onCallEvent: invokeOpts.onCallEvent,
+          callContext: invokeOpts.callContext,
+          signal: invokeOpts.signal,
+        });
+
+      if (!extractsCode) return invokeAdmittedRunner(invokeOpts.projectDir);
+
+      const stage = await runtime.createStage(invokeOpts.projectDir, 'implementer');
+      try {
+        return await invokeAdmittedRunner(stage.projectDir);
+      } finally {
+        stage.cleanup();
+      }
+    },
+
+    ...(!extractsCode && {
+      detectChanges: createChangeDetector('Configured custom implementer'),
+    }),
   });
 }

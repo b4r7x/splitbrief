@@ -329,7 +329,7 @@ describe('conversation rows projection cache', () => {
           sequence: 1,
           activityId: 'activity-1',
           role: 'planner',
-          runnerName: 'claude',
+          runnerName: 'claude-code',
           model: 'sonnet',
           label: 'started command',
         }),
@@ -337,7 +337,7 @@ describe('conversation rows projection cache', () => {
           sequence: 2,
           activityId: 'activity-2',
           role: 'planner',
-          runnerName: 'claude',
+          runnerName: 'claude-code',
           model: 'sonnet',
           label: 'finished command',
           target: 'npm run build',
@@ -346,8 +346,8 @@ describe('conversation rows projection cache', () => {
     });
 
     expect(implementer.rows.map(rowText).join('\n')).toContain('Implementer activity');
-    expect(implementer.rows.map(rowText).join('\n')).toContain('[Codex · xhigh]');
+    expect(implementer.rows.map(rowText).join('\n')).toContain('[OpenAI Codex CLI · xhigh]');
     expect(planner.rows.map(rowText).join('\n')).toContain('Plan activity');
-    expect(planner.rows.map(rowText).join('\n')).toContain('[claude · sonnet]');
+    expect(planner.rows.map(rowText).join('\n')).toContain('[Claude Code CLI · sonnet]');
   });
 });

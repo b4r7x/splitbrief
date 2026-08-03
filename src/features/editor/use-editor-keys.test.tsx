@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { approvalPromptStore } from '../../stores/approval-prompt/prompt.js';
@@ -42,7 +42,7 @@ describe('useEditorKeys field surface stands down under overlays/prompts', () =>
     openFieldSession();
     const ui = renderFeature(<FieldHost />);
     unmount = ui.unmount;
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('a');
     await tick();
@@ -56,7 +56,7 @@ describe('useEditorKeys field surface stands down under overlays/prompts', () =>
     overlayStore.open('command-palette');
     const ui = renderFeature(<FieldHost />);
     unmount = ui.unmount;
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('a');
     await tick();
@@ -75,7 +75,7 @@ describe('useEditorKeys field surface stands down under overlays/prompts', () =>
     });
     const ui = renderFeature(<FieldHost />);
     unmount = ui.unmount;
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('a');
     await tick();
@@ -93,7 +93,7 @@ describe('useEditorKeys field surface stands down under overlays/prompts', () =>
     });
     const ui = renderFeature(<FieldHost />);
     unmount = ui.unmount;
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('a');
     await tick();

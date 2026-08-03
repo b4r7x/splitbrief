@@ -1,17 +1,23 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
 import {
+  configPath,
   createDefaultConfig,
   initConfig,
   loadConfig,
+  readConfigDocument,
+  transactConfigDocument,
+  transactConfigDocumentForTest,
   writeConfig,
   writeConfigDocument,
 } from './io.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import { confinedAtomicWriteFileForTest } from '../../../lib/confined-fs.js';
 
 const TMP = join(import.meta.dirname, '.tmp-config-io-safety');
 
@@ -26,24 +32,24 @@ afterAll(() => {
 
 describe('config load safety', () => {
   describe('loadConfig', () => {
-    itUnix('rejects initConfig when .splitbrief is a symlink', () => {
+    itUnix('rejects initConfig when .splitbrief is a symlink', async () => {
       const dir = createTempDir('config-symlink-init');
       const outside = createTempDir('config-symlink-init-outside');
       try {
         mkdirSync(join(outside, 'nested'), { recursive: true });
         symlinkSync(outside, join(dir, SPLITBRIEF_DIR));
 
-        expect(() => initConfig(dir)).toThrow(/unsafe path|symlink/);
+        await expect(initConfig(dir)).rejects.toThrow(/unsafe path|symlink/);
       } finally {
         cleanupTempDir(outside);
         cleanupTempDir(dir);
       }
     });
 
-    it('gitignores both the splitbrief dir and the worktree dir so neither leaks into git-status change detection', () => {
+    it('gitignores both the splitbrief dir and the worktree dir so neither leaks into git-status change detection', async () => {
       const dir = createTempDir('config-init-gitignore');
       try {
-        initConfig(dir);
+        await initConfig(dir);
 
         const ignored = readFileSync(join(dir, '.gitignore'), 'utf-8')
           .split('\n')
@@ -314,5 +320,158 @@ describe('config load safety', () => {
       expect(thrownMessage).toContain('Malformed YAML');
       expect(thrownMessage).not.toMatch(/path.*\..*\./);
     });
+  });
+});
+
+describe('config document transaction safety', () => {
+  it('represents a missing config only with the explicit absence revision and empty document', () => {
+    const dir = createTempDir('config-missing-snapshot');
+    try {
+      const snapshot = readConfigDocument(dir);
+
+      expect(snapshot.revision).toBeNull();
+      expect(snapshot.rawBytes).toHaveLength(0);
+      expect(snapshot.rawYaml).toBe('');
+      expect(snapshot.document.contents).toBeNull();
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('binds the revision hash and identity to the exact bytes from one opened file', () => {
+    const dir = createTempDir('config-coherent-read');
+    try {
+      writeConfig(dir, createDefaultConfig());
+      const snapshot = readConfigDocument(dir);
+
+      expect(snapshot.revision).not.toBeNull();
+      expect(Buffer.from(snapshot.rawBytes).toString('utf8')).toBe(snapshot.rawYaml);
+      expect(snapshot.document.toString()).toBe(snapshot.rawYaml);
+      expect(snapshot.revision?.rawSha256).toBe(
+        createHash('sha256').update(snapshot.rawBytes).digest('hex'),
+      );
+      expect(snapshot.revision?.fileIdentity.size).toBe(BigInt(snapshot.rawBytes.byteLength));
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('rejects invalid edits before replacing the config target', async () => {
+    const dir = createTempDir('config-invalid-transaction');
+    try {
+      writeConfig(dir, createDefaultConfig());
+      const before = readConfigDocument(dir);
+
+      await expect(
+        transactConfigDocument(dir, before.revision, [{ path: ['version'], value: 2 }]),
+      ).rejects.toThrow(/Unsupported config version/);
+      expect(readFileSync(configPath(dir), 'utf8')).toBe(before.rawYaml);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('returns conflict and preserves external bytes changed after the read', async () => {
+    const dir = createTempDir('config-transaction-conflict');
+    try {
+      writeConfig(dir, createDefaultConfig());
+      const before = readConfigDocument(dir);
+      const external = before.rawYaml.replace('max_retries: 3', 'max_retries: 8');
+      writeFileSync(configPath(dir), external);
+
+      const result = await transactConfigDocument(dir, before.revision, [
+        { path: ['theme'], value: 'mono' },
+      ]);
+
+      expect(result).toMatchObject({ kind: 'conflict' });
+      expect(readFileSync(configPath(dir), 'utf8')).toBe(external);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('reloads and validates the visible intended bytes after durability uncertainty', async () => {
+    const dir = createTempDir('config-transaction-uncertain');
+    try {
+      writeConfig(dir, createDefaultConfig());
+      const before = readConfigDocument(dir);
+      const result = await transactConfigDocumentForTest(
+        dir,
+        before.revision,
+        [{ path: ['theme'], value: 'mono' }],
+        (path, bytes, options) =>
+          confinedAtomicWriteFileForTest(path, bytes, options, {
+            fsync: async (handle, target) => {
+              if (target === 'directory')
+                throw Object.assign(new Error('sync failed'), { code: 'EIO' });
+              await handle.sync();
+            },
+          }),
+      );
+
+      expect(result).toMatchObject({ kind: 'durability-uncertain' });
+      expect(loadConfig(dir).config.theme).toBe('mono');
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('reports uncertainty from the valid bytes actually visible after a post-rename race', async () => {
+    const dir = createTempDir('config-transaction-uncertain-different');
+    try {
+      writeConfig(dir, createDefaultConfig());
+      const before = readConfigDocument(dir);
+      const result = await transactConfigDocumentForTest(
+        dir,
+        before.revision,
+        [{ path: ['theme'], value: 'mono' }],
+        (path, bytes, options) =>
+          confinedAtomicWriteFileForTest(path, bytes, options, {
+            fsync: async (handle, target) => {
+              if (target === 'directory') {
+                writeFileSync(
+                  path,
+                  Buffer.from(bytes).toString('utf8').replace('theme: mono', 'theme: terminal'),
+                );
+                throw Object.assign(new Error('sync failed'), { code: 'EIO' });
+              }
+              await handle.sync();
+            },
+          }),
+      );
+
+      expect(result).toMatchObject({ kind: 'durability-uncertain' });
+      expect(loadConfig(dir).config.theme).toBe('terminal');
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('fails closed when post-rename uncertainty reveals invalid actual bytes', async () => {
+    const dir = createTempDir('config-transaction-uncertain-invalid');
+    try {
+      writeConfig(dir, createDefaultConfig());
+      const before = readConfigDocument(dir);
+
+      await expect(
+        transactConfigDocumentForTest(
+          dir,
+          before.revision,
+          [{ path: ['theme'], value: 'mono' }],
+          (path, bytes, options) =>
+            confinedAtomicWriteFileForTest(path, bytes, options, {
+              fsync: async (handle, target) => {
+                if (target === 'directory') {
+                  writeFileSync(path, 'version: [');
+                  throw Object.assign(new Error('sync failed'), { code: 'EIO' });
+                }
+                await handle.sync();
+              },
+            }),
+        ),
+      ).rejects.toThrow(/Malformed YAML/);
+    } finally {
+      cleanupTempDir(dir);
+    }
   });
 });

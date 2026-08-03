@@ -12,6 +12,7 @@ import { CodebaseConfigSchema } from './codebase.js';
 import { HooksConfigSchema } from './hooks.js';
 import { OtelConfigSchema } from './otel.js';
 import { CompactionFormatSchema } from './compaction.js';
+import { CustomCommandsConfigSchema } from '../config/custom-commands.js';
 
 const PaletteCustomActionSchema = z.object({
   id: z.string().min(1),
@@ -91,6 +92,7 @@ export const CONFIG_VERSION = 3;
 
 export const ConfigSchema = z.object({
   version: z.literal(CONFIG_VERSION),
+  customCommands: CustomCommandsConfigSchema.optional(),
   planner: PlannerConfigSchema,
   implementer: ImplementerConfigSchema,
   implementerProfiles: ImplementerProfilesConfigSchema.optional(),

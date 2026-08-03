@@ -1,16 +1,16 @@
 import type { Config } from '../../schemas/config.js';
-import { defaultApprovalConfig } from '../../schemas/config.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { RewindTarget } from '../../state/build-rewind-action.js';
 import type { OverlayType } from '../../navigation/types.js';
 import type { SessionRef } from '../../types/session-ref.js';
 import type {
+  DiscoveryRefreshSummary,
   RuntimeCommandContext,
+  RuntimeConfigSaveResult,
   ExportSessionResult,
   QueueClearCommandResult,
 } from './types.js';
 
-type ConfigSaveResult = { ok: true } | { ok: false; errorMessage?: string | undefined };
 type CommandRewindRequest = Extract<RewindTarget, { target: 'spec' | 'plan' }>;
 type HandoffTargetArg = Parameters<RuntimeCommandContext['writeHandoff']>[0];
 type ApprovalScope = 'session' | 'always' | 'all';
@@ -19,7 +19,7 @@ interface CommandContextFactoryOptions {
   isAttached?: boolean;
   projectDir: () => string;
   getConfig: () => Config | null;
-  saveConfig: (config: Config) => ConfigSaveResult;
+  saveConfig: (config: Config) => Promise<RuntimeConfigSaveResult>;
   getApprovalEnabled?: (() => boolean) | undefined;
   setApprovalEnabled?: ((enabled: boolean) => void) | undefined;
   getSessionId: (command: string) => string | null | undefined;
@@ -31,7 +31,7 @@ interface CommandContextFactoryOptions {
   quit: () => void;
   setFeedbackMessage: (message: string) => void;
   setFeedbackError: (message: string) => void;
-  refreshDetection: () => Promise<void>;
+  refreshDetection: () => Promise<DiscoveryRefreshSummary>;
   refreshProjectFiles: RuntimeCommandContext['refreshProjectFiles'];
   getCurrentPhase: () => Phase;
   requestRewind: (request: CommandRewindRequest) => boolean;
@@ -89,12 +89,16 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     if (!sessionId) throw opts.noActiveSession(command);
     return sessionId;
   };
-  const updateConfig = (update: (config: Config) => Config): boolean => {
+  const updateConfig = async (
+    update: (config: Config) => Config,
+  ): Promise<RuntimeConfigSaveResult> => {
     const config = opts.getConfig();
-    if (!config) return false;
-    const result = opts.saveConfig(update(config));
-    if (!result.ok && result.errorMessage) opts.setFeedbackError(result.errorMessage);
-    return result.ok;
+    if (!config) return { kind: 'failure', ok: false };
+    const result = await opts.saveConfig(update(config));
+    if (result.kind !== 'saved' && result.errorMessage) {
+      opts.setFeedbackError(result.errorMessage);
+    }
+    return result;
   };
 
   return {
@@ -143,14 +147,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
         ? opts.getApprovalEnabled()
         : opts.getConfig()?.approval?.enabled !== false,
     setApprovalEnabled: (enabled) => {
-      if (opts.setApprovalEnabled) {
-        opts.setApprovalEnabled(enabled);
-        return;
-      }
-      updateConfig((current) => {
-        const approval = current.approval ?? defaultApprovalConfig();
-        return { ...current, approval: { ...approval, enabled } };
-      });
+      opts.setApprovalEnabled?.(enabled);
     },
     acceptRunSnapshot: () =>
       opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/accept-run')),

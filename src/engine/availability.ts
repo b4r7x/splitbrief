@@ -34,15 +34,17 @@ function parseVersion(raw: string): string | null {
   return m ? `${m[1]}.${m[2]}.${m[3]}` : null;
 }
 
-export function parseMajorVersion(version: string): number | null {
-  const m = version.match(/(\d+)/);
-  return m ? Number(m[1]) : null;
-}
-
 interface ProbeResult {
   available: boolean;
   version: string | null;
   reason: string | null;
+}
+
+type CommandCandidates = string | readonly string[] | undefined;
+
+function normalizeCommandCandidates(commands: CommandCandidates): readonly string[] {
+  if (commands === undefined) return [];
+  return typeof commands === 'string' ? [commands] : commands;
 }
 
 async function probeCommand(
@@ -71,11 +73,34 @@ async function probeCommand(
   }
 }
 
+async function probeCommandCandidates(
+  commands: readonly string[],
+  opts?: { timeout?: number | undefined },
+): Promise<ProbeResult> {
+  let lastResult: ProbeResult | undefined;
+
+  for (const command of commands) {
+    const result = await probeCommand(command, opts);
+    if (result.available || result.reason !== 'not installed') return result;
+    lastResult = result;
+  }
+
+  return lastResult ?? { available: false, version: null, reason: 'no command configured' };
+}
+
+async function commandCandidatesResolve(commands: readonly string[]): Promise<boolean> {
+  for (const command of commands) {
+    if (await commandResolves(command)) return true;
+  }
+  return false;
+}
+
 export function createCommandAvailability(
-  command: string | undefined,
+  commands: CommandCandidates,
   opts?: { timeout?: number | undefined },
 ) {
-  if (!command) {
+  const candidates = normalizeCommandCandidates(commands);
+  if (candidates.length === 0) {
     return {
       isAvailable: async (): Promise<boolean> => false,
       getVersion: async (): Promise<string | null> => null,
@@ -85,7 +110,7 @@ export function createCommandAvailability(
   let cached: Promise<ProbeResult> | undefined;
   let lastReason: string | undefined;
   const probe = () =>
-    (cached ??= probeCommand(command, opts).then((result) => {
+    (cached ??= probeCommandCandidates(candidates, opts).then((result) => {
       lastReason = result.reason ?? undefined;
       return result;
     }));
@@ -96,15 +121,16 @@ export function createCommandAvailability(
   };
 }
 
-export function createCommandExistsAvailability(command: string | undefined) {
-  if (!command) {
+export function createCommandExistsAvailability(commands: CommandCandidates) {
+  const candidates = normalizeCommandCandidates(commands);
+  if (candidates.length === 0) {
     return {
       isAvailable: async (): Promise<boolean> => false,
       getVersion: async (): Promise<string | null> => null,
     };
   }
   let cached: Promise<boolean> | undefined;
-  const probe = () => (cached ??= commandResolves(command));
+  const probe = () => (cached ??= commandCandidatesResolve(candidates));
   return {
     isAvailable: () => probe(),
     getVersion: async (): Promise<string | null> => null,

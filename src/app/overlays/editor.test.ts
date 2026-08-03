@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { SPEC_FILE } from '../../core/paths.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import type { EditorLayout } from '../../core/editor/editor-state.js';
@@ -76,7 +76,7 @@ describe('raw editor overlay CAS write-gate', () => {
     expect(reviewStore.get().ownerToken).not.toBe(captured);
 
     const { stdin } = renderOverlay();
-    await tick(20);
+    await flushEffects();
     stdin.write(CTRL_S);
     await tick(20);
 
@@ -99,7 +99,7 @@ describe('raw editor overlay CAS write-gate', () => {
     overlayStore.open('editor');
 
     const { stdin } = renderOverlay();
-    await tick(20);
+    await flushEffects();
     stdin.write(CTRL_S);
     await tick(20);
 
@@ -125,7 +125,7 @@ describe('raw editor overlay Ctrl+O external escape hatch', () => {
     overlayStore.open('editor');
 
     const { stdin } = renderOverlay();
-    await tick(20);
+    await flushEffects();
     stdin.write(CTRL_O);
     await tick(20);
 
@@ -157,7 +157,7 @@ describe('raw editor overlay Ctrl+O external escape hatch', () => {
     expect(reviewStore.get().ownerToken).not.toBe(captured);
 
     const { stdin } = renderOverlay();
-    await tick(20);
+    await flushEffects();
     stdin.write(CTRL_O);
     await tick(20);
 

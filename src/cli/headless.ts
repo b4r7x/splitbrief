@@ -135,7 +135,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       _implementer,
       trustedCliGates,
       callbacks: {
-        onApprovalNeeded: async () => ({ approved: true }),
+        onApprovalNeeded: async (_type, _input) => ({ approved: true }),
         onQuestionAsked: async () => '',
         onComplete: () => undefined,
       },

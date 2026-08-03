@@ -144,6 +144,7 @@ describe('RecentSessionsList', () => {
 
     const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
 
+    await flushEffects();
     ui.stdin.write(ARROW_UP);
     await flushEffects();
 
@@ -217,6 +218,7 @@ describe('RecentSessionsList', () => {
     await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
+    await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
 
@@ -233,6 +235,7 @@ describe('RecentSessionsList', () => {
     await flushEffects();
 
     ui.stdin.write('char');
+    await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
 
@@ -281,6 +284,7 @@ describe('RecentSessionsList', () => {
       await flushEffects();
 
       ui.stdin.write('y');
+      await flushEffects();
       ui.stdin.write(ENTER);
       await vi.waitFor(
         () => {
@@ -307,6 +311,7 @@ describe('RecentSessionsList', () => {
       await flushEffects();
 
       ui.stdin.write('y');
+      await flushEffects();
       ui.stdin.write(ESC);
       await vi.waitFor(
         () => {
@@ -370,6 +375,7 @@ describe('RecentSessionsList', () => {
     await flushEffects();
 
     ui.stdin.write(KITTY_SUPER_Y);
+    await flushEffects();
     ui.stdin.write(KITTY_HYPER_Y);
     await flushEffects();
 
@@ -388,6 +394,7 @@ describe('RecentSessionsList', () => {
 
     const before = lineIndexContaining(ui.lastFrame() ?? '', FOCUS_BAR);
 
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
     await flushEffects();
     ui.stdin.write(ENTER);

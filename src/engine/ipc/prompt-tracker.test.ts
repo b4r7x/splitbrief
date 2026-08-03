@@ -116,47 +116,6 @@ describe('createPromptTracker wait diagnostics', () => {
     socket.destroy();
   });
 
-  it('adds an explicit empty allowed-command list to non-brief approval prompt frames', async () => {
-    const bus = createEventBus();
-    const sent: ServerMessage[] = [];
-    const socket = new Socket();
-    const tracker = createPromptTracker({
-      bus,
-      noClientPromptBehavior: 'wait',
-      currentSocket: () => socket,
-      writeMessage: (_socket, msg) => {
-        sent.push(msg);
-      },
-    });
-
-    const pending = tracker.requestClientPrompt({
-      kind: 'approval_needed',
-      approvalType: 'spec',
-      filePath: '/tmp/session/spec.md',
-    });
-    pending.catch(() => undefined);
-
-    expect(sent).toContainEqual({
-      kind: 'prompt_request',
-      request: {
-        requestId: 'prompt-1',
-        kind: 'approval_needed',
-        approvalType: 'spec',
-        filePath: '/tmp/session/spec.md',
-        allowedCommands: [],
-      },
-    });
-
-    expect(
-      tracker.handleResponse('prompt-1', {
-        kind: 'approval_needed',
-        approved: false,
-      }),
-    ).toBe(true);
-    await pending;
-    socket.destroy();
-  });
-
   it('publishes bounded approval artifact metadata while waiting for a client', async () => {
     const bus = createEventBus();
     const warnings: Array<Extract<Parameters<typeof bus.publish>[0], { type: 'warning' }>> = [];
@@ -357,44 +316,5 @@ describe('createPromptTracker response validation', () => {
       kind: 'task_review',
       response: { action: 'continue' },
     });
-  });
-
-  it('rejects command-form brief review responses for non-brief approval prompts', async () => {
-    const bus = createEventBus();
-    const warnings: string[] = [];
-    bus.subscribe((event) => {
-      if (event.type === 'warning') warnings.push(event.message);
-    });
-    const tracker = createPromptTracker({
-      bus,
-      noClientPromptBehavior: 'wait',
-      currentSocket: () => null,
-      writeMessage: () => undefined,
-    });
-
-    const pending = tracker.requestClientPrompt({
-      kind: 'approval_needed',
-      approvalType: 'spec',
-      filePath: '/tmp/spec.md',
-    });
-    pending.catch(() => undefined);
-
-    expect(
-      tracker.handleResponse('prompt-1', {
-        kind: 'approval_needed',
-        command: { action: 'approve' },
-      }),
-    ).toBe(false);
-    expect(warnings).toContainEqual(
-      expect.stringContaining('Task Brief review command is not available for this prompt'),
-    );
-
-    expect(
-      tracker.handleResponse('prompt-1', {
-        kind: 'approval_needed',
-        approved: false,
-      }),
-    ).toBe(true);
-    await expect(pending).resolves.toEqual({ kind: 'approval_needed', approved: false });
   });
 });

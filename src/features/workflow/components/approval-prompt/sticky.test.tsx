@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
-import { tick } from '#testing/helpers/ink.js';
+import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { ApprovalPrompt, PROMPT_ZONE_Z } from '../approval-prompt.js';
 import {
@@ -65,6 +65,7 @@ describe('ApprovalPrompt sticky tier', () => {
     expect(frame).not.toContain('\u0000');
     expect(frame.split('\n')).toHaveLength(getApprovalPromptRows(approvalPromptStore.get(), 34));
 
+    await flushEffects();
     ui.stdin.write(ESC);
     await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
     ui.unmount();
@@ -73,7 +74,7 @@ describe('ApprovalPrompt sticky tier', () => {
   it('ignores a keystroke that lands inside the typeahead grace window, honours it after', async () => {
     const ui = render(<ApprovalPrompt />);
     const decision = openApprovalPrompt(makeStickyRequest('write outside scope'));
-    await tick(1);
+    await flushEffects();
 
     ui.stdin.write('a');
     await tick(1);
@@ -86,6 +87,7 @@ describe('ApprovalPrompt sticky tier', () => {
     expect(ui.lastFrame() ?? '').toContain('Approve once');
 
     await tick(PAST_GRACE);
+    await flushEffects();
     ui.stdin.write('a');
     await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'once' });
     ui.unmount();
@@ -97,6 +99,7 @@ describe('ApprovalPrompt sticky tier', () => {
     overlayStore.open('settings');
     await tick(PAST_GRACE);
 
+    await flushEffects();
     ui.stdin.write('a');
     await tick(1);
     let settled = false;
@@ -107,7 +110,7 @@ describe('ApprovalPrompt sticky tier', () => {
     expect(settled).toBe(false);
 
     overlayStore.close();
-    await tick(1);
+    await flushEffects();
     ui.stdin.write('a');
     await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'once' });
     ui.unmount();
@@ -225,6 +228,7 @@ describe('short-viewport clamp clips registered sticky zones', () => {
     expect(hitTopmostZone(centerX, boxTop + 5)?.id).toBe('approval-option-a');
     expect(hitTopmostZone(centerX, boxTop + 8)).toBeUndefined();
 
+    await flushEffects();
     ui.stdin.write(ESC);
     await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
     ui.unmount();

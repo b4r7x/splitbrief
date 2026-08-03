@@ -4,6 +4,7 @@ import { EFFORT_LEVELS, WORKFLOW_MODES } from '../../schemas/enums.js';
 import {
   COPY_TARGETS,
   SCROLL_COMMAND_TARGETS,
+  formatDiscoveryRefreshFeedback,
   formatCopyResult,
   type CopyTarget,
   type RuntimeCommandDef,
@@ -106,7 +107,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       label: 'mode',
       description: `Select workflow mode ${glyph('connectorHandoff')}`,
       validScreens: ALL_SCREENS,
-      handler: (args) => {
+      handler: async (args) => {
         if (!args) {
           ctx.openOverlay('mode-selector');
           return;
@@ -116,7 +117,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           ctx.setFeedbackError(`Invalid mode: ${mode}. Valid modes: ${WORKFLOW_MODES.join(', ')}`);
           return;
         }
-        if (ctx.setWorkflowMode(mode)) {
+        if ((await ctx.setWorkflowMode(mode)).kind === 'saved') {
           ctx.setFeedbackMessage(`Workflow mode set to: ${mode}`);
         }
       },
@@ -144,7 +145,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       label: 'effort',
       description: `Set planner effort: ${EFFORT_LEVELS.join(' | ')}`,
       validScreens: ALL_SCREENS,
-      handler: (args) => {
+      handler: async (args) => {
         const value = args?.trim().toLowerCase();
         if (!value) {
           ctx.setFeedbackError(`Usage: /effort <${EFFORT_LEVELS.join('|')}>`);
@@ -154,7 +155,7 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
           ctx.setFeedbackError(`Invalid effort: ${value}. Valid: ${EFFORT_LEVELS.join(', ')}`);
           return;
         }
-        if (ctx.setPlannerEffort(value)) {
+        if ((await ctx.setPlannerEffort(value)).kind === 'saved') {
           ctx.setFeedbackMessage(`Planner effort set to: ${value}`);
         }
       },
@@ -248,8 +249,13 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
         ctx.setFeedbackMessage('Refreshing tool detection…');
         ctx.refreshProjectFiles();
         try {
-          await ctx.refreshDetection();
-          ctx.setFeedbackMessage('Tool detection refreshed');
+          const summary = await ctx.refreshDetection();
+          const feedback = formatDiscoveryRefreshFeedback({
+            subject: 'Tool detection',
+            summary,
+          });
+          if (feedback.isError) ctx.setFeedbackError(feedback.message);
+          else ctx.setFeedbackMessage(feedback.message);
         } catch (err) {
           ctx.setFeedbackError(toErrorMessage(err));
         }

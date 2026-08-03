@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { createDefaultConfig, initConfig, loadConfig } from './io.js';
@@ -88,10 +88,10 @@ describe('config defaults', () => {
       expect(workflow.git?.commitStrategy).toBe('none');
     });
 
-    it('does not serialize removed workflow fields when writing a new config', () => {
+    it('does not serialize removed workflow fields when writing a new config', async () => {
       const dir = join(TMP, 'default-no-removed-workflow-fields');
       mkdirSync(dir, { recursive: true });
-      initConfig(dir);
+      await initConfig(dir);
 
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
@@ -104,10 +104,10 @@ describe('config defaults', () => {
       expect((workflow.git as Record<string, unknown>).commit_strategy).toBe('none');
     });
 
-    it('serializes the default API identity and loads it unchanged', () => {
+    it('serializes the default API identity and loads it unchanged', async () => {
       const dir = join(TMP, 'default-api-identity');
       mkdirSync(dir, { recursive: true });
-      initConfig(dir);
+      await initConfig(dir);
 
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
@@ -117,6 +117,44 @@ describe('config defaults', () => {
         service: 'ollama',
         offering: 'local',
       });
+      expect(loadConfig(dir).config).toEqual(createDefaultConfig());
+    });
+
+    it('persists the Claude subscription session channel in a new default config', async () => {
+      const dir = join(TMP, 'default-claude-session-channel');
+      mkdirSync(dir, { recursive: true });
+      await initConfig(dir);
+
+      const written = YAML.parse(
+        readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
+      ) as Record<string, unknown>;
+      expect(written.planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        auth_channel: 'session',
+      });
+      expect(loadConfig(dir).config.planner).toEqual({
+        kind: 'cli',
+        tool: 'claude-code',
+        authChannel: 'session',
+      });
+    });
+
+    it('creates a missing config, preserves an existing config, and force-resets it', async () => {
+      const dir = join(TMP, 'init-first-save-and-force');
+      const file = join(dir, SPLITBRIEF_DIR, 'config.yaml');
+      mkdirSync(dir, { recursive: true });
+
+      expect(existsSync(file)).toBe(false);
+      await initConfig(dir);
+      expect(loadConfig(dir).config).toEqual(createDefaultConfig());
+
+      const existing = 'version: 3\ntheme: mono\n';
+      writeFileSync(file, existing);
+      await initConfig(dir);
+      expect(readFileSync(file, 'utf-8')).toBe(existing);
+
+      await initConfig(dir, { force: true });
       expect(loadConfig(dir).config).toEqual(createDefaultConfig());
     });
 

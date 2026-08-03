@@ -27,6 +27,7 @@ import {
 } from '../../core/schemas/brief-review-command.js';
 import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { IpcRecoveryIssueSchema } from '../../core/schemas/recovery/ipc.js';
+import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { isRecord } from '../../utils/type-guards.js';
 
 const IPC_MAX_AUTH_TOKEN_BYTES = 512;
@@ -44,18 +45,33 @@ const TieredApprovalRequestSchema = z.object({
 const TaskReviewRequestSchema = z.looseObject(taskReviewRequestFields);
 
 const BriefReviewCommandActionSchema = z.enum(BRIEF_REVIEW_COMMAND_ACTIONS);
+const OrdinaryApprovalPromptKindSchema = z.enum(['spec', 'plan', 'briefs']);
+
+const ArtifactApprovalReviewSchema = z.strictObject({
+  label: z.string(),
+  text: z.string().refine((text) => Buffer.byteLength(text, 'utf8') <= PLANNER_ARTIFACT_MAX_BYTES, {
+    message: 'artifact review text exceeds the declared byte limit',
+  }),
+});
 
 const ApprovalNeededPromptRequestSchema = z.object({
   requestId: z.string(),
   kind: z.literal('approval_needed'),
-  approvalType: z.enum(['spec', 'plan', 'briefs']),
+  approvalType: OrdinaryApprovalPromptKindSchema,
   filePath: z.string(),
   allowedCommands: z.array(BriefReviewCommandActionSchema),
+});
+
+const ArtifactReviewPromptRequestSchema = z.strictObject({
+  requestId: z.string(),
+  kind: z.literal('artifact_review'),
+  review: ArtifactApprovalReviewSchema,
 });
 
 const IpcPromptRequestSchema = z
   .discriminatedUnion('kind', [
     ApprovalNeededPromptRequestSchema,
+    ArtifactReviewPromptRequestSchema,
     z.object({
       requestId: z.string(),
       kind: z.literal('user_edit_conflict'),
@@ -140,6 +156,7 @@ type IpcApprovalPromptRequestInput = Omit<
 
 export type IpcPromptRequestInput =
   | IpcApprovalPromptRequestInput
+  | Omit<Extract<IpcPromptRequest, { kind: 'artifact_review' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'user_edit_conflict' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'question_asked' }>, 'requestId'>
   | Omit<Extract<IpcPromptRequest, { kind: 'continuation_needed' }>, 'requestId'>
@@ -154,6 +171,7 @@ type IpcApprovalPromptResponse =
 
 export type IpcPromptResponse =
   | IpcApprovalPromptResponse
+  | { kind: 'artifact_review'; approved: boolean }
   | { kind: 'user_edit_conflict'; selectedAction: UserEditConflictAction }
   | { kind: 'question_asked'; answer: string }
   | { kind: 'continuation_needed'; text: string }
@@ -249,6 +267,10 @@ export function parseIpcPromptResponse(value: unknown): IpcPromptResponse | null
         kind: value.kind,
         approved: false,
       };
+    case 'artifact_review':
+      return hasExactKeys(value, ['kind', 'approved']) && typeof value.approved === 'boolean'
+        ? { kind: value.kind, approved: value.approved }
+        : null;
     case 'user_edit_conflict': {
       const selectedAction = UserEditConflictActionSchema.safeParse(value.selectedAction);
       return selectedAction.success
@@ -301,8 +323,25 @@ export function parseServerMessage(value: unknown): ServerMessage | null {
   return result.success ? result.data : null;
 }
 
+export function artifactReviewPromptFrameBytes(
+  request: Extract<IpcPromptRequest, { kind: 'artifact_review' }>,
+): number {
+  return Buffer.byteLength(JSON.stringify({ kind: 'prompt_request', request }) + '\n', 'utf8');
+}
+
+export function artifactReviewPromptFitsFrame(
+  request: Extract<IpcPromptRequest, { kind: 'artifact_review' }>,
+): boolean {
+  return artifactReviewPromptFrameBytes(request) <= IPC_MAX_FRAME_BYTES;
+}
+
 function isBoundedString(value: unknown, maxBytes: number): value is string {
   return typeof value === 'string' && Buffer.byteLength(value, 'utf8') <= maxBytes;
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actualKeys = Object.keys(value);
+  return actualKeys.length === keys.length && actualKeys.every((key) => keys.includes(key));
 }
 
 function parseTaskIdList(value: unknown) {

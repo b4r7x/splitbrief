@@ -4,18 +4,27 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ADMITTED_API_PROVIDER_IDS,
   API_PROVIDER_CATALOG,
+  API_PROVIDER_DECLARATIONS,
   API_PROVIDER_VERDICT_CANDIDATE_PATHS,
-  EXISTING_API_PROVIDER_IDS,
   FORBIDDEN_API_PROVIDER_IDS,
   IMPLEMENTER_API_PROVIDER_IDS,
   KNOWN_API_PROVIDER_IDS,
   LOCAL_API_PROVIDER_IDS,
+  OLLAMA_CLOUD_API_PROVIDER_CANDIDATE,
   PASS_API_PROVIDER_IDS,
+  PENDING_API_PROVIDER_CANDIDATE_IDS,
   PLANNER_API_PROVIDER_IDS,
   REMOTE_API_PROVIDER_IDS,
   getApiProviderDescriptor,
   isApiProviderId,
 } from './api-provider-catalog.js';
+import {
+  getKnownProviderBaseURL,
+  KNOWN_PROVIDER_BASE_URLS,
+  PROVIDER_CATALOG,
+  resolveDefaultApiBase,
+} from './catalog.js';
+import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 
 const projectRoot = join(import.meta.dirname, '../../..');
 
@@ -28,15 +37,115 @@ afterEach(() => {
 });
 
 describe('API provider catalog', () => {
-  it('assembles exactly existing IDs plus PASS verdict IDs', () => {
-    expect([...ADMITTED_API_PROVIDER_IDS]).toEqual([
-      ...EXISTING_API_PROVIDER_IDS,
-      ...PASS_API_PROVIDER_IDS,
-    ]);
+  it('projects every admitted CLI into the combined provider catalog while keeping Cursor unadmitted', () => {
+    for (const id of CLI_TOOL_IDS) {
+      expect(PROVIDER_CATALOG[id]).toMatchObject({
+        id,
+        displayName: CLI_TOOL_CATALOG[id].displayName,
+        category: 'cli',
+      });
+    }
+    expect(PROVIDER_CATALOG).not.toHaveProperty('cursor');
+    expect(API_PROVIDER_CATALOG).not.toHaveProperty('cursor');
+  });
+
+  it('derives every admitted ID from active canonical declarations', () => {
+    const activeDeclarations = Object.values(API_PROVIDER_DECLARATIONS).filter(
+      (descriptor) => descriptor.admission.state === 'active',
+    );
+
+    expect([...ADMITTED_API_PROVIDER_IDS]).toEqual(activeDeclarations.map(({ id }) => id));
     expect(Object.keys(API_PROVIDER_CATALOG).toSorted()).toEqual(
       [...ADMITTED_API_PROVIDER_IDS].toSorted(),
     );
     expect(KNOWN_API_PROVIDER_IDS).toEqual(ADMITTED_API_PROVIDER_IDS);
+  });
+
+  it('derives active provider views from the canonical declarations', () => {
+    const activeDeclarations = Object.values(API_PROVIDER_DECLARATIONS).filter(
+      (descriptor) => descriptor.admission.state === 'active',
+    );
+
+    expect(Object.keys(API_PROVIDER_CATALOG).toSorted()).toEqual(
+      activeDeclarations.map(({ id }) => id).toSorted(),
+    );
+    expect(Object.keys(KNOWN_PROVIDER_BASE_URLS).toSorted()).toEqual(
+      activeDeclarations.map(({ id }) => id).toSorted(),
+    );
+
+    for (const declaration of activeDeclarations) {
+      const activeDescriptor = Object.values(API_PROVIDER_CATALOG).find(
+        ({ id }) => id === declaration.id,
+      );
+      const providerInfo = Object.values(PROVIDER_CATALOG).find(({ id }) => id === declaration.id);
+
+      expect(activeDescriptor).toBe(declaration);
+      expect(providerInfo).toMatchObject({
+        id: declaration.id,
+        displayName: declaration.displayName,
+        category: declaration.category,
+        locality: declaration.locality,
+      });
+
+      if (declaration.endpointPolicy.kind === 'fixed-origin') {
+        expect(KNOWN_PROVIDER_BASE_URLS[declaration.id]).toBe(declaration.endpointPolicy.baseURL);
+        expect(getKnownProviderBaseURL(declaration.id)).toBe(declaration.endpointPolicy.baseURL);
+        expect(resolveDefaultApiBase(declaration.id)).toBe(declaration.endpointPolicy.baseURL);
+        expect(providerInfo?.baseURL).toBe(declaration.endpointPolicy.baseURL);
+      }
+      if (declaration.endpointPolicy.kind === 'loopback') {
+        expect(KNOWN_PROVIDER_BASE_URLS[declaration.id]).toBe(
+          declaration.endpointPolicy.defaultBaseURL,
+        );
+        expect(getKnownProviderBaseURL(declaration.id)).toBe(
+          declaration.endpointPolicy.defaultBaseURL,
+        );
+        expect(resolveDefaultApiBase(declaration.id)).toBe(
+          declaration.endpointPolicy.defaultBaseURL,
+        );
+        expect(providerInfo?.baseURL).toBe(declaration.endpointPolicy.defaultBaseURL);
+      }
+      expect(providerInfo?.apiKeyEnv).toBe(declaration.credentialEnv ?? undefined);
+      expect(providerInfo?.isLocal).toBe(declaration.locality === 'local' || undefined);
+    }
+  });
+
+  it('activates direct Ollama Cloud only through its declared adapter admission', () => {
+    expect(PENDING_API_PROVIDER_CANDIDATE_IDS).toEqual([]);
+    expect(API_PROVIDER_DECLARATIONS['ollama-cloud']).toBe(OLLAMA_CLOUD_API_PROVIDER_CANDIDATE);
+    expect(OLLAMA_CLOUD_API_PROVIDER_CANDIDATE).toMatchObject({
+      id: 'ollama-cloud',
+      displayName: 'Ollama Cloud',
+      category: 'remote-api',
+      locality: 'remote',
+      endpointPolicy: { kind: 'fixed-origin', baseURL: 'https://ollama.com' },
+      credentialEnv: 'OLLAMA_API_KEY',
+      billing: 'provider-dependent',
+      dataUse: 'provider-routed',
+      authDiscoveryMode: 'api-key-unverified',
+      modelDiscoveryMode: 'account-model-list',
+      admission: { state: 'active' },
+    });
+    expect(API_PROVIDER_DECLARATIONS.ollama).toMatchObject({
+      id: 'ollama',
+      category: 'local-service',
+      locality: 'local',
+      credentialEnv: null,
+      authDiscoveryMode: 'not-required',
+    });
+    expect(OLLAMA_CLOUD_API_PROVIDER_CANDIDATE).not.toBe(API_PROVIDER_DECLARATIONS.ollama);
+    expect(API_PROVIDER_CATALOG['ollama-cloud']).toBe(OLLAMA_CLOUD_API_PROVIDER_CANDIDATE);
+    expect(KNOWN_PROVIDER_BASE_URLS['ollama-cloud']).toBe('https://ollama.com');
+    expect(PROVIDER_CATALOG['ollama-cloud']).toMatchObject({
+      id: 'ollama-cloud',
+      category: 'remote-api',
+      locality: 'remote',
+      apiKeyEnv: 'OLLAMA_API_KEY',
+    });
+
+    vi.stubEnv('OLLAMA_API_KEY', 'present');
+    expect(OLLAMA_CLOUD_API_PROVIDER_CANDIDATE.authDiscoveryMode).toBe('api-key-unverified');
+    expect(API_PROVIDER_DECLARATIONS.ollama.credentialEnv).toBeNull();
   });
 
   it('returns zero forbidden descriptor IDs from the exclusion list', () => {
@@ -74,6 +183,7 @@ describe('API provider catalog', () => {
     );
     expect(LOCAL_API_PROVIDER_IDS).toEqual(['ollama', 'lm-studio']);
     expect(REMOTE_API_PROVIDER_IDS).toEqual([
+      'ollama-cloud',
       'anthropic',
       'openrouter',
       'deepseek',

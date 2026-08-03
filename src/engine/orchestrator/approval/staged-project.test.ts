@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
@@ -152,25 +153,88 @@ describe('createStagedProject', () => {
       cleanupTempDir(dir);
     }
   });
+
+  it('is not an OS sandbox: a staged child can write an absolute outside sentinel', async () => {
+    const projectDir = createTempDir('staged-outside-sentinel-project');
+    const outsideDir = createTempDir('staged-outside-sentinel-target');
+    const sentinelPath = join(outsideDir, 'reachable-from-staged-child');
+    try {
+      createTestGitRepo(projectDir);
+      const staged = await createStagedProject(projectDir);
+      try {
+        execFileSync(
+          process.execPath,
+          [
+            '-e',
+            "require('node:fs').writeFileSync(process.argv[1], 'outside-stage-reachable')",
+            sentinelPath,
+          ],
+          { cwd: staged.projectDir, env: staged.sandboxEnv },
+        );
+
+        expect(readFileSync(sentinelPath, 'utf8')).toBe('outside-stage-reachable');
+        rmSync(sentinelPath);
+        expect(existsSync(sentinelPath)).toBe(false);
+      } finally {
+        staged.cleanup();
+      }
+    } finally {
+      cleanupTempDir(outsideDir);
+      cleanupTempDir(projectDir);
+    }
+  });
 });
 
 describe('createStagedProject — sensitive file exclusion', () => {
-  it('excludes .env files from the staged copy', async () => {
+  it.each([
+    'planner',
+    'implementer',
+  ] as const)('recursively excludes .env* files for the %s stage without excluding boundary names', async (runnerRole) => {
     const dir = createTempDir('staged-env-test');
     try {
       createTestGitRepo(dir);
       mkdirSync(join(dir, 'src'), { recursive: true });
+      mkdirSync(join(dir, 'nested', 'deep'), { recursive: true });
       writeFileSync(join(dir, 'src', 'app.ts'), 'export const app = true;\n');
-      writeFileSync(join(dir, '.env'), 'SECRET=abc\n');
-      writeFileSync(join(dir, '.env.local'), 'LOCAL_SECRET=xyz\n');
-      writeFileSync(join(dir, '.env.production'), 'PROD_SECRET=123\n');
+      const excluded = [
+        '.env',
+        '.env.local',
+        '.env.production',
+        '.envrc',
+        'nested/.env',
+        'nested/.env.local',
+        'nested/deep/.envrc',
+      ];
+      const retained = ['env', 'app.env', 'config.env', 'nested/config.env'];
+      for (const file of excluded) writeFileSync(join(dir, file), 'SECRET=canary\n');
+      for (const file of retained) writeFileSync(join(dir, file), 'public boundary\n');
 
-      const staged = await createStagedProject(dir);
+      const staged = await createStagedProject(
+        dir,
+        makeConfig({
+          implementer: {
+            kind: 'api',
+            provider: 'openai',
+            apiBase: 'https://api.openai.com/v1',
+            model: 'gpt-4',
+          },
+          planner: {
+            kind: 'api',
+            provider: 'anthropic',
+            apiBase: 'https://api.anthropic.com/v1',
+            model: 'claude-sonnet',
+          },
+        }),
+        runnerRole,
+      );
       try {
         expect(existsSync(join(staged.projectDir, 'src', 'app.ts'))).toBe(true);
-        expect(existsSync(join(staged.projectDir, '.env'))).toBe(false);
-        expect(existsSync(join(staged.projectDir, '.env.local'))).toBe(false);
-        expect(existsSync(join(staged.projectDir, '.env.production'))).toBe(false);
+        for (const file of excluded) {
+          expect(existsSync(join(staged.projectDir, file))).toBe(false);
+        }
+        for (const file of retained) {
+          expect(readFileSync(join(staged.projectDir, file), 'utf8')).toBe('public boundary\n');
+        }
       } finally {
         staged.cleanup();
       }

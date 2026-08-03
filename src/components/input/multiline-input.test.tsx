@@ -69,11 +69,13 @@ describe('MultilineInput modifier chords', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:r');
 
+    await flushEffects();
     ui.stdin.write(CTRL_U);
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:');
     expect(ui.lastFrame() ?? '').not.toContain('value:r');
 
+    await flushEffects();
     ui.stdin.write(CTRL_R);
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:');
@@ -89,6 +91,7 @@ describe('MultilineInput modifier chords', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:ab');
 
+    await flushEffects();
     ui.stdin.write(CTRL_SLASH_LEGACY);
     await flushEffects();
 
@@ -106,6 +109,7 @@ describe('MultilineInput modifier chords', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:ab');
 
+    await flushEffects();
     ui.stdin.write(ALT_A);
     await flushEffects();
 
@@ -122,6 +126,7 @@ describe('MultilineInput modifier chords', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:ab');
 
+    await flushEffects();
     ui.stdin.write('\x1B[H');
     await flushEffects();
     ui.stdin.write('\x1B[F');
@@ -166,6 +171,7 @@ describe('MultilineInput keyBinding precedence (composer bindings)', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('value:ab');
 
+    await flushEffects();
     ui.stdin.write(SHIFT_ENTER);
     await flushEffects();
     ui.stdin.write('cd');
@@ -306,6 +312,7 @@ describe('MultilineInput astral-plane editing', () => {
     await flushEffects();
 
     // Left moves to before the emoji; typing inserts ahead of it.
+    await flushEffects();
     ui.stdin.write(LEFT);
     await flushEffects();
     ui.stdin.write('x');

@@ -190,6 +190,32 @@ describe('protectEngineEventForConsumer', () => {
     expect(JSON.stringify(protectedEvent)).not.toContain('native-secret-session-456');
   });
 
+  it('keeps pre-redacted custom runner output free of its original child bytes', () => {
+    const childOutputCanary = 'custom-public-child-output-48152';
+    const event: EngineEvent = {
+      type: 'runner_call_text_delta',
+      ts: 22,
+      phase: 'planning',
+      callId: 'call-1',
+      role: 'planner',
+      backendKind: 'cli',
+      sequence: 4,
+      channel: 'assistant',
+      text: 'helper output: ***REDACTED***',
+    };
+
+    const protectedEvent = protectEngineEventForConsumer(event, {
+      context: 'ipc',
+      persistTranscript: true,
+    });
+
+    expect(protectedEvent).toMatchObject({
+      type: 'runner_call_text_delta',
+      text: 'helper output: ***REDACTED***',
+    });
+    expect(JSON.stringify(protectedEvent)).not.toContain(childOutputCanary);
+  });
+
   it('removes runner warning raw refs and message-derived fingerprints under transcript-off', () => {
     const rawMessage = 'warning contains private prompt detail';
     const rawFingerprint = runnerCallWarningFingerprint({

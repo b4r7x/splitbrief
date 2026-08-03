@@ -1,39 +1,71 @@
 import { fuzzyMatchExtended } from './fuzzy-match.js';
-import type { CommandPaletteItem } from '../../core/runtime/commands/types.js';
+import type {
+  CommandPaletteItem,
+  RuntimeConfigSaveResult,
+} from '../../core/runtime/commands/types.js';
 
 export type PaletteSource = 'command' | 'mode' | 'picker' | 'task' | 'session' | 'custom';
 
-export type PaletteResult = {
+interface PaletteResultBase {
   id: string;
   label: string;
   description: string;
-  source: PaletteSource;
   shortcut: string | null;
   score: number;
   mruRank: number;
-  action: () => void;
+}
+
+type ModePaletteResult = PaletteResultBase & {
+  source: 'mode';
+  action: () => Promise<RuntimeConfigSaveResult>;
+};
+
+type NonModePaletteResult = PaletteResultBase & {
+  source: Exclude<PaletteSource, 'mode'>;
+  action: () => void | Promise<void>;
+};
+
+export type PaletteResult = ModePaletteResult | NonModePaletteResult;
+
+type PaletteCandidateBase = Omit<PaletteResultBase, 'score' | 'mruRank'>;
+type ModePaletteCandidate = PaletteCandidateBase & {
+  source: 'mode';
+  action: () => Promise<RuntimeConfigSaveResult>;
+};
+type NonModePaletteCandidate = PaletteCandidateBase & {
+  source: Exclude<PaletteSource, 'mode'>;
+  action: () => void | Promise<void>;
+};
+type PaletteCandidate = ModePaletteCandidate | NonModePaletteCandidate;
+
+type ModePaletteItem = {
+  label: string;
+  description: string;
+  action: () => Promise<RuntimeConfigSaveResult>;
+};
+
+type NonModePaletteItem = {
+  action: () => void | Promise<void>;
 };
 
 export type PaletteInputs = {
   query: string;
   commandItems: CommandPaletteItem[];
-  modeItems: Array<{ label: string; description: string; action: () => void }>;
-  pickerItems: Array<{ label: string; description: string; action: () => void }>;
-  taskItems: Array<{ id: string; title: string; action: () => void }>;
-  sessionItems: Array<{ id: string; feature: string; status: string; action: () => void }>;
-  customItems: Array<{ id: string; label: string; description: string; action: () => void }>;
+  modeItems: ModePaletteItem[];
+  pickerItems: Array<{ label: string; description: string } & NonModePaletteItem>;
+  taskItems: Array<{ id: string; title: string } & NonModePaletteItem>;
+  sessionItems: Array<{ id: string; feature: string; status: string } & NonModePaletteItem>;
+  customItems: Array<{ id: string; label: string; description: string } & NonModePaletteItem>;
   mruIds: string[];
 };
-
-type Candidate = Omit<PaletteResult, 'score' | 'mruRank'>;
 
 type RankedPaletteResult = {
   result: PaletteResult;
   candidateOrder: number;
 };
 
-function buildCandidates(inputs: PaletteInputs): Candidate[] {
-  const candidates: Candidate[] = [];
+function buildCandidates(inputs: PaletteInputs): PaletteCandidate[] {
+  const candidates: PaletteCandidate[] = [];
 
   for (const item of inputs.commandItems) {
     candidates.push({
@@ -104,6 +136,11 @@ function buildCandidates(inputs: PaletteInputs): Candidate[] {
   return candidates;
 }
 
+function rankCandidate(candidate: PaletteCandidate, score: number, mruRank: number): PaletteResult {
+  if (candidate.source === 'mode') return { ...candidate, score, mruRank };
+  return { ...candidate, score, mruRank };
+}
+
 function getMruRank(mruIds: string[], id: string): number {
   const index = mruIds.indexOf(id);
   return index >= 0 ? index + 1 : 0;
@@ -143,11 +180,7 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
   if (terms === '') {
     return sortPaletteResults(
       candidates.map((c, candidateOrder) => ({
-        result: {
-          ...c,
-          score: 0,
-          mruRank: getMruRank(inputs.mruIds, c.id),
-        },
+        result: rankCandidate(c, 0, getMruRank(inputs.mruIds, c.id)),
         candidateOrder,
       })),
     );
@@ -160,11 +193,7 @@ export function buildPaletteResults(inputs: PaletteInputs): PaletteResult[] {
     const result = fuzzyMatchExtended(terms, target);
     if (result === null) continue;
     scored.push({
-      result: {
-        ...c,
-        score: result.score,
-        mruRank: getMruRank(inputs.mruIds, c.id),
-      },
+      result: rankCandidate(c, result.score, getMruRank(inputs.mruIds, c.id)),
       candidateOrder,
     });
   }

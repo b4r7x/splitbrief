@@ -23,6 +23,50 @@ describe('buildRunnerConfig', () => {
     });
   });
 
+  describe('Claude Code onboarding channel', () => {
+    it('persists the session channel for a newly selected Claude Code runner', () => {
+      const result = buildRunnerConfig('planner', {
+        kind: 'cli',
+        tool: 'claude-code',
+      });
+
+      expect(expectCli(result).authChannel).toBe('session');
+    });
+
+    it('keeps an explicit API-key choice for Claude Code', () => {
+      const existing = {
+        kind: 'cli' as const,
+        tool: 'codex' as const,
+        authChannel: 'api-key' as const,
+      };
+      const selected = buildRunnerConfig('planner', {
+        kind: 'cli',
+        tool: 'claude-code',
+        authChannel: 'api-key',
+        existing,
+      });
+      const rebuilt = buildRunnerConfig('planner', {
+        kind: 'cli',
+        tool: 'claude-code',
+        existing: selected,
+      });
+
+      expect(expectCli(selected).authChannel).toBe('api-key');
+      expect(expectCli(rebuilt).authChannel).toBe('api-key');
+    });
+
+    it('does not add a channel while rebuilding a legacy Claude Code runner', () => {
+      const legacy = { kind: 'cli' as const, tool: 'claude-code' as const, model: 'opus' };
+      const rebuilt = buildRunnerConfig('planner', {
+        kind: 'cli',
+        tool: 'claude-code',
+        existing: legacy,
+      });
+
+      expect(rebuilt).toEqual(legacy);
+    });
+  });
+
   describe('kind inferred from shape', () => {
     it('infers cli from tool in CLI_TOOL_IDS', () => {
       const result = buildRunnerConfig('planner', {
@@ -270,7 +314,7 @@ describe('buildRunnerConfig', () => {
         service: 'ollama',
         offering: 'local' as const,
         apiBase: 'http://localhost:11434/v1',
-        apiKey: 'env:OLLAMA_API_KEY',
+        apiKey: 'env:OLLAMA_LOCAL_API_KEY',
         model: 'old-model',
         contextLength: 8192,
         temperature: 0.3,
@@ -308,6 +352,31 @@ describe('buildRunnerConfig', () => {
       const api = expectApi(result);
       expect(api.contextLength).toBe(8192);
       expect(api.temperature).toBe(0.3);
+    });
+
+    it('admits only the dedicated environment reference when constructing local Ollama', () => {
+      const accepted = buildRunnerConfig('implementer', {
+        kind: 'api',
+        tool: 'ollama',
+        model: 'local-model',
+        apiKey: 'env:OLLAMA_LOCAL_API_KEY',
+      });
+      expect(expectApi(accepted).apiKey).toBe('env:OLLAMA_LOCAL_API_KEY');
+
+      for (const apiKey of [
+        'inline-local-secret',
+        'env:ARBITRARY_LOCAL_KEY',
+        'env:OLLAMA_API_KEY',
+      ]) {
+        expect(() =>
+          buildRunnerConfig('implementer', {
+            kind: 'api',
+            tool: 'ollama',
+            model: 'local-model',
+            apiKey,
+          }),
+        ).toThrow(/OLLAMA_LOCAL_API_KEY/);
+      }
     });
 
     it('carries timeout but resets source customModels across targets', () => {
@@ -515,7 +584,6 @@ describe('buildRunnerConfig', () => {
       };
 
       const result = buildRunnerConfig('implementer', {
-        ...source,
         existing: source,
         tool: 'copilot',
         model: undefined,

@@ -16,24 +16,26 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
 import type {
+  RuntimeConfigSaveResult,
   RuntimeCommandContext,
   RuntimeCommandDef,
 } from '../../core/runtime/commands/types.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
-import { tick } from '#testing/helpers/ink.js';
+import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { glyph } from '../../lib/glyphs.js';
 import { CommandPaletteOverlay } from './palette.js';
 
-function write(instance: ReturnType<typeof render>, chars: string): void {
+async function write(instance: ReturnType<typeof render>, chars: string): Promise<void> {
+  await flushEffects();
   instance.stdin.write(chars);
 }
 
-function setWorkflowModeForTest(mode: WorkflowMode): boolean {
+async function setWorkflowModeForTest(mode: WorkflowMode): Promise<RuntimeConfigSaveResult> {
   const state = configStore.get();
-  if (!state.config) return false;
+  if (!state.config) return { kind: 'failure', ok: false };
   configStore.__testReset({
     ...state,
     config: {
@@ -41,7 +43,7 @@ function setWorkflowModeForTest(mode: WorkflowMode): boolean {
       workflow: { ...state.config.workflow, mode },
     },
   });
-  return true;
+  return { kind: 'saved', ok: true };
 }
 
 function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommandDef[] {
@@ -51,10 +53,18 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
     navigate: (to) => routerStore.navigate({ to }),
     quit: () => {},
     setWorkflowMode: setWorkflowModeForTest,
-    setPlannerEffort: () => true,
+    setPlannerEffort: async () => ({ kind: 'saved', ok: true }),
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
-    refreshDetection: async () => {},
+    refreshDetection: async () => ({
+      status: 'fresh',
+      published: true,
+      lanes: {
+        readiness: { outcome: 'fresh' },
+        modelsDev: { outcome: 'fresh' },
+        cliModels: { outcome: 'fresh' },
+      },
+    }),
     refreshProjectFiles: () => {},
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: () => true,
@@ -213,12 +223,12 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'hel');
+    await write(instance, 'hel');
     await tick(1);
     await tick(1);
 
     expect(promptLine(instance.lastFrame() ?? '')).toContain('hel');
-    write(instance, BACKSPACE);
+    await write(instance, BACKSPACE);
     await tick(1);
     await tick(1);
 
@@ -233,12 +243,12 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'hi😀');
+    await write(instance, 'hi😀');
     await tick(1);
     await tick(1);
     expect(promptLine(instance.lastFrame() ?? '')).toContain('hi😀');
 
-    write(instance, BACKSPACE);
+    await write(instance, BACKSPACE);
     await tick(1);
     await tick(1);
 
@@ -257,7 +267,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'xyzzyxyzzy');
+    await write(instance, 'xyzzyxyzzy');
     await tick(1);
     await tick(1);
 
@@ -272,7 +282,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     expect(overlayStore.get().active).toBe('command-palette');
-    write(instance, ESC);
+    await write(instance, ESC);
     await tick(1);
     await tick(1);
 
@@ -286,11 +296,11 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
 
     const initial = instance.lastFrame() ?? '';
-    write(instance, DOWN);
+    await write(instance, DOWN);
     await tick(1);
     await tick(1);
     const afterDown = instance.lastFrame() ?? '';
-    write(instance, UP);
+    await write(instance, UP);
     await tick(1);
     await tick(1);
     const afterUp = instance.lastFrame() ?? '';
@@ -308,7 +318,7 @@ describe('CommandPaletteOverlay', () => {
     expect(overlayStore.get().active).toBe('command-palette');
     expect(commandPaletteMruStore.get().ids).toHaveLength(0);
 
-    write(instance, ENTER);
+    await write(instance, ENTER);
     await tick(1);
     await tick(1);
 
@@ -347,7 +357,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'add login');
+    await write(instance, 'add login');
     await tick(1);
     await tick(1);
 
@@ -380,7 +390,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'SuperUniquePaletteAction');
+    await write(instance, 'SuperUniquePaletteAction');
     await tick(1);
     await tick(1);
 
@@ -412,10 +422,10 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'Open Settings Custom Action');
+    await write(instance, 'Open Settings Custom Action');
     await tick(1);
     await tick(1);
-    write(instance, ENTER);
+    await write(instance, ENTER);
     await tick(1);
     await tick(1);
 
@@ -437,7 +447,7 @@ describe('CommandPaletteOverlay', () => {
     const instance = renderCommandPalette();
     await tick(1);
     await tick(1);
-    write(instance, 'uniquetasktitle123');
+    await write(instance, 'uniquetasktitle123');
     await tick(1);
     await tick(1);
 
@@ -458,7 +468,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'standard');
+    await write(instance, 'standard');
     await tick(1);
     await tick(1);
     const frame = instance.lastFrame() ?? '';
@@ -471,10 +481,10 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'instant');
+    await write(instance, 'instant');
     await tick(1);
     await tick(1);
-    write(instance, ENTER);
+    await write(instance, ENTER);
     await tick(1);
     await tick(1);
 
@@ -483,12 +493,74 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
+  it('keeps the palette open until a mode save resolves', async () => {
+    const saved = Promise.withResolvers<RuntimeConfigSaveResult>();
+    const instance = render(
+      <CommandPaletteOverlay
+        commands={createTestCommands()}
+        onRuntimeCommand={() => {}}
+        onWorkflowMode={() => saved.promise}
+      />,
+    );
+    await tick(1);
+    await tick(1);
+
+    await write(instance, 'instant');
+    await tick(1);
+    await tick(1);
+    await write(instance, ENTER);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('command-palette');
+    expect(commandPaletteMruStore.get().ids).toHaveLength(0);
+    expect(feedbackStore.get().message).toBeNull();
+
+    saved.resolve({ kind: 'saved', ok: true });
+    await tick(1);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('none');
+    expect(commandPaletteMruStore.get().ids).toContain('mode:instant');
+    instance.unmount();
+  });
+
+  it('keeps the palette open after a mode save conflict', async () => {
+    const instance = render(
+      <CommandPaletteOverlay
+        commands={createTestCommands()}
+        onRuntimeCommand={() => {}}
+        onWorkflowMode={async () => ({
+          kind: 'conflict',
+          ok: false,
+          errorMessage: 'Config changed on disk. Reload before saving again.',
+        })}
+      />,
+    );
+    await tick(1);
+    await tick(1);
+
+    await write(instance, 'instant');
+    await tick(1);
+    await tick(1);
+    await write(instance, ENTER);
+    await tick(1);
+    await tick(1);
+
+    expect(overlayStore.get().active).toBe('command-palette');
+    expect(commandPaletteMruStore.get().ids).toHaveLength(0);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Config changed on disk. Reload before saving again.',
+    });
+    instance.unmount();
+  });
+
   it('picker items are shown in results', async () => {
     const instance = renderCommandPalette();
     await tick(1);
     await tick(1);
 
-    write(instance, 'settings');
+    await write(instance, 'settings');
     await tick(1);
     await tick(1);
     const frame = instance.lastFrame() ?? '';
@@ -588,7 +660,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'settings');
+    await write(instance, 'settings');
     await tick(1);
     await tick(1);
 
@@ -613,7 +685,7 @@ describe('CommandPaletteOverlay', () => {
     expect(frame).not.toContain('implementer');
     expect(frame).not.toContain('settings');
 
-    write(instance, 'instant');
+    await write(instance, 'instant');
     await tick(1);
     await tick(1);
     expect(instance.lastFrame() ?? '').toContain('No matching commands');
@@ -639,7 +711,7 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, uniqueFeature);
+    await write(instance, uniqueFeature);
     await tick(1);
     await tick(1);
 
@@ -647,7 +719,7 @@ describe('CommandPaletteOverlay', () => {
     expect(paletteResultRows(frame).some((row) => row.includes(uniqueFeature))).toBe(true);
     expect(frame).toContain('Sessions');
 
-    write(instance, ENTER);
+    await write(instance, ENTER);
     await tick(1);
     await tick(1);
 
@@ -683,7 +755,7 @@ describe('CommandPaletteOverlay', () => {
     expect(frame).not.toContain('/hidden');
     expect(frame).not.toContain('select');
 
-    write(instance, ENTER);
+    await write(instance, ENTER);
     await tick(1);
     await tick(1);
 
@@ -693,13 +765,13 @@ describe('CommandPaletteOverlay', () => {
     instance.unmount();
   });
 
-  it('reports a synchronously thrown action error via feedback without crashing', async () => {
+  it('keeps the palette open when a mode save rejects', async () => {
     const commands = createTestCommands();
     const instance = render(
       <CommandPaletteOverlay
         commands={commands}
         onRuntimeCommand={() => {}}
-        onWorkflowMode={() => {
+        onWorkflowMode={async () => {
           throw new Error('mode switch boom');
         }}
       />,
@@ -707,16 +779,16 @@ describe('CommandPaletteOverlay', () => {
     await tick(1);
     await tick(1);
 
-    write(instance, 'instant');
+    await write(instance, 'instant');
     await tick(1);
     await tick(1);
-    write(instance, ENTER);
+    await write(instance, ENTER);
     await tick(1);
     await tick(1);
 
     expect(feedbackStore.get().isError).toBe(true);
     expect(feedbackStore.get().message).toContain('mode switch boom');
-    expect(overlayStore.get().active).toBe('none');
+    expect(overlayStore.get().active).toBe('command-palette');
     instance.unmount();
   });
 });

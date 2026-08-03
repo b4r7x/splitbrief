@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -168,6 +168,7 @@ describe('WorkflowScreen lifecycle', () => {
 
       expect(ui.lastFrame() ?? '').not.toContain('enter to resume');
 
+      await flushEffects();
       ui.stdin.write(ENTER);
       await tick(40);
 
@@ -206,7 +207,7 @@ describe('WorkflowScreen lifecycle', () => {
         cancelled: true,
         reason: 'user_cancelled',
       });
-      await tick(20);
+      await flushEffects();
 
       ui.stdin.write(ENTER);
 

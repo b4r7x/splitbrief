@@ -14,11 +14,12 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { TwoColumnPicker } from './two-column-picker/picker.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
 import type { PickerOption } from './model-catalog/options.js';
+import type { ConfiguredProviderRuntime } from '../../engine/detection/provider-outcomes.js';
 
 function seedDetections() {
   detectionStore.setDetection({
     cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
-    implementers: [
+    providers: [
       {
         provider: 'ollama',
         available: true,
@@ -75,7 +76,7 @@ function ControlledCatalogPicker({ role }: { role: 'planner' | 'implementer' }) 
       leftProps={{
         items: catalog.items,
         getKey: (item) => item.id,
-        isDisabled: (item) => !item.available && item.kind !== 'shell' && item.kind !== 'agent',
+        isDisabled: (item) => !item.available && item.kind !== 'custom-command',
         initialIndex: catalog.initialLeftIdx,
         renderRow: (item) => <Text>{item.displayName}</Text>,
       }}
@@ -95,7 +96,7 @@ function KeyboardCatalogProbe({ role }: { role: 'planner' | 'implementer' }) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const catalog = usePickerCatalog(role, 0, selectedItemId);
   const toolIds = catalog.items
-    .filter((item) => item.available || item.kind === 'shell' || item.kind === 'agent')
+    .filter((item) => item.available || item.kind === 'custom-command')
     .map((item) => item.id);
   const currentToolIndex = Math.max(0, toolIds.indexOf(catalog.selectedItemId ?? ''));
 
@@ -156,7 +157,7 @@ describe('usePickerCatalog', () => {
     ui.unmount();
   });
 
-  it('reports the persisted model regardless of the browsed tool, and excludes Auto from the detected count', async () => {
+  it('reports the persisted model regardless of the browsed tool, and only counts confirmed models as detected', async () => {
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'auto' } }),
@@ -178,8 +179,124 @@ describe('usePickerCatalog', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.startsWith('auto|')).toBe(true);
-    const [, discovered, total] = frame.split('|');
-    expect(Number(discovered)).toBe(Number(total) - 1);
+    const [, discovered] = frame.split('|');
+    expect(Number(discovered)).toBe(0);
+    ui.unmount();
+  });
+
+  it('projects a role-scoped stale catalog as stale and excludes it from the detected count', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'openai',
+          apiBase: 'https://api.openai.example/v1',
+          model: 'planner-last-confirmed-model',
+        },
+      }),
+    });
+    const plannerRuntime: ConfiguredProviderRuntime = {
+      connection: { role: 'planner', provider: 'openai', contextKey: 'planner-context' },
+      state: 'stale',
+      catalog: 'populated',
+      models: [{ id: 'planner-last-confirmed-model' }],
+      fetchedAt: 1,
+      validatedAt: 2,
+      failure: 'timeout',
+      diagnostic: 'Configured provider catalog refresh did not complete.',
+    };
+    const implementerRuntime: ConfiguredProviderRuntime = {
+      connection: { role: 'implementer', provider: 'openai', contextKey: 'implementer-context' },
+      state: 'fresh',
+      catalog: 'populated',
+      models: [{ id: 'implementer-confirmed-model' }],
+      fetchedAt: 1,
+      validatedAt: 2,
+    };
+    detectionStore.setDetection({
+      cliTools: [],
+      providers: [],
+      providerOutcomes: [plannerRuntime, implementerRuntime],
+    });
+    let projection:
+      | Readonly<{
+          model: ReturnType<typeof usePickerCatalog>['rightModels'][number] | undefined;
+          detected: number;
+          counts: ReturnType<typeof usePickerCatalog>['modelCounts'];
+        }>
+      | undefined;
+
+    function Probe() {
+      const catalog = usePickerCatalog('planner', 0, 'openai');
+      projection = {
+        model: catalog.rightModels.find((model) => model.id === 'planner-last-confirmed-model'),
+        detected: catalog.discoveredModelCount,
+        counts: catalog.modelCounts,
+      };
+      return <Text>projection</Text>;
+    }
+
+    const ui = renderFeature(<Probe />);
+
+    expect(projection).toEqual({
+      model: expect.objectContaining({
+        membership: 'stale',
+        isStale: true,
+        isDetected: false,
+      }),
+      detected: 0,
+      counts: expect.objectContaining({
+        confirmed: 0,
+        stale: 1,
+        custom: 0,
+      }),
+    });
+    expect(projection?.model?.id).not.toBe('implementer-confirmed-model');
+
+    detectionStore.setDetection({
+      cliTools: [],
+      providers: [],
+      providerOutcomes: [
+        {
+          connection: plannerRuntime.connection,
+          state: 'fresh',
+          catalog: 'populated',
+          models: [{ id: 'planner-last-confirmed-model' }],
+          fetchedAt: 3,
+          validatedAt: 3,
+        },
+        implementerRuntime,
+      ],
+    });
+    ui.rerender(<Probe />);
+    expect(projection).toEqual({
+      model: expect.objectContaining({ membership: 'confirmed', isDetected: true }),
+      detected: 1,
+      counts: expect.objectContaining({ confirmed: 1, stale: 0 }),
+    });
+
+    detectionStore.setDetection({
+      cliTools: [],
+      providers: [],
+      providerOutcomes: [
+        {
+          connection: plannerRuntime.connection,
+          state: 'fresh',
+          catalog: 'empty',
+          models: [],
+          fetchedAt: 4,
+          validatedAt: 4,
+        },
+        implementerRuntime,
+      ],
+    });
+    ui.rerender(<Probe />);
+    expect(projection).toEqual({
+      model: undefined,
+      detected: 0,
+      counts: expect.objectContaining({ confirmed: 0, stale: 0 }),
+    });
     ui.unmount();
   });
 
@@ -322,6 +439,7 @@ describe('usePickerCatalog', () => {
     await flushEffects();
     const initial = ui.lastFrame() ?? '';
 
+    await flushEffects();
     ui.stdin.write('\u001B[B');
     await flushEffects();
 

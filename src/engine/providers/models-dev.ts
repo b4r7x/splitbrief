@@ -1,15 +1,14 @@
 import type { DetectedModel, DetectedPricingTier } from '../../core/discovery/detection.js';
 import type { ProviderId } from '../../core/schemas/enums.js';
+import type { ModelsDevCatalog, ModelsDevModel } from '../../core/schemas/models-dev.js';
 import {
-  ModelsDevCatalogSchema,
-  type ModelsDevCatalog,
-  type ModelsDevModel,
-} from '../../core/schemas/models-dev.js';
-import { fetchJsonWithTimeout } from './client/request.js';
+  modelsDevCatalogFailureError,
+  refreshModelsDevCatalogCache,
+  type ModelsDevCatalogCacheOptions,
+  type ModelsDevCatalogCacheOutcome,
+} from './models-dev-cache.js';
 import { isModelFree, pricingFieldsFromResolved } from './metadata.js';
 
-const MODELS_DEV_URL = 'https://models.dev/api.json';
-const MODELS_DEV_TIMEOUT_MS = 10_000;
 const CONTEXT_OVER_200K_THRESHOLD = 200_000;
 type ModelsDevRawCostTier = NonNullable<NonNullable<ModelsDevModel['cost']>['tiers']>[number];
 
@@ -23,12 +22,6 @@ const PROVIDER_TO_MODELS_DEV_IDS: Partial<Record<ProviderId, string[]>> = {
 
 function toModelsDevProviderIds(providerId: ProviderId): string[] {
   return PROVIDER_TO_MODELS_DEV_IDS[providerId] ?? [providerId];
-}
-
-function pickFreshestDate(a: string | undefined, b: string | undefined): string | undefined {
-  if (!a) return b;
-  if (!b) return a;
-  return a >= b ? a : b;
 }
 
 function hasTierPrice(tier: DetectedPricingTier): boolean {
@@ -99,7 +92,7 @@ function mergePricingTiers(
   return [...byKey.values()].sort((a, b) => a.thresholdTokens - b.thresholdTokens);
 }
 
-function modelToDetected(model: ModelsDevModel): DetectedModel {
+function modelToDetected(providerId: string, model: ModelsDevModel): DetectedModel {
   const inputRaw = model.cost?.input;
   const outputRaw = model.cost?.output;
   const hasPricingData = inputRaw !== undefined || outputRaw !== undefined;
@@ -107,8 +100,18 @@ function modelToDetected(model: ModelsDevModel): DetectedModel {
 
   const result: DetectedModel = {
     id: model.id,
+    providerId,
+    modelId: model.id,
     ...pricingFieldsFromResolved(inputRaw, outputRaw, isFree),
   };
+
+  if (model.name !== undefined) {
+    result.displayName = model.name;
+  }
+
+  if (model.status !== undefined) {
+    result.lifecycle = model.status;
+  }
 
   if (model.cost?.cache_read !== undefined) {
     result.pricingCacheRead = model.cost.cache_read;
@@ -125,10 +128,16 @@ function modelToDetected(model: ModelsDevModel): DetectedModel {
 
   if (model.limit?.context !== undefined) {
     result.contextLength = model.limit.context;
+    result.maximumContextTokens = model.limit.context;
+  }
+
+  if (model.limit?.input !== undefined) {
+    result.maximumInputTokens = model.limit.input;
   }
 
   if (model.limit?.output !== undefined) {
     result.maxOutputTokens = model.limit.output;
+    result.maximumOutputTokens = model.limit.output;
   }
 
   if (model.temperature !== undefined) {
@@ -144,8 +153,29 @@ function modelToDetected(model: ModelsDevModel): DetectedModel {
     result.supportsImages = imageInput;
   }
 
-  const releaseDate = pickFreshestDate(model.release_date, model.last_updated);
-  if (releaseDate) result.releaseDate = releaseDate;
+  if (model.modalities?.input !== undefined) {
+    result.inputModalities = [...model.modalities.input];
+  }
+
+  if (model.modalities?.output !== undefined) {
+    result.outputModalities = [...model.modalities.output];
+  }
+
+  if (model.tool_call !== undefined) {
+    result.supportsToolCalls = model.tool_call;
+  }
+
+  if (model.structured_output !== undefined) {
+    result.supportsStructuredOutput = model.structured_output;
+  }
+
+  if (model.release_date !== undefined) {
+    result.releaseDate = model.release_date;
+  }
+
+  if (model.last_updated !== undefined) {
+    result.updatedDate = model.last_updated;
+  }
 
   return result;
 }
@@ -166,11 +196,29 @@ function mergeDetectedModel(
   const supportsTemperature = incoming.supportsTemperature ?? current.supportsTemperature;
   const supportsReasoning = incoming.supportsReasoning ?? current.supportsReasoning;
   const supportsImages = incoming.supportsImages ?? current.supportsImages;
+  const providerId = incoming.providerId ?? current.providerId;
+  const modelId = incoming.modelId ?? current.modelId;
+  const displayName = incoming.displayName ?? current.displayName;
+  const lifecycle = incoming.lifecycle ?? current.lifecycle;
   const releaseDate = incoming.releaseDate ?? current.releaseDate;
+  const updatedDate = incoming.updatedDate ?? current.updatedDate;
+  const maximumContextTokens = incoming.maximumContextTokens ?? current.maximumContextTokens;
+  const effectiveContextTokens = incoming.effectiveContextTokens ?? current.effectiveContextTokens;
+  const maximumInputTokens = incoming.maximumInputTokens ?? current.maximumInputTokens;
+  const maximumOutputTokens = incoming.maximumOutputTokens ?? current.maximumOutputTokens;
+  const inputModalities = incoming.inputModalities ?? current.inputModalities;
+  const outputModalities = incoming.outputModalities ?? current.outputModalities;
+  const supportsToolCalls = incoming.supportsToolCalls ?? current.supportsToolCalls;
+  const supportsStructuredOutput =
+    incoming.supportsStructuredOutput ?? current.supportsStructuredOutput;
   const capabilities = incoming.capabilities ?? current.capabilities;
   return {
     ...current,
     ...incoming,
+    ...(providerId !== undefined ? { providerId } : {}),
+    ...(modelId !== undefined ? { modelId } : {}),
+    ...(displayName !== undefined ? { displayName } : {}),
+    ...(lifecycle !== undefined ? { lifecycle } : {}),
     ...(contextLength !== undefined ? { contextLength } : {}),
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
     ...pricingFieldsFromResolved(pricingInput, pricingOutput, isFree),
@@ -181,15 +229,38 @@ function mergeDetectedModel(
     ...(supportsReasoning !== undefined ? { supportsReasoning } : {}),
     ...(supportsImages !== undefined ? { supportsImages } : {}),
     ...(releaseDate !== undefined ? { releaseDate } : {}),
-    ...(capabilities !== undefined ? { capabilities } : {}),
+    ...(updatedDate !== undefined ? { updatedDate } : {}),
+    ...(maximumContextTokens !== undefined ? { maximumContextTokens } : {}),
+    ...(effectiveContextTokens !== undefined ? { effectiveContextTokens } : {}),
+    ...(maximumInputTokens !== undefined ? { maximumInputTokens } : {}),
+    ...(maximumOutputTokens !== undefined ? { maximumOutputTokens } : {}),
+    ...(inputModalities !== undefined ? { inputModalities: [...inputModalities] } : {}),
+    ...(outputModalities !== undefined ? { outputModalities: [...outputModalities] } : {}),
+    ...(supportsToolCalls !== undefined ? { supportsToolCalls } : {}),
+    ...(supportsStructuredOutput !== undefined ? { supportsStructuredOutput } : {}),
+    ...(capabilities !== undefined ? { capabilities: [...capabilities] } : {}),
   };
 }
 
-export async function fetchModelsDevCatalog(): Promise<ModelsDevCatalog> {
-  const json = await fetchJsonWithTimeout(MODELS_DEV_URL, MODELS_DEV_TIMEOUT_MS);
-  const parsed = ModelsDevCatalogSchema.safeParse(json);
-  if (!parsed.success) return {};
-  return parsed.data;
+export async function fetchModelsDevCatalogWithCache(
+  options: ModelsDevCatalogCacheOptions = {},
+): Promise<ModelsDevCatalogCacheOutcome> {
+  return refreshModelsDevCatalogCache(options);
+}
+
+export async function fetchModelsDevCatalog(
+  options: ModelsDevCatalogCacheOptions = {},
+): Promise<ModelsDevCatalog> {
+  const outcome = await fetchModelsDevCatalogWithCache(options);
+  switch (outcome.kind) {
+    case 'cached':
+    case 'fresh':
+    case 'not-modified':
+    case 'stale':
+      return outcome.snapshot.catalog;
+    case 'failed':
+      throw modelsDevCatalogFailureError(outcome.failure);
+  }
 }
 
 export function getModelsForProvider(
@@ -202,8 +273,10 @@ export function getModelsForProvider(
     const provider = catalog[modelsDevId];
     if (!provider?.models) continue;
 
-    for (const model of Object.values(provider.models).map(modelToDetected)) {
-      merged.set(model.id, mergeDetectedModel(merged.get(model.id), model));
+    for (const model of Object.values(provider.models)) {
+      const detected = modelToDetected(provider.id, model);
+      const identity = `${provider.id}\u0000${model.id}`;
+      merged.set(identity, mergeDetectedModel(merged.get(identity), detected));
     }
   }
 

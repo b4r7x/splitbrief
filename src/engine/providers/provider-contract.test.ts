@@ -10,7 +10,7 @@ import type { ProviderDef, ProviderOverrides } from './types.js';
 import { createGroqProvider } from './groq.js';
 import { createTogetherProvider } from './together.js';
 import { createLmStudioProvider } from './lm-studio.js';
-import { createOllamaProvider } from './ollama.js';
+import { createOllamaCloudProvider, createOllamaProvider } from './ollama.js';
 import { createOpenRouterProvider } from './openrouter.js';
 import {
   KNOWN_PROVIDERS,
@@ -77,21 +77,34 @@ const FIXTURES: ProviderFixture[] = [
   {
     name: 'together',
     create: createTogetherProvider,
-    defaultBaseURL: 'https://api.together.xyz/v1',
+    defaultBaseURL: 'https://api.together.ai/v1',
     isLocal: false,
     envKey: 'TOGETHER_API_KEY',
-    listEndpoint: 'https://api.together.xyz/v1/models',
-    successResponse: {
-      data: [
-        { id: 'meta-llama/Llama-3-8b-chat-hf', context_length: 8192 },
-        { id: 'mistralai/Mixtral-8x7B-Instruct-v0.1', context_length: 32768 },
-      ],
-    },
+    listEndpoint: 'https://api.together.ai/v1/models',
+    successResponse: [
+      {
+        id: 'meta-llama/Llama-3-8b-chat-hf',
+        type: 'chat',
+        serverless: true,
+        context_length: 8192,
+      },
+      {
+        id: 'mistralai/Mixtral-8x7B-Instruct-v0.1',
+        type: 'code',
+        serverless: true,
+        context_length: 32768,
+      },
+    ],
     modelIds: ['meta-llama/Llama-3-8b-chat-hf', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
     contextLengthForFirst: 8192,
-    contextLengthResponse: {
-      data: [{ id: 'meta-llama/Llama-3-8b-chat-hf', context_length: 8192 }],
-    },
+    contextLengthResponse: [
+      {
+        id: 'meta-llama/Llama-3-8b-chat-hf',
+        type: 'chat',
+        serverless: true,
+        context_length: 8192,
+      },
+    ],
     detectUsesListEndpoint: true,
     sendsAuth: true,
   },
@@ -101,14 +114,17 @@ const FIXTURES: ProviderFixture[] = [
     defaultBaseURL: 'http://localhost:1234/v1',
     isLocal: true,
     envKey: '',
-    listEndpoint: 'http://localhost:1234/v1/models',
+    listEndpoint: 'http://localhost:1234/api/v1/models',
     successResponse: {
-      data: [{ id: 'deepseek-coder', max_context_length: 16384 }, { id: 'codellama' }],
+      models: [
+        { key: 'deepseek-coder', type: 'llm', max_context_length: 16384 },
+        { key: 'codellama', type: 'llm' },
+      ],
     },
     modelIds: ['deepseek-coder', 'codellama'],
     contextLengthForFirst: 16384,
     contextLengthResponse: {
-      data: [{ id: 'deepseek-coder', max_context_length: 16384 }],
+      models: [{ key: 'deepseek-coder', type: 'llm', max_context_length: 16384 }],
     },
     detectUsesListEndpoint: true,
     sendsAuth: false,
@@ -118,7 +134,7 @@ const FIXTURES: ProviderFixture[] = [
     create: createOllamaProvider,
     defaultBaseURL: 'http://localhost:11434/v1',
     isLocal: true,
-    envKey: 'OLLAMA_API_KEY',
+    envKey: 'OLLAMA_LOCAL_API_KEY',
     listEndpoint: 'http://localhost:11434/api/tags',
     successResponse: {
       models: [{ name: 'qwen:7b' }, { name: 'llama3:8b' }],
@@ -128,6 +144,22 @@ const FIXTURES: ProviderFixture[] = [
     contextLengthResponse: null,
     detectUsesListEndpoint: false,
     sendsAuth: false,
+  },
+  {
+    name: 'ollama-cloud',
+    create: createOllamaCloudProvider,
+    defaultBaseURL: 'https://ollama.com',
+    isLocal: false,
+    envKey: 'OLLAMA_API_KEY',
+    listEndpoint: 'https://ollama.com/api/tags',
+    successResponse: {
+      models: [{ name: 'kimi-k2.7-code' }, { name: 'gpt-oss:120b' }],
+    },
+    modelIds: ['kimi-k2.7-code', 'gpt-oss:120b'],
+    contextLengthForFirst: 0, // unused — detection goes through /api/show
+    contextLengthResponse: null,
+    detectUsesListEndpoint: false,
+    sendsAuth: true,
   },
   {
     name: 'openrouter',
@@ -174,7 +206,7 @@ describe('provider verdict admission contract', () => {
       expect(fixtureNames).not.toContain(id);
     }
     expect(fixtureNames.toSorted()).toEqual(
-      ['groq', 'lm-studio', 'ollama', 'openrouter', 'together'].toSorted(),
+      ['groq', 'lm-studio', 'ollama', 'ollama-cloud', 'openrouter', 'together'].toSorted(),
     );
   });
 });
@@ -210,13 +242,15 @@ describe.each(FIXTURES)('$name provider contract', (f) => {
       f.name === 'ollama' || f.name === 'lm-studio'
         ? 'http://127.0.0.1:22000/v1'
         : f.defaultBaseURL;
-    const credential = fixtureCredential(f.name, 'override-key');
-    const p = f.create({ apiBase, apiKey: credential });
+    const apiKey =
+      f.name === 'ollama' ? 'env:OLLAMA_LOCAL_API_KEY' : fixtureCredential(f.name, 'override-key');
+    const expectedApiKey = f.name === 'ollama' ? fixtureCredential(f.name, 'test-key') : apiKey;
+    const p = f.create({ apiBase, apiKey });
     expect(p.baseURL).toBe(apiBase);
-    expect(p.apiKey()).toBe(credential);
+    expect(p.apiKey()).toBe(expectedApiKey);
   });
 
-  if (f.envKey) {
+  if (f.envKey && f.name !== 'ollama') {
     it('rejects a credential from another provider family before any request', () => {
       const descriptor = getApiProviderDescriptor(f.name);
       if (descriptor?.credentialPrefix == null) return;
@@ -242,15 +276,42 @@ describe.each(FIXTURES)('$name provider contract', (f) => {
     });
   }
 
-  it('listModels returns model IDs on success', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify(f.successResponse), { status: 200 }),
-    );
+  it('listModels returns model IDs with the expected default authorization', async () => {
+    let request: Request | undefined;
+    vi.mocked(globalThis.fetch).mockImplementationOnce((input, init) => {
+      request = new Request(input, init);
+      return Promise.resolve(new Response(JSON.stringify(f.successResponse), { status: 200 }));
+    });
 
     const p = f.create();
     const models = await p.listModels();
 
     expect(models).toEqual([f.modelIds[0], f.modelIds[1]]);
+    expect(request?.headers.get('authorization')).toBe(
+      f.sendsAuth ? `Bearer ${fixtureCredential(f.name, 'test-key')}` : null,
+    );
+  });
+
+  it('accepts cancellation options and rejects when the caller aborts', async () => {
+    const controller = new AbortController();
+    let requestSignal: AbortSignal | undefined;
+    vi.mocked(globalThis.fetch).mockImplementationOnce((input, init) => {
+      const request = new Request(input, init);
+      requestSignal = request.signal;
+      return new Promise((_resolve, reject) => {
+        request.signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('The provider list was aborted.', 'AbortError')),
+          { once: true },
+        );
+      });
+    });
+
+    const pending = f.create().listModels({ signal: controller.signal });
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(/abort/i);
+    expect(requestSignal?.aborted).toBe(true);
   });
 
   it('listModels returns empty on non-ok response', async () => {

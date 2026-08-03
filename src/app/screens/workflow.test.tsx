@@ -134,11 +134,13 @@ describe('WorkflowScreen chrome calibration', () => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('First review');
     });
 
+    await flushEffects();
     ui.stdin.write('\x1b[B');
+    await flushEffects();
     ui.stdin.write('\x1b[B');
     await tick();
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
-    await tick();
+    await flushEffects();
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
@@ -146,11 +148,15 @@ describe('WorkflowScreen chrome calibration', () => {
     });
     expect(outcomes).toEqual([{ approved: false }]);
 
+    await flushEffects();
     ui.stdin.write('\r');
     await tick();
     expect(outcomes).toHaveLength(1);
+    await flushEffects();
     ui.stdin.write('\x1b[B');
+    await flushEffects();
     ui.stdin.write('\x1b[A');
+    await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(outcomes).toEqual([{ approved: false }, { approved: true }]);
@@ -187,6 +193,7 @@ describe('WorkflowScreen chrome calibration', () => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Multiline review');
     });
 
+    await flushEffects();
     ui.stdin.write('top');
     await flushEffects();
     ui.stdin.write(SHIFT_ENTER);
@@ -233,17 +240,24 @@ describe('WorkflowScreen chrome calibration', () => {
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Stale action review');
     });
+    await flushEffects();
     ui.stdin.write('\x1b[B');
+    await flushEffects();
     ui.stdin.write('\x1b[B');
-    await tick();
+    await flushEffects();
     ui.stdin.write('x');
+    await flushEffects();
     ui.stdin.write('\x7f');
+    await flushEffects();
     ui.stdin.write('\r');
     await tick();
     expect(outcome).toBeUndefined();
 
+    await flushEffects();
     ui.stdin.write('\x1b[B');
+    await flushEffects();
     ui.stdin.write('\x1b[B');
+    await flushEffects();
     ui.stdin.write('\r');
     await vi.waitFor(() => {
       expect(outcome).toEqual({ approved: false });
@@ -304,13 +318,14 @@ describe('WorkflowScreen chrome calibration', () => {
     expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('HISTORY_SENTINEL');
 
+    await flushEffects();
     ui.stdin.write('ab');
     await tick();
     expect(focusStore.get()).toBeNull();
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} ab`);
 
     focusStore.set('brief', 1);
-    await tick();
+    await flushEffects();
     ui.stdin.write('y');
     await tick();
     await Promise.resolve();
@@ -320,12 +335,13 @@ describe('WorkflowScreen chrome calibration', () => {
     expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${glyph('prompt')} ab`);
 
+    await flushEffects();
     ui.stdin.write(SHIFT_DOWN);
     await tick();
     expect(focusStore.get()).toEqual({ region: 'brief', index: 1 });
 
     focusStore.set('brief', 0);
-    await tick();
+    await flushEffects();
     ui.stdin.write('y');
     await tick();
     expect(copyTarget).toHaveBeenCalledTimes(1);

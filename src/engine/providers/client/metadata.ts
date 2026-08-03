@@ -1,5 +1,9 @@
 import type { z } from 'zod';
-import type { ProviderDefWithMetadata, ProviderOverrides } from '../types.js';
+import type {
+  ProviderDefWithMetadata,
+  ProviderModelListOptions,
+  ProviderOverrides,
+} from '../types.js';
 import type { DetectedModel } from '../../../core/discovery/detection.js';
 import { warnError } from '../../../lib/warn.js';
 import { error as createError } from '../../../utils/error.js';
@@ -19,8 +23,17 @@ import {
   type EndpointPolicy,
   type EndpointPolicyFetchOwner,
 } from '../../../core/providers/endpoint-policy.js';
-import { createEndpointPolicyFetch } from '../../../lib/http/policy-fetch.js';
+import {
+  createEndpointPolicyFetch,
+  type EndpointPolicyFetch,
+} from '../../../lib/http/policy-fetch.js';
 import { getApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
+import { throwIfAborted } from '../../../utils/abort.js';
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+export type MetadataProviderAuthentication = 'none' | 'optional' | 'required';
+export type MetadataProviderCredentialSource = 'ambient-and-override' | 'override-only';
 
 export interface MetadataProviderOpts<TRaw extends { id: string }> {
   name: string;
@@ -36,10 +49,31 @@ export interface MetadataProviderOpts<TRaw extends { id: string }> {
   headers?: (apiKey: string) => Record<string, string>;
   extractModels?: (data: unknown) => TRaw[] | null;
   /**
+   * Local providers are unauthenticated by default, but an explicitly secured
+   * loopback server can opt in without weakening the no-credential default.
+   */
+  authentication?: MetadataProviderAuthentication;
+  /**
+   * A local offering can reserve an ambient credential for a separate remote
+   * offering while still accepting an explicit local config override.
+   */
+  credentialSource?: MetadataProviderCredentialSource;
+  /** First-party loopback inventories do not follow redirects. */
+  rejectRedirects?: boolean;
+  /**
    * Candidate modules may supply their own endpoint policy before they resolve
    * any credential. Known providers use the catalog policy by default.
    */
   endpointPolicy?: EndpointPolicy;
+}
+
+function createRedirectRejectingFetch(): EndpointPolicyFetch {
+  return async (input, init) => {
+    const response = await globalThis.fetch(input, init);
+    if (!REDIRECT_STATUSES.has(response.status)) return response;
+    await response.body?.cancel();
+    throw endpointPolicyError.invalid();
+  };
 }
 
 function catalogEndpointPolicy(name: string): EndpointPolicy | undefined {
@@ -72,7 +106,13 @@ export function createMetadataProvider<TRaw extends { id: string }>(
     endpointPolicy === undefined
       ? validateProviderBaseURL(requestedBaseURL)
       : normalizeProviderEndpoint(endpointPolicy, requestedBaseURL);
-  const policyFetch = createEndpointPolicyFetch(baseURL, endpointPolicyError.invalid);
+  const policyFetch = opts.rejectRedirects
+    ? createEndpointPolicyFetch(
+        baseURL,
+        endpointPolicyError.invalid,
+        createRedirectRejectingFetch(),
+      )
+    : createEndpointPolicyFetch(baseURL, endpointPolicyError.invalid);
 
   // Endpoint validation intentionally precedes this call. An invalid endpoint
   // must fail closed before an env: reference can read a credential.
@@ -81,13 +121,17 @@ export function createMetadataProvider<TRaw extends { id: string }>(
   const credentialPrefix = getApiProviderDescriptor(opts.name)?.credentialPrefix ?? null;
   // A credential from the wrong provider family must fail here, before it can
   // reach a request. An absent credential is a separate, already-handled state.
-  const resolveCredential = (): string =>
-    resolvedApiKey ?? process.env[opts.envKeyName] ?? opts.apiKeyDefault ?? '';
+  const credentialSource = opts.credentialSource ?? 'ambient-and-override';
+  const resolveConfiguredCredential = (): string | undefined =>
+    resolvedApiKey ??
+    (credentialSource === 'ambient-and-override' ? process.env[opts.envKeyName] : undefined);
+  const resolveCredential = (): string => resolveConfiguredCredential() ?? opts.apiKeyDefault ?? '';
   const apiKey = (): string => {
     const value = resolveCredential();
     if (value.length > 0) assertCredentialPrefix(value, credentialPrefix);
     return value;
   };
+  const authentication = opts.authentication ?? (opts.isLocal ? 'none' : 'required');
 
   function getUrl(): string {
     return opts.modelsUrl ? opts.modelsUrl(baseURL) : `${baseURL}/models`;
@@ -103,12 +147,15 @@ export function createMetadataProvider<TRaw extends { id: string }>(
 
   const extractModels = opts.extractModels ?? defaultExtractModels;
 
-  async function fetchModels(): Promise<TRaw[]> {
+  async function fetchModels(options?: ProviderModelListOptions): Promise<TRaw[]> {
+    throwIfAborted(options?.signal);
     const key = apiKey();
-    if (!opts.isLocal && !key) return [];
+    const configuredCredential = resolveConfiguredCredential();
+    const requestCredential = authentication === 'none' ? '' : (configuredCredential ?? '');
+    if (authentication === 'required' && !requestCredential) return [];
     let headers: Record<string, string> | undefined;
     try {
-      headers = opts.headers ? opts.headers(key) : undefined;
+      headers = opts.headers ? opts.headers(requestCredential) : undefined;
     } catch (error) {
       const diagnostic = sanitizeProviderDiagnostic(error, {
         credentialValues: key ? [key] : undefined,
@@ -122,7 +169,9 @@ export function createMetadataProvider<TRaw extends { id: string }>(
     return fetchModelList({
       endpoint: getUrl(),
       fetch: policyFetch,
-      ...(headers ? { headers } : { apiKey: !opts.isLocal && key ? key : undefined }),
+      ...(headers
+        ? { headers }
+        : { apiKey: requestCredential.length > 0 ? requestCredential : undefined }),
       onError: (message) =>
         shell.trackError(
           message === undefined
@@ -132,6 +181,7 @@ export function createMetadataProvider<TRaw extends { id: string }>(
                 headers,
               }),
         ),
+      signal: options?.signal,
       extractModels,
     });
   }
@@ -147,13 +197,13 @@ export function createMetadataProvider<TRaw extends { id: string }>(
     isLocal: opts.isLocal,
     getLastError: shell.getLastError,
 
-    async listModels(): Promise<string[]> {
-      const models = await fetchModels();
+    async listModels(options?: ProviderModelListOptions): Promise<string[]> {
+      const models = await fetchModels(options);
       return models.map((m) => m.id);
     },
 
-    async listModelsWithMetadata(): Promise<DetectedModel[]> {
-      const models = await fetchModels();
+    async listModelsWithMetadata(options?: ProviderModelListOptions): Promise<DetectedModel[]> {
+      const models = await fetchModels(options);
       return models.map(toDetected);
     },
 
@@ -165,7 +215,9 @@ export function createMetadataProvider<TRaw extends { id: string }>(
       } catch (error) {
         warnError(
           `detectContextLength(${opts.name})`,
-          sanitizeProviderDiagnostic(error, { credentialValues: [resolveCredential()] }),
+          sanitizeProviderDiagnostic(error, {
+            credentialValues: authentication === 'none' ? undefined : [resolveCredential()],
+          }),
         );
         return null;
       }

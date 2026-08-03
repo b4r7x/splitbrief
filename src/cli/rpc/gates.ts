@@ -8,7 +8,40 @@ import {
   type BriefReviewPromptKind,
 } from '../../core/schemas/brief-review-command.js';
 import type { TaskId } from '../../core/schemas/task.js';
+import {
+  PLANNER_ARTIFACT_MAX_BYTES,
+  type ArtifactApprovalReview,
+} from '../../engine/runners/types.js';
+import { isRecord } from '../../utils/type-guards.js';
 import type { RpcCommand } from './types.js';
+
+const ARTIFACT_APPROVAL_LABEL = 'Custom planner artifact';
+
+export type ArtifactApprovalStatus = Readonly<{
+  pending: 'approval';
+  approvalType: 'artifact';
+  review: ArtifactApprovalReview;
+}>;
+
+export function isArtifactApprovalStatus(value: unknown): value is ArtifactApprovalStatus {
+  if (!isRecord(value)) return false;
+  if (value.pending !== 'approval' || value.approvalType !== 'artifact') return false;
+  if ('filePath' in value) return false;
+  return isArtifactApprovalReview(value.review);
+}
+
+function isArtifactApprovalReview(value: unknown): value is ArtifactApprovalReview {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value);
+  return (
+    keys.length === 2 &&
+    keys.includes('label') &&
+    keys.includes('text') &&
+    value.label === ARTIFACT_APPROVAL_LABEL &&
+    typeof value.text === 'string' &&
+    Buffer.byteLength(value.text, 'utf8') <= PLANNER_ARTIFACT_MAX_BYTES
+  );
+}
 
 type ApprovalGateCommon = {
   confirmationPhrase?: string | undefined;
@@ -42,10 +75,12 @@ export type ApprovalGatePrompt = {
   promptId: string;
   approvalType?: BriefReviewPromptKind | undefined;
   allowedCommands: readonly BriefReviewCommandAction[];
+  artifactReview?: ArtifactApprovalReview | undefined;
 };
 
 type ApprovalGateWaitOptions = {
   approvalType?: BriefReviewPromptKind | undefined;
+  artifactReview?: ArtifactApprovalReview | undefined;
   onSaveDraft?: BriefReviewDraftSaveHandler | undefined;
 };
 
@@ -128,6 +163,7 @@ export function createApprovalGate() {
   }
 
   function wait(options: ApprovalGateWaitOptions = {}): Promise<ApprovalGateResult> {
+    const artifactReview = options.approvalType === 'artifact' ? options.artifactReview : undefined;
     currentPrompt = {
       promptId: `approval-${nextPromptId++}`,
       approvalType: options.approvalType,
@@ -135,6 +171,7 @@ export function createApprovalGate() {
         options.approvalType === undefined
           ? []
           : allowedBriefReviewCommandsForPrompt(options.approvalType),
+      ...(artifactReview !== undefined && { artifactReview }),
     };
     currentSaveDraft = options.onSaveDraft ?? null;
     return gate.wait().finally(clearPrompt);

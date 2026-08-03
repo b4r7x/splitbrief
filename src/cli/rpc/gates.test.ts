@@ -131,6 +131,30 @@ describe('createApprovalGate', () => {
     });
     gate.reject(new Error('done'));
   });
+
+  it('keeps artifact text only in its live generic approval prompt', async () => {
+    const gate = createApprovalGate();
+    const review = Object.freeze({
+      label: 'Custom planner artifact',
+      text: '# immutable artifact\n\u0000preserve exactly\n',
+    });
+    const pending = gate.wait({ approvalType: 'artifact', artifactReview: review });
+
+    expect(gate.pendingPrompt()).toEqual({
+      promptId: 'approval-1',
+      approvalType: 'artifact',
+      allowedCommands: [],
+      artifactReview: review,
+    });
+    await expect(gate.handleBriefReview({ action: 'approve' })).resolves.toMatchObject({
+      status: 'rejected',
+      message: 'Current approval prompt does not accept Task Brief review commands.',
+    });
+
+    expect(gate.handle({ type: 'approve' })).toBe(true);
+    await expect(pending).resolves.toEqual({ approved: true });
+    expect(gate.pendingPrompt()).toBeNull();
+  });
 });
 
 describe('validateConfirmApprovalFields', () => {

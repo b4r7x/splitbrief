@@ -7,6 +7,7 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { Planner } from '../../planners/types.js';
 import type { Implementer, ImplementerFactoryOptions } from '../../implementers/types.js';
+import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
@@ -55,6 +56,11 @@ import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context
 import { createValidator } from '../validation/run.js';
 import { rejectUntrustedRunners } from '../../runners/trust.js';
 import { cliStartGateFor, type CliStartGates } from '../../runners/start-gate.js';
+import { createStagedProject } from '../approval/staged-project.js';
+import {
+  beginDeclaredArtifactReview as beginWorkflowDeclaredArtifactReview,
+  cleanupStaleArtifactReviews as cleanupWorkflowArtifactReviews,
+} from '../approval/planner-artifact.js';
 
 const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
 
@@ -126,6 +132,57 @@ export type InitializeWorkflowArgs = {
   resumeHolder: ResumeContextHolder;
 };
 
+export function composeWorkflowCustomRunnerRuntime(
+  input: Readonly<{
+    projectDir: string;
+    sessionId: string;
+    callbacks: Pick<OrchestratorCallbacks, 'onApprovalNeeded' | 'onTieredApproval'>;
+    interaction: 'interactive' | 'headless';
+    allowRepoRunners: boolean;
+  }>,
+): CustomRunnerRuntimePort {
+  // A stage supplies only the child cwd and snapshot. Declared values and executable
+  // resolution authority are captured from the host independently of that stage.
+  const sourceEnv = { ...process.env };
+  const authorizationPathEnv = process.env.PATH;
+  const authorizationPathExt = process.env.PATHEXT;
+
+  return {
+    sessionId: input.sessionId,
+    authorizationProjectDir: input.projectDir,
+    sourceEnv,
+    ...(authorizationPathEnv === undefined ? {} : { authorizationPathEnv }),
+    ...(authorizationPathExt === undefined ? {} : { authorizationPathExt }),
+    createStage: async (sourceProjectDir, _role) => {
+      const staged = await createStagedProject(sourceProjectDir);
+      return {
+        projectDir: staged.projectDir,
+        snapshot: staged.snapshot,
+        cleanup: staged.cleanup,
+      };
+    },
+    cleanupStaleArtifactReviews: () =>
+      cleanupWorkflowArtifactReviews({
+        projectDir: input.projectDir,
+        sessionId: input.sessionId,
+      }),
+    beginDeclaredArtifactReview: (artifactInput) =>
+      beginWorkflowDeclaredArtifactReview({
+        ...artifactInput,
+        projectDir: input.projectDir,
+        sessionId: input.sessionId,
+        onApprovalNeeded: input.callbacks.onApprovalNeeded,
+      }),
+    admission: {
+      interaction: input.interaction,
+      allowRepoRunners: input.allowRepoRunners,
+      ...(input.callbacks.onTieredApproval === undefined
+        ? {}
+        : { onTieredApproval: input.callbacks.onTieredApproval }),
+    },
+  };
+}
+
 export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<InitResult> {
   const { opts, sessionId, summaryBase, metadata, setTrackedState, resumeHolder } = args;
   const { feature, projectDir, callbacks, sinks } = opts;
@@ -145,6 +202,13 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }
   }
   const config: Config = hooks === undefined ? opts.config : { ...opts.config, hooks };
+  const customRuntime = composeWorkflowCustomRunnerRuntime({
+    projectDir,
+    sessionId,
+    callbacks,
+    interaction: opts.headless ? 'headless' : 'interactive',
+    allowRepoRunners: opts.allowRepoRunners ?? false,
+  });
 
   rejectUntrustedRunners(config, projectDir, opts.allowRepoRunners ?? false);
 
@@ -212,6 +276,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     opts._planner ??
     (await createPlanner(config, initialSessionId, {
       ...(plannerStartGate !== undefined && { trustedCli: plannerStartGate }),
+      customRuntime,
     }));
   if (savedState && !hasPendingRecovery) {
     savedState = await autoCompactResumeContext({
@@ -263,6 +328,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         : undefined;
     return createImplementer(runnerConfig, {
       ...factoryOptions,
+      customRuntime,
       ...(trustedCli !== undefined && { trustedCli }),
     });
   };
