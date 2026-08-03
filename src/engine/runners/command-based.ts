@@ -27,8 +27,37 @@ import { error } from '../../utils/error.js';
 import { finishRunnerCallOutputLimit, runnerCallLineOutputLimit } from '../calls/output-limit.js';
 import { commandName, isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
 import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
+import { createCustomRunnerRedactor, resolveCustomRunnerEnvironment } from './redaction.js';
+import {
+  customRunnerAdmissionError,
+  parseAdmittedCustomRunnerInvocation,
+  revalidateCustomRunnerInvocation,
+  type AdmittedCustomRunnerInvocation,
+} from './trust.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
+const CUSTOM_RUNNER_PROMPT_MAX_BYTES = 1024 * 1024;
+const CUSTOM_RUNNER_PROCESS_OUTPUT_MAX_BYTES = 1_310_720;
+const CUSTOM_RUNNER_HARD_DEADLINE_MS = 3_600_000;
+
+export const commandBasedInvocationError = {
+  promptPlaceholderInCommand: (command: string) =>
+    error(
+      'runner-command-prompt-placeholder',
+      'Runner command must not contain {prompt}; pass the prompt through stdin or args instead.',
+      { command },
+    ),
+  shellEvaluatedPrompt: (opts: { command: string; args: readonly string[] }) =>
+    error(
+      'runner-shell-evaluated-prompt',
+      `Runner args must not pass {prompt} through ${commandName(opts.command)} -c; use stdin or a non-shell argv placeholder instead.`,
+      { command: opts.command, args: opts.args },
+    ),
+  customPromptTooLarge: (maxBytes: number) =>
+    error('custom-runner-prompt-too-large', `Custom runner prompt exceeds ${maxBytes} bytes.`, {
+      maxBytes,
+    }),
+} as const;
 
 export interface CommandBasedOptions {
   command: string;
@@ -50,16 +79,34 @@ export interface CommandBasedResult {
   callResult: RunnerCallResult;
 }
 
+export interface CustomCommandBasedOptions {
+  admission: AdmittedCustomRunnerInvocation;
+  prompt: string;
+  authorizationProjectDir: string;
+  authorizationPathEnv?: string | undefined;
+  authorizationPathExt?: string | undefined;
+  cwd: string;
+  sourceEnv: NodeJS.ProcessEnv;
+  onOutput?: ((chunk: string) => void) | undefined;
+  onStderr?: ((chunk: string) => void) | undefined;
+  onSessionId?: ((id: string) => void) | undefined;
+  onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
+  callContext?: RunnerCallContext | undefined;
+  signal?: AbortSignal | undefined;
+}
+
+export type CustomCommandBasedTestSeam = Readonly<{
+  hardDeadlineMs?: number | undefined;
+}>;
+
+export type CustomCommandBasedResult = Awaited<ReturnType<typeof spawnAndCollect>>;
+
 let commandCallSequence = 0;
 
 function rejectPromptPlaceholderCommand(command: string): void {
   if (!command.includes(PROMPT_PLACEHOLDER)) return;
 
-  throw error(
-    'runner-command-prompt-placeholder',
-    'Runner command must not contain {prompt}; pass the prompt through stdin or args instead.',
-    { command },
-  );
+  throw commandBasedInvocationError.promptPlaceholderInCommand(command);
 }
 
 function rejectShellEvaluatedPrompt(
@@ -70,11 +117,7 @@ function rejectShellEvaluatedPrompt(
   if (allowShellEvaluatedPrompt) return;
   if (!isShellEvaluatedPromptArg(command, args)) return;
 
-  throw error(
-    'runner-shell-evaluated-prompt',
-    `Runner args must not pass {prompt} through ${commandName(command)} -c; use stdin or a non-shell argv placeholder instead.`,
-    { command, args },
-  );
+  throw commandBasedInvocationError.shellEvaluatedPrompt({ command, args });
 }
 
 function createCommandCallContext(opts: {
@@ -107,6 +150,68 @@ function substitutePromptPlaceholder(
     args: args.map((a) => a.replaceAll(PROMPT_PLACEHOLDER, () => prompt)),
     useStdin: false,
   };
+}
+
+async function invokeCustomCommandBasedRunnerWithDeadline(
+  opts: CustomCommandBasedOptions,
+  hardDeadlineMs: number,
+): Promise<CustomCommandBasedResult> {
+  const admission = parseAdmittedCustomRunnerInvocation(opts.admission);
+  if (admission === null) {
+    throw customRunnerAdmissionError.invalid();
+  }
+  if (Buffer.byteLength(opts.prompt, 'utf8') > CUSTOM_RUNNER_PROMPT_MAX_BYTES) {
+    throw commandBasedInvocationError.customPromptTooLarge(CUSTOM_RUNNER_PROMPT_MAX_BYTES);
+  }
+
+  const environment = resolveCustomRunnerEnvironment(opts.sourceEnv, admission.runner.command.env);
+  const redact = createCustomRunnerRedactor(environment.redactionValues);
+  const executable = await revalidateCustomRunnerInvocation({
+    invocation: admission,
+    projectDir: opts.authorizationProjectDir,
+    pathEnv: opts.authorizationPathEnv ?? '',
+    pathExt: opts.authorizationPathExt ?? '',
+  });
+
+  return spawnAndCollect({
+    command: executable.path,
+    args: [...admission.runner.command.argv],
+    cwd: opts.cwd,
+    env: environment.env,
+    stdin: opts.prompt,
+    format: admission.runner.command.outputFormat,
+    onText: opts.onOutput,
+    onStderr: opts.onStderr,
+    onSessionId: opts.onSessionId,
+    onCallEvent: opts.onCallEvent,
+    callContext: opts.callContext,
+    signal: opts.signal,
+    idle: {
+      warnMs: admission.runner.command.idleWarnMs,
+      killMs: admission.runner.command.idleKillMs,
+    },
+    outputBudgetBytes: CUSTOM_RUNNER_PROCESS_OUTPUT_MAX_BYTES,
+    timeoutMs: hardDeadlineMs,
+    credentialValues: environment.redactionValues,
+    redact,
+  });
+}
+
+/** Runs the already-admitted custom command through the no-shell process path. */
+export function invokeCustomCommandBasedRunner(
+  opts: CustomCommandBasedOptions,
+): Promise<CustomCommandBasedResult> {
+  return invokeCustomCommandBasedRunnerWithDeadline(opts, CUSTOM_RUNNER_HARD_DEADLINE_MS);
+}
+
+export function invokeCustomCommandBasedRunnerForTest(
+  opts: CustomCommandBasedOptions,
+  testSeam: CustomCommandBasedTestSeam,
+): Promise<CustomCommandBasedResult> {
+  return invokeCustomCommandBasedRunnerWithDeadline(
+    opts,
+    testSeam.hardDeadlineMs ?? CUSTOM_RUNNER_HARD_DEADLINE_MS,
+  );
 }
 
 export async function invokeCommandBasedRunner(

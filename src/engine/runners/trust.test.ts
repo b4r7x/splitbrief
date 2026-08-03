@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { checkRunnerTrust, rejectUntrustedRunners } from './trust.js';
+import { ConfigSchema } from '../../core/schemas/config.js';
+import { matches } from '../../utils/error.js';
+import { checkRunnerTrust, customRunnerAdmissionError, rejectUntrustedRunners } from './trust.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
 type ConfigOverrides = NonNullable<Parameters<typeof makeConfig>[0]>;
@@ -16,6 +18,66 @@ function shellConfig(command: string): ConfigOverrides {
     },
   };
 }
+
+function withCustomCommands(config: ReturnType<typeof makeConfig>, customCommands: unknown) {
+  return ConfigSchema.parse({ ...config, customCommands });
+}
+
+describe('custom runner admission errors', () => {
+  it('preserves typed discriminators, messages, and empty data', () => {
+    const invalid = customRunnerAdmissionError.invalid();
+    const plannerDenied = customRunnerAdmissionError.denied('planner');
+    const implementerDenied = customRunnerAdmissionError.denied('implementer');
+    const scopeMismatch = customRunnerAdmissionError.scopeMismatch();
+    const executableMissing = customRunnerAdmissionError.executableMissing();
+    const executableDrifted = customRunnerAdmissionError.executableDrifted();
+    const resolutionDrifted = customRunnerAdmissionError.executableResolutionDrifted();
+
+    expect(matches('custom-runner-admission-invalid')(invalid)).toBe(true);
+    expect(invalid).toMatchObject({
+      kind: 'custom-runner-admission-invalid',
+      message: 'Custom runner admission is invalid.',
+    });
+    expect(matches('custom-runner-admission-denied')(plannerDenied)).toBe(true);
+    expect(plannerDenied.message).toBe('Configured custom planner admission was denied.');
+    expect(matches('custom-runner-admission-denied')(implementerDenied)).toBe(true);
+    expect(implementerDenied.message).toBe('Configured custom runner admission was denied.');
+    expect(matches('custom-runner-admission-scope-mismatch')(scopeMismatch)).toBe(true);
+    expect(scopeMismatch).toMatchObject({
+      kind: 'custom-runner-admission-scope-mismatch',
+      message: 'Custom runner admission no longer matches this project and definition.',
+    });
+    expect(matches('custom-runner-executable-missing')(executableMissing)).toBe(true);
+    expect(executableMissing).toMatchObject({
+      kind: 'custom-runner-executable-missing',
+      message:
+        'Custom runner executable is no longer available. Re-run custom runner admission before execution.',
+    });
+    expect(matches('custom-runner-executable-drifted')(executableDrifted)).toBe(true);
+    expect(executableDrifted).toMatchObject({
+      kind: 'custom-runner-executable-drifted',
+      message:
+        'Custom runner executable identity changed. Re-run custom runner admission before execution.',
+    });
+    expect(matches('custom-runner-executable-resolution-drifted')(resolutionDrifted)).toBe(true);
+    expect(resolutionDrifted).toMatchObject({
+      kind: 'custom-runner-executable-resolution-drifted',
+      message: 'Custom runner executable no longer resolves to the admitted identity.',
+    });
+
+    for (const value of [
+      invalid,
+      plannerDenied,
+      implementerDenied,
+      scopeMismatch,
+      executableMissing,
+      executableDrifted,
+      resolutionDrifted,
+    ]) {
+      expect(value.data).toBeUndefined();
+    }
+  });
+});
 
 describe('checkRunnerTrust', () => {
   it('trusts system commands like claude and codex', () => {
@@ -179,6 +241,208 @@ describe('checkRunnerTrust', () => {
 
     expect(checkRunnerTrust(config, '/tmp/project').untrustedCommands).toContain(
       'bash -c printf "%s" "{prompt}"',
+    );
+  });
+
+  it('skips exact configured custom tuples for planner, default implementer, and profile rows', () => {
+    const config = withCustomCommands(
+      makeConfig({
+        planner: {
+          kind: 'shell',
+          command: './tools/plan',
+          args: ['--json'],
+          outputFormat: 'text',
+          idleWarnMs: 1_000,
+          idleKillMs: 2_000,
+          env: ['PLANNER_TOKEN'],
+        },
+        implementer: {
+          kind: 'agent',
+          command: './tools/apply',
+          args: ['--write'],
+          outputFormat: 'jsonl',
+          idleWarnMs: 1_100,
+          idleKillMs: 2_100,
+          env: ['IMPLEMENTER_TOKEN'],
+          model: 'local-agent',
+        },
+        implementerProfiles: {
+          default: 'reviewer',
+          profiles: {
+            reviewer: {
+              kind: 'shell',
+              command: './tools/review',
+              args: ['--diff'],
+              outputFormat: 'stream-json',
+              idleWarnMs: 1_200,
+              idleKillMs: 2_200,
+              env: ['PROFILE_B', 'PROFILE_A'],
+              model: 'local-reviewer',
+            },
+          },
+        },
+      }),
+      {
+        plan: {
+          label: 'Configured planner',
+          contract: 'output',
+          executable: './tools/plan',
+          argv: ['--json'],
+          outputFormat: 'text',
+          idleWarnMs: 1_000,
+          idleKillMs: 2_000,
+          env: ['PLANNER_TOKEN'],
+        },
+        apply: {
+          label: 'Configured implementer',
+          contract: 'direct',
+          executable: './tools/apply',
+          argv: ['--write'],
+          outputFormat: 'jsonl',
+          idleWarnMs: 1_100,
+          idleKillMs: 2_100,
+          env: ['IMPLEMENTER_TOKEN'],
+        },
+        review: {
+          label: 'Configured profile',
+          contract: 'output',
+          executable: './tools/review',
+          argv: ['--diff'],
+          outputFormat: 'stream-json',
+          idleWarnMs: 1_200,
+          idleKillMs: 2_200,
+          env: ['PROFILE_A', 'PROFILE_B'],
+        },
+      },
+    );
+
+    expect(checkRunnerTrust(config, '/tmp/project')).toEqual({
+      untrustedCommands: [],
+      violations: [],
+    });
+    expect(() => rejectUntrustedRunners(config, '/tmp/project', false)).not.toThrow();
+  });
+
+  it('keeps every diverged execution tuple in the legacy trust gate', () => {
+    const customCommands = {
+      review: {
+        label: 'Configured review',
+        contract: 'output' as const,
+        executable: './tools/review',
+        argv: ['--json'],
+        outputFormat: 'text' as const,
+        idleWarnMs: 1_000,
+        idleKillMs: 2_000,
+        env: ['ALPHA', 'BETA'],
+      },
+    };
+    const shellPlanner = (overrides: {
+      command?: string;
+      args?: string[];
+      outputFormat?: 'text' | 'jsonl';
+      idleWarnMs?: number;
+      idleKillMs?: number;
+      env?: string[];
+    }) =>
+      withCustomCommands(
+        makeConfig({
+          planner: {
+            kind: 'shell',
+            command: overrides.command ?? './tools/review',
+            args: overrides.args ?? ['--json'],
+            outputFormat: overrides.outputFormat ?? 'text',
+            idleWarnMs: overrides.idleWarnMs ?? 1_000,
+            idleKillMs: overrides.idleKillMs ?? 2_000,
+            env: overrides.env ?? ['ALPHA', 'BETA'],
+          },
+        }),
+        customCommands,
+      );
+    const cases = [
+      ['executable', shellPlanner({ command: './tools/other' }), './tools/other --json'],
+      ['argv', shellPlanner({ args: ['--text'] }), './tools/review --text'],
+      ['output format', shellPlanner({ outputFormat: 'jsonl' }), './tools/review --json'],
+      ['idle warning', shellPlanner({ idleWarnMs: 1_100 }), './tools/review --json'],
+      ['idle kill', shellPlanner({ idleKillMs: 2_100 }), './tools/review --json'],
+      ['environment', shellPlanner({ env: ['ALPHA', 'GAMMA'] }), './tools/review --json'],
+      [
+        'contract',
+        withCustomCommands(
+          makeConfig({
+            planner: {
+              kind: 'agent',
+              command: './tools/review',
+              args: ['--json'],
+              outputFormat: 'text',
+              idleWarnMs: 1_000,
+              idleKillMs: 2_000,
+              env: ['ALPHA', 'BETA'],
+            },
+          }),
+          customCommands,
+        ),
+        './tools/review --json',
+      ],
+    ] as const;
+
+    for (const [name, config, command] of cases) {
+      expect(checkRunnerTrust(config, '/tmp/project').violations, name).toEqual([
+        { label: 'planner', command },
+      ]);
+      expect(() => rejectUntrustedRunners(config, '/tmp/project', false), name).toThrow(
+        /untrusted runner/i,
+      );
+    }
+  });
+
+  it('keeps safe, unsafe, and noncatalog repo-local rows rejected beside a configured custom tuple', () => {
+    const config = withCustomCommands(
+      makeConfig({
+        planner: {
+          kind: 'shell',
+          command: './tools/cataloged',
+          args: ['--json'],
+        },
+        implementer: {
+          kind: 'shell',
+          command: './tools/not-cataloged',
+          args: ['--json'],
+          model: 'local-shell',
+        },
+        implementerProfiles: {
+          default: 'unsafe',
+          profiles: {
+            unsafe: {
+              kind: 'agent',
+              command: 'bash',
+              args: ['-c', 'printf "%s" "{prompt}"'],
+              model: 'local-agent',
+            },
+          },
+        },
+      }),
+      {
+        cataloged: {
+          label: 'Cataloged planner',
+          contract: 'output',
+          executable: './tools/cataloged',
+          argv: ['--json'],
+        },
+      },
+    );
+
+    expect(checkRunnerTrust(config, '/tmp/project')).toEqual({
+      untrustedCommands: ['./tools/not-cataloged --json', 'bash -c printf "%s" "{prompt}"'],
+      violations: [
+        { label: 'implementer', command: './tools/not-cataloged --json' },
+        {
+          label: 'implementer profile unsafe',
+          command: 'bash -c printf "%s" "{prompt}"',
+        },
+      ],
+    });
+    expect(() => rejectUntrustedRunners(config, '/tmp/project', false)).toThrow(
+      /untrusted runner/i,
     );
   });
 });

@@ -1,8 +1,9 @@
 import type { IpcPromptRequest, ServerMessage } from './protocol.js';
-import { parseServerMessage } from './protocol.js';
+import { artifactReviewPromptFitsFrame, parseServerMessage } from './protocol.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import { protectConsumerPayload } from '../../core/consumer-policy.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import {
   protectEngineEventForConsumer,
   projectUserEditConflictForTranscriptPolicy,
@@ -16,6 +17,9 @@ export function protectServerMessage(
   msg: ServerMessage,
   opts: ProtectServerMessageOptions,
 ): ServerMessage | null {
+  if (msg.kind === 'prompt_request' && msg.request.kind === 'artifact_review') {
+    return artifactReviewPromptIsTransportable(msg.request) ? msg : null;
+  }
   if (msg.kind === 'event') {
     const event = protectEngineEventForConsumer(msg.payload, {
       context: 'ipc',
@@ -67,6 +71,8 @@ function projectPromptRequestForTranscriptPolicy(request: IpcPromptRequest): Ipc
   switch (request.kind) {
     case 'approval_needed':
       return request;
+    case 'artifact_review':
+      return request;
     case 'user_edit_conflict':
       return {
         ...request,
@@ -91,6 +97,19 @@ function projectPromptRequestForTranscriptPolicy(request: IpcPromptRequest): Ipc
       const _exhaustive: never = request;
       return _exhaustive;
     }
+  }
+}
+
+function artifactReviewPromptIsTransportable(
+  request: Extract<IpcPromptRequest, { kind: 'artifact_review' }>,
+): boolean {
+  try {
+    return (
+      Buffer.byteLength(request.review.text, 'utf8') <= PLANNER_ARTIFACT_MAX_BYTES &&
+      artifactReviewPromptFitsFrame(request)
+    );
+  } catch {
+    return false;
   }
 }
 

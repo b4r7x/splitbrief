@@ -1,0 +1,21 @@
+# preserve me
+version: 3
+customCommands:
+  sentinel:
+    label: Sentinel
+    contract: output
+    executable: tool
+    argv:
+      - --flag
+planner:
+  kind: cli
+  tool: claude-code
+  model: claude-sonnet-4-5
+implementer:
+  kind: cli
+  tool: codex
+  model: gpt-5.3-codex
+workflow:
+  maxRetries: 3
+unknownTop:
+  preserved: true

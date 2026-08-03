@@ -14,7 +14,7 @@ import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { Session } from '../../core/schemas/session.js';
 import { SessionsPicker } from './sessions.js';
-import { tick } from '#testing/helpers/ink.js';
+import { flushEffects, tick } from '#testing/helpers/ink.js';
 
 let tmp: string;
 
@@ -137,7 +137,7 @@ describe('SessionsPicker', () => {
 
     const instance = render(<SessionsPicker />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     instance.stdin.write('interrupted');
     await tick(1);
@@ -150,7 +150,7 @@ describe('SessionsPicker', () => {
 
     const byId = render(<SessionsPicker />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     byId.stdin.write('hidden-id');
     await tick(1);
@@ -176,7 +176,7 @@ describe('SessionsPicker', () => {
     overlayStore.open('sessions');
     const instance = render(<SessionsPicker />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     instance.stdin.write('\r');
     await tick(1);
@@ -207,7 +207,7 @@ describe('SessionsPicker', () => {
 
     const instance = render(<SessionsPicker />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     instance.stdin.write('alpha-feature-filter');
     await tick(1);
@@ -235,7 +235,7 @@ describe('SessionsPicker', () => {
 
     const instance = render(<SessionsPicker />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     instance.stdin.write('alpha-feature-filter');
     await tick(1);
@@ -265,7 +265,7 @@ describe('SessionsPicker', () => {
 
     const instance = render(<SessionsPicker />);
     await tick(1);
-    await tick(1);
+    await flushEffects();
 
     instance.stdin.write('alpha-feature-filter');
     await tick(1);

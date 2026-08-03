@@ -26,7 +26,7 @@ describe('resolveEffectiveConfig', () => {
     expect(warnings).toContainEqual(
       expect.objectContaining({
         source: 'validation',
-        message: expect.stringContaining('API key found in implementer config'),
+        message: expect.stringContaining('Inline API key in implementer config'),
       }),
     );
   });

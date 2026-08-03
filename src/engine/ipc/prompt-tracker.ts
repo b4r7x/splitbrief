@@ -7,11 +7,13 @@ import type {
   IpcPromptResponse,
   ServerMessage,
 } from './protocol.js';
+import { artifactReviewPromptFrameBytes, IPC_MAX_FRAME_BYTES } from './protocol.js';
 import type { TaskReviewCommand, TaskReviewResponse } from '../events/workflow-events.js';
 import {
   allowedSettlingBriefReviewCommandsForPrompt,
   briefReviewCommandToApprovalReviewResult,
 } from '../../core/schemas/brief-review-command.js';
+import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 
 type PendingPrompt = {
   request: IpcPromptRequest;
@@ -42,6 +44,16 @@ export const ipcPromptError = {
       'ipc-prompt-cancelled-closing',
       `IPC prompt cancelled while closing server: ${promptKind}`,
       { promptKind },
+    ),
+  artifactReviewTooLarge: (textBytes: number, frameBytes: number) =>
+    error(
+      'ipc-artifact-review-too-large',
+      'IPC artifact review exceeds the supported delivery limit.',
+      {
+        promptKind: 'artifact_review',
+        textBytes,
+        frameBytes,
+      },
     ),
 } as const;
 
@@ -122,6 +134,8 @@ export function createPromptTracker(opts: PromptTrackerOptions) {
     },
     requestClientPrompt(requestWithoutId: IpcPromptRequestInput): Promise<IpcPromptResponse> {
       const request = createPromptRequest(requestWithoutId, `prompt-${nextPromptId++}`);
+      const artifactReviewError = artifactReviewTransportError(request);
+      if (artifactReviewError !== null) return Promise.reject(artifactReviewError);
 
       return new Promise<IpcPromptResponse>((resolve, reject) => {
         const currentSocket = opts.currentSocket();
@@ -180,6 +194,12 @@ function createPromptRequest(
           ...allowedSettlingBriefReviewCommandsForPrompt(requestWithoutId.approvalType),
         ],
       };
+    case 'artifact_review':
+      return {
+        requestId,
+        kind: requestWithoutId.kind,
+        review: requestWithoutId.review,
+      };
     case 'user_edit_conflict':
       return { requestId, kind: requestWithoutId.kind, conflict: requestWithoutId.conflict };
     case 'question_asked':
@@ -209,6 +229,15 @@ function createPromptRequest(
       return exhaustive;
     }
   }
+}
+
+function artifactReviewTransportError(request: IpcPromptRequest): Error | null {
+  if (request.kind !== 'artifact_review') return null;
+
+  const textBytes = Buffer.byteLength(request.review.text, 'utf8');
+  const frameBytes = artifactReviewPromptFrameBytes(request);
+  if (textBytes <= PLANNER_ARTIFACT_MAX_BYTES && frameBytes <= IPC_MAX_FRAME_BYTES) return null;
+  return ipcPromptError.artifactReviewTooLarge(textBytes, frameBytes);
 }
 
 function settlePromptResponse(response: IpcPromptResponse): IpcPromptResponse {

@@ -21,6 +21,7 @@ import { sessionsStore } from '../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { getLogo } from '../../features/home/logo.js';
 import { HomeScreen } from './home.js';
@@ -101,8 +102,8 @@ describe('HomeScreen', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    const plannerLine = frame.split('\n').find((line) => line.includes('Claude Code')) ?? '';
-    expect(plannerLine.indexOf('Claude Code')).toBeGreaterThan(0);
+    const plannerLine = frame.split('\n').find((line) => line.includes('Claude Code CLI')) ?? '';
+    expect(plannerLine.indexOf('Claude Code CLI')).toBeGreaterThan(0);
     expect(frame).not.toContain('plan expensively · build cheaply');
     expect(frame).toContain(DEFAULT_HOME_HINT);
     ui.unmount();
@@ -135,7 +136,7 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('keeps the config summary to one row with long configured model names', async () => {
+  it('keeps the canonical runner prefix and a truncated config summary on one bounded row', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
     const longModel = 'provider-family-long';
     configStore.__testReset({
@@ -151,10 +152,11 @@ describe('HomeScreen', () => {
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
-    const summaryLine = lineContaining(frame, 'Codex');
-    expect(summaryLine).toBe(lineContaining(frame, 'standard'));
+    const summaryLine = lineContaining(frame, 'OpenAI Codex CLI');
     expect(summaryLine).toContain('Ollama');
+    expect(summaryLine).toContain('…');
     expect(frame.split('\n').length).toBeLessThanOrEqual(30);
+    expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 100)).toBe(true);
     ui.unmount();
   });
 
@@ -207,15 +209,16 @@ describe('HomeScreen', () => {
     await flushEffects();
 
     const before = ui.lastFrame() ?? '';
-    const plannerLine = lineContaining(before, 'Claude Code');
+    const plannerLine = lineContaining(before, 'Claude Code CLI');
     const modeLine = lineContaining(before, 'standard');
 
+    await flushEffects();
     ui.stdin.write('/');
     await flushEffects();
 
     const after = ui.lastFrame() ?? '';
     expect(after).toContain('tab fill');
-    expect(lineContaining(after, 'Claude Code')).toBe(plannerLine);
+    expect(lineContaining(after, 'Claude Code CLI')).toBe(plannerLine);
     expect(lineContaining(after, 'standard')).toBe(modeLine);
     ui.unmount();
   });
@@ -341,6 +344,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     expect(ui.lastFrame() ?? '').not.toContain(FOCUS_BAR);
 
+    await flushEffects();
     ui.stdin.write(CTRL_R);
     await flushEffects();
 
@@ -373,6 +377,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
     }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {
       expectLineContains(ui.lastFrame() ?? '', target.feature, FOCUS_BAR);
@@ -393,6 +398,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       );
     }
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
@@ -446,6 +452,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     const before = columnIndexOf(ui.lastFrame() ?? '', marker);
 
+    await flushEffects();
     ui.stdin.write(CTRL_R);
     await flushEffects();
 
@@ -505,6 +512,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
     expect(ui.lastFrame() ?? '').not.toContain('ancient hidden focus target');
 
+    await flushEffects();
     ui.stdin.write(CTRL_R);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR);
@@ -589,6 +597,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       expect(ui.lastFrame() ?? '').not.toContain('invisible feature');
     }, SESSION_FILTER_WAIT_MS);
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
 
@@ -625,6 +634,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       expect(ui.lastFrame() ?? '').not.toContain('invisible copy feature');
     }, SESSION_FILTER_WAIT_MS);
 
+    await flushEffects();
     ui.stdin.write('y');
     await flushEffects();
 
@@ -763,6 +773,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').not.toContain(FOCUS_BAR);
 
+    await flushEffects();
     ui.stdin.write('hi');
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('hi');

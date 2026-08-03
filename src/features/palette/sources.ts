@@ -3,7 +3,10 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Phase, WorkflowMode } from '../../core/schemas/enums.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { Screen } from '../../core/navigation/types.js';
-import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type {
+  RuntimeCommandDef,
+  RuntimeConfigSaveResult,
+} from '../../core/runtime/commands/types.js';
 import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -21,7 +24,7 @@ interface BuildPaletteSourcesOptions {
   sessions: Session[];
   projectDir: string;
   onRuntimeCommand: (raw: string) => unknown;
-  onWorkflowMode: (mode: WorkflowMode) => unknown;
+  onWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
   isAttached?: boolean | undefined;
 }
 
@@ -69,13 +72,13 @@ function buildCommandItems(
 }
 
 function buildModeItems(
-  onWorkflowMode: (mode: WorkflowMode) => unknown,
+  onWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>,
 ): PaletteSources['modeItems'] {
   return WORKFLOW_MODES.map((mode) => ({
     label: mode,
     description: `Switch to ${mode} mode`,
-    action: () => {
-      void onWorkflowMode(mode);
+    action: async () => {
+      return await onWorkflowMode(mode);
     },
   }));
 }

@@ -1,7 +1,7 @@
 import { createElement, useRef } from 'react';
 import { Text } from 'ink';
 import { describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { useCompletionNavigation } from './use-completion-navigation.js';
 
 const ENTER = '\r';
@@ -37,6 +37,7 @@ describe('useCompletionNavigation', () => {
     const onSelect = vi.fn();
     const ui = renderFeature(createElement(Harness, { hasItems: false, onReturn, onSelect }));
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await tick(20);
 
@@ -50,8 +51,9 @@ describe('useCompletionNavigation', () => {
     const onSelect = vi.fn();
     const ui = renderFeature(createElement(Harness, { hasItems: false, onMove, onSelect }));
 
+    await flushEffects();
     ui.stdin.write(UP);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
     await tick(20);
 
@@ -64,6 +66,7 @@ describe('useCompletionNavigation', () => {
     const onSelect = vi.fn();
     const ui = renderFeature(createElement(Harness, { hasItems: true, onSelect }));
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await tick(20);
 

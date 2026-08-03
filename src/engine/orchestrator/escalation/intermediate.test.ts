@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { ConfigSchema } from '../../../core/schemas/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -15,6 +18,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
 import { resolveIntermediateConfig } from './intermediate.js';
 import type { EscalationContext } from './types.js';
@@ -137,6 +141,99 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
     expect(outcome.attempts).toBe(0);
     expect(events.some((e) => e.type === 'escalate')).toBe(false);
     expect(events.some((e) => e.type === 'warning')).toBe(true);
+  });
+
+  it('runs the intermediate API tier without selecting a configured default custom child', async () => {
+    const savedKey = process.env.OPENROUTER_API_KEY;
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    const { projectDir, sessionId } = setupProject();
+    const sentinel = join(projectDir, 'configured-default-ran');
+    const childProgram = `require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'ran');`;
+    const config = ConfigSchema.parse({
+      ...makeNoValidationConfig({
+        escalation: {
+          intermediateProvider: 'openrouter',
+          intermediateModel: 'x-ai/grok-4-fast',
+          enabled: true,
+        },
+      }),
+      customCommands: {
+        'intermediate-sentinel': {
+          label: 'Intermediate sentinel',
+          contract: 'output',
+          executable: process.execPath,
+          argv: ['-e', childProgram],
+          outputFormat: 'text',
+        },
+      },
+      implementerProfiles: {
+        default: 'intermediate-sentinel',
+        profiles: {
+          'intermediate-sentinel': {
+            kind: 'shell',
+            command: process.execPath,
+            args: ['-e', childProgram],
+            outputFormat: 'text',
+            model: 'configured-default',
+          },
+        },
+      },
+    });
+    const originalConfig = structuredClone(config);
+    const originalProfiles = config.implementerProfiles;
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        makeOpenAiSseResponse([
+          { content: '```ts\nexport const intermediate = true;\n```' },
+          { usage: { prompt_tokens: 40, completion_tokens: 20 } },
+        ]),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+      const { bus, events } = makeBusRecorder();
+      const { callbacks } = makeCallbacks();
+      const task = makeTask({ id: 'T001', file: 'src/intermediate.ts', action: 'create' });
+      const outcome = await runEscalationTier(INTERMEDIATE_TIER, {
+        ctx: {
+          projectDir,
+          sessionId,
+          config,
+          callbacks,
+          bus,
+          planner: makePlanner({}),
+          context: defaultContext,
+          implementer: makeImplementer(),
+          metadata: TEST_METADATA,
+          sinks: TEST_SINKS,
+          validator: createValidator(),
+          taskStartSnapshot,
+          dependsOnFiles: [],
+        },
+        task,
+        state: makeImplState([task]),
+        lastError: 'validation failed',
+        priorAttempts: 0,
+      });
+
+      expect(outcome.result).toMatchObject({
+        completed: true,
+        method: 'escalated-intermediate',
+        tool: 'openrouter',
+        model: 'x-ai/grok-4-fast',
+      });
+      expect(events).toContainEqual(expect.objectContaining({ type: 'escalate', tier: 0 }));
+      expect(fetchMock).toHaveBeenCalled();
+      expect(existsSync(sentinel)).toBe(false);
+      expect(config).toEqual(originalConfig);
+      expect(config.implementerProfiles).toBe(originalProfiles);
+    } finally {
+      vi.unstubAllGlobals();
+      if (savedKey === undefined) delete process.env.OPENROUTER_API_KEY;
+      else process.env.OPENROUTER_API_KEY = savedKey;
+    }
   });
 });
 

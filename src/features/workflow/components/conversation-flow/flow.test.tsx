@@ -300,7 +300,7 @@ describe('ConversationFlow', () => {
     const ui = renderConversation([makeRunnerActivity()], 5, 90);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Plan activity  1 update  [Codex]');
+    expect(frame).toContain('Plan activity  1 update  [OpenAI Codex CLI]');
     expectActivityLine(frame, 'READ', 'CLAUDE.md :1-260');
     expect(frame).not.toContain('/bin/zsh -lc');
     expect(frame).not.toContain('activity:');

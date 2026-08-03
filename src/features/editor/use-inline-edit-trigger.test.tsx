@@ -2,7 +2,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Text } from 'ink';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { readSessionFileConfined } from '../../core/sessions/confinement.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
@@ -55,7 +55,7 @@ describe('useInlineEditTrigger', () => {
 
     const ui = renderFeature(<Host sessionDirPath="/tmp" />);
     unmount = ui.unmount;
-    await tick();
+    await flushEffects();
 
     ui.stdin.write(CTRL_E);
     await tick();
@@ -76,7 +76,7 @@ describe('useInlineEditTrigger', () => {
 
     const ui = renderFeature(<Host sessionDirPath="/tmp" />);
     unmount = ui.unmount;
-    await tick();
+    await flushEffects();
 
     ui.stdin.write(CTRL_E);
     await tick();
@@ -91,7 +91,7 @@ describe('useInlineEditTrigger', () => {
 
     const ui = renderFeature(<Host sessionDirPath="/tmp" />);
     unmount = ui.unmount;
-    await tick();
+    await flushEffects();
 
     ui.stdin.write(CTRL_E);
     // A tick past the keypress: the null-filePath guard returns before any confined read is
@@ -118,7 +118,7 @@ describe('useInlineEditTrigger', () => {
 
       const ui = renderFeature(<Host sessionDirPath={dir} />);
       unmount = ui.unmount;
-      await tick();
+      await flushEffects();
 
       ui.stdin.write(CTRL_E);
       // The confined read is async; wait for the overlay to open once it resolves.
@@ -152,6 +152,7 @@ describe('useInlineEditTrigger', () => {
 
       // The keypress captures the current ownerToken synchronously and kicks off the async
       // confined read. Before it resolves, the owner disconnects: the review token advances.
+      await flushEffects();
       ui.stdin.write(CTRL_E);
       reviewStore.setReviewFile(specPath);
 

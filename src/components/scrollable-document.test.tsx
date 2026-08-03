@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Box, Text } from 'ink';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { glyph } from '../lib/glyphs.js';
 import { ScrollableDocument } from './scrollable-document.js';
 
@@ -62,10 +62,10 @@ describe('ScrollableDocument', () => {
 
   it('pages down by viewport height and reaches the last rows', async () => {
     const ui = renderFeature(<ScrollableDocument rows={makeRows(8)} height={3} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(PAGE_DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(PAGE_DOWN);
     await tick(20);
 
@@ -73,6 +73,7 @@ describe('ScrollableDocument', () => {
     expect(frame).toContain('line-7');
     expect(frame).toContain('more');
 
+    await flushEffects();
     ui.stdin.write(PAGE_UP);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-2');
@@ -82,12 +83,13 @@ describe('ScrollableDocument', () => {
 
   it('supports Ctrl+B and Ctrl+F as page key fallbacks', async () => {
     const ui = renderFeature(<ScrollableDocument rows={makeRows(8)} height={3} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_F);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-3');
 
+    await flushEffects();
     ui.stdin.write(CTRL_B);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-0');
@@ -97,12 +99,13 @@ describe('ScrollableDocument', () => {
 
   it('jumps home and end', async () => {
     const ui = renderFeature(<ScrollableDocument rows={makeRows(8)} height={3} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(END);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-7');
 
+    await flushEffects();
     ui.stdin.write(HOME);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-0');
@@ -120,7 +123,7 @@ describe('ScrollableDocument', () => {
         onScrollOffsetChange={(offset) => offsets.push(offset)}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(PAGE_DOWN);
     await tick(20);
@@ -149,13 +152,14 @@ describe('ScrollableDocument', () => {
     const ui = renderFeature(
       <ScrollableDocument rows={makeRows(6)} height={3} keyboardMode="line-and-page" />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-1');
     expect(ui.lastFrame() ?? '').not.toContain('line-0');
 
+    await flushEffects();
     ui.stdin.write(ARROW_UP);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('line-0');
@@ -165,7 +169,7 @@ describe('ScrollableDocument', () => {
 
   it('ignores keyboard input when isActive is false', async () => {
     const ui = renderFeature(<ScrollableDocument rows={makeRows(8)} height={3} isActive={false} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(PAGE_DOWN);
     await tick(20);
@@ -178,7 +182,7 @@ describe('ScrollableDocument', () => {
 
   it('clamps scroll offset when rows shrink', async () => {
     const ui = renderFeature(<ScrollableDocument rows={makeRows(8)} height={3} />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(END);
     await tick(20);
@@ -249,11 +253,13 @@ describe('ScrollableDocument', () => {
     expect(ui.lastFrame() ?? '').not.toContain('block-a-3');
     expect(ui.lastFrame() ?? '').not.toContain('tail-row');
 
+    await flushEffects();
     ui.stdin.write(PAGE_DOWN);
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('block-a-2');
     expect(ui.lastFrame() ?? '').toContain('block-a-3');
 
+    await flushEffects();
     ui.stdin.write(END);
     await tick(20);
 

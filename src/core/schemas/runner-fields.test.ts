@@ -121,6 +121,34 @@ describe('createRunnerConfigSchema', () => {
     expect(implementerSchema.safeParse(customRunner).success).toBe(true);
   });
 
+  it('admits only the dedicated local credential reference for Ollama', () => {
+    const schema = createRunnerConfigSchema(GenerationCommonFields);
+    const localOllama = {
+      kind: 'api' as const,
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local' as const,
+      apiBase: 'http://localhost:11434/v1',
+      model: 'local-model',
+    };
+
+    expect(schema.safeParse(localOllama).success).toBe(true);
+    expect(schema.safeParse({ ...localOllama, apiKey: 'env:OLLAMA_LOCAL_API_KEY' }).success).toBe(
+      true,
+    );
+
+    for (const apiKey of ['inline-local-secret', 'env:ARBITRARY_LOCAL_KEY', 'env:OLLAMA_API_KEY']) {
+      const result = schema.safeParse({ ...localOllama, apiKey });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues).toContainEqual(
+        expect.objectContaining({
+          path: ['apiKey'],
+          message: expect.stringContaining('OLLAMA_LOCAL_API_KEY'),
+        }),
+      );
+    }
+  });
+
   it('rejects partial, unknown, and catalog-mismatched API identities before runner use', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
 

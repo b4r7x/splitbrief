@@ -173,8 +173,7 @@ export function resolveIntermediateConfig(
     timeout: ctx.config.implementer.timeout,
   };
 
-  return {
-    ...ctx.config,
-    implementer: intermediateImplConfig,
-  };
+  const intermediateConfig = { ...ctx.config, implementer: intermediateImplConfig };
+  delete intermediateConfig.implementerProfiles;
+  return intermediateConfig;
 }

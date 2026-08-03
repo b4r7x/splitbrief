@@ -10,15 +10,16 @@ import { createRpcCommandContext } from './command-context.js';
 import type { RpcCommand } from './types.js';
 import type { RpcErrorOptions } from './writer.js';
 import type { ApprovalGatePrompt, BriefReviewGateResult } from './gates.js';
+import type { ResolvedRunConfig } from '../build-overrides.js';
 
 export function createCommandHandler(deps: {
   projectDir: string;
   getSessionId: () => string | undefined;
   getState: () => WorkflowState | null;
-  getConfig: () => Config;
-  setConfig: (config: Config) => void;
-  getPersistedConfig?: (() => Config | null) | undefined;
-  setPersistedConfig?: ((config: Config) => void) | undefined;
+  getRunConfig: () => ResolvedRunConfig | null;
+  setRunConfig: (config: ResolvedRunConfig) => void;
+  reloadRunConfig: () => ResolvedRunConfig;
+  setEffectiveConfig: (config: Config) => void;
   getApprovalEnabled?: (() => boolean) | undefined;
   setApprovalEnabled?: ((enabled: boolean) => void) | undefined;
   getPhase: () => Phase;
@@ -55,10 +56,10 @@ export function createCommandHandler(deps: {
       projectDir: deps.projectDir,
       getSessionId: deps.getSessionId,
       getState: deps.getState,
-      getConfig: deps.getConfig,
-      getPersistedConfig: deps.getPersistedConfig,
-      setConfig: deps.setConfig,
-      setPersistedConfig: deps.setPersistedConfig,
+      getRunConfig: deps.getRunConfig,
+      setRunConfig: deps.setRunConfig,
+      reloadRunConfig: deps.reloadRunConfig,
+      setEffectiveConfig: deps.setEffectiveConfig,
       getApprovalEnabled: deps.getApprovalEnabled,
       setApprovalEnabled: deps.setApprovalEnabled,
       getPhase: deps.getPhase,

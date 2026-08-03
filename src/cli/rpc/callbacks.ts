@@ -59,8 +59,12 @@ export function createWorkflowCallbacks(deps: {
   reportError: (message: string) => void;
 }): RunWorkflowOptions['callbacks'] {
   return {
-    onApprovalNeeded: async (approvalType, filePath) => {
-      const result = await deps.waitForApproval({ pending: 'approval', approvalType, filePath });
+    onApprovalNeeded: async (approvalType, input) => {
+      const result = await deps.waitForApproval(
+        approvalType === 'artifact'
+          ? { pending: 'approval', approvalType, review: input }
+          : { pending: 'approval', approvalType, filePath: input },
+      );
       if (result.approved) return { approved: true };
       if (result.action === 'edit') {
         return { approved: false, action: 'edit' };

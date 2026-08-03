@@ -83,18 +83,18 @@ describe('settings overlay integration', () => {
 
     ui.stdin.write(' ');
     ui.stdin.write(' ');
-    await flushEffects();
-
-    expect(loadConfig(dir).config.validation.typecheck).toBe(true);
+    await vi.waitFor(() => {
+      expect(loadConfig(dir).config.validation.typecheck).toBe(true);
+    });
 
     ui.stdin.write(' ');
     ui.stdin.write(ARROW_DOWN);
     ui.stdin.write(' ');
-    await flushEffects();
-
-    const validation = loadConfig(dir).config.validation;
-    expect(validation.typecheck).toBe(false);
-    expect(validation.lint).toBe(false);
+    await vi.waitFor(() => {
+      const validation = loadConfig(dir).config.validation;
+      expect(validation.typecheck).toBe(false);
+      expect(validation.lint).toBe(false);
+    });
     ui.unmount();
   });
 

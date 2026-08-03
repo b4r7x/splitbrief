@@ -3,6 +3,7 @@ import {
   assemblePickerDescriptors,
   buildPickerOptions,
   type PickerOption,
+  type RunnerPickerOption,
 } from '../../src/features/runners/model-catalog/options.js';
 
 /**
@@ -11,8 +12,11 @@ import {
  * fabricated model policy, billing posture or permission set cannot disagree
  * with the catalog the UI reads.
  */
-export function realPickerOption(role: RunnerRole, id: string): PickerOption {
-  const option = realPickerOptions(role).find((candidate) => candidate.id === id);
+export function realPickerOption(role: RunnerRole, id: string): RunnerPickerOption {
+  const option = realPickerOptions(role).find(
+    (candidate): candidate is RunnerPickerOption =>
+      candidate.kind !== 'custom-command' && candidate.id === id,
+  );
   if (!option) throw new Error(`no ${role} picker option for "${id}"`);
   return option;
 }

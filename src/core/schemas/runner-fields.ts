@@ -13,6 +13,7 @@ import {
 import { narrowRecord } from '../../utils/type-guards.js';
 import { isAutomaticModel, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import { hasAutomaticModelDefault } from '../providers/model-selection.js';
+import { isOllamaLocalCredentialReference } from '../providers/ollama-credential.js';
 import {
   CliToolIdSchema,
   EffortLevelSchema,
@@ -26,6 +27,10 @@ import type { CliToolId } from '../runners/cli-tool-catalog.js';
 import type { RunnerKind } from './enums.js';
 
 const PROMPT_PLACEHOLDER = '{prompt}';
+
+export const EnvironmentReferenceNameSchema = z
+  .string()
+  .regex(/^[A-Z_][A-Z0-9_]*$/, 'Use an uppercase environment variable name');
 
 const CommandFieldSchema = z
   .string()
@@ -169,6 +174,21 @@ function validateAutomaticModelResolvable(input: unknown, ctx: z.RefinementCtx):
   });
 }
 
+function validateOllamaLocalCredential(input: unknown, ctx: z.RefinementCtx): void {
+  const runner = narrowRecord(input);
+  if (runner?.kind !== 'api' || runner.provider !== 'ollama') return;
+
+  const apiKey = typeof runner.apiKey === 'string' ? runner.apiKey : undefined;
+  if (isOllamaLocalCredentialReference(apiKey)) return;
+
+  ctx.addIssue({
+    code: 'custom',
+    path: ['apiKey'],
+    message:
+      'Local Ollama apiKey must be omitted or exactly "env:OLLAMA_LOCAL_API_KEY" to keep cloud credentials out of loopback requests',
+  });
+}
+
 function validateApiIdentity(input: unknown, ctx: z.RefinementCtx): void {
   const runner = narrowRecord(input);
   if (
@@ -279,6 +299,7 @@ const ShellRunnerFields = {
   command: CommandFieldSchema,
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
+  env: z.array(EnvironmentReferenceNameSchema).optional(),
   ...WatchdogFields,
 };
 
@@ -287,6 +308,7 @@ const AgentRunnerFields = {
   command: CommandFieldSchema,
   args: z.array(z.string()).optional(),
   outputFormat: OutputFormatSchema.optional(),
+  env: z.array(EnvironmentReferenceNameSchema).optional(),
   ...WatchdogFields,
 };
 
@@ -425,6 +447,7 @@ export function createRunnerConfigSchema<C extends z.ZodRawShape>(commonFields: 
     ])
     .superRefine((input, ctx) => {
       validateApiIdentity(input, ctx);
+      validateOllamaLocalCredential(input, ctx);
       validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('implementer', input, ctx);
       validateCliAuthChannel(input, ctx);
@@ -456,6 +479,7 @@ export function createPlannerConfigSchema<C extends z.ZodRawShape>(commonFields:
     ])
     .superRefine((input, ctx) => {
       validateApiIdentity(input, ctx);
+      validateOllamaLocalCredential(input, ctx);
       validateAutomaticModelResolvable(input, ctx);
       validateCliModelPolicy('planner', input, ctx);
       validateCliAuthChannel(input, ctx);

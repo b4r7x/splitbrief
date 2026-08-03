@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -49,6 +49,7 @@ describe('ReadinessPanel', () => {
     expect(frame).toContain('dismiss');
     expect(frame).not.toContain('open fix');
 
+    await flushEffects();
     ui.stdin.write('\r');
     await tick(20);
     expect(ui.lastFrame() ?? '').toContain('Blocked');
@@ -65,6 +66,7 @@ describe('ReadinessPanel', () => {
     await tick();
     expect(ui.lastFrame() ?? '').toContain('open fix');
 
+    await flushEffects();
     ui.stdin.write('\r');
     await tick();
     expect(onOpenFix).toHaveBeenCalledOnce();
@@ -79,7 +81,9 @@ describe('ReadinessPanel', () => {
     const before = ui.lastFrame() ?? '';
     expect(before).not.toContain('▌');
 
+    await flushEffects();
     ui.stdin.write('\x1b[B');
+    await flushEffects();
     ui.stdin.write('\x1b[A');
     await tick();
     expect(ui.lastFrame() ?? '').toBe(before);
@@ -159,18 +163,18 @@ describe('ReadinessPanel', () => {
     overlayStore.open('settings');
     const onDismiss = vi.fn();
     const ui = renderFeature(<ReadinessPanel report={blockedReport()} onDismiss={onDismiss} />);
-    await tick();
+    await flushEffects();
 
     ui.stdin.write('q');
-    await tick();
+    await flushEffects();
     ui.stdin.write('\x1b');
     await tick();
     expect(onDismiss).not.toHaveBeenCalled();
 
     overlayStore.close();
-    await tick();
+    await flushEffects();
     ui.stdin.write('q');
-    await tick();
+    await flushEffects();
     ui.stdin.write('\x1b');
     await tick();
     expect(onDismiss).toHaveBeenCalledTimes(2);

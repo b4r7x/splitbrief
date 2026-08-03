@@ -6,13 +6,14 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
-import type { RunnerRuntime } from '../runners/types.js';
+import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { CliStartGate } from '../runners/start-gate.js';
 
 export interface PlannerFactoryOptions {
   /** Canonical CLI identity admitted by the start-readiness gate. */
   trustedCli?: CliStartGate | undefined;
+  customRuntime?: CustomRunnerRuntimePort | undefined;
 }
 
 export type PlannerCapabilities = {

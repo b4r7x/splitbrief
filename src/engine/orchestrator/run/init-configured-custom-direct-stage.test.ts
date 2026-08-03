@@ -1,0 +1,289 @@
+import { statSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
+import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
+import type { Config } from '../../../core/schemas/config.js';
+import { ConfigSchema } from '../../../core/schemas/config.js';
+import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { createStagedProject } from '../approval/staged-project.js';
+import { createRetryRuntime } from '../escalation/retry-runtime.js';
+import { cliStartGatesFromArray } from '../../runners/start-gate.js';
+import { runTaskLoop } from '../task/loop.js';
+import { initializeWorkflow } from './init.js';
+
+function codexStartGate() {
+  const executable = statSync(process.execPath);
+  return cliStartGatesFromArray([
+    {
+      tool: 'codex',
+      executable: {
+        path: process.execPath,
+        fingerprint: {
+          dev: executable.dev,
+          ino: executable.ino,
+          size: executable.size,
+          mtimeMs: executable.mtimeMs,
+        },
+      },
+    },
+  ]);
+}
+
+type DirectRunnerInput = Readonly<{
+  id: string;
+  file: string;
+  costTier: 'cheap' | 'standard';
+  sessionId: string;
+}>;
+
+function makeDirectRunner(input: DirectRunnerInput) {
+  const script = [
+    "const fs = require('node:fs'), path = require('node:path');",
+    `fs.appendFileSync(process.env.T028_STAGE_EVIDENCE, JSON.stringify({ id: ${JSON.stringify(input.id)}, cwd: process.cwd(), auth: fs.existsSync(path.join(process.cwd(), ${JSON.stringify(SANDBOX_DIR)}, 'home', '.codex', 'auth.json')), env: fs.existsSync(path.join(process.cwd(), '.env')), session: fs.existsSync(path.join(process.cwd(), ${JSON.stringify(SPLITBRIEF_DIR)}, 'sessions', ${JSON.stringify(input.sessionId)})) }) + '\\n');`,
+    "fs.mkdirSync('src', { recursive: true });",
+    `fs.writeFileSync(${JSON.stringify(input.file)}, 'export const staged = true;\\n');`,
+  ].join('');
+  const command = {
+    label: input.id,
+    contract: 'direct' as const,
+    executable: process.execPath,
+    argv: ['-e', script],
+    outputFormat: 'text' as const,
+    idleWarnMs: 300_000,
+    idleKillMs: 1_800_000,
+    env: ['T028_STAGE_EVIDENCE'],
+  };
+
+  return {
+    commandKey: `t028-${input.id}`,
+    profileKey: input.id,
+    command,
+    profile: {
+      kind: 'agent' as const,
+      command: command.executable,
+      args: command.argv,
+      outputFormat: command.outputFormat,
+      idleWarnMs: command.idleWarnMs,
+      idleKillMs: command.idleKillMs,
+      env: command.env,
+      model: input.id,
+      costTier: input.costTier,
+      capabilities: { writesFiles: 'direct' as const },
+    },
+  };
+}
+
+function directConfig(runners: readonly ReturnType<typeof makeDirectRunner>[]): Config {
+  const defaultRunner = runners[0];
+  if (defaultRunner === undefined) throw new Error('expected a configured direct runner');
+
+  return ConfigSchema.parse({
+    ...makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { mode: 'quick', persistTranscript: false },
+      approval: { enabled: false, feedRejectionsToPlanner: true },
+    }),
+    implementerProfiles: {
+      default: defaultRunner.profileKey,
+      profiles: Object.fromEntries(runners.map((runner) => [runner.profileKey, runner.profile])),
+    },
+    customCommands: Object.fromEntries(
+      runners.map((runner) => [runner.commandKey, runner.command]),
+    ),
+  });
+}
+
+async function initializeConfiguredDirectWorkflow(
+  input: Readonly<{
+    projectDir: string;
+    sessionId: string;
+    config: Config;
+  }>,
+) {
+  const { callbacks } = makeCallbacks();
+  return initializeWorkflow({
+    opts: {
+      feature: 'exercise direct configured stages',
+      projectDir: input.projectDir,
+      config: input.config,
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: makePlanner(),
+      allowHooks: true,
+      allowRepoRunners: true,
+      headless: true,
+      trustedCliGates: codexStartGate(),
+    },
+    sessionId: input.sessionId,
+    summaryBase: {
+      feature: 'exercise direct configured stages',
+      startTime: Date.now(),
+      plannerTool: 'test-planner',
+      implementerTool: 'configured-direct',
+      mode: 'quick',
+      projectDir: input.projectDir,
+      sessionId: input.sessionId,
+    },
+    metadata: {
+      plannerTool: 'test-planner',
+      implementerTool: 'configured-direct',
+      mode: 'quick',
+    },
+    setTrackedState: () => {},
+    resumeHolder: { messages: [] },
+  });
+}
+
+async function expectNoCodexStageBridge(
+  input: Readonly<{
+    evidencePath: string;
+    expectedId: string;
+    projectDir: string;
+  }>,
+) {
+  const rows = (await readFile(input.evidencePath, 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+
+  expect(rows).toContainEqual(
+    expect.objectContaining({ id: input.expectedId, auth: false, env: false, session: false }),
+  );
+  expect(rows.every((row: { cwd: string }) => row.cwd !== input.projectDir)).toBe(true);
+}
+
+function restoreEnvironment(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
+describe('configured direct stage canaries', () => {
+  it('keeps a direct main configured stage free of the Codex session bridge', async () => {
+    await withTempDir('t028-direct-main-stage-project', async (projectDir) => {
+      await withTempDir('t028-direct-main-stage-home', async (hostHome) => {
+        createTestGitRepo(projectDir);
+        const sessionId = 't028-direct-main-session';
+        const evidencePath = join(hostHome, 'evidence.jsonl');
+        const originalHome = process.env.HOME;
+        const originalEvidence = process.env.T028_STAGE_EVIDENCE;
+        try {
+          await mkdir(join(hostHome, '.codex'), { recursive: true });
+          await writeFile(join(hostHome, '.codex', 'auth.json'), 't028-codex-session-canary');
+          await writeFile(join(projectDir, '.env'), 'SHOULD_NOT_BE_STAGED=true\n');
+          process.env.HOME = hostHome;
+          process.env.T028_STAGE_EVIDENCE = evidencePath;
+          const main = makeDirectRunner({
+            id: 'main-direct',
+            file: 'src/main-direct.ts',
+            costTier: 'cheap',
+            sessionId,
+          });
+          const config = directConfig([main]);
+          const init = await initializeConfiguredDirectWorkflow({ projectDir, sessionId, config });
+
+          expect(init.ok).toBe(true);
+          if (!init.ok) return;
+          expect(
+            (
+              await runTaskLoop({
+                wctx: init.wctx,
+                initialState: makeImplState([makeTask({ id: 'T001', file: 'src/main-direct.ts' })]),
+                setTrackedState: () => {},
+                setCurrentTask: () => {},
+              })
+            ).status,
+          ).toBe('complete');
+          await expectNoCodexStageBridge({
+            evidencePath,
+            expectedId: 'main-direct',
+            projectDir,
+          });
+        } finally {
+          restoreEnvironment('HOME', originalHome);
+          restoreEnvironment('T028_STAGE_EVIDENCE', originalEvidence);
+        }
+      });
+    });
+  });
+
+  it('keeps a direct retry configured stage free of the Codex session bridge', async () => {
+    await withTempDir('t028-direct-retry-stage-project', async (projectDir) => {
+      await withTempDir('t028-direct-retry-stage-home', async (hostHome) => {
+        createTestGitRepo(projectDir);
+        const sessionId = 't028-direct-retry-session';
+        const evidencePath = join(hostHome, 'evidence.jsonl');
+        const originalHome = process.env.HOME;
+        const originalEvidence = process.env.T028_STAGE_EVIDENCE;
+        try {
+          await mkdir(join(hostHome, '.codex'), { recursive: true });
+          await writeFile(join(hostHome, '.codex', 'auth.json'), 't028-codex-session-canary');
+          await writeFile(join(projectDir, '.env'), 'SHOULD_NOT_BE_STAGED=true\n');
+          process.env.HOME = hostHome;
+          process.env.T028_STAGE_EVIDENCE = evidencePath;
+          const main = makeDirectRunner({
+            id: 'main-direct',
+            file: 'src/main-direct.ts',
+            costTier: 'cheap',
+            sessionId,
+          });
+          const retry = makeDirectRunner({
+            id: 'retry-direct',
+            file: 'src/retry-direct.ts',
+            costTier: 'standard',
+            sessionId,
+          });
+          const config = directConfig([main, retry]);
+          const init = await initializeConfiguredDirectWorkflow({ projectDir, sessionId, config });
+
+          expect(init.ok).toBe(true);
+          if (!init.ok) return;
+          const retryRuntime = await createRetryRuntime(
+            {
+              ...init.wctx,
+              taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+              dependsOnFiles: [],
+            },
+            'retry-direct',
+          );
+          const stage = await createStagedProject(projectDir, retryRuntime.config);
+          try {
+            expect(
+              (
+                await retryRuntime.implementer.retry({
+                  task: makeTask({ id: 'T002', file: 'src/retry-direct.ts' }),
+                  projectDir: stage.projectDir,
+                  config: retryRuntime.config,
+                  context: init.wctx.context,
+                  error: 'retry',
+                  attempt: 1,
+                  kind: 'local',
+                  onOutput: () => {},
+                  sandboxEnv: stage.sandboxEnv,
+                  fileIgnoreProjectDir: projectDir,
+                })
+              ).success,
+            ).toBe(true);
+          } finally {
+            stage.cleanup();
+          }
+          await expectNoCodexStageBridge({
+            evidencePath,
+            expectedId: 'retry-direct',
+            projectDir,
+          });
+        } finally {
+          restoreEnvironment('HOME', originalHome);
+          restoreEnvironment('T028_STAGE_EVIDENCE', originalEvidence);
+        }
+      });
+    });
+  });
+});

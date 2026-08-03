@@ -89,22 +89,32 @@ export function ModeSelector() {
   const actionableModeIndices = new Set(visibleModeIndices(modeRowBudget, isSmall));
   const hasActionableModes = actionableModeIndices.size > 0;
 
-  const selectMode = (item: ModeDef, index: number) => {
+  const selectMode = async (item: ModeDef, index: number) => {
     if (!actionableModeIndices.has(index)) return;
     const updated = { ...config, workflow: { ...config.workflow, mode: item.mode } };
-    const result = configStore.save(updated);
-    if (result.ok) {
+    const result = await configStore.save(updated);
+    if (result.kind === 'saved') {
       feedbackStore.setMessage(`Mode set to: ${item.mode}`);
       overlayStore.close();
-    } else if (result.error) {
-      feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+      return;
     }
+    if (result.kind === 'failure') {
+      feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+      return;
+    }
+    if (result.kind === 'durability-uncertain') {
+      feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
+      return;
+    }
+    feedbackStore.setError('Config changed on disk. Reload before saving again.');
   };
 
   const { selectedIndex } = useStaticSelector<ModeDef>({
     items: MODES,
     initialIndex: currentIdx,
-    onSelect: (item, index) => selectMode(item, index),
+    onSelect: (item, index) => {
+      void selectMode(item, index);
+    },
     onCancel: () => overlayStore.close(),
     isIndexActionable: (index) => actionableModeIndices.has(index),
   });
@@ -128,7 +138,9 @@ export function ModeSelector() {
             key={m.mode}
             zoneId={`mode:${m.mode}`}
             z={ROW_ZONE_Z_OVERLAY}
-            onActivate={() => selectMode(m, i)}
+            onActivate={() => {
+              void selectMode(m, i);
+            }}
           >
             <Box flexDirection="column" marginBottom={i < MODES.length - 1 && !isSmall ? 1 : 0}>
               <ListRow

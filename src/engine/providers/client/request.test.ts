@@ -1,3 +1,4 @@
+import http from 'node:http';
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { endpointPolicyFetch } from '../../../core/providers/endpoint-policy.js';
 import { createProviderConnection } from './connection.js';
@@ -11,18 +12,66 @@ const fixedOriginPolicy = {
 
 const attackerOrigin = 'https://evil.example.net';
 
+type RequestRecord = Readonly<{
+  method: string;
+  url: string;
+  authorization: string | undefined;
+  apiKey: string | undefined;
+}>;
+
+function recordRequest(input: RequestInfo | URL, init?: RequestInit): RequestRecord {
+  const request = new Request(input, init);
+  return {
+    method: request.method,
+    url: request.url,
+    authorization: request.headers.get('authorization') ?? undefined,
+    apiKey: request.headers.get('x-api-key') ?? undefined,
+  };
+}
+
 function assertZeroAttackerHostCredentialObservations(
-  fetchMock: ReturnType<typeof vi.fn>,
+  requests: readonly RequestRecord[],
   credential: string,
 ): void {
-  for (const [input, init] of fetchMock.mock.calls) {
-    const request = input instanceof Request ? input : new Request(input, init as RequestInit);
+  for (const request of requests) {
     const origin = new URL(request.url).origin;
     if (origin === attackerOrigin) {
-      const authorization = request.headers.get('authorization') ?? '';
-      expect(authorization).not.toContain(credential);
+      expect(request.authorization ?? '').not.toContain(credential);
     }
     expect(origin).not.toBe(attackerOrigin);
+  }
+}
+
+async function withLoopbackServer(
+  handler: (request: http.IncomingMessage, response: http.ServerResponse) => void,
+  run: (input: Readonly<{ endpoint: string; requests: RequestRecord[] }>) => Promise<void>,
+): Promise<void> {
+  const requests: RequestRecord[] = [];
+  const server = http.createServer((request, response) => {
+    const url = new URL(request.url ?? '/', 'http://loopback.invalid');
+    requests.push({
+      method: request.method ?? '',
+      url: url.href,
+      authorization:
+        typeof request.headers.authorization === 'string'
+          ? request.headers.authorization
+          : undefined,
+      apiKey:
+        typeof request.headers['x-api-key'] === 'string' ? request.headers['x-api-key'] : undefined,
+    });
+    handler(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('Expected a TCP request test server address.');
+  }
+
+  try {
+    await run({ endpoint: `http://127.0.0.1:${address.port}/v1/models`, requests });
+  } finally {
+    server.closeAllConnections();
+    if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }
 
@@ -33,15 +82,18 @@ describe('fetchJsonWithTimeout', () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       new Response(JSON.stringify({ hello: 'world' }), { status: 200 }),
     );
-    const result = await fetchJsonWithTimeout('https://api.example.com/v1', 1000);
+    const result = await fetchJsonWithTimeout({
+      url: 'https://api.example.com/v1',
+      timeoutMs: 1000,
+    });
     expect(result).toEqual({ hello: 'world' });
   });
 
   it('throws on non-ok status with HTTP code in message', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(new Response('err', { status: 503 }));
-    await expect(fetchJsonWithTimeout('https://api.example.com/v1', 1000)).rejects.toThrow(
-      'HTTP 503',
-    );
+    await expect(
+      fetchJsonWithTimeout({ url: 'https://api.example.com/v1', timeoutMs: 1000 }),
+    ).rejects.toThrow('HTTP 503');
   });
 
   it('aborts with a AbortError when the timeout fires before response', async () => {
@@ -55,9 +107,32 @@ describe('fetchJsonWithTimeout', () => {
       });
     });
 
-    await expect(fetchJsonWithTimeout('https://slow.example.com', 5)).rejects.toThrow(
-      /abort|timeout/i,
-    );
+    await expect(
+      fetchJsonWithTimeout({ url: 'https://slow.example.com', timeoutMs: 5 }),
+    ).rejects.toThrow(/abort|timeout/i);
+    expect(signalRef?.aborted).toBe(true);
+  });
+
+  it('combines a caller cancellation signal with the timeout signal', async () => {
+    const controller = new AbortController();
+    let signalRef: AbortSignal | undefined;
+    vi.mocked(globalThis.fetch).mockImplementationOnce((_url, init) => {
+      signalRef = (init as RequestInit | undefined)?.signal as AbortSignal;
+      return new Promise((_resolve, reject) => {
+        signalRef?.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'));
+        });
+      });
+    });
+
+    const pending = fetchJsonWithTimeout({
+      url: 'https://slow.example.com',
+      timeoutMs: 60_000,
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    await expect(pending).rejects.toThrow(/abort/i);
     expect(signalRef?.aborted).toBe(true);
   });
 });
@@ -120,18 +195,30 @@ describe('fetchModelList', () => {
   });
 
   it('uses custom headers verbatim when provided (no Authorization injection)', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
-    await fetchModelList({
-      endpoint: 'https://api.example.com/v1/models',
-      apiKey: 'should-be-ignored',
-      headers: { 'x-api-key': 'custom' },
-      extractModels: defaultExtract,
-    });
-    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ headers: { 'x-api-key': 'custom' } }),
+    vi.unstubAllGlobals();
+    await withLoopbackServer(
+      (_request, response) => {
+        response.writeHead(200, { 'content-type': 'application/json' });
+        response.end(JSON.stringify({ data: [] }));
+      },
+      async ({ endpoint, requests }) => {
+        expect(
+          await fetchModelList({
+            endpoint,
+            apiKey: 'should-be-ignored',
+            headers: { 'x-api-key': 'custom' },
+            extractModels: defaultExtract,
+          }),
+        ).toEqual([]);
+        expect(requests).toEqual([
+          {
+            method: 'GET',
+            url: 'http://loopback.invalid/v1/models',
+            authorization: undefined,
+            apiKey: 'custom',
+          },
+        ]);
+      },
     );
   });
 
@@ -188,7 +275,10 @@ describe('fetchModelList', () => {
     const canary = 'canary-query-value-53c1';
 
     await expect(
-      fetchJsonWithTimeout(`https://api.example.com/v1/models?api_key=${canary}`, 1000),
+      fetchJsonWithTimeout({
+        url: `https://api.example.com/v1/models?api_key=${canary}`,
+        timeoutMs: 1000,
+      }),
     ).rejects.toMatchObject({
       kind: 'provider-http-failure',
       data: expect.objectContaining({ url: expect.not.stringContaining(canary) }),
@@ -274,12 +364,14 @@ describe('provider connection redirect enforcement', () => {
 
   it('rejects a cross-origin redirect before the attacker host observes credentials', async () => {
     const credential = 'sk-redirect-canary-4d8e';
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(null, {
+    const requests: RequestRecord[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(recordRequest(input, init));
+      return new Response(null, {
         status: 302,
         headers: { location: `${attackerOrigin}/collect` },
-      }),
-    );
+      });
+    });
 
     const connection = createProviderConnection({
       requestedBaseURL: fixedOriginPolicy.baseURL,
@@ -294,8 +386,15 @@ describe('provider connection redirect enforcement', () => {
       }),
     ).rejects.toMatchObject({ kind: 'provider-endpoint-invalid' });
 
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-    assertZeroAttackerHostCredentialObservations(vi.mocked(globalThis.fetch), credential);
+    expect(requests).toEqual([
+      {
+        method: 'GET',
+        url: 'https://api.example.com/v1/models',
+        authorization: `Bearer ${credential}`,
+        apiKey: undefined,
+      },
+    ]);
+    assertZeroAttackerHostCredentialObservations(requests, credential);
   });
 });
 

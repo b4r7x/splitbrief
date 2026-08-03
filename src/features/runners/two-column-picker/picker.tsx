@@ -6,7 +6,7 @@ import type { FilterableItem } from '../../../components/pickers/filtering.js';
 import { availableRows } from '../../../components/pickers/scroll-window.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
-import { getResponsivePanelWidth } from '../../../utils/terminal-width.js';
+import { pickerPanelWidth } from '../panel-width.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { SingleColumnPicker } from '../../../components/pickers/single-column.js';
 import { ROW_ZONE_Z_OVERLAY } from '../../../components/pickers/row-zone.js';
@@ -36,6 +36,8 @@ export interface TwoColumnPickerProps<L extends FilterableItem, R extends { id: 
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
+  /** Enter on a disabled left row; without it that keypress stays a no-op. */
+  onDisabledSelect?: ((item: L) => void) | undefined;
   preview?: ((ctx: PreviewContext<L, R>) => string | undefined) | undefined;
 }
 
@@ -75,21 +77,17 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   onConfirm,
   onCancel,
   onRefresh,
+  onDisabledSelect,
   preview,
 }: TwoColumnPickerProps<L, R>) {
   const t = useTheme();
   const [{ cols, rows, isSmall }] = useStores(terminalSizeStore);
 
-  const contentMaxWidth = isSmall ? 76 : 110;
   const outerChrome = 6;
   const innerChrome = 4;
   const maxVisible = Math.min(availableRows({ rows, chromeRows: outerChrome + innerChrome }), 20);
   const columnHeight = maxVisible + 4;
-  const totalBoxWidth = getResponsivePanelWidth({
-    cols,
-    size: isSmall ? 'small' : 'large',
-    widths: { small: contentMaxWidth, large: contentMaxWidth },
-  });
+  const totalBoxWidth = pickerPanelWidth(cols, isSmall);
   const columnContentWidth = Math.max(
     1,
     Math.floor((totalBoxWidth - COLUMN_GAP) / 2) - INNER_PADDING,
@@ -102,6 +100,7 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
     onConfirm,
     onCancel,
     onRefresh,
+    onDisabledSelect,
     maxVisible,
   });
 

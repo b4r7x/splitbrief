@@ -7,11 +7,13 @@ import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { warnError } from '../lib/warn.js';
 import { detectCapabilities } from '../engine/providers/capabilities.js';
-import { detectAll } from '../engine/detection/detect.js';
-import { getDefaultDetectionService, type DetectionDeps } from '../engine/detection/service.js';
-import { loadDetectionIntoStores } from '../stores/discovery/detection-adapter.js';
-import { fetchModelsDevCatalog } from '../engine/providers/models-dev.js';
-import { discoverAllCliTools } from '../engine/providers/discovery.js';
+import { getDefaultDetectionService } from '../engine/detection/service.js';
+import {
+  detectionContextsForCurrentConfig,
+  loadDetectionForCurrentConfig,
+} from '../engine/detection/store-publication.js';
+import { hydrateDetectionIntoStores } from '../stores/discovery/detection-adapter.js';
+import { loadDetectionCacheSnapshot } from '../engine/detection/cache.js';
 import { discoverSkills } from '../engine/skill-discovery.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
@@ -21,12 +23,6 @@ import { resolveHooksConfig } from '../engine/hooks/discover.js';
 import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/from-options.js';
 
 let historyPersistenceTeardown: (() => void) | null = null;
-
-const detectionDeps: DetectionDeps = {
-  detectAll,
-  fetchModelsDevCatalog,
-  discoverAllCliTools,
-};
 
 export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
   initUIChrome();
@@ -73,15 +69,24 @@ async function loadDiscovery(projectDir: string): Promise<void> {
     feedbackStore.setMessage('Provider detection failed — using defaults');
   }
 
-  await Promise.all([
-    discoverSkills(getPlannerToolId(storeConfig.planner), projectDir).then((skills) => {
-      skillsStore.setAvailable(skills);
-    }),
-    loadDetectionIntoStores(
-      getDefaultDetectionService(),
-      detectionDeps,
-      detectionStore,
-      projectDir,
-    ),
-  ]);
+  const current = { config: storeConfig, projectDir };
+  const contexts = detectionContextsForCurrentConfig(current);
+  const snapshot = await loadDetectionCacheSnapshot({
+    projectDir,
+    contextKey: contexts.readiness,
+  });
+  if (snapshot !== null) {
+    hydrateDetectionIntoStores({ detection: detectionStore, snapshot, contexts });
+  }
+
+  void loadDetectionForCurrentConfig({
+    service: getDefaultDetectionService(),
+    publication: detectionStore,
+    current,
+  }).catch((err: unknown) => {
+    warnError('Could not refresh runner discovery', err);
+  });
+
+  const skills = await discoverSkills(getPlannerToolId(storeConfig.planner), projectDir);
+  skillsStore.setAvailable(skills);
 }

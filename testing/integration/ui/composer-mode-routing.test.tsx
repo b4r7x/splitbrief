@@ -185,6 +185,7 @@ describe('composer mode routing', () => {
     await flushEffects();
     expect(ui.lastFrame()).not.toContain('stale answer');
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
     expect(submits).not.toContain('stale answer');
@@ -213,6 +214,7 @@ describe('Composer question-mode transition', () => {
     };
 
     const ui = renderFeature(<Composer {...baseProps} mode="normal" />);
+    await flushEffects();
     ui.stdin.write('stale normal text');
     await tick(20);
     expect(ui.lastFrame()).toContain('stale normal text');
@@ -221,6 +223,7 @@ describe('Composer question-mode transition', () => {
     await tick(20);
     expect(ui.lastFrame()).not.toContain('stale normal text');
 
+    await flushEffects();
     ui.stdin.write('\r');
     await tick(20);
 

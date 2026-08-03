@@ -1,9 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getInvariantGates, runInvariantGates, type Gate } from './check-invariants.js';
+
+function captureLog(): { lines: string[]; log: (line?: string) => void } {
+  const lines: string[] = [];
+  return { lines, log: (line) => line !== undefined && lines.push(line) };
+}
 
 describe('check-invariants', () => {
   it('fails closed when a gate command fails', () => {
@@ -13,7 +18,7 @@ describe('check-invariants', () => {
       command: 'missing-tool',
       expected: 0,
     };
-    const log = vi.fn();
+    const { lines, log } = captureLog();
 
     const failed = runInvariantGates(
       [gate],
@@ -24,7 +29,7 @@ describe('check-invariants', () => {
     );
 
     expect(failed).toBe(1);
-    expect(log).toHaveBeenCalledWith('  ✗ [broken] Broken gate: command failed (expected 0) FAIL');
+    expect(lines).toEqual(['  ✗ [broken] Broken gate: command failed (expected 0) FAIL']);
   });
 
   it('fails closed when a pipeline hides a broken command behind wc', () => {
@@ -34,7 +39,7 @@ describe('check-invariants', () => {
       command: '__splitbrief_missing_command__ | wc -l',
       expected: 0,
     };
-    const log = vi.fn();
+    const { lines, log } = captureLog();
 
     expect(
       execSync('bash -c "__splitbrief_missing_command__ | wc -l"', {
@@ -43,9 +48,7 @@ describe('check-invariants', () => {
       }).trim(),
     ).toBe('0');
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith(
-      '  ✗ [pipeline] Broken pipeline: command failed (expected 0) FAIL',
-    );
+    expect(lines).toEqual(['  ✗ [pipeline] Broken pipeline: command failed (expected 0) FAIL']);
   });
 
   it('fails closed when a silent pipeline stage exits nonzero before wc', () => {
@@ -55,7 +58,7 @@ describe('check-invariants', () => {
       command: 'false | wc -l',
       expected: 0,
     };
-    const log = vi.fn();
+    const { lines, log } = captureLog();
 
     expect(
       execSync('bash -c "false | wc -l"', {
@@ -64,9 +67,9 @@ describe('check-invariants', () => {
       }).trim(),
     ).toBe('0');
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith(
+    expect(lines).toEqual([
       '  ✗ [silent-pipeline] Silent broken pipeline: command failed (expected 0) FAIL',
-    );
+    ]);
   });
 
   it('gate 18/19 pipeline shape fails closed when the wrapped tool crashes to stderr', () => {
@@ -77,12 +80,12 @@ describe('check-invariants', () => {
       command: `{ ${crash} | rg . || true; } | wc -l`,
       expected: 0,
     };
-    const log = vi.fn();
+    const { lines, log } = captureLog();
 
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith(
+    expect(lines).toEqual([
       '  ✗ [tool-crash] Tool crash via gate 18/19 shape: command failed (expected 0) FAIL',
-    );
+    ]);
   });
 
   it('gate 18/19 shape counts a clean matching run as PASS when injected', () => {
@@ -92,10 +95,10 @@ describe('check-invariants', () => {
       command: 'unused',
       expected: 0,
     };
-    const log = vi.fn();
+    const { lines, log } = captureLog();
 
     expect(runInvariantGates([gate], () => '0', log)).toBe(0);
-    expect(log).toHaveBeenCalledWith('  ✓ [matching] Matching count: 0 (expected 0) PASS');
+    expect(lines).toEqual(['  ✓ [matching] Matching count: 0 (expected 0) PASS']);
   });
 
   it('gate 18/19 shape still counts findings on a clean (non-crashing) tool run', () => {
@@ -106,10 +109,10 @@ describe('check-invariants', () => {
       command: `{ ${findings} | rg . || true; } | wc -l`,
       expected: 0,
     };
-    const log = vi.fn();
+    const { lines, log } = captureLog();
 
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith('  ✗ [findings] Findings counted: 2 (expected 0) FAIL');
+    expect(lines).toEqual(['  ✗ [findings] Findings counted: 2 (expected 0) FAIL']);
   });
 
   it('fails closed when gate output is not numeric', () => {
@@ -119,30 +122,38 @@ describe('check-invariants', () => {
       command: 'printf not-a-number',
       expected: 0,
     };
-    const log = vi.fn();
+    const { lines, log } = captureLog();
 
     expect(runInvariantGates([gate], undefined, log)).toBe(1);
-    expect(log).toHaveBeenCalledWith(
+    expect(lines).toEqual([
       '  ✗ [nonnumeric] Nonnumeric gate: invalid output "not-a-number" (expected 0) FAIL',
-    );
+    ]);
   });
 
   it('runs brand gate 27 through the fail-closed command runner', () => {
     const brandGates = getInvariantGates('27');
-    const execCommand = vi.fn(() => {
+    const commands: string[] = [];
+    const execCommand = (command: string): string => {
+      commands.push(command);
       throw new Error('brand scan failed');
-    });
-    const log = vi.fn();
+    };
+    const { lines, log } = captureLog();
 
     expect(brandGates).toHaveLength(1);
     expect(runInvariantGates(brandGates, execCommand, log)).toBe(1);
-    expect(execCommand).toHaveBeenCalledOnce();
-    expect(execCommand).toHaveBeenCalledWith(
-      "tsx scripts/check-brand.ts >/dev/null && printf '0\\n'",
-    );
-    expect(log).toHaveBeenCalledWith(
+    expect(commands).toEqual(brandGates.map((gate) => gate.command));
+    expect(lines).toEqual([
       '  ✗ [27] Maintained tree uses only canonical SPLITBRIEF identity: command failed (expected 0) FAIL',
-    );
+    ]);
+  });
+
+  it('keeps the broad-cast allowlist synchronized with the documented type guard boundary', () => {
+    const [gate] = getInvariantGates('17c');
+    if (gate === undefined) throw new Error('gate 17c is not registered');
+
+    expect(gate.command).toContain('utils/type-guards');
+    expect(readFileSync('CLAUDE.md', 'utf8')).toContain('src/utils/type-guards.ts');
+    expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain('utils/type-guards');
   });
 
   it('registers architecture and transport gates 28 through 35', () => {
@@ -154,18 +165,18 @@ describe('check-invariants', () => {
 
   it('runs legacy CLI gate 28 through the fail-closed command runner', () => {
     const legacyGates = getInvariantGates('28');
-    const execCommand = vi.fn(() => {
+    const commands: string[] = [];
+    const execCommand = (command: string): string => {
+      commands.push(command);
       throw new Error('rg failed');
-    });
-    const log = vi.fn();
+    };
+    const { lines, log } = captureLog();
 
     expect(runInvariantGates(legacyGates, execCommand, log)).toBe(1);
-    expect(execCommand).toHaveBeenCalledWith(
-      '{ rg -n "cli-tools\\.js|CLI_TOOLS|clampPromptForArgv" src testing || true; test -e src/engine/runners/cli-tools.ts && printf \'1\\n\' || true; } | wc -l',
-    );
-    expect(log).toHaveBeenCalledWith(
+    expect(commands).toEqual(legacyGates.map((gate) => gate.command));
+    expect(lines).toEqual([
       '  ✗ [28] Zero legacy CLI_TOOLS / cli-tools.ts / clampPromptForArgv: command failed (expected 0) FAIL',
-    );
+    ]);
   });
 
   it('passes architecture gates 28 through 35 on the maintained tree', () => {
@@ -179,14 +190,12 @@ describe('check-invariants', () => {
       ...getInvariantGates('34'),
       ...getInvariantGates('35'),
     ];
-    const log = vi.fn();
+    const { lines, log } = captureLog();
 
     expect(runInvariantGates(architectureGates, undefined, log)).toBe(0);
-    for (const gate of architectureGates) {
-      expect(log).toHaveBeenCalledWith(
-        expect.stringContaining(`[${gate.id}] ${gate.description}: 0 (expected 0) PASS`),
-      );
-    }
+    expect(lines).toEqual(
+      architectureGates.map((gate) => `  ✓ [${gate.id}] ${gate.description}: 0 (expected 0) PASS`),
+    );
   });
 
   it('gate 33 detects a commercial metadata fetch retargeted at a synthetic tree', () => {
@@ -200,7 +209,7 @@ describe('check-invariants', () => {
       writeFileSync(join(root, 'engine/providers/terms.ts'), 'export const termsURL = TERMS;\n');
       const [gate] = getInvariantGates('33');
       if (gate === undefined) throw new Error('gate 33 is not registered');
-      const log = vi.fn();
+      const { lines, log } = captureLog();
 
       expect(
         runInvariantGates(
@@ -209,11 +218,11 @@ describe('check-invariants', () => {
           log,
         ),
       ).toBe(1);
-      expect(log).toHaveBeenCalledWith(
+      expect(lines).toEqual([
         expect.stringContaining(
           '[33] No runtime commercial metadata URL fetch outside models.dev module: 2 (expected 0) FAIL',
         ),
-      );
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

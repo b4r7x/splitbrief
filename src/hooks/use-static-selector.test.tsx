@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { Text } from 'ink';
 import { useStaticSelector } from './use-static-selector.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 
 const UP = '\u001b[A';
 const DOWN = '\u001b[B';
@@ -29,24 +29,28 @@ describe('useStaticSelector', () => {
 
     expect(ui.lastFrame()).toContain('current:alpha|chosen:none|cancelled:no');
 
+    await flushEffects();
     ui.stdin.write(UP);
     await tick(20);
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('current:gamma');
     });
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await tick(20);
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('chosen:gamma@2');
     });
 
+    await flushEffects();
     ui.stdin.write(DOWN);
     await tick(20);
     await vi.waitFor(() => {
       expect(ui.lastFrame()).toContain('current:alpha');
     });
 
+    await flushEffects();
     ui.stdin.write(ESC);
     await tick(20);
     await vi.waitFor(() => {
@@ -66,6 +70,7 @@ describe('useStaticSelector', () => {
     await tick(20);
     expect(ui.lastFrame()).toContain('current:alpha');
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await tick(20);
     expect(ui.lastFrame()).toContain('chosen:alpha@0');
@@ -74,6 +79,7 @@ describe('useStaticSelector', () => {
     await tick(20);
     expect(ui.lastFrame()).toContain('current:none');
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await tick(20);
     expect(ui.lastFrame()).toContain('chosen:alpha@0');

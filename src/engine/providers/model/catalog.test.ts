@@ -1,295 +1,479 @@
 import { describe, expect, it } from 'vitest';
+import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { lookupCatalogContextLength, resolveModelCatalog } from './catalog.js';
+import type { ModelCacheAccessor } from './resolution.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
-describe('resolveModelCatalog', () => {
-  it('returns Claude Code aliases instead of stale pinned fallbacks', () => {
-    const ids = resolveModelCatalog('claude-code').map((entry) => entry.id);
-    expect(ids).toEqual(expect.arrayContaining(['sonnet', 'opus', 'opusplan']));
-    expect(ids).not.toContain('auto');
-    expect(ids).not.toContain('default');
-    expect(ids).not.toContain('claude-opus-4-1-20250805');
+describe('runner-owned catalog resolution', () => {
+  it('does not present a stale role-scoped runtime catalog as currently detected', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => null,
+      getScopedProviderRuntime: () => ({
+        connection: { role: 'planner', provider: 'openai', contextKey: 'planner-context' },
+        state: 'stale',
+        catalog: 'populated',
+        models: [{ id: 'last-confirmed-model' }],
+        fetchedAt: 1,
+        validatedAt: 2,
+        failure: 'timeout',
+        diagnostic: 'Configured provider catalog refresh did not complete.',
+      }),
+    };
+
+    const row = resolveModelCatalog('openai', { cache, role: 'planner' }).find(
+      (entry) => entry.selectionId === 'last-confirmed-model',
+    );
+
+    expect(row).toMatchObject({
+      membership: 'stale',
+      isStale: true,
+      isDetected: false,
+    });
   });
 
-  it('keeps the openai default a real model id, never the automatic sentinel', () => {
+  it('preserves exact native catalog defaults, hidden rows, reasoning efforts, and order', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        codex: [
+          {
+            id: 'gpt-5.6-sol',
+            displayName: 'GPT-5.6 Sol',
+            nativeOrder: 7,
+            nativeDefault: true,
+            nativeHidden: false,
+            nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+            supportsReasoning: true,
+          },
+          {
+            id: 'gpt-5.6-auto-review',
+            displayName: 'GPT-5.6 Auto Review',
+            nativeOrder: 13,
+            nativeDefault: false,
+            nativeHidden: true,
+            nativeReasoningEfforts: [],
+            supportsReasoning: false,
+          },
+        ],
+      },
+    });
+
+    const runtimeRows = resolveModelCatalog('codex', cache).filter(
+      (row) => row.source === 'runtime',
+    );
+
+    expect(runtimeRows).toMatchObject([
+      {
+        selectionId: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6 Sol',
+        nativeOrder: 7,
+        nativeDefault: true,
+        nativeHidden: false,
+        nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+        supportsReasoning: true,
+      },
+      {
+        selectionId: 'gpt-5.6-auto-review',
+        displayName: 'GPT-5.6 Auto Review',
+        nativeOrder: 13,
+        nativeDefault: false,
+        nativeHidden: true,
+        nativeReasoningEfforts: [],
+        supportsReasoning: false,
+      },
+    ]);
+  });
+
+  it('keeps native runtime order and facts while filling only missing exact-ID metadata', () => {
+    const catalog: ModelsDevCatalog = {
+      anthropic: {
+        id: 'anthropic',
+        models: {
+          'claude-sonnet-4-6': {
+            id: 'claude-sonnet-4-6',
+            name: 'Catalog Sonnet',
+            cost: { input: 3, output: 15 },
+            limit: { context: 1_000_000 },
+            tool_call: true,
+            release_date: '2026-01-12',
+          },
+          'claude-opus-4-6': {
+            id: 'claude-opus-4-6',
+            name: 'Catalog Opus',
+            limit: { context: 1_000_000 },
+          },
+        },
+      },
+    };
+    const cache = makeModelCacheAccessor({
+      catalog,
+      providerModels: {
+        anthropic: [
+          {
+            id: 'claude-opus-4-6',
+            providerId: 'anthropic',
+            displayName: 'Native Opus',
+            contextLength: 32_768,
+            effectiveContextTokens: 16_384,
+            pricingInput: 9,
+          },
+          {
+            id: 'claude-sonnet-4-6',
+            providerId: 'anthropic',
+            displayName: 'Native Sonnet',
+          },
+        ],
+      },
+    });
+
+    const rows = resolveModelCatalog('anthropic', cache);
+
+    expect(rows.slice(0, 2).map((row) => row.selectionId)).toEqual([
+      'claude-opus-4-6',
+      'claude-sonnet-4-6',
+    ]);
+    expect(rows[0]).toMatchObject({
+      source: 'runtime',
+      membership: 'confirmed',
+      isDetected: true,
+      nativeOrder: 0,
+      displayName: 'Native Opus',
+      contextLength: 32_768,
+      effectiveContextTokens: 16_384,
+      pricingInput: 9,
+    });
+    expect(rows[1]).toMatchObject({
+      source: 'runtime',
+      displayName: 'Native Sonnet',
+      contextLength: 1_000_000,
+      pricingInput: 3,
+      pricingOutput: 15,
+      supportsToolCalls: true,
+      releaseDate: '2026-01-12',
+    });
+  });
+
+  it('keeps explicit runtime false capability facts over exact public metadata', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'native-false-capabilities': {
+              id: 'native-false-capabilities',
+              modalities: { input: ['text', 'image'] },
+              tool_call: true,
+              reasoning: true,
+            },
+          },
+        },
+      },
+      providerModels: {
+        anthropic: [
+          {
+            id: 'native-false-capabilities',
+            providerId: 'anthropic',
+            supportsImages: false,
+            supportsToolCalls: false,
+            supportsReasoning: false,
+          },
+        ],
+      },
+    });
+
+    const row = resolveModelCatalog('anthropic', cache).find(
+      (entry) => entry.selectionId === 'native-false-capabilities',
+    );
+
+    expect(row).toMatchObject({
+      source: 'runtime',
+      supportsImages: false,
+      supportsToolCalls: false,
+      supportsReasoning: false,
+    });
+  });
+
+  it('keeps same-text runtime rows with different owners, aliases, and snapshots separate', () => {
+    const cache = makeModelCacheAccessor({
+      providerModels: {
+        opencode: [
+          { id: 'model-x', providerId: 'vendor-a' },
+          { id: 'model-x', providerId: 'vendor-b' },
+          { id: 'sonnet', providerId: 'vendor-a' },
+          { id: 'claude-sonnet-4-6-20260201', providerId: 'vendor-a' },
+        ],
+      },
+    });
+
+    const rows = resolveModelCatalog('opencode', cache).filter((row) => row.source === 'runtime');
+
+    expect(rows.map((row) => [row.sourceProviderId, row.selectionId])).toEqual([
+      ['vendor-a', 'model-x'],
+      ['vendor-b', 'model-x'],
+      ['vendor-a', 'sonnet'],
+      ['vendor-a', 'claude-sonnet-4-6-20260201'],
+    ]);
+  });
+
+  it('labels a public catalog row as a suggestion instead of detected membership', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-sonnet-4-6': {
+              id: 'claude-sonnet-4-6',
+              name: 'Claude Sonnet 4.6',
+              limit: { context: 1_000_000 },
+            },
+          },
+        },
+      },
+    });
+
+    const row = resolveModelCatalog('anthropic', cache).find(
+      (entry) => entry.selectionId === 'claude-sonnet-4-6',
+    );
+
+    expect(row).toMatchObject({
+      source: 'models-dev',
+      membership: 'catalog-suggestion',
+      isDetected: false,
+      canConfigure: true,
+      sourceProviderId: 'anthropic',
+      displayName: 'Claude Sonnet 4.6',
+    });
+  });
+
+  it('does not merge a nearly matching public ID into a confirmed runtime row', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-sonnet-4.6': {
+              id: 'claude-sonnet-4.6',
+              name: 'Different Punctuation',
+              limit: { context: 999_999 },
+            },
+          },
+        },
+      },
+      providerModels: {
+        anthropic: [{ id: 'claude-sonnet-4-6', providerId: 'anthropic', contextLength: 32_768 }],
+      },
+    });
+
+    const rows = resolveModelCatalog('anthropic', cache);
+
+    expect(rows.filter((row) => row.source === 'runtime')).toMatchObject([
+      { selectionId: 'claude-sonnet-4-6', contextLength: 32_768 },
+    ]);
+    expect(rows.filter((row) => row.source === 'models-dev')).toMatchObject([
+      { selectionId: 'claude-sonnet-4.6', displayName: 'Different Punctuation' },
+    ]);
+  });
+
+  it('demotes a bundled default when a fresh authoritative snapshot omits it', () => {
+    const offlineRows = resolveModelCatalog('anthropic', makeModelCacheAccessor());
+    const freshEmptyRows = resolveModelCatalog(
+      'anthropic',
+      makeModelCacheAccessor({ providerModels: { anthropic: [] } }),
+    );
+
+    expect(offlineRows.find((row) => row.selectionId === 'claude-sonnet-4-6')).toMatchObject({
+      source: 'bundled-fallback',
+      isDefault: true,
+    });
+    expect(freshEmptyRows.find((row) => row.selectionId === 'claude-sonnet-4-6')).toMatchObject({
+      source: 'bundled-fallback',
+      membership: 'bundled-suggestion',
+    });
+    expect(freshEmptyRows.some((row) => row.isDefault)).toBe(false);
+  });
+
+  it('keeps a Claude Code alias distinct from the catalog model it explicitly references', () => {
+    const cache = makeModelCacheAccessor({
+      catalog: {
+        anthropic: {
+          id: 'anthropic',
+          models: {
+            'claude-opus-4-6': { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
+          },
+        },
+      },
+    });
+
+    const rows = resolveModelCatalog('claude-code', cache);
+    const alias = rows.find((row) => row.selectionId === 'opus');
+    const catalogModel = rows.find((row) => row.selectionId === 'claude-opus-4-6');
+
+    expect(alias).toMatchObject({
+      source: 'bundled-fallback',
+      membership: 'bundled-suggestion',
+      selectionId: 'opus',
+      displayName: 'Claude Opus 4.6',
+    });
+    expect(catalogModel).toMatchObject({
+      source: 'models-dev',
+      membership: 'catalog-suggestion',
+      selectionId: 'claude-opus-4-6',
+    });
+  });
+
+  it('sorts non-native suggestions by real release date rather than metadata update time', () => {
     const cache = makeModelCacheAccessor({
       catalog: {
         openai: {
           id: 'openai',
           models: {
-            'gpt-5.4': {
-              id: 'gpt-5.4',
-              cost: { input: 2.5, output: 15 },
-              limit: { context: 400_000 },
+            'gpt-earlier': {
+              id: 'gpt-earlier',
+              name: 'Earlier',
+              release_date: '2025-12-01',
+              last_updated: '2026-04-01',
+            },
+            'gpt-later': {
+              id: 'gpt-later',
+              name: 'Later',
+              release_date: '2026-01-01',
+              last_updated: '2026-02-01',
             },
           },
         },
       },
     });
 
-    const models = resolveModelCatalog('openai', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
-    expect(models[0]?.id).toBe('gpt-5.4');
-    expect(models[0]?.isDefault).toBe(true);
-  });
-
-  it('keeps Claude Code entries unpriced in the picker catalog', () => {
-    const entry = resolveModelCatalog('claude-code').find((item) => item.id === 'sonnet');
-    expect(entry?.pricingInput).toBeUndefined();
-    expect(entry?.pricingOutput).toBeUndefined();
-    expect(entry?.pricingMode).toBe('unpriced-cli');
-  });
-
-  it('hydrates Claude Code catalog from anthropic models.dev entries', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        anthropic: {
-          id: 'anthropic',
-          models: {
-            'claude-sonnet-4-6': {
-              id: 'claude-sonnet-4-6',
-              cost: { input: 3, output: 15 },
-              limit: { context: 1_000_000 },
-            },
-            'claude-opus-4-6': {
-              id: 'claude-opus-4-6',
-              cost: { input: 5, output: 25 },
-              limit: { context: 1_000_000 },
-            },
-            'claude-haiku-4-5': {
-              id: 'claude-haiku-4-5',
-              cost: { input: 1, output: 5 },
-              limit: { context: 200_000 },
-            },
-          },
-        },
-      },
-    });
-
-    const models = resolveModelCatalog('claude-code', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
-    expect(models.some((entry) => entry.id === 'claude-sonnet-4-6')).toBe(true);
-    expect(models.some((entry) => entry.id === 'claude-opus-4-6')).toBe(true);
-    expect(models.some((entry) => entry.id === 'claude-haiku-4-5')).toBe(false);
-  });
-
-  it('hydrates anthropic catalog from models.dev first', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        anthropic: {
-          id: 'anthropic',
-          models: {
-            'claude-sonnet-4-6': {
-              id: 'claude-sonnet-4-6',
-              cost: { input: 3, output: 15 },
-              limit: { context: 1_000_000 },
-            },
-            'claude-opus-4-6': {
-              id: 'claude-opus-4-6',
-              cost: { input: 5, output: 25 },
-              limit: { context: 1_000_000 },
-            },
-          },
-        },
-      },
-    });
-
-    const models = resolveModelCatalog('anthropic', cache);
-    expect(models.some((entry) => entry.id === 'claude-sonnet-4-6')).toBe(true);
-    expect(models.some((entry) => entry.id === 'claude-opus-4-6')).toBe(true);
-    expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingInput).toBe(3);
-  });
-
-  it('includes bundled agent-sdk models without pricing (agent-sdk is unpriced-meta)', () => {
-    // agent-sdk is classified as unpriced-meta — pricing is stripped from catalog entries.
-    // Bundled models from KNOWN_MODELS are still present for model selection purposes.
-    const cache = makeModelCacheAccessor();
-    const models = resolveModelCatalog('agent-sdk', cache);
-    expect(models.some((entry) => entry.id === 'claude-sonnet-4-6')).toBe(true);
-    expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingInput).toBeUndefined();
-    expect(models.find((entry) => entry.id === 'claude-sonnet-4-6')?.pricingMode).toBe(
-      'unpriced-meta',
+    const suggestions = resolveModelCatalog('openai', cache).filter(
+      (row) => row.source === 'models-dev',
     );
+
+    expect(suggestions.map((row) => row.selectionId)).toEqual(['gpt-later', 'gpt-earlier']);
   });
 
-  it('hydrates codex catalog from filtered openai models.dev entries', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        openai: {
-          id: 'openai',
-          models: {
-            'gpt-5.4': {
-              id: 'gpt-5.4',
-              cost: { input: 2.5, output: 15 },
-              limit: { context: 400_000 },
-            },
-            'gpt-5.1-codex-max': {
-              id: 'gpt-5.1-codex-max',
-              cost: { input: 1.25, output: 10 },
-              limit: { context: 400_000 },
-            },
-            'text-embedding-3-large': {
-              id: 'text-embedding-3-large',
-              cost: { input: 0.13, output: 0 },
-              limit: { context: 8_191 },
+  it('keeps an absent configured exact ID visible as one custom recovery without claiming detection', () => {
+    const configuredSelectionId = '  Vendor/Missing-Model@2026-08-01  ';
+    const rows = resolveModelCatalog('anthropic', {
+      configuredSelectionId,
+      cache: makeModelCacheAccessor({
+        providerModels: { anthropic: [{ id: 'claude-sonnet-4-6' }] },
+      }),
+    });
+
+    const recoveryRows = rows.filter((row) => row.source === 'configured-recovery');
+
+    expect(recoveryRows).toEqual([
+      expect.objectContaining({
+        id: configuredSelectionId,
+        selectionId: configuredSelectionId,
+        sourceProviderId: 'anthropic',
+        source: 'configured-recovery',
+        membership: 'custom',
+        isCustom: true,
+        isDetected: false,
+      }),
+    ]);
+    expect(rows[0]?.selectionId).toBe(configuredSelectionId);
+  });
+
+  it.each([
+    [
+      'runtime',
+      'runtime-model',
+      makeModelCacheAccessor({ providerModels: { anthropic: [{ id: 'runtime-model' }] } }),
+    ],
+    [
+      'public catalog',
+      'public-model',
+      makeModelCacheAccessor({
+        catalog: {
+          anthropic: {
+            id: 'anthropic',
+            models: { 'public-model': { id: 'public-model' } },
+          },
+        },
+      }),
+    ],
+    ['bundled fallback', 'claude-sonnet-4-6', makeModelCacheAccessor()],
+  ])('does not duplicate a configured ID already present in the %s', (_source, id, cache) => {
+    const rows = resolveModelCatalog('anthropic', { configuredSelectionId: id, cache });
+
+    expect(rows.filter((row) => row.source === 'configured-recovery')).toEqual([]);
+    expect(rows.filter((row) => row.selectionId === id)).toHaveLength(1);
+  });
+
+  it('does not fuzzy-merge a configured snapshot with an alias or its catalog model', () => {
+    const configuredSelectionId = 'claude-opus-4-6-20260201';
+    const rows = resolveModelCatalog('claude-code', {
+      configuredSelectionId,
+      cache: makeModelCacheAccessor({
+        catalog: {
+          anthropic: {
+            id: 'anthropic',
+            models: {
+              'claude-opus-4-6': { id: 'claude-opus-4-6', name: 'Claude Opus 4.6' },
             },
           },
         },
-      },
+      }),
     });
 
-    const models = resolveModelCatalog('codex', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
-    expect(models.some((entry) => entry.id === 'gpt-5.1-codex-max')).toBe(true);
-    expect(models.some((entry) => entry.id === 'text-embedding-3-large')).toBe(false);
+    expect(
+      rows
+        .filter((row) => row.selectionId === configuredSelectionId)
+        .map((row) => [row.source, row.membership]),
+    ).toEqual([['configured-recovery', 'custom']]);
+    expect(rows.some((row) => row.selectionId === 'opus')).toBe(true);
+    expect(rows.some((row) => row.selectionId === 'claude-opus-4-6')).toBe(true);
   });
 
-  it('includes runtime-discovered CLI models alongside bundled fallback entries', () => {
-    const cache = makeModelCacheAccessor({
-      providerModels: { opencode: [{ id: 'google/gemini-2.5-pro' }] },
-    });
+  it.each([
+    undefined,
+    '',
+    '   ',
+    'auto',
+    'AUTO',
+    '  auto  ',
+  ])('does not create a custom recovery for an automatic or empty configured selection %j', (configuredSelectionId) => {
+    const rows = resolveModelCatalog('anthropic', { configuredSelectionId });
 
-    const models = resolveModelCatalog('opencode', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
-    expect(models.some((entry) => entry.id === 'google/gemini-2.5-pro')).toBe(true);
+    expect(rows.some((row) => row.source === 'configured-recovery')).toBe(false);
   });
 
-  it('hydrates opencode catalog from direct models.dev provider data', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        opencode: {
-          id: 'opencode',
-          models: {
-            'claude-sonnet-4-6': {
-              id: 'claude-sonnet-4-6',
-              cost: { input: 3, output: 15 },
-              limit: { context: 1_000_000 },
-            },
-          },
-        },
-      },
-    });
+  it('does not create a custom recovery for Claude Code’s legacy automatic alias', () => {
+    const rows = resolveModelCatalog('claude-code', { configuredSelectionId: 'default' });
 
-    const models = resolveModelCatalog('opencode', cache);
-    expect(models.some((entry) => entry.id === 'auto')).toBe(false);
-    expect(models.some((entry) => entry.id === 'anthropic/claude-sonnet-4.6')).toBe(true);
-    expect(models.find((entry) => entry.id === 'anthropic/claude-sonnet-4.6')?.source).toBe(
-      'models-dev',
-    );
+    expect(rows.some((row) => row.source === 'configured-recovery')).toBe(false);
   });
 
-  it('hydrates copilot and kilo-code catalogs from direct models.dev providers', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        'github-copilot': {
-          id: 'github-copilot',
-          models: {
-            'claude-opus-4.6': {
-              id: 'claude-opus-4.6',
-              cost: { input: 0, output: 0 },
-              limit: { context: 1_000_000 },
-            },
-          },
+  it('leaves ambiguous owner-distinct exact rows separate without adding a custom duplicate', () => {
+    const rows = resolveModelCatalog('opencode', {
+      configuredSelectionId: 'model-x',
+      cache: makeModelCacheAccessor({
+        providerModels: {
+          opencode: [
+            { id: 'model-x', providerId: 'vendor-a' },
+            { id: 'model-x', providerId: 'vendor-b' },
+          ],
         },
-        kilo: {
-          id: 'kilo',
-          models: {
-            'kimi-k2.5': {
-              id: 'kimi-k2.5',
-              cost: { input: 0, output: 0 },
-              limit: { context: 256_000 },
-            },
-          },
-        },
-      },
+      }),
     });
 
-    const copilotModels = resolveModelCatalog('copilot', cache);
-    const kiloModels = resolveModelCatalog('kilo-code', cache);
-
-    expect(copilotModels.some((entry) => entry.id === 'claude-opus-4.6')).toBe(true);
-    expect(copilotModels.find((entry) => entry.id === 'claude-opus-4.6')?.source).toBe(
-      'models-dev',
-    );
-    expect(kiloModels.some((entry) => entry.id === 'kimi-k2.5')).toBe(true);
-    expect(kiloModels.find((entry) => entry.id === 'kimi-k2.5')?.source).toBe('models-dev');
-  });
-
-  it('filters stale bundled entries when models.dev data is available', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        anthropic: {
-          id: 'anthropic',
-          models: {
-            'claude-sonnet-4-6': {
-              id: 'claude-sonnet-4-6',
-              cost: { input: 3, output: 15 },
-              limit: { context: 1_000_000 },
-            },
-          },
-        },
-      },
-    });
-
-    const models = resolveModelCatalog('anthropic', cache);
-    expect(models.some((e) => e.id === 'claude-sonnet-4-6')).toBe(true);
-    expect(models.some((e) => e.id === 'claude-opus-4-6')).toBe(false);
-    const defaultEntry = models.find((e) => e.isDefault);
-    expect(defaultEntry).toBeDefined();
-  });
-
-  it('propagates releaseDate from models.dev through catalog', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        anthropic: {
-          id: 'anthropic',
-          models: {
-            'claude-sonnet-4-6': {
-              id: 'claude-sonnet-4-6',
-              cost: { input: 3, output: 15 },
-              limit: { context: 1_000_000 },
-              release_date: '2025-10-01',
-              last_updated: '2026-02-15',
-            },
-          },
-        },
-      },
-    });
-
-    const models = resolveModelCatalog('anthropic', cache);
-    const sonnet = models.find((e) => e.id === 'claude-sonnet-4-6');
-    expect(sonnet?.releaseDate).toBe('2026-02-15');
-  });
-
-  it('models.dev context length overrides bundled fallback', () => {
-    const cache = makeModelCacheAccessor({
-      catalog: {
-        anthropic: {
-          id: 'anthropic',
-          models: {
-            'claude-sonnet-4-6': {
-              id: 'claude-sonnet-4-6',
-              cost: { input: 3, output: 15 },
-              limit: { context: 500_000 },
-            },
-          },
-        },
-      },
-    });
-
-    const models = resolveModelCatalog('anthropic', cache);
-    const sonnet = models.find((e) => e.id === 'claude-sonnet-4-6');
-    expect(sonnet?.contextLength).toBe(500_000);
+    expect(
+      rows
+        .filter((row) => row.selectionId === 'model-x')
+        .map((row) => [row.sourceProviderId, row.source, row.membership]),
+    ).toEqual([
+      ['vendor-a', 'runtime', 'confirmed'],
+      ['vendor-b', 'runtime', 'confirmed'],
+    ]);
+    expect(rows.some((row) => row.source === 'configured-recovery')).toBe(false);
   });
 });
 
 describe('lookupCatalogContextLength', () => {
-  it('looks up context length for canonical DeepSeek V4 keys', () => {
-    expect(lookupCatalogContextLength('deepseek', 'deepseek/deepseek-v4-flash')).toBe(1_000_000);
+  it('uses only the exact selection ID', () => {
     expect(lookupCatalogContextLength('deepseek', 'deepseek-v4-pro')).toBe(1_000_000);
-  });
-
-  it('returns undefined for an unknown provider', () => {
-    expect(lookupCatalogContextLength('unknown-provider', 'deepseek-chat')).toBeUndefined();
+    expect(lookupCatalogContextLength('deepseek', 'deepseek/deepseek-v4-pro')).toBeUndefined();
   });
 });

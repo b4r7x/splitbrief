@@ -17,11 +17,17 @@ export interface ColumnStateInput<T> {
   filterFn: (item: T, query: string) => boolean;
   getKey: (item: T) => string;
   initialIndex: number;
+  /**
+   * Rows the caller prepends to the rendered list (the virtual "+ Add custom…"
+   * row). The index travels in combined-list coordinates, so clamping must
+   * count these rows or the selection can never reach the last real item.
+   */
+  virtualCount?: number | undefined;
   onCurrentItemChange?: ((item: T | undefined) => void) | undefined;
 }
 
 export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T> {
-  const { source, filterFn, getKey, initialIndex, onCurrentItemChange } = input;
+  const { source, filterFn, getKey, initialIndex, virtualCount = 0, onCurrentItemChange } = input;
   const [filter, setFilterState] = useState('');
   const [index, setIndexState] = useState(initialIndex);
 
@@ -35,9 +41,14 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
   const getItems = (filterValue: string, src: T[] = sourceRef.current) =>
     filterValue ? src.filter((item) => filterFn(item, filterValue)) : src;
 
+  const itemAt = (nextIndex: number, nextItems: T[]) =>
+    nextIndex < virtualCount
+      ? undefined
+      : nextItems[clampIndex(nextIndex - virtualCount, nextItems.length)];
+
   const items = getItems(filter);
-  const effectiveIndex = clampIndex(index, items.length);
-  const currentItem = items[effectiveIndex];
+  const effectiveIndex = clampIndex(index, items.length + virtualCount);
+  const currentItem = itemAt(effectiveIndex, items);
 
   const notifiedKey = useRef<string | null>(null);
   const notifyCurrentItem = (item: T | undefined) => {
@@ -45,19 +56,17 @@ export function useColumnState<T>(input: ColumnStateInput<T>): ColumnStateHook<T
     onCurrentItemChange?.(item);
   };
 
-  // The cursor is an index, so a source list that re-sorts or re-filters under it
-  // moves to another item without any call below — re-notify on the key change.
+  // The selection is an index, so a source list that re-sorts or re-filters
+  // under it moves to another item without any call below — re-notify on the
+  // key change.
   useLayoutEffect(() => {
     if (currentItem === undefined || getKey(currentItem) === notifiedKey.current) return;
     notifyCurrentItem(currentItem);
   });
 
-  const itemAt = (nextIndex: number, nextItems: T[]) =>
-    nextItems[clampIndex(nextIndex, nextItems.length)];
-
   const setIndex = (next: number) => {
     const nextItems = getItems(filterRef.current);
-    const clamped = clampIndex(next, nextItems.length);
+    const clamped = clampIndex(next, nextItems.length + virtualCount);
     indexRef.current = clamped;
     setIndexState(clamped);
     const landed = itemAt(clamped, nextItems);

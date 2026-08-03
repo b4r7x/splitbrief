@@ -1,0 +1,18 @@
+{
+  "identity": {
+    "packageName": "splitbrief",
+    "packageVersion": "0.1.0",
+    "commit": "7596ce1b8d3ab81e44b6432fdd3de954e58560f9"
+  },
+  "CONFIG_VERSION": 3,
+  "evidence": {
+    "npmViewSplitbriefVersionsJson": "E404",
+    "repositoryTags": []
+  },
+  "sha256": {
+    "src/core/config/load/io.ts": "536d1c1d8383cd8720ab41673f2b153434924834a6a15bf15cf70e1d93951468",
+    "src/lib/confined-fs.ts": "74717a5e3b4f20a08af549c35bcbd18bc7f0fa56a67b2863ec3e8b454c8f5cb0",
+    "src/features/runners/config-transforms.ts": "a52f40beecf1fe95cda07f1c4ce142cf256d7c0793c402f50854746ac77e285d",
+    "src/stores/project/config-persistence.ts": "d1033d22e11beef6c803338186d69ff364849c38aef783832dcec630ca1b105f"
+  }
+}

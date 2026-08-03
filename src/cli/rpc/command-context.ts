@@ -6,7 +6,10 @@ import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
 import { transitionAndSave } from '../../engine/orchestrator/state-ops.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../engine/orchestrator/run/workflow.js';
-import type { RuntimeCommandContext } from '../../core/runtime/commands/types.js';
+import type {
+  RuntimeCommandContext,
+  RuntimeConfigSaveResult,
+} from '../../core/runtime/commands/types.js';
 import { createCommandContext } from '../../core/runtime/commands/context-factory.js';
 import { buildRewindAction } from '../../core/state/build-rewind-action.js';
 import { sessionDir } from '../../core/paths.js';
@@ -21,11 +24,17 @@ import {
   clearGrantsByScope,
 } from '../../core/approval/store.js';
 import { attachImage, detachImage, listAttachments } from '../../stores/workflow/attachments.js';
-import { writeConfig } from '../../core/config/load/io.js';
+import {
+  configRevisionsMatch,
+  renderConfigDocumentEdits,
+  transactConfigDocument,
+} from '../../core/config/load/io.js';
+import { toYaml } from '../../core/config/load/transform.js';
 import { defaultApprovalConfig } from '../../core/schemas/config.js';
-import { persistedConfigForSave } from '../../stores/project/config-persistence.js';
+import { editsForSave, persistedConfigForSave } from '../../stores/project/config-persistence.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
+import type { ResolvedRunConfig } from '../build-overrides.js';
 
 const rpcCommandContextError = {
   noActiveSession: () => error('rpc-command-no-active-session', 'No active session.'),
@@ -36,10 +45,10 @@ export function createRpcCommandContext(opts: {
   projectDir: string;
   getSessionId: () => string | undefined;
   getState: () => WorkflowState | null;
-  getConfig: () => Config | null;
-  getPersistedConfig?: (() => Config | null) | undefined;
-  setConfig: (config: Config) => void;
-  setPersistedConfig?: ((config: Config) => void) | undefined;
+  getRunConfig: () => ResolvedRunConfig | null;
+  setRunConfig: (config: ResolvedRunConfig) => void;
+  reloadRunConfig: () => ResolvedRunConfig;
+  setEffectiveConfig: (config: Config) => void;
   getApprovalEnabled?: (() => boolean) | undefined;
   setApprovalEnabled?: ((enabled: boolean) => void) | undefined;
   getPhase: () => Phase;
@@ -61,33 +70,85 @@ export function createRpcCommandContext(opts: {
   };
   return createCommandContext({
     projectDir: () => opts.projectDir,
-    getConfig: opts.getConfig,
-    saveConfig: (config) => {
+    getConfig: () => opts.getRunConfig()?.config ?? null,
+    saveConfig: async (config): Promise<RuntimeConfigSaveResult> => {
       try {
-        const effective = opts.getConfig();
-        const persistedBase = opts.getPersistedConfig?.();
-        const persisted =
-          effective && persistedBase
-            ? persistedConfigForSave({
-                persisted: persistedBase,
-                effective,
-                updated: config,
-              })
-            : config;
-        writeConfig(opts.projectDir, persisted);
-        opts.setPersistedConfig?.(persisted);
+        const current = opts.getRunConfig();
+        if (!current) return { kind: 'failure', ok: false };
+        const persisted = persistedConfigForSave({
+          persisted: current.persistedConfig,
+          effective: current.config,
+          updated: config,
+        });
+        const edits =
+          current.persistenceSnapshot.revision === null
+            ? [{ path: [], value: toYaml(persisted) }]
+            : editsForSave(current.persistedConfig, persisted);
+        const intendedRawBytes = Buffer.from(
+          renderConfigDocumentEdits(current.persistenceSnapshot, edits),
+        );
+        const result = await transactConfigDocument(
+          opts.projectDir,
+          current.persistenceSnapshot.revision,
+          edits,
+        );
+        if (result.kind === 'conflict') {
+          return {
+            kind: 'conflict',
+            ok: false,
+            errorMessage: 'Config changed on disk. Reload configuration before retrying.',
+          };
+        }
+
+        const reloaded = opts.reloadRunConfig();
+        if (result.kind === 'saved') {
+          if (!configRevisionsMatch(result.revision, reloaded.persistenceSnapshot.revision)) {
+            return {
+              kind: 'conflict',
+              ok: false,
+              errorMessage: 'Config changed on disk. Reload configuration before retrying.',
+            };
+          }
+          opts.setRunConfig(reloaded);
+          return { kind: 'saved', ok: true };
+        }
+
+        if (reloaded.persistenceSnapshot.revision === null) {
+          return {
+            kind: 'failure',
+            ok: false,
+            errorMessage:
+              'Config disappeared after an uncertain save. Reload configuration before retrying.',
+          };
+        }
+        opts.setRunConfig(reloaded);
+        const actualMatchesIntended =
+          Buffer.compare(Buffer.from(reloaded.persistenceSnapshot.rawBytes), intendedRawBytes) ===
+          0;
+        return {
+          kind: 'durability-uncertain',
+          ok: false,
+          errorMessage: actualMatchesIntended
+            ? `Config was saved but its directory durability is uncertain: ${result.warning}`
+            : `Config durability is uncertain; reloaded the current disk config: ${result.warning}`,
+        };
       } catch (err) {
-        return { ok: false, errorMessage: `Failed to save config: ${toErrorMessage(err)}` };
+        return {
+          kind: 'failure',
+          ok: false,
+          errorMessage: `Failed to save config: ${toErrorMessage(err)}`,
+        };
       }
-      opts.setConfig(config);
-      return { ok: true };
     },
     getApprovalEnabled: opts.getApprovalEnabled,
     setApprovalEnabled: (enabled) => {
-      const current = opts.getConfig();
+      const current = opts.getRunConfig();
       if (current) {
-        const approval = current.approval ?? defaultApprovalConfig();
-        opts.setConfig({ ...current, approval: { ...approval, enabled } });
+        const approval = current.config.approval ?? defaultApprovalConfig();
+        opts.setEffectiveConfig({
+          ...current.config,
+          approval: { ...approval, enabled },
+        });
       }
       opts.setApprovalEnabled?.(enabled);
     },
@@ -101,6 +162,15 @@ export function createRpcCommandContext(opts: {
     setFeedbackError: pushError,
     refreshDetection: async () => {
       pushMessage('Tool detection refresh is not available in RPC mode.');
+      return {
+        status: 'not-run',
+        published: false,
+        lanes: {
+          readiness: { outcome: 'not-run', reason: 'uninitialized' },
+          modelsDev: { outcome: 'not-run', reason: 'uninitialized' },
+          cliModels: { outcome: 'not-run', reason: 'uninitialized' },
+        },
+      };
     },
     refreshProjectFiles: () => {
       pushMessage('Project file refresh is not available in RPC mode.');
@@ -110,7 +180,7 @@ export function createRpcCommandContext(opts: {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const persistTranscript = opts.getConfig()?.workflow.persistTranscript ?? true;
+      const persistTranscript = opts.getRunConfig()?.config.workflow.persistTranscript ?? true;
       const { action, persistedAction, event } = buildRewindAction({
         request,
         ref: { projectDir: opts.projectDir, sessionId },
@@ -130,7 +200,7 @@ export function createRpcCommandContext(opts: {
       const state = opts.getState();
       const sessionId = opts.getSessionId();
       if (!state || !sessionId) return false;
-      const persistTranscript = opts.getConfig()?.workflow.persistTranscript ?? true;
+      const persistTranscript = opts.getRunConfig()?.config.workflow.persistTranscript ?? true;
       const { persistedAction, event } = buildRewindAction({
         request: { target: 'task', taskId },
         ref: { projectDir: opts.projectDir, sessionId },

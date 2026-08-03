@@ -2,9 +2,16 @@ import { describe, it, expect, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
+import { projectRunnerCallEvents } from '../calls/event-projection.js';
+import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
 import { RUNNER_CALL_OUTPUT_MAX_EVENTS } from '../calls/output-limit.js';
-import { spawnAndCollect } from './spawn-collect.js';
+import { protectEngineEventForConsumer } from '../events/protection/protect.js';
+import { spawnAndCollect, spawnCollectError } from './spawn-collect.js';
 import { parseJsonlLine } from './parse-jsonl.js';
+import {
+  CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE,
+  createCustomRunnerRedactor,
+} from '../runners/redaction.js';
 import { createRunnerSandboxEnv } from '../runners/sandbox-env.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
@@ -50,6 +57,424 @@ describe('spawnAndCollect', () => {
       }),
     ).rejects.toThrow('***REDACTED***');
     expect(JSON.stringify(failureEvents)).not.toContain(credential);
+  });
+
+  it('rejects invalid hard deadlines as typed errors without leaking declared values', async () => {
+    const declaredValue = 'invalid-hard-deadline-value-canary-7c3d';
+    let callbackCalled = false;
+    let failure: unknown;
+
+    try {
+      await spawnAndCollect({
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write(process.env.CUSTOM_PUBLIC_VALUE)'],
+        cwd: process.cwd(),
+        env: { CUSTOM_PUBLIC_VALUE: declaredValue },
+        credentialValues: [declaredValue],
+        redact: createCustomRunnerRedactor([declaredValue]),
+        timeoutMs: -1,
+        onText: () => {
+          callbackCalled = true;
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(spawnCollectError.isInvalidHardDeadline(failure)).toBe(true);
+    expect(failure).toMatchObject({
+      kind: 'runner-invalid-timeout',
+      message: 'Runner hard deadline must be a positive finite number of milliseconds.',
+      data: { timeoutMs: -1 },
+    });
+    expect(callbackCalled).toBe(false);
+    expect(
+      JSON.stringify(
+        failure instanceof Error
+          ? { message: failure.message, enumerable: Object.fromEntries(Object.entries(failure)) }
+          : failure,
+      ),
+    ).not.toContain(declaredValue);
+  });
+
+  it('keeps a declared value split between structured assistant and final output off every observable surface', async () => {
+    const declaredValue = 'structured-assistant-final-value-canary-a91f';
+    const splitAt = 'structured-assistant-final-'.length;
+    const assistantText = `assistant: ${declaredValue.slice(0, splitAt)}`;
+    const finalText = `assistant: ${declaredValue}`;
+    const callbacks: string[] = [];
+    const events: RunnerCallEvent[] = [];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        [
+          "const emit = (event) => process.stdout.write(JSON.stringify(event) + '\\n');",
+          `emit(${JSON.stringify({
+            type: 'assistant',
+            message: { content: [{ type: 'text', text: assistantText }] },
+          })});`,
+          `emit(${JSON.stringify({ type: 'result', result: finalText, is_error: true })});`,
+        ].join(''),
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [declaredValue],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onText: (text) => callbacks.push(text),
+      onCallEvent: (event) => events.push(event),
+    });
+
+    const observed = JSON.stringify({
+      callbacks,
+      result,
+      events,
+      errors: runnerCallErrors(events),
+    });
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      text: 'assistant: ***REDACTED***',
+      error: { code: 'runner_result_error', message: 'assistant: ***REDACTED***' },
+    });
+    expect(callbacks.join('')).toBe('assistant: ***REDACTED***');
+    expect(observed).not.toContain(declaredValue.slice(0, splitAt));
+    expect(observed).not.toContain(declaredValue.slice(splitAt));
+  });
+
+  it('redacts fragmented stream-json tool input before callback, event, protected, and session-log surfaces', async () => {
+    const canary = 'tool-input-stream-fragment-canary-6f2a';
+    const splitAt = 'tool-input-stream-'.length;
+    const callbackEvents: RunnerCallEvent[] = [];
+    const records = [
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          content_block: { type: 'tool_use', id: 'tool-real', name: 'Write', input: {} },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 1,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: `{"value":"${canary.slice(0, splitAt)}`,
+          },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 2,
+          delta: { type: 'input_json_delta', partial_json: '{"path":"src/app.ts"}' },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 1,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: `${canary.slice(splitAt)}"}`,
+          },
+        },
+      },
+      { type: 'result', result: 'runner failed', is_error: true },
+    ];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        `for (const record of ${JSON.stringify(records)}) process.stdout.write(JSON.stringify(record) + '\\n');`,
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [canary],
+      redact: createCustomRunnerRedactor([canary]),
+      onCallEvent: (event) => callbackEvents.push(event),
+    });
+
+    const projected = callbackEvents.flatMap((event, index) =>
+      projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
+    );
+    const protectedEvents = projected.map((event) =>
+      protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: true }),
+    );
+    const sessionEntries = callbackEvents.map((event, index) =>
+      runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
+    );
+    const observed = JSON.stringify({
+      callbackEvents,
+      events: callbackEvents,
+      protectedEvents,
+      result,
+      sessionEntries,
+    });
+    const toolDeltas = callbackEvents.filter((event) => event.type === 'call_tool_use_delta');
+
+    expect(result.status).toBe('failed');
+    expect(
+      toolDeltas.map(({ toolUseId, name, inputDelta }) => ({ toolUseId, name, inputDelta })),
+    ).toEqual([
+      { toolUseId: 'tool-real', name: 'Write', inputDelta: '{}' },
+      { toolUseId: 'tool-real', name: 'Write', inputDelta: '{"value":"' },
+      { toolUseId: 'tool-real', name: 'Write', inputDelta: '{"path":"src/app.ts"}' },
+      { toolUseId: 'tool-real', name: 'Write', inputDelta: '***REDACTED***"}' },
+    ]);
+    expect(observed).not.toContain(canary);
+    expect(observed).not.toContain(canary.slice(0, splitAt));
+    expect(observed).not.toContain(canary.slice(splitAt));
+    expect(observed).toContain('***REDACTED***');
+  });
+
+  it('keeps a tool-input redaction boundary across an unrelated stream-json text delta', async () => {
+    const canary = 'tool-input-interleaved-text-canary-45af';
+    const splitAt = 'tool-input-interleaved-'.length;
+    const callbacks: string[] = [];
+    const callbackEvents: RunnerCallEvent[] = [];
+    const records = [
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          content_block: { type: 'tool_use', id: 'tool-real', name: 'Write', input: {} },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 1,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: `{"value":"${canary.slice(0, splitAt)}`,
+          },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 0,
+          delta: { type: 'text_delta', text: 'unrelated assistant text' },
+        },
+      },
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          index: 1,
+          delta: {
+            type: 'input_json_delta',
+            partial_json: `${canary.slice(splitAt)}"}`,
+          },
+        },
+      },
+      { type: 'result', result: 'done' },
+    ];
+    const result = await spawnAndCollect({
+      command: process.execPath,
+      args: [
+        '-e',
+        `for (const record of ${JSON.stringify(records)}) process.stdout.write(JSON.stringify(record) + '\\n');`,
+      ],
+      cwd: process.cwd(),
+      format: 'stream-json',
+      credentialValues: [canary],
+      redact: createCustomRunnerRedactor([canary]),
+      onText: (text) => callbacks.push(text),
+      onCallEvent: (event) => callbackEvents.push(event),
+    });
+
+    const projected = callbackEvents.flatMap((event, index) =>
+      projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
+    );
+    const protectedEvents = projected.map((event) =>
+      protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: true }),
+    );
+    const sessionEntries = callbackEvents.map((event, index) =>
+      runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
+    );
+    const toolDeltas = callbackEvents.filter((event) => event.type === 'call_tool_use_delta');
+    const observed = JSON.stringify({
+      callbacks,
+      callbackEvents,
+      protectedEvents,
+      result,
+      sessionEntries,
+    });
+
+    expect(result).toMatchObject({ status: 'completed', text: 'done' });
+    expect(
+      toolDeltas.map(({ toolUseId, name, inputDelta }) => ({ toolUseId, name, inputDelta })),
+    ).toEqual([
+      { toolUseId: 'tool-real', name: 'Write', inputDelta: '{}' },
+      { toolUseId: 'tool-real', name: 'Write', inputDelta: '{"value":"' },
+      { toolUseId: 'tool-real', name: 'Write', inputDelta: '***REDACTED***"}' },
+    ]);
+    expect(callbacks.join('')).toBe('unrelated assistant tex***REDACTED***');
+    expect(observed).not.toContain(canary);
+    expect(observed).not.toContain(canary.slice(0, splitAt));
+    expect(observed).not.toContain(canary.slice(splitAt));
+  });
+
+  it('fails closed and reaps the process tree when concurrent structured tool-input state exceeds its bound', async () => {
+    const canary = 'tool-input-capacity-stream-canary-62bc';
+    const splitAt = 'tool-input-capacity-'.length;
+    const prefix = canary.slice(0, splitAt);
+    const suffix = canary.slice(splitAt);
+    const callbacks: string[] = [];
+    const callbackEvents: RunnerCallEvent[] = [];
+    let leaderPid = 0;
+    let descendantPid = 0;
+    let absentAtRejection: { leader: boolean; descendant: boolean } | undefined;
+    let result: Awaited<ReturnType<typeof spawnAndCollect>> | undefined;
+    let failure: unknown;
+    const processIsAbsent = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    const program = [
+      "const { spawn } = require('node:child_process');",
+      `const child = spawn(${JSON.stringify(process.execPath)}, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });`,
+      "const emit = (record) => process.stdout.write(JSON.stringify(record) + '\\n');",
+      "emit({ type: 'assistant', message: { content: [{ type: 'text', text: 'pids:' + process.pid + ':' + child.pid }] } });",
+      `const prefix = ${JSON.stringify(`{"value":"${prefix}`)};`,
+      `const suffix = ${JSON.stringify(`${suffix}"}`)};`,
+      `for (let index = 0; index < ${CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE}; index += 1) {`,
+      "  emit({ type: 'stream_event', event: { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: prefix } } });",
+      '}',
+      `emit({ type: 'stream_event', event: { type: 'content_block_delta', index: ${CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE}, delta: { type: 'input_json_delta', partial_json: prefix } } });`,
+      "emit({ type: 'stream_event', event: { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: suffix } } });",
+      'setInterval(() => {}, 60_000);',
+    ].join('');
+
+    try {
+      result = await spawnAndCollect({
+        command: process.execPath,
+        args: ['-e', program],
+        cwd: process.cwd(),
+        format: 'stream-json',
+        credentialValues: [canary],
+        redact: createCustomRunnerRedactor([canary]),
+        onText: (text) => {
+          callbacks.push(text);
+          const match = /^pids:(\d+):(\d+)$/.exec(text);
+          if (match?.[1] === undefined || match[2] === undefined) return;
+          leaderPid = Number.parseInt(match[1], 10);
+          descendantPid = Number.parseInt(match[2], 10);
+        },
+        onCallEvent: (event) => callbackEvents.push(event),
+      });
+    } catch (error) {
+      failure = error;
+      absentAtRejection = {
+        leader: processIsAbsent(leaderPid),
+        descendant: processIsAbsent(descendantPid),
+      };
+    }
+
+    try {
+      const projected = callbackEvents.flatMap((event, index) =>
+        projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
+      );
+      const protectedEvents = projected.map((event) =>
+        protectEngineEventForConsumer(event, { context: 'ipc', persistTranscript: true }),
+      );
+      const sessionEntries = callbackEvents.map((event, index) =>
+        runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
+      );
+      const observedFailure =
+        failure instanceof Error
+          ? {
+              kind: (failure as Error & { kind?: unknown }).kind,
+              message: failure.message,
+              data: (failure as Error & { data?: unknown }).data,
+            }
+          : failure;
+      const observed = JSON.stringify({
+        callbacks,
+        callbackEvents,
+        protectedEvents,
+        sessionEntries,
+        result,
+        failure: observedFailure,
+      });
+
+      expect(result).toBeUndefined();
+      expect(failure).toMatchObject({ kind: 'custom-runner-tool-input-state-limit' });
+      expect(runnerCallErrors(callbackEvents)).toEqual([
+        expect.objectContaining({
+          status: 'failed',
+          partial: false,
+          error: expect.objectContaining({ code: 'custom-runner-tool-input-state-limit' }),
+        }),
+      ]);
+      expect(callbackEvents.some((event) => event.type === 'call_completed')).toBe(false);
+      expect(leaderPid).toBeGreaterThan(1);
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(absentAtRejection).toEqual({ leader: true, descendant: true });
+      expect(observed).not.toContain(canary);
+      expect(observed).not.toContain(prefix);
+      expect(observed).not.toContain(suffix);
+    } finally {
+      for (const pid of [leaderPid, descendantPid]) {
+        if (pid <= 1 || processIsAbsent(pid)) continue;
+        process.kill(pid, 'SIGKILL');
+      }
+    }
+  });
+
+  it('redacts declared values from enumerable process-failure data before any controlled surface observes it', async () => {
+    const declaredValue = 'enumerable-error-value-canary-83de';
+    const callbacks: string[] = [];
+    const events: RunnerCallEvent[] = [];
+    let failure: unknown;
+
+    try {
+      await spawnAndCollect({
+        command: process.execPath,
+        args: [
+          '-e',
+          'const value = process.env.CUSTOM_PUBLIC_VALUE;process.stdout.write("stdout-" + value);process.stderr.write("stderr-" + value);process.exit(2);',
+        ],
+        cwd: process.cwd(),
+        env: { CUSTOM_PUBLIC_VALUE: declaredValue },
+        credentialValues: [declaredValue],
+        redact: createCustomRunnerRedactor([declaredValue]),
+        onText: (value) => callbacks.push(value),
+        onStderr: (value) => callbacks.push(value),
+        onCallEvent: (event) => events.push(event),
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    const observedFailure =
+      failure instanceof Error || failure instanceof DOMException
+        ? {
+            name: failure.name,
+            message: failure.message,
+            enumerable: Object.fromEntries(Object.entries(failure)),
+          }
+        : failure;
+    const observed = JSON.stringify({
+      callbacks: callbacks.join(''),
+      events,
+      failure: observedFailure,
+    });
+
+    expect(failure).toMatchObject({ kind: 'process-output' });
+    expect(observed).not.toContain(declaredValue);
   });
 
   it('redacts credentials read from a bridged state file in the collector path', async () => {
@@ -424,6 +849,172 @@ describe('spawnAndCollect', () => {
           message: expect.stringContaining('produced no output for 1s'),
         },
       });
+    } finally {
+      for (const pid of [leaderPid, descendantPid]) {
+        if (pid <= 1 || processIsAbsent(pid)) continue;
+        process.kill(pid, 'SIGKILL');
+      }
+    }
+  });
+
+  it('enforces a hard deadline despite chatty output and reaps a stubborn process tree', async () => {
+    const declaredValue = 'deadline-value-canary-c5e1';
+    const events: RunnerCallEvent[] = [];
+    const callbacks: string[] = [];
+    let leaderPid = 0;
+    let descendantPid = 0;
+    let absentAtRejection: { leader: boolean; descendant: boolean } | undefined;
+    let failure: unknown;
+    const processIsAbsent = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    const program = [
+      "const { spawn } = require('node:child_process');",
+      "const child = spawn(process.execPath, ['-e', 'process.on(\"SIGTERM\", () => {}); setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
+      'process.stdout.write(String(process.pid) + ":" + String(child.pid) + "|" + process.env.CUSTOM_PUBLIC_VALUE + "\\n");',
+      'setInterval(() => process.stdout.write("chatty\\n"), 5);',
+    ].join('');
+    const pending = spawnAndCollect({
+      command: process.execPath,
+      args: ['-e', program],
+      cwd: process.cwd(),
+      timeoutMs: 500,
+      idle: { warnMs: 1_000, killMs: 2_000 },
+      env: { CUSTOM_PUBLIC_VALUE: declaredValue },
+      credentialValues: [declaredValue],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onText: (text) => {
+        callbacks.push(text);
+        const match = /(\d+):(\d+)/.exec(text);
+        if (match?.[1] === undefined || match[2] === undefined) return;
+        leaderPid = Number.parseInt(match[1], 10);
+        descendantPid = Number.parseInt(match[2], 10);
+      },
+      onCallEvent: (event) => events.push(event),
+    });
+    const observedRejection = pending.catch((error: unknown) => {
+      failure = error;
+      absentAtRejection = {
+        leader: processIsAbsent(leaderPid),
+        descendant: processIsAbsent(descendantPid),
+      };
+      throw error;
+    });
+
+    try {
+      await expect(observedRejection).rejects.toMatchObject({ kind: 'command-timeout' });
+
+      expect(leaderPid).toBeGreaterThan(1);
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(absentAtRejection).toEqual({ leader: true, descendant: true });
+      expect(runnerCallErrors(events)).toEqual([
+        expect.objectContaining({
+          status: 'timeout',
+          error: expect.objectContaining({ code: 'command-timeout' }),
+        }),
+      ]);
+      const observedFailure =
+        failure instanceof Error || failure instanceof DOMException
+          ? {
+              name: failure.name,
+              message: failure.message,
+              enumerable: Object.fromEntries(Object.entries(failure)),
+            }
+          : failure;
+      expect(JSON.stringify({ callbacks, events, failure: observedFailure })).not.toContain(
+        declaredValue,
+      );
+    } finally {
+      for (const pid of [leaderPid, descendantPid]) {
+        if (pid <= 1 || processIsAbsent(pid)) continue;
+        process.kill(pid, 'SIGKILL');
+      }
+    }
+  });
+
+  it('clears hard-deadline timers after a successful collection', async () => {
+    vi.useFakeTimers();
+    try {
+      const result = await spawnAndCollect({
+        command: process.execPath,
+        args: ['-e', 'process.stdout.write("done\\n")'],
+        cwd: process.cwd(),
+        timeoutMs: 60_000,
+      });
+
+      expect(result.status).toBe('completed');
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps an external TimeoutError abort classified as aborted and reaps its process tree', async () => {
+    const controller = new AbortController();
+    const declaredValue = 'external-timeout-value-canary-4ab9';
+    const events: RunnerCallEvent[] = [];
+    let leaderPid = 0;
+    let descendantPid = 0;
+    const processIsAbsent = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return false;
+      } catch {
+        return true;
+      }
+    };
+    const program = [
+      "const { spawn } = require('node:child_process');",
+      "const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 60_000)'], { stdio: 'ignore' });",
+      'process.stdout.write(String(process.pid) + ":" + String(child.pid) + "\\n");',
+      'setInterval(() => process.stdout.write("chatty\\n"), 5);',
+    ].join('');
+    const pending = spawnAndCollect({
+      command: process.execPath,
+      args: ['-e', program],
+      cwd: process.cwd(),
+      timeoutMs: 60_000,
+      signal: controller.signal,
+      credentialValues: [declaredValue],
+      redact: createCustomRunnerRedactor([declaredValue]),
+      onText: (text) => {
+        const match = /(\d+):(\d+)/.exec(text);
+        if (match?.[1] === undefined || match[2] === undefined) return;
+        leaderPid = Number.parseInt(match[1], 10);
+        descendantPid = Number.parseInt(match[2], 10);
+        controller.abort(new DOMException(`external-${declaredValue}`, 'TimeoutError'));
+      },
+      onCallEvent: (event) => events.push(event),
+    });
+
+    try {
+      let failure: unknown;
+      try {
+        await pending;
+      } catch (error) {
+        failure = error;
+      }
+      const observedFailure =
+        failure instanceof Error || failure instanceof DOMException
+          ? {
+              name: failure.name,
+              message: failure.message,
+              enumerable: Object.fromEntries(Object.entries(failure)),
+            }
+          : failure;
+
+      expect(failure).toBeDefined();
+      expect(leaderPid).toBeGreaterThan(1);
+      expect(descendantPid).toBeGreaterThan(1);
+      expect(processIsAbsent(leaderPid)).toBe(true);
+      expect(processIsAbsent(descendantPid)).toBe(true);
+      expect(runnerCallErrors(events)).toEqual([expect.objectContaining({ status: 'aborted' })]);
+      expect(JSON.stringify({ events, failure: observedFailure })).not.toContain(declaredValue);
     } finally {
       for (const pid of [leaderPid, descendantPid]) {
         if (pid <= 1 || processIsAbsent(pid)) continue;

@@ -20,10 +20,9 @@ import type { SpawnServerOptions, SpawnServerResult } from '../../src/engine/ipc
 import { buildServerArgs } from '../../src/engine/ipc/spawn-server.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
 import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
-import { CLI_TOOL_CATALOG } from '../../src/core/runners/cli-tool-catalog.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import type { CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
-import { deriveCliReadiness, type CliReadinessResult } from '../../src/core/schemas/readiness.js';
+import type { CliReadinessResult } from '../../src/core/schemas/readiness.js';
 
 export const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<SpawnServerResult>>();
 export const runHeadlessMock = vi.fn<() => Promise<void>>();
@@ -50,32 +49,6 @@ function configuredCliTools(config: Config): CliToolId[] {
 }
 
 const declaredCliReadiness = new Map<CliToolId, CliReadinessResult>();
-
-/**
- * Start gates come from a declared probe result, never from an ambient PATH
- * lookup — a test that wants a tool admitted must say so explicitly.
- */
-export function declareReadyCliTool(tool: CliToolId): void {
-  const testedVersion = CLI_TOOL_CATALOG[tool].compatibility.testedVersion;
-  declaredCliReadiness.set(
-    tool,
-    deriveCliReadiness({
-      tool,
-      enabled: true,
-      installation: 'installed',
-      executable: {
-        path: `/opt/splitbrief/bin/${CLI_TOOL_CATALOG[tool].command}`,
-        fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
-      },
-      trust: 'trusted',
-      installedVersion: testedVersion,
-      testedVersion,
-      compatibility: 'compatible',
-      auth: 'authenticated',
-      probedAt: 1,
-    }),
-  );
-}
 
 export const detectCliReadinessMock = vi.fn<NonNullable<StartDeps['detectCliReadiness']>>(
   async ({ config }) => {

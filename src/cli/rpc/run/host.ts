@@ -1,5 +1,6 @@
 import type { Readable, Writable } from 'node:stream';
 import type { Phase } from '../../../core/schemas/enums.js';
+import { defaultApprovalConfig } from '../../../core/schemas/config.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
@@ -83,16 +84,14 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     deps = {},
   } = options;
   installTerminalOutputErrorGuard();
-  const resolvedConfig = resolveRunConfigWithBase({ projectDir, opts });
-  let config = resolvedConfig.config;
-  let persistedConfig = resolvedConfig.persistedConfig;
-  let sessionApprovalEnabled = config.approval?.enabled !== false;
+  let resolvedConfig = resolveRunConfigWithBase({ projectDir, opts });
+  let sessionApprovalEnabled = resolvedConfig.config.approval?.enabled !== false;
   let rpcClosed = false;
   let activeSessionId = currentSessionId(projectDir, sessionId);
 
-  function activeConfig(): typeof config {
+  function activeConfig() {
     return configForSessionTranscriptPolicy(
-      config,
+      resolvedConfig.config,
       activeSessionId === undefined ? undefined : { projectDir, sessionId: activeSessionId },
     );
   }
@@ -203,13 +202,23 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
     projectDir,
     getSessionId: () => activeSessionId,
     getState: readCurrentState,
-    getConfig: () => config,
-    getPersistedConfig: () => persistedConfig,
-    setConfig: (next) => {
-      config = next;
+    getRunConfig: () => resolvedConfig,
+    setRunConfig: (next) => {
+      const approval = next.config.approval ?? defaultApprovalConfig();
+      resolvedConfig =
+        (approval.enabled !== false) === sessionApprovalEnabled
+          ? next
+          : {
+              ...next,
+              config: {
+                ...next.config,
+                approval: { ...approval, enabled: sessionApprovalEnabled },
+              },
+            };
     },
-    setPersistedConfig: (next) => {
-      persistedConfig = next;
+    reloadRunConfig: () => resolveRunConfigWithBase({ projectDir, opts }),
+    setEffectiveConfig: (config) => {
+      resolvedConfig = { ...resolvedConfig, config };
     },
     getApprovalEnabled: () => sessionApprovalEnabled,
     setApprovalEnabled: (enabled) => {

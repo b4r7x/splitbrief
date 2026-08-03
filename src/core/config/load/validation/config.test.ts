@@ -10,6 +10,7 @@ beforeEach(() => {
     'OPENROUTER_API_KEY',
     'DEEPSEEK_API_KEY',
     'OLLAMA_API_KEY',
+    'OLLAMA_LOCAL_API_KEY',
     'OPENAI_API_KEY',
   ]) {
     savedEnv[key] = process.env[key];
@@ -144,6 +145,35 @@ describe('validateConfig', () => {
     expect(
       validateConfig(config).errors.find((e) => e.path === 'implementer.apiKey'),
     ).toBeUndefined();
+  });
+
+  it('rejects local Ollama credentials outside its dedicated environment reference', () => {
+    process.env.OLLAMA_API_KEY = 'cloud-key-canary';
+    process.env.OLLAMA_LOCAL_API_KEY = 'local-key';
+
+    const localOllama = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        model: 'local-model',
+        apiBase: 'http://localhost:11434/v1',
+        apiKey: 'env:OLLAMA_LOCAL_API_KEY',
+      },
+    });
+
+    expect(validateConfig(localOllama).errors).toEqual([]);
+    for (const apiKey of ['inline-local-secret', 'env:ARBITRARY_LOCAL_KEY', 'env:OLLAMA_API_KEY']) {
+      const rawConfig = {
+        ...localOllama,
+        implementer: { ...localOllama.implementer, apiKey },
+      };
+      expect(validateConfig(rawConfig).errors).toContainEqual(
+        expect.objectContaining({
+          path: 'implementer.apiKey',
+          message: expect.stringContaining('OLLAMA_LOCAL_API_KEY'),
+        }),
+      );
+    }
   });
 
   it('blocks the selected implementer profile when required credentials are missing', () => {

@@ -41,12 +41,13 @@ type RunnerRole = 'planner' | 'implementer';
 const ADMITTED_IDS: Readonly<Record<RunnerRole, Readonly<{ cli: string[]; api: string[] }>>> = {
   planner: {
     cli: ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'],
-    api: ['anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'],
+    api: ['ollama-cloud', 'anthropic', 'openrouter', 'deepseek', 'openai', 'groq', 'together'],
   },
   implementer: {
     cli: ['claude-code', 'codex', 'opencode', 'aider', 'copilot', 'kilo-code'],
     api: [
       'ollama',
+      'ollama-cloud',
       'lm-studio',
       'anthropic',
       'openrouter',
@@ -183,7 +184,7 @@ describe('runner catalog parity by role', () => {
 
       const expectedCliIds = ADMITTED_IDS[role].cli;
       const expectedApiIds = ADMITTED_IDS[role].api;
-      const expectedMetaIds = [...META_PROVIDER_IDS];
+      const expectedMetaIds = ['custom-command', 'agent-sdk'];
 
       for (const id of expectedCliIds) {
         expect(pickerIds).toContain(id);
@@ -194,6 +195,9 @@ describe('runner catalog parity by role', () => {
       for (const id of expectedMetaIds) {
         expect(pickerIds).toContain(id);
       }
+      expect(pickerIds.filter((id) => id === 'custom-command')).toHaveLength(1);
+      expect(pickerIds).not.toContain('shell');
+      expect(pickerIds).not.toContain('agent');
 
       const implementerOnlyCli = IMPLEMENTER_CLI_TOOL_IDS.filter(
         (id) => !PLANNER_CLI_TOOL_IDS.includes(id),
@@ -274,14 +278,16 @@ describe('first-class exclusion guard', () => {
     }
   });
 
-  it('keeps deferred OMIT CLI candidates absent from first-class surfaces', () => {
+  it('keeps Cursor and Antigravity out of first-class surfaces', () => {
     const admittedIds = admittedFirstClassIds();
 
-    for (const id of ['cursor', 'antigravity'] as const) {
+    for (const id of ['cursor', 'antigravity']) {
       expect(admittedIds.has(id)).toBe(false);
       expect(id in CLI_TOOL_CATALOG).toBe(false);
       expect(id in CLI_PLANNER_ADAPTERS).toBe(false);
       expect(id in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
+      expect(PlannerCliToolIdSchema.safeParse(id).success).toBe(false);
+      expect(ImplementerCliToolIdSchema.safeParse(id).success).toBe(false);
       expect(pickerIdsForRole('planner')).not.toContain(id);
       expect(pickerIdsForRole('implementer')).not.toContain(id);
     }

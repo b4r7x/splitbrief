@@ -1,8 +1,73 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import http from 'node:http';
 import { z } from 'zod';
 import { createMetadataProvider } from './metadata.js';
 import { resolveProviderRunMetadata } from '../cost/breakdown.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
+
+const REAL_HTTP_RELEASE_DEADLINE_MS = 1_000;
+
+type RequestRecord = Readonly<{
+  method: string;
+  pathname: string;
+  authorization: string | undefined;
+}>;
+
+async function withLoopbackServer(
+  handler: (request: http.IncomingMessage, response: http.ServerResponse) => void,
+  run: (input: Readonly<{ apiBase: string; requests: RequestRecord[] }>) => Promise<void>,
+): Promise<void> {
+  const requests: RequestRecord[] = [];
+  const server = http.createServer((request, response) => {
+    requests.push({
+      method: request.method ?? '',
+      pathname: new URL(request.url ?? '/', 'http://loopback.invalid').pathname,
+      authorization:
+        typeof request.headers.authorization === 'string'
+          ? request.headers.authorization
+          : undefined,
+    });
+    handler(request, response);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (address === null || typeof address === 'string') {
+    throw new Error('Expected a TCP metadata provider test server address.');
+  }
+
+  try {
+    await run({ apiBase: `http://127.0.0.1:${address.port}/v1`, requests });
+  } finally {
+    server.closeAllConnections();
+    if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}
+
+function sendJson(response: http.ServerResponse, payload: unknown): void {
+  response.writeHead(200, { 'content-type': 'application/json' });
+  response.end(JSON.stringify(payload));
+}
+
+async function waitForPromptHttpRelease(
+  requestAborted: Promise<void>,
+  socketClosed: Promise<void>,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.all([requestAborted, socketClosed]),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(new Error('Provider HTTP work did not release promptly after cancellation.')),
+          REAL_HTTP_RELEASE_DEADLINE_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
 
 describe('createMetadataProvider', () => {
   setupFetchMock();
@@ -48,21 +113,145 @@ describe('createMetadataProvider', () => {
     expect(await p.listModels()).toEqual([]);
   });
 
-  it('returns [] without calling fetch when non-local provider has no API key', async () => {
-    const p = createMetadataProvider(opts);
-    const models = await p.listModels();
-    expect(models).toEqual([]);
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+  it('returns [] without contacting a non-local provider that has no API key', async () => {
+    const requests: RequestRecord[] = [];
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = new Request(input, init);
+      requests.push({
+        method: request.method,
+        pathname: new URL(request.url).pathname,
+        authorization: request.headers.get('authorization') ?? undefined,
+      });
+      return new Response(JSON.stringify({ data: [{ id: 'unexpected' }] }), { status: 200 });
+    });
+
+    expect(await createMetadataProvider(opts).listModels()).toEqual([]);
+    expect(requests).toEqual([]);
   });
 
   it('fetches without auth when provider is local, regardless of API key', async () => {
-    const localOpts = { ...opts, isLocal: true };
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [{ id: 'x' }] }), { status: 200 }),
+    vi.unstubAllGlobals();
+    await withLoopbackServer(
+      (_request, response) => sendJson(response, { data: [{ id: 'x' }] }),
+      async ({ apiBase, requests }) => {
+        const localOpts = {
+          ...opts,
+          defaultBaseURL: apiBase,
+          envKeyName: '',
+          isLocal: true,
+          endpointPolicy: { kind: 'loopback' as const, defaultBaseURL: apiBase },
+        };
+
+        expect(
+          await createMetadataProvider(localOpts, { apiKey: 'must-not-send' }).listModels(),
+        ).toEqual(['x']);
+        expect(requests).toEqual([
+          { method: 'GET', pathname: '/v1/models', authorization: undefined },
+        ]);
+      },
     );
-    const p = createMetadataProvider(localOpts);
-    expect(await p.listModels()).toEqual(['x']);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends an explicitly configured optional credential to a secured loopback inventory', async () => {
+    const apiKey = 'local-optional-credential';
+    vi.unstubAllGlobals();
+    await withLoopbackServer(
+      (_request, response) => sendJson(response, { data: [{ id: 'secured-local-model' }] }),
+      async ({ apiBase, requests }) => {
+        const loopbackOpts = {
+          ...opts,
+          defaultBaseURL: apiBase,
+          envKeyName: '',
+          isLocal: true,
+          authentication: 'optional' as const,
+          credentialSource: 'override-only' as const,
+          endpointPolicy: { kind: 'loopback' as const, defaultBaseURL: apiBase },
+        };
+
+        expect(await createMetadataProvider(loopbackOpts, { apiKey }).listModels()).toEqual([
+          'secured-local-model',
+        ]);
+        expect(requests).toEqual([
+          { method: 'GET', pathname: '/v1/models', authorization: `Bearer ${apiKey}` },
+        ]);
+      },
+    );
+  });
+
+  it('keeps an override-only local provider from borrowing an ambient credential', async () => {
+    process.env.CUSTOM_API_KEY = 'ambient-cloud-credential';
+    vi.unstubAllGlobals();
+    await withLoopbackServer(
+      (_request, response) => sendJson(response, { data: [{ id: 'local-model' }] }),
+      async ({ apiBase, requests }) => {
+        const loopbackOpts = {
+          ...opts,
+          defaultBaseURL: apiBase,
+          isLocal: true,
+          apiKeyDefault: 'local-sdk-placeholder',
+          authentication: 'optional' as const,
+          credentialSource: 'override-only' as const,
+          endpointPolicy: { kind: 'loopback' as const, defaultBaseURL: apiBase },
+        };
+
+        const provider = createMetadataProvider(loopbackOpts);
+        expect(provider.apiKey()).toBe('local-sdk-placeholder');
+        expect(await provider.listModels()).toEqual(['local-model']);
+        expect(requests).toEqual([
+          { method: 'GET', pathname: '/v1/models', authorization: undefined },
+        ]);
+      },
+    );
+  });
+
+  it('never transmits a credential from an explicitly unauthenticated local inventory', async () => {
+    const apiKey = 'ollama-local-credential-must-not-leave-process';
+    vi.unstubAllGlobals();
+    await withLoopbackServer(
+      (_request, response) => sendJson(response, { data: [{ id: 'local-model' }] }),
+      async ({ apiBase, requests }) => {
+        const localOpts = {
+          ...opts,
+          defaultBaseURL: apiBase,
+          envKeyName: '',
+          isLocal: true,
+          authentication: 'none' as const,
+          endpointPolicy: { kind: 'loopback' as const, defaultBaseURL: apiBase },
+        };
+
+        expect(await createMetadataProvider(localOpts, { apiKey }).listModels()).toEqual([
+          'local-model',
+        ]);
+        expect(requests).toEqual([
+          { method: 'GET', pathname: '/v1/models', authorization: undefined },
+        ]);
+      },
+    );
+  });
+
+  it('rejects a redirect for a first-party loopback inventory without issuing a second request', async () => {
+    vi.unstubAllGlobals();
+    await withLoopbackServer(
+      (_request, response) => {
+        response.writeHead(307, { location: '/v1/models' });
+        response.end();
+      },
+      async ({ apiBase, requests }) => {
+        const loopbackOpts = {
+          ...opts,
+          defaultBaseURL: apiBase,
+          envKeyName: '',
+          isLocal: true,
+          rejectRedirects: true,
+          endpointPolicy: { kind: 'loopback' as const, defaultBaseURL: apiBase },
+        };
+
+        expect(await createMetadataProvider(loopbackOpts).listModels()).toEqual([]);
+        expect(requests).toEqual([
+          { method: 'GET', pathname: '/v1/models', authorization: undefined },
+        ]);
+      },
+    );
   });
 
   it('honours overrides.apiBase and overrides.apiKey', async () => {
@@ -118,20 +307,26 @@ describe('createMetadataProvider', () => {
   });
 
   it('uses custom modelsUrl when provided', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
-    const p = createMetadataProvider(
-      {
-        ...opts,
-        modelsUrl: (base) => `${base}/custom/models/path`,
+    vi.unstubAllGlobals();
+    await withLoopbackServer(
+      (_request, response) => sendJson(response, { data: [] }),
+      async ({ apiBase, requests }) => {
+        const provider = createMetadataProvider(
+          {
+            ...opts,
+            defaultBaseURL: apiBase,
+            envKeyName: '',
+            endpointPolicy: { kind: 'loopback' as const, defaultBaseURL: apiBase },
+            modelsUrl: (base) => `${base}/custom/models/path`,
+          },
+          { apiKey: 'k' },
+        );
+
+        expect(await provider.listModels()).toEqual([]);
+        expect(requests).toEqual([
+          { method: 'GET', pathname: '/v1/custom/models/path', authorization: 'Bearer k' },
+        ]);
       },
-      { apiKey: 'k' },
-    );
-    await p.listModels();
-    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledWith(
-      'https://api.custom.com/v1/custom/models/path',
-      expect.anything(),
     );
   });
 
@@ -268,6 +463,64 @@ describe('createMetadataProvider', () => {
     });
     const detected = await p.listModelsWithMetadata();
     expect(detected).toEqual([{ id: 'a', contextLength: 50, pricingInput: 1 }]);
+  });
+});
+
+describe('metadata provider cancellation', () => {
+  it.each([
+    'model IDs',
+    'model metadata',
+  ] as const)('aborts real local HTTP work for %s promptly without returning a late result', async (method) => {
+    const requestStarted = Promise.withResolvers<void>();
+    const requestAborted = Promise.withResolvers<void>();
+    const socketClosed = Promise.withResolvers<void>();
+    const server = http.createServer((request) => {
+      request.once('aborted', () => requestAborted.resolve());
+      request.socket.once('close', () => socketClosed.resolve());
+      requestStarted.resolve();
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (address === null || typeof address === 'string') {
+      throw new Error('Expected a TCP provider test server address.');
+    }
+    const baseURL = `http://127.0.0.1:${address.port}/v1`;
+
+    try {
+      const provider = createMetadataProvider({
+        name: 'local-cancellation',
+        defaultBaseURL: baseURL,
+        envKeyName: '',
+        isLocal: true,
+        schema: z.object({ id: z.string() }),
+        fallback: (id) => ({ id }),
+        endpointPolicy: { kind: 'loopback', defaultBaseURL: baseURL },
+      });
+      const controller = new AbortController();
+      const pending =
+        method === 'model IDs'
+          ? provider.listModels({ signal: controller.signal })
+          : provider.listModelsWithMetadata({ signal: controller.signal });
+      let published = false;
+      void pending.then(
+        () => {
+          published = true;
+        },
+        () => undefined,
+      );
+
+      await requestStarted.promise;
+      const abortedAt = Date.now();
+      controller.abort();
+
+      await expect(pending).rejects.toThrow(/abort/i);
+      await waitForPromptHttpRelease(requestAborted.promise, socketClosed.promise);
+      expect(Date.now() - abortedAt).toBeLessThan(REAL_HTTP_RELEASE_DEADLINE_MS);
+      expect(published).toBe(false);
+    } finally {
+      server.closeAllConnections();
+      if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 

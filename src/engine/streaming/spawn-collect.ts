@@ -5,14 +5,24 @@ import {
   createRunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
   runnerCallIdleTimeoutError,
-  runnerCallInterruptedStatus,
 } from '../calls/status.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
-import type { ParsedLine } from '../runners/types.js';
+import type { ParsedLine, ParsedTextChannel } from '../runners/types.js';
+import {
+  createCustomRunnerStreamingRedactor,
+  createCustomRunnerToolInputRedactor,
+  customRunnerToolInputStateLimitError,
+  customRunnerRedactionValuesFor,
+  redactCustomRunnerParsedLine,
+  type CustomRunnerRedactor,
+} from '../runners/redaction.js';
 import { processError } from '../../lib/process/errors.js';
 import { spawnWithStdin } from '../../lib/process/spawn/line-stream.js';
 import type { SpawnPipeFatalSignal } from '../../lib/process/spawn/lifecycle.js';
+import { error, matches } from '../../utils/error.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { isCredentialEnvironmentName, redactSecrets } from '../../utils/redact.js';
+import { isRecord } from '../../utils/type-guards.js';
 import {
   finishRunnerCallOutputLimit,
   runnerCallLimitWarning,
@@ -54,9 +64,29 @@ interface SpawnAndCollectOptions {
   abortOnOutputLimits?: boolean | undefined;
   /** Credential values are passed explicitly so callbacks never receive raw secrets. */
   credentialValues?: readonly string[] | undefined;
+  /**
+   * Optional hard wall-clock deadline. The collector owns composition with an
+   * external cancellation signal so the detached lifecycle reaps the process
+   * tree for either outcome.
+   */
+  timeoutMs?: number | undefined;
+  /** Redacts invocation-specific values before they reach controlled surfaces. */
+  redact?: CustomRunnerRedactor | undefined;
 }
 
 let callSequence = 0;
+
+export const spawnCollectError = {
+  invalidHardDeadline: (timeoutMs: number) =>
+    error(
+      'runner-invalid-timeout',
+      'Runner hard deadline must be a positive finite number of milliseconds.',
+      { timeoutMs },
+    ),
+  redacted: <Kind extends string>(opts: { kind: Kind; message: string; data?: unknown }) =>
+    error(opts.kind, opts.message, opts.data),
+  isInvalidHardDeadline: matches('runner-invalid-timeout'),
+} as const;
 
 function fatalLimitFromEvent(
   event: RunnerCallEvent,
@@ -88,6 +118,56 @@ function isOutputBudgetFatalSignal(
   );
 }
 
+type InvocationCancellationSource = 'none' | 'external' | 'timeout';
+
+type InvocationCancellation = Readonly<{
+  signal: AbortSignal | undefined;
+  source: () => InvocationCancellationSource;
+  cleanup: () => void;
+}>;
+
+function createInvocationCancellation(
+  signal: AbortSignal | undefined,
+  timeoutMs: number | undefined,
+): InvocationCancellation {
+  if (timeoutMs === undefined) {
+    return {
+      signal,
+      source: () => (signal?.aborted ? 'external' : 'none'),
+      cleanup: () => undefined,
+    };
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw spawnCollectError.invalidHardDeadline(timeoutMs);
+  }
+
+  const controller = new AbortController();
+  let cancellation: InvocationCancellationSource = 'none';
+  const abortForExternalSignal = () => {
+    if (cancellation !== 'none') return;
+    cancellation = 'external';
+    controller.abort(signal?.reason);
+  };
+  if (signal?.aborted) abortForExternalSignal();
+  else signal?.addEventListener('abort', abortForExternalSignal, { once: true });
+
+  const timer = setTimeout(() => {
+    if (cancellation !== 'none') return;
+    cancellation = 'timeout';
+    controller.abort(new DOMException('Runner hard deadline exceeded.', 'TimeoutError'));
+  }, timeoutMs);
+  timer.unref?.();
+
+  return {
+    signal: controller.signal,
+    source: () => cancellation,
+    cleanup: () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abortForExternalSignal);
+    },
+  };
+}
+
 export async function spawnAndCollect(
   opts: SpawnAndCollectOptions,
 ): Promise<RunnerCallResult & { sessionId?: string | null }> {
@@ -105,7 +185,11 @@ export async function spawnAndCollect(
     opts.credentialValues ?? credentialValuesFromEnvironment(opts.env ?? process.env);
   const abortOnOutputLimits = opts.abortOnOutputLimits ?? true;
   const explicitRedactor = createRunnerCallCredentialRedactor(credentialValues);
-  const redactCredential = (value: string): string => redactSecrets(explicitRedactor(value));
+  const redactCredential = (value: string): string => {
+    const redactedCredentials = redactSecrets(explicitRedactor(value));
+    return opts.redact?.(redactedCredentials) ?? redactedCredentials;
+  };
+  const cancellation = createInvocationCancellation(opts.signal, opts.timeoutMs);
   let fatalLimit: RunnerCallOutputLimit | null = null;
   const recorder = createRunnerCallRecorder({
     context,
@@ -115,14 +199,89 @@ export async function spawnAndCollect(
       opts.onCallEvent?.(event);
     },
   });
+  const protectedValues = [...credentialValues, ...customRunnerRedactionValuesFor(opts.redact)];
   const parsedRecorder = createParsedLineRecorder({
     recorder,
-    onText: (text) => opts.onText?.(redactCredential(text)),
+    onText: opts.onText,
     onSessionId: (id) => opts.onSessionId?.(redactCredential(id)),
   });
+  const createStdoutRedactor = () =>
+    createCustomRunnerStreamingRedactor(redactCredential, protectedValues);
+  const toolInputRedactor =
+    opts.redact === undefined
+      ? undefined
+      : createCustomRunnerToolInputRedactor(redactCredential, protectedValues);
+  let toolInputCapacityExceeded = false;
+  let stdoutRedactor = createStdoutRedactor();
+  let stdoutChannel: ParsedTextChannel = 'stdout';
+  const flushText = (): void => {
+    const text = stdoutRedactor.flush();
+    if (text.length > 0) parsedRecorder.apply({ text, channel: stdoutChannel });
+  };
+  const applyRedactedParsed = (parsed: ParsedLine): void => {
+    const parsedText = parsed.text;
+    const redacted =
+      opts.redact === undefined ? parsed : redactCustomRunnerParsedLine(parsed, redactCredential);
+    const channel = redacted.channel ?? (redacted.isResult ? 'result' : 'stdout');
+    const isFinalBoundary = redacted.isResult === true || channel === 'result';
+    const isStreamingText = channel === 'assistant' || channel === 'stdout';
+
+    if (isFinalBoundary && parsedText !== undefined) {
+      const terminal = stdoutRedactor.flushBeforeTerminal(parsedText);
+      if (terminal.before.length > 0) {
+        parsedRecorder.apply({ text: terminal.before, channel: stdoutChannel });
+      }
+      stdoutRedactor = createStdoutRedactor();
+      parsedRecorder.apply({ ...redacted, text: terminal.value });
+      return;
+    } else if (redacted.isError === true || !isStreamingText) {
+      flushText();
+    }
+    if (parsedText === undefined) {
+      parsedRecorder.apply(redacted);
+      return;
+    }
+
+    stdoutChannel = channel;
+    const text =
+      isFinalBoundary || !isStreamingText
+        ? stdoutRedactor.push(parsedText) + stdoutRedactor.flush()
+        : stdoutRedactor.push(parsedText);
+    parsedRecorder.apply({ ...redacted, text });
+  };
+  const flushToolInput = (): void => {
+    for (const parsed of toolInputRedactor?.flush() ?? []) {
+      applyRedactedParsed(parsed);
+    }
+  };
+  const flushStdout = (): void => {
+    flushToolInput();
+    flushText();
+  };
+  const applyParsed = (parsed: ParsedLine): void => {
+    const redactedLines = toolInputRedactor?.apply(parsed);
+    if (toolInputRedactor?.hasExceededCapacity() === true) {
+      toolInputCapacityExceeded = true;
+      return;
+    }
+    for (const redacted of redactedLines ?? [parsed]) {
+      applyRedactedParsed(redacted);
+    }
+  };
   const stderrBuffer = createRunnerCallStderrBuffer(recorder);
+  const stderrRedactor = createCustomRunnerStreamingRedactor(redactCredential, protectedValues);
+  const emitStderr = (chunk: string): void => {
+    if (chunk.length === 0) return;
+    stderrBuffer.push(chunk);
+    opts.onStderr?.(chunk);
+  };
+  const flushStderr = (): void => {
+    emitStderr(stderrRedactor.flush());
+    stderrBuffer.flush();
+  };
   const fatalOutputSignal = (): SpawnPipeFatalSignal | undefined => {
     if (fatalLimit === null) return undefined;
+    flushStdout();
     if (!recorder.hasTerminal()) {
       recorder.finishFailed({
         status: 'truncated',
@@ -134,6 +293,13 @@ export async function spawnAndCollect(
     }
     return { state: 'output-budget-breach', remediation: fatalLimit.message };
   };
+  const toolInputCapacitySignal = (): SpawnPipeFatalSignal | undefined =>
+    toolInputCapacityExceeded
+      ? {
+          state: 'protocol-failure',
+          remediation: customRunnerToolInputStateLimitError().message,
+        }
+      : undefined;
 
   try {
     await spawnWithStdin({
@@ -144,11 +310,10 @@ export async function spawnAndCollect(
       stdin: opts.stdin,
       notFoundMessage: opts.notFoundMessage,
       onStderr: (chunk) => {
-        stderrBuffer.push(chunk);
-        opts.onStderr?.(redactCredential(chunk));
-        return fatalOutputSignal();
+        emitStderr(stderrRedactor.push(chunk));
+        return toolInputCapacitySignal() ?? fatalOutputSignal();
       },
-      signal: opts.signal,
+      signal: cancellation.signal,
       idle: {
         warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
         killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
@@ -174,6 +339,7 @@ export async function spawnAndCollect(
           return undefined;
         }
         fatalLimit = limit;
+        flushStdout();
         finishRunnerCallOutputLimit(recorder, limit, {
           usage: parsedRecorder.usage,
           nativeSessionId: parsedRecorder.sessionId,
@@ -181,12 +347,29 @@ export async function spawnAndCollect(
         return fatalOutputSignal();
       },
       onLine(line) {
-        parsedRecorder.apply(parseLine(line));
-        return fatalOutputSignal();
+        applyParsed(parseLine(line));
+        return toolInputCapacitySignal() ?? fatalOutputSignal();
       },
     });
   } catch (err) {
-    stderrBuffer.flush();
+    if (toolInputCapacityExceeded) {
+      flushStderr();
+      const stateLimitError = customRunnerToolInputStateLimitError();
+      if (!recorder.hasTerminal()) {
+        recorder.finishFailed({
+          status: 'failed',
+          error: runnerCallErrorFromUnknown(
+            stateLimitError,
+            'custom-runner-tool-input-state-limit',
+            credentialValues,
+          ),
+          partial: false,
+        });
+      }
+      throw stateLimitError;
+    }
+    flushStdout();
+    flushStderr();
     if (isOutputBudgetFatalSignal(err)) {
       if (!recorder.hasTerminal()) {
         const limit = fatalLimit ?? {
@@ -201,27 +384,46 @@ export async function spawnAndCollect(
       const result = recorder.finalResult();
       return { ...result, sessionId: parsedRecorder.sessionId };
     }
+    const redactedError = redactThrownError(err, redactCredential);
     if (!recorder.hasTerminal()) {
-      if (processError.isIdleTimeout(err)) {
+      const cancellationSource = cancellation.source();
+      if (cancellationSource === 'timeout') {
+        const timeoutError = processError.timeout({
+          command: redactCredential(opts.command),
+          label: 'Custom runner',
+          timeoutMs: opts.timeoutMs ?? 0,
+          output: '',
+        });
+        recorder.finishFailed({
+          status: 'timeout',
+          error: runnerCallErrorFromUnknown(timeoutError, 'runner_timeout', credentialValues),
+        });
+        throw timeoutError;
+      }
+      if (processError.isIdleTimeout(redactedError)) {
         recorder.finishFailed({
           status: 'failed',
-          error: runnerCallIdleTimeoutError(err, credentialValues),
+          error: runnerCallIdleTimeoutError(redactedError, credentialValues),
         });
       } else {
+        const interrupted = cancellationSource === 'external';
         recorder.finishFailed({
-          status: opts.signal?.aborted ? runnerCallInterruptedStatus(opts.signal) : 'failed',
+          status: interrupted ? 'aborted' : 'failed',
           error: runnerCallErrorFromUnknown(
-            err,
-            opts.signal?.aborted ? 'runner_interrupted' : 'runner_process_error',
+            redactedError,
+            interrupted ? 'runner_interrupted' : 'runner_process_error',
             credentialValues,
           ),
         });
       }
     }
-    throw redactThrownError(err, redactCredential);
+    throw redactedError;
+  } finally {
+    cancellation.cleanup();
   }
 
-  stderrBuffer.flush();
+  flushStdout();
+  flushStderr();
   if (!recorder.hasTerminal()) {
     recorder.finishCompleted({ nativeSessionId: parsedRecorder.sessionId });
   }
@@ -238,12 +440,29 @@ export function credentialValuesFromEnvironment(environment: NodeJS.ProcessEnv):
   return [...new Set([...values, ...sandboxCredentialValues(environment)])];
 }
 
-function redactThrownError(err: unknown, redactCredential: (value: string) => string): unknown {
-  if (!(err instanceof Error)) return err;
-  err.message = redactCredential(err.message);
-  if (processError.isExitCode(err)) {
-    err.data.stderr = redactCredential(err.data.stderr);
-    err.data.output = redactCredential(err.data.output);
+function redactThrownError(err: unknown, redactCredential: (value: string) => string): Error {
+  const kind = isRecord(err) && typeof err.kind === 'string' ? err.kind : 'runner_process_error';
+  const data =
+    isRecord(err) && 'data' in err ? redactErrorValue(err.data, redactCredential) : undefined;
+  const message = redactCredential(toErrorMessage(err));
+  return spawnCollectError.redacted({ kind, message, ...(data === undefined ? {} : { data }) });
+}
+
+function redactErrorValue(
+  value: unknown,
+  redactCredential: (value: string) => string,
+  seen: WeakSet<object> = new WeakSet(),
+): unknown {
+  if (typeof value === 'string') return redactCredential(value);
+  if (Array.isArray(value))
+    return value.map((item) => redactErrorValue(item, redactCredential, seen));
+  if (!isRecord(value)) return value;
+  if (seen.has(value)) return '[Circular]';
+  seen.add(value);
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    redacted[redactCredential(key)] = redactErrorValue(item, redactCredential, seen);
   }
-  return err;
+  return redacted;
 }

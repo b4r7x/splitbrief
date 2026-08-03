@@ -26,6 +26,17 @@ export function narrowRecord(val: unknown): Record<string, unknown> | null {
   return isRecord(val) ? val : null;
 }
 
-export function typedEntries<K extends string, V>(obj: Record<K, V>): [K, V][] {
+export function typedEntries<K extends string, V>(obj: Readonly<Record<K, V>>): [K, V][] {
   return Object.entries(obj) as [K, V][];
+}
+
+export function mapRecord<K extends string, Value, Result>(
+  record: Readonly<Record<K, Value>>,
+  transform: (value: Value, key: K) => Result,
+): Record<K, Result> {
+  const entries: [K, Result][] = [];
+  for (const [key, value] of typedEntries(record)) {
+    entries.push([key, transform(value, key)]);
+  }
+  return Object.fromEntries(entries) as Record<K, Result>;
 }

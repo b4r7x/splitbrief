@@ -19,7 +19,7 @@ import { projectFilesStore } from '../stores/ui/project-files.js';
 import { attachImage, detachImage, listAttachments } from '../stores/workflow/attachments.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
 import { getDefaultDetectionService } from '../engine/detection/service.js';
-import { refreshDetectionStores } from '../stores/discovery/detection-adapter.js';
+import { refreshDetectionForCurrentConfig } from '../engine/detection/store-publication.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { readActive } from '../core/sessions/lifecycle.js';
 import type { RewindTarget } from '../core/state/build-rewind-action.js';
@@ -27,6 +27,7 @@ import type {
   CopyResult,
   CopyTarget,
   QueueClearCommandResult,
+  RuntimeConfigSaveResult,
   RuntimeCommandContext,
   ScrollCommandTarget,
   ScrollConversationResult,
@@ -159,12 +160,30 @@ export function buildCommandContext({
     isAttached: isAttachedClient(),
     projectDir: () => configStore.get().projectDir,
     getConfig: () => configStore.get().config,
-    saveConfig: (config) => {
-      const result = configStore.save(config);
-      if (result.ok) return { ok: true };
-      return result.error
-        ? { ok: false, errorMessage: `Failed to save config: ${result.error.message}` }
-        : { ok: false };
+    saveConfig: async (config): Promise<RuntimeConfigSaveResult> => {
+      const result = await configStore.save(config);
+      switch (result.kind) {
+        case 'saved':
+          return { kind: 'saved', ok: true };
+        case 'conflict':
+          return {
+            kind: 'conflict',
+            ok: false,
+            errorMessage: 'Config changed on disk. Reload before saving again.',
+          };
+        case 'durability-uncertain':
+          return {
+            kind: 'durability-uncertain',
+            ok: false,
+            errorMessage: `Config save could not be confirmed: ${result.warning}`,
+          };
+        case 'failure':
+          return {
+            kind: 'failure',
+            ok: false,
+            errorMessage: `Failed to save config: ${result.error.message}`,
+          };
+      }
     },
     setApprovalEnabled: (enabled) => {
       const current = configStore.get().config;
@@ -181,11 +200,15 @@ export function buildCommandContext({
     setFeedbackMessage: feedbackStore.setMessage,
     setFeedbackError: feedbackStore.setError,
     refreshDetection: async () => {
-      await refreshDetectionStores(
-        getDefaultDetectionService(),
-        detectionStore,
-        configStore.get().projectDir,
-      );
+      return refreshDetectionForCurrentConfig({
+        service: getDefaultDetectionService(),
+        publication: detectionStore,
+        getCurrent: () => {
+          const { config, projectDir } = configStore.get();
+          if (config === null) return null;
+          return { config, projectDir };
+        },
+      });
     },
     refreshProjectFiles: projectFilesStore.requestRefresh,
     getCurrentPhase: () => lifecycleStore.get().phase,

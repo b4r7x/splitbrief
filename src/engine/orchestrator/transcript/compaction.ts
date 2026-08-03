@@ -7,6 +7,7 @@ import {
 } from '../../../core/sessions/compaction.js';
 import { sessionDir } from '../../../core/paths.js';
 import { createPlanner } from '../../runners/factory.js';
+import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import type { Planner, PlannerSummaryMessage } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
@@ -120,8 +121,11 @@ export async function performManualCompaction(opts: {
   ref: SessionRef;
 }): Promise<CompactTranscriptResult> {
   const { config, ref } = opts;
-  const planner = await createPlanner(config);
   const plannerName = getRunnerDisplayName(config.planner);
+  if (resolveConfiguredCustomRunner(config, 'planner') !== null) {
+    return { status: 'unsupported', plannerName };
+  }
+  const planner = await createPlanner(config);
   if (planner.capabilities.supportsSelfSummarisation !== true) {
     return { status: 'unsupported', plannerName };
   }

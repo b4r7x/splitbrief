@@ -12,7 +12,8 @@ function getDef(id: string) {
 describe('displayValue with formatValue', () => {
   it('formats tool fields with getDisplayName', () => {
     const def = getDef('planner.kind');
-    expect(displayValue(def, 'claude-code')).toBe('Claude Code');
+    expect(displayValue(def, 'claude-code')).toBe('Claude Code CLI');
+    expect(displayValue(def, 'codex')).toBe('OpenAI Codex CLI');
     expect(displayValue(def, 'ollama')).toBe('Ollama');
   });
 

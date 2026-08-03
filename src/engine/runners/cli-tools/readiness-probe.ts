@@ -2,8 +2,13 @@ import type { ChildProcess } from 'node:child_process';
 import type { Dirent } from 'node:fs';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import type { CliAuthState, CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import { delimiter, dirname, join } from 'node:path';
+import type {
+  CliAuthState,
+  CliExecutableIdentity,
+  CliProviderAuthFact,
+} from '../../../core/discovery/detection.js';
+import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
 import {
   CLI_TOOL_CATALOG,
   selectCliAuthChannel,
@@ -14,18 +19,47 @@ import {
 import { deriveCliReadiness, type CliReadinessResult } from '../../../core/schemas/readiness.js';
 import { createBoundedOutput, type BoundedOutput } from '../../../lib/process/bounded-output.js';
 import { killProcess } from '../../../lib/process/registry.js';
+import { throwIfAborted } from '../../../utils/abort.js';
 import {
   isFatalSignal,
   spawnPipe,
   type SpawnPipeFatalSignal,
 } from '../../../lib/process/spawn/lifecycle.js';
-import { createSandboxEnv } from '../sandbox-env.js';
-import type { CliProbeCommand, CliProbeContract } from './contract.js';
+import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
+import { createSandboxEnv, prependCliExecutableDirectory } from '../sandbox-env.js';
+import {
+  isDeclaredCliProbeContract,
+  type CliAuthProbe,
+  type CliDeclaredProbeContract,
+  type CliProbeCommand,
+  type CliProbeContract,
+  type CliProbeOutput,
+  type CliSessionPresenceProbe,
+  type CliVersionProbe,
+} from './contract.js';
+import {
+  darwinKeychainEntryPresent,
+  type DarwinKeychainEntryPresent,
+} from './keychain-presence.js';
+import { isProviderOracleProbe, parseProviderOracleOutput } from './provider-oracle.js';
 import { revalidateCliExecutableIdentity } from './process-invoke.js';
 
-const PROBE_TIMEOUT_CEILING_MS = 30_000;
+const PROBE_TIMEOUT_CEILING_MS = DISCOVERY_SUBPROCESS_TIMEOUT_MS;
 const PROBE_OUTPUT_CEILING_BYTES = 64 * 1024;
 const PROBE_TIMED_OUT = Symbol('splitbrief.probeTimedOut');
+const FORBIDDEN_PROBE_ARGUMENTS = new Set([
+  'download',
+  'exec',
+  'install',
+  'login',
+  'pull',
+  'refresh',
+  'run',
+  'sync',
+  'update',
+  'upgrade',
+]);
+
 export interface ProbeCliReadinessOptions {
   tool: CliToolId;
   executable: CliExecutableIdentity | null;
@@ -33,28 +67,57 @@ export interface ProbeCliReadinessOptions {
   authChannel?: CliAuthChannelId | undefined;
   enabled?: boolean | undefined;
   now?: (() => number) | undefined;
+  signal?: AbortSignal | undefined;
+  keychainPresence?: DarwinKeychainEntryPresent | undefined;
   classifyVersion?:
     | ((input: {
         installedVersion: string;
         testedVersion: string;
       }) => 'compatible' | 'incompatible' | 'unverified')
     | undefined;
+  /**
+   * @deprecated Legacy command callbacks cannot establish authentication.
+   * Adapter-declared `auth-status` probes expose a parser and are required
+   * for a verified authentication fact.
+   */
   classifyAuth?:
     | ((input: { stdout: string; stderr: string; exitCode: number }) => CliAuthState)
     | undefined;
 }
 
-interface ProbeOutput {
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-  timedOut: boolean;
-  outputExceeded: boolean;
-}
+export type CliReadinessProbeEvidence = Readonly<{
+  version: ProbeOutcome<string>;
+  auth: AuthFact;
+  /** Per-provider facts; present only when a credential oracle ran cleanly and verified. */
+  providerAuth?: readonly CliProviderAuthFact[] | undefined;
+}>;
+
+export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
+  tool: CliToolId;
+  executable: CliExecutableIdentity | null;
+  probe: CliDeclaredProbeContract;
+  authChannel?: CliAuthChannelId | undefined;
+  enabled?: boolean | undefined;
+  signal?: AbortSignal | undefined;
+  keychainPresence?: DarwinKeychainEntryPresent | undefined;
+}>;
 
 interface ProbeEnvironment {
   env: NodeJS.ProcessEnv;
   authAvailable: boolean;
+}
+
+/**
+ * Declared readiness probes execute an exact resolved binary. Their PATH is
+ * only an interpreter runtime aid, never a second executable-selection
+ * channel, so ambient PATH entries (including external shadows) stay out.
+ */
+function probeRuntimePath(): string {
+  const directories =
+    process.platform === 'win32'
+      ? [dirname(process.execPath)]
+      : [dirname(process.execPath), '/usr/bin', '/bin'];
+  return [...new Set(directories)].join(delimiter);
 }
 
 async function containsRegularFile(root: string): Promise<boolean> {
@@ -72,12 +135,17 @@ async function containsRegularFile(root: string): Promise<boolean> {
   return false;
 }
 
-async function probeEnvironment(
-  executable: CliExecutableIdentity,
-  neutralDir: string,
-  tool: CliToolId,
-  channel: CliAuthChannel | undefined,
-): Promise<ProbeEnvironment> {
+async function probeEnvironment({
+  executable,
+  neutralDir,
+  tool,
+  channel,
+}: Readonly<{
+  executable: CliExecutableIdentity;
+  neutralDir: string;
+  tool: CliToolId;
+  channel: CliAuthChannel | undefined;
+}>): Promise<ProbeEnvironment> {
   const env = await createSandboxEnv(
     neutralDir,
     [...(channel?.env ?? [])],
@@ -101,18 +169,29 @@ async function probeEnvironment(
   return {
     env: {
       ...env,
-      PATH: dirname(executable.path),
+      PATH: prependCliExecutableDirectory({
+        executablePath: executable.path,
+        safeRuntimePath: probeRuntimePath(),
+      }),
     },
     authAvailable,
   };
 }
 
-async function runProbe(
-  executable: CliExecutableIdentity,
-  command: CliProbeCommand,
-  cwd: string,
-  env: NodeJS.ProcessEnv,
-): Promise<ProbeOutput> {
+async function runProbe({
+  executable,
+  command,
+  cwd,
+  env,
+  signal: externalSignal,
+}: Readonly<{
+  executable: CliExecutableIdentity;
+  command: CliProbeCommand;
+  cwd: string;
+  env: NodeJS.ProcessEnv;
+  signal?: AbortSignal | undefined;
+}>): Promise<CliProbeOutput> {
+  throwIfAborted(externalSignal);
   const [, ...args] = command.command;
   const timeoutMs =
     Number.isFinite(command.timeoutMs) && command.timeoutMs > 0
@@ -125,6 +204,10 @@ async function runProbe(
   const stdout = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'tail' });
   const stderr = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'tail' });
   const timeout = new AbortController();
+  const signal =
+    externalSignal === undefined
+      ? timeout.signal
+      : AbortSignal.any([externalSignal, timeout.signal]);
   let timer: NodeJS.Timeout | undefined;
   let child: ChildProcess | undefined;
   let spawnFailure: unknown;
@@ -141,7 +224,7 @@ async function runProbe(
       remediation: `Readiness probe exceeded its ${maxOutputBytes}-byte output budget.`,
     };
   };
-  const captured = (exitCode: number | null, timedOut: boolean): ProbeOutput => ({
+  const captured = (exitCode: number | null, timedOut: boolean): CliProbeOutput => ({
     stdout: stdout.snapshot().text,
     stderr: stderr.snapshot().text,
     exitCode,
@@ -150,22 +233,18 @@ async function runProbe(
   });
 
   try {
-    return await spawnPipe<ProbeOutput>({
+    return await spawnPipe<CliProbeOutput>({
       command: executable.path,
       args,
       cwd,
       env,
-      // The detached group is what lets a probe prove its descendants were
-      // reaped; `spawnPipe` refuses to launch where that guarantee is absent.
       detached: true,
       ledger: false,
-      signal: timeout.signal,
+      signal,
       partialStdoutMaxBytes: maxOutputBytes,
       partialStderrMaxBytes: maxOutputBytes,
       onSpawned: (proc) => {
         child = proc;
-        // The probe budget covers the child's own run, not the spawn that
-        // precedes it, so the clock starts once the child exists.
         timer = setTimeout(() => timeout.abort(PROBE_TIMED_OUT), timeoutMs);
         timer.unref?.();
       },
@@ -176,17 +255,15 @@ async function runProbe(
         return null;
       },
       onClose: async (exitCode) => {
-        // A probe leader may exit while a descendant it spawned still holds the
-        // group, so reap the group before the readiness answer is returned.
         if (child !== undefined) await killProcess(child, { group: true });
         return captured(exitCode, false);
       },
     });
   } catch (cause) {
     if (cause === PROBE_TIMED_OUT) return captured(null, true);
-    if (isFatalSignal(cause) && cause.state === 'output-budget-breach')
+    if (isFatalSignal(cause) && cause.state === 'output-budget-breach') {
       return captured(null, false);
-    // A child that never started is a probe answer, not a harness failure.
+    }
     if (cause === spawnFailure) return captured(null, false);
     throw cause;
   } finally {
@@ -194,27 +271,191 @@ async function runProbe(
   }
 }
 
-function extractVersion(output: ProbeOutput): string | null {
+function hasForbiddenProbeArgument(command: CliProbeCommand): boolean {
+  return command.command.slice(1).some((argument) => {
+    const normalized = argument.toLowerCase();
+    return (
+      FORBIDDEN_PROBE_ARGUMENTS.has(normalized) ||
+      FORBIDDEN_PROBE_ARGUMENTS.has(normalized.replace(/^--/, ''))
+    );
+  });
+}
+
+/**
+ * `codex login status` is a documented read-only status command. Keep this
+ * exception exact: an alias, flag, extra argument, or another tool continues
+ * through the mutating-command denylist.
+ */
+function isExactCodexLoginStatusProbe({
+  tool,
+  command,
+}: Readonly<{
+  tool: CliToolId;
+  command: CliProbeCommand;
+}>): boolean {
+  return (
+    tool === 'codex' &&
+    command.command.length === 3 &&
+    command.command[0] === 'codex' &&
+    command.command[1] === 'login' &&
+    command.command[2] === 'status'
+  );
+}
+
+function probeCommandsMatch({
+  left,
+  right,
+}: Readonly<{
+  left: CliProbeCommand;
+  right: CliProbeCommand;
+}>): boolean {
+  return (
+    left.command.length === right.command.length &&
+    left.command.every((argument, index) => argument === right.command[index])
+  );
+}
+
+function declaredAuthProbeIsSafe({
+  tool,
+  auth,
+  version,
+}: Readonly<{
+  tool: CliToolId;
+  auth: CliAuthProbe;
+  version: CliVersionProbe;
+}>): boolean {
+  if (auth.kind === 'not-run') return false;
+  if (hasForbiddenProbeArgument(auth) && !isExactCodexLoginStatusProbe({ tool, command: auth })) {
+    return false;
+  }
+  if (probeCommandsMatch({ left: auth, right: version })) return false;
+  return !auth.command
+    .slice(1)
+    .some((argument) => argument === '--version' || argument === 'version');
+}
+
+/** `null` is an invalid requested channel; `undefined` is intentionally unselected. */
+function selectedAuthChannel(
+  tool: CliToolId,
+  authChannel: CliAuthChannelId | undefined,
+): CliAuthChannel | undefined | null {
+  if (authChannel === undefined) return undefined;
+  return selectCliAuthChannel(tool, { channel: authChannel }) ?? null;
+}
+
+function versionOutcomeFromProbe({
+  probe,
+  output,
+}: Readonly<{
+  probe: CliVersionProbe;
+  output: CliProbeOutput;
+}>): ProbeOutcome<string> {
+  if (output.timedOut) return { kind: 'timeout' };
+  if (output.outputExceeded || output.exitCode === null || output.exitCode !== 0) {
+    return { kind: 'malformed' };
+  }
+  try {
+    const outcome = probe.parse(output);
+    return outcome.kind === 'success' && outcome.value.trim().length === 0
+      ? { kind: 'malformed' }
+      : outcome;
+  } catch {
+    return { kind: 'malformed' };
+  }
+}
+
+function authFactFromDeclaredProbe({
+  probe,
+  output,
+  channel,
+}: Readonly<{
+  probe: Exclude<CliAuthProbe, { kind: 'not-run' }>;
+  output: CliProbeOutput;
+  channel: CliAuthChannel;
+}>): AuthFact {
+  if (output.timedOut) return 'timeout';
+  if (output.outputExceeded) return 'malformed';
+  if (output.exitCode === null) return 'unknown';
+  try {
+    const auth = probe.parse(output);
+    if (auth === 'verified' && output.exitCode !== 0) return 'unknown';
+    if (auth === 'not-required' && authChannelRequiresCredential(channel)) return 'unknown';
+    return auth;
+  } catch {
+    return 'malformed';
+  }
+}
+
+/**
+ * Three-way oracle semantics. A listing that parsed cleanly is a probe that
+ * ran and always wins: at least one entry verifies with per-provider facts,
+ * and a clean zero is a truthful negative, never a presence fallback. Output
+ * the oracle could not produce (nonzero exit, timeout, budget breach) or that
+ * cannot be parsed falls back to bridged-state presence, so detection is
+ * never worse than presence alone.
+ */
+function oracleAuthEvidence({
+  output,
+  presenceAvailable,
+}: Readonly<{ output: CliProbeOutput; presenceAvailable: boolean }>): Pick<
+  CliReadinessProbeEvidence,
+  'auth' | 'providerAuth'
+> {
+  const fallback = { auth: presenceAvailable ? ('verified' as const) : ('missing' as const) };
+  if (output.timedOut || output.outputExceeded || output.exitCode !== 0) return fallback;
+  const parsed = parseProviderOracleOutput(output.stdout);
+  if (parsed.kind !== 'success') return fallback;
+  if (parsed.entries.length === 0) return { auth: 'missing' };
+  return { auth: 'verified', providerAuth: parsed.entries };
+}
+
+function legacyAuthState(auth: AuthFact): CliAuthState {
+  switch (auth) {
+    case 'verified':
+      return 'authenticated';
+    case 'missing':
+      return 'unauthenticated';
+    case 'not-required':
+      return 'not-required';
+    case 'not-run':
+      return 'not-checked';
+    case 'not-selected':
+    case 'unknown':
+    case 'invalid':
+    case 'policy-denied':
+    case 'offline':
+    case 'timeout':
+    case 'malformed':
+    case 'cancelled':
+      return 'unknown';
+  }
+}
+
+function extractVersion(output: CliProbeOutput): string | null {
   const match = `${output.stdout}\n${output.stderr}`.match(
     /(?:^|\s|v)(\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?)(?:\s|$)/,
   );
   return match?.[1] ?? null;
 }
 
-function untrustedResult(
+function untrustedResult({
+  base,
+  executable,
+  installedVersion,
+}: Readonly<{
   base: Readonly<{
     tool: CliToolId;
     enabled: boolean;
     testedVersion: string;
     probedAt: number;
-  }>,
-  executable: CliExecutableIdentity,
-  installedVersion: string | null,
-): CliReadinessResult {
+  }>;
+  executable: CliExecutableIdentity;
+  installedVersion: string | null;
+}>): CliReadinessResult {
   return deriveCliReadiness({
     ...base,
     installation: 'installed',
-    executable,
+    executable: readinessExecutable(executable),
     trust: 'untrusted',
     installedVersion,
     compatibility: 'not-checked',
@@ -222,9 +463,165 @@ function untrustedResult(
   });
 }
 
+function readinessExecutable(executable: CliExecutableIdentity): CliExecutableIdentity {
+  return {
+    path: executable.path,
+    fingerprint: {
+      dev: executable.fingerprint.dev,
+      ino: executable.fingerprint.ino,
+      size: executable.fingerprint.size,
+      mtimeMs: executable.fingerprint.mtimeMs,
+    },
+  };
+}
+
+/**
+ * Presence in an unbridgeable store (the macOS login keychain) is consulted
+ * only when no bridgeable session file exists: a sandboxed probe cannot see
+ * the keychain and would report a false logout. It never overrides a probe
+ * that actually ran.
+ */
+async function unbridgeableSessionStatePresent({
+  presence,
+  keychainPresence,
+  signal,
+}: Readonly<{
+  presence: CliSessionPresenceProbe;
+  keychainPresence: DarwinKeychainEntryPresent;
+  signal: AbortSignal | undefined;
+}>): Promise<boolean> {
+  if (presence.kind !== 'darwin-keychain') return false;
+  return keychainPresence({
+    service: presence.service,
+    ...(signal === undefined ? {} : { signal }),
+  });
+}
+
+async function declaredReadinessEvidence({
+  executable,
+  neutralDir,
+  tool,
+  probe,
+  authChannel,
+  signal,
+  keychainPresence,
+}: Readonly<{
+  executable: CliExecutableIdentity;
+  neutralDir: string;
+  tool: CliToolId;
+  probe: CliDeclaredProbeContract;
+  authChannel: CliAuthChannel | undefined;
+  signal: AbortSignal | undefined;
+  keychainPresence: DarwinKeychainEntryPresent;
+}>): Promise<CliReadinessProbeEvidence> {
+  throwIfAborted(signal);
+  const versionEnvironment = await probeEnvironment({
+    executable,
+    neutralDir,
+    tool,
+    channel: undefined,
+  });
+  const version = hasForbiddenProbeArgument(probe.version)
+    ? { kind: 'not-run' as const }
+    : versionOutcomeFromProbe({
+        probe: probe.version,
+        output: await runProbe({
+          executable,
+          command: probe.version,
+          cwd: neutralDir,
+          env: versionEnvironment.env,
+          signal,
+        }),
+      });
+  if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
+    return { version: { kind: 'cancelled' }, auth: 'cancelled' };
+  }
+  if (authChannel === undefined) return { version, auth: 'not-selected' };
+  const authProbe =
+    probe.auth.kind === 'not-run' ||
+    !declaredAuthProbeIsSafe({ tool, auth: probe.auth, version: probe.version })
+      ? null
+      : probe.auth;
+  if (authProbe === null && authChannel.stateBridge !== 'host-cli-state') {
+    return { version, auth: 'not-run' };
+  }
+
+  const authEnvironment = await probeEnvironment({
+    executable,
+    neutralDir,
+    tool,
+    channel: authChannel,
+  });
+  throwIfAborted(signal);
+  // A session channel without a safe status command still carries a real
+  // presence fact: bridged state exists or it does not. A stale file can
+  // overstate a login; the tool's own error surfaces at run time.
+  if (authProbe === null) {
+    return { version, auth: authEnvironment.authAvailable ? 'verified' : 'missing' };
+  }
+  if (!authEnvironment.authAvailable && authChannelRequiresCredential(authChannel)) {
+    const present = await unbridgeableSessionStatePresent({
+      presence: probe.sessionPresence,
+      keychainPresence,
+      signal,
+    });
+    return { version, auth: present ? 'verified' : 'missing' };
+  }
+  const output = await runProbe({
+    executable,
+    command: authProbe,
+    cwd: neutralDir,
+    env: authEnvironment.env,
+    signal,
+  });
+  if ((await revalidateCliExecutableIdentity(executable)) !== 'match') {
+    return { version: { kind: 'cancelled' }, auth: 'cancelled' };
+  }
+  if (isProviderOracleProbe({ tool, command: authProbe })) {
+    return {
+      version,
+      ...oracleAuthEvidence({ output, presenceAvailable: authEnvironment.authAvailable }),
+    };
+  }
+  return {
+    version,
+    auth: authFactFromDeclaredProbe({ probe: authProbe, output, channel: authChannel }),
+  };
+}
+
+/** Runs only adapter-declared version and authentication status commands. */
+export async function probeDeclaredCliReadinessEvidence(
+  options: ProbeDeclaredCliReadinessEvidenceOptions,
+): Promise<CliReadinessProbeEvidence> {
+  throwIfAborted(options.signal);
+  if (options.enabled === false || options.executable === null) {
+    return { version: { kind: 'not-run' }, auth: 'not-run' };
+  }
+  if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {
+    return { version: { kind: 'cancelled' }, auth: 'cancelled' };
+  }
+  const selectedChannel = selectedAuthChannel(options.tool, options.authChannel);
+  const authChannel = selectedChannel === null ? undefined : selectedChannel;
+  const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-readiness-'));
+  try {
+    return await declaredReadinessEvidence({
+      executable: options.executable,
+      neutralDir,
+      tool: options.tool,
+      probe: options.probe,
+      authChannel,
+      signal: options.signal,
+      keychainPresence: options.keychainPresence ?? darwinKeychainEntryPresent,
+    });
+  } finally {
+    await rm(neutralDir, { recursive: true, force: true });
+  }
+}
+
 export async function probeCliReadiness(
   options: ProbeCliReadinessOptions,
 ): Promise<CliReadinessResult> {
+  throwIfAborted(options.signal);
   const descriptor = CLI_TOOL_CATALOG[options.tool];
   const probedAt = (options.now ?? Date.now)();
   const base = {
@@ -245,126 +642,85 @@ export async function probeCliReadiness(
     });
   }
   if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {
-    return untrustedResult(base, options.executable, null);
+    return untrustedResult({ base, executable: options.executable, installedVersion: null });
   }
 
-  const authChannel =
-    options.authChannel === undefined
-      ? undefined
-      : selectCliAuthChannel(options.tool, { channel: options.authChannel });
-
-  const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-readiness-'));
-  try {
-    const probeEnvironmentResult = await probeEnvironment(
-      options.executable,
-      neutralDir,
-      options.tool,
-      authChannel,
-    );
-    const { env } = probeEnvironmentResult;
-    const versionProbe = await runProbe(options.executable, options.probe.version, neutralDir, env);
-    const installedVersion = extractVersion(versionProbe);
-    if (
-      versionProbe.exitCode !== 0 ||
-      versionProbe.timedOut ||
-      versionProbe.outputExceeded ||
-      installedVersion === null
-    ) {
-      return deriveCliReadiness({
-        ...base,
-        installation: 'installed',
+  let installedVersion: string | null;
+  let auth: CliAuthState;
+  let providerAuth: readonly CliProviderAuthFact[] | undefined;
+  if (isDeclaredCliProbeContract(options.probe)) {
+    const evidence = await probeDeclaredCliReadinessEvidence({
+      tool: options.tool,
+      executable: options.executable,
+      probe: options.probe.declared,
+      ...(options.authChannel !== undefined ? { authChannel: options.authChannel } : {}),
+      enabled: base.enabled,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      ...(options.keychainPresence !== undefined
+        ? { keychainPresence: options.keychainPresence }
+        : {}),
+    });
+    installedVersion = evidence.version.kind === 'success' ? evidence.version.value : null;
+    auth = legacyAuthState(evidence.auth);
+    providerAuth = evidence.providerAuth;
+  } else {
+    const neutralDir = await mkdtemp(join(tmpdir(), 'splitbrief-readiness-'));
+    try {
+      const environment = await probeEnvironment({
         executable: options.executable,
-        trust: 'trusted',
-        installedVersion,
-        compatibility: 'unverified',
-        auth: 'not-checked',
+        neutralDir,
+        tool: options.tool,
+        channel: undefined,
       });
-    }
-    if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {
-      return untrustedResult(base, options.executable, installedVersion);
-    }
-    const compatibility = options.classifyVersion
-      ? options.classifyVersion({ installedVersion, testedVersion: base.testedVersion })
-      : installedVersion === base.testedVersion
-        ? 'compatible'
-        : 'unverified';
-    if (compatibility !== 'compatible') {
-      return deriveCliReadiness({
-        ...base,
-        installation: 'installed',
+      const versionProbe = await runProbe({
         executable: options.executable,
-        trust: 'trusted',
-        installedVersion,
-        compatibility,
-        auth: 'not-checked',
+        command: options.probe.version,
+        cwd: neutralDir,
+        env: environment.env,
+        signal: options.signal,
       });
+      installedVersion = extractVersion(versionProbe);
+      auth = 'unknown';
+    } finally {
+      await rm(neutralDir, { recursive: true, force: true });
     }
-
-    if (authChannel === undefined) {
-      return deriveCliReadiness({
-        ...base,
-        installation: 'installed',
-        executable: options.executable,
-        trust: 'trusted',
-        installedVersion,
-        compatibility,
-        auth: 'unknown',
-      });
-    }
-
-    if (!probeEnvironmentResult.authAvailable && authChannelRequiresCredential(authChannel)) {
-      return deriveCliReadiness({
-        ...base,
-        installation: 'installed',
-        executable: options.executable,
-        trust: 'trusted',
-        installedVersion,
-        compatibility,
-        auth: 'unauthenticated',
-      });
-    }
-
-    const authProbe = await runProbe(options.executable, options.probe.auth, neutralDir, env);
-    if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {
-      return untrustedResult(base, options.executable, installedVersion);
-    }
-    const auth = authStateFromProbe(authProbe, authChannel, options.classifyAuth);
+  }
+  if ((await revalidateCliExecutableIdentity(options.executable)) !== 'match') {
+    return untrustedResult({
+      base,
+      executable: options.executable,
+      installedVersion,
+    });
+  }
+  if (installedVersion === null) {
     return deriveCliReadiness({
       ...base,
       installation: 'installed',
-      executable: options.executable,
+      executable: readinessExecutable(options.executable),
       trust: 'trusted',
       installedVersion,
-      compatibility,
+      compatibility: 'unverified',
       auth,
+      ...(providerAuth === undefined ? {} : { providerAuth }),
     });
-  } finally {
-    await rm(neutralDir, { recursive: true, force: true });
   }
+  const compatibility = options.classifyVersion
+    ? options.classifyVersion({ installedVersion, testedVersion: base.testedVersion })
+    : installedVersion === base.testedVersion
+      ? 'compatible'
+      : 'unverified';
+  return deriveCliReadiness({
+    ...base,
+    installation: 'installed',
+    executable: readinessExecutable(options.executable),
+    trust: 'trusted',
+    installedVersion,
+    compatibility,
+    auth: compatibility === 'compatible' ? auth : 'not-checked',
+    ...(compatibility === 'compatible' && providerAuth !== undefined ? { providerAuth } : {}),
+  });
 }
 
 export function authChannelRequiresCredential(channel: CliAuthChannel): boolean {
   return channel.env.length > 0 || channel.stateBridge === 'host-cli-state';
-}
-
-function authStateFromProbe(
-  authProbe: ProbeOutput,
-  channel: CliAuthChannel,
-  classifyAuth:
-    | ((input: { stdout: string; stderr: string; exitCode: number }) => CliAuthState)
-    | undefined,
-): CliAuthState {
-  if (authProbe.timedOut || authProbe.outputExceeded || authProbe.exitCode === null) {
-    return 'unknown';
-  }
-  if (authProbe.exitCode !== 0) return 'unauthenticated';
-  if (!classifyAuth) return 'unknown';
-  const classified = classifyAuth({
-    stdout: authProbe.stdout,
-    stderr: authProbe.stderr,
-    exitCode: authProbe.exitCode,
-  });
-  return authChannelRequiresCredential(channel) && classified === 'not-required'
-    ? 'unauthenticated'
-    : classified;
 }

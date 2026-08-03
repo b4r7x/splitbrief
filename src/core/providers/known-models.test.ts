@@ -176,6 +176,17 @@ describe('KNOWN_MODELS recommendation metadata', () => {
     }
   });
 
+  it('keeps the direct Ollama Cloud fallback to one current coding model', () => {
+    const defaults = (KNOWN_MODELS['ollama-cloud'] ?? []).filter((model) => model.isDefault);
+
+    expect(defaults).toHaveLength(1);
+    expect(defaults[0]).toMatchObject({
+      name: 'kimi-k2.7-code',
+      recommendation: 'compatible-only',
+      provenance: expect.stringContaining('direct /api/tags fallback (2026-08-01)'),
+    });
+  });
+
   it('does not expose retirement-date DashScope Coder models as selectable defaults', () => {
     const allNames = Object.values(KNOWN_MODELS).flatMap((models) =>
       (models ?? []).map((model) => model.name),

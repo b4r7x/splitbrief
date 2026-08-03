@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { chmod, mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
@@ -21,8 +21,8 @@ import { isENOENT } from '../../../lib/process/errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 import { isCredentialEnvironmentName } from '../../../utils/redact.js';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { sandboxCredentialValues } from '../sandbox-env.js';
+import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import type { CliInvocation, CliProcessAdapter, CliProtocolEvent } from './contract.js';
 
@@ -39,6 +39,8 @@ export const CLI_RAW_OUTPUT_MAX_BYTES = 64 * 1024 * 1024;
 export const CLI_RAW_PROTOCOL_MAX_EVENTS = 262_144;
 
 type CliAdapter = CliProcessAdapter;
+
+export { revalidateCliExecutableIdentity };
 
 export type InvokeProcessCliContext = Readonly<{
   invocation: CliInvocation;
@@ -417,28 +419,6 @@ export async function invokeProcessCli(
     // The terminal result is already recorded; a scratch-directory removal failure
     // must not replace it with a throw.
     await prepared.cleanup().catch(() => {});
-  }
-}
-
-export async function revalidateCliExecutableIdentity(
-  identity: CliExecutableIdentity,
-): Promise<'match' | 'missing' | 'drift'> {
-  try {
-    const path = await realpath(identity.path);
-    const info = await stat(path);
-    if (!info.isFile()) return 'drift';
-    if (
-      path !== identity.path ||
-      info.dev !== identity.fingerprint.dev ||
-      info.ino !== identity.fingerprint.ino ||
-      info.size !== identity.fingerprint.size ||
-      info.mtimeMs !== identity.fingerprint.mtimeMs
-    ) {
-      return 'drift';
-    }
-    return 'match';
-  } catch (cause) {
-    return isENOENT(cause) ? 'missing' : 'drift';
   }
 }
 

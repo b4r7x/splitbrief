@@ -187,6 +187,14 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
         'Ollama local model fallback; context limit discovered from the daemon (2026-07); T-080 evaluation candidate',
     }),
   ],
+  'ollama-cloud': [
+    compatibleModel({
+      name: 'kimi-k2.7-code',
+      isDefault: true,
+      provenance:
+        'Ollama Cloud direct /api/tags fallback (2026-08-01); live account inventory is authoritative',
+    }),
+  ],
   'lm-studio': [
     compatibleModel({
       name: 'qwen2.5-coder-7b',

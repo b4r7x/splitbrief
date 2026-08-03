@@ -22,6 +22,63 @@ function hasIssueAtPath(issues: ReturnType<typeof issuesFor>, path: string): boo
 }
 
 describe('ConfigSchema user config contracts', () => {
+  it('round-trips strict custom command definitions without introducing an active command reference', () => {
+    const config = ConfigSchema.parse({
+      ...validConfig,
+      customCommands: {
+        review: {
+          label: 'Review changes',
+          contract: 'output',
+          executable: './tools/review',
+          argv: ['--format', 'jsonl'],
+          outputFormat: 'jsonl',
+          idleWarnMs: 4_000,
+          idleKillMs: 8_000,
+          env: ['REVIEW_TOKEN'],
+        },
+      },
+    });
+
+    expect(config.customCommands).toEqual({
+      review: {
+        label: 'Review changes',
+        contract: 'output',
+        executable: './tools/review',
+        argv: ['--format', 'jsonl'],
+        outputFormat: 'jsonl',
+        idleWarnMs: 4_000,
+        idleKillMs: 8_000,
+        env: ['REVIEW_TOKEN'],
+      },
+    });
+    expect(config.planner.kind).not.toBe('command');
+  });
+
+  it('rejects unsafe custom command fields instead of accepting a shell command line', () => {
+    const issues = issuesFor({
+      ...validConfig,
+      customCommands: {
+        unsafe: {
+          label: 'Unsafe',
+          contract: 'output',
+          executable: './review',
+          argv: ['--token=sk-redacted-test-value'],
+          shell: true,
+        },
+      },
+    });
+
+    expect(
+      issues.some(
+        (issue) =>
+          issue.code === 'unrecognized_keys' &&
+          issue.path.join('.') === 'customCommands.unsafe' &&
+          issue.keys.includes('shell'),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(issues)).not.toContain('sk-redacted-test-value');
+  });
+
   it('validates palette custom actions users can invoke from the command palette', () => {
     const valid = ConfigSchema.safeParse({
       ...validConfig,

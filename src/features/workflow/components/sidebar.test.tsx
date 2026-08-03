@@ -6,6 +6,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { glyph, spinnerFrames } from '../../../lib/glyphs.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { configStore } from '../../../stores/project/config.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
@@ -109,17 +110,20 @@ describe('Sidebar — completed count', () => {
     ui.unmount();
   });
 
-  it('names both runner models on the role line, color-coded by role', async () => {
+  it('keeps canonical runner metadata visible and bounded on a narrow role line', async () => {
     tasksStore.__testReset({ tasks: [task('1', 'done')] });
 
     const ui = renderFeature(<Sidebar width={60} />);
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const runnerLine = frame.split('\n').find((line) => line.includes('Planner')) ?? '';
 
-    expect(frame).toContain('Planner Claude Code');
-    expect(frame).toContain('Implementer');
-    expect(frame).toContain('Qwen 2.5 Coder 7B');
-    expect(frame).toContain(glyph('connectorHandoff'));
+    expect(runnerLine).toContain('Planner Claude Code CLI');
+    expect(runnerLine).toContain('Implementer');
+    expect(runnerLine).toContain('Qwen 2.5 Coder');
+    expect(runnerLine).toContain('…');
+    expect(runnerLine).toContain(glyph('connectorHandoff'));
+    expect(getTerminalCellWidth(runnerLine)).toBeLessThanOrEqual(60);
 
     ui.unmount();
   });

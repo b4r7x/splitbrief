@@ -1,10 +1,28 @@
+import type { ResolvedModelMembership } from '../../../engine/providers/model/catalog.js';
+
+/** One provider-qualified spelling of a merged model row. */
+export interface ModelVariant {
+  fullId: string;
+  providerPrefix: string;
+  tag: string;
+  /** Pre-merge enumeration facts so counting can restate per-variant truth. */
+  membership?: ResolvedModelMembership | undefined;
+  isCustom?: boolean | undefined;
+}
+
 export interface ModelOption {
   id: string;
   isDefault?: boolean | undefined;
   isDetected?: boolean | undefined;
+  /** Membership remains visible after engine catalog projection. */
+  membership?: ResolvedModelMembership | undefined;
+  /** Last-confirmed runtime inventory retained after a failed refresh. */
+  isStale?: boolean | undefined;
   isCustom?: boolean | undefined;
   contextLength?: number | undefined;
   releaseDate?: string | undefined;
+  /** Present only on provider-merged rows of provider-dependent tools. */
+  variants?: readonly ModelVariant[] | undefined;
 }
 
 export function isCustomModel(item: ModelOption): boolean {

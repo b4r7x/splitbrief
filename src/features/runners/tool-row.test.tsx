@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import type { PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
@@ -185,6 +186,29 @@ describe('runner row grammar', () => {
     defaultUi.unmount();
   });
 
+  it('marks a stale retained model without calling it detected', async () => {
+    const ui = renderFeature(
+      renderModelRow({
+        item: {
+          id: 'retained-model',
+          membership: 'stale',
+          isStale: true,
+          isDetected: false,
+        },
+        isCursor: false,
+        maxWidth: 60,
+        currentModel: undefined,
+      }),
+    );
+    await tick(20);
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Stale');
+    expect(frame).not.toContain('Detected');
+    expect(frame).not.toContain('Confirmed');
+    ui.unmount();
+  });
+
   it('renders the Auto policy row as a bare label with no model metadata', async () => {
     const ui = renderFeature(
       renderModelRow({ item: { id: 'auto' }, isCursor: false, maxWidth: 40, currentModel: 'auto' }),
@@ -198,22 +222,11 @@ describe('runner row grammar', () => {
     ui.unmount();
   });
 
-  it('renders distinct add-shell and add-agent labels', async () => {
-    const shell = pickerItem({
-      id: 'shell',
-      displayName: 'Shell',
-      kind: 'shell',
-      roles: ['planner', 'implementer'],
-      modelPolicy: 'none',
-      billing: 'unknown',
-      permissions: readyPermissions,
-      status: { state: 'ready', remediation: null },
-      available: true,
-    });
-    const agent = pickerItem({
-      id: 'agent',
-      displayName: 'Agent',
-      kind: 'agent',
+  it('renders one add-custom-command launcher instead of per-kind add rows', async () => {
+    const launcher = pickerItem({
+      id: 'custom-command',
+      displayName: 'Custom command',
+      kind: 'custom-command',
       roles: ['planner', 'implementer'],
       modelPolicy: 'none',
       billing: 'unknown',
@@ -222,29 +235,121 @@ describe('runner row grammar', () => {
       available: true,
     });
     const ui = renderFeature(
-      <>
-        {renderToolRow({
-          item: shell,
-          isCursor: false,
-          isSelected: false,
-          maxWidth: 40,
-          currentCommand: undefined,
-          currentCommandKind: undefined,
-        })}
-        {renderToolRow({
-          item: agent,
-          isCursor: false,
-          isSelected: false,
-          maxWidth: 40,
-          currentCommand: undefined,
-          currentCommandKind: undefined,
-        })}
-      </>,
+      renderToolRow({
+        item: launcher,
+        isCursor: false,
+        isSelected: false,
+        maxWidth: 40,
+        currentCommand: undefined,
+        currentCommandKind: undefined,
+      }),
     );
     await tick();
 
-    expect(ui.lastFrame()).toContain('+ Add shell command…');
-    expect(ui.lastFrame()).toContain('+ Add agent command…');
+    expect(ui.lastFrame()).toContain('+ Add custom command…');
+    expect(ui.lastFrame()).not.toContain('Add shell command');
+    expect(ui.lastFrame()).not.toContain('Add agent command');
     ui.unmount();
+  });
+
+  describe('merged provider rows', () => {
+    beforeEach(() => {
+      forceUnicodeGlyphs();
+    });
+
+    const MERGED: ModelOption = {
+      id: 'github-copilot/gpt-5.6',
+      contextLength: 128_000,
+      variants: [
+        { fullId: 'github-copilot/gpt-5.6', providerPrefix: 'github-copilot', tag: 'copilot' },
+        { fullId: 'kilo/openrouter/gpt-5.6', providerPrefix: 'kilo/openrouter', tag: 'openrouter' },
+      ],
+    };
+
+    it('signposts a multi-provider row with a provider count, no tags or glyphs', async () => {
+      const ui = renderFeature(
+        renderModelRow({ item: MERGED, isCursor: false, maxWidth: 60, currentModel: undefined }),
+      );
+      await tick(20);
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('GPT-5.6');
+      expect(frame).toContain('2 providers');
+      expect(frame).not.toContain('copilot');
+      expect(frame).not.toContain('●');
+      expect(frame).not.toContain('○');
+      ui.unmount();
+    });
+
+    it('renders a single-variant row without any provider annotation', async () => {
+      const ui = renderFeature(
+        renderModelRow({
+          item: {
+            id: 'openrouter/gemini-3-flash',
+            variants: [
+              {
+                fullId: 'openrouter/gemini-3-flash',
+                providerPrefix: 'openrouter',
+                tag: 'openrouter',
+              },
+            ],
+          },
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: undefined,
+        }),
+      );
+      await tick(20);
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).not.toContain('providers');
+      expect(frame).not.toContain('openrouter');
+      ui.unmount();
+    });
+
+    it('marks the row configured when any variant spelling matches the saved model', async () => {
+      const ui = renderFeature(
+        renderModelRow({
+          item: MERGED,
+          isCursor: false,
+          maxWidth: 60,
+          currentModel: 'kilo/openrouter/gpt-5.6',
+        }),
+      );
+      await tick(20);
+      expect(ui.lastFrame() ?? '').toContain('✓');
+      ui.unmount();
+    });
+  });
+
+  it('shows the configured command with its saved contract on the launcher row', async () => {
+    const launcher = pickerItem({
+      id: 'custom-command',
+      displayName: 'Custom command',
+      kind: 'custom-command',
+      roles: ['planner', 'implementer'],
+      modelPolicy: 'none',
+      billing: 'unknown',
+      permissions: readyPermissions,
+      status: { state: 'ready', remediation: null },
+      available: true,
+    });
+
+    for (const [kind, contractWord] of [
+      ['shell', 'output'],
+      ['agent', 'direct'],
+    ] as const) {
+      const ui = renderFeature(
+        renderToolRow({
+          item: launcher,
+          isCursor: false,
+          isSelected: false,
+          maxWidth: 40,
+          currentCommand: 'my-tool --json',
+          currentCommandKind: kind,
+        }),
+      );
+      await tick();
+      expect(ui.lastFrame()).toContain(`${contractWord} · my-tool --json`);
+      ui.unmount();
+    }
   });
 });

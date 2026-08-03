@@ -102,6 +102,7 @@ describe('FilterableList row activation', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('charlie');
 
+    await flushEffects();
     ui.stdin.write(ENTER);
     await flushEffects();
     await vi.waitFor(() => {

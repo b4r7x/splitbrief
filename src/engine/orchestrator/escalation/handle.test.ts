@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
+import { normalizeCustomCommand } from '../../../core/config/custom-commands.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
@@ -12,8 +14,13 @@ import {
   makeBusRecorder,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
+import type { ConfiguredCustomRunner } from '../../runners/custom-trust.js';
+import type { CustomRunnerRuntimePort } from '../../runners/types.js';
+import { createConfiguredCustomPlanner } from '../../planners/command-invoke.js';
+import { cleanupStaleArtifactReviews } from '../approval/planner-artifact.js';
+import { SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { handleRetryAndEscalation } from './handle.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
@@ -482,6 +489,150 @@ describe('handleRetryAndEscalation', () => {
     expect(result.method).toBe('failed');
     expect(finalState.currentTaskIndex).toBe(0);
     expect(finalState.tasks[0]?.status).toBe('pending');
+  });
+
+  it('runs configured direct full escalation in the outer stage and only promotes an approved diff', async () => {
+    const scenarios = [
+      {
+        name: 'approved',
+        response: {
+          decision: 'confirm',
+          phrase: CONFIRM_PHRASE,
+          reason: 'reviewed full diff',
+        } as const,
+        promoted: true,
+      },
+      {
+        name: 'rejected',
+        response: { decision: 'deny', reason: 'do not promote' } as const,
+        promoted: false,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const { projectDir, sessionId } = setupProject();
+      const stateDir = createTempDir(`t028-full-${scenario.name}-state`);
+      const outsideDir = createTempDir(`t028-full-${scenario.name}-outside`);
+      dirs.push(stateDir, outsideDir);
+      const outsideSentinel = join(outsideDir, 'child-can-reach-host');
+      const task = makeTask({
+        id: 'T028',
+        file: 'src/escalated.ts',
+        action: 'create',
+        scope: { inBounds: ['src/escalated.ts'] },
+      });
+      const state: WorkflowState = { ...makeValidatingState(), tasks: [task] };
+      let nestedStageCalls = 0;
+      const program = [
+        "const fs = require('node:fs');",
+        "const prompt = fs.readFileSync(0, 'utf8');",
+        `const sourceProject = ${JSON.stringify(projectDir)};`,
+        "fs.mkdirSync('src', { recursive: true });",
+        `fs.writeFileSync(${JSON.stringify(outsideSentinel)}, 'outside-stage-reachable');`,
+        'const lines = [',
+        "  '// outer-stage:' + (process.cwd() !== sourceProject),",
+        "  '// allowed:' + (process.env.T028_ALLOWED_VALUE ?? 'absent'),",
+        "  '// undeclared:' + (process.env.T028_UNDECLARED_SECRET ?? 'absent'),",
+        "  '// session-in-prompt:' + prompt.includes('t028-session-must-not-reach-child'),",
+        "  'export const escalated = true;',",
+        '];',
+        "fs.writeFileSync('src/escalated.ts', lines.join('\\n') + '\\n');",
+      ].join('');
+      const runner: ConfiguredCustomRunner = {
+        source: 'configured',
+        command: normalizeCustomCommand(`t028-full-${scenario.name}`, {
+          label: `T028 full ${scenario.name}`,
+          contract: 'direct',
+          executable: process.execPath,
+          argv: ['-e', program],
+          env: ['T028_ALLOWED_VALUE'],
+        }),
+      };
+      const staleReviewRoot = join(
+        projectDir,
+        SPLITBRIEF_DIR,
+        'sessions',
+        't028-session-must-not-reach-child',
+        '.custom-runner-review',
+      );
+      const stalePath = join(staleReviewRoot, 'stale-call', 'result');
+      mkdirSync(join(staleReviewRoot, 'stale-call'), { recursive: true });
+      writeFileSync(stalePath, 'stale');
+      const runtime: CustomRunnerRuntimePort = {
+        sessionId: 't028-session-must-not-reach-child',
+        authorizationProjectDir: projectDir,
+        sourceEnv: {
+          T028_ALLOWED_VALUE: 'runtime-source-only',
+          T028_UNDECLARED_SECRET: 'must-not-reach-child',
+        },
+        authorizationPathEnv: process.env.PATH ?? '',
+        ...(process.env.PATHEXT === undefined ? {} : { authorizationPathExt: process.env.PATHEXT }),
+        createStage: async () => {
+          nestedStageCalls += 1;
+          throw new Error('Direct full escalation must use the retry outer stage');
+        },
+        admission: { interaction: 'headless', allowRepoRunners: true, stateDir },
+        cleanupStaleArtifactReviews: () =>
+          cleanupStaleArtifactReviews({
+            projectDir,
+            sessionId: 't028-session-must-not-reach-child',
+          }),
+        beginDeclaredArtifactReview: async () => {
+          throw new Error('Direct full escalation must not begin planner artifact review.');
+        },
+      };
+      const planner = createConfiguredCustomPlanner(runner, runtime);
+      const implementer = makeImplementer({
+        retry: vi.fn().mockResolvedValue({
+          success: false,
+          output: '',
+          error: 'still broken',
+          usage: { inputTokens: 1, outputTokens: 1 },
+        }),
+      });
+      const { callbacks } = makeCallbacks({
+        onTieredApproval: vi.fn().mockResolvedValue(scenario.response),
+      });
+      const { bus } = makeBusRecorder();
+
+      const { result } = await handleRetryAndEscalation({
+        wctx: makeWctx({
+          projectDir,
+          sessionId,
+          config: makeNoValidationConfig({
+            workflow: { maxRetries: 1 },
+            approval: {
+              enabled: true,
+              feedRejectionsToPlanner: true,
+              tiers: { write_in_scope: 'confirm' },
+            },
+          }),
+          planner,
+          callbacks,
+          implementer,
+          bus,
+        }),
+        task,
+        initialError: 'validation failed',
+        currentState: state,
+      });
+
+      expect(nestedStageCalls).toBe(0);
+      expect(existsSync(stalePath)).toBe(false);
+      expect(existsSync(staleReviewRoot)).toBe(false);
+      expect(result.completed).toBe(scenario.promoted);
+      expect(result.method).toBe(scenario.promoted ? 'escalated-full' : 'failed');
+      expect(readFileSync(outsideSentinel, 'utf8')).toBe('outside-stage-reachable');
+      expect(existsSync(join(projectDir, 'src', 'escalated.ts'))).toBe(scenario.promoted);
+      if (scenario.promoted) {
+        const promoted = readFileSync(join(projectDir, 'src', 'escalated.ts'), 'utf8');
+        expect(promoted).toContain('// outer-stage:true');
+        expect(promoted).toContain('// allowed:runtime-source-only');
+        expect(promoted).toContain('// undeclared:absent');
+        expect(promoted).toContain('// session-in-prompt:false');
+        expect(promoted).not.toContain(projectDir);
+      }
+    }
   });
 
   it('pre_escalation deny raises a hook-named recovery instead of a generic retry-exhausted one', async () => {

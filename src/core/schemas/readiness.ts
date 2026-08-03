@@ -3,6 +3,7 @@ import {
   CliAuthStateSchema,
   CliCompatibilityStateSchema,
   CliExecutableIdentitySchema,
+  CliProviderAuthFactSchema,
   type CliReadinessStateSchema,
   CliTrustStateSchema,
   NON_READY_CLI_READINESS_STATES,
@@ -96,6 +97,8 @@ export const CliReadinessFactsSchema = z
     testedVersion: z.string().min(1),
     compatibility: CliCompatibilityStateSchema,
     auth: CliAuthStateSchema,
+    /** Per-provider oracle facts; present only when a credential oracle ran cleanly. */
+    providerAuth: z.array(CliProviderAuthFactSchema).max(64).readonly().optional(),
     probedAt: z.number().int().nonnegative(),
   })
   .strict();

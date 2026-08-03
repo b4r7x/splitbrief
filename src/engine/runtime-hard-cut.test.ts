@@ -83,7 +83,7 @@ it('runtime hard-cut matrix has exactly 8 labeled cases', async () => {
           version: 1,
           timestamp: Date.now(),
           planners: [],
-          implementers: [],
+          providers: [],
         });
         for (const priorDir of PRIOR_STATE_DIRS) {
           const priorPath = join(projectDir, priorDir, 'detection-cache.json');

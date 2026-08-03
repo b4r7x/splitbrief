@@ -49,7 +49,7 @@ function seedRunnerCatalog(): void {
         probedAt: 1_786_000_000_000,
       },
     ],
-    implementers: [
+    providers: [
       {
         provider: 'ollama',
         available: true,

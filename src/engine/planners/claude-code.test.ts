@@ -1,49 +1,24 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import {
-  writeFileSync,
-  chmodSync,
-  readFileSync,
-  existsSync,
-  realpathSync,
-  statSync,
-} from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import { createClaudeCodePlanner } from './claude-code.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
 import { writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
-
-/**
- * Exercises the real subprocess seam. `claude-code.ts` escalation calls
- * `runClaudeOneShot`, which resolves the trusted Claude command before spawning. We install a shim
- * named `claude` whose discovery depends entirely on the PATH the planner hands
- * the subprocess: when escalation forwards `sandboxEnv` as the spawn `env`, that
- * replaces the whole process environment, so the shim is only found via the
- * PATH inside `sandboxEnv`. The shim records the marker env var it observed,
- * letting us assert that `sandboxEnv` actually reached the spawned process.
- */
+import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
 
 let shimDir: string;
 let projectDir: string;
 let originalPath: string | undefined;
 let originalAnthropicApiKey: string | undefined;
 let originalOpenAiApiKey: string | undefined;
-
-function installRecordingShim(): { envMarkerFile: string } {
-  const envMarkerFile = join(shimDir, 'env-marker.txt');
-  const shimPath = join(shimDir, 'claude');
-  const script = [
-    '#!/bin/bash',
-    `printf '%s\\n' "$SPLITBRIEF_SANDBOX_MARKER" > '${envMarkerFile}'`,
-    `printf '%s\\n' '{"type":"result","result":"\`\`\`ts\\nexport const x = 1;\\n\`\`\`"}'`,
-  ].join('\n');
-  writeFileSync(shimPath, `${script}\n`, 'utf8');
-  chmodSync(shimPath, 0o755);
-  return { envMarkerFile };
-}
 
 beforeEach(() => {
   shimDir = createTempDir('claude-code-planner-shim');
@@ -64,26 +39,16 @@ afterEach(() => {
   cleanupTempDir(projectDir);
 });
 
-function trustedClaudeExecutable(): CliExecutableIdentity {
-  const path = realpathSync(join(shimDir, 'claude'));
-  const info = statSync(path);
-  return {
-    path,
-    fingerprint: {
-      dev: info.dev,
-      ino: info.ino,
-      size: info.size,
-      mtimeMs: info.mtimeMs,
-    },
-  };
+async function trustedClaudeExecutable(): Promise<CliExecutableIdentity> {
+  return resolveCliExecutable('claude', projectDir);
 }
 
-function createTrustedClaudeCodePlanner(
+async function createTrustedClaudeCodePlanner(
   opts: Parameters<typeof createClaudeCodePlanner>[0],
-): ReturnType<typeof createClaudeCodePlanner> {
+): Promise<ReturnType<typeof createClaudeCodePlanner>> {
   return createClaudeCodePlanner({
     ...opts,
-    trustedCli: { executable: trustedClaudeExecutable() },
+    trustedCli: { executable: await trustedClaudeExecutable() },
   });
 }
 
@@ -102,41 +67,73 @@ function installAuthRecordingShim(): string {
 
 describe('createClaudeCodePlanner escalation', () => {
   it('forwards sandboxEnv to the spawned claude subprocess during escalateFull', async () => {
-    const { envMarkerFile } = installRecordingShim();
-    // Strip the shim dir from the ambient PATH so the only way `claude` is found
-    // is through the PATH carried inside sandboxEnv — proving forwarding.
-    process.env['PATH'] = '/nonexistent-empty-path-for-claude-code-test';
+    const envMarkerFile = join(shimDir, 'env-marker.txt');
+    const restoreCompatibleShim = activateCompatibleCliShim(
+      installCompatibleCliShim({
+        directory: shimDir,
+        tool: 'claude-code',
+        authChannel: 'session',
+        invocation: {
+          marker: { path: envMarkerFile, environment: 'SPLITBRIEF_SANDBOX_MARKER' },
+          stdoutLines: [
+            JSON.stringify({
+              type: 'result',
+              result: `\`\`\`ts
+export const x = 1;
+\`\`\``,
+            }),
+          ],
+        },
+      }),
+    );
 
-    const planner = createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    try {
+      const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+      const result = await planner.escalateFull({
+        task: makeTask(),
+        error: 'boom',
+        projectDir,
+        callbacks: { onOutput: () => {} },
+        sandboxEnv: {
+          PATH: `${shimDir}:${originalPath ?? ''}`,
+          SPLITBRIEF_SANDBOX_MARKER: 'forwarded',
+        },
+      });
 
-    await planner.escalateFull({
-      task: makeTask(),
-      error: 'boom',
-      projectDir,
-      callbacks: { onOutput: () => {} },
-      sandboxEnv: {
-        PATH: `${shimDir}:${originalPath ?? ''}`,
-        SPLITBRIEF_SANDBOX_MARKER: 'forwarded',
-      },
-    });
-
-    expect(existsSync(envMarkerFile)).toBe(true);
-    expect(readFileSync(envMarkerFile, 'utf8').trim()).toBe('forwarded');
+      expect(result).toMatchObject({ success: true, code: 'export const x = 1;' });
+      expect(existsSync(envMarkerFile)).toBe(true);
+      expect(readFileSync(envMarkerFile, 'utf8').trim()).toBe('forwarded');
+    } finally {
+      restoreCompatibleShim();
+    }
   });
 });
 
 describe('createClaudeCodePlanner planning', () => {
-  it('takes the non-bridging auth channel when the configuration selects none', async () => {
+  it('defaults the omitted auth channel to the session channel', async () => {
     const envFile = installAuthRecordingShim();
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
     process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
     process.env['OPENAI_API_KEY'] = 'openai-canary';
+    const homeDir = createTempDir('claude-code-planner-home');
+    const originalHome = process.env['HOME'];
+    mkdirSync(join(homeDir, '.claude'), { recursive: true });
+    writeFileSync(join(homeDir, '.claude', '.credentials.json'), '{"session":"stub"}\n', 'utf8');
+    process.env['HOME'] = homeDir;
 
-    const planner = createTrustedClaudeCodePlanner({ authChannel: undefined });
-    await planner.review('prompt', projectDir, { onOutput: () => {} });
+    try {
+      const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
+      await planner.review('prompt', projectDir, { onOutput: () => {} });
 
-    expect(readFileSync(envFile, 'utf8').trim()).toBe('anthropic-canary|');
-    expect(existsSync(join(projectDir, SANDBOX_DIR, 'home', '.claude'))).toBe(false);
+      expect(readFileSync(envFile, 'utf8').trim()).toBe('|');
+      expect(
+        existsSync(join(projectDir, SANDBOX_DIR, 'home', '.claude', '.credentials.json')),
+      ).toBe(true);
+    } finally {
+      if (originalHome === undefined) delete process.env['HOME'];
+      else process.env['HOME'] = originalHome;
+      cleanupTempDir(homeDir);
+    }
   });
 
   it('forwards only the selected API-key auth channel into a sanitized planner environment', async () => {
@@ -145,7 +142,7 @@ describe('createClaudeCodePlanner planning', () => {
     process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
     process.env['OPENAI_API_KEY'] = 'openai-canary';
 
-    const planner = createTrustedClaudeCodePlanner({ authChannel: 'api-key' });
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'api-key' });
     await planner.review('prompt', projectDir, { onOutput: () => {} });
 
     expect(readFileSync(envFile, 'utf8').trim()).toBe('anthropic-canary|');
@@ -157,7 +154,7 @@ describe('createClaudeCodePlanner planning', () => {
     process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
     process.env['OPENAI_API_KEY'] = 'openai-canary';
 
-    const planner = createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
     await planner.review('prompt', projectDir, { onOutput: () => {} });
 
     expect(readFileSync(envFile, 'utf8').trim()).toBe('|');
@@ -196,8 +193,8 @@ Create the Claude fallback file.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const events: Array<{ type: string; callId: string; attempt?: number | undefined }> = [];
-    const onSessionId = vi.fn();
-    const planner = createTrustedClaudeCodePlanner({
+    const reportedSessionIds: string[] = [];
+    const planner = await createTrustedClaudeCodePlanner({
       authChannel: 'session',
       initialSessionId: 'sess-old',
     });
@@ -207,7 +204,7 @@ Create the Claude fallback file.
       projectDir,
       callbacks: {
         onOutput: () => {},
-        onSessionId,
+        onSessionId: (sessionId) => reportedSessionIds.push(sessionId),
         onCallEvent: (event) => {
           if (event.type === 'call_started' || event.type === 'call_error') events.push(event);
         },
@@ -221,8 +218,7 @@ Create the Claude fallback file.
     expect(started[0]?.callId).toMatch(/-attempt-2$/);
     expect(events).not.toContainEqual(expect.objectContaining({ type: 'call_error' }));
     expect(JSON.stringify(events)).not.toContain('sess-old');
-    expect(onSessionId).toHaveBeenCalledTimes(1);
-    expect(onSessionId).toHaveBeenCalledWith('sess-new');
+    expect(reportedSessionIds).toEqual(['sess-new']);
   });
 
   it('treats a different returned Claude session id as expired resume and does not expose it', async () => {
@@ -258,10 +254,10 @@ Create the Claude mismatch fallback file.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const events: RunnerCallEvent[] = [];
-    const onSessionId = vi.fn();
-    const onSessionExpired = vi.fn();
-    const onOutput = vi.fn();
-    const planner = createTrustedClaudeCodePlanner({
+    const reportedSessionIds: string[] = [];
+    const expiredSessionIds: string[] = [];
+    const output: string[] = [];
+    const planner = await createTrustedClaudeCodePlanner({
       authChannel: 'session',
       initialSessionId: 'sess-old',
     });
@@ -270,18 +266,17 @@ Create the Claude mismatch fallback file.
       feature: 'fallback',
       projectDir,
       callbacks: {
-        onOutput,
-        onSessionId,
-        onSessionExpired,
+        onOutput: (chunk) => output.push(chunk),
+        onSessionId: (sessionId) => reportedSessionIds.push(sessionId),
+        onSessionExpired: (sessionId) => expiredSessionIds.push(sessionId),
         onCallEvent: (event) => events.push(event),
       },
     });
 
     expect(result.tasks).toHaveLength(1);
-    expect(onSessionExpired).toHaveBeenCalledWith('sess-old');
-    expect(onSessionId).not.toHaveBeenCalledWith('sess-new-unexpected');
-    expect(onSessionId).toHaveBeenCalledWith('sess-fresh');
-    expect(JSON.stringify(onOutput.mock.calls)).not.toContain('stale resumed output');
+    expect(expiredSessionIds).toEqual(['sess-old']);
+    expect(reportedSessionIds).toEqual(['sess-fresh']);
+    expect(output.join('\n')).not.toContain('stale resumed output');
 
     const started = events.filter((event) => event.type === 'call_started');
     expect(started).toHaveLength(1);
@@ -307,7 +302,7 @@ Create the Claude mismatch fallback file.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const events: RunnerCallEvent[] = [];
-    const planner = createTrustedClaudeCodePlanner({
+    const planner = await createTrustedClaudeCodePlanner({
       authChannel: 'session',
       initialSessionId: 'sess-old',
     });
@@ -338,7 +333,10 @@ Create the Claude mismatch fallback file.
     process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
 
     const events: RunnerCallEvent[] = [];
-    const planner = createTrustedClaudeCodePlanner({ authChannel: 'session', idleWarnMs: 30 });
+    const planner = await createTrustedClaudeCodePlanner({
+      authChannel: 'session',
+      idleWarnMs: 30,
+    });
 
     const result = await planner.review('prompt', projectDir, {
       onOutput: () => {},

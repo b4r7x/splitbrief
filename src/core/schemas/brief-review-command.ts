@@ -13,6 +13,12 @@ export const BRIEF_REVIEW_COMMAND_ACTIONS = [
 
 export type BriefReviewCommandAction = (typeof BRIEF_REVIEW_COMMAND_ACTIONS)[number];
 
+export const BRIEF_REVIEW_PROMPT_KINDS = ['spec', 'plan', 'briefs', 'artifact'] as const;
+
+export const BriefReviewPromptKindSchema = z.enum(BRIEF_REVIEW_PROMPT_KINDS);
+
+export type BriefReviewPromptKind = z.infer<typeof BriefReviewPromptKindSchema>;
+
 const BriefReviewCommentSchema = z
   .string()
   .trim()
@@ -33,8 +39,6 @@ export const BriefReviewCommandSchema = z.discriminatedUnion('action', [
 ]);
 
 export type BriefReviewCommand = z.infer<typeof BriefReviewCommandSchema>;
-
-export type BriefReviewPromptKind = 'spec' | 'plan' | 'briefs';
 
 export type BriefReviewCommandDisposition =
   | { kind: 'settles'; result: ApprovalReviewResult }

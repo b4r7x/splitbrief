@@ -1,10 +1,52 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../core/schemas/task.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
+import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { IPC_MAX_FRAME_BYTES, type ServerMessage } from './protocol.js';
 import { protectServerMessage } from './message-protection.js';
 
 describe('protectServerMessage', () => {
+  it('preserves immutable artifact text byte-for-byte outside generic consumer protection', () => {
+    const prefix = 'sk-artifact-secret-21893\u001b]0;control\u0007\n';
+    const text = `${prefix}${'\u0000'.repeat(
+      PLANNER_ARTIFACT_MAX_BYTES - Buffer.byteLength(prefix, 'utf8'),
+    )}`;
+    const msg: ServerMessage = {
+      kind: 'prompt_request',
+      request: {
+        requestId: 'artifact-review-1',
+        kind: 'artifact_review',
+        review: { label: 'Custom planner artifact', text },
+      },
+    };
+
+    for (const persistTranscript of [true, false]) {
+      const protectedMsg = protectServerMessage(msg, { persistTranscript });
+      expect(protectedMsg).toBe(msg);
+      expect(protectedMsg).toEqual(msg);
+      expect(JSON.stringify(protectedMsg)).toContain('sk-artifact-secret-21893');
+      expect(Buffer.byteLength(JSON.stringify(protectedMsg) + '\n', 'utf8')).toBeLessThanOrEqual(
+        IPC_MAX_FRAME_BYTES,
+      );
+    }
+  });
+
+  it('drops untransportable artifact reviews without substituting a warning frame', () => {
+    const msg: ServerMessage = {
+      kind: 'prompt_request',
+      request: {
+        requestId: 'artifact-review-too-large',
+        kind: 'artifact_review',
+        review: {
+          label: 'Custom planner artifact',
+          text: `${'\u0000'.repeat(PLANNER_ARTIFACT_MAX_BYTES)}x`,
+        },
+      },
+    };
+
+    expect(protectServerMessage(msg, { persistTranscript: true })).toBeNull();
+  });
+
   it('redacts secrets and strips terminal controls in event frames', () => {
     const msg: ServerMessage = {
       kind: 'event',

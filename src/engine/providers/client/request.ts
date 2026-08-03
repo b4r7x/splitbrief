@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { warnError } from '../../../lib/warn.js';
 import { redactSecrets } from '../../../utils/redact.js';
+import { throwIfAborted } from '../../../utils/abort.js';
 import { providerError } from '../errors.js';
 import { endpointPolicyError } from '../../../core/providers/endpoint-policy.js';
 import {
@@ -71,11 +72,24 @@ export function sanitizeProviderDiagnostic(
   return sanitizeTerminalDiagnosticText(redactSecrets(text));
 }
 
-export async function fetchJsonWithTimeout(url: string, timeoutMs: number): Promise<unknown> {
-  const policyFetch = createEndpointPolicyFetch(url, endpointPolicyError.invalid);
-  const res = await policyFetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-  if (!res.ok) throw providerError.httpFailure(res.status, sanitizeProviderDiagnostic(url));
-  return await res.json();
+export interface FetchJsonWithTimeoutOptions {
+  readonly url: string;
+  readonly timeoutMs: number;
+  readonly signal?: AbortSignal | undefined;
+}
+
+export async function fetchJsonWithTimeout(options: FetchJsonWithTimeoutOptions): Promise<unknown> {
+  throwIfAborted(options.signal);
+  const timeoutSignal = AbortSignal.timeout(options.timeoutMs);
+  const signal =
+    options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
+  const policyFetch = createEndpointPolicyFetch(options.url, endpointPolicyError.invalid);
+  const res = await policyFetch(options.url, { signal });
+  throwIfAborted(options.signal);
+  if (!res.ok) throw providerError.httpFailure(res.status, sanitizeProviderDiagnostic(options.url));
+  const json = await res.json();
+  throwIfAborted(options.signal);
+  return json;
 }
 
 export async function fetchModelList<T>(options: {
@@ -84,8 +98,10 @@ export async function fetchModelList<T>(options: {
   headers?: Record<string, string> | undefined;
   fetch?: EndpointPolicyFetch | undefined;
   onError?: ((err: string | undefined) => void) | undefined;
+  signal?: AbortSignal | undefined;
   extractModels: (data: unknown) => T[] | null;
 }): Promise<T[]> {
+  throwIfAborted(options.signal);
   const { endpoint, apiKey, onError, extractModels } = options;
   try {
     const headers = options.headers ?? (apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined);
@@ -98,15 +114,21 @@ export async function fetchModelList<T>(options: {
         message === undefined ? undefined : sanitizeProviderDiagnostic(message, diagnosticOptions),
       );
     };
-    const signal = AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS);
+    const timeoutSignal = AbortSignal.timeout(MODEL_LIST_TIMEOUT_MS);
+    const signal =
+      options.signal === undefined
+        ? timeoutSignal
+        : AbortSignal.any([options.signal, timeoutSignal]);
     const policyFetch =
       options.fetch ?? createEndpointPolicyFetch(endpoint, endpointPolicyError.invalid);
     const res = await policyFetch(endpoint, headers ? { headers, signal } : { signal });
+    throwIfAborted(options.signal);
     if (!res.ok) {
       reportError(`HTTP ${res.status}`);
       return [];
     }
     const json: unknown = await res.json();
+    throwIfAborted(options.signal);
     if (typeof json !== 'object' || json === null) {
       reportError('Invalid response payload');
       return [];
@@ -119,6 +141,7 @@ export async function fetchModelList<T>(options: {
     reportError(undefined);
     return result;
   } catch (err) {
+    throwIfAborted(options.signal);
     const headers = options.headers ?? (apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined);
     const diagnostic = sanitizeProviderDiagnostic(err, {
       credentialValues: apiKey ? [apiKey] : undefined,

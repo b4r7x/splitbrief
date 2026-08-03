@@ -1,15 +1,14 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   IMPLEMENTER_API_PROVIDER_IDS,
   PLANNER_API_PROVIDER_IDS,
 } from '../providers/api-provider-catalog.js';
-import {
-  IMPLEMENTER_CLI_TOOL_IDS,
-  PLANNER_CLI_TOOL_IDS,
-  type RunnerRole,
-} from '../runners/cli-tool-catalog.js';
+import { IMPLEMENTER_CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import { ImplementerConfigSchema } from './implementer-config.js';
 import { PlannerConfigSchema } from './planner-config.js';
+import { ConfigSchema } from './config.js';
+import { createDefaultConfig } from '../config/load/io.js';
+import { readCustomCommandCatalog } from '../config/custom-commands.js';
 
 function implementerOnlyApiProviderIds() {
   const plannerIds = new Set<string>(PLANNER_API_PROVIDER_IDS);
@@ -18,41 +17,6 @@ function implementerOnlyApiProviderIds() {
 
 function implementerOnlyCliToolIds(): string[] {
   return IMPLEMENTER_CLI_TOOL_IDS.filter((id) => !PLANNER_CLI_TOOL_IDS.includes(id));
-}
-
-const SYNTHETIC_IMPLEMENTER_ONLY_TOOL = 'synthetic-implementer-cli';
-
-// Every admitted CLI tool serves both roles today, so only an injected descriptor exercises
-// the implementer-accepted / planner-rejected pair REQ-001 freezes.
-function mockCatalogWithImplementerOnlyTool(): void {
-  vi.doMock('../runners/cli-tool-catalog.js', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../runners/cli-tool-catalog.js')>();
-    type CatalogDescriptor = (typeof actual.CLI_TOOL_CATALOG)[keyof typeof actual.CLI_TOOL_CATALOG];
-    type Descriptor = Readonly<Omit<CatalogDescriptor, 'id'> & { id: string }>;
-    const descriptor: Descriptor = {
-      ...actual.CLI_TOOL_CATALOG.codex,
-      id: SYNTHETIC_IMPLEMENTER_ONLY_TOOL,
-      roles: ['implementer'],
-    };
-    const catalog: Record<string, Descriptor> = {
-      ...actual.CLI_TOOL_CATALOG,
-      [SYNTHETIC_IMPLEMENTER_ONLY_TOOL]: descriptor,
-    };
-    const ids = Object.keys(catalog);
-    return {
-      ...actual,
-      CLI_TOOL_CATALOG: catalog,
-      CLI_TOOL_TRUST: {
-        ...actual.CLI_TOOL_TRUST,
-        [SYNTHETIC_IMPLEMENTER_ONLY_TOOL]: actual.CLI_TOOL_TRUST.codex,
-      },
-      CLI_TOOL_IDS: ids,
-      PLANNER_CLI_TOOL_IDS: ids.filter((id) => catalog[id]?.roles.includes('planner')),
-      IMPLEMENTER_CLI_TOOL_IDS: ids.filter((id) => catalog[id]?.roles.includes('implementer')),
-      cliToolSupportsRole: (id: string, role: RunnerRole) =>
-        catalog[id]?.roles.includes(role) ?? false,
-    };
-  });
 }
 
 describe('ImplementerConfigSchema', () => {
@@ -120,29 +84,40 @@ describe('ImplementerConfigSchema', () => {
       ).toBe(false);
     }
   });
-});
+  it('parses an inline agent and exposes the real persisted catalog independently', () => {
+    const implementer = ImplementerConfigSchema.parse({
+      kind: 'agent',
+      command: './tools/apply',
+      args: ['--quiet'],
+      model: 'local-agent',
+    });
+    const config = ConfigSchema.parse({
+      ...createDefaultConfig(),
+      implementer,
+      customCommands: {
+        review: {
+          label: 'Review changes',
+          contract: 'output',
+          executable: './tools/review',
+          argv: ['--json'],
+        },
+      },
+    });
 
-describe('synthetic implementer-only CLI descriptor', () => {
-  afterEach(() => {
-    vi.doUnmock('../runners/cli-tool-catalog.js');
-    vi.resetModules();
-  });
-
-  it('parses as an implementer runner and fails planner parsing', async () => {
-    vi.resetModules();
-    mockCatalogWithImplementerOnlyTool();
-    const { ImplementerConfigSchema: MockedImplementerSchema } = await import(
-      './implementer-config.js'
-    );
-    const { PlannerConfigSchema: MockedPlannerSchema } = await import('./planner-config.js');
-
-    const runner = {
-      kind: 'cli',
-      tool: SYNTHETIC_IMPLEMENTER_ONLY_TOOL,
-      model: 'explicit-model',
-    };
-
-    expect(MockedImplementerSchema.safeParse(runner).success).toBe(true);
-    expect(MockedPlannerSchema.safeParse(runner).success).toBe(false);
+    expect(config.implementer).toEqual(implementer);
+    expect(readCustomCommandCatalog(config).configured).toEqual([
+      expect.objectContaining({
+        id: 'review',
+        contract: 'output',
+        executable: './tools/review',
+        argv: ['--json'],
+      }),
+    ]);
+    expect(readCustomCommandCatalog(config).legacy).toEqual([
+      expect.objectContaining({
+        kind: 'safe',
+        command: expect.objectContaining({ contract: 'direct', executable: './tools/apply' }),
+      }),
+    ]);
   });
 });

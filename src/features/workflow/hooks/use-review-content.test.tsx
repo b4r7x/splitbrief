@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Text } from 'ink';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -12,8 +12,11 @@ import { useReviewContent } from './use-review-content.js';
 
 type ReviewContentReader = NonNullable<Parameters<typeof useReviewContent>[1]>;
 
-function Harness({ filePath, reader }: { filePath: string | null; reader?: ReviewContentReader }) {
-  const content = useReviewContent(filePath, reader);
+const itUnix = process.platform === 'win32' ? it.skip : it;
+
+function Harness({ reader }: { reader?: ReviewContentReader }) {
+  const source = reviewStore.use((state) => state.source);
+  const content = useReviewContent(source, reader);
   const viewport = terminalSizeStore.use((state) => `${state.cols}x${state.rows}`);
   return <Text>{`${viewport}:${content ? `content=${content}` : 'empty'}`}</Text>;
 }
@@ -36,8 +39,9 @@ describe('useReviewContent', () => {
   it('reads the file without using raw line count as document height', async () => {
     const file = join(tmp, 'spec.md');
     writeFileSync(file, 'line one\nline two\nline three\n');
+    reviewStore.setReviewFile(file);
 
-    ui = renderFeature(<Harness filePath={file} />);
+    ui = renderFeature(<Harness />);
 
     await vi.waitFor(() => {
       expect(ui?.lastFrame()).toContain('content=line one');
@@ -61,8 +65,9 @@ describe('useReviewContent', () => {
 
     const file = join(tmp, 'spec.md');
     writeFileSync(file, 'mid-read content\n');
+    reviewStore.setReviewFile(file);
 
-    ui = renderFeature(<Harness filePath={file} reader={deferredReader} />);
+    ui = renderFeature(<Harness reader={deferredReader} />);
     ui.unmount();
     ui = null;
     resolveRead?.('should not apply');
@@ -90,11 +95,12 @@ describe('useReviewContent', () => {
         pending.set(path, { resolve, reject });
       });
 
-    ui = renderFeature(<Harness filePath={fileA} reader={reader} />);
+    reviewStore.setReviewFile(fileA);
+    ui = renderFeature(<Harness reader={reader} />);
     await vi.waitFor(() => {
       expect(pending.has(fileA)).toBe(true);
     });
-    ui.rerender(<Harness filePath={fileB} reader={reader} />);
+    reviewStore.setReviewFile(fileB);
     await vi.waitFor(() => {
       expect(pending.has(fileB)).toBe(true);
     });
@@ -113,11 +119,11 @@ describe('useReviewContent', () => {
     await tick(50);
     expect(ui?.lastFrame()).toContain('content=current bbb');
 
-    ui.rerender(<Harness filePath={fileC} reader={reader} />);
+    reviewStore.setReviewFile(fileC);
     await vi.waitFor(() => {
       expect(pending.has(fileC)).toBe(true);
     });
-    ui.rerender(<Harness filePath={fileD} reader={reader} />);
+    reviewStore.setReviewFile(fileD);
     await vi.waitFor(() => {
       expect(pending.has(fileD)).toBe(true);
     });
@@ -153,7 +159,7 @@ describe('useReviewContent', () => {
         pending.push({ resolve, reject });
       });
 
-    ui = renderFeature(<Harness filePath={file} reader={reader} />);
+    ui = renderFeature(<Harness reader={reader} />);
     await vi.waitFor(() => {
       expect(pending).toHaveLength(1);
     });
@@ -198,7 +204,7 @@ describe('useReviewContent', () => {
     reviewStore.setReviewFile(file);
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
 
-    ui = renderFeature(<Harness filePath={file} />);
+    ui = renderFeature(<Harness />);
 
     await vi.waitFor(() => {
       expect(ui?.lastFrame()).toContain('120x40:content=before edit');
@@ -232,12 +238,13 @@ describe('useReviewContent', () => {
   it('surfaces read failures for the active path', async () => {
     const file = join(tmp, 'broken.md');
     writeFileSync(file, 'contents\n');
+    reviewStore.setReviewFile(file);
 
     const reader: ReviewContentReader = async () => {
       throw new Error('boom');
     };
 
-    ui = renderFeature(<Harness filePath={file} reader={reader} />);
+    ui = renderFeature(<Harness reader={reader} />);
 
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).toBe(`Failed to read ${file}: boom`);
@@ -245,4 +252,34 @@ describe('useReviewContent', () => {
       expect(ui?.lastFrame()).toContain('empty');
     });
   });
+
+  itUnix(
+    'keeps the finalized artifact text when its old candidate becomes an oversized symlink',
+    async () => {
+      const reviewedText = 'reviewed immutable artifact';
+      const candidatePath = join(tmp, 'candidate');
+      const replacementPath = join(tmp, 'replacement');
+      writeFileSync(candidatePath, reviewedText);
+      writeFileSync(replacementPath, 'attacker-canary'.repeat(10_000));
+      reviewStore.setReviewArtifact(reviewedText);
+      unlinkSync(candidatePath);
+      symlinkSync(replacementPath, candidatePath);
+      const reader = vi.fn<ReviewContentReader>(async () => {
+        throw new Error('artifact reviews must not read a path');
+      });
+
+      ui = renderFeature(<Harness reader={reader} />);
+
+      await vi.waitFor(() => {
+        expect(ui?.lastFrame()).toContain(`content=${reviewedText}`);
+      });
+      expect(reviewStore.get()).toMatchObject({
+        source: { kind: 'artifact', text: reviewedText },
+        filePath: null,
+      });
+      expect(ui?.lastFrame()).not.toContain('attacker-canary');
+      expect(reader).not.toHaveBeenCalled();
+      expect(feedbackStore.get().message).toBeNull();
+    },
+  );
 });

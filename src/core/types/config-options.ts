@@ -36,6 +36,7 @@ export interface WorkflowOpts {
   plannerEffort?: EffortLevel;
   allowHooks?: boolean;
   allowRepoRunners?: boolean;
+  allowUnverifiedAuth?: boolean;
   json?: boolean;
   rpc?: boolean;
   otelExporter?: string;

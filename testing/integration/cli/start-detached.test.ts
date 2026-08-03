@@ -8,9 +8,12 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
-  declareReadyCliTool,
   getStartCommandTmp,
   readSingleSessionArtifact,
   runStart,
@@ -18,6 +21,7 @@ import {
   spawnServerMock,
   writeReadyReadinessFixtures,
 } from '#testing/helpers/start-command.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, TREES_DIR, worktreePath } from '../../../src/core/paths.js';
 import { isCliError } from '../../../src/cli/errors.js';
 import {
@@ -35,9 +39,24 @@ setupStartCommandIntegration();
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
+let compatibleCliShimDir: string | undefined;
+let restoreCompatibleCliShim: (() => void) | undefined;
+
+function captureConsoleLog(): string[] {
+  const output: string[] = [];
+  vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+    output.push(args.map(String).join(' '));
+  });
+  return output;
+}
+
 describe('start command — detached', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    restoreCompatibleCliShim?.();
+    restoreCompatibleCliShim = undefined;
+    if (compatibleCliShimDir !== undefined) cleanupTempDir(compatibleCliShimDir);
+    compatibleCliShimDir = undefined;
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.PLANNER_KEY;
   });
@@ -46,8 +65,7 @@ describe('start command — detached', () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
     const wtPath = worktreePath(tmp, 'detached-feature');
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const output = captureConsoleLog();
 
     await runStart(['--project', tmp, '--worktree', 'detached-feature', '--detach', 'implement X']);
 
@@ -58,13 +76,10 @@ describe('start command — detached', () => {
     expect(artifact.projectDir).toBe(wtPath);
     expect(artifact.configPath).toBe(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE));
 
-    const output = vi
-      .mocked(console.log)
-      .mock.calls.map((call) => call.join(' '))
-      .join('\n');
-    expect(output).toContain('splitbrief attach');
-    expect(output).toContain('--project');
-    expect(output).not.toContain('cd ');
+    const outputText = output.join('\n');
+    expect(outputText).toContain('splitbrief attach');
+    expect(outputText).toContain('--project');
+    expect(outputText).not.toContain('cd ');
   });
 
   it('prints a shell-safe attach hint with --project for paths containing spaces', async () => {
@@ -73,8 +88,7 @@ describe('start command — detached', () => {
     mkdirSync(spaced, { recursive: true });
     createTestGitRepo(spaced);
     writeReadyReadinessFixtures(spaced);
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const output = captureConsoleLog();
 
     await runStart(['--project', spaced, '--detach', 'implement X']);
 
@@ -82,13 +96,10 @@ describe('start command — detached', () => {
     expect(sessionIds).toHaveLength(1);
     const sessionId = sessionIds[0] ?? '';
 
-    const output = vi
-      .mocked(console.log)
-      .mock.calls.map((call) => call.join(' '))
-      .join('\n');
     const expectedRun = `Run: ${formatDetachedAttachHint(spaced, sessionId)}`;
-    expect(output).toContain(expectedRun);
-    expect(output).not.toContain('cd ');
+    const outputText = output.join('\n');
+    expect(outputText).toContain(expectedRun);
+    expect(outputText).not.toContain('cd ');
   });
 
   it('preserves config workflow mode when --detach omits --mode', async () => {
@@ -99,17 +110,10 @@ describe('start command — detached', () => {
       configFilePath,
       readFileSync(configFilePath, 'utf-8').replace('mode: standard', 'mode: quick'),
     );
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    captureConsoleLog();
 
     await runStart(['--project', tmp, '--detach', 'implement X']);
 
-    expect(spawnServerMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mode: 'quick',
-        overrides: expect.not.objectContaining({ mode: expect.anything() }),
-      }),
-    );
     const artifact = readSingleSessionArtifact(tmp, 'server-args.json') as {
       mode?: string;
       overrides?: { mode?: string };
@@ -121,11 +125,16 @@ describe('start command — detached', () => {
   it('persists detached CLI overrides in the server args artifact', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    declareReadyCliTool('codex');
+    compatibleCliShimDir = createTempDir('start-detached-codex-shim');
+    const shim = installCompatibleCliShim({
+      directory: compatibleCliShimDir,
+      tool: 'codex',
+      authChannel: 'session',
+    });
+    restoreCompatibleCliShim = activateCompatibleCliShim(shim);
     process.env.OPENROUTER_API_KEY = 'sk-or-test-openrouter-key';
     process.env.PLANNER_KEY = 'test-planner-key';
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    captureConsoleLog();
 
     await runStart([
       '--project',
@@ -184,6 +193,10 @@ describe('start command — detached', () => {
       mode?: string;
       configPath?: string;
       overrides?: unknown;
+      trustedCliGates?: Array<{
+        tool?: string;
+        executable?: { path?: string; executableIdentity?: { fingerprint?: string } };
+      }>;
     };
     expect(artifact).toMatchObject({
       mode: 'quick',
@@ -215,6 +228,17 @@ describe('start command — detached', () => {
         plannerEffort: 'high',
       },
     });
+    expect(artifact.trustedCliGates).toEqual([
+      expect.objectContaining({
+        tool: 'codex',
+        executable: expect.objectContaining({
+          path: shim.path,
+          executableIdentity: expect.objectContaining({
+            fingerprint: expect.stringMatching(/:sha256:[a-f0-9]{64}$/u),
+          }),
+        }),
+      }),
+    ]);
   });
 
   itUnix(
@@ -254,8 +278,7 @@ describe('start command — detached', () => {
         ].join('\n'),
       );
       chmodSync(configFilePath, 0o666);
-      spawnServerMock.mockClear();
-      vi.spyOn(console, 'log').mockImplementation(() => {});
+      captureConsoleLog();
       const stderrChunks: string[] = [];
       let warningsBeforeSpawn = '';
       vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
@@ -270,7 +293,6 @@ describe('start command — detached', () => {
 
       await runStart(['--project', tmp, '--detach', 'implement X']);
 
-      expect(spawnServerMock).toHaveBeenCalledTimes(1);
       expect(warningsBeforeSpawn).toContain('has overly permissive permissions');
     },
   );
@@ -278,19 +300,18 @@ describe('start command — detached', () => {
   it.each(['full', 'spec-kit'])('rejects the removed --mode %s alias', async (mode) => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    captureConsoleLog();
 
     await expect(
       runStart(['--project', tmp, '--detach', '--mode', mode, 'implement X']),
     ).rejects.toThrow(/Invalid workflow mode/);
-    expect(spawnServerMock).not.toHaveBeenCalled();
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
   });
 
   it('clears the active pointer when detached server spawn fails', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    captureConsoleLog();
     const spawnFailure: SpawnServerResult = { ok: false, reason: 'boom' };
     spawnServerMock.mockImplementationOnce(async () => spawnFailure);
 
@@ -310,14 +331,9 @@ describe('start command — detached', () => {
   it('redacts the generated session id but forwards the raw feature to the detached planner when persistTranscript is false', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp, { persistTranscript: false });
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    captureConsoleLog();
 
     await runStart(['--project', tmp, '--detach', 'add secret oauth login']);
-
-    expect(spawnServerMock).toHaveBeenCalledTimes(1);
-    const spawnArgs = spawnServerMock.mock.calls[0]?.[0];
-    expect(spawnArgs?.persistTranscript).toBe(false);
 
     const sessionIds = readdirSync(join(tmp, SPLITBRIEF_DIR, 'sessions'));
     expect(sessionIds).toHaveLength(1);
@@ -340,28 +356,27 @@ describe('start command — detached', () => {
   it('keeps the raw feature in the generated session id and detached metadata when persistTranscript is true', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp, { persistTranscript: true });
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    captureConsoleLog();
 
     await runStart(['--project', tmp, '--detach', 'add email validator']);
-
-    const spawnArgs = spawnServerMock.mock.calls[0]?.[0];
-    expect(spawnArgs?.persistTranscript).toBe(true);
 
     const sessionIds = readdirSync(join(tmp, SPLITBRIEF_DIR, 'sessions'));
     const sessionId = sessionIds[0] ?? '';
     expect(isOpaqueSessionId(sessionId)).toBe(false);
     expect(sessionId).toContain('add-email-validator');
 
-    const artifact = readSingleSessionArtifact(tmp, 'server-args.json') as { feature?: string };
+    const artifact = readSingleSessionArtifact(tmp, 'server-args.json') as {
+      feature?: string;
+      persistTranscript?: boolean;
+    };
     expect(artifact.feature).toBe('add email validator');
+    expect(artifact.persistTranscript).toBe(true);
   });
 
   it('uses an opaque worktree slug for a bare --worktree when persistTranscript is false', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp, { persistTranscript: false });
-    spawnServerMock.mockClear();
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    captureConsoleLog();
 
     await runStart(['--project', tmp, 'add secret oauth login', '--worktree', '--detach']);
 

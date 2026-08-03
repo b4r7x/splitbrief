@@ -1,35 +1,152 @@
-import { createStore, storeBase } from '../create-store.js';
-import { isProviderId, type ProviderId } from '../../core/schemas/enums.js';
-import type { DetectedModel } from '../../core/discovery/detection.js';
+import { createStore } from '../create-store.js';
+import type {
+  CliToolDetection,
+  DetectedModel,
+  ProviderDetection,
+} from '../../core/discovery/detection.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
+import type { ActiveRunnerRole } from '../../core/config/accessors/active-runner.js';
+import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import type { ProviderId } from '../../core/schemas/enums.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
+import { CLI_TOOL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type {
+  DetectionRefreshOutcomes,
+  DetectionServiceResult,
+  ModelsDevRefreshOutcome,
+  ResolvedDetectionSourceContexts,
+} from '../../engine/detection/service.js';
+import type { DetectionPublicationRequest } from '../../engine/detection/store-publication.js';
+import type {
+  CliModelSnapshot,
+  DetectionSourceError,
+  DetectionSourceOutcome,
+} from '../../engine/detection/coordinator.js';
+import type {
+  ScopedCliCatalogAttempt,
+  ScopedCliCatalogConnection,
+  ScopedCliCatalogRuntime,
+} from '../../engine/detection/cli-catalog-outcomes.js';
+import type {
+  ConfiguredProviderOutcome,
+  ConfiguredProviderRuntime,
+} from '../../engine/detection/provider-outcomes.js';
+import type { ProviderCatalogFailureKind } from '../../engine/providers/types.js';
+import { includes } from '../../utils/type-guards.js';
+
+export type DiscoverySourceOutcome =
+  | 'uninitialized'
+  | 'fresh'
+  | 'cached'
+  | 'not-modified'
+  | 'stale'
+  | 'failed'
+  | 'not-run';
+
+export interface DiscoverySourceRefresh {
+  readonly outcome: DiscoverySourceOutcome;
+  readonly refreshing: boolean;
+  readonly generation: number | null;
+  readonly requestId: number | null;
+  readonly fetchedAt: number | null;
+  readonly validatedAt: number | null;
+  readonly error: DetectionSourceError | null;
+}
+
+export interface DiscoveryRefreshState {
+  readonly generation: number;
+  readonly publicationId: number;
+  readonly readiness: DiscoverySourceRefresh;
+  readonly modelsDev: DiscoverySourceRefresh;
+  readonly cliModels: DiscoverySourceRefresh;
+}
+
+export interface DetectionStoreState {
+  readonly providers: readonly ProviderDetection[];
+  readonly cliTools: readonly CliToolDetection[];
+  /** Role-scoped, memory-only API catalog outcomes. */
+  readonly providerOutcomes: readonly ConfiguredProviderRuntime[];
+  /** Role/tool/context-scoped, memory-only native CLI catalog outcomes. */
+  readonly cliCatalogOutcomes: readonly ScopedCliCatalogRuntime[];
+  readonly refresh: DiscoveryRefreshState;
+}
 
 interface ProviderModelCache {
-  models: readonly DetectedModel[];
-  fetchedAt: number;
-  isStale: boolean;
+  readonly models: readonly DetectedModel[];
+  readonly fetchedAt: number | null;
+  readonly isStale: boolean;
 }
 
 interface ModelCacheState {
-  providers: Partial<Record<ProviderId, ProviderModelCache>>;
-  modelsDevCatalog: ModelsDevCatalog | null;
-  modelsDevFetchedAt: number | null;
+  readonly detection: DetectionStoreState;
+  readonly providers: Partial<Record<ProviderId, ProviderModelCache>>;
+  readonly configuredProviders: Readonly<Record<string, ConfiguredProviderRuntime>>;
+  readonly cliCatalogs: Readonly<Record<string, ScopedCliCatalogRuntime>>;
+  /** False until an authoritative exact-context catalog lane has completed. */
+  readonly cliCatalogsLoaded: boolean;
+  /** Deprecated generic test/manual injection fallback, never used by discovery. */
+  readonly cliModels: Partial<Record<CliToolId, ProviderModelCache>>;
+  readonly modelsDevCatalog: ModelsDevCatalog | null;
+  readonly modelsDevFetchedAt: number | null;
+  readonly refresh: DiscoveryRefreshState;
 }
 
-const TTL_MS = 5 * 60 * 1000; // 5 minutes
-const MODELS_DEV_TTL_MS = 60 * 60 * 1000; // 1 hour
+export type DiscoverySourceContexts = ResolvedDetectionSourceContexts;
 
-const initial: ModelCacheState = {
-  providers: {},
-  modelsDevCatalog: null,
-  modelsDevFetchedAt: null,
-};
+export type DiscoveryRefreshRequest = DetectionPublicationRequest;
 
-const store = createStore<ModelCacheState>(initial);
-
-function isExpired(fetchedAt: number): boolean {
-  return Date.now() - fetchedAt >= TTL_MS;
+export interface DetectionStoreHydration {
+  readonly providers: readonly ProviderDetection[];
+  readonly cliTools: readonly CliToolDetection[];
+  readonly fetchedAt: number;
+  readonly validatedAt: number;
+  readonly generation: number;
+  readonly requestId: number;
+  readonly contexts: DiscoverySourceContexts;
 }
+
+const initialSource = (): DiscoverySourceRefresh => ({
+  outcome: 'uninitialized',
+  refreshing: false,
+  generation: null,
+  requestId: null,
+  fetchedAt: null,
+  validatedAt: null,
+  error: null,
+});
+
+const initialRefresh = (): DiscoveryRefreshState => ({
+  generation: 0,
+  publicationId: 0,
+  readiness: initialSource(),
+  modelsDev: initialSource(),
+  cliModels: initialSource(),
+});
+
+function initialState(): ModelCacheState {
+  const refresh = initialRefresh();
+  return {
+    detection: {
+      providers: [],
+      cliTools: [],
+      providerOutcomes: [],
+      cliCatalogOutcomes: [],
+      refresh,
+    },
+    providers: {},
+    configuredProviders: {},
+    cliCatalogs: {},
+    cliCatalogsLoaded: false,
+    cliModels: {},
+    modelsDevCatalog: null,
+    modelsDevFetchedAt: null,
+    refresh,
+  };
+}
+
+const store = createStore<ModelCacheState>(initialState);
+let activeContexts: DiscoverySourceContexts | null = null;
+let nextPublicationId = 0;
 
 function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return value;
@@ -37,59 +154,947 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-function freezeModels(models: DetectedModel[]): readonly DetectedModel[] {
+function cloneCliTool(cliTool: CliToolDetection): CliToolDetection {
+  return {
+    ...cliTool,
+    executable:
+      cliTool.executable === null
+        ? null
+        : {
+            path: cliTool.executable.path,
+            fingerprint: { ...cliTool.executable.fingerprint },
+          },
+    diagnostic:
+      cliTool.diagnostic.state === 'ready'
+        ? { state: 'ready', remediation: null }
+        : { state: cliTool.diagnostic.state, remediation: cliTool.diagnostic.remediation },
+  };
+}
+
+function cloneProvider(provider: ProviderDetection): ProviderDetection {
+  return {
+    ...provider,
+    ...(provider.models === undefined ? {} : { models: provider.models.map(cloneDetectedModel) }),
+  };
+}
+
+/**
+ * Stores may depend on engine contracts only through type imports. Keep this
+ * small reconciliation adapter at the store boundary so runtime publication
+ * remains directed engine → store, never the reverse.
+ */
+function configuredProviderRoleKey(
+  connection: Pick<ConfiguredProviderRuntime['connection'], 'role' | 'provider'>,
+): string {
+  return `${connection.role}\u0000${connection.provider}`;
+}
+
+function configuredProviderConnectionKey(
+  connection: ConfiguredProviderRuntime['connection'],
+): string {
+  return `${configuredProviderRoleKey(connection)}\u0000${connection.contextKey}`;
+}
+
+function cloneConfiguredProviderRuntime(
+  runtime: ConfiguredProviderRuntime,
+): ConfiguredProviderRuntime {
+  return {
+    connection: { ...runtime.connection },
+    state: runtime.state,
+    catalog: runtime.catalog,
+    models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
+    fetchedAt: runtime.fetchedAt,
+    validatedAt: runtime.validatedAt,
+    ...(runtime.failure === undefined ? {} : { failure: runtime.failure }),
+    ...(runtime.diagnostic === undefined ? {} : { diagnostic: runtime.diagnostic }),
+  };
+}
+
+/**
+ * Stores may consume engine contracts as types but cannot import engine
+ * runtime helpers. Keep this small clone/reconciliation adapter at the store
+ * boundary so publication remains engine → store and all persisted state is
+ * still exact role/tool/context scoped.
+ */
+function cliCatalogRoleKey(connection: Pick<ScopedCliCatalogConnection, 'role' | 'tool'>): string {
+  return `${connection.role}\u0000${connection.tool}`;
+}
+
+function cliCatalogConnectionKey(connection: ScopedCliCatalogConnection): string {
+  return `${cliCatalogRoleKey(connection)}\u0000${connection.contextKey}`;
+}
+
+function cloneScopedCliCatalogRuntime(runtime: ScopedCliCatalogRuntime): ScopedCliCatalogRuntime {
+  return {
+    connection: { ...runtime.connection },
+    state: runtime.state,
+    models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
+    fetchedAt: runtime.fetchedAt,
+    validatedAt: runtime.validatedAt,
+    ...(runtime.failure === undefined ? {} : { failure: runtime.failure }),
+  };
+}
+
+function runtimeFromCliCatalogAttempt(
+  input: Readonly<{
+    attempt: ScopedCliCatalogAttempt;
+    previous: ScopedCliCatalogRuntime | undefined;
+    observedAt: number;
+  }>,
+): ScopedCliCatalogRuntime {
+  const { attempt, previous, observedAt } = input;
+  if (attempt.outcome.kind === 'success') {
+    return {
+      connection: { ...attempt.connection },
+      state: 'fresh',
+      models: attempt.outcome.value.map(cloneDetectedModel),
+      fetchedAt: observedAt,
+      validatedAt: observedAt,
+    };
+  }
+  if (previous !== undefined && previous.state !== 'failed') {
+    return {
+      connection: { ...attempt.connection },
+      state: 'stale',
+      models: previous.models === null ? null : previous.models.map(cloneDetectedModel),
+      fetchedAt: previous.fetchedAt,
+      validatedAt: observedAt,
+      failure: attempt.outcome.kind,
+    };
+  }
+  return {
+    connection: { ...attempt.connection },
+    state: 'failed',
+    models: null,
+    fetchedAt: null,
+    validatedAt: observedAt,
+    failure: attempt.outcome.kind,
+  };
+}
+
+function reconcileCliCatalogAttemptsAtStoreBoundary(
+  input: Readonly<{
+    previous: readonly ScopedCliCatalogRuntime[];
+    attempts: readonly ScopedCliCatalogAttempt[];
+    observedAt: number;
+  }>,
+): ScopedCliCatalogRuntime[] {
+  const observedRoleKeys = new Set(
+    input.attempts.map((attempt) => cliCatalogRoleKey(attempt.connection)),
+  );
+  const observedConnectionKeys = new Set(
+    input.attempts.map((attempt) => cliCatalogConnectionKey(attempt.connection)),
+  );
+  const previousByConnection = new Map<string, ScopedCliCatalogRuntime>();
+  const next = new Map<string, ScopedCliCatalogRuntime>();
+
+  for (const runtime of input.previous) {
+    const key = cliCatalogConnectionKey(runtime.connection);
+    previousByConnection.set(key, runtime);
+    if (
+      !observedRoleKeys.has(cliCatalogRoleKey(runtime.connection)) ||
+      observedConnectionKeys.has(key)
+    ) {
+      next.set(key, cloneScopedCliCatalogRuntime(runtime));
+    }
+  }
+  for (const attempt of input.attempts) {
+    const key = cliCatalogConnectionKey(attempt.connection);
+    next.set(
+      key,
+      runtimeFromCliCatalogAttempt({
+        attempt,
+        previous: previousByConnection.get(key),
+        observedAt: input.observedAt,
+      }),
+    );
+  }
+  return [...next.values()].map(cloneScopedCliCatalogRuntime);
+}
+
+function findScopedCliCatalogRuntimeAtStoreBoundary(
+  runtimes: readonly ScopedCliCatalogRuntime[],
+  connection: Pick<ScopedCliCatalogConnection, 'role' | 'tool'>,
+): ScopedCliCatalogRuntime | null {
+  const roleKey = cliCatalogRoleKey(connection);
+  const matches = runtimes.filter((runtime) => cliCatalogRoleKey(runtime.connection) === roleKey);
+  return matches.length === 1 && matches[0] !== undefined
+    ? cloneScopedCliCatalogRuntime(matches[0])
+    : null;
+}
+
+function findGenericCliCatalogRuntimeAtStoreBoundary(
+  runtimes: readonly ScopedCliCatalogRuntime[],
+  tool: CliToolId,
+): ScopedCliCatalogRuntime | null {
+  const matches = runtimes.filter((runtime) => runtime.connection.tool === tool);
+  return matches.length === 1 && matches[0] !== undefined
+    ? cloneScopedCliCatalogRuntime(matches[0])
+    : null;
+}
+
+function reconcileConfiguredProviderOutcomes(input: {
+  previous: readonly ConfiguredProviderRuntime[];
+  outcomes: readonly ConfiguredProviderOutcome[];
+  observedAt: number;
+}): ConfiguredProviderRuntime[] {
+  const priorByConnection = new Map(
+    input.previous.map((entry) => [configuredProviderConnectionKey(entry.connection), entry]),
+  );
+  const nextByRole = new Map(
+    input.previous.map((entry) => [configuredProviderRoleKey(entry.connection), entry]),
+  );
+
+  for (const configured of input.outcomes) {
+    const previous = priorByConnection.get(configuredProviderConnectionKey(configured.connection));
+    if (configured.outcome.kind === 'success') {
+      nextByRole.set(configuredProviderRoleKey(configured.connection), {
+        connection: { ...configured.connection },
+        state: 'fresh',
+        catalog: configured.outcome.catalog,
+        models: configured.outcome.models.map(cloneDetectedModel),
+        fetchedAt: input.observedAt,
+        validatedAt: input.observedAt,
+      });
+      continue;
+    }
+
+    if (previous !== undefined && previous.state !== 'failed') {
+      nextByRole.set(configuredProviderRoleKey(configured.connection), {
+        connection: { ...configured.connection },
+        state: 'stale',
+        catalog: previous.catalog,
+        models: previous.models === null ? null : previous.models.map(cloneDetectedModel),
+        fetchedAt: previous.fetchedAt,
+        validatedAt: input.observedAt,
+        failure: configured.outcome.failure,
+        diagnostic: configured.outcome.diagnostic,
+      });
+      continue;
+    }
+
+    nextByRole.set(configuredProviderRoleKey(configured.connection), {
+      connection: { ...configured.connection },
+      state: 'failed',
+      catalog: null,
+      models: null,
+      fetchedAt: null,
+      validatedAt: input.observedAt,
+      failure: configured.outcome.failure,
+      diagnostic: configured.outcome.diagnostic,
+    });
+  }
+
+  return [...nextByRole.values()].map(cloneConfiguredProviderRuntime);
+}
+
+function configuredProviderFailureKind(error: DetectionSourceError): ProviderCatalogFailureKind {
+  switch (error.kind) {
+    case 'request-failed':
+      return 'request-failed';
+    case 'invalid-response':
+      return 'malformed';
+    case 'missing-credential':
+      return 'missing-credential';
+    case 'invalid-credential':
+      return 'invalid-credential';
+    case 'policy-denied':
+      return 'policy-denied';
+    case 'timeout':
+      return 'timeout';
+    case 'unsupported':
+      return 'endpoint-invalid';
+    case 'offline':
+      return 'offline';
+  }
+}
+
+function staleConfiguredProviderRuntimes(input: {
+  previous: readonly ConfiguredProviderRuntime[];
+  matchingOutcomes?: readonly ConfiguredProviderOutcome[] | undefined;
+  error: DetectionSourceError;
+  observedAt: number;
+}): ConfiguredProviderRuntime[] {
+  const matchingConnections =
+    input.matchingOutcomes === undefined
+      ? null
+      : new Set(
+          input.matchingOutcomes.map((configured) =>
+            configuredProviderConnectionKey(configured.connection),
+          ),
+        );
+  const failure = configuredProviderFailureKind(input.error);
+
+  return input.previous.map((runtime) => {
+    const matches =
+      matchingConnections === null ||
+      matchingConnections.has(configuredProviderConnectionKey(runtime.connection));
+    if (!matches || runtime.state === 'failed') return cloneConfiguredProviderRuntime(runtime);
+
+    return {
+      connection: { ...runtime.connection },
+      state: 'stale',
+      catalog: runtime.catalog,
+      models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
+      fetchedAt: runtime.fetchedAt,
+      validatedAt: input.observedAt,
+      failure,
+      diagnostic: 'Configured provider catalog refresh did not complete.',
+    };
+  });
+}
+
+function freezeDetection(input: {
+  providers: readonly ProviderDetection[];
+  cliTools: readonly CliToolDetection[];
+  providerOutcomes: readonly ConfiguredProviderRuntime[];
+  cliCatalogOutcomes?: readonly ScopedCliCatalogRuntime[] | undefined;
+  refresh: DiscoveryRefreshState;
+}): DetectionStoreState {
+  return deepFreeze({
+    providers: input.providers.map(cloneProvider),
+    cliTools: input.cliTools.map(cloneCliTool),
+    providerOutcomes: input.providerOutcomes.map(cloneConfiguredProviderRuntime),
+    cliCatalogOutcomes: (input.cliCatalogOutcomes ?? []).map(cloneScopedCliCatalogRuntime),
+    refresh: input.refresh,
+  });
+}
+
+function freezeModels(models: readonly DetectedModel[]): readonly DetectedModel[] {
   return deepFreeze(models.map(cloneDetectedModel));
+}
+
+function freezeConfiguredProviders(
+  runtime: readonly ConfiguredProviderRuntime[],
+): Readonly<Record<string, ConfiguredProviderRuntime>> {
+  const result: Record<string, ConfiguredProviderRuntime> = {};
+  for (const entry of runtime) {
+    result[configuredProviderRoleKey(entry.connection)] = deepFreeze(
+      cloneConfiguredProviderRuntime(entry),
+    );
+  }
+  return deepFreeze(result);
+}
+
+function configuredProviderValues(
+  providers: Readonly<Record<string, ConfiguredProviderRuntime>>,
+): readonly ConfiguredProviderRuntime[] {
+  return Object.values(providers);
+}
+
+function freezeCliCatalogs(
+  runtimes: readonly ScopedCliCatalogRuntime[],
+): Readonly<Record<string, ScopedCliCatalogRuntime>> {
+  const result: Record<string, ScopedCliCatalogRuntime> = {};
+  for (const runtime of runtimes) {
+    result[cliCatalogConnectionKey(runtime.connection)] = deepFreeze(
+      cloneScopedCliCatalogRuntime(runtime),
+    );
+  }
+  return deepFreeze(result);
+}
+
+function cliCatalogValues(
+  catalogs: Readonly<Record<string, ScopedCliCatalogRuntime>>,
+): readonly ScopedCliCatalogRuntime[] {
+  return Object.values(catalogs).map(cloneScopedCliCatalogRuntime);
+}
+
+function staleCliCatalogRuntimes(input: {
+  previous: readonly ScopedCliCatalogRuntime[];
+  observedAt: number;
+  failure: ScopedCliCatalogRuntime['failure'];
+}): ScopedCliCatalogRuntime[] {
+  return input.previous.map((runtime) => {
+    if (runtime.state === 'failed') return cloneScopedCliCatalogRuntime(runtime);
+    return {
+      connection: { ...runtime.connection },
+      state: 'stale',
+      models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
+      fetchedAt: runtime.fetchedAt,
+      validatedAt: input.observedAt,
+      ...(input.failure === undefined ? {} : { failure: input.failure }),
+    };
+  });
+}
+
+function cliCatalogFailure(error: DetectionSourceError): ScopedCliCatalogRuntime['failure'] {
+  switch (error.kind) {
+    case 'missing-credential':
+      return 'missing-credential';
+    case 'invalid-credential':
+      return 'invalid-credential';
+    case 'policy-denied':
+      return 'policy-denied';
+    case 'timeout':
+      return 'timeout';
+    case 'unsupported':
+      return 'unsupported';
+    case 'offline':
+      return 'offline';
+    case 'invalid-response':
+      return 'malformed';
+    case 'request-failed':
+      return 'offline';
+  }
+}
+
+function reconciledCliCatalogs(
+  input: Readonly<{
+    previous: readonly ScopedCliCatalogRuntime[];
+    outcome: DetectionSourceOutcome<CliModelSnapshot>;
+    observedAt: number;
+  }>,
+): readonly ScopedCliCatalogRuntime[] {
+  switch (input.outcome.kind) {
+    case 'fresh':
+      return reconcileCliCatalogAttemptsAtStoreBoundary({
+        previous: input.previous,
+        attempts: input.outcome.snapshot.value,
+        observedAt: input.observedAt,
+      });
+    case 'stale':
+      return staleCliCatalogRuntimes({
+        previous: input.previous,
+        observedAt: input.observedAt,
+        failure: cliCatalogFailure(
+          input.outcome.snapshot.error ?? {
+            kind: 'request-failed',
+            message: 'CLI model discovery refresh failed.',
+          },
+        ),
+      });
+    case 'failed':
+      return staleCliCatalogRuntimes({
+        previous: input.previous,
+        observedAt: input.observedAt,
+        failure: cliCatalogFailure(input.outcome.error),
+      });
+    case 'not-run':
+      return input.previous.map(cloneScopedCliCatalogRuntime);
+  }
 }
 
 function freezeCatalog(catalog: ModelsDevCatalog): ModelsDevCatalog {
   return deepFreeze(structuredClone(catalog));
 }
 
-export const modelCacheStore = {
-  ...storeBase(store),
+function cloneError(error: DetectionSourceError): DetectionSourceError {
+  return { kind: error.kind, message: error.message };
+}
 
-  setProviderModels(provider: ProviderId, models: DetectedModel[]): void {
-    const frozen = freezeModels(models);
-    store.set((prev) => ({
-      ...prev,
-      providers: {
-        ...prev.providers,
-        [provider]: { models: frozen, fetchedAt: Date.now(), isStale: false },
+function sourceContextsMatch(
+  left: DiscoverySourceContexts,
+  right: DiscoverySourceContexts,
+): boolean {
+  return (
+    left.readiness === right.readiness &&
+    left.modelsDev === right.modelsDev &&
+    left.cliModels === right.cliModels
+  );
+}
+
+function sourceContext<Value extends object>(outcome: DetectionSourceOutcome<Value>): string {
+  switch (outcome.kind) {
+    case 'fresh':
+    case 'stale':
+      return outcome.snapshot.contextKey;
+    case 'failed':
+    case 'not-run':
+      return outcome.contextKey;
+  }
+}
+
+function modelsDevContext(outcome: ModelsDevRefreshOutcome): string {
+  switch (outcome.kind) {
+    case 'cached':
+    case 'fresh':
+    case 'not-modified':
+    case 'stale':
+      return outcome.snapshot.contextKey;
+    case 'failed':
+    case 'not-run':
+      return outcome.contextKey;
+  }
+}
+
+function contextsFromOutcomes(outcomes: DetectionRefreshOutcomes): DiscoverySourceContexts {
+  return {
+    readiness: sourceContext(outcomes.readiness),
+    modelsDev: modelsDevContext(outcomes.modelsDev),
+    cliModels: sourceContext(outcomes.cliModels),
+  };
+}
+
+function sourceRefresh<Value extends object>(
+  previous: DiscoverySourceRefresh,
+  outcome: DetectionSourceOutcome<Value>,
+): DiscoverySourceRefresh {
+  switch (outcome.kind) {
+    case 'fresh':
+      return {
+        outcome: 'fresh',
+        refreshing: false,
+        generation: outcome.snapshot.generation,
+        requestId: outcome.snapshot.requestId,
+        fetchedAt: outcome.snapshot.fetchedAt,
+        validatedAt: outcome.snapshot.validatedAt,
+        error: null,
+      };
+    case 'stale':
+      return {
+        outcome: 'stale',
+        refreshing: false,
+        generation: outcome.snapshot.generation,
+        requestId: outcome.snapshot.requestId,
+        fetchedAt: outcome.snapshot.fetchedAt,
+        validatedAt: outcome.snapshot.validatedAt,
+        error: outcome.snapshot.error === undefined ? null : cloneError(outcome.snapshot.error),
+      };
+    case 'failed':
+      return {
+        ...previous,
+        outcome: 'failed',
+        refreshing: false,
+        generation: outcome.generation,
+        requestId: outcome.requestId,
+        validatedAt: outcome.checkedAt,
+        error: cloneError(outcome.error),
+      };
+    case 'not-run':
+      return { ...previous, outcome: 'not-run', refreshing: false, error: null };
+  }
+}
+
+function modelsDevRefresh(
+  previous: DiscoverySourceRefresh,
+  outcome: ModelsDevRefreshOutcome,
+): DiscoverySourceRefresh {
+  switch (outcome.kind) {
+    case 'cached':
+    case 'fresh':
+    case 'not-modified':
+      return {
+        outcome: outcome.kind,
+        refreshing: false,
+        generation: outcome.snapshot.generation,
+        requestId: outcome.snapshot.requestId,
+        fetchedAt: outcome.snapshot.fetchedAt,
+        validatedAt: outcome.snapshot.validatedAt,
+        error: null,
+      };
+    case 'stale':
+      return {
+        outcome: 'stale',
+        refreshing: false,
+        generation: outcome.snapshot.generation,
+        requestId: outcome.snapshot.requestId,
+        fetchedAt: outcome.snapshot.fetchedAt,
+        validatedAt: outcome.snapshot.validatedAt,
+        error: cloneError(
+          outcome.snapshot.error ?? { kind: 'request-failed', message: outcome.failure.message },
+        ),
+      };
+    case 'failed':
+      return {
+        ...previous,
+        outcome: 'failed',
+        refreshing: false,
+        generation: outcome.generation,
+        requestId: outcome.requestId,
+        validatedAt: outcome.checkedAt,
+        error: { kind: 'request-failed', message: outcome.failure.message },
+      };
+    case 'not-run':
+      return { ...previous, outcome: 'not-run', refreshing: false, error: null };
+  }
+}
+
+function legacyOutcomes(
+  result: DetectionServiceResult,
+  contexts: DiscoverySourceContexts,
+): DetectionRefreshOutcomes {
+  const generation = result.generation ?? 0;
+  const snapshot = <Value extends object>(value: Value, contextKey: string) => ({
+    generation,
+    requestId: generation,
+    fetchedAt: Date.now(),
+    validatedAt: Date.now(),
+    stale: false,
+    contextKey,
+    value,
+  });
+  return {
+    readiness: {
+      kind: 'fresh',
+      origin: 'request',
+      snapshot: {
+        source: 'readiness',
+        ...snapshot(
+          {
+            providers: result.providers,
+            cliTools: result.cliTools,
+            ...(result.configuredProviderOutcomes === undefined
+              ? {}
+              : { configuredProviderOutcomes: result.configuredProviderOutcomes }),
+          },
+          contexts.readiness,
+        ),
       },
-    }));
+    },
+    modelsDev:
+      result.catalog === null
+        ? {
+            kind: 'not-run',
+            source: 'models-dev',
+            contextKey: contexts.modelsDev,
+            reason: 'uninitialized',
+          }
+        : {
+            kind: 'fresh',
+            origin: 'request',
+            snapshot: {
+              source: 'models-dev',
+              ...snapshot(result.catalog, contexts.modelsDev),
+            },
+          },
+    cliModels: {
+      kind: 'fresh',
+      origin: 'request',
+      snapshot: { source: 'cli-models', ...snapshot(result.cliModels, contexts.cliModels) },
+    },
+  };
+}
+
+function freshness<Value extends object>(outcome: DetectionSourceOutcome<Value>): Value | null {
+  return outcome.kind === 'fresh' || outcome.kind === 'stale' ? outcome.snapshot.value : null;
+}
+
+function modelsDevValue(outcome: ModelsDevRefreshOutcome): ModelsDevCatalog | null {
+  switch (outcome.kind) {
+    case 'cached':
+    case 'fresh':
+    case 'not-modified':
+    case 'stale':
+      return outcome.snapshot.value;
+    case 'failed':
+    case 'not-run':
+      return null;
+  }
+}
+
+function providerModels(
+  previous: Partial<Record<ProviderId, ProviderModelCache>>,
+  providers: readonly ProviderDetection[],
+  source: DiscoverySourceRefresh,
+): Partial<Record<ProviderId, ProviderModelCache>> {
+  if (providers.length === 0) return {};
+  const next = { ...previous };
+  for (const provider of providers) {
+    if (provider.models === undefined) continue;
+    next[provider.provider] = {
+      models: freezeModels(provider.models),
+      fetchedAt: source.fetchedAt,
+      isStale: source.outcome === 'stale' || source.outcome === 'failed',
+    };
+  }
+  return next;
+}
+
+function setState(
+  next: Omit<ModelCacheState, 'detection'> & { detection: DetectionStoreState },
+): void {
+  store.set(next);
+}
+
+function resetAll(): void {
+  activeContexts = null;
+  nextPublicationId = 0;
+  store.reset();
+}
+
+export const modelCacheStore = {
+  get: store.get,
+  subscribe: store.subscribe,
+  use: store.use,
+  reset: resetAll,
+
+  getDetection(): DetectionStoreState {
+    return store.get().detection;
   },
 
-  getProviderModels(provider: ProviderId): readonly DetectedModel[] | null {
-    const cache = store.get().providers[provider];
-    if (!cache || cache.isStale) return null;
-    if (isExpired(cache.fetchedAt)) return null;
-    return cache.models;
-  },
-
-  // Object.entries is safe here: runs inside store.set(), not inside useStores() Proxy tracking.
-  invalidateAll(): void {
-    store.set((prev) => {
-      const providers: Partial<Record<ProviderId, ProviderModelCache>> = {};
-      for (const [k, v] of Object.entries(prev.providers)) {
-        if (!isProviderId(k)) continue;
-        if (v) providers[k] = { ...v, isStale: true };
-      }
-      return { ...prev, providers, modelsDevCatalog: null, modelsDevFetchedAt: null };
+  resetDetection(): void {
+    activeContexts = null;
+    const current = store.get();
+    const refresh = initialRefresh();
+    setState({
+      ...current,
+      detection: freezeDetection({
+        providers: [],
+        cliTools: [],
+        providerOutcomes: [],
+        cliCatalogOutcomes: [],
+        refresh,
+      }),
+      configuredProviders: {},
+      cliCatalogs: {},
+      cliCatalogsLoaded: false,
+      refresh,
     });
   },
 
+  setDetection(input: {
+    providers: readonly ProviderDetection[];
+    cliTools: readonly CliToolDetection[];
+    providerOutcomes?: readonly ConfiguredProviderRuntime[] | undefined;
+  }): void {
+    const current = store.get();
+    const providerOutcomes = input.providerOutcomes ?? [];
+    setState({
+      ...current,
+      configuredProviders: freezeConfiguredProviders(providerOutcomes),
+      detection: freezeDetection({
+        providers: input.providers,
+        cliTools: input.cliTools,
+        providerOutcomes,
+        cliCatalogOutcomes: current.detection.cliCatalogOutcomes,
+        refresh: current.refresh,
+      }),
+    });
+  },
+
+  beginRefresh(input: { contexts: DiscoverySourceContexts }): DiscoveryRefreshRequest {
+    const { contexts } = input;
+    const contextChanged =
+      activeContexts !== null && !sourceContextsMatch(activeContexts, contexts);
+    activeContexts = contexts;
+    const id = nextPublicationId + 1;
+    nextPublicationId = id;
+    const current = store.get();
+    const base = contextChanged ? initialState() : current;
+    const refresh: DiscoveryRefreshState = {
+      ...base.refresh,
+      publicationId: id,
+      readiness: { ...base.refresh.readiness, refreshing: true },
+      modelsDev: { ...base.refresh.modelsDev, refreshing: true },
+      cliModels: { ...base.refresh.cliModels, refreshing: true },
+    };
+    setState({
+      ...base,
+      detection: freezeDetection({
+        providers: base.detection.providers,
+        cliTools: base.detection.cliTools,
+        providerOutcomes: base.detection.providerOutcomes,
+        cliCatalogOutcomes: base.detection.cliCatalogOutcomes,
+        refresh,
+      }),
+      refresh,
+    });
+    return { id, contexts };
+  },
+
+  hydrateDetection(input: DetectionStoreHydration): boolean {
+    if (activeContexts === null) activeContexts = input.contexts;
+    else if (!sourceContextsMatch(activeContexts, input.contexts)) return false;
+    const current = store.get();
+    if (input.generation < current.refresh.generation) return false;
+    const readiness: DiscoverySourceRefresh = {
+      outcome: 'stale',
+      refreshing: false,
+      generation: input.generation,
+      requestId: input.requestId,
+      fetchedAt: input.fetchedAt,
+      validatedAt: input.validatedAt,
+      error: null,
+    };
+    const refresh: DiscoveryRefreshState = {
+      ...current.refresh,
+      generation: input.generation,
+      readiness,
+    };
+    setState({
+      ...current,
+      detection: freezeDetection({
+        providers: input.providers,
+        cliTools: input.cliTools,
+        providerOutcomes: current.detection.providerOutcomes,
+        cliCatalogOutcomes: current.detection.cliCatalogOutcomes,
+        refresh,
+      }),
+      providers: providerModels(current.providers, input.providers, readiness),
+      refresh,
+    });
+    return true;
+  },
+
+  publish(input: { result: DetectionServiceResult; request: DiscoveryRefreshRequest }): boolean {
+    const current = store.get();
+    if (current.refresh.publicationId !== input.request.id) return false;
+    if (activeContexts === null || !sourceContextsMatch(activeContexts, input.request.contexts)) {
+      return false;
+    }
+    const outcomes = input.result.outcomes ?? legacyOutcomes(input.result, input.request.contexts);
+    const incomingContexts = contextsFromOutcomes(outcomes);
+    if (!sourceContextsMatch(input.request.contexts, incomingContexts)) return false;
+    const generation = input.result.generation ?? current.refresh.generation + 1;
+    if (generation < current.refresh.generation) return false;
+
+    const readiness = sourceRefresh(current.refresh.readiness, outcomes.readiness);
+    const modelsDev = modelsDevRefresh(current.refresh.modelsDev, outcomes.modelsDev);
+    const cliModelsRefresh = sourceRefresh(current.refresh.cliModels, outcomes.cliModels);
+    const refresh: DiscoveryRefreshState = {
+      generation,
+      publicationId: current.refresh.publicationId,
+      readiness,
+      modelsDev,
+      cliModels: cliModelsRefresh,
+    };
+    const readinessValue = freshness(outcomes.readiness);
+    const catalog = modelsDevValue(outcomes.modelsDev);
+    const providerCaches =
+      readinessValue === null
+        ? current.providers
+        : readinessValue.configuredProviderOutcomes === undefined
+          ? providerModels(current.providers, readinessValue.providers, readiness)
+          : current.providers;
+    const configuredProviders = (() => {
+      const previous = configuredProviderValues(current.configuredProviders);
+      const observedAt = readiness.validatedAt ?? Date.now();
+      switch (outcomes.readiness.kind) {
+        case 'fresh': {
+          const configured = outcomes.readiness.snapshot.value.configuredProviderOutcomes;
+          if (configured === undefined) return current.configuredProviders;
+          return freezeConfiguredProviders(
+            reconcileConfiguredProviderOutcomes({ previous, outcomes: configured, observedAt }),
+          );
+        }
+        case 'stale': {
+          const configured = outcomes.readiness.snapshot.value.configuredProviderOutcomes;
+          if (configured === undefined) return current.configuredProviders;
+          return freezeConfiguredProviders(
+            staleConfiguredProviderRuntimes({
+              previous,
+              matchingOutcomes: configured,
+              error: outcomes.readiness.snapshot.error ?? {
+                kind: 'request-failed',
+                message: 'Runner readiness refresh failed.',
+              },
+              observedAt,
+            }),
+          );
+        }
+        case 'failed':
+          return freezeConfiguredProviders(
+            staleConfiguredProviderRuntimes({
+              previous,
+              error: outcomes.readiness.error,
+              observedAt,
+            }),
+          );
+        case 'not-run':
+          return current.configuredProviders;
+      }
+    })();
+    const providerOutcomes = configuredProviderValues(configuredProviders);
+    const cliCatalogRuntimes = reconciledCliCatalogs({
+      previous: cliCatalogValues(current.cliCatalogs),
+      outcome: outcomes.cliModels,
+      observedAt: cliModelsRefresh.validatedAt ?? Date.now(),
+    });
+    const cliCatalogs = freezeCliCatalogs(cliCatalogRuntimes);
+    const cliCatalogsLoaded =
+      current.cliCatalogsLoaded ||
+      outcomes.cliModels.kind === 'fresh' ||
+      outcomes.cliModels.kind === 'stale' ||
+      outcomes.cliModels.kind === 'failed';
+
+    setState({
+      detection: freezeDetection({
+        providers: readinessValue === null ? current.detection.providers : readinessValue.providers,
+        cliTools: readinessValue === null ? current.detection.cliTools : readinessValue.cliTools,
+        providerOutcomes,
+        cliCatalogOutcomes: cliCatalogRuntimes,
+        refresh,
+      }),
+      providers: providerCaches,
+      configuredProviders,
+      cliCatalogs,
+      cliCatalogsLoaded,
+      cliModels: current.cliModels,
+      modelsDevCatalog: catalog === null ? current.modelsDevCatalog : freezeCatalog(catalog),
+      modelsDevFetchedAt: catalog === null ? current.modelsDevFetchedAt : modelsDev.fetchedAt,
+      refresh,
+    });
+    return true;
+  },
+
+  setProviderModels(provider: ProviderId, models: DetectedModel[]): void {
+    const current = store.get();
+    const cache = { models: freezeModels(models), fetchedAt: Date.now(), isStale: false };
+    if (includes(CLI_TOOL_IDS, provider)) {
+      setState({
+        ...current,
+        cliModels: { ...current.cliModels, [provider]: cache },
+      });
+      return;
+    }
+    setState({
+      ...current,
+      providers: {
+        ...current.providers,
+        [provider]: cache,
+      },
+    });
+  },
+
+  getProviderModels(provider: ProviderId): readonly DetectedModel[] | null {
+    const current = store.get();
+    if (includes(CLI_TOOL_IDS, provider)) {
+      if (!current.cliCatalogsLoaded) return current.cliModels[provider]?.models ?? null;
+      // A generic tool lookup is deliberately denied when planner/implementer
+      // or two selected channels make the catalog ambiguous.
+      return (
+        findGenericCliCatalogRuntimeAtStoreBoundary(cliCatalogValues(current.cliCatalogs), provider)
+          ?.models ?? null
+      );
+    }
+    const roleScoped = configuredProviderValues(current.configuredProviders).filter(
+      (entry) => entry.connection.provider === provider,
+    );
+    if (roleScoped.length > 0)
+      return roleScoped.length === 1 ? (roleScoped[0]?.models ?? null) : null;
+    const cache = current.providers[provider];
+    return cache?.models ?? null;
+  },
+
+  getScopedProviderRuntime(input: {
+    role: ActiveRunnerRole;
+    provider: ApiProviderId;
+  }): ConfiguredProviderRuntime | null | undefined {
+    const configuredProviders = store.get().configuredProviders;
+    if (Object.keys(configuredProviders).length === 0) return undefined;
+    return configuredProviders[configuredProviderRoleKey(input)] ?? null;
+  },
+
+  getScopedCliCatalogRuntime(input: {
+    role: ActiveRunnerRole;
+    tool: CliToolId;
+  }): ScopedCliCatalogRuntime | null | undefined {
+    const current = store.get();
+    if (!current.cliCatalogsLoaded) return undefined;
+    return findScopedCliCatalogRuntimeAtStoreBoundary(cliCatalogValues(current.cliCatalogs), input);
+  },
+
   setModelsDevCatalog(catalog: ModelsDevCatalog): void {
-    store.set((prev) => ({
-      ...prev,
+    const current = store.get();
+    setState({
+      ...current,
       modelsDevCatalog: freezeCatalog(catalog),
       modelsDevFetchedAt: Date.now(),
-    }));
+    });
   },
 
   getModelsDevCatalog(): ModelsDevCatalog | null {
-    const { modelsDevCatalog, modelsDevFetchedAt } = store.get();
-    if (!modelsDevCatalog || modelsDevFetchedAt === null) return null;
-    if (Date.now() - modelsDevFetchedAt >= MODELS_DEV_TTL_MS) return null;
-    return modelsDevCatalog;
+    return store.get().modelsDevCatalog;
   },
 };

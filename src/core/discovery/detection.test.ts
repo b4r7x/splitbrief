@@ -7,6 +7,7 @@ import {
   DetectedModelSchema,
   DetectedPricingProvenanceSchema,
   DetectedPricingTierSchema,
+  PROVIDER_DETECTION_FAILURE_KINDS,
   ProviderDetectionSchema,
   type CliCompatibilityState,
   type CliDiagnostic,
@@ -63,6 +64,33 @@ function detectionFor(state: CliReadinessState): CliToolDetection {
 }
 
 describe('detection schemas', () => {
+  it('accepts per-provider oracle facts as an additive, legacy-tolerant field', () => {
+    const legacy = detectionFor('ready');
+    expect(CliToolDetectionSchema.parse(legacy).providerAuth).toBeUndefined();
+
+    const withFacts = {
+      ...legacy,
+      providerAuth: [
+        { provider: 'GitHub Copilot', source: 'oauth' },
+        { provider: 'Alibaba Coding Plan', source: 'api' },
+        { provider: 'OpenAI', source: 'env', envVar: 'OPENAI_API_KEY' },
+      ],
+    };
+    expect(CliToolDetectionSchema.parse(withFacts)).toEqual(withFacts);
+    expect(
+      CliToolDetectionSchema.safeParse({
+        ...legacy,
+        providerAuth: [{ provider: 'OpenAI', source: 'oauth', apiKey: 'sk-secret' }],
+      }).success,
+    ).toBe(false);
+    expect(
+      CliToolDetectionSchema.safeParse({
+        ...legacy,
+        providerAuth: [{ provider: '', source: 'oauth' }],
+      }).success,
+    ).toBe(false);
+  });
+
   it('round-trips provider model metadata, pricing tiers, and pricing provenance', () => {
     const pricingProvenance: DetectedPricingProvenance = {
       asOf: '2026-07-31',
@@ -128,6 +156,46 @@ describe('detection schemas', () => {
         provider,
         available: true,
         isLocal: false,
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(PROVIDER_DETECTION_FAILURE_KINDS)('round-trips a %s provider failure', (failure) => {
+    const detection = {
+      provider: 'openai',
+      available: false,
+      isLocal: false,
+      hasKey: true,
+      failure,
+      error: 'Provider model discovery failed.',
+    } as const;
+
+    expect(ProviderDetectionSchema.parse(JSON.parse(JSON.stringify(detection)) as unknown)).toEqual(
+      detection,
+    );
+  });
+
+  it('accepts cached provider payloads that predate the failure field', () => {
+    const legacy = {
+      provider: 'openai',
+      available: false,
+      isLocal: false,
+      hasKey: false,
+      error: 'Provider credential is not configured.',
+    };
+
+    const parsed = ProviderDetectionSchema.parse(legacy);
+    expect(parsed).toEqual(legacy);
+    expect(parsed.failure).toBeUndefined();
+  });
+
+  it('rejects provider failure values outside the known kinds', () => {
+    expect(
+      ProviderDetectionSchema.safeParse({
+        provider: 'openai',
+        available: false,
+        isLocal: false,
+        failure: 'unreachable',
       }).success,
     ).toBe(false);
   });
@@ -250,6 +318,33 @@ describe('detection schemas', () => {
       asOf: '2026-07-31',
       source: 'test fixture pricing record',
     });
+  });
+
+  it('round-trips and clones exact native catalog metadata without changing selection identity', () => {
+    const original = {
+      id: 'gpt-5.6-sol',
+      displayName: 'GPT-5.6 Sol',
+      nativeOrder: 2,
+      nativeDefault: true,
+      nativeHidden: false,
+      nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+      supportsReasoning: true,
+    };
+
+    const roundTripped = DetectedModelSchema.parse(JSON.parse(JSON.stringify(original)) as unknown);
+    const cloned = cloneDetectedModel(roundTripped);
+    if (!cloned.nativeReasoningEfforts) throw new Error('Expected cloned native reasoning efforts');
+
+    expect(roundTripped).toMatchObject({
+      id: 'gpt-5.6-sol',
+      displayName: 'GPT-5.6 Sol',
+      nativeOrder: 2,
+      nativeDefault: true,
+      nativeHidden: false,
+      nativeReasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+    });
+    expect(cloned.nativeReasoningEfforts).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(cloned.nativeReasoningEfforts).not.toBe(roundTripped.nativeReasoningEfforts);
   });
 
   it('requires absolute executable identity and actionable non-ready diagnostics', () => {

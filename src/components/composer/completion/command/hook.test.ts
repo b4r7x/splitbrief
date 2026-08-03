@@ -86,6 +86,7 @@ describe('useCommandCompletion submit routing', () => {
   it('sends an unmatched slash command to the dispatcher on Enter', async () => {
     const { ui, commandCalls, submits } = renderComposer();
 
+    await flushEffects();
     ui.stdin.write('/nope');
     await tick(20);
     await vi.waitFor(
@@ -110,6 +111,7 @@ describe('useCommandCompletion submit routing', () => {
   it('forwards an argument-bearing command unchanged on Enter', async () => {
     const { ui, commandCalls, submits } = renderComposer();
 
+    await flushEffects();
     ui.stdin.write('/copy path');
     await tick(20);
     await vi.waitFor(
@@ -134,6 +136,7 @@ describe('useCommandCompletion submit routing', () => {
   it('forwards /queue clear unchanged on Enter', async () => {
     const { ui, commandCalls } = renderComposer();
 
+    await flushEffects();
     ui.stdin.write('/queue clear');
     await tick(20);
     await vi.waitFor(
@@ -156,6 +159,7 @@ describe('useCommandCompletion submit routing', () => {
   it('runs the highlighted command when one matches the token', async () => {
     const { ui, commandCalls } = renderComposer();
 
+    await flushEffects();
     ui.stdin.write('/cop');
     await tick(20);
     await vi.waitFor(
@@ -199,6 +203,7 @@ describe('useCommandCompletion suppression', () => {
     inputHistoryStore.hydrate(['/sidebar', 'older-a', 'older-b']);
     const { ui } = renderComposer();
 
+    await flushEffects();
     ui.stdin.write(ARROW_UP);
     await tick(20);
     await vi.waitFor(
@@ -209,6 +214,7 @@ describe('useCommandCompletion suppression', () => {
     );
     expect(ui.lastFrame()).not.toContain('Toggle the sidebar');
 
+    await flushEffects();
     ui.stdin.write(ARROW_UP);
     await tick(20);
     await vi.waitFor(

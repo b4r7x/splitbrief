@@ -158,3 +158,50 @@ describe('selectRoutingProfile context cache', () => {
     expect(withDetected.routingDecision.contextLength).toBe(20_000);
   });
 });
+
+describe('selectRoutingProfile recovery override', () => {
+  it('uses the exact requested retry profile only for its target task', async () => {
+    const task = makeTask({ id: 'T010' });
+    const profiles = detectedFallbackProfiles();
+    const state = makeImplStateWithMetadata([task]);
+
+    const selected = await selectRoutingProfile({
+      wctx: makeTaskWorkflowContext({
+        retryProfileOverride: 'standard-worker',
+        retryProfileOverrideTaskId: task.id,
+      }),
+      state,
+      setTrackedState: () => {},
+      task,
+      taskIndex: 0,
+      resolvedProfiles: profiles,
+      taskBreakdowns: [],
+      getRunnerModelName,
+    });
+
+    expect(selected.ok).toBe(true);
+    if (!selected.ok) return;
+    expect(selected.selectedProfile).toBe(profiles[1]);
+    expect(selected.routingDecision.selectedProfile).toBe('standard-worker');
+
+    const otherTask = makeTask({ id: 'T011' });
+    const normal = await selectRoutingProfile({
+      wctx: makeTaskWorkflowContext({
+        retryProfileOverride: 'standard-worker',
+        retryProfileOverrideTaskId: task.id,
+      }),
+      state: makeImplStateWithMetadata([otherTask]),
+      setTrackedState: () => {},
+      task: otherTask,
+      taskIndex: 0,
+      resolvedProfiles: profiles,
+      taskBreakdowns: [],
+      getRunnerModelName,
+    });
+
+    expect(normal.ok).toBe(true);
+    if (!normal.ok) return;
+    expect(normal.selectedProfile).toBe(profiles[0]);
+    expect(normal.routingDecision.selectedProfile).toBe('cheap-detected-worker');
+  });
+});

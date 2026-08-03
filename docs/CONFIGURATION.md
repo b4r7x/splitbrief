@@ -133,7 +133,7 @@ OpenAI-compatible HTTP endpoint.
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `provider` | non-empty string | yes | `anthropic` \| `openrouter` \| `deepseek` \| `openai` \| `groq` \| `together` \| `ollama` \| `lm-studio` \| any custom name |
+| `provider` | non-empty string | yes | `anthropic` \| `openrouter` \| `deepseek` \| `openai` \| `groq` \| `together` \| `ollama` \| `ollama-cloud` \| `lm-studio` \| any custom name |
 | `service` | non-empty string | yes | Billing/identity service behind the provider. Back-filled from `API_PROVIDER_CATALOG` for admitted provider IDs; custom names must set it explicitly. |
 | `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. Back-filled for admitted provider IDs; custom names must set it explicitly. |
 | `apiBase` | non-empty string | yes | Base URL. For known providers, see "Default API base URLs" below. |
@@ -239,8 +239,9 @@ Source: `src/core/providers/catalog.ts`.
 | `openrouter` | `https://openrouter.ai/api/v1` |
 | `deepseek` | `https://api.deepseek.com/v1` |
 | `groq` | `https://api.groq.com/openai/v1` |
-| `together` | `https://api.together.xyz/v1` |
+| `together` | `https://api.together.ai/v1` |
 | `ollama` | `http://localhost:11434/v1` |
+| `ollama-cloud` | `https://ollama.com` |
 | `lm-studio` | `http://localhost:1234/v1` |
 
 **See also:** §3 `implementer`, §11 environment variables, [API-KEYS.md](./API-KEYS.md).
@@ -950,7 +951,8 @@ Source: `src/core/providers/catalog.ts`, `src/cli/setup.ts`, `src/lib/otel.ts`, 
 | `DEEPSEEK_API_KEY` | `deepseek` | |
 | `GROQ_API_KEY` | `groq` | |
 | `TOGETHER_API_KEY` | `together` | |
-| `OLLAMA_API_KEY` | `ollama` | Optional; usually unset. |
+| `OLLAMA_API_KEY` | `ollama-cloud` | Required for remote Ollama Cloud; it is never read or sent for local Ollama. |
+| `OLLAMA_LOCAL_API_KEY` | local `ollama` daemon | Optional. Only use it through `apiKey: env:OLLAMA_LOCAL_API_KEY` when your loopback daemon requires authentication. |
 
 Inline `apiKey` in YAML works. For official provider endpoints, it triggers a stderr warning recommending the env var. For known providers with a custom/proxy `apiBase`, keep the key inline because env-sourced provider keys are not sent to custom endpoints. Unknown providers without a built-in catalog entry must set `service`, `offering`, `apiBase`, and `apiKey` in YAML.
 
@@ -1227,11 +1229,14 @@ Credential prefix or env presence validates the configured offering but **never 
 | deepseek | deepseek | payg | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` | `sk-` | planner, implementer | api-metered |
 | openai | openai | payg | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `sk-` | planner, implementer | api-metered |
 | groq | groq | payg | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` | `gsk_` | planner, implementer | provider-dependent |
-| together | together | payg | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` | — | planner, implementer | api-metered |
-| ollama | ollama | local | `http://localhost:11434/v1` | `OLLAMA_API_KEY` | — | implementer | local |
+| together | together | payg | `https://api.together.ai/v1` | `TOGETHER_API_KEY` | — | planner, implementer | api-metered |
+| ollama | ollama | local | `http://localhost:11434/v1` | — | — | implementer | local |
+| ollama-cloud | ollama | payg | `https://ollama.com` | `OLLAMA_API_KEY` | — | planner, implementer | provider-dependent |
 | lm-studio | lm-studio | local | `http://localhost:1234/v1` | — | — | implementer | local |
 
-**Role restriction:** only `ollama` and `lm-studio` are implementer-only. Configuring them as `planner` fails schema validation. `OLLAMA_API_KEY` is optional for default loopback use.
+**Role restriction:** only `ollama` and `lm-studio` are implementer-only. Configuring them as `planner` fails schema validation.
+
+`ollama` and `ollama-cloud` are distinct providers. Local `ollama` talks only to a loopback daemon and normally omits `apiKey`; if that daemon requires authentication, the only accepted reference is `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never resolved or sent to local Ollama. Remote `ollama-cloud` is the fixed `https://ollama.com` API, uses `OLLAMA_API_KEY`, and gets its live account inventory from `/api/tags`.
 
 **Deferred / not admitted:** researched subscription coding plans, retired consumer CLI entitlements, generic self-hosted OpenAI-compatible shims, and every other candidate without a PASS verdict have **no** first-class provider ID, descriptor, or support row here. Verdict-pending offerings remain absent until a credentialed production gate passes. Per-offering verdicts and dates: [Excluded API offerings](#excluded-api-offerings). Excluded CLI candidates: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#excluded-researched-candidates).
 
@@ -1245,6 +1250,7 @@ Recommendation labels mirror `src/core/providers/known-models.ts`. A row becomes
 | openrouter | anthropic/claude-sonnet-4.6 | compatible-only | Bundled cloud default. T-080: OMIT-NOT-APPLICABLE — no evaluation metrics recorded. |
 | groq | openai/gpt-oss-120b | compatible-only | Cheap hosted implementer; uses Groq `max_completion_tokens` contract. T-080: OMIT-NOT-APPLICABLE. |
 | ollama | qwen3-coder:30b | compatible-only | Local default; context limit discovered from the daemon — not hard-coded. T-080: OMIT-NOT-APPLICABLE. |
+| ollama-cloud | kimi-k2.7-code | compatible-only | Cloud fallback; the authenticated `/api/tags` account inventory is authoritative. |
 | lm-studio | qwen2.5-coder-7b | compatible-only | Local default; context limit discovered from the daemon. T-080: OMIT-NOT-APPLICABLE. |
 | openrouter | openrouter/free | compatible-only | Opportunistic free pool — not a reproducible default. |
 | anthropic | claude-sonnet-4-6 | compatible-only | Direct API default; priced via models.dev / bundled metadata. |
@@ -1318,7 +1324,7 @@ implementer:
   provider: together
   service: together
   offering: payg
-  apiBase: https://api.together.xyz/v1
+  apiBase: https://api.together.ai/v1
   model: zai-org/GLM-5.1
 ```
 
@@ -1331,6 +1337,17 @@ implementer:
   offering: local
   apiBase: http://localhost:11434/v1
   model: qwen3-coder:30b
+```
+
+<!-- config-api-minimal: ollama-cloud -->
+```yaml
+implementer:
+  kind: api
+  provider: ollama-cloud
+  service: ollama
+  offering: payg
+  apiBase: https://ollama.com
+  model: kimi-k2.7-code
 ```
 
 <!-- config-api-minimal: lm-studio -->

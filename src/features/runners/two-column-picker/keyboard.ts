@@ -17,6 +17,10 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   leftCurrentItem: L | undefined;
   leftFiltered: L[];
   filteredRight: RightItemOrVirtual<R>[];
+  leftFilter: string;
+  rightFilter: string;
+  /** Virtual rows pinned ahead of the right matches; the first real match sits at this index. */
+  rightVirtualCount: number;
   leftEffectiveIndex: number;
   rightEffectiveIndex: number;
   rightItems: R[];
@@ -29,6 +33,7 @@ export interface KeyboardContext<L extends FilterableItem, R extends { id: strin
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
   maxVisible: number;
+  onDisabledSelect?: ((item: L) => void) | undefined;
   setActiveColumn: (col: 'left' | 'right') => void;
   setSelectedLeftKey: (key: string | null) => void;
   setLeftFilter: (fn: (prev: string) => string) => void;
@@ -52,12 +57,21 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
     return: boolean;
     backspace: boolean;
     delete: boolean;
-    shift: boolean;
     tab: boolean;
   },
   ctx: KeyboardContext<L, R>,
 ): void {
   if (key.escape) {
+    if (ctx.leftActive && ctx.leftFilter !== '') {
+      ctx.setLeftFilter(() => '');
+      ctx.resetRight(ctx.setLeftIndex(0));
+      return;
+    }
+    if (ctx.rightActive && ctx.rightFilter !== '') {
+      ctx.setRightFilter(() => '');
+      ctx.setRightIndex(ctx.rightVirtualCount);
+      return;
+    }
     ctx.onCancel();
     return;
   }
@@ -117,7 +131,11 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
   if (key.return) {
     if (ctx.maxVisible <= 0) return;
     if (ctx.leftActive) {
-      if (!ctx.leftCurrentItem || ctx.isDisabled) return;
+      if (!ctx.leftCurrentItem) return;
+      if (ctx.isDisabled) {
+        ctx.onDisabledSelect?.(ctx.leftCurrentItem);
+        return;
+      }
       if (ctx.isSpecial) {
         ctx.onConfirm(ctx.leftCurrentItem, null);
         return;
@@ -138,24 +156,27 @@ export function handleKeyboardInput<L extends FilterableItem, R extends { id: st
     return;
   }
 
+  // Type-anywhere: every printable key edits the focused column's query, no matter
+  // which row the cursor sits on — including the pinned custom-command launcher —
+  // and the cursor then lands on the first visible match.
   if (key.backspace || key.delete) {
-    if (ctx.leftActive && !ctx.isSpecial) {
+    if (ctx.leftActive) {
       ctx.setLeftFilter((prev) => prev.slice(0, -1));
       ctx.resetRight(ctx.setLeftIndex(0));
     } else if (ctx.rightActive) {
       ctx.setRightFilter((prev) => prev.slice(0, -1));
-      ctx.setRightIndex(0);
+      ctx.setRightIndex(ctx.rightVirtualCount);
     }
     return;
   }
 
-  if (input && !key.ctrl && !key.meta) {
-    if (ctx.leftActive && !ctx.isSpecial) {
+  if (input && !key.ctrl && !key.meta && !key.tab) {
+    if (ctx.leftActive) {
       ctx.setLeftFilter((prev) => prev + input);
       ctx.resetRight(ctx.setLeftIndex(0));
     } else if (ctx.rightActive) {
       ctx.setRightFilter((prev) => prev + input);
-      ctx.setRightIndex(0);
+      ctx.setRightIndex(ctx.rightVirtualCount);
     }
   }
 }

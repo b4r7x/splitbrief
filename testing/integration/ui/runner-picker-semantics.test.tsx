@@ -26,8 +26,10 @@ import {
 } from '../../../src/core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../src/core/providers/catalog.js';
 import { CLI_TOOL_IDS, PLANNER_CLI_TOOL_IDS } from '../../../src/core/runners/cli-tool-catalog.js';
-import { META_PROVIDER_IDS } from '../../../src/core/schemas/enums.js';
-import { buildRightModels } from '../../../src/features/runners/model-catalog/catalog.js';
+import {
+  buildRightModels,
+  countModelOptions,
+} from '../../../src/features/runners/model-catalog/catalog.js';
 import {
   assemblePickerDescriptors,
   buildPickerOptions,
@@ -62,11 +64,15 @@ function pickerItem(
 function makeActions(overrides: Partial<PickerActions> = {}): PickerActions {
   return {
     confirm: () => {},
+    confirmProviderVariant: async () => {},
     leftChange: () => {},
     deleteRight: () => {},
+    chooseContract: () => {},
     customCommand: () => {},
     customModel: () => {},
     openCustomModel: () => {},
+    openProviderAuth: () => {},
+    submitProviderKey: async () => {},
     closeOverlay: () => {},
     ...overrides,
   };
@@ -89,7 +95,7 @@ function readyImplementerDetections(): ProviderDetection[] {
 function seedReadyDetection(): void {
   detectionStore.setDetection({
     cliTools: readyCliDetections(),
-    implementers: readyImplementerDetections(),
+    providers: readyImplementerDetections(),
   });
   for (const provider of IMPLEMENTER_API_PROVIDER_IDS) {
     modelCacheStore.setProviderModels(provider, [
@@ -128,6 +134,8 @@ function catalogForItem(
     currentModel: item.isCurrent ? rightModels[0]?.id : undefined,
     persistedModel: rightModels[0]?.id,
     discoveredModelCount: rightModels.filter((model) => model.id !== 'auto').length,
+    modelCounts: countModelOptions(rightModels),
+    catalogDiagnostic: undefined,
     currentCommand: undefined,
     currentCommandKind: undefined,
     customModels: [],
@@ -163,7 +171,7 @@ describe('runner picker semantics integration', () => {
       seedReadyDetection();
       const snapshot = {
         cliTools: detectionStore.get().cliTools,
-        providers: detectionStore.get().implementers,
+        providers: detectionStore.get().providers,
         hasApiKeyOverride: () => true,
       };
       const descriptors = assemblePickerDescriptors();
@@ -183,7 +191,8 @@ describe('runner picker semantics integration', () => {
       expect(plannerZones).not.toContain('antigravity');
       expect(plannerCatalog.map((item) => item.id)).toEqual(
         expect.arrayContaining([
-          ...META_PROVIDER_IDS,
+          'custom-command',
+          'agent-sdk',
           ...PLANNER_CLI_TOOL_IDS,
           ...PLANNER_API_PROVIDER_IDS,
         ]),
@@ -198,6 +207,8 @@ describe('runner picker semantics integration', () => {
       );
       expect(implementerZones).toContain('ollama');
       expect(implementerZones).toContain('lm-studio');
+      expect(implementerZones).not.toContain('cursor');
+      expect(implementerZones).not.toContain('antigravity');
       expect(plannerZones).not.toContain('ollama');
       expect(plannerZones).not.toContain('lm-studio');
       expect(implementerCatalog.some((item) => item.id === 'ollama')).toBe(true);
@@ -245,7 +256,7 @@ describe('runner picker semantics integration', () => {
     it('renders API auth and offline semantics from detection-backed picker state', async () => {
       detectionStore.setDetection({
         cliTools: [],
-        implementers: [
+        providers: [
           {
             provider: 'groq',
             available: false,
@@ -299,7 +310,7 @@ describe('runner picker semantics integration', () => {
         const broken = cliDetectionFor('incompatible', 'claude-code');
         detectionStore.setDetection({
           cliTools: [broken, cliDetectionFor('ready', 'codex')],
-          implementers: [],
+          providers: [],
         });
 
         const ui = await renderPicker('planner');
@@ -311,6 +322,7 @@ describe('runner picker semantics integration', () => {
         expect(frame).toContain((broken.diagnostic.remediation ?? '').slice(0, 20));
         expect(broken.diagnostic.remediation).toBeTruthy();
 
+        await flushEffects();
         ui.stdin.write('codex');
         await flushEffects();
         ui.stdin.write(ENTER);
@@ -318,8 +330,12 @@ describe('runner picker semantics integration', () => {
         ui.stdin.write(ENTER);
         await flushEffects();
 
-        const persisted = loadConfig(projectDir).config;
-        expect(persisted.planner).toMatchObject({ kind: 'cli', tool: 'codex' });
+        await vi.waitFor(() => {
+          expect(loadConfig(projectDir).config.planner).toMatchObject({
+            kind: 'cli',
+            tool: 'codex',
+          });
+        });
         expect(feedbackStore.get().message).toContain('Planner set to');
         ui.unmount();
       });
@@ -495,7 +511,14 @@ describe('runner picker semantics integration', () => {
       expect(emptyFrame).toContain('Add custom model');
       emptyUi.unmount();
 
-      const discovered = [{ id: 'gpt-4o', contextLength: 128_000, isDetected: true }];
+      const discovered = [
+        {
+          id: 'gpt-4o',
+          contextLength: 128_000,
+          isDetected: true,
+          membership: 'confirmed' as const,
+        },
+      ];
       const discoveredUi = renderFeature(
         <PickerView
           role="planner"
@@ -541,7 +564,7 @@ describe('runner picker semantics integration', () => {
       });
       detectionStore.setDetection({
         cliTools: [cliDetectionFor('ready', 'codex')],
-        implementers: [],
+        providers: [],
       });
       modelCacheStore.setProviderModels('codex', [{ id: 'gpt-5.4' }, { id: 'runtime-only-model' }]);
 
@@ -560,7 +583,7 @@ describe('runner picker semantics integration', () => {
     it('never shows models from the previously selected tool during rapid input', async () => {
       detectionStore.setDetection({
         cliTools: readyCliDetections(),
-        implementers: [
+        providers: [
           {
             provider: 'ollama',
             available: true,
@@ -604,7 +627,9 @@ describe('runner picker semantics integration', () => {
         }
       }
 
+      await flushEffects();
       ui.stdin.write(ARROW_DOWN);
+      await flushEffects();
       ui.stdin.write(ARROW_DOWN);
       await flushEffects();
       const afterKeys = frameText(ui);
@@ -621,7 +646,7 @@ describe('runner picker semantics integration', () => {
         configStore.load(projectDir);
         detectionStore.setDetection({
           cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
-          implementers: [
+          providers: [
             {
               provider: 'ollama',
               available: true,
@@ -635,6 +660,7 @@ describe('runner picker semantics integration', () => {
         ]);
 
         const plannerUi = await renderPicker('planner');
+        await flushEffects();
         plannerUi.stdin.write('claude-code');
         await flushEffects();
         plannerUi.stdin.write(ENTER);
@@ -643,12 +669,15 @@ describe('runner picker semantics integration', () => {
         await flushEffects();
         plannerUi.unmount();
 
-        expect(loadConfig(projectDir).config.planner).toMatchObject({
-          kind: 'cli',
-          tool: 'claude-code',
+        await vi.waitFor(() => {
+          expect(loadConfig(projectDir).config.planner).toMatchObject({
+            kind: 'cli',
+            tool: 'claude-code',
+          });
         });
 
         const implementerUi = await renderPicker('implementer');
+        await flushEffects();
         implementerUi.stdin.write('ollama');
         await flushEffects();
         implementerUi.stdin.write(ENTER);
@@ -657,11 +686,13 @@ describe('runner picker semantics integration', () => {
         await flushEffects();
         implementerUi.unmount();
 
-        expect(loadConfig(projectDir).config.implementer).toMatchObject({
-          kind: 'api',
-          provider: 'ollama',
+        await vi.waitFor(() => {
+          expect(loadConfig(projectDir).config.implementer).toMatchObject({
+            kind: 'api',
+            provider: 'ollama',
+          });
+          expect(loadConfig(projectDir).config.implementer.model).toBeTruthy();
         });
-        expect(loadConfig(projectDir).config.implementer.model).toBeTruthy();
       });
     });
 
@@ -678,15 +709,17 @@ describe('runner picker semantics integration', () => {
         configStore.load(projectDir);
         detectionStore.setDetection({
           cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
-          implementers: [],
+          providers: [],
         });
 
         const ui = await renderPicker('planner');
         for (const keystroke of keys) {
+          await flushEffects();
           ui.stdin.write(keystroke);
           await flushEffects();
         }
         expect(frameText(ui)).not.toContain('Claude Code');
+        await flushEffects();
         ui.stdin.write(ENTER);
         await flushEffects();
         ui.stdin.write(ENTER);
@@ -731,7 +764,7 @@ describe('runner picker semantics integration', () => {
           assemblePickerDescriptors(),
           {
             cliTools: detectionStore.get().cliTools,
-            providers: detectionStore.get().implementers,
+            providers: detectionStore.get().providers,
             hasApiKeyOverride: () => true,
           },
           undefined,

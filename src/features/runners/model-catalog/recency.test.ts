@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { sortModelsByRecency } from './recency.js';
+import { sortModelsByRecency, type ModelOption, type ModelVariant } from './recency.js';
 
 describe('model recency ordering', () => {
   it('sorts models by default flag, release date, embedded dates, and name', () => {
@@ -40,5 +40,43 @@ describe('model recency ordering', () => {
       'gemini-2.0-pro',
       'gemini-2.5-pro',
     ]);
+  });
+
+  it('keeps stale membership facts intact while ordering rows', () => {
+    const stale: ModelOption = {
+      id: 'last-confirmed',
+      membership: 'stale',
+      isStale: true,
+      isDetected: false,
+    };
+
+    const sorted = sortModelsByRecency([{ id: 'newer-20260101' }, stale]);
+
+    expect(sorted.find((model) => model.id === stale.id)).toEqual(stale);
+  });
+
+  it('keeps provider variants intact while ordering rows', () => {
+    // The three-field literal pins the cross-package ModelVariant contract.
+    const variant: ModelVariant = {
+      fullId: 'opencode-go/deepseek-v4-flash',
+      providerPrefix: 'opencode-go',
+      tag: 'opencode-go',
+    };
+    const merged: ModelOption = {
+      id: 'ollama-cloud/deepseek-v4-flash',
+      membership: 'confirmed',
+      variants: [
+        {
+          fullId: 'ollama-cloud/deepseek-v4-flash',
+          providerPrefix: 'ollama-cloud',
+          tag: 'ollama-cloud',
+        },
+        variant,
+      ],
+    };
+
+    const sorted = sortModelsByRecency([{ id: 'newer-20260101' }, merged]);
+
+    expect(sorted.find((model) => model.id === merged.id)).toEqual(merged);
   });
 });

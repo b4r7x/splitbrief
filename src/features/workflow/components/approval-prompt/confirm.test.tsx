@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
-import { tick } from '#testing/helpers/ink.js';
+import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { ApprovalPrompt } from '../approval-prompt.js';
 import {
@@ -65,6 +65,7 @@ describe('ApprovalPrompt confirm tier', () => {
     expect(ui.lastFrame() ?? '').toContain('confirm file write');
     expect(ui.lastFrame() ?? '').toContain('src/feature.ts');
 
+    await flushEffects();
     ui.stdin.write(ESC);
     await expect(third).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
     ui.unmount();
@@ -75,10 +76,12 @@ describe('ApprovalPrompt confirm tier', () => {
     const first = openApprovalPrompt(makeConfirmRequest('delete temp files'));
     await tick(PAST_GRACE);
 
+    await flushEffects();
     ui.stdin.write('I confirm');
     await vi.waitFor(() => {
       expect(stripColor(ui.lastFrame())).toContain(`${glyph('prompt')} I confirm`);
     });
+    await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       expect(ui.lastFrame() ?? '').toContain('phrase accepted');
@@ -94,6 +97,7 @@ describe('ApprovalPrompt confirm tier', () => {
     expect(frame).toContain('to proceed');
     expect(frame).not.toContain('phrase accepted');
 
+    await flushEffects();
     ui.stdin.write(ESC);
     await expect(second).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
     ui.unmount();

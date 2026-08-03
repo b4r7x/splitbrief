@@ -111,6 +111,7 @@ describe('useEditBuffer commit on invalid input', () => {
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('buffer=[hi😀]');
 
+    await flushEffects();
     ui.stdin.write('\x7f'); // backspace the emoji
     await flushEffects();
 

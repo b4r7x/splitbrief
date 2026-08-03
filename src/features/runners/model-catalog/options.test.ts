@@ -10,10 +10,10 @@ import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
 } from '../../../core/runners/cli-tool-catalog.js';
-import { META_PROVIDER_IDS } from '../../../core/schemas/enums.js';
 import { isCurrentConfig } from './catalog.js';
 import { assemblePickerDescriptors, buildPickerOptions } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
+import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
 function makeImplementerDetection(
   provider: ProviderDetection['provider'],
@@ -24,6 +24,23 @@ function makeImplementerDetection(
     available: false,
     isLocal: false,
     ...extra,
+  };
+}
+
+function scopedRuntime(input: {
+  role: 'planner' | 'implementer';
+  provider: 'openrouter' | 'anthropic';
+  state: 'fresh' | 'stale' | 'failed';
+  failure?: ConfiguredProviderRuntime['failure'];
+}): ConfiguredProviderRuntime {
+  return {
+    connection: { role: input.role, provider: input.provider, contextKey: `${input.role}-context` },
+    state: input.state,
+    catalog: input.state === 'fresh' ? 'empty' : null,
+    models: input.state === 'fresh' ? [] : null,
+    fetchedAt: input.state === 'fresh' ? 1 : null,
+    validatedAt: 2,
+    ...(input.failure === undefined ? {} : { failure: input.failure }),
   };
 }
 
@@ -48,14 +65,16 @@ describe('role membership', () => {
     expect(plannerIds).not.toEqual(implementerIds);
     expect(plannerIds).toEqual(
       expect.arrayContaining([
-        ...META_PROVIDER_IDS,
+        'custom-command',
+        'agent-sdk',
         ...PLANNER_CLI_TOOL_IDS,
         ...PLANNER_API_PROVIDER_IDS,
       ]),
     );
     expect(implementerIds).toEqual(
       expect.arrayContaining([
-        ...META_PROVIDER_IDS,
+        'custom-command',
+        'agent-sdk',
         ...IMPLEMENTER_CLI_TOOL_IDS,
         ...IMPLEMENTER_API_PROVIDER_IDS,
       ]),
@@ -68,16 +87,16 @@ describe('role membership', () => {
     expect(implementerItems.every((item) => item.roles.includes('implementer'))).toBe(true);
   });
 
-  it('includes the custom agent runner in both picker catalogs', () => {
+  it('includes exactly one custom-command launcher in both picker catalogs', () => {
     const descriptors = assemblePickerDescriptors();
     const detections = { cliTools: [], providers: [] };
     const plannerItems = buildPickerOptions('planner', descriptors, detections, undefined);
     const implementerItems = buildPickerOptions('implementer', descriptors, detections, undefined);
 
-    expect(plannerItems.some((item) => item.id === 'agent' && item.kind === 'agent')).toBe(true);
-    expect(implementerItems.some((item) => item.id === 'agent' && item.kind === 'agent')).toBe(
-      true,
-    );
+    expect(plannerItems.filter((item) => item.kind === 'custom-command')).toHaveLength(1);
+    expect(implementerItems.filter((item) => item.kind === 'custom-command')).toHaveLength(1);
+    expect(plannerItems.some((item) => item.id === 'shell' || item.id === 'agent')).toBe(false);
+    expect(implementerItems.some((item) => item.id === 'shell' || item.id === 'agent')).toBe(false);
   });
 });
 
@@ -119,6 +138,57 @@ describe('status projection', () => {
       remediation: 'Set OPENROUTER_API_KEY or configure an inline apiKey, then refresh detection.',
     });
     expect(openrouter?.available).toBe(false);
+  });
+
+  it('maps a rejected env credential to unauthenticated with key-replacement remediation', () => {
+    const options = buildPickerOptions(
+      'planner',
+      assemblePickerDescriptors(),
+      {
+        cliTools: [],
+        providers: [
+          makeImplementerDetection('openai', {
+            available: false,
+            hasKey: true,
+            failure: 'invalid-credential',
+          }),
+        ],
+      },
+      undefined,
+    );
+    const openai = options.find((item) => item.id === 'openai');
+    expect(openai?.status).toEqual({
+      state: 'unauthenticated',
+      remediation: 'Key found in OPENAI_API_KEY but openai rejected it.',
+    });
+    expect(openai?.available).toBe(false);
+  });
+
+  it.each([
+    'offline',
+    'timeout',
+    'request-failed',
+  ] as const)('keeps a present-key %s detection unavailable rather than unauthenticated', (failure) => {
+    const options = buildPickerOptions(
+      'planner',
+      assemblePickerDescriptors(),
+      {
+        cliTools: [],
+        providers: [
+          makeImplementerDetection('openai', {
+            available: false,
+            hasKey: true,
+            failure,
+            error: 'openai is not currently reachable.',
+          }),
+        ],
+      },
+      undefined,
+    );
+    expect(options.find((item) => item.id === 'openai')?.status).toEqual({
+      state: 'unavailable',
+      remediation: 'openai is not currently reachable.',
+    });
   });
 
   it('keeps an unverified provider unselectable even when reachable with a credential', () => {
@@ -178,6 +248,91 @@ describe('status projection', () => {
     expect(anthropic?.available).toBe(true);
   });
 
+  it('keeps same-provider picker status role-scoped and surfaces typed guardrail remediation', () => {
+    const detections = {
+      cliTools: [],
+      providers: [makeImplementerDetection('openrouter', { available: true, hasKey: true })],
+      providerOutcomes: [
+        scopedRuntime({ role: 'planner', provider: 'openrouter', state: 'fresh' }),
+        scopedRuntime({
+          role: 'implementer',
+          provider: 'openrouter',
+          state: 'failed',
+          failure: 'guardrail-filtered',
+        }),
+      ],
+    };
+
+    const planner = buildPickerOptions(
+      'planner',
+      assemblePickerDescriptors(),
+      detections,
+      undefined,
+    );
+    const implementer = buildPickerOptions(
+      'implementer',
+      assemblePickerDescriptors(),
+      detections,
+      undefined,
+    );
+
+    expect(planner.find((item) => item.id === 'openrouter')?.status).toEqual({
+      state: 'ready',
+      remediation: null,
+    });
+    expect(implementer.find((item) => item.id === 'openrouter')?.status).toEqual({
+      state: 'unavailable',
+      remediation:
+        'openrouter guardrails filtered catalog access. Review provider policy and refresh detection.',
+    });
+  });
+
+  it('does not borrow a generic ready provider detection when scoped outcomes are authoritative', () => {
+    const options = buildPickerOptions(
+      'planner',
+      assemblePickerDescriptors(),
+      {
+        cliTools: [],
+        providers: [makeImplementerDetection('openrouter', { available: true, hasKey: true })],
+        providerOutcomes: [
+          scopedRuntime({ role: 'planner', provider: 'anthropic', state: 'fresh' }),
+        ],
+        hasApiKeyOverride: () => false,
+      },
+      undefined,
+    );
+
+    expect(options.find((item) => item.id === 'openrouter')?.status.state).toBe('unauthenticated');
+  });
+
+  it('marks a role-scoped stale Agent SDK catalog unavailable instead of using ambient credential state', () => {
+    const currentConfig = makeConfig({
+      planner: {
+        kind: 'agent-sdk',
+        apiKey: 'sk-ant-picker-status',
+        model: 'claude-sonnet-4-6',
+      },
+    }).planner;
+    const options = buildPickerOptions(
+      'planner',
+      assemblePickerDescriptors(),
+      {
+        cliTools: [],
+        providers: [],
+        providerOutcomes: [
+          scopedRuntime({ role: 'planner', provider: 'anthropic', state: 'stale' }),
+        ],
+        hasApiKeyOverride: () => true,
+      },
+      currentConfig,
+    );
+
+    expect(options.find((item) => item.id === 'agent-sdk')?.status).toEqual({
+      state: 'unavailable',
+      remediation: 'Last confirmed Agent SDK catalog is stale. Refresh detection.',
+    });
+  });
+
   it('maps agent-sdk without credentials to unauthenticated', () => {
     const options = buildPickerOptions(
       'implementer',
@@ -190,16 +345,30 @@ describe('status projection', () => {
     expect(agentSdk?.available).toBe(false);
   });
 
-  it('keeps shell and agent command runners always ready', () => {
+  it('keeps the custom-command launcher always ready and selectable', () => {
     const options = buildPickerOptions(
       'planner',
       assemblePickerDescriptors(),
       { cliTools: [], providers: [] },
       undefined,
     );
-    expect(options.find((item) => item.id === 'shell')?.status.state).toBe('ready');
-    expect(options.find((item) => item.id === 'agent')?.status.state).toBe('ready');
-    expect(options.find((item) => item.id === 'shell')?.available).toBe(true);
+    const launcher = options.find((item) => item.kind === 'custom-command');
+    expect(launcher?.status.state).toBe('ready');
+    expect(launcher?.available).toBe(true);
+  });
+
+  it('renders a non-active tool whose diagnostic is ready as selectable', () => {
+    const options = buildPickerOptions(
+      'implementer',
+      assemblePickerDescriptors(),
+      { cliTools: [cliDetectionFor('ready', 'opencode')], providers: [] },
+      undefined,
+    );
+    const opencode = options.find((item) => item.id === 'opencode');
+
+    expect(opencode?.isCurrent).toBeUndefined();
+    expect(opencode?.status).toEqual({ state: 'ready', remediation: null });
+    expect(opencode?.available).toBe(true);
   });
 
   it('projects descriptor model policy onto picker options', () => {

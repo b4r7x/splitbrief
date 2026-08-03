@@ -35,7 +35,7 @@ const STAGED_COPY_EXCLUDE = new Set([
 ]);
 
 function isStagedCopyExcluded(name: string): boolean {
-  return STAGED_COPY_EXCLUDE.has(name) || name.startsWith('.env.');
+  return STAGED_COPY_EXCLUDE.has(name) || name.startsWith('.env');
 }
 
 async function shouldCopyToStagedProject(source: string): Promise<boolean> {

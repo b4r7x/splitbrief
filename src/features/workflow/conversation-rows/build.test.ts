@@ -16,6 +16,8 @@ import { rowText } from './row-format/rows.js';
 import { wrapWidthFor } from './row-markers.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
+const CODEX_LABEL = 'OpenAI Codex CLI';
+const CLAUDE_CODE_LABEL = 'Claude Code CLI';
 
 function activityLine(label: Parameters<typeof displayActivityLabel>[0], value: string): string {
   return `${displayActivityLabel(label).padEnd(ACTIVITY_LABEL_PAD)}  ${value}`;
@@ -120,7 +122,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(3);
-    expect(text).toContain('Plan activity  3 updates  [Codex]');
+    expect(text).toContain(`Plan activity  3 updates  [${CODEX_LABEL}]`);
     expect(text).not.toContain('sed -n');
     expect(text).toContain(activityLine('READ', 'CLAUDE.md :1-240'));
     expect(text).toContain(activityLine('RUN', 'wc -l CLAUDE.md'));
@@ -176,7 +178,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(2);
-    expect(text).toContain('Plan activity  2 updates  [Codex]');
+    expect(text).toContain(`Plan activity  2 updates  [${CODEX_LABEL}]`);
     expect(text.match(/npm run typecheck/g)).toHaveLength(1);
     expect(text).toContain(activityLine('READ', 'src/app.ts'));
     expect(text).not.toContain('+  ');
@@ -207,7 +209,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(4);
-    expect(text).toContain('Plan activity  4 updates  [Codex]');
+    expect(text).toContain(`Plan activity  4 updates  [${CODEX_LABEL}]`);
     expect(text).not.toContain('a.ts');
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
@@ -262,7 +264,7 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain('Plan activity  5 updates  1 warn  [Codex]');
+    expect(text).toContain(`Plan activity  5 updates  1 warn  [${CODEX_LABEL}]`);
     expect(text).toContain(activityLine('WARN', 'stderr'));
     expect(text).toContain(activityLine('READ', 'c.ts'));
     expect(text).toContain(activityLine('READ', 'd.ts'));
@@ -417,7 +419,7 @@ describe('buildConversationRows', () => {
 
     expect(renderableCount).toBe(4);
     expect(text.match(/Plan activity/g)).toHaveLength(1);
-    expect(text).toContain('Plan activity  4 updates  [Codex]');
+    expect(text).toContain(`Plan activity  4 updates  [${CODEX_LABEL}]`);
     expect(text).not.toContain('a.ts');
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
@@ -530,7 +532,7 @@ describe('buildConversationRows', () => {
     const singleText = single.rows.map(rowText).join('\n');
 
     expect(singleText.match(/Plan activity/g)).toHaveLength(1);
-    expect(singleText).toContain('Plan activity  8 updates  [Codex]');
+    expect(singleText).toContain(`Plan activity  8 updates  [${CODEX_LABEL}]`);
     expect(single.renderableCount).toBe(8);
 
     const continued: EngineEvent[] = [
@@ -609,8 +611,8 @@ describe('buildConversationRows', () => {
 
     expect(plannerText.match(/Plan activity/g)).toHaveLength(1);
     expect(implementerText.match(/Implementer activity/g)).toHaveLength(1);
-    expect(plannerText).toContain('Plan activity  6 updates  [Codex]');
-    expect(implementerText).toContain('Implementer activity  6 updates  [Claude Code]');
+    expect(plannerText).toContain(`Plan activity  6 updates  [${CODEX_LABEL}]`);
+    expect(implementerText).toContain(`Implementer activity  6 updates  [${CLAUDE_CODE_LABEL}]`);
     expect(plannerText).toContain('+3 more');
     expect(implementerText).toContain('+3 more');
     expect(implementer.renderableCount).toBe(planner.renderableCount);

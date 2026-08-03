@@ -152,7 +152,9 @@ function writeConformanceShim(
       ? ['PROMPT=$(cat)', `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`].join('\n')
       : profile.terminal === 'turn.completed'
         ? `printf '%s\\n' '${codexLine.replace(/'/g, "'\\''")}'`
-        : "printf '%s\\n' 'ok'",
+        : profile.terminal === 'result'
+          ? `printf '%s\\n' '${resultLine.replace(/'/g, "'\\''")}'`
+          : "printf '%s\\n' 'ok'",
     role === 'implementer' ? 'printf changed > "$MARKER"' : '',
     'exit 0',
     '',

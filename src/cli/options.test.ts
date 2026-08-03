@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { InvalidArgumentError } from 'commander';
+import { Command, InvalidArgumentError } from 'commander';
+import type { WorkflowOpts } from '../core/types/config-options.js';
 import {
+  addWorkflowOptions,
   assertModeFlagsExclusive,
   parseBudgetOption,
   parseNumberOption,
@@ -8,6 +10,12 @@ import {
   parsePositiveIntegerOption,
 } from './options.js';
 import { runCommand } from '#testing/helpers/commander.js';
+
+function parseWorkflowOptions(args: string[]): WorkflowOpts {
+  const command = addWorkflowOptions(new Command());
+  command.parse(['node', 'splitbrief', ...args]);
+  return command.opts<WorkflowOpts>();
+}
 
 describe('parseNumberOption', () => {
   it('parses a finite numeric string', () => {
@@ -77,6 +85,25 @@ describe('assertModeFlagsExclusive', () => {
     {},
   ])('accepts %o', (opts) => {
     expect(() => assertModeFlagsExclusive(opts)).not.toThrow();
+  });
+});
+
+describe('--allow-unverified-auth', () => {
+  it.each([
+    { args: [], expected: false },
+    { args: ['--allow-unverified-auth'], expected: true },
+  ])('Commander parses %o as $expected', ({ args, expected }) => {
+    expect(parseWorkflowOptions(args).allowUnverifiedAuth).toBe(expected);
+  });
+});
+
+describe('--allow-repo-runners', () => {
+  it('explains its legacy-runner and headless custom-command grant', () => {
+    const help = addWorkflowOptions(new Command()).helpInformation();
+
+    expect(help).toContain(
+      'Grant repo-local legacy runners and configured custom commands in headless use',
+    );
   });
 });
 

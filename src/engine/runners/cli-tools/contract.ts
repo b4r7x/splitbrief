@@ -1,5 +1,6 @@
 import type { CLI_TOOL_CATALOG, CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
+import type { CliExecutableIdentity, DetectedModel } from '../../../core/discovery/detection.js';
+import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
 import type { RunnerCallTextChannel } from '../../../core/runner-call-contract.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
@@ -76,10 +77,73 @@ export type CliProbeCommand = Readonly<{
   maxOutputBytes: number;
 }>;
 
+export type CliProbeOutput = Readonly<{
+  stdout: string;
+  stderr: string;
+  exitCode: number | null;
+  timedOut: boolean;
+  outputExceeded: boolean;
+}>;
+
+export type CliProbeParser<Value> = (input: CliProbeOutput) => ProbeOutcome<Value>;
+
+export type CliVersionProbe = CliProbeCommand &
+  Readonly<{
+    kind: 'version';
+    parse: CliProbeParser<string>;
+  }>;
+
+export type CliAuthProbe =
+  | Readonly<{ kind: 'not-run' }>
+  | (CliProbeCommand &
+      Readonly<{
+        kind: 'auth-status';
+        parse: (input: CliProbeOutput) => AuthFact;
+      }>);
+
+export type CliCatalogProbe =
+  | Readonly<{ kind: 'not-run' }>
+  | (CliProbeCommand &
+      Readonly<{
+        kind: 'catalog';
+        /** A separately declared fixed manual command; never caller-mutated argv. */
+        manualCommand?: readonly [string, ...string[]] | undefined;
+        parse: CliProbeParser<readonly DetectedModel[]>;
+      }>);
+
+/**
+ * Where a tool keeps session state that cannot be bridged into a sandbox as a
+ * file. Presence is checked by metadata only — the credential value is never
+ * read, captured, or logged.
+ */
+export type CliSessionPresenceProbe =
+  | Readonly<{ kind: 'none' }>
+  | Readonly<{ kind: 'darwin-keychain'; service: string }>;
+
+export type CliDeclaredProbeContract = Readonly<{
+  kind: 'declared';
+  version: CliVersionProbe;
+  auth: CliAuthProbe;
+  catalog: CliCatalogProbe;
+  sessionPresence: CliSessionPresenceProbe;
+}>;
+
+/**
+ * The legacy commands remain while detection migrates to adapter-declared
+ * parser contracts. They carry no parser, so they cannot establish
+ * authentication.
+ */
 export type CliProbeContract = Readonly<{
   version: CliProbeCommand;
   auth: CliProbeCommand;
+  declared?: CliDeclaredProbeContract | undefined;
 }>;
+
+export function isDeclaredCliProbeContract(
+  probe: CliProbeContract,
+): probe is CliProbeContract & Readonly<{ declared: CliDeclaredProbeContract }> {
+  return probe.declared !== undefined && probe.declared.kind === 'declared';
+}
 
 type CliArgumentValidation =
   | Readonly<{ valid: true }>

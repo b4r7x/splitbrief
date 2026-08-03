@@ -34,6 +34,11 @@ const noop = () => 'none' as const;
 // the parent (e.g. a runner picker opened from settings would skip settings and close outright).
 const GLOBAL_ESC_OVERLAYS = new Set<OverlayType>(['help', 'cost-drilldown']);
 
+// The runner pickers give Escape a meaning beyond closing: a non-empty filter query clears first
+// and only a second press exits. The global close must stand down for them even on an empty stack,
+// or the query-clearing press would also close the overlay.
+const SELF_ESC_OVERLAYS = new Set<OverlayType>(['planner-picker', 'implementer-picker']);
+
 interface UseAppKeysOptions {
   exit: () => void;
   interruptWorkflow?: (() => InterruptResult) | undefined;
@@ -108,7 +113,9 @@ export function useAppKeys({
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
   const overlayHasStack = overlay.stack.length > 0;
-  const overlayClosesOnGlobalEscape = !overlayHasStack || GLOBAL_ESC_OVERLAYS.has(overlayActive);
+  const overlayClosesOnGlobalEscape =
+    !SELF_ESC_OVERLAYS.has(overlayActive) &&
+    (!overlayHasStack || GLOBAL_ESC_OVERLAYS.has(overlayActive));
   const promptPending = approval.status === 'pending' || cost.status === 'pending';
   const completionOpen = completion.open;
   // The inline briefs field editor is not an overlay (it renders inside the workflow screen), so

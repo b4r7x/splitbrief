@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { RuntimeConfigSaveResult } from '../../core/runtime/commands/types.js';
 import { buildPaletteResults } from './results.js';
 import type { PaletteInputs } from './results.js';
 
 const noop = () => {};
+const savedMode = async (): Promise<RuntimeConfigSaveResult> => ({ kind: 'saved', ok: true });
 
 function makeInputs(overrides: Partial<PaletteInputs> = {}): PaletteInputs {
   return {
@@ -32,7 +34,7 @@ describe('buildPaletteResults', () => {
             availableOn: [],
           },
         ],
-        modeItems: [{ label: 'Standard', description: 'Standard mode', action: noop }],
+        modeItems: [{ label: 'Standard', description: 'Standard mode', action: savedMode }],
         pickerItems: [{ label: 'File', description: 'Pick file', action: noop }],
         taskItems: [{ id: 'T-001', title: 'Fix bug', action: noop }],
         sessionItems: [{ id: 'S-001', feature: 'Auth', status: 'running', action: noop }],
@@ -114,8 +116,8 @@ describe('buildPaletteResults', () => {
       makeInputs({
         query: 'a',
         modeItems: [
-          { label: 'azure', description: 'desc', action: noop },
-          { label: 'apple', description: 'desc', action: noop },
+          { label: 'azure', description: 'desc', action: savedMode },
+          { label: 'apple', description: 'desc', action: savedMode },
         ],
       }),
     );
@@ -144,7 +146,7 @@ describe('buildPaletteResults', () => {
             availableOn: [],
           },
         ],
-        modeItems: [{ label: 'Runner mode', description: 'runner mode', action: noop }],
+        modeItems: [{ label: 'Runner mode', description: 'runner mode', action: savedMode }],
         mruIds: ['mode:Runner mode', 'command:Runner'],
       }),
     );

@@ -75,6 +75,7 @@ interface UseTwoColumnStateParams<L extends FilterableItem, R extends { id: stri
   onConfirm: (left: L, right: R | null) => void;
   onCancel: () => void;
   onRefresh?: (() => void) | undefined;
+  onDisabledSelect?: ((item: L) => void) | undefined;
   maxVisible: number;
 }
 
@@ -89,7 +90,14 @@ function defaultRightFilter<R extends { id: string }>(item: R, query: string): b
 export function useTwoColumnState<L extends FilterableItem, R extends { id: string }>(
   params: UseTwoColumnStateParams<L, R>,
 ): TwoColumnNavState<L, R> {
-  const { leftProps, rightProps, initialColumn = 'left', onConfirm, onCancel } = params;
+  const {
+    leftProps,
+    rightProps,
+    initialColumn = 'left',
+    onConfirm,
+    onCancel,
+    onDisabledSelect,
+  } = params;
 
   const leftItems = leftProps.items;
   const rightItems = rightProps.items;
@@ -131,6 +139,7 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
     filterFn: rightProps.filterBy ?? defaultRightFilter,
     getKey: rightProps.getKey,
     initialIndex: initialRightIndex,
+    virtualCount: allowCustomRight ? 1 : 0,
   });
 
   const filteredRight: RightItemOrVirtual<R>[] = allowCustomRight
@@ -203,8 +212,12 @@ export function useTwoColumnState<L extends FilterableItem, R extends { id: stri
         isOnVirtual,
         currentRightIsCustom,
         leftCurrentItem: leftCol.currentItem,
+        onDisabledSelect,
         leftFiltered: leftCol.items,
         filteredRight,
+        leftFilter: leftCol.filter,
+        rightFilter: rightCol.filter,
+        rightVirtualCount: allowCustomRight ? 1 : 0,
         leftEffectiveIndex: leftCol.effectiveIndex,
         rightEffectiveIndex,
         rightItems,

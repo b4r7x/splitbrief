@@ -26,7 +26,8 @@ Environment variables are not committed to git, are not stored on disk in projec
 | Together AI | `TOGETHER_API_KEY` | — | |
 | OpenRouter | `OPENROUTER_API_KEY` | `sk-or-` | |
 | DeepSeek | `DEEPSEEK_API_KEY` | `sk-` | |
-| Ollama | `OLLAMA_API_KEY` | — | Optional for secured local/proxy deployments |
+| Local Ollama | `OLLAMA_LOCAL_API_KEY` | — | Optional only for a secured loopback daemon; configure `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never accepted or sent locally. |
+| Ollama Cloud | `OLLAMA_API_KEY` | — | Required for the fixed remote Ollama Cloud API. |
 | LM Studio | — | — | Local provider; no key required |
 | Custom remote provider | Not inferred | — | Set `apiKey: env:YOUR_VAR` or inline only when you accept **normalized-origin trust** for the declared `apiBase` |
 
@@ -50,6 +51,17 @@ planner:
 **SPLITBRIEF warns when inline API keys are detected in config files** — it recommends switching to the matching environment variable when the provider uses its official normalized endpoint. For a known provider with a custom/proxy `apiBase`, keep the key inline only when you accept **normalized-origin trust** for that host; environment keys are intentionally rejected for that case so your provider key is not sent to an unexpected origin.
 
 Never paste real or placeholder secrets (`sk-ant-…`, `sk-or-…`, `gsk_…`) into committed YAML examples.
+
+## Entering a key in the runner picker
+
+The runner picker (`/planner`, `/implementer`) marks offerings whose credential is missing as **Auth required**. Pressing Enter on such a row opens a masked key-entry panel instead of selecting the runner:
+
+- Input is masked while you type.
+- The key is validated against the provider **before** anything is saved. A key the provider rejects is discarded — nothing is written.
+- Pressing esc closes the panel and saves nothing.
+- Only after successful validation is the key stored in `.splitbrief/config.yaml` with `0600` permissions, alongside a check that `.splitbrief/` is gitignored.
+
+This is a convenience path for getting unblocked inside the TUI. Exporting the provider's environment variable (above) remains the preferred place for a credential; once you export it, remove the stored `apiKey` entry from `.splitbrief/config.yaml` — the loader keeps warning while an inline key remains.
 
 ## Generic remote endpoints
 

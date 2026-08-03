@@ -27,8 +27,8 @@ interface ReviewViewProps {
 
 export function ReviewView({ height, width }: ReviewViewProps) {
   const t = useTheme();
-  const [{ filePath, scrollOffset: offset }] = useStores(reviewStore);
-  const content = useReviewContent(filePath);
+  const [{ source, scrollOffset: offset }] = useStores(reviewStore);
+  const content = useReviewContent(source);
   const containerHeight = height ?? 20;
   const documentWidth = Math.max(1, getReviewColumnWidth(width ?? 80));
   const frameInnerWidth = Math.max(1, documentWidth - 4);
@@ -47,10 +47,12 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const clampedOffset = clampScrollableDocumentOffset(offset, renderedLineCount, contentHeight);
 
   useEffect(() => {
-    reviewStore.setRenderedLineCount(filePath ? renderedLineCount : 0);
-  }, [filePath, renderedLineCount]);
+    reviewStore.setRenderedLineCount(source ? renderedLineCount : 0);
+  }, [source, renderedLineCount]);
 
-  if (!filePath) return null;
+  if (!source) return null;
+
+  const reviewLabel = source.kind === 'file' ? source.filePath : 'Custom planner artifact';
 
   const remaining = Math.max(0, renderedLineCount - clampedOffset - contentHeight);
   const footerLabel = remaining > 0 ? `↓ ${remaining} more` : 'End of file';
@@ -61,7 +63,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
 
   return (
     <Box flexDirection="column" height={containerHeight} width={width} overflow="hidden">
-      <FramePanel filePath={filePath} width={documentWidth} height={containerHeight}>
+      <FramePanel filePath={reviewLabel} width={documentWidth} height={containerHeight}>
         {contentHeight > 0 && (
           <ScrollableDocument
             rows={rows}

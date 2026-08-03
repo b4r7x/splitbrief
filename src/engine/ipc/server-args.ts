@@ -5,12 +5,12 @@ import { CLIOverridesSchema } from '../../core/config/runtime/overrides/schema.j
 import { WorkflowModeSchema } from '../../core/schemas/enums.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';
+import { isRecord } from '../../utils/type-guards.js';
 import { sessionDir } from '../../core/paths.js';
 import { assertSessionConfinement } from '../../core/sessions/confinement.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import { CliExecutableIdentitySchema } from '../../core/discovery/detection.js';
+import { CliExecutableTrustSchema } from '../../core/discovery/detection.js';
 import { CliToolIdSchema } from '../../core/schemas/enums.js';
-import type { CliStartGate } from '../runners/start-gate.js';
 
 export const SERVER_ARGS_FILE = 'server-args.json';
 
@@ -21,7 +21,7 @@ const IpcServerAttachmentSchema = z.object({
 });
 
 const IpcCliStartGateSchema = z
-  .object({ tool: CliToolIdSchema, executable: CliExecutableIdentitySchema })
+  .object({ tool: CliToolIdSchema, executable: CliExecutableTrustSchema })
   .strict();
 
 export type IpcServerAttachment = z.infer<typeof IpcServerAttachmentSchema>;
@@ -41,9 +41,7 @@ const IpcServerArgsSchema = z.object({
   trustedCliGates: z.array(IpcCliStartGateSchema).optional(),
 });
 
-export type IpcServerArgs = z.infer<typeof IpcServerArgsSchema> & {
-  trustedCliGates?: CliStartGate[] | undefined;
-};
+export type IpcServerArgs = z.infer<typeof IpcServerArgsSchema>;
 
 export const ipcServerArgsError = {
   invalidServerArgs: () => error('ipc-invalid-server-args', 'invalid server-args.json'),
@@ -79,11 +77,7 @@ export function readIpcServerArgsFileConfined(
       throw ipcServerArgsError.symlinkRead(argsFile);
     }
   } catch (err: unknown) {
-    if (
-      err instanceof Error &&
-      typeof (err as { kind?: unknown }).kind === 'string' &&
-      String((err as { kind?: unknown }).kind) === 'server-args-symlink-read'
-    ) {
+    if (err instanceof Error && isRecord(err) && err.kind === 'server-args-symlink-read') {
       throw err;
     }
     throw ipcServerArgsError.invalidServerArgs();

@@ -8,6 +8,7 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
+import { SOFT_SEP } from '../../components/separators.js';
 import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
 import {
   formatUserEditConflictPrompt,
@@ -18,6 +19,7 @@ import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 export const CONTINUATION_PROMPT =
   'Interrupted. Type instructions to steer, or press Enter to retry.';
+export const ARTIFACT_REVIEW_HINT = `approve${SOFT_SEP}quit`;
 
 interface BuildCallbacksOptions {
   inputMode: UseInputModeResult;
@@ -30,12 +32,21 @@ export function buildPromptCallbacks(): (opts: BuildCallbacksOptions) => Orchest
   return (opts: BuildCallbacksOptions): OrchestratorCallbacks => {
     const { inputMode, abortedRef, controller, onComplete } = opts;
     return {
-      onApprovalNeeded: async (type, filePath) => {
-        reviewStore.setReviewFile(filePath);
-        const hint = type === 'briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
-        const result = await inputMode.setReviewMode(hint);
-        reviewStore.clearReview();
-        return result;
+      onApprovalNeeded: async (type, input) => {
+        const artifactReview = typeof input !== 'string';
+        const reviewOwner = artifactReview
+          ? reviewStore.setReviewArtifact(input.text)
+          : reviewStore.setReviewFile(input);
+        const hint = artifactReview
+          ? ARTIFACT_REVIEW_HINT
+          : type === 'briefs'
+            ? BRIEFS_REVIEW_HINT
+            : REVIEW_HINT;
+        try {
+          return await inputMode.setReviewMode(hint);
+        } finally {
+          reviewStore.clearReviewIfOwner(reviewOwner);
+        }
       },
       onUserEditConflict: async (conflict) => {
         const answer = await inputMode.setQuestionMode(formatUserEditConflictPrompt(conflict));

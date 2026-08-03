@@ -7,7 +7,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   ANTIGRAVITY_CLI_ADMISSION_VERDICT,
@@ -52,40 +52,56 @@ const PROMPT_TAIL = ' TAIL_SENTINEL';
 const FULL_PROMPT = `${PROMPT_HEAD}implement src/contract.ts${PROMPT_TAIL}`;
 const LARGE_ARGV_PROMPT = `${PROMPT_HEAD}${'x'.repeat(100_000)}${PROMPT_TAIL}`;
 
+function canonicalVersionLine(toolId: ImplementerCliToolId, version: string): string {
+  switch (toolId) {
+    case 'claude-code':
+      return `${version} (Claude Code)`;
+    case 'codex':
+      return `codex-cli ${version}`;
+    case 'opencode':
+    case 'kilo-code':
+      return version;
+    case 'aider':
+      return `aider ${version}`;
+    case 'copilot':
+      return `GitHub Copilot CLI ${version}.`;
+  }
+}
+
 const SHIM_PROFILES: Record<ImplementerCliToolId, ContractShimProfile> = {
   'claude-code': {
     transport: 'stdin',
-    versionLine: 'claude 2.0.0',
+    versionLine: canonicalVersionLine('claude-code', '2.0.0'),
     successLines: ['{"type":"result","result":"done"}'],
     authArgv: ['auth'],
   },
   codex: {
     transport: 'argv',
-    versionLine: 'codex 0.40.0',
+    versionLine: canonicalVersionLine('codex', '0.40.0'),
     successLines: ['{"type":"turn.completed"}'],
     authArgv: ['auth'],
   },
   opencode: {
     transport: 'argv',
-    versionLine: 'opencode 0.5.0',
+    versionLine: canonicalVersionLine('opencode', '0.5.0'),
     successLines: ['{"type":"text","part":{"type":"text","text":"ok"}}'],
     authArgv: ['auth'],
   },
   aider: {
     transport: 'argv',
-    versionLine: 'aider 0.86.0',
+    versionLine: canonicalVersionLine('aider', '0.86.0'),
     successLines: ['ok'],
     authArgv: ['auth'],
   },
   copilot: {
     transport: 'argv',
-    versionLine: 'copilot 0.3.0',
+    versionLine: canonicalVersionLine('copilot', '0.3.0'),
     successLines: ['ok'],
     authArgv: ['auth', 'status'],
   },
   'kilo-code': {
     transport: 'argv',
-    versionLine: 'kilo 0.1.0',
+    versionLine: canonicalVersionLine('kilo-code', '0.1.0'),
     successLines: ['ok'],
     authArgv: ['auth'],
   },
@@ -99,6 +115,71 @@ const AUTH_CHANNELS: Record<ImplementerCliToolId, CliImplementerConfig['authChan
   copilot: 'session',
   'kilo-code': 'provider-dependent',
 };
+
+// With session state seeded, every probe-bearing adapter runs its declared
+// status command; the shim's exit-1 failure maps to the adapter-declared
+// 'unknown', never to an authenticated fallback. Copilot declares no
+// auth-status probe, so bridged session-state presence resolves its fact.
+// Opencode and kilo-code declare the provider credential oracle
+// (`providers list` / `auth list`); these shims cannot print oracle-format
+// output, which is a parse failure, so their fact falls back to bridged
+// session-state presence. The clean oracle paths and the absent-state
+// 'missing' path are pinned by readiness-probe-session-presence.test.ts.
+const AUTH_FAILURE_FACTS_BY_PROBE_CONTRACT = {
+  'claude-code': 'unknown',
+  codex: 'unknown',
+  opencode: 'authenticated',
+  aider: 'not-checked',
+  copilot: 'authenticated',
+  'kilo-code': 'authenticated',
+} as const satisfies Record<ImplementerCliToolId, 'authenticated' | 'not-checked' | 'unknown'>;
+
+const HOME_SESSION_STATE_PATHS: Partial<Record<ImplementerCliToolId, string>> = {
+  'claude-code': '.claude/.credentials.json',
+  codex: '.codex/auth.json',
+  opencode: '.config/opencode/auth.json',
+  copilot: '.copilot/config.json',
+  'kilo-code': '.config/kilo/auth.json',
+};
+
+const STATE_SOURCE_ENV = [
+  'HOME',
+  'XDG_CONFIG_HOME',
+  'XDG_DATA_HOME',
+  'APPDATA',
+  'LOCALAPPDATA',
+] as const;
+
+/**
+ * Runs the auth-failure probe against a seeded session-state home so the
+ * declared probe executes on every machine, independent of the developer's
+ * real logins or keychain.
+ */
+async function withSeededSessionStateHome<T>(
+  toolId: ImplementerCliToolId,
+  run: () => Promise<T>,
+): Promise<T> {
+  const stateHome = createTempDir('contract-auth-state-home');
+  const relativePath = HOME_SESSION_STATE_PATHS[toolId];
+  if (relativePath !== undefined) {
+    mkdirSync(join(stateHome, dirname(relativePath)), { recursive: true });
+    writeFileSync(join(stateHome, relativePath), '{"session":"stub"}\n', 'utf8');
+  }
+  const saved = STATE_SOURCE_ENV.map((name) => [name, process.env[name]] as const);
+  process.env['HOME'] = stateHome;
+  for (const name of STATE_SOURCE_ENV) {
+    if (name !== 'HOME') delete process.env[name];
+  }
+  try {
+    return await run();
+  } finally {
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    cleanupTempDir(stateHome);
+  }
+}
 
 const CONFLICTING_ARGS: Record<ImplementerCliToolId, readonly string[]> = {
   'claude-code': ['--output-format', 'text'],
@@ -335,10 +416,12 @@ afterEach(() => {
   else process.env['PATH'] = originalPath;
 });
 
-describe('conditional OMIT admission', () => {
-  it('produces no implementer rows for cursor or antigravity', () => {
+describe('Cursor and Antigravity admission', () => {
+  it('keeps Cursor and Antigravity outside admitted implementer execution', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('OMIT');
     expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('OMIT');
+    expect(IMPLEMENTER_CLI_TOOL_IDS).not.toContain('cursor');
+    expect('cursor' in CLI_TOOL_CATALOG).toBe(false);
     expect('cursor' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
     expect('antigravity' in CLI_IMPLEMENTER_ADAPTERS).toBe(false);
     expect(() => lookupCliPlannerAdapter('cursor')).toThrow(/planner configuration/);
@@ -489,7 +572,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
     expect(missing.error?.code).toBe('spawn-not-found');
 
     installShim(fixture, 'success-direct', {
-      versionLine: `${CLI_TOOL_CATALOG[toolId].command} 0.0.1`,
+      versionLine: canonicalVersionLine(toolId, '0.0.1'),
     });
     const incompatibleExecutable = await resolveFixtureExecutable(fixture);
     const incompatible = await probeCliReadiness({
@@ -504,14 +587,18 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
 
     installShim(fixture, 'success-direct', { authExitCode: 1 });
     const unauthenticatedExecutable = await resolveFixtureExecutable(fixture);
-    const unauthenticated = await probeCliReadiness({
-      tool: toolId,
-      executable: unauthenticatedExecutable,
-      probe: CLI_IMPLEMENTER_ADAPTERS[toolId].probe,
-      authChannel: AUTH_CHANNELS[toolId],
-      classifyAuth: ({ exitCode }) => (exitCode === 0 ? 'authenticated' : 'unauthenticated'),
-    });
-    expect(unauthenticated.auth).toBe('unauthenticated');
+    const authFailure = await withSeededSessionStateHome(toolId, () =>
+      probeCliReadiness({
+        tool: toolId,
+        executable: unauthenticatedExecutable,
+        probe: CLI_IMPLEMENTER_ADAPTERS[toolId].probe,
+        authChannel: AUTH_CHANNELS[toolId],
+        keychainPresence: async () => false,
+      }),
+    );
+    // Readiness projects the adapter-declared fact: no generic version or
+    // exit-code fallback is allowed to authenticate a probe-bearing adapter.
+    expect(authFailure.auth).toBe(AUTH_FAILURE_FACTS_BY_PROBE_CONTRACT[toolId]);
 
     const untrusted = await createCliImplementer(implementerConfig(toolId), {
       trustedCli: undefined,

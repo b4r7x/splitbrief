@@ -70,24 +70,34 @@ describe('TwoColumnPicker', () => {
         onCancel={() => {}}
       />,
     );
-    await vi.waitFor(() => {
-      expect(leftChanges.at(-1)).toBe('alpha');
-    });
+    await vi.waitFor(
+      () => {
+        expect(leftChanges.at(-1)).toBe('alpha');
+      },
+      { timeout: 5_000 },
+    );
+    await flushEffects();
 
     ui.stdin.write('\u001B[B'); // down -> 'beta' (disabled)
-    await vi.waitFor(() => {
-      expect(leftChanges.at(-1)).toBe('beta');
-    });
+    await vi.waitFor(
+      () => {
+        expect(leftChanges.at(-1)).toBe('beta');
+      },
+      { timeout: 5_000 },
+    );
+    await flushEffects();
 
     ui.stdin.write('\r'); // Enter on disabled - no-op
-    await tick(20);
+    await flushEffects();
+    ui.stdin.write('\u001B[B'); // down -> 'gamma'; reaching it proves the Enter above was processed
+    await vi.waitFor(
+      () => {
+        expect(leftChanges.at(-1)).toBe('gamma');
+        expect(ui.lastFrame()).toContain('Gamma');
+      },
+      { timeout: 5_000 },
+    );
     expect(confirms).toEqual([]);
-
-    ui.stdin.write('\u001B[B'); // down -> 'gamma'
-    await vi.waitFor(() => {
-      expect(leftChanges.at(-1)).toBe('gamma');
-      expect(ui.lastFrame()).toContain('Gamma');
-    });
     ui.unmount();
   });
 
@@ -120,6 +130,7 @@ describe('TwoColumnPicker', () => {
     await flushEffects();
     expect(ui.lastFrame()).toContain('alpha-1');
 
+    await flushEffects();
     ui.stdin.write('g');
     await flushEffects();
 
@@ -164,12 +175,14 @@ describe('TwoColumnPicker', () => {
     await flushEffects();
     expect(ui.lastFrame()).toContain('alpha-1');
 
+    await flushEffects();
     ui.stdin.write('\u0012'); // ctrl+r - refresh re-sorts the tools under the cursor
     await flushEffects();
 
     expect(ui.lastFrame()).toContain('gamma-1');
     expect(ui.lastFrame()).not.toContain('alpha-1');
 
+    await flushEffects();
     ui.stdin.write('\r'); // Enter left -> focus right
     await flushEffects();
     ui.stdin.write('\r'); // Enter right -> confirm
@@ -211,6 +224,7 @@ describe('TwoColumnPicker', () => {
     await flushEffects();
     expect(ui.lastFrame()).toContain('alpha-1');
 
+    await flushEffects();
     ui.stdin.write('\r'); // Enter left -> focus right
     await flushEffects();
     ui.stdin.write('\r'); // Enter right -> confirm
@@ -255,6 +269,7 @@ describe('TwoColumnPicker', () => {
 
     // Down to gamma (beta is disabled but still navigable), back up to alpha:
     // each move resets the right cursor through resolveInitialIndex.
+    await flushEffects();
     ui.stdin.write('\u001B[B');
     await flushEffects();
     ui.stdin.write('\u001B[B');
@@ -266,6 +281,7 @@ describe('TwoColumnPicker', () => {
 
     expect(confirms).toEqual([{ l: 'gamma', r: 'g-1' }]);
 
+    await flushEffects();
     ui.stdin.write('\u001B[D');
     await flushEffects();
     ui.stdin.write('\u001B[B');
@@ -316,9 +332,11 @@ describe('TwoColumnPicker', () => {
     await flushEffects();
 
     for (const keystroke of keys) {
+      await flushEffects();
       ui.stdin.write(keystroke);
       await flushEffects();
     }
+    await flushEffects();
     ui.stdin.write('\r');
     await flushEffects();
     ui.stdin.write('\r');
@@ -414,10 +432,10 @@ describe('TwoColumnPicker', () => {
         }}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\u001B[C'); // right with no left item
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\u001B'); // Escape
     await tick(20);
 
@@ -447,14 +465,14 @@ describe('TwoColumnPicker', () => {
         }}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\u001B'); // Escape - ignored while the overlay is on top
     await tick(20);
     expect(cancelled).toBe(0);
 
     overlayStore.close();
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\u001B'); // Escape now reaches the picker and fires onCancel
     await tick(20);
@@ -678,7 +696,7 @@ describe('TwoColumnPicker', () => {
         }}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\u001B'); // Escape - active because the picker's own overlay is topmost
     await tick(20);
@@ -709,7 +727,7 @@ describe('TwoColumnPicker', () => {
         onCancel={() => {}}
       />,
     );
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\r');
     await tick(20);

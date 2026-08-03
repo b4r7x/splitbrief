@@ -49,4 +49,11 @@ describe('providerError factories', () => {
     expect(err.message).toBe('HTTP 503');
     expect(err.data).toEqual({ status: 503, url: 'https://api.example/v1' });
   });
+
+  test('ollamaLocalCredentialReference rejects unsafe sources without echoing a secret', () => {
+    const err = providerError.ollamaLocalCredentialReference();
+    expect(err.kind).toBe('provider-ollama-local-credential-invalid');
+    expect(err.message).toContain('OLLAMA_LOCAL_API_KEY');
+    expect(err.data).toBeUndefined();
+  });
 });

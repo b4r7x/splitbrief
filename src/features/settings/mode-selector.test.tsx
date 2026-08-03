@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configStore } from '../../stores/project/config.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
@@ -124,9 +124,9 @@ describe('ModeSelector', () => {
     const click = collectClickableZones({ cols: 100, rows: 50 }).get('mode:instant');
     expect(click).toBeDefined();
     click?.();
-    await tick(20);
-
-    expect(getWorkflowMode(configStore.get().config ?? makeConfig())).toBe('instant');
+    await vi.waitFor(() => {
+      expect(getWorkflowMode(configStore.get().config ?? makeConfig())).toBe('instant');
+    });
     expect(feedbackStore.get().message).toContain('instant');
     expect(overlayStore.get().active).toBe('none');
 
@@ -139,10 +139,10 @@ describe('ModeSelector', () => {
     expect(getWorkflowMode(configStore.get().config ?? makeConfig())).toBe('standard');
 
     const ui = renderFeature(<ModeSelector />);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('\u001b[B');
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('\r');
     await tick(20);
 

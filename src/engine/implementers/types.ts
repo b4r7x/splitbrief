@@ -3,7 +3,7 @@ import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
-import type { RunnerRuntime } from '../runners/types.js';
+import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
 import type { RunnerFailureOutcomeState } from '../runners/errors.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { CliStartGate } from '../runners/start-gate.js';
@@ -39,6 +39,7 @@ export interface ImplementerFactoryOptions {
   allowRepoRunners?: boolean | undefined;
   /** Canonical CLI identity admitted by the start-readiness gate. */
   trustedCli?: CliStartGate | undefined;
+  customRuntime?: CustomRunnerRuntimePort | undefined;
 }
 
 export interface ImplementerOptions {

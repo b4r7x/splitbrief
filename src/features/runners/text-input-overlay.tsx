@@ -1,39 +1,51 @@
 import { useState, useEffect } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { Box, Text } from 'ink';
 import { MultilineInput } from '../../components/input/multiline-input.js';
 import { SOFT_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
-import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getClampedTerminalWidth } from '../../utils/terminal-width.js';
+import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { glyph } from '../../lib/glyphs.js';
+import { SubPanel } from './sub-panel.js';
 
 interface TextInputOverlayProps {
-  title: ReactNode;
+  title: string;
+  role: 'planner' | 'implementer';
+  stepIndicator?: ReactElement | undefined;
+  recap?: ReactElement | undefined;
   label: ReactNode;
   placeholder: string;
   initialValue?: string;
-  examples?: string[];
+  mask?: string | undefined;
+  helper?: string | undefined;
+  examples?: string[] | undefined;
+  hint?: string | undefined;
   rows?: number;
   maxRows?: number;
+  onChange?: ((value: string) => void) | undefined;
   onSubmit: (value: string) => void;
 }
 
 export function TextInputOverlay({
   title,
+  role,
+  stepIndicator,
+  recap,
   label,
   placeholder,
   initialValue = '',
+  mask,
+  helper,
   examples,
+  hint,
   rows = 1,
   maxRows = 1,
+  onChange,
   onSubmit,
 }: TextInputOverlayProps) {
   const t = useTheme();
-  const cols = terminalSizeStore.use((s) => s.cols);
-  const termRows = terminalSizeStore.use((s) => s.rows);
   const [value, setValue] = useState(initialValue);
+  const [visibleRows, setVisibleRows] = useState(rows);
   const focus = overlayStore.use(
     (s) =>
       s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
@@ -46,59 +58,81 @@ export function TextInputOverlay({
     };
   }, []);
 
+  const handleChange = (next: string) => {
+    setValue(next);
+    onChange?.(next);
+  };
+
   const handleSubmit = (text: string) => {
     const trimmed = text.trim();
     if (trimmed) onSubmit(trimmed);
   };
 
+  // Keep the panel height constant while the input grows: the helper line
+  // yields first, then the examples. The input reports its actual rendered
+  // rows, so word-wrap never outgrows an estimate.
+  const showHelper = helper !== undefined && visibleRows < 2;
+  const showExamples = examples !== undefined && examples.length > 0 && visibleRows < 3;
+  const spacedExamples = helper === undefined;
+
   return (
-    <Box width={cols} height={termRows} alignItems="center" justifyContent="center">
-      <Box flexDirection="column">
-        <Box marginBottom={1}>
-          <Text color={t.textDim}>{title}</Text>
+    <SubPanel
+      title={title}
+      role={role}
+      stepIndicator={stepIndicator}
+      hint={hint ?? `⏎ save${SOFT_SEP}esc back`}
+    >
+      {recap ? (
+        <Box flexDirection="column">
+          {recap}
+          <Box height={1} />
         </Box>
-        <Text color={t.textDim}>{label}</Text>
-        <Box
-          marginTop={1}
-          borderStyle="round"
-          borderColor={t.border}
-          paddingX={1}
-          width={getClampedTerminalWidth({ cols, maxWidth: 60, gutter: 12 })}
-        >
-          <Text color={t.accent}>{`${glyph('prompt')} `}</Text>
-          <Box flexGrow={1}>
-            <MultilineInput
-              value={value}
-              onChange={setValue}
-              onSubmit={handleSubmit}
-              rows={rows}
-              maxRows={maxRows}
-              placeholder={placeholder}
-              focus={focus}
-              keyBindings={{
-                submit: (key) => key.return,
-                newline: () => false,
-              }}
-            />
-          </Box>
-        </Box>
-        {examples && examples.length > 0 && (
-          <Box marginTop={1} flexDirection="column">
-            <Text color={t.textDim} dimColor>
-              Examples
-            </Text>
-            {examples.map((ex) => (
-              <Text key={ex} color={t.textDim} dimColor>
-                {'  '}
-                {ex}
-              </Text>
-            ))}
-          </Box>
-        )}
-        <Box marginTop={1}>
-          <Text color={t.textDim}>{`⏎ save${SOFT_SEP}esc back`}</Text>
+      ) : null}
+      <Box height={1} overflow="hidden">
+        <Text color={t.text} wrap="truncate-end">
+          {label}
+        </Text>
+      </Box>
+      <Box borderStyle={borderStyleFor('round')} borderColor={t.border} paddingX={1}>
+        <Text color={t.accent}>{`${glyph('prompt')} `}</Text>
+        <Box flexGrow={1}>
+          <MultilineInput
+            value={value}
+            onChange={handleChange}
+            onSubmit={handleSubmit}
+            rows={rows}
+            maxRows={maxRows}
+            mask={mask}
+            placeholder={placeholder}
+            focus={focus}
+            onVisibleRowsChange={setVisibleRows}
+            keyBindings={{
+              submit: (key) => key.return,
+              newline: () => false,
+            }}
+          />
         </Box>
       </Box>
-    </Box>
+      {showHelper ? (
+        <Box height={1} overflow="hidden">
+          <Text color={t.textDim} wrap="truncate-end">
+            {helper}
+          </Text>
+        </Box>
+      ) : null}
+      {showExamples && examples ? (
+        <Box flexDirection="column">
+          {spacedExamples ? <Box height={1} /> : null}
+          {examples.map((example, exampleIndex) => (
+            <Box key={example} height={1} overflow="hidden">
+              <Text color={t.textDim} wrap="truncate-end">
+                {`${exampleIndex === 0 ? 'e.g. ' : '     '}${example}`}
+              </Text>
+            </Box>
+          ))}
+          {spacedExamples ? <Box height={1} /> : null}
+        </Box>
+      ) : null}
+    </SubPanel>
   );
 }

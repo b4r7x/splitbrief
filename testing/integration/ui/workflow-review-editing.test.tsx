@@ -236,7 +236,7 @@ describe('WorkflowScreen review editing', () => {
         expect(ui.lastFrame() ?? '').toContain('Inline shortcut task');
       });
       focusStore.set('brief', 0);
-      await tick(20);
+      await flushEffects();
 
       ui.stdin.write(CTRL_E);
 

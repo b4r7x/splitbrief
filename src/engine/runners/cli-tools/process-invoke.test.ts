@@ -6,6 +6,7 @@ import {
   realpathSync,
   statSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,9 +27,13 @@ import {
   CLI_RAW_OUTPUT_MAX_BYTES,
   CLI_RAW_PROTOCOL_MAX_EVENTS,
   invokeProcessCli,
+  revalidateCliExecutableIdentity,
 } from './process-invoke.js';
 import { toCliEnvironment } from '../invoke-cli-adapter.js';
+import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import { createRunnerSandboxEnv } from '../sandbox-env.js';
+
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 const callContext = {
   callId: 'process-invoke-test',
@@ -777,6 +782,44 @@ describe('invokeProcessCli', () => {
         error: { code: 'cli-executable-identity-drift' },
       });
       expect(result.error?.message).not.toContain(trustedIdentity.path);
+      expect(existsSync(markerPath)).toBe(false);
+    });
+  });
+
+  itUnix('blocks a metadata-preserving replacement at invocation without spawning it', async () => {
+    await withTempDir('splitbrief-cli-digest-identity', async (dir) => {
+      const executablePath = join(dir, 'fixture');
+      const markerPath = `${executablePath}.ran`;
+      const original = '#!/bin/sh\n:     "$0.ran"\nexit 0\n';
+      const replacement = '#!/bin/sh\ntouch "$0.ran"\nexit 0\n';
+      expect(Buffer.byteLength(original)).toBe(Buffer.byteLength(replacement));
+      writeFileSync(executablePath, original, { mode: 0o755 });
+      chmodSync(executablePath, 0o755);
+      const fixedTime = new Date(1_700_000_000_000);
+      utimesSync(executablePath, fixedTime, fixedTime);
+      const trustedIdentity = await resolveCliExecutable(executablePath, process.cwd());
+      const before = statSync(executablePath);
+
+      writeFileSync(executablePath, replacement, { mode: 0o755 });
+      chmodSync(executablePath, 0o755);
+      utimesSync(executablePath, fixedTime, fixedTime);
+      const after = statSync(executablePath);
+
+      expect(after.ino).toBe(before.ino);
+      expect(after.size).toBe(before.size);
+      expect(after.mtimeMs).toBe(before.mtimeMs);
+      expect(await revalidateCliExecutableIdentity(trustedIdentity)).toBe('drift');
+
+      const result = await run(
+        adapter({ kind: 'stdin' }),
+        invocation({ executable: trustedIdentity, script: '' }),
+      );
+
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'cli-executable-identity-drift' },
+      });
+      expect(result.error?.message).not.toContain(executablePath);
       expect(existsSync(markerPath)).toBe(false);
     });
   });

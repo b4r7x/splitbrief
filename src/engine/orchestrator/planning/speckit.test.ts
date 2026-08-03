@@ -19,6 +19,7 @@ import { ANALYZE_FILE, sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../.
 import { runPlanningPhase } from './run.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
+import type { ApprovalReviewInput } from '../../runners/types.js';
 import type { OrchestratorCallbacks } from '../types.js';
 
 const TEST_METADATA = {
@@ -262,7 +263,11 @@ describe('runSpeckitPlanning', () => {
     let tasksPath = '';
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockImplementationOnce(async (_type, filePath) => {
+      .mockImplementationOnce(async (_type, input: ApprovalReviewInput) => {
+        if (typeof input !== 'string') {
+          throw new Error('Expected a task briefs file path');
+        }
+        const filePath = input;
         tasksPath = filePath;
         writeFileSync(filePath, formatTasks(invalidPlanResult().tasks), 'utf8');
         return { approved: true };

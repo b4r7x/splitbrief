@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { useRecentSessionsFocus } from './use-recent-sessions-focus.js';
 
 const CTRL_R = '\x12';
@@ -44,7 +44,7 @@ describe('useRecentSessionsFocus', () => {
       />,
     );
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await tick(20);
@@ -65,7 +65,7 @@ describe('useRecentSessionsFocus', () => {
       />,
     );
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await tick(20);
@@ -86,7 +86,7 @@ describe('useRecentSessionsFocus', () => {
       />,
     );
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await tick(20);
@@ -107,7 +107,7 @@ describe('useRecentSessionsFocus', () => {
       />,
     );
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(CTRL_R);
     await tick(20);
@@ -128,14 +128,14 @@ describe('useRecentSessionsFocus', () => {
       />,
     );
     unmount = ui.unmount;
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write(ARROW_UP);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ARROW_DOWN);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write(ENTER);
-    await tick(20);
+    await flushEffects();
     ui.stdin.write('x');
     await tick(20);
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { tick } from '#testing/helpers/ink.js';
+import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -63,6 +63,7 @@ describe('WorkflowScreen key ownership', () => {
 
     // A single 's' must produce exactly one semantic action: the prompt's session-approve.
     // If the composer were still focused it would also append 's' to the input box.
+    await flushEffects();
     ui.stdin.write('s');
     await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'session' });
     await tick(20);
@@ -81,7 +82,7 @@ describe('WorkflowScreen key ownership', () => {
 
     const decision = openApprovalPrompt(stickyRequest());
     await tick(PAST_GRACE);
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('s');
     await expect(decision).resolves.toEqual({ decision: 'allow', scope: 'session' });
@@ -98,6 +99,7 @@ describe('WorkflowScreen key ownership', () => {
 
     // The 'x' arrives inside the grace window (a keystroke meant for the composer that was
     // in flight when the prompt opened). It must not deny the prompt.
+    await flushEffects();
     ui.stdin.write('x');
     await tick(20);
     let settled = false;
@@ -108,6 +110,7 @@ describe('WorkflowScreen key ownership', () => {
     expect(settled).toBe(false);
 
     await tick(PAST_GRACE);
+    await flushEffects();
     ui.stdin.write('x');
     await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
 
@@ -151,6 +154,7 @@ describe('WorkflowScreen key ownership', () => {
 
     expect(ui.lastFrame() ?? '').toContain('approve?');
 
+    await flushEffects();
     ui.stdin.write('n');
     await expect(decision).resolves.toBe(false);
 
@@ -162,6 +166,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(20);
 
     // Control: outside brief review the composer owns printable keystrokes.
+    await flushEffects();
     ui.stdin.write('j');
     await tick(20);
 
@@ -174,7 +179,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(20);
 
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    await tick(20);
+    await flushEffects();
 
     ui.stdin.write('j');
     await tick(20);

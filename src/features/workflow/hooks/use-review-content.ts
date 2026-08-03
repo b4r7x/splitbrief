@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import fs from 'node:fs/promises';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { reviewStore } from '../../../stores/workflow/review.js';
+import { reviewStore, type ReviewSource } from '../../../stores/workflow/review.js';
 import { labelError } from '../../../utils/format-errors.js';
 
 type ReviewContentReader = (
@@ -17,7 +17,7 @@ interface LoadedReviewContent {
 }
 
 export function useReviewContent(
-  filePath: string | null,
+  source: ReviewSource | null,
   reader: ReviewContentReader = fs.readFile,
 ): string {
   const [loaded, setLoaded] = useState<LoadedReviewContent | null>(null);
@@ -25,12 +25,13 @@ export function useReviewContent(
   const ownerToken = reviewStore.use((s) => s.ownerToken);
 
   useEffect(() => {
-    if (!filePath) {
+    if (source?.kind !== 'file') {
       setLoaded(null);
       reviewStore.setRenderedLineCount(0);
       return;
     }
 
+    const filePath = source.filePath;
     const controller = new AbortController();
     const readOwnerToken = ownerToken;
     const readRevision = revision;
@@ -62,9 +63,12 @@ export function useReviewContent(
     return () => {
       controller.abort();
     };
-  }, [filePath, ownerToken, revision, reader]);
+  }, [source, ownerToken, revision, reader]);
 
-  return loaded?.filePath === filePath &&
+  if (source?.kind === 'artifact') return source.text;
+
+  return source?.kind === 'file' &&
+    loaded?.filePath === source.filePath &&
     loaded.ownerToken === ownerToken &&
     loaded.revision === revision
     ? loaded.content

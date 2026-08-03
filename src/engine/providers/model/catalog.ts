@@ -1,274 +1,438 @@
 import type { DetectedModel } from '../../../core/discovery/detection.js';
-import { isProviderId, type ProviderId } from '../../../core/schemas/enums.js';
-import { isProviderLocal } from '../../../core/providers/catalog.js';
+import type { ActiveRunnerRole } from '../../../core/config/accessors/active-runner.js';
+import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
 import type { KnownModel } from '../../../core/providers/known-models.js';
+import { isProviderId, type ProviderId } from '../../../core/schemas/enums.js';
+import { getPricingMode, isApiPricedProvider, type PricingMode } from '../pricing-resolver.js';
 import {
   NULL_CACHE,
-  findModelMetadata,
+  findKnownModel,
   getBundledModels,
   getModelsDevEntries,
-  getRuntimeLookupProvider,
-  lookupRuntimeModel,
+  getRuntimeModelSnapshot,
   type ModelCacheAccessor,
 } from './resolution.js';
-import { isApiPricedProvider, getPricingMode, type PricingMode } from '../pricing-resolver.js';
-import { buildComparableKeys } from './parsing.js';
+import { areExactModelSelectionIdsEqual } from './parsing.js';
+
+export type ResolvedModelSource =
+  | 'models-dev'
+  | 'runtime'
+  | 'bundled-fallback'
+  | 'configured-recovery';
+export type ResolvedModelMembership =
+  | 'confirmed'
+  | 'stale'
+  | 'catalog-suggestion'
+  | 'bundled-suggestion'
+  | 'custom';
+
+export interface ResolveModelCatalogOptions {
+  readonly cache?: ModelCacheAccessor | undefined;
+  readonly configuredSelectionId?: string | undefined;
+  readonly role?: ActiveRunnerRole | undefined;
+}
 
 export interface ResolvedModelCatalogEntry extends DetectedModel {
-  id: string;
-  isDefault?: boolean;
-  isDetected?: boolean;
-  source: 'models-dev' | 'runtime' | 'bundled-fallback';
-  pricingMode: PricingMode;
+  readonly id: string;
+  readonly selectionId: string;
+  readonly runnerId: ProviderId;
+  readonly sourceProviderId: string;
+  readonly isDefault?: boolean;
+  readonly isDetected?: boolean;
+  readonly isCustom?: boolean;
+  readonly nativeOrder?: number | undefined;
+  readonly source: ResolvedModelSource;
+  readonly membership: ResolvedModelMembership;
+  readonly isStale?: boolean;
+  readonly canConfigure: boolean;
+  readonly pricingMode: PricingMode;
 }
 
-function mergeModelMetadata(opts: {
-  providerId: ProviderId;
-  base: ResolvedModelCatalogEntry;
-  runtime: DetectedModel | undefined;
-  modelsDev: DetectedModel | undefined;
-}): ResolvedModelCatalogEntry {
-  const { providerId, base, runtime, modelsDev } = opts;
-  const apiPriced = isApiPricedProvider(providerId);
-  const { pricingInput: seedIn, pricingOutput: seedOut, isFree: seedFree, ...seedRest } = base;
-  const contextLength = modelsDev?.contextLength ?? runtime?.contextLength ?? base.contextLength;
-  const pricingInput = modelsDev?.pricingInput ?? runtime?.pricingInput ?? seedIn;
-  const pricingOutput = modelsDev?.pricingOutput ?? runtime?.pricingOutput ?? seedOut;
-  const pricingCacheRead =
-    modelsDev?.pricingCacheRead ?? runtime?.pricingCacheRead ?? base.pricingCacheRead;
-  const pricingCacheWrite =
-    modelsDev?.pricingCacheWrite ?? runtime?.pricingCacheWrite ?? base.pricingCacheWrite;
-  const pricingTiers = modelsDev?.pricingTiers ?? runtime?.pricingTiers ?? base.pricingTiers;
-  const isFree = modelsDev?.isFree ?? runtime?.isFree ?? seedFree;
-  const isDetected = base.isDetected ?? !!runtime;
-  const releaseDate = modelsDev?.releaseDate ?? runtime?.releaseDate ?? base.releaseDate;
-
-  return {
-    ...seedRest,
-    source: modelsDev
-      ? 'models-dev'
-      : base.source === 'models-dev'
-        ? 'models-dev'
-        : runtime
-          ? 'runtime'
-          : base.source,
-    ...(contextLength !== undefined && { contextLength }),
-    ...(apiPriced && pricingInput !== undefined && { pricingInput }),
-    ...(apiPriced && pricingOutput !== undefined && { pricingOutput }),
-    ...(apiPriced && pricingCacheRead !== undefined && { pricingCacheRead }),
-    ...(apiPriced && pricingCacheWrite !== undefined && { pricingCacheWrite }),
-    ...(apiPriced && pricingTiers !== undefined && { pricingTiers }),
-    ...(apiPriced && isFree !== undefined && { isFree }),
-    ...(isDetected !== undefined && { isDetected }),
-    ...(releaseDate !== undefined && { releaseDate }),
-  };
+function ownerFor(entry: DetectedModel, fallback: string): string {
+  return entry.providerId ?? fallback;
 }
 
-function toBundledEntry(
+function entryKey(input: Readonly<{ owner: string; selectionId: string }>): string {
+  return `${input.owner}\u0000${input.selectionId}`;
+}
+
+function exactModelsDevMetadata(
+  input: Readonly<{
+    entries: readonly DetectedModel[];
+    selectionId: string;
+    sourceProviderId?: string | undefined;
+  }>,
+): DetectedModel | null {
+  const matches = input.entries.filter(
+    (entry) =>
+      areExactModelSelectionIdsEqual({ left: entry.id, right: input.selectionId }) &&
+      (input.sourceProviderId === undefined || entry.providerId === input.sourceProviderId),
+  );
+  if (matches.length !== 1) return null;
+  return matches[0] ?? null;
+}
+
+function metadataForSelection(
+  input: Readonly<{
+    runnerId: ProviderId;
+    selectionId: string;
+    sourceProviderId: string;
+    modelsDevEntries: readonly DetectedModel[];
+  }>,
+): DetectedModel | null {
+  const direct = exactModelsDevMetadata({
+    entries: input.modelsDevEntries,
+    selectionId: input.selectionId,
+    sourceProviderId: input.sourceProviderId,
+  });
+  if (direct !== null) return direct;
+
+  const known = findKnownModel(input.runnerId, input.selectionId);
+  if (known?.catalogModelId === undefined || known.catalogProvider === undefined) return null;
+  return exactModelsDevMetadata({
+    entries: input.modelsDevEntries,
+    selectionId: known.catalogModelId,
+    sourceProviderId: known.catalogProvider,
+  });
+}
+
+function metadataForBundledModel(
+  input: Readonly<{
+    model: KnownModel;
+    modelsDevEntries: readonly DetectedModel[];
+  }>,
+): DetectedModel | null {
+  const { model } = input;
+  const selectionId = model.catalogModelId ?? model.name;
+  return exactModelsDevMetadata({
+    entries: input.modelsDevEntries,
+    selectionId,
+    ...(model.catalogProvider === undefined ? {} : { sourceProviderId: model.catalogProvider }),
+  });
+}
+
+function mergeRuntimeMetadata(
+  runtime: DetectedModel,
+  modelsDev: DetectedModel | null,
+): DetectedModel {
+  if (modelsDev === null) return runtime;
+  return { ...modelsDev, ...runtime };
+}
+
+function stripUnpricedFields(
   providerId: ProviderId,
-  entry: KnownModel,
-  cache: ModelCacheAccessor,
+  entry: ResolvedModelCatalogEntry,
 ): ResolvedModelCatalogEntry {
-  const apiPriced = isApiPricedProvider(providerId);
-  const base: ResolvedModelCatalogEntry = {
-    id: entry.name,
+  if (isApiPricedProvider(providerId)) return entry;
+  const {
+    pricingInput: _pricingInput,
+    pricingOutput: _pricingOutput,
+    pricingCacheRead: _pricingCacheRead,
+    pricingCacheWrite: _pricingCacheWrite,
+    pricingTiers: _pricingTiers,
+    isFree: _isFree,
+    ...unpriced
+  } = entry;
+  return unpriced;
+}
+
+function runtimeEntry(
+  input: Readonly<{
+    runnerId: ProviderId;
+    runtimeProviderId: ProviderId;
+    model: DetectedModel;
+    nativeOrder: number;
+    isStale: boolean;
+    modelsDevEntries: readonly DetectedModel[];
+  }>,
+): ResolvedModelCatalogEntry {
+  const sourceProviderId = ownerFor(input.model, input.runtimeProviderId);
+  const metadata = metadataForSelection({
+    runnerId: input.runnerId,
+    selectionId: input.model.id,
+    sourceProviderId,
+    modelsDevEntries: input.modelsDevEntries,
+  });
+  const merged = mergeRuntimeMetadata(input.model, metadata);
+  return stripUnpricedFields(input.runnerId, {
+    ...merged,
+    id: input.model.id,
+    selectionId: input.model.id,
+    runnerId: input.runnerId,
+    sourceProviderId,
+    isDetected: !input.isStale,
+    nativeOrder: input.model.nativeOrder ?? input.nativeOrder,
+    source: 'runtime',
+    membership: input.isStale ? 'stale' : 'confirmed',
+    ...(input.isStale ? { isStale: true } : {}),
+    canConfigure: true,
+    pricingMode: getPricingMode(input.runnerId),
+  });
+}
+
+function modelsDevSuggestion(
+  input: Readonly<{
+    runnerId: ProviderId;
+    model: DetectedModel;
+  }>,
+): ResolvedModelCatalogEntry {
+  const sourceProviderId = ownerFor(input.model, input.runnerId);
+  return stripUnpricedFields(input.runnerId, {
+    ...input.model,
+    id: input.model.id,
+    selectionId: input.model.id,
+    runnerId: input.runnerId,
+    sourceProviderId,
+    isDetected: false,
+    source: 'models-dev',
+    membership: 'catalog-suggestion',
+    canConfigure: true,
+    pricingMode: getPricingMode(input.runnerId),
+  });
+}
+
+function bundledSuggestion(
+  input: Readonly<{
+    runnerId: ProviderId;
+    model: KnownModel;
+    modelsDevEntries: readonly DetectedModel[];
+    keepBundledDefault: boolean;
+  }>,
+): ResolvedModelCatalogEntry {
+  const sourceProviderId = input.runnerId;
+  const metadata = metadataForBundledModel({
+    model: input.model,
+    modelsDevEntries: input.modelsDevEntries,
+  });
+  const base: DetectedModel = {
+    id: input.model.name,
+    ...(input.model.contextLength === undefined
+      ? {}
+      : { contextLength: input.model.contextLength }),
+    ...(input.model.maxOutputTokens === undefined
+      ? {}
+      : { maxOutputTokens: input.model.maxOutputTokens }),
+    ...(input.model.pricingInput === undefined ? {} : { pricingInput: input.model.pricingInput }),
+    ...(input.model.pricingOutput === undefined
+      ? {}
+      : { pricingOutput: input.model.pricingOutput }),
+    ...(input.model.pricingCacheRead === undefined
+      ? {}
+      : { pricingCacheRead: input.model.pricingCacheRead }),
+    ...(input.model.pricingCacheWrite === undefined
+      ? {}
+      : { pricingCacheWrite: input.model.pricingCacheWrite }),
+    ...(input.model.isFree === undefined ? {} : { isFree: input.model.isFree }),
+  };
+  const merged = metadata === null ? base : { ...metadata, ...base };
+  return stripUnpricedFields(input.runnerId, {
+    ...merged,
+    id: input.model.name,
+    selectionId: input.model.name,
+    runnerId: input.runnerId,
+    sourceProviderId,
+    ...(input.keepBundledDefault && input.model.isDefault ? { isDefault: true } : {}),
+    isDetected: false,
     source: 'bundled-fallback',
-    pricingMode: getPricingMode(providerId),
-    ...(entry.isDefault !== undefined && { isDefault: entry.isDefault }),
-    ...(entry.contextLength !== undefined && { contextLength: entry.contextLength }),
-    ...(entry.maxOutputTokens !== undefined && { maxOutputTokens: entry.maxOutputTokens }),
-    ...(apiPriced && entry.pricingInput !== undefined && { pricingInput: entry.pricingInput }),
-    ...(apiPriced && entry.pricingOutput !== undefined && { pricingOutput: entry.pricingOutput }),
-    ...(apiPriced && entry.isFree !== undefined && { isFree: entry.isFree }),
-  };
-
-  return mergeModelMetadata({
-    providerId,
-    base,
-    runtime: undefined,
-    modelsDev: entry.catalogModelId
-      ? (findModelMetadata(entry.catalogProvider ?? providerId, entry.catalogModelId, cache) ??
-        undefined)
-      : undefined,
+    membership: 'bundled-suggestion',
+    canConfigure: true,
+    pricingMode: getPricingMode(input.runnerId),
   });
 }
 
-function toRuntimeEntry(
-  providerId: ProviderId,
-  entry: DetectedModel,
-  cache: ModelCacheAccessor,
+function configuredRecovery(
+  input: Readonly<{
+    runnerId: ProviderId;
+    selectionId: string;
+  }>,
 ): ResolvedModelCatalogEntry {
-  return mergeModelMetadata({
-    providerId,
-    base: {
-      id: entry.id,
-      source: 'runtime',
-      pricingMode: getPricingMode(providerId),
-      isDetected: true,
-    },
-    runtime: entry,
-    modelsDev: isApiPricedProvider(providerId)
-      ? (findModelMetadata(providerId, entry.id, cache) ?? undefined)
-      : undefined,
+  return stripUnpricedFields(input.runnerId, {
+    id: input.selectionId,
+    selectionId: input.selectionId,
+    runnerId: input.runnerId,
+    sourceProviderId: input.runnerId,
+    isDetected: false,
+    isCustom: true,
+    source: 'configured-recovery',
+    membership: 'custom',
+    canConfigure: true,
+    pricingMode: getPricingMode(input.runnerId),
   });
 }
 
-function toModelsDevEntry(
+function lifecycleRank(lifecycle: string | undefined): number {
+  return lifecycle?.toLowerCase() === 'deprecated' ? 1 : 0;
+}
+
+function compareSuggestions(
+  left: ResolvedModelCatalogEntry,
+  right: ResolvedModelCatalogEntry,
+): number {
+  const lifecycleDifference = lifecycleRank(left.lifecycle) - lifecycleRank(right.lifecycle);
+  if (lifecycleDifference !== 0) return lifecycleDifference;
+
+  const releaseDifference = (right.releaseDate ?? '').localeCompare(left.releaseDate ?? '');
+  if (releaseDifference !== 0) return releaseDifference;
+
+  const displayDifference = (left.displayName ?? left.id).localeCompare(
+    right.displayName ?? right.id,
+  );
+  if (displayDifference !== 0) return displayDifference;
+
+  const idDifference = left.id.localeCompare(right.id);
+  if (idDifference !== 0) return idDifference;
+  return left.sourceProviderId.localeCompare(right.sourceProviderId);
+}
+
+function runtimeModels(
   providerId: ProviderId,
-  entry: DetectedModel,
   cache: ModelCacheAccessor,
-): ResolvedModelCatalogEntry {
-  return mergeModelMetadata({
-    providerId,
-    base: {
-      id: entry.id,
-      source: 'models-dev',
-      pricingMode: getPricingMode(providerId),
-    },
-    runtime: lookupRuntimeModel(providerId, entry.id, cache) ?? undefined,
-    modelsDev: entry,
-  });
+  role: ActiveRunnerRole | undefined,
+): ReturnType<typeof getRuntimeModelSnapshot> {
+  return getRuntimeModelSnapshot({ providerId, cache, role });
 }
 
-function mergeCatalogEntries(
-  providerId: ProviderId,
-  sources: {
-    bundled: ResolvedModelCatalogEntry[];
-    runtime: ResolvedModelCatalogEntry[];
-    modelsDev: ResolvedModelCatalogEntry[];
-  },
-): ResolvedModelCatalogEntry[] {
-  const byId = new Map<string, ResolvedModelCatalogEntry>();
-  const keyIndex = new Map<string, string>();
-
-  const setEntry = (entry: ResolvedModelCatalogEntry) => {
-    const entryKeys = buildComparableKeys(entry.id);
-    const canonicalId = entryKeys.map((k) => keyIndex.get(k)).find((v) => v !== undefined);
-
-    if (canonicalId === undefined) {
-      byId.set(entry.id, entry);
-      for (const k of entryKeys) keyIndex.set(k, entry.id);
-      return;
-    }
-
-    const existing = byId.get(canonicalId);
-    if (!existing) return;
-
-    const merged = mergeModelMetadata({
-      providerId,
-      base: { ...existing },
-      runtime: entry.source === 'runtime' ? entry : undefined,
-      modelsDev: entry.source === 'models-dev' ? entry : undefined,
-    });
-    const mergedIsDefault = existing.isDefault ?? entry.isDefault;
-    const mergedIsDetected = existing.isDetected || entry.isDetected;
-    if (mergedIsDefault !== undefined) merged.isDefault = mergedIsDefault;
-    if (mergedIsDetected !== undefined) merged.isDetected = mergedIsDetected;
-
-    byId.delete(canonicalId);
-    byId.set(merged.id, merged);
-    for (const [k, v] of keyIndex) {
-      if (v === canonicalId) keyIndex.set(k, merged.id);
-    }
-    for (const k of buildComparableKeys(merged.id)) keyIndex.set(k, merged.id);
-  };
-
-  sources.bundled.forEach(setEntry);
-  sources.modelsDev.forEach(setEntry);
-  sources.runtime.forEach(setEntry);
-
-  return [...byId.values()];
-}
-
-function filterStaleBundled(
-  entries: ResolvedModelCatalogEntry[],
-  freshIds: Set<string>,
-): ResolvedModelCatalogEntry[] {
-  if (freshIds.size === 0) return entries;
-  const freshKeySet = new Set<string>();
-  for (const id of freshIds) {
-    for (const key of buildComparableKeys(id)) freshKeySet.add(key);
+function configuredSelectionId(
+  input: Readonly<{ providerId: ProviderId; selectionId: string | undefined }>,
+): string | null {
+  if (
+    input.selectionId === undefined ||
+    input.selectionId.trim() === '' ||
+    isAutomaticModel(input.selectionId, input.providerId)
+  ) {
+    return null;
   }
-  return entries.filter((e) => {
-    if (e.isDefault) return true;
-    return buildComparableKeys(e.id).some((key) => freshKeySet.has(key));
-  });
+  return input.selectionId;
 }
 
-function collectFreshIds(
-  modelsDev: ResolvedModelCatalogEntry[],
-  runtime: ResolvedModelCatalogEntry[],
-): Set<string> {
-  const ids = new Set<string>();
-  for (const e of modelsDev) ids.add(e.id);
-  for (const e of runtime) ids.add(e.id);
-  return ids;
+function hasExactSelection(
+  entries: readonly ResolvedModelCatalogEntry[],
+  selectionId: string,
+): boolean {
+  return entries.some((entry) =>
+    areExactModelSelectionIdsEqual({ left: entry.selectionId, right: selectionId }),
+  );
 }
 
 function resolveCatalogEntries(
-  providerId: ProviderId,
-  cache: ModelCacheAccessor,
-  opts: { runtimeProvider?: ProviderId; includeModelsDev?: boolean },
+  input: Readonly<{
+    providerId: ProviderId;
+    cache: ModelCacheAccessor;
+    configuredSelectionId?: string | undefined;
+    role?: ActiveRunnerRole | undefined;
+  }>,
 ): ResolvedModelCatalogEntry[] {
-  const bundled = getBundledModels(providerId).map((entry) =>
-    toBundledEntry(providerId, entry, cache),
-  );
-  const modelsDev = opts.includeModelsDev
-    ? getModelsDevEntries(providerId, cache).map((entry) =>
-        toModelsDevEntry(providerId, entry, cache),
-      )
-    : [];
-  const runtimeSource: ProviderId = opts.runtimeProvider ?? providerId;
-  const runtime = (cache.getProviderModels(runtimeSource) ?? []).map((entry) =>
-    toRuntimeEntry(providerId, entry, cache),
-  );
-  return filterStaleBundled(
-    mergeCatalogEntries(providerId, { bundled, runtime, modelsDev }),
-    collectFreshIds(modelsDev, runtime),
-  );
-}
+  const { providerId, cache } = input;
+  const modelsDevEntries = getModelsDevEntries(providerId, cache);
+  const runtimeSnapshot = runtimeModels(providerId, cache, input.role);
+  const runtime = runtimeSnapshot?.entries ?? [];
+  const runtimeRows: ResolvedModelCatalogEntry[] = [];
+  const runtimeKeys = new Set<string>();
 
-function resolveApiCatalog(
-  providerId: ProviderId,
-  cache: ModelCacheAccessor,
-): ResolvedModelCatalogEntry[] {
-  return resolveCatalogEntries(providerId, cache, {
-    runtimeProvider: getRuntimeLookupProvider(providerId),
-    includeModelsDev: true,
+  runtime.forEach((model, nativeOrder) => {
+    const owner = ownerFor(model, runtimeSnapshot?.providerId ?? providerId);
+    const key = entryKey({ owner, selectionId: model.id });
+    if (runtimeKeys.has(key)) return;
+    runtimeKeys.add(key);
+    runtimeRows.push(
+      runtimeEntry({
+        runnerId: providerId,
+        runtimeProviderId: runtimeSnapshot?.providerId ?? providerId,
+        model,
+        nativeOrder,
+        isStale: runtimeSnapshot?.isStale ?? false,
+        modelsDevEntries,
+      }),
+    );
   });
+
+  const modelsDevRows: ResolvedModelCatalogEntry[] = [];
+  const modelsDevKeys = new Set<string>();
+  for (const model of modelsDevEntries) {
+    const key = entryKey({ owner: ownerFor(model, providerId), selectionId: model.id });
+    if (runtimeKeys.has(key) || modelsDevKeys.has(key)) continue;
+    modelsDevKeys.add(key);
+    modelsDevRows.push(modelsDevSuggestion({ runnerId: providerId, model }));
+  }
+
+  const bundledRows: ResolvedModelCatalogEntry[] = [];
+  const bundledKeys = new Set<string>();
+  const keepBundledDefault = runtimeSnapshot === null;
+  for (const model of getBundledModels(providerId)) {
+    const owner = providerId;
+    const key = entryKey({ owner, selectionId: model.name });
+    if (runtimeKeys.has(key) || modelsDevKeys.has(key) || bundledKeys.has(key)) continue;
+    bundledKeys.add(key);
+    bundledRows.push(
+      bundledSuggestion({
+        runnerId: providerId,
+        model,
+        modelsDevEntries,
+        keepBundledDefault,
+      }),
+    );
+  }
+
+  const catalogRows = [
+    ...runtimeRows,
+    ...modelsDevRows.sort(compareSuggestions),
+    ...bundledRows.sort(compareSuggestions),
+  ];
+  const configured = configuredSelectionId({
+    providerId,
+    selectionId: input.configuredSelectionId,
+  });
+  if (configured === null || hasExactSelection(catalogRows, configured)) return catalogRows;
+
+  return [configuredRecovery({ runnerId: providerId, selectionId: configured }), ...catalogRows];
 }
 
-function resolveToolCatalog(
-  providerId: ProviderId,
-  cache: ModelCacheAccessor,
-): ResolvedModelCatalogEntry[] {
-  return resolveCatalogEntries(providerId, cache, { includeModelsDev: true });
+function isModelCacheAccessor(
+  input: ResolveModelCatalogOptions | ModelCacheAccessor | undefined,
+): input is ModelCacheAccessor {
+  return (
+    input !== undefined &&
+    'getModelsDevCatalog' in input &&
+    typeof input.getModelsDevCatalog === 'function' &&
+    'getProviderModels' in input &&
+    typeof input.getProviderModels === 'function'
+  );
 }
 
-function resolveLocalCatalog(
-  providerId: ProviderId,
-  cache: ModelCacheAccessor,
-): ResolvedModelCatalogEntry[] {
-  return resolveCatalogEntries(providerId, cache, {});
+function resolveCatalogOptions(
+  input: ResolveModelCatalogOptions | ModelCacheAccessor | undefined,
+): ResolveModelCatalogOptions {
+  if (isModelCacheAccessor(input)) return { cache: input };
+  return input ?? {};
 }
 
 export function resolveModelCatalog(
   providerId: string,
-  cache: ModelCacheAccessor = NULL_CACHE,
+  options?: ResolveModelCatalogOptions,
+): ResolvedModelCatalogEntry[];
+export function resolveModelCatalog(
+  providerId: string,
+  cache?: ModelCacheAccessor,
+): ResolvedModelCatalogEntry[];
+export function resolveModelCatalog(
+  providerId: string,
+  optionsOrCache?: ResolveModelCatalogOptions | ModelCacheAccessor,
 ): ResolvedModelCatalogEntry[] {
   if (!isProviderId(providerId)) return [];
-  if (isProviderLocal(providerId)) return resolveLocalCatalog(providerId, cache);
-  if (isApiPricedProvider(providerId)) return resolveApiCatalog(providerId, cache);
-  return resolveToolCatalog(providerId, cache);
+  const options = resolveCatalogOptions(optionsOrCache);
+  return resolveCatalogEntries({
+    providerId,
+    cache: options.cache ?? NULL_CACHE,
+    configuredSelectionId: options.configuredSelectionId,
+    role: options.role,
+  });
 }
 
 export function lookupCatalogContextLength(
   providerId: string,
   modelId: string,
 ): number | undefined {
-  const modelKeys = new Set(buildComparableKeys(modelId));
-  const entry = resolveModelCatalog(providerId).find((candidate) =>
-    buildComparableKeys(candidate.id).some((key) => modelKeys.has(key)),
-  );
-  return entry?.contextLength;
+  return resolveModelCatalog(providerId).find((entry) =>
+    areExactModelSelectionIdsEqual({ left: entry.selectionId, right: modelId }),
+  )?.contextLength;
 }

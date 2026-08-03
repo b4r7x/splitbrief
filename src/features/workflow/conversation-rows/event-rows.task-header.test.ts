@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
@@ -58,7 +59,7 @@ function makeMarkdownPlannerText(
 }
 
 describe('eventRows task header and planner phase header', () => {
-  it('renders task_started as a segmented header (accent index, text title, textDim metadata)', () => {
+  it('preserves task header metadata across canonical-label wrapping', () => {
     const event = makeTaskStarted();
     const rows = eventRows({
       event,
@@ -69,15 +70,21 @@ describe('eventRows task header and planner phase header', () => {
 
     expect(rows.length).toBeGreaterThan(0);
     const first = requireRow(rows, 0);
+    const text = rows.map(rowText).join('');
+    const metadata = rows
+      .flatMap((row) => row.segments)
+      .filter((segment) => segment.tone === 'textDim')
+      .map((segment) => segment.text)
+      .join('');
+
     expect(first.kind).toBe('task-header');
-    expect(first.segments).toEqual([
-      { text: 'T1', tone: 'text', bold: true },
-      { text: ' Route ordinary task', tone: 'text', bold: true },
-      {
-        text: '  src/app.ts (modify) · Codex · profile cheap-cloud · fit fits · why selected cheapest capable ',
-        tone: 'textDim',
-      },
-    ]);
+    expect(text).toContain('T1 Route ordinary task');
+    expect(metadata).toContain('src/app.ts (modify)');
+    expect(metadata).toContain('OpenAI Codex CLI');
+    expect(metadata).toContain('profile cheap-cloud');
+    expect(metadata).toContain('fit fits');
+    expect(metadata).toContain('why selected cheapest capable');
+    expect(rows.every((row) => getTerminalCellWidth(rowText(row)) <= 120)).toBe(true);
   });
 
   it('keeps title bold on wrapped continuation lines before metadata', () => {

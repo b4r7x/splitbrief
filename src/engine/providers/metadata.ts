@@ -23,16 +23,3 @@ export function pricingFieldsFromResolved(
     ...(isFree !== undefined && { isFree }),
   };
 }
-
-export function buildPricingFields(inputPerToken?: number, outputPerToken?: number): PricingFields {
-  const pricingInput =
-    inputPerToken !== undefined ? perTokenToPerMillion(inputPerToken) : undefined;
-  const pricingOutput =
-    outputPerToken !== undefined ? perTokenToPerMillion(outputPerToken) : undefined;
-  const hasPricing = pricingInput !== undefined || pricingOutput !== undefined;
-  return pricingFieldsFromResolved(
-    pricingInput,
-    pricingOutput,
-    hasPricing ? isModelFree(pricingInput, pricingOutput) : undefined,
-  );
-}

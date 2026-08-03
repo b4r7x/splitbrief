@@ -66,6 +66,25 @@ describe('createCommandExistsAvailability', () => {
       else process.env['PATH'] = originalPath;
     }
   });
+
+  itUnix('uses a later executable alias when the primary alias is absent', async () => {
+    const fallback = join(dir, 'fallback-cli');
+    writeFileSync(fallback, '#!/bin/bash\n', 'utf8');
+    chmodSync(fallback, 0o755);
+
+    const availability = createCommandExistsAvailability([join(dir, 'primary-cli'), fallback]);
+
+    expect(await availability.isAvailable()).toBe(true);
+  });
+
+  it('reports unavailable when no executable alias resolves', async () => {
+    const availability = createCommandExistsAvailability([
+      join(dir, 'primary-cli'),
+      join(dir, 'fallback-cli'),
+    ]);
+
+    expect(await availability.isAvailable()).toBe(false);
+  });
 });
 
 describe('createCommandAvailability', () => {
@@ -89,6 +108,61 @@ describe('createCommandAvailability', () => {
     const availability = createCommandAvailability('nonexistent-command-that-does-not-exist-xyz');
 
     expect(availability.unavailabilityReason()).toBeUndefined();
+    expect(await availability.isAvailable()).toBe(false);
+    expect(availability.unavailabilityReason()).toBe('not installed');
+  });
+
+  itUnix('prefers the primary alias when more than one responds to --version', async () => {
+    const primary = join(dir, 'primary-cli');
+    const fallback = join(dir, 'fallback-cli');
+    writeFileSync(primary, '#!/bin/bash\necho primary-cli 1.2.3\n', 'utf8');
+    writeFileSync(fallback, '#!/bin/bash\necho fallback-cli 4.5.6\n', 'utf8');
+    chmodSync(primary, 0o755);
+    chmodSync(fallback, 0o755);
+
+    const availability = createCommandAvailability([primary, fallback]);
+
+    expect(await availability.isAvailable()).toBe(true);
+    expect(await availability.getVersion()).toBe('1.2.3');
+  });
+
+  itUnix('uses a fallback alias only after the primary alias is absent', async () => {
+    const fallback = join(dir, 'fallback-cli');
+    writeFileSync(fallback, '#!/bin/bash\necho fallback-cli 4.5.6\n', 'utf8');
+    chmodSync(fallback, 0o755);
+
+    const availability = createCommandAvailability([join(dir, 'primary-cli'), fallback]);
+
+    expect(await availability.isAvailable()).toBe(true);
+    expect(await availability.getVersion()).toBe('4.5.6');
+  });
+
+  itUnix('does not switch aliases after the primary version probe fails', async () => {
+    const primary = join(dir, 'primary-cli');
+    const fallback = join(dir, 'fallback-cli');
+    const fallbackMarker = join(dir, 'fallback-ran.txt');
+    writeFileSync(primary, '#!/bin/bash\necho broken >&2\nexit 9\n', 'utf8');
+    writeFileSync(
+      fallback,
+      `#!/bin/bash\ntouch '${fallbackMarker}'\necho fallback-cli 4.5.6\n`,
+      'utf8',
+    );
+    chmodSync(primary, 0o755);
+    chmodSync(fallback, 0o755);
+
+    const availability = createCommandAvailability([primary, fallback]);
+
+    expect(await availability.isAvailable()).toBe(false);
+    expect(availability.unavailabilityReason()).toBe('probe failed: broken');
+    expect(existsSync(fallbackMarker)).toBe(false);
+  });
+
+  it('reports the all-absent alias set as not installed', async () => {
+    const availability = createCommandAvailability([
+      join(dir, 'primary-cli'),
+      join(dir, 'fallback-cli'),
+    ]);
+
     expect(await availability.isAvailable()).toBe(false);
     expect(availability.unavailabilityReason()).toBe('not installed');
   });

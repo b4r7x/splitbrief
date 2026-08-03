@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box, Text } from 'ink';
 import { useAppKeys } from './keys.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -44,15 +44,18 @@ function Harness({
   );
 }
 
-function writeCtrlC(ui: { stdin: { write: (d: string) => void } }) {
+async function writeCtrlC(ui: { stdin: { write: (d: string) => void } }) {
+  await flushEffects();
   ui.stdin.write('\x03');
 }
 
-function writeEsc(ui: { stdin: { write: (d: string) => void } }) {
+async function writeEsc(ui: { stdin: { write: (d: string) => void } }) {
+  await flushEffects();
   ui.stdin.write('\x1b');
 }
 
-function writeKey(ui: { stdin: { write: (d: string) => void } }, chars: string) {
+async function writeKey(ui: { stdin: { write: (d: string) => void } }, chars: string) {
+  await flushEffects();
   ui.stdin.write(chars);
 }
 
@@ -76,7 +79,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
 
     expect(abortStore.get().armed).toBe('exit');
@@ -92,7 +95,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
 
     expect(abortStore.get().armed).toBe('exit');
@@ -108,7 +111,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
 
     expect(abortStore.get().armed).toBe('exit');
@@ -130,7 +133,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
 
     expect(approvalPromptStore.get().status).toBe('idle');
@@ -146,7 +149,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
 
     expect(costApprovalStore.get().status).toBe('idle');
@@ -160,12 +163,12 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
     expect(exit).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(1000);
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
     expect(exit).toHaveBeenCalledTimes(1);
     expect(interruptWorkflow).toHaveBeenCalledTimes(1);
@@ -178,7 +181,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
     expect(abortStore.get().armed).toBe('exit');
 
@@ -187,7 +190,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     expect(abortStore.get().armed).toBe('none');
 
     expect(lifecycleStore.get().phase).toBe('implementing');
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
 
     expect(exit).not.toHaveBeenCalled();
@@ -203,7 +206,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
     expect(exit).toHaveBeenCalledTimes(1);
     expect(interruptWorkflow).not.toHaveBeenCalled();
@@ -223,7 +226,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={interruptWorkflow} />);
     await tick();
 
-    writeCtrlC(ui);
+    await writeCtrlC(ui);
     await tick();
     expect(exit).toHaveBeenCalledTimes(1);
     expect(interruptWorkflow).not.toHaveBeenCalled();
@@ -257,14 +260,14 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     // The arm is deferred by the escape-debounce to let a split escape sequence cancel it first.
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
     expect(abortStore.get().armed).toBe('interrupt');
     expect(abort).not.toHaveBeenCalled();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     expect(abort).toHaveBeenCalledTimes(1);
     expect(abortStore.get().armed).toBe('none');
@@ -278,13 +281,13 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
     expect(abortStore.get().armed).toBe('cancel');
     expect(lifecycleStore.get().cancelled).toBe(false);
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     expect(lifecycleStore.get().cancelled).toBe(true);
     expect(abortStore.get().armed).toBe('none');
@@ -300,10 +303,10 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     );
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
 
     expect(cancelWorkflow).toHaveBeenCalledTimes(1);
@@ -319,12 +322,12 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     );
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
     expect(abortStore.get().armed).toBe('cancel');
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
 
     expect(cancelWorkflow).toHaveBeenCalledTimes(1);
@@ -340,9 +343,9 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     await tick();
 
     // ESC arrives first (deferred), then the rest of an Up-arrow sequence over a slow link.
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
-    writeKey(ui, '[A');
+    await writeKey(ui, '[A');
     await tick();
 
     // The non-ESC tail cancels the deferred arm before its debounce deadline.
@@ -360,9 +363,9 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     await tick();
 
     // ESC arrives first (deferred), then the rest of an Up-arrow sequence over a slow link.
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
-    writeKey(ui, '[A');
+    await writeKey(ui, '[A');
     await tick();
 
     // The non-ESC tail cancels the deferred navigate before its deadline.
@@ -377,7 +380,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
     expect(abortStore.get().armed).toBe('interrupt');
@@ -394,9 +397,9 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
 
     expect(exit).not.toHaveBeenCalled();
@@ -415,7 +418,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
@@ -436,9 +439,9 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={() => 'none'} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
-    writeKey(ui, '[A');
+    await writeKey(ui, '[A');
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
@@ -455,7 +458,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
 
     expect(overlayStore.get().active).toBe('settings');
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
 
     expect(overlayStore.get().active).toBe('none');
@@ -477,7 +480,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
@@ -498,7 +501,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
@@ -517,7 +520,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     const ui = renderFeature(<Harness exit={exit} interruptWorkflow={handlers.interruptTurn} />);
     await tick();
 
-    writeEsc(ui);
+    await writeEsc(ui);
     await tick();
     vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
 
@@ -554,7 +557,7 @@ describe('useAppKeys: keystroke binding', () => {
 
     expect(overlayStore.get().active).toBe('none');
 
-    writeKey(ui, input);
+    await writeKey(ui, input);
     await tick(20);
 
     expect(overlayStore.get().active).toBe(overlay);
@@ -571,7 +574,7 @@ describe('useAppKeys: keystroke binding', () => {
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, '\x1b[44;5u');
+    await writeKey(ui, '\x1b[44;5u');
     await tick(20);
 
     expect(overlayStore.get().active).toBe('none');
@@ -586,7 +589,7 @@ describe('useAppKeys: keystroke binding', () => {
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, '\x0b');
+    await writeKey(ui, '\x0b');
     await tick(20);
 
     expect(overlayStore.get().active).toBe('settings');
@@ -604,7 +607,7 @@ describe('useAppKeys: keystroke binding', () => {
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, '\x0b');
+    await writeKey(ui, '\x0b');
     await tick(20);
 
     expect(overlayStore.get().active).toBe('none');
@@ -617,7 +620,7 @@ describe('useAppKeys: keystroke binding', () => {
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, '\x0b');
+    await writeKey(ui, '\x0b');
     await tick(20);
 
     expect(overlayStore.get().active).toBe('none');
@@ -629,7 +632,7 @@ describe('useAppKeys: keystroke binding', () => {
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, '\x11');
+    await writeKey(ui, '\x11');
     await tick(20);
 
     expect(exit).toHaveBeenCalledTimes(1);
@@ -647,7 +650,7 @@ describe('useAppKeys: keystroke binding', () => {
 
     expect(overlayStore.get().exclusive).toBe(true);
 
-    writeKey(ui, '\x1b');
+    await writeKey(ui, '\x1b');
     await tick(20);
 
     expect(overlayStore.get().active).toBe('settings');
@@ -669,7 +672,7 @@ describe('useAppKeys: keystroke binding', () => {
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, '\x1b');
+    await writeKey(ui, '\x1b');
     await tick(20);
 
     expect(overlayStore.get().active).toBe('settings');
@@ -689,7 +692,26 @@ describe('useAppKeys: keystroke binding', () => {
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, '\x1b');
+    await writeKey(ui, '\x1b');
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('planner-picker');
+    ui.unmount();
+  });
+
+  it('Escape leaves an unstacked runner picker to its own handler (filter-clearing press must not exit)', async () => {
+    const exit = vi.fn();
+    // The picker clears a non-empty filter query on the first Escape and only closes on the next
+    // one. The global close must stand down even without a parent on the stack, or the
+    // query-clearing press would also close the overlay.
+    overlayStore.open('planner-picker');
+    await tick(20);
+    expect(overlayStore.get().stack.length).toBe(0);
+
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick(20);
+
+    await writeKey(ui, '\x1b');
     await tick(20);
 
     expect(overlayStore.get().active).toBe('planner-picker');
@@ -729,7 +751,7 @@ describe('useAppKeys: suppressed while the inline briefs field editor owns input
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, input);
+    await writeKey(ui, input);
     await tick(20);
 
     expect(overlayStore.get().active).toBe('none');
@@ -741,7 +763,7 @@ describe('useAppKeys: suppressed while the inline briefs field editor owns input
     const ui = renderFeature(<Harness exit={exit} />);
     await tick(20);
 
-    writeKey(ui, '\x11');
+    await writeKey(ui, '\x11');
     await tick(20);
 
     expect(exit).not.toHaveBeenCalled();

@@ -6,7 +6,9 @@ import {
 import type { Implementer, ImplementerFactoryOptions } from '../implementers/types.js';
 import type { Planner, PlannerFactoryOptions } from '../planners/types.js';
 import { warnStderr } from '../../lib/warn.js';
+import { error } from '../../utils/error.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
+import { resolveConfiguredCustomRunner } from './configured-custom.js';
 import { runnerConfigError } from './errors.js';
 
 function lazy<T>(load: () => Promise<T>): () => Promise<T> {
@@ -20,11 +22,23 @@ const loadApiPlanner = lazy(() => import('../planners/api.js'));
 const loadShellPlanner = lazy(() => import('../planners/shell.js'));
 const loadAgentPlanner = lazy(() => import('../planners/agent.js'));
 const loadAgentSdkPlanner = lazy(() => import('../planners/agent-sdk.js'));
+const loadConfiguredCustomPlanner = lazy(() => import('../planners/command-invoke.js'));
 const loadCliImplementer = lazy(() => import('../implementers/cli.js'));
 const loadApiImplementer = lazy(() => import('../implementers/api.js'));
 const loadShellImplementer = lazy(() => import('../implementers/shell.js'));
 const loadAgentImplementer = lazy(() => import('../implementers/agent.js'));
 const loadAgentSdkImplementer = lazy(() => import('../implementers/agent-sdk.js'));
+const loadConfiguredCustomImplementer = lazy(() => import('../implementers/command-invoke.js'));
+
+export const customRunnerFactoryError = {
+  runtimeUnavailable: (role: 'planner' | 'implementer') =>
+    error(
+      'custom-runner-runtime-unavailable',
+      role === 'planner'
+        ? 'Configured custom planner requires a custom runner runtime.'
+        : 'Configured custom implementer requires a custom runner runtime.',
+    ),
+} as const;
 
 function assertCliPlannerTool(tool: string): void {
   if (!includes(PLANNER_CLI_TOOL_IDS, tool)) {
@@ -96,6 +110,16 @@ export async function createPlanner(
   initialSessionId?: string | null,
   options?: PlannerFactoryOptions,
 ): Promise<Planner> {
+  const configured = resolveConfiguredCustomRunner(config, 'planner');
+  if (configured !== null) {
+    const runtime = options?.customRuntime;
+    if (runtime === undefined) {
+      throw customRunnerFactoryError.runtimeUnavailable('planner');
+    }
+    const mod = await loadConfiguredCustomPlanner();
+    return mod.createConfiguredCustomPlanner(configured, runtime);
+  }
+
   if (config.planner.kind === 'cli') {
     assertCliPlannerTool(config.planner.tool);
   }
@@ -115,6 +139,20 @@ export async function createImplementer(
   config: Config,
   options?: ImplementerFactoryOptions,
 ): Promise<Implementer> {
+  const configured = resolveConfiguredCustomRunner(config, 'implementer');
+  if (configured !== null) {
+    const runtime = options?.customRuntime;
+    if (runtime === undefined) {
+      throw customRunnerFactoryError.runtimeUnavailable('implementer');
+    }
+    const mod = await loadConfiguredCustomImplementer();
+    return mod.createConfiguredCustomImplementer({
+      runner: configured,
+      runtime,
+      factoryOptions: options,
+    });
+  }
+
   const kind = config.implementer.kind;
   if (kind === 'cli') {
     assertCliImplementerTool(config.implementer.tool);

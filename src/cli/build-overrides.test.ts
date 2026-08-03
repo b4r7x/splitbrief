@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../core/paths.js';
@@ -52,5 +52,17 @@ describe('resolveRunConfigWithBase', () => {
 
     const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('overly permissive'));
     expect(permissionWarnings).toHaveLength(1);
+  });
+
+  it('returns the persistence snapshot from the load that produced the persisted config', () => {
+    const configPath = writeMinimalV3Config(tempDir);
+    const rawYaml = readFileSync(configPath, 'utf8');
+
+    const resolved = resolveRunConfigWithBase({ projectDir: tempDir, opts: {} });
+
+    expect(resolved.persistedConfig.workflow.mode).toBe('standard');
+    expect(resolved.persistenceSnapshot.rawYaml).toBe(rawYaml);
+    expect(resolved.persistenceSnapshot.rawBytes).toEqual(Buffer.from(rawYaml));
+    expect(resolved.persistenceSnapshot.revision).not.toBeNull();
   });
 });

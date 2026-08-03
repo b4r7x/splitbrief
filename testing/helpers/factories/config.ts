@@ -79,7 +79,7 @@ function apiIdentity(provider: string): { service: string; offering: ApiOffering
 }
 
 function makePlannerConfig(planner?: PlannerFixture): unknown {
-  const config = planner ?? { kind: 'cli', tool: 'claude-code' };
+  const config = planner ?? { kind: 'cli', tool: 'claude-code', authChannel: 'session' };
   if (config.kind !== 'api') return config;
   return { ...apiIdentity(config.provider), ...config };
 }

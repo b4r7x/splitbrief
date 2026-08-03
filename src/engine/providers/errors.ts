@@ -64,6 +64,11 @@ export const providerError = {
       'provider-invalid-api-key-env-reference',
       'Invalid apiKey env reference; expected env:VARIABLE_NAME',
     ),
+  ollamaLocalCredentialReference: () =>
+    error(
+      'provider-ollama-local-credential-invalid',
+      'Local Ollama accepts no apiKey or exactly env:OLLAMA_LOCAL_API_KEY',
+    ),
   apiBaseExfiltration: (provider: string, envVar: string) =>
     error(
       'provider-api-base-exfiltration',

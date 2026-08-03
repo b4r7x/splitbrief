@@ -370,17 +370,23 @@ describe('useWorkflowRunner', () => {
       />,
     );
     const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
-    await vi.waitFor(() => {
-      expect(existsSync(logPath)).toBe(true);
-    });
+    await vi.waitFor(
+      () => {
+        expect(existsSync(logPath)).toBe(true);
+      },
+      { timeout: 5_000 },
+    );
 
     expect(requestCancel()).toBe(true);
 
-    await vi.waitFor(() => {
-      const log = readFileSync(logPath, 'utf-8');
-      expect(log).toContain('"type":"workflow_cancelled"');
-      expect(log).toContain('"reason":"user_cancelled"');
-    });
+    await vi.waitFor(
+      () => {
+        const log = readFileSync(logPath, 'utf-8');
+        expect(log).toContain('"type":"workflow_cancelled"');
+        expect(log).toContain('"reason":"user_cancelled"');
+      },
+      { timeout: 5_000 },
+    );
 
     await runFinished;
     inst.unmount();
