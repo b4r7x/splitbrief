@@ -12,8 +12,13 @@ import {
   detectionContextsForCurrentConfig,
   loadDetectionForCurrentConfig,
 } from '../engine/detection/store-publication.js';
-import { hydrateDetectionIntoStores } from '../stores/discovery/detection-adapter.js';
+import {
+  hydrateDetectionIntoStores,
+  hydrateModelsDevCatalogIntoStores,
+} from '../stores/discovery/detection-adapter.js';
+import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { loadDetectionCacheSnapshot } from '../engine/detection/cache.js';
+import { loadModelsDevCatalogCache } from '../engine/providers/models-dev-cache.js';
 import { discoverSkills } from '../engine/skill-discovery.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
@@ -79,6 +84,14 @@ async function loadDiscovery(projectDir: string): Promise<void> {
     hydrateDetectionIntoStores({ detection: detectionStore, snapshot, contexts });
   }
 
+  // For a tool with no native catalog — claude-code, the default planner —
+  // models.dev is the only real model source, so the picker shows bundled
+  // fallbacks until this lands. Nothing awaits it and it yields to any catalog
+  // a live lane already delivered, so it races the refresh below safely.
+  void seedModelsDevCatalog().catch((err: unknown) => {
+    warnError('Could not read the remembered models.dev catalog', err);
+  });
+
   void loadDetectionForCurrentConfig({
     service: getDefaultDetectionService(),
     publication: detectionStore,
@@ -89,4 +102,10 @@ async function loadDiscovery(projectDir: string): Promise<void> {
 
   const skills = await discoverSkills(getPlannerToolId(storeConfig.planner), projectDir);
   skillsStore.setAvailable(skills);
+}
+
+async function seedModelsDevCatalog(): Promise<void> {
+  const snapshot = await loadModelsDevCatalogCache();
+  if (snapshot === null) return;
+  hydrateModelsDevCatalogIntoStores({ cache: modelCacheStore, snapshot });
 }

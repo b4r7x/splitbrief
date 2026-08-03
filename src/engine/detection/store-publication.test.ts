@@ -3,6 +3,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { ProviderDetection } from '../../core/discovery/detection.js';
 import type {
   DetectionDeps,
+  DetectionLanePublication,
   DetectionRefreshOutcomes,
   DetectionService,
   DetectionServiceResult,
@@ -30,13 +31,74 @@ function freshResult(providers: ProviderDetection[] = []): DetectionServiceResul
   return { providers, cliTools: [], catalog: {}, cliModels: [] };
 }
 
-function allFailedResult(deps: DetectionDeps): DetectionServiceResult {
+function declaredContexts(deps: DetectionDeps): ResolvedDetectionSourceContexts {
   const contexts = deps.sourceContexts;
-  const contextKeys = {
+  return {
     readiness: contexts?.readiness ?? 'missing-readiness-context',
     modelsDev: contexts?.modelsDev ?? 'missing-models-dev-context',
     cliModels: contexts?.cliModels ?? 'missing-cli-models-context',
   };
+}
+
+/** Mirrors what the real service announces per lane while a load is in flight. */
+function settledLanes(
+  result: DetectionServiceResult,
+  contexts: ResolvedDetectionSourceContexts,
+): DetectionLanePublication[] {
+  const stamp = { generation: 1, requestId: 1, fetchedAt: 100, validatedAt: 100, stale: false };
+  return [
+    {
+      lane: 'readiness',
+      outcome: {
+        kind: 'fresh',
+        origin: 'request',
+        snapshot: {
+          source: 'readiness',
+          contextKey: contexts.readiness,
+          ...stamp,
+          value: { providers: result.providers, cliTools: result.cliTools },
+        },
+      },
+    },
+    {
+      lane: 'modelsDev',
+      outcome:
+        result.catalog === null
+          ? {
+              kind: 'not-run',
+              source: 'models-dev',
+              contextKey: contexts.modelsDev,
+              reason: 'uninitialized',
+            }
+          : {
+              kind: 'fresh',
+              origin: 'request',
+              snapshot: {
+                source: 'models-dev',
+                contextKey: contexts.modelsDev,
+                ...stamp,
+                value: result.catalog,
+              },
+            },
+    },
+    {
+      lane: 'cliModels',
+      outcome: {
+        kind: 'fresh',
+        origin: 'request',
+        snapshot: {
+          source: 'cli-models',
+          contextKey: contexts.cliModels,
+          ...stamp,
+          value: result.cliModels,
+        },
+      },
+    },
+  ];
+}
+
+function allFailedResult(deps: DetectionDeps): DetectionServiceResult {
+  const contextKeys = declaredContexts(deps);
   const outcomes: DetectionRefreshOutcomes = {
     readiness: {
       kind: 'failed',
@@ -72,17 +134,25 @@ function allFailedResult(deps: DetectionDeps): DetectionServiceResult {
 function publicationRecorder(): {
   readonly publication: DetectionPublicationPort;
   readonly began: ResolvedDetectionSourceContexts[];
+  readonly publishedLanes: DetectionLanePublication['lane'][];
 } {
   const began: ResolvedDetectionSourceContexts[] = [];
+  const publishedLanes: DetectionLanePublication['lane'][] = [];
   return {
     publication: {
       beginRefresh: (input) => {
         began.push(input.contexts);
         return detectionStore.beginRefresh(input);
       },
+      publishLane: (input) => {
+        const published = detectionStore.publishLane(input);
+        if (published) publishedLanes.push(input.lane.lane);
+        return published;
+      },
       publish: (input) => detectionStore.publish(input),
     },
     began,
+    publishedLanes,
   };
 }
 
@@ -96,9 +166,13 @@ function recordingService(input: {
   const received: DetectionDeps[] = [];
   return {
     service: {
-      loadDetection: async (deps) => {
+      loadDetection: async ({ deps, onLane }) => {
         received.push(deps);
-        return input.load === undefined ? freshResult() : input.load(deps);
+        const result = input.load === undefined ? freshResult() : await input.load(deps);
+        if (onLane !== undefined) {
+          for (const lane of settledLanes(result, declaredContexts(deps))) onLane(lane);
+        }
+        return result;
       },
       refreshDetection: async (refreshInput) => {
         if (refreshInput === undefined) return freshResult();
@@ -137,7 +211,7 @@ describe('store publication from current configuration', () => {
       },
     });
     const state = current(config, '/projects/current');
-    const { publication, began } = publicationRecorder();
+    const { publication, began, publishedLanes } = publicationRecorder();
     const { service, received } = recordingService({
       load: async () => freshResult([openAiProvider('current-private-model')]),
     });
@@ -147,6 +221,7 @@ describe('store publication from current configuration', () => {
     expect(received).toHaveLength(1);
     expect(received[0]?.sourceContexts).toEqual(detectionContextsForCurrentConfig(state));
     expect(began).toEqual([detectionContextsForCurrentConfig(state)]);
+    expect(publishedLanes).toEqual(['readiness', 'modelsDev', 'cliModels']);
     expect(modelCacheStore.getProviderModels('openai')).toEqual([{ id: 'current-private-model' }]);
   });
 
