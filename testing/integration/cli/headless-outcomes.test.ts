@@ -5,6 +5,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   createHeadlessGitProject,
+  preparedHeadlessExecution,
   writeMinimalHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
@@ -75,11 +76,12 @@ describe('runHeadless — recovery stops', () => {
 
     await expect(
       runHeadless({
-        feature: 'recover me',
-        projectDir: projectDir,
-        opts: {},
-        savedState: state,
-        sessionId: sessionId,
+        prepared: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'recover me',
+          resumeState: state,
+        }),
         _planner: planner,
         _implementer: implementer,
       }),
@@ -136,11 +138,12 @@ describe('runHeadless — recovery stops', () => {
 
     await expect(
       runHeadless({
-        feature: 'review me',
-        projectDir: projectDir,
-        opts: {},
-        savedState: state,
-        sessionId: sessionId,
+        prepared: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'review me',
+          resumeState: state,
+        }),
         _planner: failingPlanner,
         _implementer: implementer,
       }),
@@ -197,10 +200,7 @@ describe('runHeadless — failed session exits non-zero', () => {
 
     await expect(
       runHeadless({
-        feature: 'stall out',
-        projectDir,
-        opts: {},
-        sessionId,
+        prepared: preparedHeadlessExecution({ projectDir, sessionId, feature: 'stall out' }),
         _planner: stalledPlanner,
         _implementer: makeImplementer(),
       }),

@@ -4,6 +4,7 @@ import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { createDetectionService, type DetectionDeps } from '../../engine/detection/service.js';
 import { resolveModelCatalog } from '../../engine/providers/model/catalog.js';
+import { getRuntimeModelSnapshot } from '../../engine/providers/model/resolution.js';
 import type {
   ConfiguredProviderOutcome,
   ConfiguredProviderRuntime,
@@ -233,6 +234,154 @@ function outerReadinessFailureResult(input: {
 describe('modelCacheStore', () => {
   beforeEach(() => {
     modelCacheStore.reset();
+  });
+
+  it('hydrates remembered CLI catalogs as stale rows until a fresh publish replaces them', () => {
+    const hydrated = modelCacheStore.hydrateDetection({
+      providers: [],
+      cliTools: [],
+      fetchedAt: 50,
+      validatedAt: 60,
+      generation: 1,
+      requestId: 1,
+      contexts: scopedContexts,
+      cliCatalogs: [
+        { role: 'planner', tool: 'codex', models: [{ id: 'gpt-5.2-codex' }], probedAt: 40 },
+      ],
+    });
+    expect(hydrated).toBe(true);
+
+    expect(
+      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
+    ).toMatchObject({ state: 'stale', models: [{ id: 'gpt-5.2-codex' }], fetchedAt: 40 });
+
+    expect(
+      publishCliCatalogs(
+        [
+          cliCatalogAttempt({
+            role: 'planner',
+            tool: 'codex',
+            contextKey: 'live-context',
+            models: ['gpt-6-codex'],
+          }),
+        ],
+        2,
+      ),
+    ).toBe(true);
+
+    const fresh = modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' });
+    expect(fresh).toMatchObject({ state: 'fresh', models: [{ id: 'gpt-6-codex' }] });
+    expect(fresh?.models).toHaveLength(1);
+  });
+
+  it('never overwrites live CLI catalogs with a disk snapshot that hydrates late', () => {
+    expect(
+      publishCliCatalogs(
+        [
+          cliCatalogAttempt({
+            role: 'planner',
+            tool: 'codex',
+            contextKey: 'live-context',
+            models: ['gpt-6-codex'],
+          }),
+        ],
+        1,
+      ),
+    ).toBe(true);
+
+    const hydrated = modelCacheStore.hydrateDetection({
+      providers: [],
+      cliTools: [],
+      fetchedAt: 50,
+      validatedAt: 60,
+      generation: 1,
+      requestId: 1,
+      contexts: scopedContexts,
+      cliCatalogs: [
+        { role: 'planner', tool: 'codex', models: [{ id: 'remembered-old-codex' }], probedAt: 40 },
+      ],
+    });
+    expect(hydrated).toBe(true);
+
+    expect(
+      modelCacheStore.getScopedCliCatalogRuntime({ role: 'planner', tool: 'codex' }),
+    ).toMatchObject({ state: 'fresh', models: [{ id: 'gpt-6-codex' }] });
+  });
+
+  it('surfaces remembered provider rows as stale through the runtime snapshot', () => {
+    expect(
+      modelCacheStore.hydrateDetection({
+        providers: [
+          {
+            provider: 'openrouter',
+            available: true,
+            isLocal: false,
+            models: [{ id: 'remembered-openrouter-model' }],
+          },
+        ],
+        cliTools: [],
+        fetchedAt: 50,
+        validatedAt: 60,
+        generation: 1,
+        requestId: 1,
+        contexts: scopedContexts,
+      }),
+    ).toBe(true);
+
+    expect(modelCacheStore.isProviderModelCacheStale('openrouter')).toBe(true);
+    expect(
+      getRuntimeModelSnapshot({ providerId: 'openrouter', cache: modelCacheStore }),
+    ).toMatchObject({ entries: [{ id: 'remembered-openrouter-model' }], isStale: true });
+  });
+
+  it('never overwrites live provider models with a disk snapshot that hydrates late', () => {
+    publishConfigured([], 1);
+
+    expect(
+      modelCacheStore.hydrateDetection({
+        providers: [
+          {
+            provider: 'openrouter',
+            available: true,
+            isLocal: false,
+            models: [{ id: 'remembered-openrouter-model' }],
+          },
+        ],
+        cliTools: [],
+        fetchedAt: 50,
+        validatedAt: 60,
+        generation: 1,
+        requestId: 1,
+        contexts: scopedContexts,
+      }),
+    ).toBe(true);
+
+    expect(modelCacheStore.getProviderModels('openrouter')).toBeNull();
+  });
+
+  it('keeps remembered CLI rows role-scoped: no answer for the other role, no generic bleed', () => {
+    expect(
+      modelCacheStore.hydrateDetection({
+        providers: [],
+        cliTools: [],
+        fetchedAt: 50,
+        validatedAt: 60,
+        generation: 1,
+        requestId: 1,
+        contexts: scopedContexts,
+        cliCatalogs: [
+          { role: 'planner', tool: 'codex', models: [{ id: 'planner-codex-model' }], probedAt: 40 },
+        ],
+      }),
+    ).toBe(true);
+
+    expect(
+      modelCacheStore.getScopedCliCatalogRuntime({ role: 'implementer', tool: 'codex' }),
+    ).toBeUndefined();
+    expect(
+      getRuntimeModelSnapshot({ providerId: 'codex', role: 'implementer', cache: modelCacheStore }),
+    ).toBeNull();
+    expect(modelCacheStore.getProviderModels('codex')).toBeNull();
   });
 
   it('provider cache lifecycle retains the last published models until reset', () => {

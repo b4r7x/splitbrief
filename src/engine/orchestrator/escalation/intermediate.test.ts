@@ -12,6 +12,7 @@ import {
   makeBusRecorder,
   makeCallbacks,
   makeImplementer,
+  makePreparedImplementerFactory,
   makePlanner,
   TEST_METADATA,
   TEST_SINKS,
@@ -19,6 +20,7 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
+import type { RunnerGate } from '../../runners/prepared-execution.js';
 import { INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
 import { resolveIntermediateConfig } from './intermediate.js';
 import type { EscalationContext } from './types.js';
@@ -143,7 +145,7 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
     expect(events.some((e) => e.type === 'warning')).toBe(true);
   });
 
-  it('runs the intermediate API tier without selecting a configured default custom child', async () => {
+  it('uses the prepared intermediate gate without a second admission path', async () => {
     const savedKey = process.env.OPENROUTER_API_KEY;
     process.env.OPENROUTER_API_KEY = 'sk-or-test';
     const { projectDir, sessionId } = setupProject();
@@ -190,6 +192,23 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
         ]),
       );
     vi.stubGlobal('fetch', fetchMock);
+    const preparationId = 'intermediate-preparation';
+    const gates: RunnerGate[] = [
+      {
+        kind: 'api',
+        slot: { role: 'intermediate' },
+        preparationId,
+        provider: 'openrouter',
+        endpointOrigin: 'https://openrouter.ai',
+      },
+    ];
+    const preparedFactory = vi.fn(
+      makePreparedImplementerFactory({
+        preparationId,
+        gates,
+        slot: { role: 'intermediate' },
+      }),
+    );
 
     try {
       const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
@@ -206,6 +225,7 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
           planner: makePlanner({}),
           context: defaultContext,
           implementer: makeImplementer(),
+          createImplementer: preparedFactory,
           metadata: TEST_METADATA,
           sinks: TEST_SINKS,
           validator: createValidator(),
@@ -226,6 +246,10 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
       });
       expect(events).toContainEqual(expect.objectContaining({ type: 'escalate', tier: 0 }));
       expect(fetchMock).toHaveBeenCalled();
+      expect(preparedFactory).toHaveBeenCalledOnce();
+      expect(preparedFactory.mock.calls[0]?.[1]).toMatchObject({
+        slot: { role: 'intermediate' },
+      });
       expect(existsSync(sentinel)).toBe(false);
       expect(config).toEqual(originalConfig);
       expect(config.implementerProfiles).toBe(originalProfiles);

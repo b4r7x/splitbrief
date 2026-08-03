@@ -10,7 +10,7 @@ import { createInitialState } from '../state/machine.js';
 import { writeActive } from '../sessions/lifecycle.js';
 import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
-import { collectReadiness } from './collect.js';
+import { applyRunnerPreparationChecks, collectReadiness } from './collect.js';
 import { flattenReadinessChecks } from './status.js';
 
 function writeSessionState(projectDir: string, sessionId: string, phase: string): void {
@@ -74,6 +74,31 @@ describe('collectReadiness validation probe wiring', () => {
 
     const checks = flattenReadinessChecks(report.sections);
     expect(checks.find((check) => check.id === 'validation.already-failing')).toBeUndefined();
+  });
+});
+
+describe('preparation readiness projection', () => {
+  it('replaces tool-level CLI placeholders with exact slot checks', async () => {
+    const projectDir = createTempDir('collect-preparation-checks');
+    try {
+      const { report } = await collectReadiness({ projectDir, config: makeConfig() });
+      const prepared = applyRunnerPreparationChecks(report, [
+        {
+          id: 'runners.preparation.planner',
+          severity: 'ok',
+          summary: 'Configured planner is freshly admitted.',
+        },
+      ]);
+      const checks = flattenReadinessChecks(prepared.sections);
+
+      expect(checks.some((check) => check.id.startsWith('runners.cli.'))).toBe(false);
+      expect(checks).toContainEqual(
+        expect.objectContaining({ id: 'runners.preparation.planner', severity: 'ok' }),
+      );
+      expect(prepared.counts.blocker).toBe(report.counts.blocker - 1);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
   });
 });
 
@@ -153,6 +178,35 @@ describe('collectReadiness git posture', () => {
     );
     expect(activeSession?.id).toBe('repo.active-session-stale');
     expect(activeSession?.metadata).toMatchObject({ sessionId, live: false });
+  });
+
+  it('ignores only the explicit session being resumed', async () => {
+    createTestGitRepo(tempDir);
+    const sessionId = '2026-04-18-resume-session';
+    writeSessionState(tempDir, sessionId, 'implementing');
+    writeActive({ projectDir: tempDir, sessionId });
+
+    const resumed = await collectReadiness({
+      projectDir: tempDir,
+      config: makeConfig(),
+      resumeSession: { projectDir: tempDir, sessionId },
+    });
+    const other = await collectReadiness({
+      projectDir: tempDir,
+      config: makeConfig(),
+      resumeSession: { projectDir: tempDir, sessionId: 'another-session' },
+    });
+
+    expect(
+      flattenReadinessChecks(resumed.report.sections).some((check) =>
+        check.id.startsWith('repo.active-session-'),
+      ),
+    ).toBe(false);
+    expect(
+      flattenReadinessChecks(other.report.sections).some((check) =>
+        check.id.startsWith('repo.active-session-'),
+      ),
+    ).toBe(true);
   });
 });
 

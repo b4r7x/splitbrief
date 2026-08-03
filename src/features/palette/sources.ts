@@ -7,7 +7,7 @@ import type {
   RuntimeCommandDef,
   RuntimeConfigSaveResult,
 } from '../../core/runtime/commands/types.js';
-import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
+import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import type { WorkflowTask } from '../../stores/workflow/tasks.js';
@@ -25,6 +25,7 @@ interface BuildPaletteSourcesOptions {
   projectDir: string;
   onRuntimeCommand: (raw: string) => unknown;
   onWorkflowMode: (mode: WorkflowMode) => Promise<RuntimeConfigSaveResult>;
+  onSessionSelect: (session: Session, projectDir: string) => Promise<void>;
   isAttached?: boolean | undefined;
 }
 
@@ -38,6 +39,7 @@ export function buildPaletteSources({
   projectDir,
   onRuntimeCommand,
   onWorkflowMode,
+  onSessionSelect,
   isAttached = false,
 }: BuildPaletteSourcesOptions): PaletteSources {
   return {
@@ -45,7 +47,7 @@ export function buildPaletteSources({
     modeItems: isAttached ? [] : buildModeItems(onWorkflowMode),
     pickerItems: buildPickerItems({ isAttached }),
     taskItems: buildTaskItems(tasks, phase),
-    sessionItems: buildSessionItems(sessions, projectDir),
+    sessionItems: buildSessionItems(sessions, projectDir, onSessionSelect),
     customItems: isAttached ? [] : buildCustomItems(config, onRuntimeCommand),
   };
 }
@@ -139,13 +141,14 @@ function buildTaskItems(tasks: WorkflowTask[], phase: Phase): PaletteSources['ta
 function buildSessionItems(
   sessions: Session[],
   projectDir: string,
+  onSessionSelect: (session: Session, projectDir: string) => Promise<void>,
 ): PaletteSources['sessionItems'] {
   return sessions.slice(0, 10).map((s) => ({
     id: s.id,
     feature: s.feature,
     status: s.status,
-    action: () => {
-      handleSessionSelect(s, projectDir);
+    action: async () => {
+      await onSessionSelect(s, projectDir);
       const error = sessionSelectStore.get().error;
       if (error) feedbackStore.setTransientError(error);
     },

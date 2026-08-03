@@ -3,6 +3,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
+  preparedHeadlessExecution,
   setupBudgetHeadlessProject,
   writeHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
@@ -92,14 +93,16 @@ describe('runHeadless — budget pause behavior', () => {
     const projectDir = setupBudgetHeadlessProject(0.75);
     dirs.push(projectDir);
     const sessionId = beginSession(projectDir, 'fix budget behavior');
+    const state = makeBudgetState();
 
     await expect(
       runHeadless({
-        feature: 'fix budget behavior',
-        projectDir: projectDir,
-        opts: {},
-        savedState: makeBudgetState(),
-        sessionId: sessionId,
+        prepared: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'fix budget behavior',
+          resumeState: state,
+        }),
         _planner: planner,
         _implementer: implementer,
       }),
@@ -182,13 +185,17 @@ describe('runHeadless — budget pause behavior', () => {
       '  budget_pause_threshold: 0.85',
       '  task_review: every',
     ]);
+    const sessionId = beginSession(projectDir, 'fix budget behavior');
+    const state = makeBudgetState();
 
     await expect(
       runHeadless({
-        feature: 'fix budget behavior',
-        projectDir: projectDir,
-        opts: {},
-        savedState: makeBudgetState(),
+        prepared: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'fix budget behavior',
+          resumeState: state,
+        }),
         _planner: planner,
         _implementer: implementer,
       }),

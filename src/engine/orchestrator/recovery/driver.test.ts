@@ -6,7 +6,12 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { listSessions } from '../../../core/sessions/io.js';
-import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
+import {
+  readActive,
+  reactivateExistingSession,
+  type ActiveSessionReceipt,
+} from '../../../core/sessions/lifecycle.js';
+import { randomUUID } from 'node:crypto';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { readStats } from '../../../core/stats/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -14,6 +19,10 @@ import { buildContextOverflowRecoveryIssue } from './builders/task.js';
 import { finalizeRecoveryResult, loadPendingRecoveryState } from './driver.js';
 
 let dirs: string[] = [];
+
+function receipt(sessionId: string): ActiveSessionReceipt {
+  return { version: 1, sessionId, generation: randomUUID() };
+}
 
 afterEach(() => {
   for (const dir of dirs) cleanupTempDir(dir);
@@ -71,7 +80,7 @@ describe('finalizeRecoveryResult — detached abort', () => {
     dirs.push(projectDir);
     const sessionId = 'sess-aborted';
     ensureSessionDir(projectDir, sessionId);
-    writeActive({ projectDir, sessionId });
+    const active = reactivateExistingSession({ projectDir, sessionId });
 
     // Pre-CANCEL state: the work the detached server completed before the abort answer.
     const preCancelState: WorkflowState = {
@@ -94,6 +103,7 @@ describe('finalizeRecoveryResult — detached abort', () => {
     finalizeRecoveryResult({
       projectDir,
       sessionId,
+      active,
       state: preCancelState,
       config: makeConfig(),
       status: 'aborted',
@@ -125,6 +135,7 @@ describe('finalizeRecoveryResult — detached abort', () => {
     finalizeRecoveryResult({
       projectDir,
       sessionId,
+      active: receipt(sessionId),
       state: {
         ...makeImplState([makeTask({ id: 'T001', status: 'done' })]),
         feature: secretFeature,
@@ -149,6 +160,7 @@ describe('finalizeRecoveryResult — detached abort', () => {
     finalizeRecoveryResult({
       projectDir,
       sessionId,
+      active: receipt(sessionId),
       state: {
         ...makeImplState([
           makeTask({ id: 'T001', status: 'done' }),
@@ -176,6 +188,7 @@ describe('finalizeRecoveryResult — detached abort', () => {
     finalizeRecoveryResult({
       projectDir,
       sessionId,
+      active: receipt(sessionId),
       state: makeImplState([makeTask({ id: 'T001' })]),
       config: makeConfig(),
       status: 'retry-current-task',

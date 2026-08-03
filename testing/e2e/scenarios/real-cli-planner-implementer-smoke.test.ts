@@ -1,8 +1,11 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import YAML from 'yaml';
 import { evaluateTsArtifact } from '../helpers/artifact-assertions.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { prepareExecution } from '../../../src/engine/runners/prepare-execution.js';
+import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
 import type { CliToolId } from '../../../src/core/runners/cli-tool-catalog.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -37,42 +40,66 @@ describe('real CLI smoke: planner to implementer', () => {
 
         const plannerTool = realCliTool('SPLITBRIEF_REAL_CLI_PLANNER', 'codex');
         const implementerTool = realCliTool('SPLITBRIEF_REAL_CLI_IMPLEMENTER', 'opencode');
-        const summary = await runWorkflow({
-          feature:
-            'Create src/real-cli-smoke.ts exporting a string constant named realCliSmoke with value "real-cli-smoke".',
+        const feature =
+          'Create src/real-cli-smoke.ts exporting a string constant named realCliSmoke with value "real-cli-smoke".';
+        const config = makeConfig({
+          planner: {
+            kind: 'cli',
+            tool: plannerTool,
+            ...(process.env.SPLITBRIEF_REAL_CLI_PLANNER_MODEL
+              ? { model: process.env.SPLITBRIEF_REAL_CLI_PLANNER_MODEL }
+              : {}),
+          },
+          implementer: {
+            kind: 'cli',
+            tool: implementerTool,
+            ...(process.env.SPLITBRIEF_REAL_CLI_IMPLEMENTER_MODEL
+              ? { model: process.env.SPLITBRIEF_REAL_CLI_IMPLEMENTER_MODEL }
+              : {}),
+            contextLength: 4096,
+          },
+          validation: {
+            typecheck: false,
+            lint: false,
+            test: true,
+            testCommand: 'node validate.mjs',
+          },
+          workflow: {
+            mode: 'quick',
+            approve: 'none',
+            maxRetries: 1,
+            persistTranscript: true,
+          },
+        });
+        mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
+        writeFileSync(join(projectDir, '.splitbrief/config.yaml'), YAML.stringify(config), 'utf-8');
+        const preparation = await prepareExecution({
           projectDir,
-          config: makeConfig({
-            planner: {
-              kind: 'cli',
-              tool: plannerTool,
-              ...(process.env.SPLITBRIEF_REAL_CLI_PLANNER_MODEL
-                ? { model: process.env.SPLITBRIEF_REAL_CLI_PLANNER_MODEL }
-                : {}),
-            },
-            implementer: {
-              kind: 'cli',
-              tool: implementerTool,
-              ...(process.env.SPLITBRIEF_REAL_CLI_IMPLEMENTER_MODEL
-                ? { model: process.env.SPLITBRIEF_REAL_CLI_IMPLEMENTER_MODEL }
-                : {}),
-              contextLength: 4096,
-            },
-            validation: {
-              typecheck: false,
-              lint: false,
-              test: true,
-              testCommand: 'node validate.mjs',
-            },
-            workflow: {
-              mode: 'quick',
-              approve: 'none',
-              maxRetries: 1,
-              persistTranscript: true,
-            },
-          }),
+          feature,
+          effectiveConfig: config,
+          policy: {
+            purpose: 'new-workflow',
+            interaction: 'headless',
+            unverifiedAuth: 'allowed',
+            allowRepoRunners: false,
+            allowHooks: false,
+          },
+          signal: new AbortController().signal,
+        });
+        if (preparation.kind === 'failed') throw preparation.error;
+        if (preparation.kind !== 'prepared') {
+          throw new Error(`Real CLI preparation ended with '${preparation.kind}'.`);
+        }
+        if (preparation.execution.session.kind === 'new') {
+          releasePreparedSession({
+            ref: preparation.execution.session.ref,
+            ownership: preparation.execution.session.ownership,
+          });
+        }
+        const summary = await runWorkflow({
+          prepared: preparation.execution,
           callbacks: makeCallbacks().callbacks,
           sinks: TEST_WORKFLOW_SINKS,
-          sessionId: 'sess-real-cli-planner-implementer',
         });
 
         expect(summary.totalTasks).toBeGreaterThanOrEqual(1);

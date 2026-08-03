@@ -7,7 +7,13 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
+import { reactivateExistingSession } from '../../core/sessions/lifecycle.js';
 import { saveState } from '../../core/state/persistence.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+  type RunnerGate,
+} from '../../engine/runners/prepared-execution.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
@@ -63,19 +69,65 @@ function runDriver(
   sessionId: string,
   inputMode: UseInputModeResult,
 ): ReturnType<ReturnType<ReturnType<typeof createRecoveryDriver>>> {
+  const prepared = makePreparedExecution(projectDir, sessionId);
   const promptPendingRecovery = createRecoveryDriver()({
-    projectDir,
-    config: makeConfig(),
+    prepared,
     inputMode,
     abortedRef: { current: false },
     setInlineResume: () => {},
   });
   return promptPendingRecovery({
     state: makeImplState([makeTask({ id: 'T001' })], { pendingRecovery: makeRecoveryIssue() }),
-    activeSessionId: sessionId,
     controller: new AbortController(),
     republishPrompt: false,
   });
+}
+
+function makePreparedExecution(projectDir: string, sessionId: string): PreparedExecution {
+  const ref = { projectDir, sessionId };
+  const config = parsePreparedConfig(
+    makeConfig({
+      planner: { kind: 'agent', command: 'test-planner' },
+      implementer: { kind: 'agent', command: 'test-implementer', model: 'test-model' },
+    }),
+  );
+  const preparationId = `recovery-${sessionId}`;
+  const gates = [
+    {
+      kind: 'agent',
+      slot: { role: 'planner' },
+      preparationId,
+      command: { kind: 'validated-config' },
+    },
+    {
+      kind: 'agent',
+      slot: { role: 'implementer', profile: 'default' },
+      preparationId,
+      command: { kind: 'validated-config' },
+    },
+  ] as const satisfies readonly RunnerGate[];
+  const active = reactivateExistingSession(ref);
+  return {
+    purpose: 'resume',
+    config,
+    preparationId,
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir,
+      status: 'ready',
+      counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates,
+    session: { kind: 'existing', ref, active },
+    runtime: {
+      feature: 'recovery test',
+      allowRepoRunners: false,
+      allowHooks: false,
+    },
+  };
 }
 
 describe('createRecoveryDriver — unparseable answers', () => {

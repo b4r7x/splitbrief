@@ -12,7 +12,7 @@ import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { formatTasks } from '../../../src/engine/spec/formatter.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
-import { mountWorkflowScreen, readyReadiness } from '#testing/helpers/workflow-screen.js';
+import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -101,15 +101,18 @@ describe('WorkflowScreen review editing', () => {
         ]),
         'utf-8',
       );
-      configStore.__testReset({
-        config: makeConfig({ workflow: { briefReview: 'rich' } }),
+      const config = makeConfig({ workflow: { briefReview: 'rich' } });
+      const prepared = prepareWorkflowExecution({
         projectDir,
+        feature: 'rich footer review',
+        config,
+        sessionId: 'rich-footer-review',
       });
+      configStore.__testReset({ config, projectDir });
       terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        feature: 'rich footer review',
-        readiness: readyReadiness(projectDir),
+        execution: { kind: 'local', prepared },
       });
       runWorkflow.mockImplementationOnce(async (opts) => {
         lifecycleStore.__testReset({ phase: 'reviewing-briefs' });

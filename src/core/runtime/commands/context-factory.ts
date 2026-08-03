@@ -2,7 +2,6 @@ import type { Config } from '../../schemas/config.js';
 import type { Phase } from '../../schemas/enums.js';
 import type { RewindTarget } from '../../state/build-rewind-action.js';
 import type { OverlayType } from '../../navigation/types.js';
-import type { SessionRef } from '../../types/session-ref.js';
 import type {
   DiscoveryRefreshSummary,
   RuntimeCommandContext,
@@ -24,7 +23,6 @@ interface CommandContextFactoryOptions {
   setApprovalEnabled?: ((enabled: boolean) => void) | undefined;
   getSessionId: (command: string) => string | null | undefined;
   noActiveSession: (command: string) => Error;
-  noConfig: (command: string) => Error;
   exportMissingSession?: (() => ExportSessionResult) | undefined;
   openOverlay: (type: OverlayType, focus?: string) => void;
   navigateHome: () => void;
@@ -64,10 +62,7 @@ interface CommandContextFactoryOptions {
     projectDir: string,
     sessionId: string,
   ) => ReturnType<RuntimeCommandContext['rejectRunSnapshot']>;
-  compactTranscript: (opts: {
-    config: Config;
-    ref: SessionRef;
-  }) => ReturnType<RuntimeCommandContext['compactTranscript']>;
+  compactTranscript: RuntimeCommandContext['compactTranscript'];
   exportSession: (
     projectDir: string,
     sessionId: string,
@@ -79,11 +74,6 @@ interface CommandContextFactoryOptions {
 }
 
 export function createCommandContext(opts: CommandContextFactoryOptions): RuntimeCommandContext {
-  const currentConfig = (command: string) => {
-    const config = opts.getConfig();
-    if (!config) throw opts.noConfig(command);
-    return config;
-  };
   const sessionIdOrThrow = (command: string) => {
     const sessionId = opts.getSessionId(command);
     if (!sessionId) throw opts.noActiveSession(command);
@@ -153,12 +143,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       opts.acceptRunSnapshot(opts.projectDir(), sessionIdOrThrow('/accept-run')),
     rejectRunSnapshot: () =>
       opts.rejectRunSnapshot(opts.projectDir(), sessionIdOrThrow('/reject-run')),
-    compactTranscript: () => {
-      const projectDir = opts.projectDir();
-      const config = currentConfig('/compact-transcript');
-      const sessionId = sessionIdOrThrow('/compact-transcript');
-      return opts.compactTranscript({ config, ref: { projectDir, sessionId } });
-    },
+    compactTranscript: opts.compactTranscript,
     exportSession: async () => {
       const projectDir = opts.projectDir();
       const sessionId = opts.getSessionId('/export');

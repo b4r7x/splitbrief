@@ -3,6 +3,7 @@ import { matches } from '../../utils/error.js';
 import {
   CUSTOM_RUNNER_TOOL_INPUT_MAX_ACTIVE,
   createCustomRunnerRedactor,
+  createCustomRunnerStreamingRedactor,
   createCustomRunnerToolInputRedactor,
   customRunnerToolInputStateLimitError,
   redactCustomRunnerParsedLine,
@@ -108,6 +109,27 @@ describe('custom runner environment and redaction boundary', () => {
     );
 
     for (const value of [shortValue, longValue, markerValue, fullMarkerValue]) {
+      expect(observed).not.toContain(value);
+    }
+  });
+
+  it('redacts overlapping and marker-colliding values split across streamed chunks', () => {
+    const shortValue = 'edge-overlap';
+    const longValue = 'prefix-edge-overlap-suffix';
+    const markerValue = 'REDACTED';
+    const redact = createCustomRunnerRedactor([shortValue, longValue, markerValue]);
+    const stream = createCustomRunnerStreamingRedactor(redact);
+
+    const observed = [
+      stream.push('before:prefix-edge'),
+      stream.push('-overlap-suffix|between:edge-'),
+      stream.push('overlap|marker:RED'),
+      stream.push('ACTED:after'),
+      stream.flush(),
+    ].join('');
+
+    expect(observed).toBe('before:|between:|marker::after');
+    for (const value of [shortValue, longValue, markerValue]) {
       expect(observed).not.toContain(value);
     }
   });

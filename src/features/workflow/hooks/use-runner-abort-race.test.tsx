@@ -5,8 +5,15 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+  type RunnerGate,
+} from '../../../engine/runners/prepared-execution.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner, type RunWorkflowFn } from './use-runner.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -14,8 +21,10 @@ import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { configStore } from '../../../stores/project/config.js';
 import { clearAllHandlers, requestRewind } from '../handlers.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
+import { clearActiveReceipt, reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -37,34 +46,66 @@ function workflowStartedForFeature(events: readonly EngineEvent[], feature: stri
 }
 
 function Harness({
-  feature,
-  projectDir,
-  planner,
+  prepared,
   runWorkflow,
 }: {
-  feature: string;
-  projectDir: string;
-  planner: PlannerConfig;
+  prepared: PreparedExecution;
   runWorkflow?: RunWorkflowFn | undefined;
 }) {
   const inputMode = useInputMode();
-  const config = makeConfig({
-    planner,
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-    workflow: {
-      mode: 'quick',
-      approve: 'none',
-    },
-  });
   const runner = useWorkflowRunner({
-    feature,
-    projectDir,
-    config,
+    prepared,
     onComplete: () => {},
     inputMode,
     runWorkflow,
   });
-  return <Text>{`${feature}:${runner.startedAt}`}</Text>;
+  return <Text>{`${prepared.runtime.feature}:${runner.startedAt}`}</Text>;
+}
+
+function preparedExecution(input: {
+  projectDir: string;
+  feature: string;
+  sessionId: string;
+  planner: PlannerConfig;
+}): PreparedExecution {
+  const ref = { projectDir: input.projectDir, sessionId: input.sessionId };
+  ensureSessionDir(input.projectDir, input.sessionId);
+  const config = parsePreparedConfig(
+    makeConfig({
+      planner: input.planner,
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { mode: 'quick', approve: 'none' },
+    }),
+  );
+  const preparationId = `abort-race-${input.sessionId}`;
+  const gates: readonly RunnerGate[] = [
+    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
+    ...resolveImplementerProfiles(config).profiles.map((profile) =>
+      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
+    ),
+  ];
+  const active = reactivateExistingSession(ref);
+  return {
+    purpose: 'new-workflow',
+    config,
+    preparationId,
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir: input.projectDir,
+      status: 'ready',
+      counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates,
+    session: { kind: 'existing', ref, active },
+    runtime: {
+      feature: input.feature,
+      allowRepoRunners: false,
+      allowHooks: false,
+    },
+  };
 }
 
 let projectDir: string;
@@ -77,6 +118,7 @@ describe('useWorkflowRunner abort race', () => {
     resetWorkflow();
     controlsStore.reset();
     feedbackStore.reset();
+    configStore.__testReset();
     clearAllHandlers();
   });
 
@@ -85,7 +127,50 @@ describe('useWorkflowRunner abort race', () => {
     resetWorkflow();
     controlsStore.reset();
     feedbackStore.reset();
+    configStore.__testReset();
     cleanupTempDir(projectDir);
+  });
+
+  it('store changes after admission do not restart or abort the run', async () => {
+    const prepared = preparedExecution({
+      projectDir,
+      feature: FIRST_FEATURE,
+      sessionId: 'store-change-stability',
+      planner: MISSING_PLANNER,
+    });
+    const { promise: releaseRun, resolve: finishRun } = Promise.withResolvers<void>();
+    const attempts: PreparedExecution[] = [];
+    let runSignal: AbortSignal | undefined;
+    const runWorkflowStub: RunWorkflowFn = async (options) => {
+      attempts.push(options.prepared);
+      runSignal = options.signal;
+      await releaseRun;
+      return makeSummary();
+    };
+    const ui = render(<Harness prepared={prepared} runWorkflow={runWorkflowStub} />);
+
+    await vi.waitFor(() => {
+      expect(attempts).toHaveLength(1);
+    });
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        planner: { kind: 'agent', command: '/changed/after/admission' },
+      }),
+    });
+    await new Promise<void>((resolve) => setTimeout(resolve, 60));
+
+    expect(attempts).toEqual([prepared]);
+    expect(attempts[0]?.config).toBe(prepared.config);
+    expect(attempts[0]?.gates).toBe(prepared.gates);
+    expect(attempts[0]?.report).toBe(prepared.report);
+    expect(attempts[0]?.session).toBe(prepared.session);
+    expect(runSignal?.aborted).toBe(false);
+    expect(Object.isFrozen(prepared.config)).toBe(true);
+
+    finishRun();
+    await releaseRun;
+    ui.unmount();
   });
 
   it('rerender with a new feature aborts the pending first run without leaking its error', async () => {
@@ -101,13 +186,14 @@ describe('useWorkflowRunner abort race', () => {
         finishRun();
       }
     };
+    const firstPrepared = preparedExecution({
+      projectDir,
+      feature: FIRST_FEATURE,
+      sessionId: 'first-abort-race',
+      planner: LONG_RUNNING_PLANNER,
+    });
     const ui = render(
-      <Harness
-        feature={FIRST_FEATURE}
-        projectDir={projectDir}
-        planner={LONG_RUNNING_PLANNER}
-        runWorkflow={runWorkflowWithCompletions}
-      />,
+      <Harness prepared={firstPrepared} runWorkflow={runWorkflowWithCompletions} />,
     );
 
     await vi.waitFor(
@@ -123,14 +209,14 @@ describe('useWorkflowRunner abort race', () => {
       { timeout: 15_000 },
     );
 
-    ui.rerender(
-      <Harness
-        feature={SECOND_FEATURE}
-        projectDir={projectDir}
-        planner={MISSING_PLANNER}
-        runWorkflow={runWorkflowWithCompletions}
-      />,
-    );
+    clearActiveReceipt(firstPrepared.session.ref, firstPrepared.session.active);
+    const secondPrepared = preparedExecution({
+      projectDir,
+      feature: SECOND_FEATURE,
+      sessionId: 'second-abort-race',
+      planner: MISSING_PLANNER,
+    });
+    ui.rerender(<Harness prepared={secondPrepared} runWorkflow={runWorkflowWithCompletions} />);
 
     await vi.waitFor(
       () => {
@@ -159,12 +245,11 @@ describe('useWorkflowRunner abort race', () => {
       sessionId: string;
     }> = [];
     const runWorkflow: RunWorkflowFn = async (opts) => {
-      const { sessionId, signal } = opts;
-      if (sessionId === undefined || signal === undefined) {
-        throw new Error('expected the runner to provide a session ID and abort signal');
-      }
+      const { signal } = opts;
+      if (signal === undefined) throw new Error('expected the runner to provide an abort signal');
+      const sessionId = opts.prepared.session.ref.sessionId;
       calls.push({
-        feature: opts.feature,
+        feature: opts.prepared.runtime.feature,
         savedState: opts.savedState,
         rewindFeedback: opts.rewindFeedback,
         sessionId,
@@ -176,14 +261,13 @@ describe('useWorkflowRunner abort race', () => {
       }
       return makeSummary();
     };
-    const ui = render(
-      <Harness
-        feature={FIRST_FEATURE}
-        projectDir={projectDir}
-        planner={MISSING_PLANNER}
-        runWorkflow={runWorkflow}
-      />,
-    );
+    const firstPrepared = preparedExecution({
+      projectDir,
+      feature: FIRST_FEATURE,
+      sessionId: 'first-rewind-race',
+      planner: MISSING_PLANNER,
+    });
+    const ui = render(<Harness prepared={firstPrepared} runWorkflow={runWorkflow} />);
 
     await vi.waitFor(() => {
       expect(calls).toHaveLength(1);
@@ -199,14 +283,14 @@ describe('useWorkflowRunner abort race', () => {
 
     expect(requestRewind({ target: 'spec', comment: REWIND_COMMENT })).toBe(true);
 
-    ui.rerender(
-      <Harness
-        feature={SECOND_FEATURE}
-        projectDir={projectDir}
-        planner={MISSING_PLANNER}
-        runWorkflow={runWorkflow}
-      />,
-    );
+    clearActiveReceipt(firstPrepared.session.ref, firstPrepared.session.active);
+    const secondPrepared = preparedExecution({
+      projectDir,
+      feature: SECOND_FEATURE,
+      sessionId: 'second-rewind-race',
+      planner: MISSING_PLANNER,
+    });
+    ui.rerender(<Harness prepared={secondPrepared} runWorkflow={runWorkflow} />);
 
     await vi.waitFor(() => {
       expect(calls.some((call) => call.feature === SECOND_FEATURE)).toBe(true);

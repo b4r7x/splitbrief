@@ -4,6 +4,7 @@ import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-fact
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   createHeadlessGitProject,
+  preparedHeadlessExecution,
   writeMinimalHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
@@ -66,19 +67,21 @@ describe('runHeadless — liveness record (F-261)', () => {
       return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
     });
     const implementer = makeImplementer({ implement });
+    const state = {
+      ...createInitialState('liveness feature'),
+      phase: 'implementing' as const,
+      tasks: [makeTask({ id: 'T001', file: 'src/one.ts' })],
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    };
 
     await runHeadless({
-      feature: 'liveness feature',
-      projectDir,
-      opts: {},
-      savedState: {
-        ...createInitialState('liveness feature'),
-        phase: 'implementing',
-        tasks: [makeTask({ id: 'T001', file: 'src/one.ts' })],
-        plannerTool: 'claude-code',
-        implementerTool: 'ollama',
-      },
-      sessionId,
+      prepared: preparedHeadlessExecution({
+        projectDir,
+        sessionId,
+        feature: 'liveness feature',
+        resumeState: state,
+      }),
       _planner: planner,
       _implementer: implementer,
     });

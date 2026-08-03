@@ -34,6 +34,16 @@ import type { EngineEventOf } from '../../../engine/events/types.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 
+const WORKFLOW_ROUTE = {
+  screen: 'workflow',
+  execution: {
+    kind: 'attached',
+    feature: 'feat',
+    sessionId: 'mouse-pointer-session',
+    attach: { sockPath: '/tmp/mouse-pointer.sock', authToken: 'test-token' },
+  },
+} as const;
+
 function seedTallTranscript(): void {
   eventsStore.__testReset({
     events: [
@@ -141,7 +151,7 @@ function pointerEvent(type: MouseEvent['type'], x: number, y: number): MouseEven
 }
 
 function openBriefReview(taskCount: number) {
-  routerStore.init({ screen: 'workflow', feature: 'feat' });
+  routerStore.init(WORKFLOW_ROUTE);
   lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
   controlsStore.setInputMode('review');
   reviewStore.setReviewFile('briefs.md', taskCount);
@@ -260,7 +270,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('opens the cost drilldown when a registered footer zone is clicked', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     registerMouseZone({
       id: 'cost',
       left: 60,
@@ -276,7 +286,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('blocks hover, transcript actions, and row zones behind an open completion menu', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     seedDiff();
     const snapshot = readConversationScrollSnapshot();
@@ -298,7 +308,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('ignores a release event so X10 button-3 releases do not click a zone', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     const onClick = vi.fn();
     registerMouseZone({ id: 'z', left: 1, right: 80, top: 5, bottom: 5, z: 5, onClick });
     dispatchWorkflowPointer(pointerEvent('release', 10, 5));
@@ -307,7 +317,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('click on the active rail stage scrolls the transcript to the bottom without setting focus', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     seedTallTranscript();
     const snapshot = readConversationScrollSnapshot();
@@ -327,7 +337,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('routes distinct rail stages to distinct transcript scroll destinations', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
     lifecycleStore.__testReset({ phase: 'analyzing', status: 'running', startedAt: 0 });
     seedTallTranscript();
@@ -369,7 +379,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('clears hover on a move over the click-only rail', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const railZone = readRailSnapshot().zones[0];
     if (!railZone) throw new Error('expected a rail zone');
@@ -388,7 +398,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('sets a conversation hover on a move over the transcript', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const snapshot = readConversationScrollSnapshot();
     dispatchWorkflowPointer(
@@ -399,7 +409,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('clears stale transcript hover and blocks transcript actions when review owns the body without a file', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     seedDiff();
     const snapshot = readConversationScrollSnapshot();
@@ -420,7 +430,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('routes hover and press to the visible transcript in normal mode despite stale brief review state', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'reviewing-briefs', status: 'running', startedAt: 0 });
     reviewStore.setReviewFile('briefs.md', 12);
     controlsStore.setInputMode('normal');
@@ -452,7 +462,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('click on a +N more activity row expands the batch', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const batchKey = seedActivityBatch();
     const snapshot = readConversationScrollSnapshot();
@@ -473,7 +483,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('click on the collapse activity row collapses the expanded batch', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     const batchKey = seedActivityBatch();
     conversationScrollStore.toggleActivityBatch(batchKey);
@@ -495,7 +505,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('click on a collapsed diff hint row expands the diff', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     seedDiff();
     const snapshot = readConversationScrollSnapshot();
@@ -518,7 +528,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('resolves an activity disclosure click while a stage is live and the transcript is scrolled to the bottom', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     seedLiveDisclosureTranscript();
     const snapshot = readConversationScrollSnapshot();
@@ -546,7 +556,7 @@ describe('workflow pointer handling', () => {
   });
 
   it('click on a plain transcript row sets no focus and toggles nothing', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
     seedTallTranscript();
     const snapshot = readConversationScrollSnapshot();

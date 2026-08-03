@@ -55,6 +55,33 @@ function sessionsRoot(): string {
 }
 
 describe('spec command', () => {
+  it('spec prepares only its configured planner before session creation', async () => {
+    setStdinIsTTY(false);
+    let gates: readonly unknown[] = [];
+    const program = new Command();
+    program.exitOverride();
+    registerSpecCommand(program, {
+      createPlanner: async (config, options) => {
+        gates = options.gates;
+        return createPlannerMock(config);
+      },
+    });
+
+    await program.parseAsync([
+      'node',
+      'splitbrief',
+      'spec',
+      '--project',
+      tmp,
+      '--allow-hooks',
+      'prepare planner only',
+    ]);
+
+    expect(gates).toHaveLength(1);
+    expect(gates[0]).toMatchObject({ slot: { role: 'planner' } });
+    expect(readdirSync(sessionsRoot())).toHaveLength(1);
+  });
+
   it('composes an interactive custom-runner runtime after creating the standalone session', async () => {
     setStdinIsTTY(true);
     let runtime: CustomRunnerRuntimePort | undefined;
@@ -63,8 +90,8 @@ describe('spec command', () => {
     const program = new Command();
     program.exitOverride();
     registerSpecCommand(program, {
-      createPlanner: async (config, _initialSessionId, options) => {
-        runtime = options?.customRuntime;
+      createPlanner: async (config, options) => {
+        runtime = options.customRuntime;
         return createPlannerMock(config);
       },
       promptCustomRunnerDisclosure: async ({ request }) => {
@@ -139,8 +166,8 @@ describe('spec command', () => {
     const program = new Command();
     program.exitOverride();
     registerSpecCommand(program, {
-      createPlanner: async (config, _initialSessionId, options) => {
-        runtime = options?.customRuntime;
+      createPlanner: async (config, options) => {
+        runtime = options.customRuntime;
         return createPlannerMock(config);
       },
       promptCustomRunnerDisclosure: async () => {

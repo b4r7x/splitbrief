@@ -13,14 +13,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { CONFIRM_PHRASE } from '../../core/approval/types.js';
-import {
-  CONFIG_FILE,
-  PLAN_FILE,
-  RESEARCH_FILE,
-  SPLITBRIEF_DIR,
-  SPEC_FILE,
-  TASKS_FILE,
-} from '../../core/paths.js';
+import { CONFIG_FILE, SPLITBRIEF_DIR, SPEC_FILE, TASKS_FILE } from '../../core/paths.js';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import type { ArtifactApprovalReview } from '../../engine/runners/types.js';
 import {
@@ -246,14 +239,7 @@ describe('spec command', () => {
 
       expect(existsSync(markerPath)).toBe(false);
       expect(existsSync(trustPath)).toBe(false);
-      const sessions = readdirSync(sessionsRoot(), { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => entry.name);
-      expect(sessions).toHaveLength(1);
-      const sessionPath = join(sessionsRoot(), sessions[0] ?? 'missing');
-      for (const file of [RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE]) {
-        expect(existsSync(join(sessionPath, file))).toBe(false);
-      }
+      expect(existsSync(sessionsRoot())).toBe(false);
     } finally {
       if (originalHome === undefined) delete process.env.HOME;
       else process.env.HOME = originalHome;

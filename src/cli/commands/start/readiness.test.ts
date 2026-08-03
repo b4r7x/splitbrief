@@ -1,376 +1,247 @@
-import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, statSync, utimesSync, writeFileSync } from 'node:fs';
-import { delimiter, join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import type { RunnerDiscoveryContext } from '../../../core/config/accessors/runner-config.js';
+import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
+import type { ReadinessReport } from '../../../core/readiness/types.js';
+import { sessionDir } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
-import {
-  detectRunnerEvidence,
-  runnerDiscoveryContextKey,
-} from '../../../engine/detection/detect.js';
-import { revalidateCliStartGates, type CliStartGates } from '../../../engine/runners/start-gate.js';
-import { authorizeConfiguredCliStart } from './readiness.js';
+import { readActive } from '../../../core/sessions/lifecycle.js';
+import { prepareNewSession } from '../../../core/sessions/prepare.js';
+import { runnerDiscoveryContextKey } from '../../../engine/detection/detect.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
+import { cliPreparationPolicy, prepareStartExecution } from './readiness.js';
 
-const FIXTURE_EXECUTABLE_FINGERPRINT = `1:2:3:4:sha256:${'0'.repeat(64)}`;
-const itUnix = process.platform === 'win32' ? it.skip : it;
+const executable = CliExecutableReceiptSchema.parse({
+  path: '/usr/local/bin/codex',
+  fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+  executableIdentity: {
+    canonicalPath: '/usr/local/bin/codex',
+    realPath: '/usr/local/bin/codex',
+    platformFileId: '1:2',
+    fingerprint: `1:2:3:4:sha256:${'a'.repeat(64)}`,
+    resolvedAt: 1,
+  },
+});
 
-type EvidenceOverrides = Readonly<{
-  context: RunnerDiscoveryContext;
-  auth?: RunnerEvidence['auth'];
-  source?: RunnerEvidence['context']['source'];
-  runnerId?: string;
-  selectionId?: string;
-  path?: string;
-}>;
+const directories: string[] = [];
 
-function evidenceFor(overrides: EvidenceOverrides): RunnerEvidence {
-  const tool = configuredCliTool(overrides.context);
-  const contextKey = runnerDiscoveryContextKey(overrides.context);
-  const testedVersion = CLI_TOOL_CATALOG[tool].compatibility.testedVersion;
+afterEach(() => {
+  for (const directory of directories.splice(0)) cleanupTempDir(directory);
+});
+
+function projectWithConfig(config: Config): string {
+  const projectDir = createTempDir('start-preparation');
+  directories.push(projectDir);
+  mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
+  writeFileSync(join(projectDir, '.splitbrief', 'config.yaml'), JSON.stringify(config));
+  return projectDir;
+}
+
+function readyReport(projectDir: string): ReadinessReport {
   return {
-    runner: {
-      id: overrides.runnerId ?? tool,
-      kind: 'cli',
-      locality: 'local',
-      enabled: 'enabled',
-    },
-    context: { key: contextKey, observedAt: 1, source: overrides.source ?? 'fresh' },
-    installation: 'installed',
-    executable: {
-      kind: 'trusted',
-      identity: {
-        canonicalPath: overrides.path ?? `/usr/local/bin/${tool}`,
-        realPath: overrides.path ?? `/usr/local/bin/${tool}`,
-        platformFileId: '1:2',
-        fingerprint: FIXTURE_EXECUTABLE_FINGERPRINT,
-        resolvedAt: 1,
+    generatedAt: '2026-08-04T00:00:00.000Z',
+    projectDir,
+    status: 'ready',
+    counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+    nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+    sections: [
+      {
+        id: 'runners',
+        title: 'Runners',
+        checks: [{ id: 'runners.configured', severity: 'ok', summary: 'Configured' }],
       },
-    },
+    ],
+    metadata: {},
+  };
+}
+
+function cliEvidence(context: Parameters<typeof runnerDiscoveryContextKey>[0]): RunnerEvidence {
+  const contextKey = runnerDiscoveryContextKey(context);
+  const testedVersion = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
+  return {
+    runner: { id: 'codex', kind: 'cli', locality: 'local', enabled: 'enabled' },
+    context: { key: contextKey, observedAt: 1, source: 'fresh' },
+    installation: 'installed',
+    executable: { kind: 'trusted', identity: executable.executableIdentity },
     compatibility: { kind: 'compatible', installedVersion: testedVersion, testedVersion },
     credential: 'present',
-    auth: overrides.auth ?? 'verified',
+    auth: 'verified',
     endpoint: { kind: 'not-run' },
     catalog: { kind: 'not-run' },
     modelRun: {
       kind: 'unknown',
-      selectionId: overrides.selectionId ?? 'unselected',
+      selectionId: context.model ?? 'unselected',
       observedAt: 1,
       contextKey,
     },
   };
 }
 
-function configuredCliTool(context: RunnerDiscoveryContext): CliToolId {
-  if (context.kind !== 'cli') throw new Error('test expected a CLI context');
-  const tool = Object.values(CLI_TOOL_CATALOG).find((candidate) => candidate.id === context.id);
-  if (tool === undefined) throw new Error('test expected a known CLI tool');
-  return tool.id;
-}
-
-function authorize(options: {
-  config: Config;
-  interaction?: 'interactive' | 'headless';
-  allowUnverifiedAuth?: boolean;
-  evidence: (context: RunnerDiscoveryContext) => RunnerEvidence;
-  disclosures?: Array<{ role: 'planner' | 'implementer'; tool: CliToolId }>;
-}) {
-  return authorizeConfiguredCliStart({
-    projectDir: '/project',
-    config: options.config,
-    interaction: options.interaction ?? 'interactive',
-    allowUnverifiedAuth: options.allowUnverifiedAuth ?? false,
-    detectEvidence: async ({ context }) => options.evidence(context),
-    revalidateGates: async ({ gates }) => gates,
-    ...(options.disclosures !== undefined && {
-      onAuthUnknownDisclosure: (disclosure) => options.disclosures?.push(disclosure),
-    }),
-  });
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\"'\"'")}'`;
-}
-
-function sameLengthCodexShims(
-  markerPath: string,
-): Readonly<{ initial: string; replacement: string }> {
-  const probes = [
-    '#!/bin/sh',
-    'if [ "$1" = "--version" ]; then',
-    "  printf 'codex 0.40.0\\n'",
-    '  exit 0',
-    'fi',
-    'if [ "$1" = "login" ] && [ "$2" = "status" ]; then',
-    "  printf 'authenticated\\n'",
-    '  exit 0',
-    'fi',
-  ].join('\n');
-  const initial = `${probes}\n:\n${'#'.repeat(2_048)}\n`;
-  const replacementBase = `${probes}\ntouch ${shellQuote(markerPath)}\n`;
-  return {
-    initial,
-    replacement: `${replacementBase}${'#'.repeat(
-      Buffer.byteLength(initial) - Buffer.byteLength(replacementBase),
-    )}`,
-  };
-}
-
-describe('fresh configured CLI start authorization', () => {
-  it('uses fresh exact-config evidence instead of a prior readiness projection', async () => {
+describe('start preparation', () => {
+  it('uses one fresh evidence set for readiness and CLI admission', async () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
     });
-    const gates = await authorize({
-      config,
-      evidence: (context) => evidenceFor({ context }),
+    const projectDir = projectWithConfig(config);
+    const report = readyReport(projectDir);
+    const collect = vi.fn(async () => ({ report, config }));
+    const detect = vi.fn(async ({ context }) => cliEvidence(context));
+    const prepareSession = vi.fn(() => {
+      const ownership = {
+        version: 1 as const,
+        sessionId: 'prepared-session',
+        generation: '11111111-1111-4111-8111-111111111111',
+      };
+      return {
+        kind: 'prepared' as const,
+        session: {
+          ref: { projectDir, sessionId: ownership.sessionId },
+          ownership,
+          active: ownership,
+        },
+      };
     });
+    const emit = vi.fn();
 
-    expect(gates.get('codex')?.executable.path).toBe('/usr/local/bin/codex');
-  });
-
-  itUnix(
-    'denies a same-tool replacement between role probes before any gate can invoke it',
-    async () => {
-      const projectDir = createTempDir('start-role-merge-project');
-      const executableDir = createTempDir('start-role-merge-executable');
-      const executablePath = join(executableDir, 'codex');
-      const markerPath = join(executableDir, 'replacement-invoked');
-      const { initial, replacement } = sameLengthCodexShims(markerPath);
-      const originalPath = process.env.PATH;
-      const originalApiKey = process.env.OPENAI_API_KEY;
-      const fixedTime = new Date(1_700_000_000_000);
-      let before: ReturnType<typeof statSync> | undefined;
-      let plannerEvidence: RunnerEvidence | undefined;
-      let implementerEvidence: RunnerEvidence | undefined;
-      let gatesAtInvocation: CliStartGates | undefined;
-      let authorizationError: unknown;
-
-      try {
-        writeFileSync(executablePath, initial, { mode: 0o755 });
-        chmodSync(executablePath, 0o755);
-        utimesSync(executablePath, fixedTime, fixedTime);
-        before = statSync(executablePath);
-        process.env.PATH = [executableDir, originalPath ?? ''].filter(Boolean).join(delimiter);
-        process.env.OPENAI_API_KEY = 'test-only-start-gate-key';
-
-        const config = makeConfig({
-          planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-          implementer: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-        });
-        await authorizeConfiguredCliStart({
-          projectDir,
-          config,
-          interaction: 'headless',
-          allowUnverifiedAuth: false,
-          detectEvidence: async ({ context }) => {
-            const evidence = await detectRunnerEvidence({ context, projectDir });
-            if (context.role === 'planner') {
-              plannerEvidence = evidence;
-              writeFileSync(executablePath, replacement, { mode: 0o755 });
-              chmodSync(executablePath, 0o755);
-              utimesSync(executablePath, fixedTime, fixedTime);
-            } else {
-              implementerEvidence = evidence;
-            }
-            return evidence;
+    const execution = await prepareStartExecution({
+      projectDir,
+      feature: 'fresh admission',
+      opts: {},
+      transport: 'json',
+      emitReadiness: emit,
+      prepare: (input) =>
+        prepareExecution({
+          ...input,
+          deps: {
+            collectReadiness: collect,
+            detectRunnerEvidence: detect,
+            resolveCliExecutableAliases: async () => ({
+              command: 'codex',
+              executable,
+              usedFallback: false,
+            }),
+            prepareNewSession: prepareSession,
+            newPreparationId: () => 'start-preparation',
           },
-          revalidateGates: async (input) => {
-            const gates = await revalidateCliStartGates(input);
-            gatesAtInvocation = gates;
-            const executable = gates.get('codex')?.executable;
-            if (executable !== undefined) {
-              spawnSync(executable.path, ['exec'], { cwd: projectDir, stdio: 'ignore' });
-            }
-            return gates;
-          },
-        });
-      } catch (error) {
-        authorizationError = error;
-      } finally {
-        if (originalPath === undefined) delete process.env.PATH;
-        else process.env.PATH = originalPath;
-        if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
-        else process.env.OPENAI_API_KEY = originalApiKey;
-      }
-
-      const after = statSync(executablePath);
-      const plannerIdentity =
-        plannerEvidence?.executable.kind === 'trusted'
-          ? plannerEvidence.executable.identity
-          : undefined;
-      const implementerIdentity =
-        implementerEvidence?.executable.kind === 'trusted'
-          ? implementerEvidence.executable.identity
-          : undefined;
-
-      try {
-        expect(Buffer.byteLength(initial)).toBe(Buffer.byteLength(replacement));
-        expect(after.ino).toBe(before?.ino);
-        expect(after.size).toBe(before?.size);
-        expect(after.mtimeMs).toBe(before?.mtimeMs);
-        expect(plannerIdentity?.fingerprint).not.toBe(implementerIdentity?.fingerprint);
-        expect(gatesAtInvocation).toBeUndefined();
-        expect(existsSync(markerPath)).toBe(false);
-        expect(authorizationError).toMatchObject({
-          message: expect.stringContaining('different executable identities'),
-        });
-      } finally {
-        cleanupTempDir(projectDir);
-        cleanupTempDir(executableDir);
-      }
-    },
-  );
-
-  it('discloses compatibility auth unknown before admitting an interactive run', async () => {
-    const disclosures: Array<{ role: 'planner' | 'implementer'; tool: CliToolId }> = [];
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'aider', authChannel: 'provider-dependent' },
-    });
-    const gates = await authorize({
-      config,
-      evidence: (context) => evidenceFor({ context, auth: 'unknown' }),
-      disclosures,
+        }),
     });
 
-    expect(disclosures).toEqual([{ role: 'planner', tool: 'aider' }]);
-    expect(gates.has('aider')).toBe(true);
+    expect(collect).toHaveBeenCalledOnce();
+    expect(detect).toHaveBeenCalledOnce();
+    expect(prepareSession).toHaveBeenCalledOnce();
+    expect(emit).toHaveBeenCalledWith(execution.report);
+    expect(execution.gates).toEqual([
+      expect.objectContaining({
+        kind: 'cli',
+        slot: { role: 'planner' },
+        preparationId: 'start-preparation',
+        executable,
+      }),
+      expect.objectContaining({
+        kind: 'api',
+        slot: { role: 'implementer', profile: 'default' },
+        preparationId: 'start-preparation',
+      }),
+    ]);
   });
 
-  it('blocks unknown auth in headless mode without the explicit allowance', async () => {
+  it('emits a fresh blocked report without creating a session', async () => {
     const config = makeConfig({
-      planner: { kind: 'cli', tool: 'aider', authChannel: 'provider-dependent' },
+      planner: { kind: 'shell', command: 'true', model: 'shell', contextLength: 32_768 },
     });
+    const projectDir = projectWithConfig(config);
+    const report = {
+      ...readyReport(projectDir),
+      status: 'blocked' as const,
+      counts: { ok: 0, info: 0, warning: 0, blocker: 1 },
+      nextAction: { kind: 'fix-config' as const, label: 'Fix config', reason: 'Blocked' },
+    };
+    const emit = vi.fn();
 
     await expect(
-      authorize({
-        config,
-        interaction: 'headless',
-        evidence: (context) => evidenceFor({ context, auth: 'unknown' }),
+      prepareStartExecution({
+        projectDir,
+        feature: 'blocked admission',
+        opts: {},
+        transport: 'json',
+        emitReadiness: emit,
+        prepare: async () => ({ kind: 'blocked', report }),
       }),
-    ).rejects.toThrow('--allow-unverified-auth');
+    ).rejects.toMatchObject({ kind: 'cli-error' });
+    expect(emit).toHaveBeenCalledWith(report);
   });
 
-  it('admits unknown auth in headless mode with the explicit allowance', async () => {
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'aider', authChannel: 'provider-dependent' },
-    });
-    const gates = await authorize({
-      config,
-      interaction: 'headless',
-      allowUnverifiedAuth: true,
-      evidence: (context) => evidenceFor({ context, auth: 'unknown' }),
-    });
-
-    expect(gates.has('aider')).toBe(true);
-  });
-
-  it('does not let interactive disclosure bypass first-class unknown auth', async () => {
-    const disclosures: Array<{ role: 'planner' | 'implementer'; tool: CliToolId }> = [];
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-    });
+  it('rolls back the exact prepared session when readiness emission fails', async () => {
+    const config = makeConfig();
+    const projectDir = projectWithConfig(config);
+    const report = readyReport(projectDir);
+    let preparedSessionId: string | undefined;
 
     await expect(
-      authorize({
-        config,
-        evidence: (context) => evidenceFor({ context, auth: 'unknown' }),
-        disclosures,
-      }),
-    ).rejects.toThrow('could not be verified');
-    expect(disclosures).toEqual([]);
-  });
-
-  it('fails closed when supplied evidence is not fresh', async () => {
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-    });
-
-    await expect(
-      authorize({
-        config,
-        evidence: (context) => evidenceFor({ context, source: 'legacy-projection' }),
-      }),
-    ).rejects.toThrow('not checked freshly');
-  });
-
-  it('fails closed when fresh evidence names a different runner', async () => {
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-    });
-
-    await expect(
-      authorize({
-        config,
-        evidence: (context) => evidenceFor({ context, runnerId: 'claude-code' }),
-      }),
-    ).rejects.toThrow('changed while it was being checked');
-  });
-
-  it.each([
-    [
-      'role',
-      (context: RunnerDiscoveryContext): RunnerDiscoveryContext => ({
-        ...context,
-        role: context.role === 'planner' ? 'implementer' : 'planner',
-      }),
-    ],
-    [
-      'auth channel',
-      (context: RunnerDiscoveryContext): RunnerDiscoveryContext => ({
-        ...context,
-        authChannel: 'session',
-      }),
-    ],
-    [
-      'endpoint origin',
-      (context: RunnerDiscoveryContext): RunnerDiscoveryContext => ({
-        ...context,
-        endpointOrigin: 'https://evidence-only.example',
-      }),
-    ],
-    [
-      'credential domain',
-      (context: RunnerDiscoveryContext): RunnerDiscoveryContext => ({
-        ...context,
-        credentialPresent: true,
-        endpointOrigin: 'https://api.openai.example',
-        credentialDomain: {
-          providerId: 'openai',
-          endpointOrigin: 'https://api.openai.example',
-          authChannel: 'api-key',
-          credentialSource: { kind: 'env', name: 'EVIDENCE_ONLY_OPENAI_KEY' },
-          configGeneration: context.configGeneration,
+      prepareStartExecution({
+        projectDir,
+        feature: 'failed readiness emission',
+        opts: {},
+        transport: 'json',
+        emitReadiness: () => {
+          throw new Error('output stream closed');
+        },
+        prepare: async () => {
+          const prepared = prepareNewSession({
+            projectDir,
+            feature: 'failed readiness emission',
+            config,
+            report,
+          });
+          if (prepared.kind === 'aborted') throw new Error('unexpected aborted preparation');
+          preparedSessionId = prepared.session.ref.sessionId;
+          return {
+            kind: 'prepared',
+            execution: {
+              purpose: 'new-workflow',
+              config,
+              preparationId: 'readiness-emission-failure',
+              report,
+              gates: [],
+              session: { kind: 'new', ...prepared.session },
+              runtime: {
+                feature: 'failed readiness emission',
+                allowRepoRunners: false,
+                allowHooks: false,
+              },
+            },
+          };
         },
       }),
-    ],
-    [
-      'configuration generation',
-      (context: RunnerDiscoveryContext): RunnerDiscoveryContext => ({
-        ...context,
-        configGeneration: `${context.configGeneration}-different`,
-      }),
-    ],
-    [
-      'model selection',
-      (context: RunnerDiscoveryContext): RunnerDiscoveryContext => ({
-        ...context,
-        model: 'evidence-only-model',
-      }),
-    ],
-  ] as const)('denies fresh evidence bound to a different %s', async (_field, differentContext) => {
-    const config = makeConfig({
-      planner: { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
-    });
+    ).rejects.toThrow('output stream closed');
 
-    await expect(
-      authorize({
-        config,
-        evidence: (context) => evidenceFor({ context: differentContext(context) }),
+    expect(preparedSessionId).toBeDefined();
+    expect(existsSync(sessionDir(projectDir, preparedSessionId as string))).toBe(false);
+    expect(readActive(projectDir)).toBeNull();
+  });
+
+  it('keeps entry-point policy differences inside the shared preparation policy', () => {
+    expect(
+      cliPreparationPolicy({ purpose: 'new-workflow', interaction: 'interactive', opts: {} }),
+    ).toMatchObject({
+      purpose: 'new-workflow',
+      interaction: 'interactive',
+      unverifiedAuth: 'disclosed',
+    });
+    expect(
+      cliPreparationPolicy({
+        purpose: 'resume',
+        interaction: 'headless',
+        opts: { allowUnverifiedAuth: true },
       }),
-    ).rejects.toThrow('changed while it was being checked');
+    ).toMatchObject({ purpose: 'resume', interaction: 'headless', unverifiedAuth: 'allowed' });
+    expect(
+      cliPreparationPolicy({ purpose: 'spec', interaction: 'headless', opts: {} }),
+    ).toMatchObject({ purpose: 'spec', interaction: 'headless', unverifiedAuth: 'denied' });
   });
 });

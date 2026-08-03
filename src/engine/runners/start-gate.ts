@@ -1,5 +1,4 @@
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
-import type { CliReadinessResult } from '../../core/schemas/readiness.js';
 import {
   CliExecutableReceiptSchema,
   parseDigestBoundExecutableFingerprint,
@@ -10,11 +9,9 @@ import {
   type StartAdmission,
   type StartFact,
 } from '../../core/discovery/runner-evidence.js';
-import {
-  resolveCliExecutableAliases,
-  type CliExecutableResolver,
-} from './resolve-cli-executable.js';
 import { error } from '../../utils/error.js';
+import { assertNever } from '../../utils/type-guards.js';
+import type { RunnerGate, RunnerGateExpectation } from './prepared-execution.js';
 import type {
   CliExecutableIdentity,
   CliExecutableReceipt,
@@ -31,8 +28,6 @@ export type FreshCliStartGate = Readonly<{
   tool: CliToolId;
   executable: CliExecutableReceipt;
 }>;
-
-export type CliStartGates = ReadonlyMap<CliToolId, CliStartGate>;
 
 export type FreshCliStartGateResult =
   | Readonly<{ kind: 'admitted'; gate: FreshCliStartGate }>
@@ -51,10 +46,61 @@ export interface AdmitFreshCliStartOptions {
   readonly unverifiedAuth: 'denied' | 'disclosed' | 'allowed';
 }
 
-export interface RevalidateCliStartGatesOptions {
-  readonly projectDir: string;
-  readonly gates: CliStartGates;
-  readonly resolveExecutable?: CliExecutableResolver | undefined;
+export function runnerGateFor(
+  gates: readonly RunnerGate[],
+  expected: RunnerGateExpectation,
+): RunnerGate {
+  const gate = gates.find((candidate) => {
+    if (candidate.preparationId !== expected.preparationId) return false;
+    if (candidate.slot.role !== expected.slot.role) return false;
+    if (
+      candidate.slot.role === 'implementer' &&
+      expected.slot.role === 'implementer' &&
+      candidate.slot.profile !== expected.slot.profile
+    ) {
+      return false;
+    }
+
+    switch (candidate.kind) {
+      case 'cli':
+        return expected.kind === 'cli' && candidate.tool === expected.tool;
+      case 'api':
+        return (
+          expected.kind === 'api' &&
+          candidate.provider === expected.provider &&
+          candidate.endpointOrigin === expected.endpointOrigin
+        );
+      case 'agent-sdk':
+        return expected.kind === 'agent-sdk' && candidate.provider === expected.provider;
+      case 'shell':
+      case 'agent':
+        if (expected.kind !== candidate.kind) return false;
+        switch (candidate.command.kind) {
+          case 'validated-config':
+            return expected.command.kind === 'validated-config';
+          case 'configured-custom':
+            return (
+              expected.command.kind === 'configured-custom' &&
+              candidate.command.invocation.scope.definitionId === expected.command.definitionId
+            );
+          default:
+            return assertNever(candidate.command);
+        }
+      default:
+        return assertNever(candidate);
+    }
+  });
+  if (gate !== undefined) return gate;
+
+  throw error(
+    'runner-gate-mismatch',
+    `Runner gate does not match the prepared ${expected.slot.role} context.`,
+    {
+      kind: expected.kind,
+      role: expected.slot.role,
+      ...(expected.slot.role === 'implementer' && { profile: expected.slot.profile }),
+    },
+  );
 }
 
 const CLI_START_REQUIRED_FACTS = [
@@ -105,40 +151,6 @@ export function admitFreshCliStart(options: AdmitFreshCliStartOptions): FreshCli
   return { kind: 'admitted', gate: { tool: options.tool, executable } };
 }
 
-/** Re-resolve every admitted identity before a session exists. */
-export async function revalidateCliStartGates(
-  options: RevalidateCliStartGatesOptions,
-): Promise<CliStartGates> {
-  const gates: CliStartGate[] = [];
-  for (const gate of options.gates.values()) {
-    const executable = (
-      await resolveCliExecutableAliases({
-        commands: CLI_TOOL_CATALOG[gate.tool].executableAliases,
-        projectDir: options.projectDir,
-        trust: gate.executable,
-        ...(options.resolveExecutable === undefined
-          ? {}
-          : { resolveExecutable: options.resolveExecutable }),
-      })
-    ).executable;
-    gates.push({ tool: gate.tool, executable });
-  }
-  return cliStartGatesFromArray(gates);
-}
-
-export function cliStartGatesFromArray(gates: readonly CliStartGate[] | undefined): CliStartGates {
-  return new Map((gates ?? []).map((gate) => [gate.tool, gate]));
-}
-
-export function cliStartGateFor(
-  tool: CliToolId,
-  gates: CliStartGates | null | undefined,
-): CliStartGate {
-  const gate = gates?.get(tool);
-  if (gate === undefined || gate.tool !== tool) return missingCliStartGate(tool);
-  return gate;
-}
-
 function missingCliStartGate(tool: CliToolId): never {
   throw error(
     'cli-executable-untrusted',
@@ -153,32 +165,4 @@ export function assertCliStartGate(
 ): CliExecutableIdentity {
   if (gate === null || gate === undefined || gate.tool !== tool) return missingCliStartGate(tool);
   return gate.executable;
-}
-
-export function cliStartGateFromReadiness(
-  tool: CliToolId,
-  readiness: CliReadinessResult | undefined,
-): CliStartGate {
-  if (
-    readiness === undefined ||
-    readiness.tool !== tool ||
-    readiness.status !== 'ready' ||
-    readiness.trust !== 'trusted' ||
-    readiness.executable === null
-  ) {
-    return missingCliStartGate(tool);
-  }
-  return { tool, executable: readiness.executable };
-}
-
-export function cliStartGatesFromReadiness(
-  readiness: readonly CliReadinessResult[] | undefined,
-): CliStartGates {
-  const gates = new Map<CliToolId, CliStartGate>();
-  for (const result of readiness ?? []) {
-    if (result.status === 'ready' && result.trust === 'trusted' && result.executable !== null) {
-      gates.set(result.tool, { tool: result.tool, executable: result.executable });
-    }
-  }
-  return gates;
 }

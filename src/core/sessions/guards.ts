@@ -1,13 +1,16 @@
-import { readActive, isSessionLive, clearActive } from './lifecycle.js';
+import { clearActive, clearActiveReceipt, isSessionLive, readActiveRecord } from './lifecycle.js';
 import { sessionError } from './errors.js';
 
 export function clearStaleSession(projectDir: string): void {
-  const active = readActive(projectDir);
-  if (!active) return;
+  const active = readActiveRecord(projectDir);
+  if (active === null) return;
+  const sessionId = active.kind === 'legacy' ? active.sessionId : active.receipt.sessionId;
+  const ref = { projectDir, sessionId };
 
-  if (isSessionLive({ projectDir, sessionId: active })) {
-    throw sessionError.stillActive(active);
+  if (isSessionLive(ref)) {
+    throw sessionError.stillActive(sessionId);
   }
 
-  clearActive({ projectDir, sessionId: active });
+  if (active.kind === 'legacy') clearActive(ref);
+  else clearActiveReceipt(ref, active.receipt);
 }

@@ -516,8 +516,8 @@ describe('createDetectionService', () => {
     expect(outcomes(result).readiness).toMatchObject({ kind: 'fresh', origin: 'snapshot' });
   });
 
-  it('keeps scoped CLI catalog inventories in memory and excludes their model data from disk cache', async () => {
-    const privateModelId = 'cli-catalog-private-model-canary';
+  it('persists sanitized CLI catalog model rows without their connection context keys', async () => {
+    const rememberedModelId = 'cli-catalog-remembered-model';
     const deps = makeDeps({
       sourceContexts: sourceContexts(),
       discoverAllCliTools: async () => [
@@ -527,7 +527,7 @@ describe('createDetectionService', () => {
             tool: 'codex',
             contextKey: 'opaque-cli-executable-context',
           },
-          outcome: { kind: 'success', value: [{ id: privateModelId }] },
+          outcome: { kind: 'success', value: [{ id: rememberedModelId }] },
         },
       ],
     });
@@ -537,10 +537,50 @@ describe('createDetectionService', () => {
     const cache = await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8');
 
     expect(result.cliModels).toMatchObject([
-      { outcome: { kind: 'success', value: [{ id: privateModelId }] } },
+      { outcome: { kind: 'success', value: [{ id: rememberedModelId }] } },
     ]);
-    expect(cache).not.toContain(privateModelId);
     expect(cache).not.toContain('opaque-cli-executable-context');
+    expect(JSON.parse(cache).cliCatalogs).toEqual([
+      {
+        role: 'planner',
+        tool: 'codex',
+        models: [{ id: rememberedModelId }],
+        probedAt: expect.any(Number),
+      },
+    ]);
+  });
+
+  it('persists the fresh CLI probe of a new process even when readiness answers from disk', async () => {
+    let probe = 0;
+    const makeProbeDeps = () =>
+      makeDeps({
+        sourceContexts: sourceContexts(),
+        discoverAllCliTools: async () => [
+          {
+            connection: { role: 'planner', tool: 'codex', contextKey: 'probe-cli-context' },
+            outcome: { kind: 'success', value: [{ id: `probe-model-${++probe}` }] },
+          },
+        ],
+      });
+
+    await service.loadDetection(makeProbeDeps(), tempDir);
+    await service.getPendingSave();
+
+    const restarted = createDetectionService();
+    await restarted.loadDetection(makeProbeDeps(), tempDir);
+    await restarted.getPendingSave();
+
+    const cache = JSON.parse(
+      await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8'),
+    );
+    expect(cache.cliCatalogs).toEqual([
+      {
+        role: 'planner',
+        tool: 'codex',
+        models: [{ id: 'probe-model-2' }],
+        probedAt: expect.any(Number),
+      },
+    ]);
   });
 
   it('uses a soft TTL in memory and lets manual refresh bypass it without clearing last success', async () => {

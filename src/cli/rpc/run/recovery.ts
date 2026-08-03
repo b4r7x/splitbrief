@@ -3,6 +3,7 @@ import { RecoveryActionSchema } from '../../../core/schemas/enums.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ActiveSessionReceipt } from '../../../core/sessions/lifecycle.js';
 import type { EventBus } from '../../../engine/events/types.js';
 import { applyRecoveryAction } from '../../../engine/orchestrator/recovery/actions.js';
 import {
@@ -35,7 +36,8 @@ export type RpcRecoveryHandlersDeps = {
   resolveSessionId: () => string | undefined;
   setActiveSessionId: (id: string) => void;
   readCurrentState: () => WorkflowState | null;
-  activeConfig: () => Config;
+  executionConfig: () => Config;
+  active: ActiveSessionReceipt;
   bus: EventBus;
   recoveryGate: RecoveryGate;
   writer: ResponseWriter;
@@ -113,7 +115,7 @@ export function createRpcRecoveryHandlers(deps: RpcRecoveryHandlersDeps) {
       const current = deps.readCurrentState() ?? latest;
       const currentIssue = current.pendingRecovery;
       if (!currentIssue) return { shouldRun: true, state: current };
-      const effectiveConfig = deps.activeConfig();
+      const effectiveConfig = deps.executionConfig();
 
       const selectedImplementerProfile = currentIssue.selectedImplementerProfile;
       const retryProfileOverrideTaskId =
@@ -137,6 +139,7 @@ export function createRpcRecoveryHandlers(deps: RpcRecoveryHandlersDeps) {
         finalizeRecoveryResult({
           projectDir: deps.projectDir,
           sessionId: id,
+          active: deps.active,
           state: result.state,
           config: effectiveConfig,
           status: result.status,

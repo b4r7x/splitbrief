@@ -4,8 +4,9 @@ import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { SPLITBRIEF_IDENTITY } from '../core/identity.js';
 import { Composer } from '../components/composer/composer.js';
+import { getHomeLayout } from '../features/home/layout.js';
+import { getLogo } from '../features/home/logo.js';
 import { ConversationFlow } from '../features/workflow/components/conversation-flow/flow.js';
 import { InputFooter } from '../features/workflow/components/input-footer.js';
 import { configStore } from '../stores/project/config.js';
@@ -15,7 +16,7 @@ import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { Layout } from './layout.js';
-import { SetupScreen } from './screens/setup.js';
+import { HomeScreen } from './screens/home.js';
 
 const LABELS = ['identity', 'composer-command', 'byline-not-row', 'navigation-return'] as const;
 
@@ -61,13 +62,17 @@ it('UI hard-cut preservation matrix has exactly 4 labeled cases', async () => {
       label: 'identity',
       verify: async () => {
         configStore.__testReset({ projectDir: '/tmp/splitbrief-ui', config: makeConfig() });
-        routerStore.init({ screen: 'setup' });
+        routerStore.init({ screen: 'home' });
         terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
 
-        const ui = renderFeature(<SetupScreen renderToolPicker={() => null} />);
+        const ui = renderFeature(<HomeScreen commands={[]} onRuntimeCommand={() => {}} />);
         await flushEffects();
 
-        expect(ui.lastFrame() ?? '').toContain(SPLITBRIEF_IDENTITY.displayName);
+        const frame = ui.lastFrame() ?? '';
+        const layout = getHomeLayout({ cols: 80, rows: 24, isSmall: false });
+        for (const line of getLogo(layout.logoTier).split('\n')) {
+          expect(frame).toContain(line.trim());
+        }
         ui.unmount();
       },
     },
@@ -115,7 +120,15 @@ it('UI hard-cut preservation matrix has exactly 4 labeled cases', async () => {
       label: 'byline-not-row',
       verify: () => {
         configStore.__testReset({ projectDir: '/tmp/splitbrief-ui', config: makeConfig() });
-        routerStore.init({ screen: 'workflow', feature: 'preserve status placement' });
+        routerStore.init({
+          screen: 'workflow',
+          execution: {
+            kind: 'attached',
+            feature: 'preserve status placement',
+            sessionId: 'attached-session',
+            attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+          },
+        });
         terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
         eventsStore.__testReset({
           events: [
@@ -154,8 +167,12 @@ it('UI hard-cut preservation matrix has exactly 4 labeled cases', async () => {
         terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
         routerStore.init({
           screen: 'workflow',
-          feature: 'preserve route state',
-          plannerContext: 'keep this context',
+          execution: {
+            kind: 'attached',
+            feature: 'preserve route state',
+            sessionId: 'preserve-session',
+            attach: { sockPath: '/tmp/preserve.sock', authToken: 'keep-this-token' },
+          },
         });
         const origin = routerStore.get();
         const ui = renderFeature(<NavigationReturnHarness />);

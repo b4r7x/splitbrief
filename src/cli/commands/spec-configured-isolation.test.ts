@@ -22,7 +22,6 @@ import {
   TASKS_FILE,
 } from '../../core/paths.js';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
-import { createPlanner } from '../../engine/runners/factory.js';
 import { DECLARED_PLANNER_ARTIFACT_PATH } from '../../engine/runners/types.js';
 import { registerSpecCommand } from './spec.js';
 
@@ -90,7 +89,6 @@ describe('spec command', () => {
         planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
       });
-      writeConfig(baseConfig);
 
       const childProgram = [
         "const fs = require('node:fs');",
@@ -129,12 +127,11 @@ describe('spec command', () => {
         },
         customCommands: { 'r2-standalone-direct': command },
       });
+      writeConfig(selectedConfig);
 
       const program = new Command();
       program.exitOverride();
       registerSpecCommand(program, {
-        createPlanner: (_base, initialSessionId, options) =>
-          createPlanner(selectedConfig, initialSessionId, options),
         promptCustomRunnerDisclosure: async () => ({
           decision: 'confirm',
           phrase: 'I confirm',

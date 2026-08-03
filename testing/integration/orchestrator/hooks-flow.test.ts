@@ -11,6 +11,12 @@ import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { HooksConfig } from '../../../src/core/schemas/hooks.js';
+import type { Config } from '../../../src/core/schemas/config.js';
+import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../src/engine/runners/prepared-execution.js';
 
 const DENY_PRE_TASK_HOOKS: HooksConfig = {
   pre_task: [
@@ -52,6 +58,52 @@ function postTaskMarkerHooks(projectDir: string): HooksConfig {
   };
 }
 
+function preparedExecution(
+  projectDir: string,
+  feature: string,
+  inputConfig: Config,
+): PreparedExecution {
+  if (inputConfig.hooks !== undefined) markHooksConfigTrusted(projectDir, inputConfig.hooks);
+  const config = parsePreparedConfig(inputConfig);
+  const sessionId = `hooks-${feature.replaceAll(' ', '-')}`;
+  const preparationId = `${sessionId}-preparation`;
+  const active = {
+    version: 1 as const,
+    sessionId,
+    generation: '4a444444-4444-4444-8444-444444444444',
+  };
+  return {
+    purpose: 'new-workflow',
+    config,
+    preparationId,
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir,
+      status: 'ready',
+      counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates: [
+      {
+        kind: 'shell',
+        slot: { role: 'planner' },
+        preparationId,
+        command: { kind: 'validated-config' },
+      },
+      {
+        kind: 'shell',
+        slot: { role: 'implementer', profile: 'default' },
+        preparationId,
+        command: { kind: 'validated-config' },
+      },
+    ],
+    session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+    runtime: { feature, allowRepoRunners: true, allowHooks: true },
+  };
+}
+
 describe('hooks integration flow', { timeout: 90_000 }, () => {
   it('pre_task hook deny causes task_skipped and no task_completed', async () => {
     const projectDir = createTempDir('orch-int-hooks-pre-task');
@@ -81,13 +133,9 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
     });
 
     await runWorkflow({
-      feature: 'add foo',
-      projectDir,
-      config,
+      prepared: preparedExecution(projectDir, 'add foo', config),
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
-      allowHooks: true,
-      allowRepoRunners: true,
       _eventSink: (e) => recorded.push(e),
     });
 
@@ -132,13 +180,9 @@ describe('hooks integration flow', { timeout: 90_000 }, () => {
     });
 
     await runWorkflow({
-      feature: 'add foo',
-      projectDir,
-      config,
+      prepared: preparedExecution(projectDir, 'add foo', config),
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
-      allowHooks: true,
-      allowRepoRunners: true,
     });
 
     await vi.waitFor(

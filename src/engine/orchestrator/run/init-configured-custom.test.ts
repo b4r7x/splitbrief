@@ -1,4 +1,4 @@
-import { statSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -8,27 +8,94 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { ConfigSchema } from '../../../core/schemas/config.js';
+import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { SANDBOX_DIR } from '../../../core/paths.js';
-import { cliStartGatesFromArray } from '../../runners/start-gate.js';
 import { DECLARED_PLANNER_ARTIFACT_PATH } from '../../runners/types.js';
 import { composeWorkflowCustomRunnerRuntime, initializeWorkflow } from './init.js';
+import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
+import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
+import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+  type RunnerGate,
+  type RunnerSlot,
+} from '../../runners/prepared-execution.js';
 
-function codexStartGate() {
-  const executable = statSync(process.execPath);
-  return cliStartGatesFromArray([
-    {
-      tool: 'codex',
-      executable: {
-        path: process.execPath,
-        fingerprint: {
-          dev: executable.dev,
-          ino: executable.ino,
-          size: executable.size,
-          mtimeMs: executable.mtimeMs,
-        },
-      },
+function readyReport(projectDir: string): ReadinessReport {
+  return {
+    generatedAt: new Date(0).toISOString(),
+    projectDir,
+    status: 'ready',
+    counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+    nextAction: { kind: 'continue', label: 'Continue', reason: 'ready' },
+    sections: [],
+    metadata: {},
+  };
+}
+
+async function configuredGate(
+  input: Readonly<{
+    projectDir: string;
+    config: ReturnType<typeof parsePreparedConfig>;
+    role: 'planner' | 'implementer';
+    slot: RunnerSlot;
+    preparationId: string;
+  }>,
+): Promise<RunnerGate> {
+  const runner = resolveConfiguredCustomRunner(input.config, input.role);
+  if (runner === null) throw new Error(`Expected a configured ${input.role} runner.`);
+  const admission = await prepareCustomRunnerAdmission({
+    projectDir: input.projectDir,
+    runner,
+    posture: customRunnerSecurityPosture(input.role, runner.command.contract),
+    phase: input.role === 'planner' ? 'planning' : 'implementing',
+    interaction: 'headless',
+    allowRepoRunners: true,
+    authorizationPathEnv: process.env.PATH ?? '',
+    authorizationPathExt: process.env.PATHEXT ?? '',
+  });
+  if (admission.kind !== 'admitted') throw new Error('Configured runner was not admitted.');
+  return {
+    kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+    slot: input.slot,
+    preparationId: input.preparationId,
+    command: { kind: 'configured-custom', invocation: admission.invocation },
+  };
+}
+
+function preparedExecution(
+  input: Readonly<{
+    projectDir: string;
+    feature: string;
+    sessionId: string;
+    config: ReturnType<typeof parsePreparedConfig>;
+    preparationId: string;
+    gates: readonly RunnerGate[];
+  }>,
+): PreparedExecution {
+  const active = {
+    version: 1 as const,
+    sessionId: input.sessionId,
+    generation: randomUUID(),
+  };
+  return {
+    purpose: 'new-workflow',
+    config: input.config,
+    preparationId: input.preparationId,
+    report: readyReport(input.projectDir),
+    gates: input.gates,
+    session: {
+      kind: 'existing',
+      ref: { projectDir: input.projectDir, sessionId: active.sessionId },
+      active,
     },
-  ]);
+    runtime: {
+      feature: input.feature,
+      allowRepoRunners: true,
+      allowHooks: true,
+    },
+  };
 }
 
 describe('configured custom workflow runtime', () => {
@@ -147,19 +214,33 @@ describe('configured custom workflow runtime', () => {
           });
           const { callbacks } = makeCallbacks();
           const sessionId = 'r2-configured-stage';
+          const config = parsePreparedConfig(dynamicConfig);
+          const preparationId = 'r2-configured-stage';
+          const gates = [
+            await configuredGate({
+              projectDir,
+              config,
+              role: 'implementer',
+              slot: { role: 'implementer', profile: 'configured-output' },
+              preparationId,
+            }),
+          ];
           const init = await initializeWorkflow({
             opts: {
-              feature: 'exercise a configured output runner',
-              projectDir,
-              config: baseConfig,
+              prepared: preparedExecution({
+                projectDir,
+                feature: 'exercise a configured output runner',
+                sessionId,
+                config,
+                preparationId,
+                gates,
+              }),
               callbacks,
               sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
               _planner: makePlanner(),
-              allowHooks: true,
-              allowRepoRunners: true,
               headless: true,
-              trustedCliGates: codexStartGate(),
             },
+            config,
             sessionId,
             summaryBase: {
               feature: 'exercise a configured output runner',
@@ -186,11 +267,13 @@ describe('configured custom workflow runtime', () => {
           if (createDynamicImplementer === undefined) {
             throw new Error('expected a dynamic implementer factory');
           }
-          const dynamicImplementer = await createDynamicImplementer(dynamicConfig);
+          const dynamicImplementer = await createDynamicImplementer(config, {
+            slot: { role: 'implementer', profile: 'configured-output' },
+          });
           const result = await dynamicImplementer.implement({
             task: makeTask({ file: 'src/dynamic-stage.ts' }),
             projectDir,
-            config: dynamicConfig,
+            config,
             context: { name: 'r2-stage-project', dir: projectDir },
             onOutput: () => {},
           });
@@ -255,15 +338,38 @@ describe('configured custom workflow runtime', () => {
         },
       });
       const { callbacks } = makeCallbacks();
+      const preparedConfig = parsePreparedConfig(config);
+      const preparationId = 'session-init-configured-custom-runners';
+      const gates = await Promise.all([
+        configuredGate({
+          projectDir,
+          config: preparedConfig,
+          role: 'planner',
+          slot: { role: 'planner' },
+          preparationId,
+        }),
+        configuredGate({
+          projectDir,
+          config: preparedConfig,
+          role: 'implementer',
+          slot: { role: 'implementer', profile: 'configured-custom' },
+          preparationId,
+        }),
+      ]);
       const init = await initializeWorkflow({
         opts: {
-          feature,
-          projectDir,
-          config,
+          prepared: preparedExecution({
+            projectDir,
+            feature,
+            sessionId,
+            config: preparedConfig,
+            preparationId,
+            gates,
+          }),
           callbacks,
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-          allowHooks: true,
         },
+        config: preparedConfig,
         sessionId,
         summaryBase: {
           feature,
@@ -286,7 +392,13 @@ describe('configured custom workflow runtime', () => {
       if (!init.ok) return;
       expect(init.wctx.planner.capabilities.supportsSelfSummarisation).toBe(false);
       expect(init.wctx.implementer.capabilities).toEqual({ writesFiles: 'extracted-code' });
-      expect((await init.wctx.createImplementer?.(config))?.capabilities).toEqual({
+      expect(
+        (
+          await init.wctx.createImplementer?.(preparedConfig, {
+            slot: { role: 'implementer', profile: 'configured-custom' },
+          })
+        )?.capabilities,
+      ).toEqual({
         writesFiles: 'extracted-code',
       });
     });

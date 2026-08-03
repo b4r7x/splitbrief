@@ -17,6 +17,7 @@ import type { Config } from '../../../src/core/schemas/config.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { WorkflowOpts } from '../../../src/core/types/config-options.js';
+import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../src/core/paths.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { SessionLogEventEntrySchema } from '../../../src/core/schemas/session-log.js';
@@ -30,6 +31,7 @@ function createMutableRpcContext(args: {
   projectDir?: string;
   opts?: WorkflowOpts;
   initial?: ResolvedRunConfig | null;
+  getPreparedExecution?: () => PreparedExecution | null;
   getSessionId?: () => string | undefined;
   getState?: () => WorkflowState | null;
   bus?: ReturnType<typeof createEventBus>;
@@ -41,6 +43,7 @@ function createMutableRpcContext(args: {
     args.initial === undefined ? resolveRunConfigWithBase({ projectDir, opts }) : args.initial;
   const context = createRpcCommandContext({
     projectDir,
+    getPreparedExecution: args.getPreparedExecution ?? (() => null),
     getSessionId: args.getSessionId ?? (() => undefined),
     getState: args.getState ?? (() => null),
     getRunConfig: () => runConfig,
@@ -72,9 +75,9 @@ describe('createRpcCommandContext integration', () => {
     expect(() => ctx.acceptRunSnapshot()).toThrow(/No active session/);
   });
 
-  it('reports a config-specific error (not the session error) when config is absent', () => {
+  it('reports that no prepared execution exists when transcript compaction has no authority', () => {
     const { context: ctx } = createMutableRpcContext({ initial: null });
-    expect(() => ctx.compactTranscript()).toThrow(/No config loaded/);
+    expect(() => ctx.compactTranscript()).toThrow(/No active session/);
   });
 
   it('reports UI-only conversation commands as unavailable', () => {

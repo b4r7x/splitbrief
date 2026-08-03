@@ -7,11 +7,14 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { readyReadiness } from '#testing/helpers/workflow-screen.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { RunWorkflowOptions } from '../../engine/orchestrator/run/init.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../engine/runners/prepared-execution.js';
 import { formatTasks } from '../../engine/spec/formatter.js';
 import { getContentTopRow } from '../../features/workflow/layout/chrome-rows.js';
 import { getWorkflowContentRect } from '../../features/workflow/layout/rect.js';
@@ -43,6 +46,48 @@ function publishEvent(opts: RunWorkflowOptions, event: EngineEvent): void {
   sink(event);
 }
 
+function preparedExecution(projectDir: string, feature: string): PreparedExecution {
+  const sessionId = 'workflow-screen-session';
+  const active = {
+    version: 1 as const,
+    sessionId,
+    generation: '44444444-4444-4444-8444-444444444444',
+  };
+  return {
+    purpose: 'new-workflow',
+    config: parsePreparedConfig(makeConfig()),
+    preparationId: 'workflow-screen-preparation',
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir,
+      status: 'ready',
+      counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates: [],
+    session: {
+      kind: 'new',
+      ref: { projectDir, sessionId },
+      ownership: active,
+      active,
+    },
+    runtime: {
+      feature,
+      allowRepoRunners: false,
+      allowHooks: false,
+    },
+  };
+}
+
+function navigatePreparedWorkflow(projectDir: string, feature: string): void {
+  routerStore.navigate({
+    to: 'workflow',
+    execution: { kind: 'local', prepared: preparedExecution(projectDir, feature) },
+  });
+}
+
 describe('WorkflowScreen chrome calibration', () => {
   let projectDir = '';
 
@@ -65,11 +110,7 @@ describe('WorkflowScreen chrome calibration', () => {
     configStore.__testReset({ config: makeConfig(), projectDir });
     terminalSizeStore.__testReset({ cols, rows, isSmall: false });
     inputHeightStore.__testReset({ rows: inputRows });
-    routerStore.navigate({
-      to: 'workflow',
-      feature: 'chrome calibration',
-      readiness: readyReadiness(projectDir),
-    });
+    navigatePreparedWorkflow(projectDir, 'chrome calibration');
 
     const ui = renderFeature(
       <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
@@ -102,11 +143,7 @@ describe('WorkflowScreen chrome calibration', () => {
 
     configStore.__testReset({ config: makeConfig(), projectDir });
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
-    routerStore.navigate({
-      to: 'workflow',
-      feature: 'review action lifecycle',
-      readiness: readyReadiness(projectDir),
-    });
+    navigatePreparedWorkflow(projectDir, 'review action lifecycle');
     runWorkflow.mockImplementation(async (opts) => {
       publishEvent(opts, {
         type: 'workflow_started',
@@ -170,11 +207,7 @@ describe('WorkflowScreen chrome calibration', () => {
     inputHistoryStore.hydrate(['HISTORY_SENTINEL']);
     configStore.__testReset({ config: makeConfig(), projectDir });
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
-    routerStore.navigate({
-      to: 'workflow',
-      feature: 'multiline review ownership',
-      readiness: readyReadiness(projectDir),
-    });
+    navigatePreparedWorkflow(projectDir, 'multiline review ownership');
     runWorkflow.mockImplementation(async (opts) => {
       publishEvent(opts, {
         type: 'workflow_started',
@@ -218,11 +251,7 @@ describe('WorkflowScreen chrome calibration', () => {
     let outcome: ApprovalReviewResult | undefined;
     configStore.__testReset({ config: makeConfig(), projectDir });
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
-    routerStore.navigate({
-      to: 'workflow',
-      feature: 'stale review action',
-      readiness: readyReadiness(projectDir),
-    });
+    navigatePreparedWorkflow(projectDir, 'stale review action');
     runWorkflow.mockImplementation(async (opts) => {
       publishEvent(opts, {
         type: 'workflow_started',
@@ -284,11 +313,7 @@ describe('WorkflowScreen chrome calibration', () => {
     const copyTarget = vi.fn(async () => 'empty' as const);
     configStore.__testReset({ config: makeConfig(), projectDir });
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
-    routerStore.navigate({
-      to: 'workflow',
-      feature: 'brief key ownership',
-      readiness: readyReadiness(projectDir),
-    });
+    navigatePreparedWorkflow(projectDir, 'brief key ownership');
     runWorkflow.mockImplementation(async (opts) => {
       lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
       await opts.callbacks.onApprovalNeeded('briefs', tasksPath);

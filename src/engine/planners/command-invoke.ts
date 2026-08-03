@@ -6,7 +6,7 @@ import {
 } from '../runners/command-based.js';
 import { extractQuestionsFromStream } from '../parsers/question.js';
 import { createCommandExistsAvailability, DEFAULT_AVAILABILITY } from '../availability.js';
-import type { OutputFormat, Phase } from '../../core/schemas/enums.js';
+import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import type { RunnerCallResult } from '../calls/types.js';
 import {
@@ -15,12 +15,8 @@ import {
   type CustomRunnerRuntimePort,
   type PreparedDeclaredArtifactReview,
 } from '../runners/types.js';
-import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
-import { customRunnerAdmissionError } from '../runners/trust.js';
-import {
-  customRunnerSecurityPosture,
-  type ConfiguredCustomRunner,
-} from '../runners/custom-trust.js';
+import type { AdmittedCustomRunnerInvocation } from '../runners/trust.js';
+import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
 import { resolveCustomRunnerEnvironment } from '../runners/redaction.js';
 
 export function resolveCapabilities(
@@ -108,23 +104,12 @@ export function createCommandBasedPlanner(
   });
 }
 
-function plannerAdmissionPhase(role: RunnerCallContext['role']): Phase {
-  switch (role) {
-    case 'escalation':
-      return 'escalating';
-    case 'review':
-      return 'final-review';
-    default:
-      return 'planning';
-  }
-}
-
 function declaredArtifactPrompt(prompt: string): string {
   return `${prompt}\n\nStdout is diagnostic only. Write the complete result to ${DECLARED_PLANNER_ARTIFACT_PATH}. The result must not exceed ${PLANNER_ARTIFACT_MAX_BYTES} bytes.`;
 }
 
 /**
- * Runs a configured custom planner only after its per-call admission.
+ * Runs a configured custom planner with preparation-time admission.
  * Output-contract calls discard a child stage; direct normal calls return one
  * reviewed declared artifact, while direct full escalation writes only to the
  * supplied outer stage for the existing diff gate to review.
@@ -132,9 +117,9 @@ function declaredArtifactPrompt(prompt: string): string {
 export function createConfiguredCustomPlanner(
   runner: ConfiguredCustomRunner,
   runtime: CustomRunnerRuntimePort,
+  admission: AdmittedCustomRunnerInvocation,
 ): Planner {
   const direct = runner.command.contract === 'direct';
-  const posture = customRunnerSecurityPosture('planner', runner.command.contract);
 
   const invoke = async ({
     prompt,
@@ -156,19 +141,6 @@ export function createConfiguredCustomPlanner(
     try {
       const authorizationPathEnv = runtime.authorizationPathEnv ?? '';
       const authorizationPathExt = runtime.authorizationPathExt ?? '';
-      const admission = await prepareCustomRunnerAdmission({
-        ...runtime.admission,
-        projectDir: runtime.authorizationProjectDir,
-        runner,
-        posture,
-        phase: plannerAdmissionPhase(callContext.role),
-        authorizationPathEnv,
-        authorizationPathExt,
-      });
-      if (admission.kind !== 'admitted') {
-        throw customRunnerAdmissionError.denied('planner');
-      }
-
       const invokeAdmittedRunner = ({
         cwd,
         childPrompt,
@@ -177,7 +149,7 @@ export function createConfiguredCustomPlanner(
         childPrompt: string;
       }>) =>
         invokeCustomCommandBasedRunner({
-          admission: admission.invocation,
+          admission,
           prompt: childPrompt,
           authorizationProjectDir: runtime.authorizationProjectDir,
           authorizationPathEnv,

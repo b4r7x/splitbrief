@@ -10,6 +10,8 @@ import type { RunnerPermissionPosture } from './model-catalog/posture.js';
 import type { PickerOptionStatus } from './model-catalog/status.js';
 import type { ProviderAuthAction } from './provider-auth.js';
 
+const DETECTING_MODELS_COPY = 'Detecting models…';
+
 /** Why a native CLI catalog probe produced no confirmed models. */
 export type ModelCatalogDiagnostic =
   | Readonly<{ kind: 'not-probed' }>
@@ -129,6 +131,7 @@ export function formatModelCatalogGuidance(
   item: PickerOption,
   counts: PickerModelCounts,
   diagnostic?: ModelCatalogDiagnostic,
+  refreshing = false,
 ): { headline: string; detail: string | undefined } {
   if (item.status.state !== 'ready') {
     return {
@@ -137,7 +140,7 @@ export function formatModelCatalogGuidance(
     };
   }
 
-  const guidance = readyModelGuidance(item, counts, diagnostic);
+  const guidance = readyModelGuidance(item, counts, diagnostic, refreshing);
   const providerSummary = formatConfiguredProviderSummary(item.status);
   if (providerSummary === undefined) return guidance;
   return {
@@ -150,6 +153,7 @@ function readyModelGuidance(
   item: PickerOption,
   counts: PickerModelCounts,
   diagnostic?: ModelCatalogDiagnostic,
+  refreshing = false,
 ): { headline: string; detail: string | undefined } {
   const { modelCapability } = item;
   if (!modelCapability.showsDiscovered && !modelCapability.allowsCustom) {
@@ -172,11 +176,16 @@ function readyModelGuidance(
   if (suggested > 0) {
     return {
       headline: `No models confirmed${SOFT_SEP}${suggested} suggested from catalog`,
-      detail:
-        diagnostic === undefined
+      detail: refreshing
+        ? DETECTING_MODELS_COPY
+        : diagnostic === undefined
           ? undefined
           : formatCatalogDiagnostic(diagnostic, item.displayName),
     };
+  }
+
+  if (refreshing) {
+    return { headline: DETECTING_MODELS_COPY, detail: undefined };
   }
 
   return {
@@ -270,12 +279,13 @@ export function formatToolPreview(
   authAction?: ProviderAuthAction | null,
   diagnostic?: ModelCatalogDiagnostic,
   credentialNote?: string,
+  refreshing = false,
 ): string {
   if (item.kind === 'custom-command') {
     return [item.displayName, 'OUTPUT reads stdout', 'DIRECT writes your files'].join(SOFT_SEP);
   }
 
-  const guidance = formatModelCatalogGuidance(item, counts, diagnostic);
+  const guidance = formatModelCatalogGuidance(item, counts, diagnostic, refreshing);
   const parts = [item.displayName, item.kind, formatToolPostureSummary(item), guidance.headline];
   // The actionable key hint precedes the unbounded remediation: the preview
   // truncates right, so the affordance must never be the part that gets cut.

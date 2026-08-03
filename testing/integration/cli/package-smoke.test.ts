@@ -96,7 +96,7 @@ afterAll(() => {
     const parent = join(installDir, '..');
     rmSync(parent, { recursive: true, force: true });
   }
-});
+}, 60_000);
 
 describe('package smoke test', () => {
   it('--help exits 0 and prints usage', () => {

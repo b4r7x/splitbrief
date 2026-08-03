@@ -1,5 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, rmSync, existsSync, statSync, writeFileSync, readFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  rmSync,
+  existsSync,
+  statSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync,
+  mkdtempSync,
+  closeSync,
+  openSync,
+  writeSync,
+} from 'node:fs';
 import { execSync, execFileSync } from 'node:child_process';
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -8,16 +20,27 @@ import { IPC_SOCK_FILE } from '../../core/paths.js';
 import { HEARTBEAT_STALENESS_MS } from '../../core/sessions/lockfile-status.js';
 import { writeLockfile } from './lockfile.js';
 import {
+  acceptsDetachedPreparedResult,
   buildServerArgs,
   buildServerArgv,
+  publishBootstrapLog,
   resolveEntryPoint,
   spawnServer,
   waitForServerReady,
   type SpawnServerOptions,
 } from './spawn-server.js';
 import { parseIpcServerArgs, writeIpcServerArgsFile } from './server-args.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
-import { featureForTranscriptPolicy } from '../../core/sessions/lifecycle.js';
+import {
+  createSessionPreparationCandidate,
+  prepareNewSession,
+  rollbackPreparedSession,
+  transferPreparedSessionToDetached,
+} from '../../core/sessions/prepare.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { EventEmitter } from 'node:events';
+import type { ChildProcess, spawn as spawnProcess } from 'node:child_process';
+import { readActiveRecord } from '../../core/sessions/lifecycle.js';
+import { detachedBootstrapRoot, sessionDir } from '../../core/paths.js';
 
 let testDir: string;
 let socketServer: Server | null = null;
@@ -61,6 +84,7 @@ async function writeServerLockfile(
     sessionId: basename(testDir),
     mode: 'standard',
     feature: 'test feature',
+    authToken: 'test-startup-auth',
     ...overrides,
   });
 }
@@ -70,8 +94,7 @@ function sessionIdFor(dir: string): string {
 }
 
 beforeEach(() => {
-  testDir = join(tmpdir(), `spawn-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  mkdirSync(testDir, { recursive: true });
+  testDir = mkdtempSync('/tmp/sb-spawn-');
 });
 
 afterEach(async () => {
@@ -84,7 +107,10 @@ describe('waitForServerReady', () => {
     await writeServerLockfile();
     await listenOnSocket(join(testDir, IPC_SOCK_FILE));
 
-    const result = await waitForServerReady(testDir, sessionIdFor(testDir));
+    const result = await waitForServerReady({
+      sessionDir: testDir,
+      sessionId: sessionIdFor(testDir),
+    });
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -94,7 +120,11 @@ describe('waitForServerReady', () => {
   });
 
   it('returns { ok: false } when lockfile never appears', async () => {
-    const result = await waitForServerReady(testDir, sessionIdFor(testDir), 600);
+    const result = await waitForServerReady({
+      sessionDir: testDir,
+      sessionId: sessionIdFor(testDir),
+      timeoutMs: 600,
+    });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -107,7 +137,11 @@ describe('waitForServerReady', () => {
       lastAliveMs: Date.now() - HEARTBEAT_STALENESS_MS - 1,
     });
 
-    const result = await waitForServerReady(testDir, sessionIdFor(testDir), 600);
+    const result = await waitForServerReady({
+      sessionDir: testDir,
+      sessionId: sessionIdFor(testDir),
+      timeoutMs: 600,
+    });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -123,7 +157,11 @@ describe('waitForServerReady', () => {
     });
 
     const start = Date.now();
-    const result = await waitForServerReady(testDir, sessionIdFor(testDir), 5000);
+    const result = await waitForServerReady({
+      sessionDir: testDir,
+      sessionId: sessionIdFor(testDir),
+      timeoutMs: 5000,
+    });
     const elapsed = Date.now() - start;
 
     expect(result.ok).toBe(false);
@@ -141,7 +179,11 @@ describe('waitForServerReady', () => {
       signal: 'SIGTERM',
     });
 
-    const result = await waitForServerReady(testDir, sessionIdFor(testDir), 5000);
+    const result = await waitForServerReady({
+      sessionDir: testDir,
+      sessionId: sessionIdFor(testDir),
+      timeoutMs: 5000,
+    });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -154,7 +196,11 @@ describe('waitForServerReady', () => {
     const candidate = join(longSessionDir, IPC_SOCK_FILE);
     expect(Buffer.byteLength(candidate, 'utf8')).toBeGreaterThan(104);
 
-    const result = await waitForServerReady(longSessionDir, sessionIdFor(longSessionDir), 5000);
+    const result = await waitForServerReady({
+      sessionDir: longSessionDir,
+      sessionId: sessionIdFor(longSessionDir),
+      timeoutMs: 5000,
+    });
 
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -170,12 +216,14 @@ describe('spawnServer', () => {
     process.env['PATH'] = '';
     try {
       const result = await spawnServer({
-        sessionDir: testDir,
-        sessionId: sessionIdFor(testDir),
+        candidate: createSessionPreparationCandidate({
+          projectDir: testDir,
+          feature: 'test feature',
+          persistTranscript: true,
+          sessionId: sessionIdFor(testDir),
+        }),
         projectDir: testDir,
         feature: 'test feature',
-        mode: 'standard',
-        configPath: join(testDir, 'config.yaml'),
       });
 
       expect(result.ok).toBe(false);
@@ -286,18 +334,25 @@ describe('resolveEntryPoint', () => {
 
 describe('server args launch contract', () => {
   it('stores detached launch details in a secure args file', () => {
-    const argsFile = writeIpcServerArgsFile(testDir, {
-      sessionId: 'test-session',
-      projectDir: '/repo',
-      feature: 'implement from @file\n\nsecret context',
-      mode: 'standard',
-      configPath: '/repo/.splitbrief/config.yaml',
-      overrides: { budget: 4 },
+    const argsFile = writeIpcServerArgsFile({
+      bootstrapDir: testDir,
+      args: {
+        version: 1,
+        parentPid: process.pid,
+        candidate: {
+          version: 1,
+          sessionId: 'test-session',
+          generation: '12345678-1234-4123-8123-123456789abc',
+        },
+        projectDir: '/repo',
+        feature: 'implement from @file\n\nsecret context',
+        overrides: { budget: 4 },
+      },
     });
 
     expect(statSync(argsFile).mode & 0o777).toBe(0o600);
     expect(parseIpcServerArgs(JSON.parse(readFileSync(argsFile, 'utf8')))).toMatchObject({
-      sessionId: 'test-session',
+      candidate: { sessionId: 'test-session' },
       feature: 'implement from @file\n\nsecret context',
       overrides: { budget: 4 },
     });
@@ -309,45 +364,470 @@ describe('server args launch contract', () => {
   });
 });
 
-describe('buildServerArgs transcript policy', () => {
+describe('buildServerArgs transport policy', () => {
   const base: SpawnServerOptions = {
-    sessionDir: '/repo/.splitbrief/sessions/s',
-    sessionId: 's',
+    candidate: {
+      version: 1,
+      sessionId: 's',
+      generation: '12345678-1234-4123-8123-123456789abc',
+    },
     projectDir: '/repo',
     feature: 'add secret oauth login',
-    mode: 'standard',
-    configPath: '/repo/.splitbrief/config.yaml',
   };
 
-  it('keeps the raw feature under persistTranscript:false so the detached planner gets the real input', () => {
-    const args = buildServerArgs({ ...base, persistTranscript: false });
+  it('keeps the raw feature in the private bootstrap so the detached planner gets the real input', () => {
+    const args = buildServerArgs(base);
     expect(args.feature).toBe('add secret oauth login');
-  });
-
-  it('forwards the transcript policy so the child can redact the ps-facing lockfile', () => {
-    expect(buildServerArgs({ ...base, persistTranscript: false }).persistTranscript).toBe(false);
-    expect(buildServerArgs({ ...base, persistTranscript: true }).persistTranscript).toBe(true);
   });
 
   it('forwards repo runner trust to the detached child', () => {
     expect(buildServerArgs({ ...base, allowRepoRunners: true }).allowRepoRunners).toBe(true);
   });
 
-  it('redacting the forwarded feature with its policy yields the ps-facing omission', () => {
-    const args = buildServerArgs({ ...base, persistTranscript: false });
-    expect(featureForTranscriptPolicy(args.feature, args.persistTranscript ?? true)).toBe(
-      TRANSCRIPT_OMITTED_MESSAGE,
+  it.each([
+    ['API-key selectors', { planner: { apiKey: 'env:PLANNER_KEY' } }],
+    ['raw runner arguments', { implementer: { args: ['--header', 'secret'] } }],
+  ])('rejects detached %s instead of silently persisting or dropping them', (_label, overrides) => {
+    expect(() => buildServerArgs({ ...base, overrides })).toThrow(/cannot cross/);
+  });
+});
+
+function detachedCandidate(projectDir: string, sessionId: string) {
+  return createSessionPreparationCandidate({
+    projectDir,
+    feature: 'detached startup',
+    persistTranscript: true,
+    sessionId,
+  });
+}
+
+function prepareDetachedCandidate(
+  projectDir: string,
+  candidate: ReturnType<typeof detachedCandidate>,
+) {
+  return prepareNewSession({
+    projectDir,
+    feature: 'detached startup',
+    config: makeConfig(),
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir,
+      status: 'ready',
+      counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    signal: new AbortController().signal,
+    candidate,
+  });
+}
+
+function fakeChild(pid = 4242): ChildProcess {
+  const child = new EventEmitter();
+  Object.defineProperties(child, {
+    pid: { value: pid },
+    exitCode: { value: null, writable: true },
+    signalCode: { value: null, writable: true },
+  });
+  Object.assign(child, { unref: () => {} });
+  return child as ChildProcess;
+}
+
+function fakeSpawn(child: ChildProcess): typeof spawnProcess {
+  return (() => child) as typeof spawnProcess;
+}
+
+function bootstrapArtifacts(projectDir: string): string[] {
+  const root = detachedBootstrapRoot(projectDir);
+  return existsSync(root) ? readdirSync(root) : [];
+}
+
+describe('detached receipt handoff', () => {
+  it('cancellation terminates and waits before rollback without leaving detached artifacts', async () => {
+    const candidate = detachedCandidate(testDir, 'cancelled-start');
+    const child = fakeChild();
+    const cancellation = new AbortController();
+    const order: string[] = [];
+
+    const result = await spawnServer(
+      {
+        candidate,
+        projectDir: testDir,
+        feature: 'detached startup',
+        signal: cancellation.signal,
+      },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async ({ signal }) => {
+          const prepared = prepareDetachedCandidate(testDir, candidate);
+          expect(prepared.kind).toBe('prepared');
+          order.push('polling');
+          cancellation.abort();
+          expect(signal?.aborted).toBe(true);
+          return { ok: false, reason: 'detached start cancelled' };
+        },
+        terminateAndWait: async () => {
+          order.push('kill');
+          await Promise.resolve();
+          order.push('wait');
+          return true;
+        },
+        rollback: (session) => {
+          order.push('rollback');
+          rollbackPreparedSession(session);
+        },
+      },
     );
+
+    expect(result).toEqual({ ok: false, reason: 'detached start cancelled' });
+    expect(order).toEqual(['polling', 'kill', 'wait', 'rollback']);
+    expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(false);
+    expect(readActiveRecord(testDir)).toBeNull();
+    expect(bootstrapArtifacts(testDir)).toEqual([]);
   });
 
-  it('keeps the raw feature when persistTranscript is true', () => {
-    const args = buildServerArgs({ ...base, persistTranscript: true });
-    expect(args.feature).toBe('add secret oauth login');
+  it('keeps the child log writable at its final session path after handoff cleanup', () => {
+    const bootstrapDir = mkdtempSync(join(testDir, 'bootstrap-'));
+    const finalDir = join(testDir, 'final-session');
+    const bootstrapLog = join(bootstrapDir, 'server.log');
+    mkdirSync(finalDir);
+    const descriptor = openSync(bootstrapLog, 'a', 0o600);
+
+    try {
+      writeSync(descriptor, 'before handoff\n');
+      const finalLog = publishBootstrapLog({ bootstrapDir, finalSessionDir: finalDir });
+      rmSync(bootstrapDir, { recursive: true, force: true });
+      writeSync(descriptor, 'after handoff\n');
+
+      expect(finalLog).toBe(join(finalDir, 'server.log'));
+      expect(readFileSync(finalLog, 'utf8')).toBe('before handoff\nafter handoff\n');
+    } finally {
+      closeSync(descriptor);
+    }
   });
 
-  it('omits the policy and persists the raw feature when persistTranscript is unset', () => {
-    const args = buildServerArgs(base);
-    expect(args.feature).toBe('add secret oauth login');
-    expect(args.persistTranscript).toBeUndefined();
+  it('terminates the child and removes bootstrap and final artifacts for every detached startup failure', async () => {
+    for (const stage of ['pre-directory', 'post-creation', 'log-transfer', 'transfer'] as const) {
+      const candidate = detachedCandidate(testDir, `failure-${stage}`);
+      const child = fakeChild();
+      const order: string[] = [];
+      const result = await spawnServer(
+        { candidate, projectDir: testDir, feature: 'detached startup' },
+        {
+          spawnChild: fakeSpawn(child),
+          waitForPrepared: async () => {
+            if (stage !== 'pre-directory') {
+              const prepared = prepareDetachedCandidate(testDir, candidate);
+              expect(prepared.kind).toBe('prepared');
+              if (stage === 'log-transfer') {
+                writeFileSync(
+                  join(sessionDir(testDir, candidate.sessionId), 'server.log'),
+                  'conflicting log',
+                );
+              }
+            }
+            order.push('failed');
+            return stage === 'transfer' || stage === 'log-transfer'
+              ? { ok: true, pid: 4242, sessionId: candidate.sessionId, authToken: 'auth' }
+              : { ok: false, reason: 'startup failed' };
+          },
+          terminateAndWait: async () => {
+            order.push('kill');
+            await Promise.resolve();
+            order.push('wait');
+            return true;
+          },
+          ...(stage === 'transfer' && {
+            acceptServer: async () => {
+              order.push('parent-accept');
+              return { ok: true, pid: 4242, sessionId: candidate.sessionId };
+            },
+            transfer: () => {
+              order.push('transfer-failed');
+              throw new Error('transfer failed');
+            },
+          }),
+          rollback: (session) => {
+            order.push('rollback');
+            rollbackPreparedSession(session);
+          },
+        },
+      );
+
+      expect(result.ok).toBe(false);
+      expect(order.indexOf('kill')).toBeGreaterThan(order.indexOf('failed'));
+      expect(order.indexOf('wait')).toBeGreaterThan(order.indexOf('kill'));
+      expect(order.indexOf('rollback')).toBeGreaterThan(order.indexOf('wait'));
+      expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(false);
+      expect(bootstrapArtifacts(testDir)).toEqual([]);
+    }
+  });
+
+  it('preserves owned state when child termination cannot be confirmed', async () => {
+    const candidate = detachedCandidate(testDir, 'unconfirmed-child');
+    const child = fakeChild();
+    const order: string[] = [];
+
+    const result = await spawnServer(
+      { candidate, projectDir: testDir, feature: 'detached startup' },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async () => {
+          const prepared = prepareDetachedCandidate(testDir, candidate);
+          expect(prepared.kind).toBe('prepared');
+          order.push('failed');
+          return { ok: false, reason: 'startup rejected' };
+        },
+        terminateAndWait: async () => {
+          order.push('termination-unconfirmed');
+          return false;
+        },
+        rollback: () => {
+          order.push('rollback');
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'startup rejected; child termination could not be confirmed',
+    });
+    expect(order).toEqual(['failed', 'termination-unconfirmed']);
+    expect(readActiveRecord(testDir)).toEqual({ kind: 'v1', receipt: candidate });
+    expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(true);
+    expect(bootstrapArtifacts(testDir)).not.toEqual([]);
+  });
+
+  it('removes the exact candidate session when the child dies after creation before acknowledgement', async () => {
+    const candidate = detachedCandidate(testDir, 'dies-before-ack');
+    const child = fakeChild();
+
+    const result = await spawnServer(
+      { candidate, projectDir: testDir, feature: 'detached startup' },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async () => {
+          const prepared = prepareDetachedCandidate(testDir, candidate);
+          expect(prepared.kind).toBe('prepared');
+          return { ok: false, reason: 'child exited before acknowledgement' };
+        },
+        terminateAndWait: async () => true,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(false);
+  });
+
+  it('uses the detached candidate generation as the initial active receipt and rolls back a pre-ack child death', async () => {
+    const candidate = detachedCandidate(testDir, 'candidate-active');
+    const child = fakeChild();
+
+    const result = await spawnServer(
+      { candidate, projectDir: testDir, feature: 'detached startup' },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async () => {
+          const prepared = prepareDetachedCandidate(testDir, candidate);
+          expect(prepared).toMatchObject({
+            kind: 'prepared',
+            session: { ownership: candidate, active: candidate },
+          });
+          expect(readActiveRecord(testDir)).toEqual({ kind: 'v1', receipt: candidate });
+          return { ok: false, reason: 'child died before ack' };
+        },
+        terminateAndWait: async () => true,
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(readActiveRecord(testDir)).toBeNull();
+    expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(false);
+  });
+
+  it('parent transfers ownership only after exact response and socket acceptance', async () => {
+    const candidate = detachedCandidate(testDir, 'parent-release');
+    const child = fakeChild();
+    const order: string[] = [];
+    const result = await spawnServer(
+      { candidate, projectDir: testDir, feature: 'detached startup' },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async () => {
+          const prepared = prepareDetachedCandidate(testDir, candidate);
+          expect(prepared.kind).toBe('prepared');
+          expect(
+            acceptsDetachedPreparedResult({
+              result: {
+                version: 1,
+                kind: 'prepared',
+                sessionId: candidate.sessionId,
+                ownership: candidate,
+                active: candidate,
+                pid: 4242,
+              },
+              candidate,
+              childPid: 4242,
+            }),
+          ).toBe(true);
+          order.push('response');
+          order.push('socket');
+          return { ok: true, pid: 4242, sessionId: candidate.sessionId, authToken: 'auth' };
+        },
+        acceptServer: async () => {
+          order.push('parent-accept');
+          return { ok: true, pid: 4242, sessionId: candidate.sessionId };
+        },
+        transfer: (session) => {
+          order.push('parent-transfer');
+          transferPreparedSessionToDetached(session);
+        },
+      },
+    );
+
+    expect(result).toEqual({ ok: true, pid: 4242, sessionId: candidate.sessionId });
+    expect(order).toEqual(['response', 'socket', 'parent-accept', 'parent-transfer']);
+    expect(existsSync(join(sessionDir(testDir, candidate.sessionId), '.prepare-owner.json'))).toBe(
+      true,
+    );
+    expect(
+      existsSync(join(sessionDir(testDir, candidate.sessionId), '.detached-handoff.json')),
+    ).toBe(true);
+  });
+
+  it('keeps parent rollback authority when the acceptance ACK cannot be confirmed', async () => {
+    const candidate = detachedCandidate(testDir, 'ack-write-failure');
+    const child = fakeChild();
+    const order: string[] = [];
+
+    const result = await spawnServer(
+      { candidate, projectDir: testDir, feature: 'detached startup' },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async () => {
+          const prepared = prepareDetachedCandidate(testDir, candidate);
+          expect(prepared.kind).toBe('prepared');
+          return { ok: true, pid: 4242, sessionId: candidate.sessionId, authToken: 'auth' };
+        },
+        acceptServer: async () => {
+          order.push('ack-failed');
+          return { ok: false, reason: 'parent acceptance ACK was not flushed' };
+        },
+        transfer: () => {
+          order.push('transfer');
+        },
+        terminateAndWait: async () => {
+          order.push('terminate');
+          return true;
+        },
+        rollback: (session) => {
+          order.push('rollback');
+          rollbackPreparedSession(session);
+        },
+      },
+    );
+
+    expect(result).toEqual({ ok: false, reason: 'parent acceptance ACK was not flushed' });
+    expect(order).toEqual(['ack-failed', 'terminate', 'rollback']);
+    expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(false);
+  });
+
+  it('cancels after acceptance and before ownership transfer', async () => {
+    const candidate = detachedCandidate(testDir, 'cancel-after-acceptance');
+    const child = fakeChild();
+    const cancellation = new AbortController();
+    const order: string[] = [];
+
+    const result = await spawnServer(
+      {
+        candidate,
+        projectDir: testDir,
+        feature: 'detached startup',
+        signal: cancellation.signal,
+      },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async () => {
+          const prepared = prepareDetachedCandidate(testDir, candidate);
+          expect(prepared.kind).toBe('prepared');
+          return { ok: true, pid: 4242, sessionId: candidate.sessionId, authToken: 'auth' };
+        },
+        acceptServer: async () => {
+          order.push('accepted');
+          cancellation.abort();
+          return { ok: true, pid: 4242, sessionId: candidate.sessionId };
+        },
+        transfer: () => {
+          order.push('transfer');
+        },
+        terminateAndWait: async () => {
+          order.push('terminate');
+          return true;
+        },
+        rollback: (session) => {
+          order.push('rollback');
+          rollbackPreparedSession(session);
+        },
+      },
+    );
+
+    expect(result).toEqual({ ok: false, reason: 'detached start cancelled' });
+    expect(order).toEqual(['accepted', 'terminate', 'rollback']);
+    expect(readActiveRecord(testDir)).toBeNull();
+    expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(false);
+    expect(bootstrapArtifacts(testDir)).toEqual([]);
+  });
+
+  it('pre-directory detached failure treats absent candidate rollback as a no-op', async () => {
+    const candidate = detachedCandidate(testDir, 'absent-candidate');
+    const child = fakeChild();
+    const order: string[] = [];
+
+    const result = await spawnServer(
+      { candidate, projectDir: testDir, feature: 'detached startup' },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async () => ({ ok: false, reason: 'failed before preparation' }),
+        terminateAndWait: async () => {
+          order.push('kill');
+          await Promise.resolve();
+          order.push('wait');
+          return true;
+        },
+        rollback: (session) => {
+          order.push('rollback');
+          rollbackPreparedSession(session);
+        },
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(order).toEqual(['kill', 'wait', 'rollback']);
+    expect(existsSync(sessionDir(testDir, candidate.sessionId))).toBe(false);
+    expect(bootstrapArtifacts(testDir)).toEqual([]);
+  });
+
+  it('removes the bootstrap even when receipt-aware rollback fails', async () => {
+    const candidate = detachedCandidate(testDir, 'rollback-failure');
+    const child = fakeChild();
+
+    const result = await spawnServer(
+      { candidate, projectDir: testDir, feature: 'detached startup' },
+      {
+        spawnChild: fakeSpawn(child),
+        waitForPrepared: async () => ({ ok: false, reason: 'startup rejected' }),
+        terminateAndWait: async () => true,
+        rollback: () => {
+          throw new Error('rollback failed');
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: 'startup rejected; startup rollback failed',
+    });
+    expect(bootstrapArtifacts(testDir)).toEqual([]);
   });
 });

@@ -21,9 +21,35 @@ import {
 import { resolveCustomExecutable } from '../runners/resolve-cli-executable.js';
 import { customRunnerAdmissionError } from '../runners/trust.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
-import { createConfiguredCustomImplementer } from './command-invoke.js';
+import {
+  createConfiguredCustomImplementer as createPreparedConfiguredCustomImplementer,
+  type ConfiguredCustomImplementerOptions,
+} from './command-invoke.js';
+import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
+
+async function createConfiguredCustomImplementer(
+  options: Omit<ConfiguredCustomImplementerOptions, 'admission'> & {
+    runner: ConfiguredCustomRunner;
+  },
+) {
+  const admission = await prepareCustomRunnerAdmission({
+    ...options.runtime.admission,
+    projectDir: options.runtime.authorizationProjectDir,
+    runner: options.runner,
+    posture: customRunnerSecurityPosture('implementer', options.runner.command.contract),
+    phase: 'implementing',
+    authorizationPathEnv: options.runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: options.runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('implementer');
+  return createPreparedConfiguredCustomImplementer({
+    runtime: options.runtime,
+    ...(options.factoryOptions === undefined ? {} : { factoryOptions: options.factoryOptions }),
+    admission: admission.invocation,
+  });
+}
 
 let directories: string[] = [];
 
@@ -125,7 +151,7 @@ function runtimeHarness(
 }
 
 async function implement(
-  implementer: ReturnType<typeof createConfiguredCustomImplementer>,
+  implementer: Awaited<ReturnType<typeof createConfiguredCustomImplementer>>,
   projectDir: string,
   options: Readonly<{
     file: string;
@@ -161,7 +187,7 @@ describe('createConfiguredCustomImplementer', () => {
       publishDone: vi.fn(),
       publishFailed: vi.fn(),
     };
-    const implementer = createConfiguredCustomImplementer({
+    const implementer = await createConfiguredCustomImplementer({
       runner: configuredRunner({
         argv: ['-e', "process.stdout.write('```ts\\nexport const namedOptions = true;\\n```\\n');"],
       }),
@@ -186,18 +212,22 @@ describe('createConfiguredCustomImplementer', () => {
     const harness = runtimeHarness(projectDir, {
       admission: { interaction: 'headless', allowRepoRunners: false },
     });
-    const implementer = createConfiguredCustomImplementer({
-      runner: configuredRunner({
-        argv: [
-          '-e',
-          `require('node:fs').writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
-        ],
-      }),
-      runtime: harness.runtime,
-    });
-
-    const result = await implement(implementer, projectDir, { file: 'src/denied.ts' });
     const denied = customRunnerAdmissionError.denied('implementer');
+
+    await expect(
+      createConfiguredCustomImplementer({
+        runner: configuredRunner({
+          argv: [
+            '-e',
+            `require('node:fs').writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
+          ],
+        }),
+        runtime: harness.runtime,
+      }),
+    ).rejects.toMatchObject({
+      kind: 'custom-runner-admission-denied',
+      message: 'Configured custom runner admission was denied.',
+    });
 
     expect(matches('custom-runner-admission-denied')(denied)).toBe(true);
     expect(denied).toMatchObject({
@@ -205,7 +235,6 @@ describe('createConfiguredCustomImplementer', () => {
       message: 'Configured custom runner admission was denied.',
     });
     expect(denied.data).toBeUndefined();
-    expect(result).toMatchObject({ success: false, error: denied.message });
     expect(existsSync(childStarted)).toBe(false);
     expect(harness.stages).toEqual([]);
   });
@@ -221,7 +250,7 @@ describe('createConfiguredCustomImplementer', () => {
       "const selected = process.env.CUSTOM_IMPLEMENTER_MODE === 'runtime-source-canary' ? 'runtime-source' : process.env.CUSTOM_IMPLEMENTER_MODE === 'sandbox-canary' ? 'sandbox' : 'missing';",
       "process.stdout.write('```ts\\nexport const childCwd = ' + JSON.stringify(process.cwd()) + ';\\nexport const selected = ' + JSON.stringify(selected) + ';\\n```\\n');",
     ].join('');
-    const implementer = createConfiguredCustomImplementer({
+    const implementer = await createConfiguredCustomImplementer({
       runner: configuredRunner({
         argv: ['-e', childProgram],
         env: ['CUSTOM_IMPLEMENTER_MODE'],
@@ -262,7 +291,7 @@ describe('createConfiguredCustomImplementer', () => {
       "fs.writeFileSync('src/direct.ts', 'export const direct = ' + JSON.stringify(selected) + ';\\n');",
       "process.stdout.write('direct write complete');",
     ].join('');
-    const implementer = createConfiguredCustomImplementer({
+    const implementer = await createConfiguredCustomImplementer({
       runner: configuredRunner({
         contract: 'direct',
         argv: ['-e', childProgram],
@@ -294,7 +323,7 @@ describe('createConfiguredCustomImplementer', () => {
       `require('node:fs').writeFileSync(${JSON.stringify(childStarted)}, 'started');`,
       "process.stdout.write('```ts\\nexport const shouldNotExist = true;\\n```\\n');",
     ].join('');
-    const implementer = createConfiguredCustomImplementer({
+    const implementer = await createConfiguredCustomImplementer({
       runner: configuredRunner({ argv: ['-e', childProgram], env: ['CUSTOM_REQUIRED_VALUE'] }),
       runtime: harness.runtime,
     });
@@ -334,15 +363,14 @@ describe('createConfiguredCustomImplementer', () => {
           sourceEnv: { PATH: temptingBin },
           onCreateStage: () => writeFileSync(stageRequested, 'unexpected stage'),
         });
-        const implementer = createConfiguredCustomImplementer({
-          runner: configuredRunner({ executable: executableName }),
-          runtime: harness.runtime,
-        });
-
-        const result = await implement(implementer, projectDir, { file: 'src/path-absent.ts' });
+        await expect(
+          createConfiguredCustomImplementer({
+            runner: configuredRunner({ executable: executableName }),
+            runtime: harness.runtime,
+          }),
+        ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
 
         expect(harness.runtime.authorizationPathEnv).toBe('');
-        expect(result.success).toBe(false);
         expect(existsSync(childStarted)).toBe(false);
         expect(existsSync(stageRequested)).toBe(false);
         expect(existsSync(join(projectDir, 'src', 'path-absent.ts'))).toBe(false);
@@ -355,7 +383,7 @@ describe('createConfiguredCustomImplementer', () => {
   );
 
   itUnix(
-    'fails closed on authorization PATH drift before it creates a stage or starts either executable',
+    'fails closed on authorization PATH drift before it starts either executable and cleans its stage',
     async () => {
       const projectDir = projectDirectory('configured-implementer-path-drift');
       const stateDir = temporaryDirectory('configured-implementer-path-state');
@@ -398,19 +426,24 @@ describe('createConfiguredCustomImplementer', () => {
       if (trusted.kind !== 'trusted') throw new Error('Admitted test executable was not trusted');
       const harness = runtimeHarness(projectDir, {
         sourceEnv: {},
-        authorizationPathEnv: replacementBin,
+        authorizationPathEnv: admittedBin,
         admission: { interaction: 'headless', allowRepoRunners: false, stateDir },
         onCreateStage: () => writeFileSync(stageRequested, 'unexpected stage'),
       });
-      const implementer = createConfiguredCustomImplementer({ runner, runtime: harness.runtime });
+      const implementer = await createConfiguredCustomImplementer({
+        runner,
+        runtime: harness.runtime,
+      });
+      Object.defineProperty(harness.runtime, 'authorizationPathEnv', { value: replacementBin });
 
       const result = await implement(implementer, projectDir, { file: 'src/path-drift.ts' });
 
       expect(result.success).toBe(false);
-      expect(existsSync(stageRequested)).toBe(false);
+      expect(existsSync(stageRequested)).toBe(true);
       expect(existsSync(admittedStarted)).toBe(false);
       expect(existsSync(replacementStarted)).toBe(false);
-      expect(harness.stages).toEqual([]);
+      expect(harness.stages).toHaveLength(1);
+      expect(existsSync(harness.stages[0] ?? '')).toBe(false);
     },
   );
 
@@ -449,7 +482,7 @@ describe('createConfiguredCustomImplementer', () => {
         authorizationPathEnv: authorizationBin,
         sourceEnv: { PATH: sourceEnvBin },
       });
-      const implementer = createConfiguredCustomImplementer({
+      const implementer = await createConfiguredCustomImplementer({
         runner: configuredRunner({ executable: executableName }),
         runtime: harness.runtime,
       });

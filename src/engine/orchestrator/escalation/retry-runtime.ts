@@ -10,9 +10,9 @@ import {
   type ResolvedImplementerProfile,
 } from '../../../core/config/accessors/implementer-profiles.js';
 import { createImplementerPublisher } from '../events.js';
-import { createImplementer } from '../../runners/factory.js';
 import { configForProfile } from '../task/routing.js';
 import type { EscalationContext } from './types.js';
+import { error } from '../../../utils/error.js';
 
 export type RetryRuntime = {
   config: Config;
@@ -52,10 +52,16 @@ export async function createRetryRuntime(
   if (!profile) throw configError.profileNotFound(profileOverride);
 
   const config = configForProfile(ctx.config, profile);
-  const factory = ctx.createImplementer ?? createImplementer;
+  const factory = ctx.createImplementer;
+  if (factory === undefined) {
+    throw error('runner-gate-mismatch', 'Prepared implementer factory is unavailable.');
+  }
   return {
     config,
-    implementer: await factory(config, { publisher: createImplementerPublisher(ctx.bus) }),
+    implementer: await factory(config, {
+      publisher: createImplementerPublisher(ctx.bus),
+      slot: { role: 'implementer', profile: profile.name },
+    }),
     implementerProfile: profile.name,
     profile,
   };

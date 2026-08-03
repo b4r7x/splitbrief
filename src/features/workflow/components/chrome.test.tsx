@@ -12,14 +12,24 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
 import { ConversationFlow } from './conversation-flow/flow.js';
+import type { RouteData } from '../../../stores/navigation/router.js';
 
 const RAIL_STAGES = ['Spec', 'Plan', 'Briefs', 'Build', 'Verify'];
+const WORKFLOW_ROUTE = {
+  screen: 'workflow',
+  execution: {
+    kind: 'attached',
+    feature: 'test feature',
+    sessionId: 'chrome-test-session',
+    attach: { sockPath: '/tmp/chrome-test.sock', authToken: 'test-token' },
+  },
+} satisfies RouteData;
 
 describe('WorkflowHeader', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
     resetAllStores();
-    routerStore.init({ screen: 'workflow', feature: 'test feature' });
+    routerStore.init(WORKFLOW_ROUTE);
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'researching', status: 'running', startedAt: 0 });
   });
@@ -75,7 +85,7 @@ describe('WorkflowFooter', () => {
   beforeEach(() => {
     forceUnicodeGlyphs();
     resetAllStores();
-    routerStore.init({ screen: 'workflow', feature: 'test feature' });
+    routerStore.init(WORKFLOW_ROUTE);
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
     configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/splitbrief-test' });
   });

@@ -207,9 +207,12 @@ describe('buildCommandContext', () => {
   it('hides local-only workflow mutation commands when attached', () => {
     routerStore.init({
       screen: 'workflow',
-      feature: 'feat',
-      sessionId: 's1',
-      attach: { sockPath: '/tmp/s.sock', authToken: 'tok' },
+      execution: {
+        kind: 'attached',
+        feature: 'feat',
+        sessionId: 's1',
+        attach: { sockPath: '/tmp/s.sock', authToken: 'tok' },
+      },
     });
 
     const names = createRuntimeCommands(build()).map((cmd) => cmd.name);

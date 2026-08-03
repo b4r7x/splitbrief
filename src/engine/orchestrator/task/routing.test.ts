@@ -1,16 +1,16 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
+import { describe, expect, it, vi } from 'vitest';
+import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
+import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
 import { createImplementer } from '../../runners/factory.js';
-import type { CustomRunnerRuntimePort } from '../../runners/types.js';
+import type { RunnerSlot } from '../../runners/prepared-execution.js';
+import { runnerGateFor } from '../../runners/start-gate.js';
+import type { ImplementerFactoryOptions } from '../../implementers/types.js';
 import { configForProfile, createTaskImplementer, routingBlockMessage } from './routing.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 
@@ -119,79 +119,95 @@ describe('configForProfile', () => {
 });
 
 describe('createTaskImplementer configured profile admission', () => {
-  it('denies the selected profile before its child, a stage, or the default child can run', async () => {
-    const projectDir = createTempDir('routing-denied-profile-project');
-    const stateDir = createTempDir('routing-denied-profile-state');
-    const selectedMarker = join(projectDir, 'selected-child-started');
-    const defaultMarker = join(projectDir, 'default-child-started');
-    try {
-      const config = configWithProfileContracts('direct', 'output', {
-        outputFormat: 'text',
-        argvById: {
-          'default-id': [
-            '-e',
-            `require('node:fs').writeFileSync(${JSON.stringify(defaultMarker)}, 'started');`,
-          ],
-          'selected-id': [
-            '-e',
-            `require('node:fs').writeFileSync(${JSON.stringify(selectedMarker)}, 'started');`,
-          ],
+  it('routes every current runner kind and named profile with its matching prepared gate', async () => {
+    const runners: ImplementerConfig[] = [
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      makeNoValidationConfig().implementer,
+      { kind: 'agent-sdk', model: 'claude-sonnet-4-20250514' },
+      { kind: 'shell', command: process.execPath, model: 'shell-model' },
+      { kind: 'agent', command: process.execPath, model: 'agent-model' },
+    ];
+    const wctxIdentity = { projectDir: defaultContext.dir, sessionId: 'routing-test-session' };
+    const existingImplementer = makeWctx(wctxIdentity).implementer;
+
+    for (const runner of runners) {
+      const profileName = `${runner.kind}-profile`;
+      const profile = {
+        name: profileName,
+        costTier: 'unknown' as const,
+        capabilities: {
+          writesFiles: runner.kind === 'agent' ? ('direct' as const) : ('extracted-code' as const),
         },
-      });
-      const selected = resolveImplementerProfiles(config).profiles.find(
-        (profile) => profile.name === 'selected-profile',
-      );
-      if (selected === undefined) throw new Error('Expected selected profile fixture');
-      let stages = 0;
-      const runtime: CustomRunnerRuntimePort = {
-        sessionId: 'routing-denied-session',
-        authorizationProjectDir: projectDir,
-        sourceEnv: {},
-        authorizationPathEnv: process.env.PATH ?? '',
-        ...(process.env.PATHEXT === undefined ? {} : { authorizationPathExt: process.env.PATHEXT }),
-        createStage: async () => {
-          stages++;
-          throw new Error('Denied runner must not create a stage');
-        },
-        admission: { interaction: 'headless', allowRepoRunners: false, stateDir },
-        cleanupStaleArtifactReviews: async () => {},
-        beginDeclaredArtifactReview: async () => {
-          throw new Error('Configured implementer must not begin planner artifact review.');
-        },
+        config: runner,
+        isDefault: false,
       };
-      const taskConfig = configForProfile(config, selected);
-      const taskImplementer = await createTaskImplementer({
+      const config = makeNoValidationConfig({ implementer: runner });
+      const slot: RunnerSlot = { role: 'implementer', profile: profileName };
+      const preparationId = `routing-${runner.kind}`;
+      const gates = [makeRunnerGate(runner, slot, preparationId)];
+      const preparedFactory = vi.fn(
+        (runnerConfig: Config, options: ImplementerFactoryOptions = {}) => {
+          expect(runnerConfig.implementer).toEqual(runner);
+          expect(options).toMatchObject({ slot });
+          runnerGateFor(gates, {
+            slot,
+            preparationId,
+            ...(runner.kind === 'cli'
+              ? { kind: 'cli' as const, tool: runner.tool }
+              : runner.kind === 'api'
+                ? {
+                    kind: 'api' as const,
+                    provider: runner.provider,
+                    endpointOrigin: new URL(runner.apiBase).origin,
+                  }
+                : runner.kind === 'agent-sdk'
+                  ? { kind: 'agent-sdk' as const, provider: 'anthropic' as const }
+                  : { kind: runner.kind, command: { kind: 'validated-config' as const } }),
+          });
+          return existingImplementer;
+        },
+      );
+
+      await expect(
+        createTaskImplementer({
+          wctx: makeWctx({ ...wctxIdentity, config, createImplementer: preparedFactory }),
+          profile,
+          taskConfig: config,
+          singleImplementerMode: false,
+        }),
+      ).resolves.toBe(existingImplementer);
+      expect(preparedFactory).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('rejects a selected profile when its prepared gate is absent', async () => {
+    const config = configWithProfileContracts('direct', 'output');
+    const selected = resolveImplementerProfiles(config).profiles.find(
+      (profile) => profile.name === 'selected-profile',
+    );
+    if (selected === undefined) throw new Error('Expected selected profile fixture');
+    const taskConfig = configForProfile(config, selected);
+
+    await expect(
+      createTaskImplementer({
         wctx: makeWctx({
-          projectDir,
-          sessionId: runtime.sessionId,
+          projectDir: defaultContext.dir,
+          sessionId: 'routing-test-session',
           config,
-          createImplementer: (runnerConfig, factoryOptions) =>
-            createImplementer(runnerConfig, { ...factoryOptions, customRuntime: runtime }),
+          createImplementer: (_runnerConfig, factoryOptions) =>
+            createImplementer(config, {
+              ...factoryOptions,
+              preparedConfig: config,
+              preparationId: 'routing-missing-gate',
+              gates: [],
+              slot: { role: 'implementer', profile: selected.name },
+            }),
         }),
         profile: selected,
         taskConfig,
         singleImplementerMode: false,
-      });
-
-      const result = await taskImplementer.implement({
-        task: makeTask({ id: 'T001', file: 'src/denied-profile.ts' }),
-        projectDir,
-        config: taskConfig,
-        context: { name: 'routing denied profile', dir: projectDir },
-        onOutput: () => {},
-      });
-
-      expect(result).toMatchObject({
-        success: false,
-        error: 'Configured custom runner admission was denied.',
-      });
-      expect(stages).toBe(0);
-      expect(existsSync(selectedMarker)).toBe(false);
-      expect(existsSync(defaultMarker)).toBe(false);
-    } finally {
-      cleanupTempDir(projectDir);
-      cleanupTempDir(stateDir);
-    }
+      }),
+    ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });
   });
 });
 

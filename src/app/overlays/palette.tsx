@@ -32,6 +32,8 @@ import type {
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { handleSessionSelect } from '../../stores/navigation/session-select.js';
+import { sessionSelectDeps } from '../prepare-resume.js';
 
 const PALETTE_MAX_WIDTH = 86;
 const MAX_LABEL_WIDTH = 24;
@@ -119,7 +121,7 @@ export function CommandPaletteOverlay({
 
   const route = routerStore.use((s) => s);
   const screen = route.screen;
-  const isAttached = route.screen === 'workflow' && route.attach !== undefined;
+  const isAttached = route.screen === 'workflow' && route.execution.kind === 'attached';
   const config = configStore.useConfig();
   const phase = lifecycleStore.use((s) => s.phase);
   const mruIds = commandPaletteMruStore.use((s) => s.ids);
@@ -142,6 +144,7 @@ export function CommandPaletteOverlay({
     projectDir,
     onRuntimeCommand,
     onWorkflowMode,
+    onSessionSelect: (session, dir) => handleSessionSelect(session, dir, sessionSelectDeps),
     isAttached,
   });
 

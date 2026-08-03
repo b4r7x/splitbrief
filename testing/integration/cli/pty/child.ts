@@ -4,8 +4,14 @@ import { createElement } from 'react';
 import { App, type AppProps } from '../../../../src/app/root.js';
 import { createDefaultConfig } from '../../../../src/core/config/load/io.js';
 import { createInitialState, transition } from '../../../../src/core/state/machine.js';
+import { ensureSessionDir } from '../../../../src/core/paths-io.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run/init.js';
+import {
+  prepareExecution,
+  type PreparationPolicy,
+} from '../../../../src/engine/runners/prepare-execution.js';
+import type { PreparedExecution } from '../../../../src/engine/runners/prepared-execution.js';
 import { renderApp as productionRenderApp } from '../../../../src/cli/render/app.js';
 import { configStore } from '../../../../src/stores/project/config.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
@@ -70,14 +76,21 @@ export async function runPtyChild(
 
     resetAllStores();
     const defaults = createDefaultConfig();
-    configStore.__testReset({
-      config: {
-        ...defaults,
-        workflow: {
-          ...defaults.workflow,
-          persistTranscript: false,
-        },
+    const config: ReturnType<typeof createDefaultConfig> = {
+      ...defaults,
+      planner: {
+        kind: 'shell',
+        command: process.execPath,
+        model: 'pty-planner',
+        outputFormat: 'text',
       },
+      workflow: {
+        ...defaults.workflow,
+        persistTranscript: false,
+      },
+    };
+    configStore.__testReset({
+      config,
       projectDir,
     });
     terminalSizeStore.__testReset({
@@ -85,11 +98,10 @@ export async function runPtyChild(
       rows: PTY_VIEWPORT.rows,
       isSmall: false,
     });
+    const prepared = await preparePtyExecution(projectDir, config);
     routerStore.init({
       screen: 'workflow',
-      feature: PTY_FEATURE,
-      resumeState: reviewingSpecState(),
-      readiness: readyReadiness(projectDir),
+      execution: { kind: 'local', prepared },
     });
 
     let result: { approved: boolean } | undefined;
@@ -125,6 +137,38 @@ function reviewingSpecState() {
   const researching = transition(initial, { type: 'START' });
   const specifying = transition(researching, { type: 'RESEARCH_DONE' });
   return transition(specifying, { type: 'SPEC_DONE' });
+}
+
+async function preparePtyExecution(
+  projectDir: string,
+  config: ReturnType<typeof createDefaultConfig>,
+): Promise<PreparedExecution> {
+  const resumeState = reviewingSpecState();
+  const ref = { projectDir, sessionId: 'pty-review-session' };
+  ensureSessionDir(ref.projectDir, ref.sessionId);
+  const policy: Extract<PreparationPolicy, { purpose: 'resume' }> = {
+    purpose: 'resume',
+    interaction: 'interactive',
+    unverifiedAuth: 'disclosed',
+    allowRepoRunners: false,
+    allowHooks: false,
+  };
+  const outcome = await prepareExecution({
+    existingSession: ref,
+    feature: PTY_FEATURE,
+    effectiveConfig: config,
+    resumeState,
+    policy,
+    signal: new AbortController().signal,
+    deps: {
+      collectReadiness: async () => ({ report: readyReadiness(projectDir), config }),
+      newPreparationId: () => 'pty-review-preparation',
+    },
+  });
+  if (outcome.kind !== 'prepared') {
+    throw new Error(`PTY workflow preparation failed: ${outcome.kind}`);
+  }
+  return outcome.execution;
 }
 
 function readyReadiness(projectDir: string) {

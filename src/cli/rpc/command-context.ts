@@ -35,16 +35,17 @@ import { editsForSave, persistedConfigForSave } from '../../stores/project/confi
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { error } from '../../utils/error.js';
 import type { ResolvedRunConfig } from '../build-overrides.js';
+import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 
 const rpcCommandContextError = {
   noActiveSession: () => error('rpc-command-no-active-session', 'No active session.'),
-  noConfig: () => error('rpc-command-no-config', 'No config loaded.'),
 } as const;
 
 export function createRpcCommandContext(opts: {
   projectDir: string;
   getSessionId: () => string | undefined;
   getState: () => WorkflowState | null;
+  getPreparedExecution: () => PreparedExecution | null;
   getRunConfig: () => ResolvedRunConfig | null;
   setRunConfig: (config: ResolvedRunConfig) => void;
   reloadRunConfig: () => ResolvedRunConfig;
@@ -154,7 +155,6 @@ export function createRpcCommandContext(opts: {
     },
     getSessionId: () => opts.getSessionId(),
     noActiveSession: () => rpcCommandContextError.noActiveSession(),
-    noConfig: () => rpcCommandContextError.noConfig(),
     openOverlay: (type) => pushMessage(`Overlay ${type} is not available in RPC mode.`),
     navigateHome: () => pushMessage('Navigation is not available in RPC mode.'),
     quit: () => opts.abort(),
@@ -248,7 +248,16 @@ export function createRpcCommandContext(opts: {
     },
     acceptRunSnapshot,
     rejectRunSnapshot,
-    compactTranscript: performManualCompaction,
+    compactTranscript: () => {
+      const prepared = opts.getPreparedExecution();
+      if (prepared === null) throw rpcCommandContextError.noActiveSession();
+      return performManualCompaction({
+        config: prepared.config,
+        ref: prepared.session.ref,
+        preparationId: prepared.preparationId,
+        gates: prepared.gates,
+      });
+    },
     exportSession: async (projectDir, sessionId) =>
       writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
     scrollConversation: () => ({

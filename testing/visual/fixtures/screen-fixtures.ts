@@ -1,4 +1,4 @@
-import { rmSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import type { RouteData } from '../../../src/stores/navigation/router.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
@@ -10,11 +10,11 @@ import { projectFilesStore } from '../../../src/stores/ui/project-files.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { operationsStore } from '../../../src/stores/workflow/operations/state.js';
-import type { ReadinessReport } from '../../../src/core/readiness/types.js';
 import { scenarioId } from '../contracts/identifiers.js';
 import { makeConfig } from '../../helpers/factories/config.js';
 import { makeSummary } from '../../helpers/factories/summary.js';
 import { resetAllStores } from '../../helpers/stores.js';
+import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import type {
   FixtureContext,
   FixtureFactory,
@@ -22,9 +22,8 @@ import type {
   FixtureRegistry,
 } from './common.js';
 
-export const VISUAL_FIXTURE_PROJECT_DIR = '.test-artifacts/ui-fixture-project';
-
-const FIXED_GENERATED_AT = '2025-01-01T12:00:00.000Z';
+const VISUAL_FIXTURE_WORK_DIR = `.test-artifacts/ui-fixture-worker-${process.pid}`;
+export const VISUAL_FIXTURE_PROJECT_DIR = `${VISUAL_FIXTURE_WORK_DIR}/ui-fixture-project`;
 
 function visualConfig() {
   return makeConfig({
@@ -62,6 +61,7 @@ export function resetVisualFixtureStores(): void {
 
 export function setupVisualFixture(context: FixtureContext): void {
   removeFixtureProject();
+  mkdirSync(VISUAL_FIXTURE_PROJECT_DIR, { recursive: true });
   resetVisualFixtureStores();
   const config = visualConfig();
   configStore.__testReset({
@@ -82,19 +82,7 @@ export function teardownVisualFixture(): void {
 }
 
 function removeFixtureProject(): void {
-  rmSync(VISUAL_FIXTURE_PROJECT_DIR, { recursive: true, force: true });
-}
-
-function readyReadiness(): ReadinessReport {
-  return {
-    generatedAt: FIXED_GENERATED_AT,
-    projectDir: VISUAL_FIXTURE_PROJECT_DIR,
-    status: 'ready',
-    counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
-    nextAction: { kind: 'continue', label: 'Continue', reason: 'Synthetic fixture is ready' },
-    sections: [],
-    metadata: { mode: 'standard', configExists: true },
-  };
+  rmSync(VISUAL_FIXTURE_WORK_DIR, { recursive: true, force: true });
 }
 
 function createRouteFixture(route: () => RouteData): FixtureLifecycle {
@@ -110,13 +98,24 @@ function createRouteFixture(route: () => RouteData): FixtureLifecycle {
 export const createHomeFixture: FixtureFactory = () =>
   createRouteFixture(() => ({ screen: 'home' }));
 
-export const createWorkflowBaseFixture: FixtureFactory = () =>
-  createRouteFixture(() => ({
-    screen: 'workflow',
-    feature: 'Refine terminal navigation',
-    sessionId: 'visual-workflow',
-    readiness: readyReadiness(),
-  }));
+export function createWorkflowBaseFixture(
+  feature = 'Refine terminal navigation',
+): FixtureLifecycle {
+  return createRouteFixture(() => {
+    const config = configStore.get().config;
+    if (config === null) throw new Error('Visual workflow fixture requires project config');
+    const prepared = prepareWorkflowExecution({
+      projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+      feature,
+      config,
+      sessionId: 'visual-workflow',
+    });
+    return {
+      screen: 'workflow',
+      execution: { kind: 'local', prepared },
+    };
+  });
+}
 
 export const createSummaryFixture: FixtureFactory = () =>
   createRouteFixture(() => ({

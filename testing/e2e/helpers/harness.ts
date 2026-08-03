@@ -2,13 +2,18 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach } from 'vitest';
 import YAML from 'yaml';
-import type { Config } from '../../../src/core/schemas/config.js';
+import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
+import { getApiProviderDescriptor } from '../../../src/core/providers/api-provider-catalog.js';
+import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { applyCLIOverrides } from '../../../src/core/config/runtime/overrides/apply.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { prepareExecution } from '../../../src/engine/runners/prepare-execution.js';
+import { resolveHooksConfig } from '../../../src/engine/hooks/discover.js';
+import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
 import { createTestGitRepo } from '../../helpers/git.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '../../helpers/temp-dir.js';
@@ -101,13 +106,37 @@ export async function runE2eWorkflow(
   scenario: E2eScenario,
 ): ReturnType<typeof runWorkflow> {
   const bus = createEventBus();
+  const baseConfig = replaySafeConfig(loadAndOverrideConfig(ctx.projectDir, scenario.mode));
+  const hooks = await resolveHooksConfig(ctx.projectDir, baseConfig.hooks);
+  if (hooks !== undefined) markHooksConfigTrusted(ctx.projectDir, hooks);
+  const config = hooks === undefined ? baseConfig : ConfigSchema.parse({ ...baseConfig, hooks });
+  const preparation = await prepareExecution({
+    projectDir: ctx.projectDir,
+    feature: scenario.feature,
+    effectiveConfig: config,
+    policy: {
+      purpose: 'new-workflow',
+      interaction: 'headless',
+      unverifiedAuth: 'allowed',
+      allowRepoRunners: false,
+      allowHooks: true,
+    },
+    signal: new AbortController().signal,
+  });
+  if (preparation.kind === 'failed') throw preparation.error;
+  if (preparation.kind !== 'prepared') {
+    throw new Error(`E2E runner preparation ended with '${preparation.kind}'.`);
+  }
+  if (preparation.execution.session.kind === 'new') {
+    releasePreparedSession({
+      ref: preparation.execution.session.ref,
+      ownership: preparation.execution.session.ownership,
+    });
+  }
 
   return runWorkflow({
-    feature: scenario.feature,
-    projectDir: ctx.projectDir,
-    config: loadAndOverrideConfig(ctx.projectDir, scenario.mode),
+    prepared: preparation.execution,
     headless: true,
-    allowHooks: true,
     sinks: TEST_WORKFLOW_SINKS,
     eventBus: bus,
     _eventSink: (event) => ctx.events.push(event),
@@ -117,6 +146,42 @@ export async function runE2eWorkflow(
       onContinuationNeeded: async () => '',
       onComplete: () => undefined,
     },
+  });
+}
+
+function replayRunner(runner: Config['planner'] | Config['implementer']): unknown {
+  if (isRecording || runner.kind !== 'api') return runner;
+  const descriptor = getApiProviderDescriptor(runner.provider);
+  if (descriptor?.endpointPolicy.kind !== 'fixed-origin') return runner;
+  return {
+    ...runner,
+    apiBase: descriptor.endpointPolicy.baseURL,
+    ...(descriptor.credentialPrefix === null
+      ? {}
+      : { apiKey: `${descriptor.credentialPrefix}e2e-replay` }),
+  };
+}
+
+function replaySafeConfig(config: Config): Config {
+  if (isRecording) return config;
+  const profiles = config.implementerProfiles;
+  return ConfigSchema.parse({
+    ...config,
+    planner: replayRunner(config.planner),
+    implementer: replayRunner(config.implementer),
+    ...(profiles === undefined
+      ? {}
+      : {
+          implementerProfiles: {
+            ...profiles,
+            profiles: Object.fromEntries(
+              Object.entries(profiles.profiles).map(([name, profile]) => [
+                name,
+                replayRunner(profile),
+              ]),
+            ),
+          },
+        }),
   });
 }
 

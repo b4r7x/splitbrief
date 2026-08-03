@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   getStartCommandTmp,
+  prepareExecutionMock,
   readSingleSessionArtifact,
   renderCalls,
   runHeadlessMock,
@@ -15,8 +16,18 @@ import {
   writeSessionLockfile,
 } from '#testing/helpers/start-command.js';
 import { isCliError } from '../../../src/cli/errors.js';
+import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
 
 setupStartCommandIntegration();
+
+function enableTaskReview(projectDir: string): void {
+  const configPath = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
+  const yaml = readFileSync(configPath, 'utf8');
+  writeFileSync(
+    configPath,
+    yaml.replace('  mode: standard', '  mode: standard\n  taskReview: every'),
+  );
+}
 
 describe('start command — readiness', () => {
   afterEach(() => {
@@ -41,6 +52,7 @@ describe('start command — readiness', () => {
     const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(isCliError(captured)).toBe(true);
     expect(output).toContain('repo.active-session-live');
+    expect(output.match(/repo\.active-session-live/gu)).toHaveLength(1);
     expect(output).not.toContain('repo.dirty-worktree');
     expect(output).not.toContain('scratch.txt');
     expect(renderCalls).toEqual([]);
@@ -105,6 +117,7 @@ describe('start command — readiness', () => {
 
     expect(isCliError(captured)).toBe(true);
     expect(runHeadlessMock).not.toHaveBeenCalled();
+    expect(stdoutChunks).toHaveLength(1);
     const firstLine = JSON.parse(stdoutChunks[0]?.trim() ?? '{}') as {
       report?: {
         status?: string;
@@ -122,6 +135,28 @@ describe('start command — readiness', () => {
     );
     expect(blocker).toMatchObject({ stateId: null });
     expect(blocker?.remediation).toEqual(expect.any(String));
+  });
+
+  it('rejects JSON task review before preparing or activating a session', async () => {
+    const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp);
+    enableTaskReview(tmp);
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, '--json', 'implement X']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as Error).message).toContain(
+      'workflow.taskReview requires an interactive TUI run',
+    );
+    expect(prepareExecutionMock).not.toHaveBeenCalled();
+    expect(runHeadlessMock).not.toHaveBeenCalled();
+    expect(existsSync(activeFile(tmp))).toBe(false);
+    expect(existsSync(sessionsRoot(tmp))).toBe(false);
   });
 
   it('emits readiness before RPC workflow execution and persists compact session evidence', async () => {
@@ -154,6 +189,19 @@ describe('start command — readiness', () => {
     };
     expect(readinessRecord.type).toBe('start-readiness');
     expect(readinessRecord.status).toBe('ready');
+  });
+
+  it('keeps task review available for RPC starts', async () => {
+    const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp);
+    enableTaskReview(tmp);
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+    await runStart(['--project', tmp, '--rpc', 'implement X']);
+
+    expect(prepareExecutionMock).toHaveBeenCalledOnce();
+    expect(runRpcMock).toHaveBeenCalledOnce();
+    expect(runRpcMock.mock.calls[0]?.[0].prepared.config.workflow.taskReview).toBe('every');
   });
 
   it('rejects --json and --rpc together before workflow execution', async () => {

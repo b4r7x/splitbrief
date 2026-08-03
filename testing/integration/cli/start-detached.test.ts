@@ -8,10 +8,6 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import {
-  activateCompatibleCliShim,
-  installCompatibleCliShim,
-} from '#testing/helpers/compatible-cli-shim.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   getStartCommandTmp,
@@ -21,26 +17,25 @@ import {
   spawnServerMock,
   writeReadyReadinessFixtures,
 } from '#testing/helpers/start-command.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { CONFIG_FILE, SPLITBRIEF_DIR, TREES_DIR, worktreePath } from '../../../src/core/paths.js';
-import { isCliError } from '../../../src/cli/errors.js';
 import {
-  featureForTranscriptPolicy,
-  isOpaqueSessionId,
-} from '../../../src/core/sessions/lifecycle.js';
+  CONFIG_FILE,
+  sessionDir,
+  SPLITBRIEF_DIR,
+  TREES_DIR,
+  worktreePath,
+} from '../../../src/core/paths.js';
+import { isCliError } from '../../../src/cli/errors.js';
+import { isOpaqueSessionId } from '../../../src/core/sessions/lifecycle.js';
 import type {
   SpawnServerOptions,
   SpawnServerResult,
 } from '../../../src/engine/ipc/spawn-server.js';
-import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../src/core/transcript-policy.js';
+import { parseIpcServerArgs, type IpcServerArgs } from '../../../src/engine/ipc/server-args.js';
 import { formatDetachedAttachHint } from '../../../src/cli/commands/attach-hint.js';
 
 setupStartCommandIntegration();
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
-
-let compatibleCliShimDir: string | undefined;
-let restoreCompatibleCliShim: (() => void) | undefined;
 
 function captureConsoleLog(): string[] {
   const output: string[] = [];
@@ -50,13 +45,15 @@ function captureConsoleLog(): string[] {
   return output;
 }
 
+function readServerArgsArtifact(projectDir: string): IpcServerArgs {
+  const artifact = parseIpcServerArgs(readSingleSessionArtifact(projectDir, 'server-args.json'));
+  if (artifact === null) throw new Error('Expected a valid detached server bootstrap artifact');
+  return artifact;
+}
+
 describe('start command — detached', () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    restoreCompatibleCliShim?.();
-    restoreCompatibleCliShim = undefined;
-    if (compatibleCliShimDir !== undefined) cleanupTempDir(compatibleCliShimDir);
-    compatibleCliShimDir = undefined;
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.PLANNER_KEY;
   });
@@ -69,12 +66,11 @@ describe('start command — detached', () => {
 
     await runStart(['--project', tmp, '--worktree', 'detached-feature', '--detach', 'implement X']);
 
-    const artifact = readSingleSessionArtifact(wtPath, 'server-args.json') as {
-      projectDir?: string;
-      configPath?: string;
-    };
+    const artifact = readServerArgsArtifact(wtPath);
     expect(artifact.projectDir).toBe(wtPath);
-    expect(artifact.configPath).toBe(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE));
+    expect(artifact.candidate.sessionId).toBeDefined();
+    expect(artifact).not.toHaveProperty('configPath');
+    expect(existsSync(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
 
     const outputText = output.join('\n');
     expect(outputText).toContain('splitbrief attach');
@@ -114,24 +110,14 @@ describe('start command — detached', () => {
 
     await runStart(['--project', tmp, '--detach', 'implement X']);
 
-    const artifact = readSingleSessionArtifact(tmp, 'server-args.json') as {
-      mode?: string;
-      overrides?: { mode?: string };
-    };
-    expect(artifact.mode).toBe('quick');
-    expect(artifact.overrides?.mode).toBeUndefined();
+    const artifact = readServerArgsArtifact(tmp);
+    expect(artifact.overrides.mode).toBe('quick');
+    expect(artifact).not.toHaveProperty('mode');
   });
 
-  it('persists detached CLI overrides in the server args artifact', async () => {
+  it('forwards transport-safe detached CLI overrides in the private bootstrap artifact', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
-    compatibleCliShimDir = createTempDir('start-detached-codex-shim');
-    const shim = installCompatibleCliShim({
-      directory: compatibleCliShimDir,
-      tool: 'codex',
-      authChannel: 'session',
-    });
-    restoreCompatibleCliShim = activateCompatibleCliShim(shim);
     process.env.OPENROUTER_API_KEY = 'sk-or-test-openrouter-key';
     process.env.PLANNER_KEY = 'test-planner-key';
     captureConsoleLog();
@@ -148,10 +134,6 @@ describe('start command — detached', () => {
       'plan-it',
       '--planner-api-base',
       'https://planner.example/v1',
-      '--planner-api-key-env',
-      'PLANNER_KEY',
-      '--planner-args',
-      '--planner-json',
       '--planner-output-format',
       'stream-json',
       '--planner-context-length',
@@ -164,12 +146,6 @@ describe('start command — detached', () => {
       'build-it',
       '--implementer-api-base',
       'https://openrouter.ai/api/v1',
-      '--implementer-api-key-env',
-      'OPENROUTER_API_KEY',
-      '--implementer-args',
-      '--cheap-mode',
-      '--implementer-args',
-      'fast',
       '--implementer-output-format',
       'opencode',
       '--implementer-context-length',
@@ -189,26 +165,24 @@ describe('start command — detached', () => {
       'implement X',
     ]);
 
-    const artifact = readSingleSessionArtifact(tmp, 'server-args.json') as {
-      mode?: string;
-      configPath?: string;
-      overrides?: unknown;
-      trustedCliGates?: Array<{
-        tool?: string;
-        executable?: { path?: string; executableIdentity?: { fingerprint?: string } };
-      }>;
-    };
+    const artifact = readServerArgsArtifact(tmp);
     expect(artifact).toMatchObject({
-      mode: 'quick',
-      configPath: join(tmp, SPLITBRIEF_DIR, CONFIG_FILE),
+      version: 1,
+      projectDir: tmp,
+      feature: 'implement X',
+      candidate: {
+        version: 1,
+        sessionId: expect.any(String),
+        generation: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+        ),
+      },
       overrides: {
         planner: {
           tool: 'codex',
           model: 'gpt-5',
           command: 'plan-it',
           apiBase: 'https://planner.example/v1',
-          apiKey: 'env:PLANNER_KEY',
-          args: ['--planner-json'],
           outputFormat: 'stream-json',
           contextLength: 200_000,
         },
@@ -217,8 +191,6 @@ describe('start command — detached', () => {
           model: 'qwen/qwen3-coder',
           command: 'build-it',
           apiBase: 'https://openrouter.ai/api/v1',
-          apiKey: 'env:OPENROUTER_API_KEY',
-          args: ['--cheap-mode', 'fast'],
           outputFormat: 'opencode',
           contextLength: 131_072,
         },
@@ -228,17 +200,29 @@ describe('start command — detached', () => {
         plannerEffort: 'high',
       },
     });
-    expect(artifact.trustedCliGates).toEqual([
-      expect.objectContaining({
-        tool: 'codex',
-        executable: expect.objectContaining({
-          path: shim.path,
-          executableIdentity: expect.objectContaining({
-            fingerprint: expect.stringMatching(/:sha256:[a-f0-9]{64}$/u),
-          }),
-        }),
-      }),
-    ]);
+    expect(artifact.overrides.planner).not.toHaveProperty('apiKey');
+    expect(artifact.overrides.implementer).not.toHaveProperty('apiKey');
+    expect(JSON.stringify(artifact)).not.toContain('sk-or-test-openrouter-key');
+    expect(JSON.stringify(artifact)).not.toContain('test-planner-key');
+    expect(artifact).not.toHaveProperty('configPath');
+    expect(artifact).not.toHaveProperty('gates');
+  });
+
+  it.each([
+    ['--planner-args', '--secret-header'],
+    ['--implementer-args', '--secret-header'],
+    ['--planner-api-key-env', 'PLANNER_KEY'],
+    ['--implementer-api-key-env', 'OPENROUTER_API_KEY'],
+  ])('rejects detached %s before allocating a session', async (flag, value) => {
+    const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp);
+    captureConsoleLog();
+
+    await expect(
+      runStart(['--project', tmp, '--detach', flag, value, 'implement X']),
+    ).rejects.toThrow(/cannot cross the process boundary safely/);
+
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
   });
 
   itUnix(
@@ -287,8 +271,8 @@ describe('start command — detached', () => {
       });
       spawnServerMock.mockImplementationOnce(async (opts: SpawnServerOptions) => {
         warningsBeforeSpawn = stderrChunks.join('');
-        mkdirSync(opts.sessionDir, { recursive: true });
-        return { ok: true, pid: 1234, sessionId: opts.sessionId };
+        mkdirSync(sessionDir(opts.projectDir, opts.candidate.sessionId), { recursive: true });
+        return { ok: true, pid: 1234, sessionId: opts.candidate.sessionId };
       });
 
       await runStart(['--project', tmp, '--detach', 'implement X']);
@@ -328,7 +312,7 @@ describe('start command — detached', () => {
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
   });
 
-  it('redacts the generated session id but forwards the raw feature to the detached planner when persistTranscript is false', async () => {
+  it('redacts the candidate session id but forwards the raw feature when transcripts are disabled', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp, { persistTranscript: false });
     captureConsoleLog();
@@ -342,18 +326,13 @@ describe('start command — detached', () => {
     expect(sessionId).not.toContain('secret');
     expect(sessionId).not.toContain('oauth');
 
-    const artifact = readSingleSessionArtifact(tmp, 'server-args.json') as {
-      feature?: string;
-      persistTranscript?: boolean;
-    };
+    const artifact = readServerArgsArtifact(tmp);
     expect(artifact.feature).toBe('add secret oauth login');
-    expect(artifact.persistTranscript).toBe(false);
-    expect(
-      featureForTranscriptPolicy(artifact.feature ?? '', artifact.persistTranscript ?? true),
-    ).toBe(TRANSCRIPT_OMITTED_MESSAGE);
+    expect(artifact.candidate.sessionId).toBe(sessionId);
+    expect(artifact).not.toHaveProperty('persistTranscript');
   });
 
-  it('keeps the raw feature in the generated session id and detached metadata when persistTranscript is true', async () => {
+  it('keeps the feature-derived candidate id and raw bootstrap feature when transcripts are enabled', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp, { persistTranscript: true });
     captureConsoleLog();
@@ -365,12 +344,10 @@ describe('start command — detached', () => {
     expect(isOpaqueSessionId(sessionId)).toBe(false);
     expect(sessionId).toContain('add-email-validator');
 
-    const artifact = readSingleSessionArtifact(tmp, 'server-args.json') as {
-      feature?: string;
-      persistTranscript?: boolean;
-    };
+    const artifact = readServerArgsArtifact(tmp);
     expect(artifact.feature).toBe('add email validator');
-    expect(artifact.persistTranscript).toBe(true);
+    expect(artifact.candidate.sessionId).toBe(sessionId);
+    expect(artifact).not.toHaveProperty('persistTranscript');
   });
 
   it('uses an opaque worktree slug for a bare --worktree when persistTranscript is false', async () => {

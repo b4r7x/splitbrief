@@ -16,6 +16,12 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { createImplementer } from '../../runners/factory.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
+import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
+import type { RunnerGate } from '../../runners/prepared-execution.js';
+import { configForProfile } from './routing.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];
@@ -199,6 +205,40 @@ function configuredRuntime(
   };
 }
 
+async function configuredGates(
+  config: Config,
+  runtime: CustomRunnerRuntimePort,
+  preparationId: string,
+): Promise<readonly RunnerGate[]> {
+  return Promise.all(
+    resolveImplementerProfiles(config).profiles.map(async (profile) => {
+      const runner = resolveConfiguredCustomRunner(
+        configForProfile(config, profile),
+        'implementer',
+      );
+      if (runner === null) throw new Error(`Expected configured runner for ${profile.name}.`);
+      const admission = await prepareCustomRunnerAdmission({
+        ...runtime.admission,
+        projectDir: runtime.authorizationProjectDir,
+        runner,
+        posture: customRunnerSecurityPosture('implementer', runner.command.contract),
+        phase: 'implementing',
+        authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+        authorizationPathExt: runtime.authorizationPathExt ?? '',
+      });
+      if (admission.kind !== 'admitted') {
+        throw new Error(`Expected configured runner admission for ${profile.name}.`);
+      }
+      return {
+        kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+        slot: { role: 'implementer', profile: profile.name },
+        preparationId,
+        command: { kind: 'configured-custom', invocation: admission.invocation },
+      } satisfies RunnerGate;
+    }),
+  );
+}
+
 describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
   it.each([
     {
@@ -258,6 +298,8 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
       taskFile,
     });
     const runtime = configuredRuntime({ projectDir, sessionId, stateDir });
+    const preparationId = `task-loop-${sessionId}`;
+    const gates = await configuredGates(config, runtime, preparationId);
     let dynamicImplementer: Awaited<ReturnType<typeof createImplementer>> | undefined;
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -270,10 +312,15 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
         callbacks,
         bus,
         allowRepoRunners: true,
-        createImplementer: async (profileConfig, options) => {
-          dynamicImplementer = await createImplementer(profileConfig, {
+        createImplementer: async (_profileConfig, options) => {
+          if (options?.slot === undefined) throw new Error('Expected a named implementer slot.');
+          dynamicImplementer = await createImplementer(config, {
             ...options,
             customRuntime: runtime,
+            preparedConfig: config,
+            preparationId,
+            gates,
+            slot: options.slot,
           });
           return dynamicImplementer;
         },

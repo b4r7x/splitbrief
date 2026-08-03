@@ -8,6 +8,7 @@ import {
   makeCallbacks,
   makeBusRecorder,
   makeImplementer,
+  makePreparedImplementerFactory,
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import {
@@ -28,6 +29,20 @@ import { retryAndRecord } from './retry.js';
 vi.setConfig({ testTimeout: 30_000 });
 
 let savedOpenRouterKey: string | undefined;
+
+const preparedIntermediateFactory = makePreparedImplementerFactory({
+  preparationId: 'retry-intermediate-preparation',
+  slot: { role: 'intermediate' },
+  gates: [
+    {
+      kind: 'api',
+      slot: { role: 'intermediate' },
+      preparationId: 'retry-intermediate-preparation',
+      provider: 'openrouter',
+      endpointOrigin: 'https://openrouter.ai',
+    },
+  ],
+});
 
 beforeEach(() => {
   savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
@@ -416,6 +431,7 @@ describe('retryAndRecord — escalated-intermediate booking identity', () => {
       projectDir,
       sessionId,
       implementer,
+      createImplementer: preparedIntermediateFactory,
       config: makeConfig({
         validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
         workflow: { maxRetries: 1 },

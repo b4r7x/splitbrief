@@ -1,18 +1,24 @@
 import { readFileSync, lstatSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { z } from 'zod';
-import { CLIOverridesSchema } from '../../core/config/runtime/overrides/schema.js';
-import { WorkflowModeSchema } from '../../core/schemas/enums.js';
+import {
+  CLIOverridesSchema,
+  RunnerOverrideSchema,
+} from '../../core/config/runtime/overrides/schema.js';
 import { writeSecureFile } from '../../lib/fs.js';
 import { error } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
-import { sessionDir } from '../../core/paths.js';
-import { assertSessionConfinement } from '../../core/sessions/confinement.js';
+import { detachedBootstrapRoot, isValidSessionId } from '../../core/paths.js';
+import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
-import { CliExecutableTrustSchema } from '../../core/discovery/detection.js';
-import { CliToolIdSchema } from '../../core/schemas/enums.js';
+import type {
+  ActiveSessionReceipt,
+  SessionOwnershipReceipt,
+} from '../../core/sessions/lifecycle.js';
 
 export const SERVER_ARGS_FILE = 'server-args.json';
+export const SERVER_RESULT_FILE = 'server-result.json';
+export const SERVER_BOOTSTRAP_PREFIX = 'server-';
 
 const IpcServerAttachmentSchema = z.object({
   id: z.string(),
@@ -20,46 +26,82 @@ const IpcServerAttachmentSchema = z.object({
   mimeType: z.string(),
 });
 
-const IpcCliStartGateSchema = z
-  .object({ tool: CliToolIdSchema, executable: CliExecutableTrustSchema })
+const SessionReceiptSchema = z
+  .object({
+    version: z.literal(1),
+    sessionId: z.string().refine(isValidSessionId),
+    generation: z.uuid(),
+  })
   .strict();
+
+const DetachedRunnerOverrideSchema = RunnerOverrideSchema.pick({
+  tool: true,
+  model: true,
+  command: true,
+  apiBase: true,
+  outputFormat: true,
+  contextLength: true,
+}).strict();
+const DetachedOverridesSchema = CLIOverridesSchema.extend({
+  planner: DetachedRunnerOverrideSchema.optional(),
+  implementer: DetachedRunnerOverrideSchema.optional(),
+});
 
 export type IpcServerAttachment = z.infer<typeof IpcServerAttachmentSchema>;
 
-const IpcServerArgsSchema = z.object({
-  sessionId: z.string(),
-  projectDir: z.string(),
-  feature: z.string(),
-  mode: WorkflowModeSchema,
-  configPath: z.string(),
-  overrides: CLIOverridesSchema.default({}),
-  persistTranscript: z.boolean().optional(),
-  allowHooks: z.boolean().optional(),
-  allowRepoRunners: z.boolean().optional(),
-  plannerContext: z.string().optional(),
-  attachments: z.array(IpcServerAttachmentSchema).optional(),
-  trustedCliGates: z.array(IpcCliStartGateSchema).optional(),
-});
+const IpcServerArgsSchema = z
+  .object({
+    version: z.literal(1),
+    parentPid: z.number().int().positive(),
+    candidate: SessionReceiptSchema,
+    projectDir: z.string(),
+    feature: z.string(),
+    overrides: DetachedOverridesSchema.default({}),
+    allowHooks: z.boolean().optional(),
+    allowRepoRunners: z.boolean().optional(),
+    allowUnverifiedAuth: z.boolean().optional(),
+    plannerContext: z.string().optional(),
+    attachments: z.array(IpcServerAttachmentSchema).optional(),
+  })
+  .strict();
 
 export type IpcServerArgs = z.infer<typeof IpcServerArgsSchema>;
+
+const DetachedPreparedResultSchema = z
+  .object({
+    version: z.literal(1),
+    kind: z.literal('prepared'),
+    sessionId: z.string().refine(isValidSessionId),
+    ownership: SessionReceiptSchema,
+    active: SessionReceiptSchema,
+    pid: z.number().int().positive(),
+  })
+  .strict();
+
+export type DetachedPreparedResultV1 = Readonly<{
+  version: 1;
+  kind: 'prepared';
+  sessionId: string;
+  ownership: SessionOwnershipReceipt;
+  active: ActiveSessionReceipt;
+  pid: number;
+}>;
 
 export const ipcServerArgsError = {
   invalidServerArgs: () => error('ipc-invalid-server-args', 'invalid server-args.json'),
   symlinkRead: (path: string) =>
-    error('server-args-symlink-read', `Refusing to read server-args through symlink: ${path}`, {
-      path,
-    }),
-  escapesSession: (path: string, expected: string) =>
-    error('server-args-escapes-session', `server-args.json path escapes expected session dir`, {
+    error(
+      'server-bootstrap-symlink-read',
+      `Refusing to read bootstrap data through symlink: ${path}`,
+      {
+        path,
+      },
+    ),
+  escapesBootstrap: (path: string, expected: string) =>
+    error('server-args-escapes-bootstrap', `Detached bootstrap path escapes its project root`, {
       path,
       expected,
     }),
-  mismatchedSessionId: (expected: string, actual: string) =>
-    error(
-      'server-args-mismatched-id',
-      `server-args sessionId '${actual}' does not match expected '${expected}'`,
-      { expected, actual },
-    ),
 } as const;
 
 export function parseIpcServerArgs(value: unknown): IpcServerArgs | null {
@@ -67,44 +109,102 @@ export function parseIpcServerArgs(value: unknown): IpcServerArgs | null {
   return result.success ? result.data : null;
 }
 
-export function readIpcServerArgsFileConfined(
-  argsFile: string,
-  expectedSessionId?: string,
-): IpcServerArgs {
+export function parseDetachedPreparedResult(value: unknown): DetachedPreparedResultV1 | null {
+  const result = DetachedPreparedResultSchema.safeParse(value);
+  return result.success ? result.data : null;
+}
+
+function assertBootstrapFile(
+  input: Readonly<{
+    filePath: string;
+    projectDir: string;
+    fileName: string;
+  }>,
+): void {
+  const { filePath, projectDir, fileName } = input;
+  const absolute = resolve(filePath);
+  const bootstrapDir = dirname(absolute);
+  const root = resolve(detachedBootstrapRoot(projectDir));
+  if (
+    resolve(dirname(bootstrapDir)) !== root ||
+    !basename(bootstrapDir).startsWith(SERVER_BOOTSTRAP_PREFIX) ||
+    absolute !== join(bootstrapDir, fileName)
+  ) {
+    throw ipcServerArgsError.escapesBootstrap(filePath, root);
+  }
   try {
-    const st = lstatSync(argsFile);
-    if (st.isSymbolicLink()) {
-      throw ipcServerArgsError.symlinkRead(argsFile);
+    assertExistingPathConfined(relative(projectDir, absolute), projectDir);
+  } catch {
+    throw ipcServerArgsError.escapesBootstrap(filePath, root);
+  }
+}
+
+function readJsonFileWithoutSymlink(filePath: string): unknown {
+  try {
+    const st = lstatSync(filePath);
+    if (st.isSymbolicLink() || !st.isFile()) {
+      throw ipcServerArgsError.symlinkRead(filePath);
     }
+    return JSON.parse(readFileSync(filePath, 'utf8'));
   } catch (err: unknown) {
-    if (err instanceof Error && isRecord(err) && err.kind === 'server-args-symlink-read') {
+    if (err instanceof Error && isRecord(err) && err.kind === 'server-bootstrap-symlink-read') {
       throw err;
     }
     throw ipcServerArgsError.invalidServerArgs();
   }
+}
 
-  const parsed = parseIpcServerArgs(JSON.parse(readFileSync(argsFile, 'utf8')));
+export function readIpcServerArgsFileConfined(
+  input: Readonly<{ argsFile: string }>,
+): IpcServerArgs {
+  const { argsFile } = input;
+  const parsed = parseIpcServerArgs(readJsonFileWithoutSymlink(argsFile));
   if (!parsed) throw ipcServerArgsError.invalidServerArgs();
-
-  const expectedSessionDir = sessionDir(parsed.projectDir, parsed.sessionId);
-  assertSessionConfinement(argsFile, expectedSessionDir);
-
-  if (expectedSessionId !== undefined && parsed.sessionId !== expectedSessionId) {
-    throw ipcServerArgsError.mismatchedSessionId(expectedSessionId, parsed.sessionId);
-  }
-
-  const expectedArgsFile = resolve(expectedSessionDir, SERVER_ARGS_FILE);
-  if (resolve(argsFile) !== expectedArgsFile) {
-    throw ipcServerArgsError.escapesSession(argsFile, expectedArgsFile);
-  }
-
+  assertBootstrapFile({
+    filePath: argsFile,
+    projectDir: parsed.projectDir,
+    fileName: SERVER_ARGS_FILE,
+  });
   return parsed;
 }
 
-export function writeIpcServerArgsFile(sessionDir: string, args: IpcServerArgs): string {
-  const argsFile = join(sessionDir, SERVER_ARGS_FILE);
+export function writeIpcServerArgsFile(
+  input: Readonly<{
+    bootstrapDir: string;
+    args: IpcServerArgs;
+  }>,
+): string {
+  const { bootstrapDir, args } = input;
+  const argsFile = join(bootstrapDir, SERVER_ARGS_FILE);
   writeSecureFile(argsFile, JSON.stringify(args, null, 2));
   return argsFile;
+}
+
+export function readDetachedPreparedResultFile(
+  input: Readonly<{
+    resultFile: string;
+    projectDir: string;
+  }>,
+): DetachedPreparedResultV1 | null {
+  const { resultFile, projectDir } = input;
+  try {
+    assertBootstrapFile({ filePath: resultFile, projectDir, fileName: SERVER_RESULT_FILE });
+    return parseDetachedPreparedResult(readJsonFileWithoutSymlink(resultFile));
+  } catch {
+    return null;
+  }
+}
+
+export function writeDetachedPreparedResultFile(
+  input: Readonly<{
+    bootstrapDir: string;
+    result: DetachedPreparedResultV1;
+  }>,
+): string {
+  const { bootstrapDir, result } = input;
+  const resultFile = join(bootstrapDir, SERVER_RESULT_FILE);
+  writeSecureFile(resultFile, `${JSON.stringify(result)}\n`);
+  return resultFile;
 }
 
 function materializeAttachment(record: IpcServerAttachment): Attachment {

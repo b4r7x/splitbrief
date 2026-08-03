@@ -5,8 +5,11 @@ import { ConfigSchema, type Config } from '../src/core/schemas/config.js';
 import { createEventBus } from '../src/engine/events/bus.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { runWorkflow } from '../src/engine/orchestrator/run/workflow.js';
+import { prepareExecution } from '../src/engine/runners/prepare-execution.js';
+import { releasePreparedSession } from '../src/core/sessions/prepare.js';
 import { createCassetteRecorder } from '#testing/helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '#testing/helpers/cassette/replayer.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { collectRunMetrics, compareScenario, type EvalReport, type RunMetrics } from './metrics.js';
 import { generateReport } from './report.js';
 import type { EvalScenario, QualityCheckResult } from './scenarios/types.js';
@@ -49,6 +52,7 @@ async function runSingleEval(
   opts: { record: boolean; replay: boolean; cassetteDir: string },
 ): Promise<RunMetrics> {
   const { tmpDir, projectDir } = copyScenarioFixture(scenario, mode);
+  createTestGitRepo(projectDir);
   const events: EngineEvent[] = [];
   const bus = createEventBus();
   bus.subscribe((event) => events.push(event));
@@ -76,10 +80,31 @@ async function runSingleEval(
     }
 
     const startMs = Date.now();
-    const summary = await runWorkflow({
-      feature: scenario.feature,
+    const preparation = await prepareExecution({
       projectDir,
-      config,
+      feature: scenario.feature,
+      effectiveConfig: config,
+      policy: {
+        purpose: 'new-workflow',
+        interaction: 'headless',
+        unverifiedAuth: 'allowed',
+        allowRepoRunners: false,
+        allowHooks: false,
+      },
+      signal: new AbortController().signal,
+    });
+    if (preparation.kind === 'failed') throw preparation.error;
+    if (preparation.kind !== 'prepared') {
+      throw new Error(`Eval runner preparation ended with '${preparation.kind}'.`);
+    }
+    if (preparation.execution.session.kind === 'new') {
+      releasePreparedSession({
+        ref: preparation.execution.session.ref,
+        ownership: preparation.execution.session.ownership,
+      });
+    }
+    const summary = await runWorkflow({
+      prepared: preparation.execution,
       headless: true,
       eventBus: bus,
       sinks: { setAbortHandler: () => undefined, setQueueHandler: () => undefined },

@@ -4,6 +4,10 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { adviseMode } from '../../../engine/orchestrator/planning/mode-advisor.js';
 import type { AdvisorResult } from '../../../engine/orchestrator/planning/mode-advisor.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../engine/runners/prepared-execution.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -20,6 +24,90 @@ import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
 import { InputFooter } from './input-footer.js';
 
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
+
+function localExecution(
+  feature: string,
+  worktreeName?: string,
+): { kind: 'local'; prepared: PreparedExecution } {
+  const projectDir = '/tmp/splitbrief-test';
+  const preparationId = 'input-footer-preparation';
+  const sessionId = 'input-footer-session';
+  const active = {
+    version: 1 as const,
+    sessionId,
+    generation: '22222222-2222-4222-8222-222222222222',
+  };
+
+  return {
+    kind: 'local',
+    prepared: {
+      purpose: 'new-workflow',
+      config: parsePreparedConfig(
+        makeConfig({
+          planner: {
+            kind: 'api',
+            provider: 'anthropic',
+            model: 'test-planner',
+            apiBase: 'https://api.anthropic.com/v1',
+            apiKey: 'test-key',
+            contextLength: 32_768,
+          },
+        }),
+      ),
+      preparationId,
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [
+          {
+            id: 'runners',
+            title: 'Runners',
+            checks: [
+              { id: 'runner.planner', severity: 'ok', summary: 'Planner ready' },
+              {
+                id: 'runner.implementer.default',
+                severity: 'ok',
+                summary: 'Implementer ready',
+              },
+            ],
+          },
+        ],
+        metadata: {},
+      },
+      gates: [
+        {
+          kind: 'api',
+          slot: { role: 'planner' },
+          preparationId,
+          provider: 'anthropic',
+          endpointOrigin: 'https://api.anthropic.com',
+        },
+        {
+          kind: 'api',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          provider: 'ollama',
+          endpointOrigin: 'http://localhost:11434',
+        },
+      ],
+      session: {
+        kind: 'new',
+        ref: { projectDir, sessionId },
+        ownership: active,
+        active,
+      },
+      runtime: {
+        feature,
+        ...(worktreeName !== undefined && { worktreeName }),
+        allowRepoRunners: false,
+        allowHooks: false,
+      },
+    },
+  };
+}
 
 function publishAdvisory(advisory: AdvisorResult): void {
   if (advisory.kind === 'none') return;
@@ -41,7 +129,15 @@ describe('InputFooter', () => {
   beforeEach(() => {
     eventsStore.__testReset();
     configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/splitbrief-test' });
-    routerStore.init({ screen: 'workflow', feature: 'demo' });
+    routerStore.init({
+      screen: 'workflow',
+      execution: {
+        kind: 'attached',
+        feature: 'demo',
+        sessionId: 'attached-session',
+        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+      },
+    });
     conversationScrollStore.__testReset();
     lifecycleStore.__testReset();
     tasksStore.__testReset();
@@ -355,7 +451,10 @@ describe('InputFooter', () => {
     // OSC-52 clipboard write + CSI erase wrapped around the visible name. A resumed/attached
     // workflow's worktree name is untrusted, so none of these bytes may reach the terminal.
     const dirty = `${esc}]52;c;YWJj${bel}clean-tree${esc}[2K`;
-    routerStore.init({ screen: 'workflow', feature: 'demo', worktreeName: dirty });
+    routerStore.init({
+      screen: 'workflow',
+      execution: localExecution('demo', dirty),
+    });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -370,7 +469,15 @@ describe('InputFooter', () => {
 
   it('omits the worktree marker when the workflow route has no worktree name', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
-    routerStore.init({ screen: 'workflow', feature: 'demo' });
+    routerStore.init({
+      screen: 'workflow',
+      execution: {
+        kind: 'attached',
+        feature: 'demo',
+        sessionId: 'attached-session',
+        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+      },
+    });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');

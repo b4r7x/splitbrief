@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { continueCommand } from './command.js';
 import type { ContinueDeps } from './command.js';
@@ -9,17 +10,17 @@ import { checkServerStatus } from '../../../engine/ipc/lockfile.js';
 import type { ServerStatus } from '../../../engine/ipc/lockfile.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
-import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { activeFile, CONFIG_FILE, sessionsRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution.js';
+import type { ReadinessReport } from '../../../core/readiness/types.js';
 
 type RpcRun = {
   feature: string;
   projectDir: string;
-  opts: WorkflowOpts;
   state: WorkflowState | undefined;
-  sessionId: string | undefined;
+  sessionId: string;
 };
 
 type RenderRun = {
@@ -131,6 +132,47 @@ function liveStatus(sessionId: string, feature: string): ServerStatus {
   };
 }
 
+function readyReport(projectDir: string): ReadinessReport {
+  return {
+    generatedAt: '2026-08-04T00:00:00.000Z',
+    projectDir,
+    status: 'ready',
+    counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+    nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+    sections: [],
+    metadata: {},
+  };
+}
+
+async function prepareResume(input: PrepareExecutionInput) {
+  if (!('existingSession' in input)) throw new Error('expected resume preparation');
+  return {
+    kind: 'prepared' as const,
+    execution: {
+      purpose: 'resume' as const,
+      config: input.effectiveConfig,
+      preparationId: 'resume-preparation',
+      report: readyReport(input.existingSession.projectDir),
+      gates: [],
+      session: {
+        kind: 'existing' as const,
+        ref: input.existingSession,
+        active: {
+          version: 1 as const,
+          sessionId: input.existingSession.sessionId,
+          generation: '22222222-2222-4222-8222-222222222222',
+        },
+      },
+      runtime: {
+        feature: input.feature,
+        resumeState: input.resumeState,
+        allowRepoRunners: input.policy.allowRepoRunners,
+        allowHooks: input.policy.allowHooks,
+      },
+    },
+  };
+}
+
 function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
   return {
     checkServerStatus,
@@ -139,8 +181,13 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
       renderRuns.push({ route: routerStore.get(), options });
     },
     runHeadless: async () => {},
-    runRpc: async ({ feature, projectDir, opts, savedState, sessionId }) => {
-      rpcRuns.push({ feature, projectDir, opts, state: savedState, sessionId });
+    runRpc: async ({ prepared }) => {
+      rpcRuns.push({
+        feature: prepared.runtime.feature,
+        projectDir: prepared.session.ref.projectDir,
+        state: prepared.runtime.resumeState,
+        sessionId: prepared.session.ref.sessionId,
+      });
     },
     setupWorkflow: async (opts) => ({
       projectDir: opts.project ?? '',
@@ -148,7 +195,7 @@ function createDeps(overrides: Partial<ContinueDeps> = {}): ContinueDeps {
       useMouse: true,
       useHover: false,
     }),
-    detectCliReadiness: async () => [],
+    prepareExecution: prepareResume,
     printCrashDiagnostic: async () => ({
       sessionId: 'test',
       status: 'crashed' as const,
@@ -227,10 +274,62 @@ describe('continueCommand', () => {
     expect(rpcRuns[0]).toMatchObject({
       feature: 'test-feature',
       projectDir,
-      opts: { rpc: true, projectDir },
       state: { feature: 'test-feature', phase: 'implementing' },
       sessionId: '2025-04-01-rpc',
     });
+  });
+
+  it('resume reauthorizes the existing session without creating another', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-exact-resume';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    writeState(sessDir, 'implementing');
+    const prepare = vi.fn(prepareResume);
+    deps = createDeps({ prepareExecution: prepare });
+
+    await continueCommand(sessionId, { projectDir, rpc: true }, deps);
+
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(prepare.mock.calls[0]?.[0]).toMatchObject({
+      existingSession: { projectDir, sessionId },
+      policy: { purpose: 'resume', interaction: 'headless' },
+    });
+    expect(readdirSync(join(projectDir, SPLITBRIEF_DIR, 'sessions'))).toEqual([sessionId]);
+    expect(rpcRuns[0]).toMatchObject({ sessionId, state: { phase: 'implementing' } });
+  });
+
+  it('rejects JSON task review before publishing a new active generation', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-json-review';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    writeState(sessDir, 'implementing');
+    writeFileSync(
+      join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE),
+      JSON.stringify(makeConfig({ workflow: { taskReview: 'every' } })),
+    );
+    const existingActive = JSON.stringify({
+      version: 1,
+      sessionId,
+      generation: '11111111-1111-4111-8111-111111111111',
+    });
+    writeFileSync(activeFile(projectDir), existingActive);
+    const prepare = vi.fn(prepareResume);
+    const runHeadless = vi.fn(async () => {});
+    deps = createDeps({ prepareExecution: prepare, runHeadless });
+
+    await expect(
+      continueCommand(sessionId, { projectDir, json: true }, deps),
+    ).rejects.toMatchObject({
+      kind: 'cli-error',
+      message: expect.stringContaining('workflow.taskReview requires an interactive TUI run'),
+    });
+
+    expect(prepare).not.toHaveBeenCalled();
+    expect(runHeadless).not.toHaveBeenCalled();
+    expect(readFileSync(activeFile(projectDir), 'utf8')).toBe(existingActive);
+    expect(readdirSync(sessionsRoot(projectDir))).toEqual([sessionId]);
   });
 
   it('attaches the workflow screen when the target session is still running', async () => {
@@ -257,10 +356,14 @@ describe('continueCommand', () => {
     expect(renderRuns).toHaveLength(1);
     expect(renderRuns[0]?.route).toMatchObject({
       screen: 'workflow',
-      feature: 'live feature',
-      sessionId: '2025-04-01-live',
-      attach: {
-        sockPath: join(projectDir, '.splitbrief', 'sessions', '2025-04-01-live', 'ipc.sock'),
+      execution: {
+        kind: 'attached',
+        feature: 'live feature',
+        sessionId: '2025-04-01-live',
+        attach: {
+          sockPath: join(projectDir, '.splitbrief', 'sessions', '2025-04-01-live', 'ipc.sock'),
+          authToken: 'test-auth-token',
+        },
       },
     });
   });

@@ -3,6 +3,8 @@ import { CONFIRM_PHRASE, type TieredApprovalRequest } from '../../core/approval/
 import type { Phase } from '../../core/schemas/enums.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
+import { isAbortError, throwIfAborted } from '../../utils/abort.js';
+import { error } from '../../utils/error.js';
 import { assertNever } from '../../utils/type-guards.js';
 import {
   formatCustomRunnerDisclosure,
@@ -23,12 +25,22 @@ import type { CustomRunnerAdmissionPolicy } from './types.js';
 
 const RECEIPT_CONFIRMATION_NOTICE = 'Exact confirmation stores an owner-only reusable receipt.';
 
+export const CUSTOM_RUNNER_TRUST_PERSISTED_AFTER_ABORT =
+  'custom-runner-trust-persisted-after-abort';
+
+export type PreparedCustomRunnerAdmission =
+  | Exclude<CustomRunnerAdmission, { kind: 'admitted' }>
+  | (Extract<CustomRunnerAdmission, { kind: 'admitted' }> & Readonly<{ trustPersisted: boolean }>);
+
 export interface PrepareCustomRunnerAdmissionOptions extends CustomRunnerAdmissionPolicy {
   readonly projectDir: string;
   readonly runner: ConfiguredCustomRunner;
   readonly posture: CustomRunnerSecurityPosture;
   readonly phase: Phase;
   readonly taskId?: TaskId | undefined;
+  readonly signal?: AbortSignal | undefined;
+  readonly _beforeTrustWrite?: (() => void) | undefined;
+  readonly _afterTrustWrite?: (() => void) | undefined;
   /** Executable-resolution authority, deliberately distinct from declared child environment. */
   readonly authorizationPathEnv?: string | undefined;
   /** Windows executable-extension authority, deliberately distinct from declared child environment. */
@@ -54,8 +66,21 @@ function admissionOptions(
   };
 }
 
-function deniedAfterReAdmission(admission: CustomRunnerAdmission): CustomRunnerAdmission {
+function deniedAfterReAdmission(
+  admission: CustomRunnerAdmission,
+): Extract<CustomRunnerAdmission, { kind: 'denied' }> {
   return admission.kind === 'denied' ? admission : { kind: 'denied', status: 'invalid' };
+}
+
+function signalIsAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
+function trustPersistedAbortError(): Error {
+  return error(
+    CUSTOM_RUNNER_TRUST_PERSISTED_AFTER_ABORT,
+    'Runner trust was saved before preparation cancellation completed.',
+  );
 }
 
 function isExecutableLaunchability(
@@ -135,6 +160,13 @@ async function captureOptions(
     authorizationPathEnv: options.authorizationPathEnv ?? '',
     authorizationPathExt: options.authorizationPathExt ?? '',
     ...(options.taskId === undefined ? {} : { taskId: options.taskId }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    ...(options._beforeTrustWrite === undefined
+      ? {}
+      : { _beforeTrustWrite: options._beforeTrustWrite }),
+    ...(options._afterTrustWrite === undefined
+      ? {}
+      : { _afterTrustWrite: options._afterTrustWrite }),
     ...(options.stateDir === undefined ? {} : { stateDir: options.stateDir }),
     ...(options.onTieredApproval === undefined
       ? {}
@@ -175,7 +207,7 @@ async function projectStillMatchesSnapshot({
 
 function deniedPreMarkRevalidation(
   resolution: Awaited<ReturnType<typeof resolveCustomExecutable>>,
-): CustomRunnerAdmission {
+): Extract<CustomRunnerAdmission, { kind: 'denied' }> {
   switch (resolution.kind) {
     case 'identity-drifted':
       return { kind: 'denied', status: 'drifted' };
@@ -198,9 +230,11 @@ function deniedPreMarkRevalidation(
  */
 export async function prepareCustomRunnerAdmission(
   options: PrepareCustomRunnerAdmissionOptions,
-): Promise<CustomRunnerAdmission> {
+): Promise<PreparedCustomRunnerAdmission> {
   try {
+    throwIfAborted(options.signal);
     const capturedOptions = await captureOptions(options);
+    throwIfAborted(options.signal);
     if (capturedOptions === null) return { kind: 'denied', status: 'invalid' };
     const initial = await admitCustomRunner(
       admissionOptions(capturedOptions, {
@@ -208,7 +242,10 @@ export async function prepareCustomRunnerAdmission(
         grant: capturedOptions.interaction === 'headless' && capturedOptions.allowRepoRunners,
       }),
     );
-    if (initial.kind !== 'disclosure-required') return initial;
+    throwIfAborted(options.signal);
+    if (initial.kind !== 'disclosure-required') {
+      return initial.kind === 'admitted' ? { ...initial, trustPersisted: false } : initial;
+    }
     if (capturedOptions.interaction === 'headless') return { kind: 'denied', status: 'untrusted' };
 
     const disclosed = await resolveCustomRunnerLaunchability({
@@ -219,6 +256,7 @@ export async function prepareCustomRunnerAdmission(
       pathEnv: capturedOptions.authorizationPathEnv,
       pathExt: capturedOptions.authorizationPathExt,
     });
+    throwIfAborted(options.signal);
     if (!isExecutableLaunchability(disclosed)) return { kind: 'denied', status: 'invalid' };
 
     const request: TieredApprovalRequest = {
@@ -232,13 +270,14 @@ export async function prepareCustomRunnerAdmission(
       return { kind: 'denied', status: 'untrusted' };
 
     const response = await capturedOptions.onTieredApproval(request);
+    throwIfAborted(options.signal);
     if (!isConfirmed(response)) return { kind: 'denied', status: 'untrusted' };
-    if (
-      !(await projectStillMatchesSnapshot({
-        originalProjectDir: options.projectDir,
-        capturedProjectDir: capturedOptions.projectDir,
-      }))
-    ) {
+    const projectMatches = await projectStillMatchesSnapshot({
+      originalProjectDir: options.projectDir,
+      capturedProjectDir: capturedOptions.projectDir,
+    });
+    throwIfAborted(options.signal);
+    if (!projectMatches) {
       return { kind: 'denied', status: 'invalid' };
     }
     if (!sourceStillMatchesSnapshots({ options, captured: capturedOptions })) {
@@ -252,22 +291,40 @@ export async function prepareCustomRunnerAdmission(
       pathEnv: capturedOptions.authorizationPathEnv,
       pathExt: capturedOptions.authorizationPathExt,
     });
+    throwIfAborted(options.signal);
     if (revalidated.kind !== 'resolved') return deniedPreMarkRevalidation(revalidated);
 
+    throwIfAborted(options.signal);
     const trusted = await markCustomRunnerTrusted({
       projectDir: capturedOptions.projectDir,
       runner: capturedOptions.runner,
       posture: capturedOptions.posture,
       executable: disclosed.executable,
       ...(capturedOptions.stateDir === undefined ? {} : { stateDir: capturedOptions.stateDir }),
+      signal: options.signal,
+      ...(capturedOptions._beforeTrustWrite === undefined
+        ? {}
+        : { _beforeWrite: capturedOptions._beforeTrustWrite }),
+      ...(capturedOptions._afterTrustWrite === undefined
+        ? {}
+        : { _afterWrite: capturedOptions._afterTrustWrite }),
     });
     if (trusted.kind !== 'trusted') return { kind: 'denied', status: 'invalid' };
+    if (trusted.abortedAfterPublication || signalIsAborted(options.signal)) {
+      throw trustPersistedAbortError();
+    }
 
     const reAdmitted = await admitCustomRunner(
       admissionOptions(capturedOptions, { interaction: 'headless', grant: false }),
     );
-    return reAdmitted.kind === 'admitted' ? reAdmitted : deniedAfterReAdmission(reAdmitted);
-  } catch {
+    if (signalIsAborted(options.signal)) {
+      throw trustPersistedAbortError();
+    }
+    return reAdmitted.kind === 'admitted'
+      ? { ...reAdmitted, trustPersisted: true }
+      : deniedAfterReAdmission(reAdmitted);
+  } catch (cause) {
+    if (options.signal?.aborted === true || isAbortError(cause)) throw cause;
     return { kind: 'denied', status: 'invalid' };
   }
 }

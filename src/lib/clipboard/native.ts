@@ -1,9 +1,6 @@
 import { execFile } from 'node:child_process';
 import { warnError } from '../warn.js';
 
-const NATIVE_TIMEOUT_MS =
-  process.env['SPLITBRIEF_TEST_CLIPBOARD_CALLS'] === undefined ? 2000 : 15_000;
-
 const linuxClipboardArgs = {
   'wl-copy': [],
   xclip: ['-selection', 'clipboard'],
@@ -34,7 +31,8 @@ function runWithStdin(
   input: string,
 ): Promise<number | null> {
   return new Promise((resolve) => {
-    const child = execFile(command, [...args], { timeout: NATIVE_TIMEOUT_MS }, (err) => {
+    const timeout = process.env['SPLITBRIEF_TEST_CLIPBOARD_CALLS'] === undefined ? 2000 : 15_000;
+    const child = execFile(command, [...args], { timeout }, (err) => {
       resolve(err ? exitCodeOf(err) : 0);
     });
     // EPIPE just means the tool exited before draining stdin — its exit code is the source of truth.

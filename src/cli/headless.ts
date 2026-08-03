@@ -1,20 +1,17 @@
-import type { WorkflowOpts } from '../core/types/config-options.js';
-import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Planner } from '../engine/planners/types.js';
 import type { Implementer } from '../engine/implementers/types.js';
-import type { CliStartGates } from '../engine/runners/start-gate.js';
+import type { PreparedExecution } from '../engine/runners/prepared-execution.js';
 import { loadState } from '../core/state/persistence.js';
-import { readActive } from '../core/sessions/lifecycle.js';
-import { configForSessionTranscriptPolicy, readSession } from '../core/sessions/io.js';
+import { readSession } from '../core/sessions/io.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
 import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { cliError } from './errors.js';
-import { resolveRunConfig } from './build-overrides.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { flushOtel } from '../lib/otel.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../core/transcript-policy.js';
+import type { Config } from '../core/schemas/config.js';
 
 function buildNoopSinks() {
   return {
@@ -25,19 +22,17 @@ function buildNoopSinks() {
 
 function emitRecoveryAndFailIfPending(
   projectDir: string,
-  sessionId: string | undefined,
+  sessionId: string,
   persistTranscript: boolean,
 ): void {
-  const recoverySessionId = sessionId ?? readActive(projectDir);
-  if (!recoverySessionId) return;
-  const state = loadState({ projectDir, sessionId: recoverySessionId });
+  const state = loadState({ projectDir, sessionId });
   const issue = state?.pendingRecovery;
   if (!issue) return;
   if (issue.status !== 'awaiting-user') return;
   writeHeadlessJsonRecord(
     {
       type: 'recovery_required',
-      sessionId: recoverySessionId,
+      sessionId,
       reason: issue.reason,
       message: issue.message,
       taskId: issue.taskId,
@@ -53,63 +48,44 @@ function emitRecoveryAndFailIfPending(
   throw cliError(`Recovery required: ${message}`, 1);
 }
 
-function failIfFinalReviewIncomplete(projectDir: string, sessionId: string | undefined): void {
-  const reviewSessionId = sessionId ?? readActive(projectDir);
-  if (!reviewSessionId) return;
-  const state = loadState({ projectDir, sessionId: reviewSessionId });
+function failIfFinalReviewIncomplete(projectDir: string, sessionId: string): void {
+  const state = loadState({ projectDir, sessionId });
   if (state?.phase !== 'final-review') return;
-  writeHeadlessJsonRecord({ type: 'final_review_failed', sessionId: reviewSessionId });
+  writeHeadlessJsonRecord({ type: 'final_review_failed', sessionId });
   throw cliError('Final review did not pass — workflow is incomplete.', 1);
 }
 
-function failIfSessionFailed(projectDir: string, sessionId: string | undefined): void {
-  const failedSessionId = sessionId ?? readActive(projectDir);
-  if (!failedSessionId) return;
-  const session = readSession({ projectDir, sessionId: failedSessionId });
+function failIfSessionFailed(projectDir: string, sessionId: string): void {
+  const session = readSession({ projectDir, sessionId });
   if (session?.status !== 'failed') return;
   writeHeadlessJsonRecord({
     type: 'error',
-    message: `Session ${failedSessionId} ended with status failed.`,
+    message: `Session ${sessionId} ended with status failed.`,
   });
   throw cliError('Workflow failed — see the error output above.', 1);
 }
 
 export interface RunHeadlessOptions {
-  feature: string;
-  projectDir: string;
-  opts: WorkflowOpts;
-  savedState?: WorkflowState | undefined;
-  sessionId?: string | undefined;
+  prepared: PreparedExecution;
   _planner?: Planner | undefined;
   _implementer?: Implementer | undefined;
-  plannerContext?: string | undefined;
-  trustedCliGates?: CliStartGates | undefined;
+}
+
+export function assertHeadlessTaskReviewDisabled(config: Pick<Config, 'workflow'>): void {
+  if ((config.workflow.taskReview ?? 'none') === 'none') return;
+  throw cliError(
+    'workflow.taskReview requires an interactive TUI run. Set workflow.taskReview: none for headless mode.',
+  );
 }
 
 export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
-  const {
-    feature,
-    projectDir,
-    opts,
-    savedState,
-    sessionId,
-    _planner,
-    _implementer,
-    plannerContext,
-    trustedCliGates,
-  } = options;
+  const { prepared, _planner, _implementer } = options;
+  const projectDir = prepared.session.ref.projectDir;
+  const sessionId = prepared.session.ref.sessionId;
+  const runConfig = prepared.config;
   installTerminalOutputErrorGuard();
-  const config = resolveRunConfig({ projectDir, opts, defaultApprove: 'none' });
-  const runConfig = configForSessionTranscriptPolicy(
-    config,
-    sessionId === undefined ? undefined : { projectDir, sessionId },
-  );
 
-  if ((runConfig.workflow.taskReview ?? 'none') !== 'none') {
-    throw cliError(
-      'workflow.taskReview requires an interactive TUI run. Set workflow.taskReview: none for headless mode.',
-    );
-  }
+  assertHeadlessTaskReviewDisabled(runConfig);
 
   const abortController = new AbortController();
   const onSignal = () => abortController.abort();
@@ -118,22 +94,15 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
 
   try {
     await runWorkflow({
-      feature,
-      plannerContext,
-      projectDir,
-      config: runConfig,
+      prepared,
       headless: true,
-      allowHooks: opts.allowHooks ?? false,
-      allowRepoRunners: opts.allowRepoRunners ?? false,
       sinks: buildNoopSinks(),
       modelCache: modelCacheStore,
       drainPendingAttachments: () => attachmentsStore.drain(),
-      savedState,
-      sessionId,
       signal: abortController.signal,
       _planner,
       _implementer,
-      trustedCliGates,
+      savedState: prepared.runtime.resumeState,
       callbacks: {
         onApprovalNeeded: async (_type, _input) => ({ approved: true }),
         onQuestionAsked: async () => '',

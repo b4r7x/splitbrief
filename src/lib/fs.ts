@@ -5,14 +5,13 @@ import {
   existsSync,
   readFileSync,
   appendFileSync,
-  chmodSync,
   lstatSync,
   renameSync,
   realpathSync,
   rmSync,
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { readFile, lstat, writeFile, rename, chmod, rm } from 'node:fs/promises';
+import { readFile, lstat, writeFile, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { assertWritablePathConfined } from './path-confinement.js';
@@ -93,9 +92,8 @@ export function writeSecureFile(filePath: string, content: string): void {
   const tmpPath = join(dir, tmpName);
 
   try {
-    writeFileSync(tmpPath, content, { mode: SECURE_FILE_MODE });
+    writeFileSync(tmpPath, content, { mode: SECURE_FILE_MODE, flag: 'wx' });
     renameSync(tmpPath, filePath);
-    chmodSync(filePath, SECURE_FILE_MODE);
   } catch (err) {
     rmSync(tmpPath, { force: true });
     throw err;
@@ -110,9 +108,8 @@ async function atomicSecureWriteAsync(filePath: string, content: string): Promis
   const tmpPath = join(dir, tmpName);
 
   try {
-    await writeFile(tmpPath, content, { mode: SECURE_FILE_MODE });
+    await writeFile(tmpPath, content, { mode: SECURE_FILE_MODE, flag: 'wx' });
     await rename(tmpPath, filePath);
-    await chmod(filePath, SECURE_FILE_MODE);
   } catch (err) {
     await rm(tmpPath, { force: true });
     throw err;

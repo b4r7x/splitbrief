@@ -18,6 +18,11 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import { executableReceipt } from '#testing/helpers/custom-command-based.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../src/engine/runners/prepared-execution.js';
 
 const dirs: string[] = [];
 
@@ -92,10 +97,9 @@ describe('resume planning continuation with a direct-writing implementer', {
       }),
     });
 
-    const summary = await runWorkflow({
-      feature,
-      projectDir,
-      config: makeConfig({
+    const resumeState = savedPlanningContinuationState(feature);
+    const config = parsePreparedConfig(
+      makeConfig({
         implementer: {
           kind: 'agent',
           command: 'node',
@@ -110,10 +114,55 @@ describe('resume planning continuation with a direct-writing implementer', {
           persistTranscript: true,
         },
       }),
+    );
+    const preparationId = 'resume-planning-direct-preparation';
+    const active = {
+      version: 1 as const,
+      sessionId,
+      generation: '8a888888-8888-4888-8888-888888888888',
+    };
+    const prepared: PreparedExecution = {
+      purpose: 'resume',
+      config,
+      preparationId,
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [],
+        metadata: {},
+      },
+      gates: [
+        {
+          kind: 'cli',
+          slot: { role: 'planner' },
+          preparationId,
+          tool: 'claude-code',
+          executable: executableReceipt(),
+        },
+        {
+          kind: 'agent',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          command: { kind: 'validated-config' },
+        },
+      ],
+      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+      runtime: {
+        feature,
+        resumeState,
+        allowRepoRunners: false,
+        allowHooks: false,
+      },
+    };
+
+    const summary = await runWorkflow({
+      prepared,
+      savedState: resumeState,
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
-      savedState: savedPlanningContinuationState(feature),
-      sessionId,
       _planner: planner,
       _implementer: implementer,
       _eventSink: (event) => events.push(event),

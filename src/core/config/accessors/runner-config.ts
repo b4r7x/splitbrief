@@ -8,9 +8,34 @@ import { isPlannerToolId, type PlannerToolId } from '../../schemas/enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { Config } from '../../schemas/config.js';
 import type { ActiveRunnerConfig, ActiveRunnerRole } from './active-runner.js';
+import type { ImplementerConfig } from '../../schemas/implementer-config.js';
+import type { PlannerConfig } from '../../schemas/planner-config.js';
 import { defaultCliAuthChannel, type CliAuthChannelId } from '../../runners/cli-tool-catalog.js';
 
 export type RunnerConfig = ActiveRunnerConfig;
+
+export type DeepReadonly<T> = T extends object
+  ? { readonly [Key in keyof T]: DeepReadonly<T[Key]> }
+  : T;
+
+export type RunnerConfigSlot =
+  | Readonly<{ role: 'planner' }>
+  | Readonly<{ role: 'implementer'; profile: string }>
+  | Readonly<{ role: 'intermediate' }>;
+
+export type RunnerConfigSource =
+  | Readonly<{ role: 'planner'; runner: DeepReadonly<PlannerConfig> }>
+  | Readonly<{
+      role: 'implementer';
+      profile: string;
+      runner: DeepReadonly<ImplementerConfig>;
+    }>
+  | Readonly<{ role: 'intermediate'; runner: DeepReadonly<ImplementerConfig> }>;
+
+export type RunnerConfigContext = Readonly<{
+  slot: RunnerConfigSlot;
+  runner: DeepReadonly<RunnerConfig>;
+}>;
 
 export type CredentialSourceIdentity =
   | { readonly kind: 'env'; readonly name: string }
@@ -56,6 +81,22 @@ function opaqueIdentity(store: WeakMap<object, string>, value: object, prefix: s
 
 function endpointOrigin(apiBase: string): string {
   return new URL(apiBase).origin;
+}
+
+export function resolveRunnerConfigContext(source: RunnerConfigSource): RunnerConfigContext {
+  switch (source.role) {
+    case 'planner':
+      return { slot: { role: 'planner' }, runner: source.runner };
+    case 'implementer':
+      return {
+        slot: { role: 'implementer', profile: source.profile },
+        runner: source.runner,
+      };
+    case 'intermediate':
+      return { slot: { role: 'intermediate' }, runner: source.runner };
+    default:
+      return assertNever(source);
+  }
 }
 
 function anthropicEndpointOrigin(): string | undefined {
@@ -234,7 +275,7 @@ export function projectRunnerDiscoveryContext(
   };
 }
 
-export function getRunnerDisplayName(runner: RunnerConfig): string {
+export function getRunnerDisplayName(runner: DeepReadonly<RunnerConfig>): string {
   switch (runner.kind) {
     case 'cli':
       return runner.tool;
@@ -280,7 +321,7 @@ export function getRunnerApiKey(runner: RunnerConfig): string | undefined {
   return undefined;
 }
 
-export function getRunnerModelName(runner: RunnerConfig): string | undefined {
+export function getRunnerModelName(runner: DeepReadonly<RunnerConfig>): string | undefined {
   if ('model' in runner && typeof runner.model === 'string') {
     return runner.kind === 'cli'
       ? resolveCliModel(runner.model, runner.tool)

@@ -9,15 +9,17 @@ import type {
 import type { Phase } from '../../core/schemas/enums.js';
 import type { Screen } from '../../core/navigation/types.js';
 import { createInitialState } from '../../core/state/machine.js';
-import { saveState } from '../../core/state/persistence.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
-import { sessionSelectStore } from '../../stores/navigation/session-select.js';
+import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
+import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { buildPaletteSources } from './sources.js';
 
 const noop = () => {};
 const savedMode = async (): Promise<RuntimeConfigSaveResult> => ({ kind: 'saved', ok: true });
+const noopSessionSelect = async () => {};
 
 function buildCommandSources(
   commands: RuntimeCommandDef[],
@@ -34,6 +36,7 @@ function buildCommandSources(
     projectDir: '/tmp/splitbrief-test',
     onRuntimeCommand,
     onWorkflowMode: savedMode,
+    onSessionSelect: noopSessionSelect,
   }).commandItems;
 }
 
@@ -157,6 +160,7 @@ describe('buildPaletteSources attached-client boundary', () => {
       projectDir: '/tmp/splitbrief-test',
       onRuntimeCommand: noop,
       onWorkflowMode: savedMode,
+      onSessionSelect: noopSessionSelect,
       isAttached: true,
     });
 
@@ -178,6 +182,7 @@ describe('buildPaletteSources display descriptions', () => {
       projectDir: '/tmp/splitbrief-test',
       onRuntimeCommand: noop,
       onWorkflowMode: savedMode,
+      onSessionSelect: noopSessionSelect,
     });
 
     expect(sources.modeItems.find((item) => item.label === 'instant')?.description).toBe(
@@ -211,7 +216,7 @@ describe('buildPaletteSources session items', () => {
     sessionSelectStore.reset();
   });
 
-  it('resumes an interrupted session with its saved state instead of starting fresh', () => {
+  it('awaits interrupted-session preparation before exposing the prepared route', async () => {
     const session = makeSession({
       id: 'sess-resume',
       feature: 'add auth',
@@ -234,20 +239,33 @@ describe('buildPaletteSources session items', () => {
       projectDir: tmp,
       onRuntimeCommand: noop,
       onWorkflowMode: savedMode,
+      onSessionSelect: (selected, projectDir) =>
+        handleSessionSelect(selected, projectDir, {
+          loadState,
+          prepareResume: async ({ ref, state }) => ({
+            kind: 'prepared',
+            execution: prepareWorkflowExecution({
+              projectDir: ref.projectDir,
+              feature: state.feature,
+              sessionId: ref.sessionId,
+              resumeState: state,
+            }),
+          }),
+        }),
     });
 
-    sessionItems[0]?.action();
+    await sessionItems[0]?.action();
 
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
-    if (route.screen === 'workflow') {
-      expect(route.feature).toBe('saved add auth');
-      expect(route.resumeState).toEqual(savedState);
-      expect(route.sessionId).toBe(session.id);
+    if (route.screen === 'workflow' && route.execution.kind === 'local') {
+      expect(route.execution.prepared.runtime.feature).toBe('saved add auth');
+      expect(route.execution.prepared.runtime.resumeState).toEqual(savedState);
+      expect(route.execution.prepared.session.ref.sessionId).toBe(session.id);
     }
   });
 
-  it('surfaces palette-triggered session selection errors through global feedback', () => {
+  it('surfaces palette-triggered session selection errors through global feedback', async () => {
     const session = makeSession({
       id: 'sess-missing-state',
       feature: 'missing state',
@@ -265,9 +283,16 @@ describe('buildPaletteSources session items', () => {
       projectDir: tmp,
       onRuntimeCommand: noop,
       onWorkflowMode: savedMode,
+      onSessionSelect: (selected, projectDir) =>
+        handleSessionSelect(selected, projectDir, {
+          loadState,
+          prepareResume: async () => {
+            throw new Error('Preparation should not run without saved state');
+          },
+        }),
     });
 
-    sessionItems[0]?.action();
+    await sessionItems[0]?.action();
 
     expect(sessionSelectStore.get().error).toBe(
       'Cannot resume: saved workflow state is missing or invalid',

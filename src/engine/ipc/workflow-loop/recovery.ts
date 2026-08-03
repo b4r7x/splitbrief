@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import { RecoveryActionSchema } from '../../../core/schemas/enums.js';
 import { projectIpcRecoveryIssue } from '../../../core/schemas/recovery/ipc.js';
-import { DEFAULT_WORKFLOW_MODE, type Config } from '../../../core/schemas/config.js';
+import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import { applyRecoveryAction } from '../../orchestrator/recovery/actions.js';
 import {
   finalizeRecoveryResult,
@@ -18,17 +18,13 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import { assertPromptResponse } from './prompts.js';
 import type { IpcServer } from '../server.js';
 import type { IpcServerAttachment } from '../server-args.js';
-import type { CliStartGates } from '../../runners/start-gate.js';
+import type { PreparedExecution } from '../../runners/prepared-execution.js';
+
+type PreparedConfig = PreparedExecution['config'];
 
 export type WorkflowLoopContext = {
-  projectDir: string;
-  sessionId: string;
-  feature: string;
-  plannerContext?: string | undefined;
-  allowHooks?: boolean | undefined;
-  allowRepoRunners?: boolean | undefined;
+  prepared: PreparedExecution;
   attachments?: IpcServerAttachment[] | undefined;
-  trustedCliGates?: CliStartGates | undefined;
 };
 
 type DetachedRecoveryResolution = {
@@ -45,17 +41,18 @@ type DetachedRecoveryOutcome =
 function applyDetachedRecoveryAction(
   ctx: WorkflowLoopContext,
   bus: EventBus,
-  config: Config,
+  config: PreparedConfig,
   state: WorkflowState,
   action: RecoveryAction,
 ): DetachedRecoveryOutcome {
+  const { ref, active } = ctx.prepared.session;
   const currentIssue = state.pendingRecovery;
   const selectedImplementerProfile = currentIssue?.selectedImplementerProfile;
   const retryProfileOverrideTaskId =
     currentIssue?.taskId ?? state.tasks[state.currentTaskIndex]?.id;
   const result = applyRecoveryAction({
-    projectDir: ctx.projectDir,
-    sessionId: ctx.sessionId,
+    projectDir: ref.projectDir,
+    sessionId: ref.sessionId,
     state,
     action,
     bus,
@@ -65,8 +62,9 @@ function applyDetachedRecoveryAction(
   if (!result.ok) return { ok: false, blockedMessage: result.message };
   if (result.status === 'aborted') {
     finalizeRecoveryResult({
-      projectDir: ctx.projectDir,
-      sessionId: ctx.sessionId,
+      projectDir: ref.projectDir,
+      sessionId: ref.sessionId,
+      active,
       state: result.state,
       config,
       status: result.status,
@@ -91,18 +89,15 @@ export async function resolveDetachedPendingRecovery(
   ctx: WorkflowLoopContext,
   ipcServer: IpcServer,
   bus: EventBus,
-  config: Config,
+  config: PreparedConfig,
   state: WorkflowState,
 ): Promise<DetachedRecoveryResolution> {
-  const pending = loadPendingRecoveryState(
-    { projectDir: ctx.projectDir, sessionId: ctx.sessionId },
-    state,
-  );
+  const ref = ctx.prepared.session.ref;
+  const pending = loadPendingRecoveryState(ref, state);
   if (!pending.pending) return { shouldRun: true, state: pending.state };
 
   const applyAction = (action: RecoveryAction) => {
-    const current =
-      loadState({ projectDir: ctx.projectDir, sessionId: ctx.sessionId }) ?? pending.state;
+    const current = loadState(ref) ?? pending.state;
     return applyDetachedRecoveryAction(ctx, bus, config, current, action);
   };
 
@@ -145,8 +140,9 @@ export async function resolveDetachedPendingRecovery(
 export function buildPausedSummary(
   ctx: WorkflowLoopContext,
   state: WorkflowState,
-  config: Config,
+  config: PreparedConfig,
 ): Summary {
+  const ref = ctx.prepared.session.ref;
   const ident = runPricingIdentity(config);
   const parsedStart = Date.parse(state.startedAt);
   const startTime = Number.isFinite(parsedStart) ? parsedStart : Date.now();
@@ -161,7 +157,7 @@ export function buildPausedSummary(
     implementerTool: state.implementerTool ?? ident.implementerTool,
     ...(implementerModel !== undefined ? { implementerModel } : {}),
     mode: config.workflow.mode ?? DEFAULT_WORKFLOW_MODE,
-    projectDir: ctx.projectDir,
-    sessionId: ctx.sessionId,
+    projectDir: ref.projectDir,
+    sessionId: ref.sessionId,
   });
 }

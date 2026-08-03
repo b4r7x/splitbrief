@@ -16,6 +16,7 @@ import type {
   ModelsDevRefreshOutcome,
   ResolvedDetectionSourceContexts,
 } from '../../engine/detection/service.js';
+import type { RememberedCliCatalog } from '../../engine/detection/cache.js';
 import type { DetectionPublicationRequest } from '../../engine/detection/store-publication.js';
 import type {
   CliModelSnapshot,
@@ -103,6 +104,7 @@ export interface DetectionStoreHydration {
   readonly generation: number;
   readonly requestId: number;
   readonly contexts: DiscoverySourceContexts;
+  readonly cliCatalogs?: readonly RememberedCliCatalog[] | undefined;
 }
 
 const initialSource = (): DiscoverySourceRefresh => ({
@@ -912,16 +914,43 @@ export const modelCacheStore = {
       generation: input.generation,
       readiness,
     };
+    // Remembered catalogs are presentation-only stale rows; live data already
+    // in memory always wins over a disk snapshot.
+    const rememberedCatalogs =
+      current.cliCatalogsLoaded || input.cliCatalogs === undefined || input.cliCatalogs.length === 0
+        ? null
+        : input.cliCatalogs.map(
+            (entry): ScopedCliCatalogRuntime => ({
+              connection: {
+                role: entry.role,
+                tool: entry.tool,
+                contextKey: 'remembered-detection-cache',
+              },
+              state: 'stale',
+              models: entry.models.map(cloneDetectedModel),
+              fetchedAt: entry.probedAt,
+              validatedAt: input.validatedAt,
+            }),
+          );
     setState({
       ...current,
       detection: freezeDetection({
         providers: input.providers,
         cliTools: input.cliTools,
         providerOutcomes: current.detection.providerOutcomes,
-        cliCatalogOutcomes: current.detection.cliCatalogOutcomes,
+        cliCatalogOutcomes:
+          rememberedCatalogs === null ? current.detection.cliCatalogOutcomes : rememberedCatalogs,
         refresh,
       }),
-      providers: providerModels(current.providers, input.providers, readiness),
+      providers:
+        current.refresh.readiness.outcome === 'uninitialized'
+          ? providerModels(current.providers, input.providers, readiness)
+          : current.providers,
+      // cliCatalogsLoaded stays false: remembered rows render, but authoritative
+      // absence and bundled-default semantics still belong to live lanes only.
+      ...(rememberedCatalogs === null
+        ? {}
+        : { cliCatalogs: freezeCliCatalogs(rememberedCatalogs) }),
       refresh,
     });
     return true;
@@ -1050,6 +1079,8 @@ export const modelCacheStore = {
   getProviderModels(provider: ProviderId): readonly DetectedModel[] | null {
     const current = store.get();
     if (includes(CLI_TOOL_IDS, provider)) {
+      // Remembered rows are role-scoped and answer only through the scoped
+      // lookup; this role-blind map must not serve them.
       if (!current.cliCatalogsLoaded) return current.cliModels[provider]?.models ?? null;
       // A generic tool lookup is deliberately denied when planner/implementer
       // or two selected channels make the catalog ambiguous.
@@ -1067,6 +1098,26 @@ export const modelCacheStore = {
     return cache?.models ?? null;
   },
 
+  isProviderModelCacheStale(provider: ProviderId): boolean {
+    const current = store.get();
+    if (includes(CLI_TOOL_IDS, provider)) {
+      // Mirrors getProviderModels: before a live lane completes the CLI answer
+      // comes from the manual-injection map, which is never remembered data.
+      if (!current.cliCatalogsLoaded) return false;
+      return (
+        findGenericCliCatalogRuntimeAtStoreBoundary(cliCatalogValues(current.cliCatalogs), provider)
+          ?.state === 'stale'
+      );
+    }
+    const roleScoped = configuredProviderValues(current.configuredProviders).filter(
+      (entry) => entry.connection.provider === provider,
+    );
+    if (roleScoped.length > 0) {
+      return roleScoped.length === 1 && roleScoped[0]?.state === 'stale';
+    }
+    return current.providers[provider]?.isStale ?? false;
+  },
+
   getScopedProviderRuntime(input: {
     role: ActiveRunnerRole;
     provider: ApiProviderId;
@@ -1081,8 +1132,14 @@ export const modelCacheStore = {
     tool: CliToolId;
   }): ScopedCliCatalogRuntime | null | undefined {
     const current = store.get();
-    if (!current.cliCatalogsLoaded) return undefined;
-    return findScopedCliCatalogRuntimeAtStoreBoundary(cliCatalogValues(current.cliCatalogs), input);
+    const match = findScopedCliCatalogRuntimeAtStoreBoundary(
+      cliCatalogValues(current.cliCatalogs),
+      input,
+    );
+    // Before a live catalog lane completes, a remembered row still answers but
+    // absence stays "unknown", never authoritative.
+    if (!current.cliCatalogsLoaded) return match ?? undefined;
+    return match;
   },
 
   setModelsDevCatalog(catalog: ModelsDevCatalog): void {

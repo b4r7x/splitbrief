@@ -54,7 +54,13 @@ describe('start command — session lifecycle during setup', () => {
 
     await runStart(['--project', tmp, 'implement X']);
 
-    expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement X' });
+    expect(routerStore.get()).toMatchObject({
+      screen: 'workflow',
+      execution: {
+        kind: 'local',
+        prepared: { runtime: { feature: 'implement X' } },
+      },
+    });
     const activePath = join(tmp, SPLITBRIEF_DIR, 'active');
     expect(existsSync(activePath)).toBe(true);
   });

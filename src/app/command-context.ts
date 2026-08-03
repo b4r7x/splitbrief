@@ -48,6 +48,7 @@ import {
 } from '../core/approval/store.js';
 import { error } from '../utils/error.js';
 import { assertNever } from '../utils/type-guards.js';
+import type { RouteData } from '../stores/navigation/router.js';
 
 export interface ConversationScrollMetrics {
   renderableCount: number;
@@ -70,21 +71,16 @@ export interface WorkflowCommandPorts {
 const appCommandContextError = {
   noActiveSession: (command: string) =>
     error('app-command-no-active-session', `No active session for ${command}`, { command }),
-  noConfig: (command: string) =>
-    error('app-command-no-config', `No config loaded for ${command}`, { command }),
 } as const;
 
-function currentSessionId(projectDir: string): string | null {
-  const route = routerStore.get();
-  if ((route.screen === 'workflow' || route.screen === 'summary') && route.sessionId) {
-    return route.sessionId;
+function routeSessionId(route: RouteData, projectDir: string): string | null {
+  if (route.screen === 'workflow') {
+    return route.execution.kind === 'local'
+      ? route.execution.prepared.session.ref.sessionId
+      : route.execution.sessionId;
   }
+  if (route.screen === 'summary' && route.sessionId) return route.sessionId;
   return readActive(projectDir);
-}
-
-function isAttachedClient(): boolean {
-  const route = routerStore.get();
-  return route.screen === 'workflow' && route.attach !== undefined;
 }
 
 function conversationPageStep(viewportHeight: number): number {
@@ -156,9 +152,15 @@ export function buildCommandContext({
   exit: () => void;
   workflow: WorkflowCommandPorts;
 }): RuntimeCommandContext {
+  const route = routerStore.get();
+  const prepared =
+    route.screen === 'workflow' && route.execution.kind === 'local'
+      ? route.execution.prepared
+      : null;
+  const projectDir = prepared?.session.ref.projectDir ?? configStore.get().projectDir;
   return createCommandContext({
-    isAttached: isAttachedClient(),
-    projectDir: () => configStore.get().projectDir,
+    isAttached: route.screen === 'workflow' && route.execution.kind === 'attached',
+    projectDir: () => projectDir,
     getConfig: () => configStore.get().config,
     saveConfig: async (config): Promise<RuntimeConfigSaveResult> => {
       const result = await configStore.save(config);
@@ -190,9 +192,8 @@ export function buildCommandContext({
       if (!current) return;
       configStore.setApprovalEnabled(enabled);
     },
-    getSessionId: () => currentSessionId(configStore.get().projectDir),
+    getSessionId: () => routeSessionId(route, projectDir),
     noActiveSession: appCommandContextError.noActiveSession,
-    noConfig: appCommandContextError.noConfig,
     exportMissingSession: () => ({ status: 'error', error: 'No active session for /export' }),
     openOverlay: overlayStore.open,
     navigateHome: () => routerStore.navigate({ to: 'home' }),
@@ -242,7 +243,17 @@ export function buildCommandContext({
     },
     acceptRunSnapshot,
     rejectRunSnapshot,
-    compactTranscript: performManualCompaction,
+    compactTranscript: () => {
+      if (prepared === null) {
+        throw appCommandContextError.noActiveSession('/compact-transcript');
+      }
+      return performManualCompaction({
+        config: prepared.config,
+        ref: prepared.session.ref,
+        preparationId: prepared.preparationId,
+        gates: prepared.gates,
+      });
+    },
     exportSession: async (projectDir, sessionId) =>
       writeSessionHtmlReport(sessionDir(projectDir, sessionId), sessionId),
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),

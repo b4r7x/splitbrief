@@ -5,6 +5,7 @@ import {
   getRunnerDisplayName,
   isSameCredentialDomain,
   projectRunnerDiscoveryContext,
+  resolveRunnerConfigContext,
 } from './runner-config.js';
 import { createDefaultConfig } from '../load/io.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
@@ -348,5 +349,35 @@ describe('projectRunnerDiscoveryContext', () => {
           .credentialDomain,
       }),
     ).toBe(false);
+  });
+});
+
+describe('resolveRunnerConfigContext', () => {
+  it('keeps planner named implementer and intermediate sources in distinct slots', () => {
+    const planner = { kind: 'cli', tool: 'claude-code' } as const;
+    const implementer = { kind: 'cli', tool: 'codex' } as const;
+    const intermediate = {
+      kind: 'api',
+      provider: 'openrouter',
+      service: 'openrouter',
+      offering: 'payg',
+      apiBase: 'https://openrouter.ai/api/v1',
+      model: 'openrouter/model',
+    } as const;
+
+    expect(resolveRunnerConfigContext({ role: 'planner', runner: planner })).toEqual({
+      slot: { role: 'planner' },
+      runner: planner,
+    });
+    expect(
+      resolveRunnerConfigContext({ role: 'implementer', profile: 'fast', runner: implementer }),
+    ).toEqual({
+      slot: { role: 'implementer', profile: 'fast' },
+      runner: implementer,
+    });
+    expect(resolveRunnerConfigContext({ role: 'intermediate', runner: intermediate })).toEqual({
+      slot: { role: 'intermediate' },
+      runner: intermediate,
+    });
   });
 });

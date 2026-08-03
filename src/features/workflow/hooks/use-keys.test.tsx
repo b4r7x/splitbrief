@@ -215,8 +215,12 @@ describe('useWorkflowKeys', () => {
   it('attached Ctrl+D does not toggle the latest workflow diff', async () => {
     routerStore.init({
       screen: 'workflow',
-      feature: 'attached test',
-      attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'token' },
+      execution: {
+        kind: 'attached',
+        feature: 'attached test',
+        sessionId: 'attached-session',
+        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'token' },
+      },
     });
     const key = seedDiff();
     const ui = render(<Harness />);

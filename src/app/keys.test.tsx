@@ -4,7 +4,15 @@ import { useAppKeys } from './keys.js';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
+import {
+  parsePreparedConfig,
+  type PreparationOutcome,
+  type PreparedExecution,
+} from '../engine/runners/prepared-execution.js';
+import { createInitialState } from '../core/state/machine.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
 import { abortStore } from '../stores/workflow/abort.js';
@@ -18,10 +26,92 @@ import { approvalPromptStore, openApprovalPrompt } from '../stores/approval-prom
 import { costApprovalStore, openCostApprovalPrompt } from '../stores/cost-approval/prompt.js';
 import { editorStore } from '../stores/ui/editor.js';
 import { reviewStore } from '../stores/workflow/review.js';
+import { handleSessionSelect, sessionSelectStore } from '../stores/navigation/session-select.js';
+import { SessionPreparation } from './session-preparation.js';
 
 // Comfortably past the escape-debounce defer (DEFAULT_DELAY_MS in escape-debounce.ts)
 // so the deferred arm flushes without copying that module-private literal here.
 const PAST_DEBOUNCE_MS = 100;
+
+function localExecution(feature: string): { kind: 'local'; prepared: PreparedExecution } {
+  const projectDir = '/tmp/splitbrief-app-keys';
+  const preparationId = 'app-keys-preparation';
+  const sessionId = 'app-keys-session';
+  const active = {
+    version: 1 as const,
+    sessionId,
+    generation: '11111111-1111-4111-8111-111111111111',
+  };
+
+  return {
+    kind: 'local',
+    prepared: {
+      purpose: 'new-workflow',
+      config: parsePreparedConfig(
+        makeConfig({
+          planner: {
+            kind: 'api',
+            provider: 'anthropic',
+            model: 'test-planner',
+            apiBase: 'https://api.anthropic.com/v1',
+            apiKey: 'test-key',
+            contextLength: 32_768,
+          },
+        }),
+      ),
+      preparationId,
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [
+          {
+            id: 'runners',
+            title: 'Runners',
+            checks: [
+              { id: 'runner.planner', severity: 'ok', summary: 'Planner ready' },
+              {
+                id: 'runner.implementer.default',
+                severity: 'ok',
+                summary: 'Implementer ready',
+              },
+            ],
+          },
+        ],
+        metadata: {},
+      },
+      gates: [
+        {
+          kind: 'api',
+          slot: { role: 'planner' },
+          preparationId,
+          provider: 'anthropic',
+          endpointOrigin: 'https://api.anthropic.com',
+        },
+        {
+          kind: 'api',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          provider: 'ollama',
+          endpointOrigin: 'http://localhost:11434',
+        },
+      ],
+      session: {
+        kind: 'new',
+        ref: { projectDir, sessionId },
+        ownership: active,
+        active,
+      },
+      runtime: {
+        feature,
+        allowRepoRunners: false,
+        allowHooks: false,
+      },
+    },
+  };
+}
 
 function Harness({
   exit,
@@ -44,6 +134,11 @@ function Harness({
   );
 }
 
+function SessionPreparationKeysHarness({ exit }: { exit: () => void }) {
+  useAppKeys({ exit });
+  return <SessionPreparation />;
+}
+
 async function writeCtrlC(ui: { stdin: { write: (d: string) => void } }) {
   await flushEffects();
   ui.stdin.write('\x03');
@@ -64,7 +159,7 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     vi.setSystemTime(1000);
     resetAllStores();
-    routerStore.navigate({ to: 'workflow', feature: 'test' });
+    routerStore.navigate({ to: 'workflow', execution: localExecution('test') });
     lifecycleStore.__testReset({ phase: 'implementing' });
   });
 
@@ -218,8 +313,12 @@ describe('useAppKeys: Ctrl+C ladder', () => {
     routerStore.navigate({ to: 'home' });
     routerStore.navigate({
       to: 'workflow',
-      feature: 'test',
-      attach: { sockPath: '/tmp/sock', authToken: 'tok' },
+      execution: {
+        kind: 'attached',
+        feature: 'test',
+        sessionId: 'attached-session',
+        attach: { sockPath: '/tmp/sock', authToken: 'tok' },
+      },
     });
     const exit = vi.fn();
     const interruptWorkflow = vi.fn<() => InterruptResult>(() => 'none');
@@ -240,7 +339,7 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
     vi.setSystemTime(1000);
     resetAllStores();
-    routerStore.navigate({ to: 'workflow', feature: 'test' });
+    routerStore.navigate({ to: 'workflow', execution: localExecution('test') });
     lifecycleStore.__testReset({ phase: 'implementing' });
   });
 
@@ -450,6 +549,52 @@ describe('useAppKeys: ESC interrupt/cancel ladder', () => {
     ui.unmount();
   });
 
+  it('session preparation owns Escape and shortcuts while returning to its summary origin', async () => {
+    routerStore.navigate({
+      to: 'summary',
+      summary: makeSummary(),
+      status: 'complete',
+      sessionId: 'summary-session',
+    });
+    const exactSummaryRoute = routerStore.get();
+    const selected = makeSession({
+      id: 'resume-from-summary',
+      feature: 'resume from summary',
+      status: 'interrupted',
+      summary: null,
+    });
+    const resumeState = {
+      ...createInitialState(selected.feature),
+      phase: 'implementing' as const,
+    };
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    const selection = handleSessionSelect(selected, '/tmp/session-preparation-keys', {
+      loadState: () => resumeState,
+      prepareResume: () => pending.promise,
+    });
+    const exit = vi.fn();
+    const ui = renderFeature(<SessionPreparationKeysHarness exit={exit} />);
+    await tick();
+
+    expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
+    expect(ui.lastFrame() ?? '').toContain('Preparing your tools');
+
+    await writeKey(ui, '\x0b');
+    await tick();
+    expect(overlayStore.get().active).toBe('none');
+    expect(routerStore.get()).toBe(exactSummaryRoute);
+
+    await writeEsc(ui);
+    await tick();
+    expect(sessionSelectStore.get().preparation.kind).toBe('idle');
+    expect(routerStore.get()).toBe(exactSummaryRoute);
+    expect(exit).not.toHaveBeenCalled();
+
+    pending.resolve({ kind: 'aborted' });
+    await selection;
+    ui.unmount();
+  });
+
   it('ESC does not arm while an overlay is open (only closes the overlay)', async () => {
     overlayStore.open('settings');
     const exit = vi.fn();
@@ -567,8 +712,12 @@ describe('useAppKeys: keystroke binding', () => {
   it('Ctrl+, does not open local settings in an attached client', async () => {
     routerStore.navigate({
       to: 'workflow',
-      feature: 'attached feature',
-      attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'tok' },
+      execution: {
+        kind: 'attached',
+        feature: 'attached feature',
+        sessionId: 'attached-session',
+        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'tok' },
+      },
     });
     const exit = vi.fn();
     const ui = renderFeature(<Harness exit={exit} />);
@@ -724,7 +873,10 @@ describe('useAppKeys: suppressed while the inline briefs field editor owns input
 
   beforeEach(() => {
     resetAllStores();
-    routerStore.navigate({ to: 'workflow', feature: 'field-edit test' });
+    routerStore.navigate({
+      to: 'workflow',
+      execution: localExecution('field-edit test'),
+    });
     // The field editor is not an overlay: give a field session ownership of the live prompt by
     // matching its captured token to reviewStore.ownerToken (the CON-B ownership predicate).
     const token = reviewStore.setReviewFile('/tmp/TASKS.md');

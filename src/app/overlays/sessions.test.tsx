@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,6 +13,7 @@ import { routerStore } from '../../stores/navigation/router.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import type { Session } from '../../core/schemas/session.js';
+import { createInitialState } from '../../core/state/machine.js';
 import { SessionsPicker } from './sessions.js';
 import { flushEffects, tick } from '#testing/helpers/ink.js';
 
@@ -179,18 +180,53 @@ describe('SessionsPicker', () => {
     await flushEffects();
 
     instance.stdin.write('\r');
-    await tick(1);
-    await tick(1);
+    await vi.waitFor(() => {
+      const current = instance.lastFrame() ?? '';
+      expect(current).toContain('resume missing state');
+      expect(current).toContain('saved workflow state');
+    });
 
     const frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('resume missing state');
-    expect(frame).toContain('saved workflow state');
     expect(frame).not.toContain('Error:');
     expect(routerStore.get().screen).toBe('home');
     expect(overlayStore.get().active).toBe('sessions');
 
     instance.unmount();
     expect(sessionSelectStore.get().error).toBeNull();
+  });
+
+  it('reifies a rejected resume boundary without an unhandled event callback promise', async () => {
+    const session = makeSession({
+      id: 'sess-rejected-resume',
+      feature: 'resume rejected boundary',
+      status: 'interrupted',
+      summary: null,
+    });
+    writeSessionSummary(tmp, session);
+    overlayStore.open('sessions');
+    const instance = render(
+      <SessionsPicker
+        deps={{
+          loadState: () => ({ ...createInitialState(session.feature), phase: 'implementing' }),
+          prepareResume: async () => {
+            throw new Error('sessions overlay resume rejected');
+          },
+        }}
+      />,
+    );
+    await tick(1);
+    await flushEffects();
+
+    instance.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(sessionSelectStore.get().preparation).toMatchObject({
+        kind: 'failed',
+        error: expect.objectContaining({ message: 'sessions overlay resume rejected' }),
+      });
+    });
+    expect(routerStore.get().screen).toBe('home');
+    expect(overlayStore.get().active).toBe('none');
+    instance.unmount();
   });
 
   it('keeps long filter text visible at 80x18', async () => {
@@ -268,12 +304,14 @@ describe('SessionsPicker', () => {
     await flushEffects();
 
     instance.stdin.write('alpha-feature-filter');
-    await tick(1);
+    await vi.waitFor(() => {
+      const current = instance.lastFrame() ?? '';
+      expect(stripAnsiStyles(current)).toContain('Sessions · 1');
+      expect(current).toContain('alpha-feature');
+    });
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
-    expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
-    expect(frame).toContain('alpha-feature');
     expect(frame).toContain('navigate');
     expect(frame).not.toContain('No matching sessions');
     expect(frame).not.toContain('╭');

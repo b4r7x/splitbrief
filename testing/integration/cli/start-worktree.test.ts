@@ -193,7 +193,13 @@ describe('start command — worktree indicator passthrough', () => {
 
     await runStart(['--project', wtPath, 'implement X']);
 
-    expect(routerStore.get()).toMatchObject({ screen: 'workflow', worktreeName: 'my-feature' });
+    expect(routerStore.get()).toMatchObject({
+      screen: 'workflow',
+      execution: {
+        kind: 'local',
+        prepared: { runtime: { worktreeName: 'my-feature' } },
+      },
+    });
   });
 
   it('routes workflow without worktreeName when started in the base repository', async () => {
@@ -202,6 +208,11 @@ describe('start command — worktree indicator passthrough', () => {
 
     await runStart(['--project', tmp, 'implement X']);
 
-    expect(routerStore.get()).toMatchObject({ screen: 'workflow', worktreeName: undefined });
+    const route = routerStore.get();
+    expect(route).toMatchObject({ screen: 'workflow', execution: { kind: 'local' } });
+    if (route.screen !== 'workflow' || route.execution.kind !== 'local') {
+      throw new Error('Expected a prepared local workflow route');
+    }
+    expect(route.execution.prepared.runtime.worktreeName).toBeUndefined();
   });
 });

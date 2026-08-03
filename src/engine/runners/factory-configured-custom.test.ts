@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONFIRM_PHRASE } from '../../core/approval/types.js';
@@ -13,8 +13,18 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resolveCustomRunnerTrustFile } from './custom-trust.js';
-import { createImplementer, createPlanner } from './factory.js';
+import {
+  createImplementer as createPreparedImplementer,
+  createPlanner as createPreparedPlanner,
+} from './factory.js';
 import type { CustomRunnerRuntimePort } from './types.js';
+import type { PlannerFactoryOptions } from '../planners/types.js';
+import type { ImplementerFactoryOptions } from '../implementers/types.js';
+import { resolveConfiguredCustomRunner } from './configured-custom.js';
+import { prepareCustomRunnerAdmission } from './custom-admission.js';
+import { customRunnerSecurityPosture } from './custom-trust.js';
+import { customRunnerAdmissionError } from './trust.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 
 type CustomRunnerRole = 'planner' | 'implementer';
 type CustomCommandContract = 'output' | 'direct';
@@ -25,6 +35,81 @@ const configuredRoutes = [
   ['implementer', 'output'],
   ['implementer', 'direct'],
 ] as const;
+
+async function createPlanner(
+  config: Config,
+  initialSessionId: string | null | undefined,
+  options: PlannerFactoryOptions,
+) {
+  const runtime = options.customRuntime;
+  const runner = resolveConfiguredCustomRunner(config, 'planner');
+  if (runtime === undefined || runner === null)
+    throw new Error('Missing configured planner test input.');
+  const admission = await prepareCustomRunnerAdmission({
+    ...runtime.admission,
+    projectDir: runtime.authorizationProjectDir,
+    runner,
+    posture: customRunnerSecurityPosture('planner', runner.command.contract),
+    phase: 'planning',
+    authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('planner');
+  const preparationId = 'factory-configured-planner';
+  const slot = { role: 'planner' as const };
+  return createPreparedPlanner(config, {
+    ...options,
+    initialSessionId,
+    preparedConfig: config,
+    preparationId,
+    slot,
+    gates: [
+      {
+        kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+        slot,
+        preparationId,
+        command: { kind: 'configured-custom', invocation: admission.invocation },
+      },
+    ],
+  });
+}
+
+async function createImplementer(config: Config, options: ImplementerFactoryOptions) {
+  const runtime = options.customRuntime;
+  const runner = resolveConfiguredCustomRunner(config, 'implementer');
+  if (runtime === undefined || runner === null) {
+    throw new Error('Missing configured implementer test input.');
+  }
+  const admission = await prepareCustomRunnerAdmission({
+    ...runtime.admission,
+    projectDir: runtime.authorizationProjectDir,
+    runner,
+    posture: customRunnerSecurityPosture('implementer', runner.command.contract),
+    phase: 'implementing',
+    authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('implementer');
+  const preparationId = 'factory-configured-implementer';
+  const slot = {
+    role: 'implementer' as const,
+    profile: resolveImplementerProfiles(config).defaultProfile.name,
+  };
+  return createPreparedImplementer(config, {
+    ...options,
+    preparedConfig: config,
+    preparationId,
+    slot,
+    gates: [
+      {
+        kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+        slot,
+        preparationId,
+        command: { kind: 'configured-custom', invocation: admission.invocation },
+      },
+    ],
+  });
+}
 
 describe('configured custom runner factory behavior', () => {
   const fixtureDirs: string[] = [];
@@ -395,6 +480,31 @@ describe('configured custom runner factory behavior', () => {
     }
   });
 
+  it('passes prepared custom shell and agent admission through factories without prompting again', async () => {
+    const fixture = createFixture('prepared-admission-once');
+    const config = configuredFactoryBehaviorConfig({
+      role: 'planner',
+      contract: 'output',
+      sourceName: fixture.sourceName,
+      program: "process.stdout.write('prepared admission');",
+      legacyProgram: "process.stdout.write('legacy');",
+    });
+    const baseRuntime = factoryRuntime(fixture, 'interactive');
+    const approve = baseRuntime.admission.onTieredApproval;
+    if (approve === undefined) throw new Error('Expected interactive approval callback.');
+    const onTieredApproval = vi.fn(approve);
+    const runtime: CustomRunnerRuntimePort = {
+      ...baseRuntime,
+      admission: { ...baseRuntime.admission, onTieredApproval },
+    };
+
+    const planner = await createPlanner(config, undefined, { customRuntime: runtime });
+    await planner.review('first', fixture.projectDir, { onOutput: () => {} });
+    await planner.review('second', fixture.projectDir, { onOutput: () => {} });
+
+    expect(onTieredApproval).toHaveBeenCalledOnce();
+  });
+
   it.each(
     configuredRoutes,
   )('denies a configured %s %s child before it can start or fall back', async (role, contract) => {
@@ -419,32 +529,19 @@ describe('configured custom runner factory behavior', () => {
     expect(process.env[fixture.sourceName]).toBeUndefined();
 
     if (role === 'planner') {
-      const planner = await createPlanner(config, undefined, {
-        customRuntime: factoryRuntime(fixture, 'headless'),
-      });
-
       await expect(
-        planner.review('review the fixture', fixture.projectDir, {
-          onOutput: (chunk) => output.push(chunk),
+        createPlanner(config, undefined, {
+          customRuntime: factoryRuntime(fixture, 'headless'),
         }),
       ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
       expect(existsSync(join(fixture.projectDir, '.splitbrief-runner'))).toBe(false);
     } else {
-      const task = makeTask({ file: `src/denied-${contract}.ts` });
-      const implementer = await createImplementer(config, {
-        customRuntime: factoryRuntime(fixture, 'headless'),
-      });
-
-      const result = await implementer.implement({
-        task,
-        projectDir: fixture.projectDir,
-        config,
-        context: { ...defaultContext, dir: fixture.projectDir },
-        onOutput: (chunk) => output.push(chunk),
-      });
-
-      expect(result.success).toBe(false);
-      expect(existsSync(join(fixture.projectDir, task.file))).toBe(false);
+      await expect(
+        createImplementer(config, {
+          customRuntime: factoryRuntime(fixture, 'headless'),
+        }),
+      ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
+      expect(existsSync(join(fixture.projectDir, `src/denied-${contract}.ts`))).toBe(false);
     }
 
     expect(output).toEqual([]);

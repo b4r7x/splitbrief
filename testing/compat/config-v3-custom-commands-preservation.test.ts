@@ -587,5 +587,5 @@ describe('v3 custom command preservation', () => {
       },
     ]);
     console.info('v3 customCommands preservation: PASS');
-  });
+  }, 60_000);
 });

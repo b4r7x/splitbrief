@@ -19,14 +19,12 @@ import { CONFIG_FILE, SPLITBRIEF_DIR, LOCKFILE, STATE_FILE } from '../../src/cor
 import type { SpawnServerOptions, SpawnServerResult } from '../../src/engine/ipc/spawn-server.js';
 import { buildServerArgs } from '../../src/engine/ipc/spawn-server.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
-import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
-import type { Config } from '../../src/core/schemas/config.js';
-import type { CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
-import type { CliReadinessResult } from '../../src/core/schemas/readiness.js';
+import { prepareExecution } from '../../src/engine/runners/prepare-execution.js';
+import { sessionDir } from '../../src/core/paths.js';
 
 export const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<SpawnServerResult>>();
-export const runHeadlessMock = vi.fn<() => Promise<void>>();
-export const runRpcMock = vi.fn<() => Promise<void>>();
+export const runHeadlessMock = vi.fn<StartDeps['runHeadless']>();
+export const runRpcMock = vi.fn<StartDeps['runRpc']>();
 
 const initStoresMock: StartDeps['initStores'] = async () => {};
 export const renderCalls: Array<Parameters<StartDeps['renderApp']>[1]> = [];
@@ -35,31 +33,7 @@ const renderAppFake: StartDeps['renderApp'] = async (_app, options) => {
   renderCalls.push(options);
 };
 
-function configuredCliTools(config: Config): CliToolId[] {
-  const tools = new Set<CliToolId>();
-  if (config.planner.kind === 'cli') tools.add(config.planner.tool);
-  try {
-    for (const profile of resolveImplementerProfiles(config).profiles) {
-      if (profile.config.kind === 'cli') tools.add(profile.config.tool);
-    }
-  } catch {
-    // Invalid profile config is surfaced by config readiness, not this helper.
-  }
-  return [...tools];
-}
-
-const declaredCliReadiness = new Map<CliToolId, CliReadinessResult>();
-
-export const detectCliReadinessMock = vi.fn<NonNullable<StartDeps['detectCliReadiness']>>(
-  async ({ config }) => {
-    const results: CliReadinessResult[] = [];
-    for (const tool of configuredCliTools(config)) {
-      const declared = declaredCliReadiness.get(tool);
-      if (declared) results.push(declared);
-    }
-    return results;
-  },
-);
+export const prepareExecutionMock = vi.fn<typeof prepareExecution>(prepareExecution);
 
 export const fakeDeps: StartDeps = {
   spawnServer: spawnServerMock,
@@ -67,7 +41,7 @@ export const fakeDeps: StartDeps = {
   runRpc: runRpcMock as unknown as StartDeps['runRpc'],
   initStores: initStoresMock,
   renderApp: renderAppFake,
-  detectCliReadiness: detectCliReadinessMock,
+  prepareExecution: prepareExecutionMock,
 };
 
 let tmp = '';
@@ -84,18 +58,18 @@ export function setupStartCommandIntegration(): void {
     routerStore.init({ screen: 'home' });
     process.stdin.isTTY = true;
     renderCalls.length = 0;
-    declaredCliReadiness.clear();
     spawnServerMock.mockClear();
     runHeadlessMock.mockClear();
     runRpcMock.mockClear();
-    detectCliReadinessMock.mockClear();
+    prepareExecutionMock.mockClear();
     spawnServerMock.mockImplementation(async (opts: SpawnServerOptions) => {
-      mkdirSync(opts.sessionDir, { recursive: true });
+      const preparedSessionDir = sessionDir(opts.projectDir, opts.candidate.sessionId);
+      mkdirSync(preparedSessionDir, { recursive: true });
       writeFileSync(
-        join(opts.sessionDir, 'server-args.json'),
+        join(preparedSessionDir, 'server-args.json'),
         JSON.stringify(buildServerArgs(opts), null, 2),
       );
-      return { ok: true, pid: 1234, sessionId: opts.sessionId };
+      return { ok: true, pid: 1234, sessionId: opts.candidate.sessionId };
     });
     runHeadlessMock.mockResolvedValue(undefined);
     runRpcMock.mockResolvedValue(undefined);

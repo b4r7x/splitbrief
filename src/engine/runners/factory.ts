@@ -10,6 +10,142 @@ import { error } from '../../utils/error.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import { resolveConfiguredCustomRunner } from './configured-custom.js';
 import { runnerConfigError } from './errors.js';
+import { runnerGateFor } from './start-gate.js';
+import type {
+  PreparedConfig,
+  RunnerGate,
+  RunnerGateExpectation,
+  RunnerSlot,
+} from './prepared-execution.js';
+import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { resolveIntermediateRunner } from '../../core/config/accessors/intermediate-runner.js';
+
+export type RunnerFactoryAuthority = Readonly<{
+  preparedConfig: PreparedConfig;
+  preparationId: string;
+  gates: readonly RunnerGate[];
+  slot: RunnerSlot;
+}>;
+
+export type PlannerCreationOptions = PlannerFactoryOptions &
+  RunnerFactoryAuthority &
+  Readonly<{ initialSessionId?: string | null | undefined }>;
+export type ImplementerCreationOptions = ImplementerFactoryOptions &
+  RunnerFactoryAuthority &
+  Readonly<{ intermediateContextLength?: number | undefined }>;
+
+function requireFactoryAuthority(
+  config: Config,
+  options: RunnerFactoryAuthority | undefined,
+  role: 'planner' | 'implementer',
+): RunnerFactoryAuthority {
+  if (options === undefined) {
+    throw error('runner-gate-mismatch', `Runner gate does not match the prepared ${role} context.`);
+  }
+  if (role === 'planner' && options.slot.role !== 'planner') {
+    throw error('runner-gate-mismatch', 'Runner gate does not match the prepared planner context.');
+  }
+  if (role === 'implementer' && options.slot.role === 'planner') {
+    throw error(
+      'runner-gate-mismatch',
+      'Runner gate does not match the prepared implementer context.',
+    );
+  }
+  if (config !== options.preparedConfig) {
+    throw error(
+      'runner-gate-mismatch',
+      `Runner gate does not match the exact prepared ${role} configuration.`,
+    );
+  }
+  return options;
+}
+
+function implementerConfigForAuthority(authority: ImplementerCreationOptions): Config {
+  const config = authority.preparedConfig;
+  const slot = authority.slot;
+  if (slot.role === 'intermediate') {
+    const resolved = resolveIntermediateRunner(config, {
+      ...(authority.intermediateContextLength !== undefined && {
+        contextLength: authority.intermediateContextLength,
+      }),
+    });
+    if (resolved === null) {
+      throw error('runner-gate-mismatch', 'Prepared intermediate runner is unavailable.');
+    }
+    const intermediateConfig = { ...config, implementer: resolved.runner };
+    delete intermediateConfig.implementerProfiles;
+    return intermediateConfig;
+  }
+
+  const profile = resolveImplementerProfiles(config).profiles.find(
+    (candidate) => candidate.name === slot.profile,
+  );
+  if (profile === undefined) {
+    throw error(
+      'runner-gate-mismatch',
+      `Prepared implementer profile "${slot.profile}" is unavailable.`,
+    );
+  }
+  if (config.implementerProfiles === undefined) return config;
+  return {
+    ...config,
+    implementer: profile.config,
+    implementerProfiles: {
+      ...config.implementerProfiles,
+      default: profile.name,
+    },
+  };
+}
+
+function gateExpectation(
+  input: Readonly<{
+    runner: RunnerConfig;
+    slot: RunnerSlot;
+    preparationId: string;
+  }>,
+): RunnerGateExpectation {
+  const base = { slot: input.slot, preparationId: input.preparationId };
+  switch (input.runner.kind) {
+    case 'cli':
+      return { ...base, kind: 'cli', tool: input.runner.tool };
+    case 'api':
+      return {
+        ...base,
+        kind: 'api',
+        provider: input.runner.provider,
+        endpointOrigin: new URL(input.runner.apiBase).origin,
+      };
+    case 'agent-sdk':
+      return { ...base, kind: 'agent-sdk', provider: 'anthropic' };
+    case 'shell':
+      return { ...base, kind: 'shell', command: { kind: 'validated-config' } };
+    case 'agent':
+      return { ...base, kind: 'agent', command: { kind: 'validated-config' } };
+    default:
+      return assertNever(input.runner);
+  }
+}
+
+function configuredCommandGate(
+  authority: RunnerFactoryAuthority,
+  kind: 'shell' | 'agent',
+  definitionId: string,
+): Extract<RunnerGate, { kind: 'shell' | 'agent' }> {
+  const expected = {
+    slot: authority.slot,
+    preparationId: authority.preparationId,
+    command: { kind: 'configured-custom' as const, definitionId },
+  };
+  const gate = runnerGateFor(
+    authority.gates,
+    kind === 'shell' ? { ...expected, kind: 'shell' } : { ...expected, kind: 'agent' },
+  );
+  if ((gate.kind !== 'shell' && gate.kind !== 'agent') || gate.kind !== kind) {
+    throw error('runner-gate-mismatch', 'Configured runner gate is invalid.');
+  }
+  return gate;
+}
 
 function lazy<T>(load: () => Promise<T>): () => Promise<T> {
   let p: Promise<T> | undefined;
@@ -107,23 +243,39 @@ async function loadPlanner(
 
 export async function createPlanner(
   config: Config,
-  initialSessionId?: string | null,
-  options?: PlannerFactoryOptions,
+  options: PlannerCreationOptions,
 ): Promise<Planner> {
+  const authority = requireFactoryAuthority(config, options, 'planner');
   const configured = resolveConfiguredCustomRunner(config, 'planner');
   if (configured !== null) {
-    const runtime = options?.customRuntime;
+    const configuredKind = configured.command.contract === 'output' ? 'shell' : 'agent';
+    const gate = configuredCommandGate(authority, configuredKind, configured.command.id);
+    if (gate.command.kind !== 'configured-custom') {
+      throw error('runner-gate-mismatch', 'Configured planner gate is invalid.');
+    }
+    const runtime = options.customRuntime;
     if (runtime === undefined) {
       throw customRunnerFactoryError.runtimeUnavailable('planner');
     }
     const mod = await loadConfiguredCustomPlanner();
-    return mod.createConfiguredCustomPlanner(configured, runtime);
+    return mod.createConfiguredCustomPlanner(configured, runtime, gate.command.invocation);
   }
 
   if (config.planner.kind === 'cli') {
     assertCliPlannerTool(config.planner.tool);
   }
-  const planner = await loadPlanner(config, initialSessionId, options);
+  const gate = runnerGateFor(
+    authority.gates,
+    gateExpectation({
+      runner: config.planner,
+      slot: authority.slot,
+      preparationId: authority.preparationId,
+    }),
+  );
+  const planner = await loadPlanner(config, options.initialSessionId, {
+    ...options,
+    ...(gate.kind === 'cli' && { trustedCli: { tool: gate.tool, executable: gate.executable } }),
+  });
   if (config.planner.effort && !planner.capabilities.supportsEffort) {
     warnStderr(`planner-effort: dropped (${config.planner.kind} backend has no reasoning control)`);
   }
@@ -137,51 +289,70 @@ export async function createPlanner(
 
 export async function createImplementer(
   config: Config,
-  options?: ImplementerFactoryOptions,
+  options: ImplementerCreationOptions,
 ): Promise<Implementer> {
-  const configured = resolveConfiguredCustomRunner(config, 'implementer');
+  const authority = requireFactoryAuthority(config, options, 'implementer');
+  const effectiveConfig = implementerConfigForAuthority(options);
+  const configured = resolveConfiguredCustomRunner(effectiveConfig, 'implementer');
   if (configured !== null) {
-    const runtime = options?.customRuntime;
+    const configuredKind = configured.command.contract === 'output' ? 'shell' : 'agent';
+    const gate = configuredCommandGate(authority, configuredKind, configured.command.id);
+    if (gate.command.kind !== 'configured-custom') {
+      throw error('runner-gate-mismatch', 'Configured implementer gate is invalid.');
+    }
+    const runtime = options.customRuntime;
     if (runtime === undefined) {
       throw customRunnerFactoryError.runtimeUnavailable('implementer');
     }
     const mod = await loadConfiguredCustomImplementer();
     return mod.createConfiguredCustomImplementer({
-      runner: configured,
       runtime,
+      admission: gate.command.invocation,
       factoryOptions: options,
     });
   }
 
-  const kind = config.implementer.kind;
+  const kind = effectiveConfig.implementer.kind;
   if (kind === 'cli') {
-    assertCliImplementerTool(config.implementer.tool);
+    assertCliImplementerTool(effectiveConfig.implementer.tool);
   }
-  if (config.implementer.temperature !== undefined && kind !== 'api') {
+  if (effectiveConfig.implementer.temperature !== undefined && kind !== 'api') {
     warnStderr(
       `implementer-temperature: dropped (${kind} backend does not accept sampling temperature)`,
     );
   }
+  const gate = runnerGateFor(
+    authority.gates,
+    gateExpectation({
+      runner: effectiveConfig.implementer,
+      slot: authority.slot,
+      preparationId: authority.preparationId,
+    }),
+  );
+  const adapterOptions: ImplementerFactoryOptions = {
+    ...options,
+    ...(gate.kind === 'cli' && { trustedCli: { tool: gate.tool, executable: gate.executable } }),
+  };
   switch (kind) {
     case 'cli': {
       const mod = await loadCliImplementer();
-      return mod.createCliImplementer(config.implementer, options);
+      return mod.createCliImplementer(effectiveConfig.implementer, adapterOptions);
     }
     case 'api': {
       const mod = await loadApiImplementer();
-      return mod.createApiImplementer(config, options);
+      return mod.createApiImplementer(effectiveConfig, adapterOptions);
     }
     case 'shell': {
       const mod = await loadShellImplementer();
-      return mod.createShellImplementer(config, options);
+      return mod.createShellImplementer(effectiveConfig, adapterOptions);
     }
     case 'agent': {
       const mod = await loadAgentImplementer();
-      return mod.createAgentImplementer(config, options);
+      return mod.createAgentImplementer(effectiveConfig, adapterOptions);
     }
     case 'agent-sdk': {
       const mod = await loadAgentSdkImplementer();
-      return mod.createAgentSdkImplementer(config, options);
+      return mod.createAgentSdkImplementer(effectiveConfig, adapterOptions);
     }
     default:
       return assertNever(kind);

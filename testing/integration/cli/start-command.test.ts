@@ -67,7 +67,13 @@ describe('start command — shorthand invocation', () => {
     registerStartCommand(program, fakeDeps);
     await program.parseAsync(['node', 'splitbrief', 'implement auth flow', '--project', tmp]);
 
-    expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'implement auth flow' });
+    expect(routerStore.get()).toMatchObject({
+      screen: 'workflow',
+      execution: {
+        kind: 'local',
+        prepared: { runtime: { feature: 'implement auth flow' } },
+      },
+    });
   });
 
   it('does not hijack explicit subcommands registered on the same program', async () => {
@@ -102,7 +108,13 @@ describe('start command — shorthand invocation', () => {
       tmp,
     ]);
 
-    expect(routerStore.get()).toMatchObject({ screen: 'workflow', feature: 'build feature X' });
+    expect(routerStore.get()).toMatchObject({
+      screen: 'workflow',
+      execution: {
+        kind: 'local',
+        prepared: { runtime: { feature: 'build feature X' } },
+      },
+    });
   });
 });
 
@@ -129,11 +141,14 @@ describe('start command — @file syntax', () => {
       tmp,
     ]);
 
-    expect(routerStore.get()).toMatchObject({ screen: 'workflow' });
-    const route = routerStore.get() as { feature?: string; plannerContext?: string };
-    expect(route.feature ?? '').toContain('build it');
-    expect(route.feature ?? '').not.toContain('Context about the feature.');
-    expect(route.plannerContext ?? '').toContain('Context about the feature.');
+    const route = routerStore.get();
+    expect(route).toMatchObject({ screen: 'workflow', execution: { kind: 'local' } });
+    if (route.screen !== 'workflow' || route.execution.kind !== 'local') {
+      throw new Error('Expected a prepared local workflow route');
+    }
+    expect(route.execution.prepared.runtime.feature).toContain('build it');
+    expect(route.execution.prepared.runtime.feature).not.toContain('Context about the feature.');
+    expect(route.execution.prepared.runtime.plannerContext).toContain('Context about the feature.');
   });
 
   it('warns on stderr for missing @file without aborting', async () => {

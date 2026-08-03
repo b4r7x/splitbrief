@@ -5,7 +5,9 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { writeConfig } from '../../../src/core/config/load/io.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
@@ -24,6 +26,7 @@ const ENTER = '\r';
 const HOME_HINT = '/help · /settings · /skills · ctrl+r recent · ctrl+k commands';
 const FOCUS_BAR = '▌';
 const SESSION_FILTER_WAIT_MS = 5000;
+const workflowDeps = { runWorkflow: () => new Promise<never>(() => {}) };
 
 async function focusRecentSessions(ui: ReturnType<typeof renderFeature>): Promise<void> {
   await flushEffects();
@@ -63,7 +66,20 @@ describe('home navigation flow (through real App)', () => {
     forceUnicodeGlyphs();
     resetAllStores();
     projectDir = createTempDir('home-nav-flow');
-    configStore.__testReset({ config: makeConfig(), projectDir });
+    createTestGitRepo(projectDir);
+    const config = makeConfig({
+      planner: { kind: 'agent', command: 'splitbrief-test-missing-planner' },
+      implementer: {
+        kind: 'agent',
+        command: 'splitbrief-test-missing-implementer',
+        model: 'test-model',
+      },
+    });
+    writeConfig(projectDir, config);
+    configStore.__testReset({
+      config,
+      projectDir,
+    });
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
   });
 
@@ -76,19 +92,22 @@ describe('home navigation flow (through real App)', () => {
   it('Ctrl+R then Enter resumes the focused session on the workflow screen', async () => {
     seedInterruptedSession(projectDir, 'resume-me', 'resume feature', 1_700_000_500);
 
-    const ui = renderFeature(<App />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
     await tick(20);
 
     await focusRecentSessions(ui);
     await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
-      expect(routerStore.get().screen).toBe('workflow');
-    });
+      expect({ route: routerStore.get(), error: sessionSelectStore.get().error }).toMatchObject({
+        route: { screen: 'workflow' },
+        error: null,
+      });
+    }, SESSION_FILTER_WAIT_MS);
 
     const route = routerStore.get();
-    if (route.screen === 'workflow') {
-      expect(route.sessionId).toBe('resume-me');
+    if (route.screen === 'workflow' && route.execution.kind === 'local') {
+      expect(route.execution.prepared.session.ref.sessionId).toBe('resume-me');
     }
 
     ui.unmount();
@@ -107,7 +126,7 @@ describe('home navigation flow (through real App)', () => {
       }),
     );
 
-    const ui = renderFeature(<App />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
     await tick(20);
 
     await focusRecentSessions(ui);
@@ -137,7 +156,7 @@ describe('home navigation flow (through real App)', () => {
       seedInterruptedSession(projectDir, `focus-${i}`, `focus feature ${i}`, 1_700_000_000 + i);
     }
 
-    const ui = renderFeature(<App />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
     await tick(20);
 
     await focusRecentSessions(ui);
@@ -151,10 +170,10 @@ describe('home navigation flow (through real App)', () => {
 
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
-    });
+    }, SESSION_FILTER_WAIT_MS);
     const route = routerStore.get();
-    if (route.screen === 'workflow') {
-      expect(route.sessionId).toBe('focus-1');
+    if (route.screen === 'workflow' && route.execution.kind === 'local') {
+      expect(route.execution.prepared.session.ref.sessionId).toBe('focus-1');
     }
 
     ui.unmount();
@@ -165,7 +184,7 @@ describe('home navigation flow (through real App)', () => {
       seedInterruptedSession(projectDir, `focus-${i}`, `focus feature ${i}`, 1_700_000_000 + i);
     }
 
-    const ui = renderFeature(<App />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
     await tick(20);
 
     await focusRecentSessions(ui);
@@ -193,7 +212,7 @@ describe('home navigation flow (through real App)', () => {
     }
     inputHistoryStore.push('recalled prompt');
 
-    const ui = renderFeature(<App />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
     await flushEffects();
 
     ui.stdin.write(ARROW_UP);
@@ -217,7 +236,7 @@ describe('home navigation flow (through real App)', () => {
     );
     seedInterruptedSession(projectDir, 'recover-me', 'recover feature', 1_700_000_600);
 
-    const ui = renderFeature(<App />);
+    const ui = renderFeature(<App workflowDeps={workflowDeps} />);
     await tick(20);
 
     await focusRecentSessions(ui);
@@ -240,10 +259,10 @@ describe('home navigation flow (through real App)', () => {
 
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
-    });
+    }, SESSION_FILTER_WAIT_MS);
     const route = routerStore.get();
-    if (route.screen === 'workflow') {
-      expect(route.sessionId).toBe('recover-me');
+    if (route.screen === 'workflow' && route.execution.kind === 'local') {
+      expect(route.execution.prepared.session.ref.sessionId).toBe('recover-me');
     }
 
     ui.unmount();

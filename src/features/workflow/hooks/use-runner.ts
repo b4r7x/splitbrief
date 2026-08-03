@@ -1,5 +1,4 @@
 import { useRef, useEffect, useEffectEvent, useState } from 'react';
-import type { Config } from '../../../core/schemas/config.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -27,7 +26,7 @@ import {
 import { addTuiEvent, createTuiSink } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
 import type { StreamingSink } from '../../../engine/orchestrator/task/streaming-feed.js';
-import type { CliStartGates } from '../../../engine/runners/start-gate.js';
+import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import {
   createAbortHandlerScope,
   setCancelHandler,
@@ -40,8 +39,7 @@ import {
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { closeCostApprovalPrompt } from '../../../stores/cost-approval/prompt.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { generateSessionId, readActive } from '../../../core/sessions/lifecycle.js';
-import { configForSessionTranscriptPolicy, readSession } from '../../../core/sessions/io.js';
+import { readSession } from '../../../core/sessions/io.js';
 import { transition } from '../../../core/state/machine.js';
 import { isResumable } from '../../../core/phases.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -61,19 +59,11 @@ function isWorkflowAborted(controller: AbortController, ref: { current: boolean 
 }
 
 interface UseWorkflowRunnerOptions {
-  feature: string;
-  plannerContext?: string | undefined;
-  projectDir: string;
-  config: Config;
+  prepared?: PreparedExecution | undefined;
   onComplete: (completion: WorkflowCompletion) => void;
-  initialResumeState?: WorkflowState | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
-  sessionId?: string | undefined;
-  allowRepoRunners?: boolean | undefined;
-  enabled?: boolean | undefined;
   runWorkflow?: RunWorkflowFn | undefined;
-  trustedCliGates?: CliStartGates | undefined;
 }
 
 export interface WorkflowCompletion {
@@ -83,12 +73,12 @@ export interface WorkflowCompletion {
 }
 
 interface InlineResume {
-  feature: string;
+  prepared: PreparedExecution;
   state: WorkflowState;
 }
 
 interface PendingRewind {
-  feature: string;
+  prepared: PreparedExecution;
   event: EngineEvent;
   feedback: string | undefined;
 }
@@ -100,34 +90,30 @@ interface UseWorkflowRunnerResult {
 }
 
 export function useWorkflowRunner({
-  feature,
-  plannerContext,
-  projectDir,
-  config,
+  prepared,
   onComplete,
-  initialResumeState,
   selectedSkills,
   inputMode,
-  sessionId: initialSessionId,
-  allowRepoRunners = false,
-  enabled = true,
   runWorkflow: runWorkflowFn = runWorkflow,
-  trustedCliGates,
 }: UseWorkflowRunnerOptions): UseWorkflowRunnerResult {
   const abortedRef = useRef(false);
   const pendingRewindRef = useRef<PendingRewind | null>(null);
-  const sessionIdRef = useRef<string | undefined>(initialSessionId);
-  const runFeatureRef = useRef(feature);
   const [startedAt] = useState(() => nowIso());
   const [runId, setRunId] = useState(0);
   const [inlineResume, setInlineResume] = useState<InlineResume | undefined>(undefined);
 
-  const resumeState = inlineResume?.feature === feature ? inlineResume.state : initialResumeState;
+  const resumeState =
+    inlineResume !== undefined && inlineResume.prepared === prepared
+      ? inlineResume.state
+      : prepared?.runtime.resumeState;
 
   const buildCallbacks = buildPromptCallbacks();
   const recoveryDriverFactory = createRecoveryDriver();
 
   const startWorkflow = useEffectEvent(async (controller: AbortController) => {
+    if (prepared === undefined) return;
+    const { session, config } = prepared;
+    const { sessionId } = session.ref;
     // A fresh abort-handler scope per run: a superseded run's late pops (its
     // aborted body settles after the rewind cleanup) drain its own scope and
     // cannot steal this run's live handler.
@@ -140,33 +126,17 @@ export function useWorkflowRunner({
     let stateForRun = resumeState;
     const pendingRewind = pendingRewindRef.current;
     const rewindFeedbackForRun =
-      pendingRewind?.feature === feature ? pendingRewind.feedback : undefined;
+      pendingRewind?.prepared === prepared ? pendingRewind.feedback : undefined;
     pendingRewindRef.current = null;
-    if (initialSessionId) sessionIdRef.current = initialSessionId;
-    const pendingRecoverySessionId = stateForRun?.pendingRecovery
-      ? (readActive(projectDir) ?? undefined)
-      : undefined;
-    const sessionIdForRun =
-      sessionIdRef.current ??
-      pendingRecoverySessionId ??
-      generateSessionId(projectDir, feature, new Date(), {
-        persistTranscript: config.workflow.persistTranscript,
-      });
-    sessionIdRef.current = sessionIdForRun;
-    let activeSessionId = sessionIdForRun;
     let recoveryPromptAlreadyPublished = false;
-
-    function activeConfig(): Config {
-      return configForSessionTranscriptPolicy(config, { projectDir, sessionId: activeSessionId });
-    }
 
     resetWorkflow(stateForRun);
     resetMarkdownConversationRowsCache();
     resetConversationRowsProjectionCache();
     resetEventBlockCache();
-    if (pendingRewind?.feature === feature) {
+    if (pendingRewind?.prepared === prepared) {
       addTuiEvent(pendingRewind.event, {
-        persistTranscript: activeConfig().workflow.persistTranscript,
+        persistTranscript: config.workflow.persistTranscript,
       });
     }
     conversationScrollStore.reset();
@@ -176,8 +146,7 @@ export function useWorkflowRunner({
     });
     setRewindHandler((request) => {
       inputMode.resetMode();
-      const ref = { projectDir, sessionId: activeSessionId };
-      const effectiveConfig = activeConfig();
+      const ref = session.ref;
       const current = loadState(ref);
       if (!current) return;
 
@@ -185,7 +154,7 @@ export function useWorkflowRunner({
         request,
         ref,
         state: current,
-        persistTranscript: effectiveConfig.workflow.persistTranscript,
+        persistTranscript: config.workflow.persistTranscript,
       });
       let next = transition(current, persistedAction);
       if (request.target === 'task' && next.pendingRecovery?.taskId === request.taskId) {
@@ -193,7 +162,7 @@ export function useWorkflowRunner({
       }
       saveState(ref, next);
       pendingRewindRef.current = {
-        feature,
+        prepared,
         event,
         feedback:
           action.type === 'REWIND_TO_SPEC' || action.type === 'REWIND_TO_PLAN'
@@ -201,7 +170,7 @@ export function useWorkflowRunner({
             : undefined,
       };
       controller.abort(WORKFLOW_REWIND_ABORT_REASON);
-      setInlineResume({ feature, state: next });
+      setInlineResume({ prepared, state: next });
       setRunId((id) => id + 1);
     });
 
@@ -209,18 +178,15 @@ export function useWorkflowRunner({
       let retryProfileOverride: string | undefined;
       let retryProfileOverrideTaskId: TaskId | undefined;
       while (!isWorkflowAborted(controller, abortedRef)) {
-        const effectiveConfig = activeConfig();
         const promptPendingRecovery = recoveryDriverFactory({
-          projectDir,
-          config: effectiveConfig,
+          prepared,
           inputMode,
           abortedRef,
-          setInlineResume: (state) => setInlineResume({ feature, state }),
+          setInlineResume: (state) => setInlineResume({ prepared, state }),
         });
         if (stateForRun?.pendingRecovery) {
           const recovery = await promptPendingRecovery({
             state: stateForRun,
-            activeSessionId,
             controller,
             republishPrompt: !recoveryPromptAlreadyPublished,
           });
@@ -239,14 +205,10 @@ export function useWorkflowRunner({
 
         const detectedContextLength = configStore.getDetectedContextLength();
         const summary = await runWorkflowFn({
-          feature,
-          plannerContext,
-          projectDir,
-          config: effectiveConfig,
-          allowRepoRunners,
+          prepared,
           getApprovalEnabled: () => configStore.get().config?.approval?.enabled !== false,
           sinks,
-          tuiSink: createTuiSink({ persistTranscript: effectiveConfig.workflow.persistTranscript }),
+          tuiSink: createTuiSink({ persistTranscript: config.workflow.persistTranscript }),
           modelCache: modelCacheStore,
           drainPendingAttachments: () => attachmentsStore.drain(),
           streamingSink: storeStreamingSink,
@@ -255,13 +217,10 @@ export function useWorkflowRunner({
             inputMode,
             abortedRef,
             controller,
-            onComplete: (summary) =>
-              onComplete({ summary, sessionId: activeSessionId, status: 'complete' }),
+            onComplete: (summary) => onComplete({ summary, sessionId, status: 'complete' }),
           }),
           savedState: stateForRun,
           selectedSkills,
-          sessionId: activeSessionId,
-          trustedCliGates,
           ...(rewindFeedbackForRun !== undefined && { rewindFeedback: rewindFeedbackForRun }),
           ...(detectedContextLength !== undefined && { detectedContextLength }),
           ...(retryProfileOverride !== undefined && { retryProfileOverride }),
@@ -272,20 +231,19 @@ export function useWorkflowRunner({
 
         if (isWorkflowAborted(controller, abortedRef)) return;
 
-        const session = readSession({ projectDir, sessionId: activeSessionId });
-        if (session?.status === 'failed') {
-          onComplete({ summary, sessionId: activeSessionId, status: 'failed' });
+        const persistedSession = readSession(session.ref);
+        if (persistedSession?.status === 'failed') {
+          onComplete({ summary, sessionId, status: 'failed' });
           return;
         }
 
-        const savedSessionId = activeSessionId;
-        const saved = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
+        const saved = loadState(session.ref);
 
         // A failed final-review gate returns without onComplete and leaves the phase at
         // 'final-review' (a LIVE_PHASE). Drive the screen to the terminal summary view so
         // the user is not stranded on a live-looking workflow screen.
         if (!saved?.pendingRecovery && saved?.phase === 'final-review') {
-          onComplete({ summary, sessionId: savedSessionId, status: 'interrupted' });
+          onComplete({ summary, sessionId, status: 'interrupted' });
           return;
         }
         if (!saved?.pendingRecovery) {
@@ -296,15 +254,13 @@ export function useWorkflowRunner({
           // Enter-retry promise cannot be kept here; drive to the terminal
           // summary view instead of leaving a dead workflow screen.
           if (lifecycleStore.get().status === 'interrupted') {
-            onComplete({ summary, sessionId: savedSessionId, status: 'interrupted' });
+            onComplete({ summary, sessionId, status: 'interrupted' });
           }
           return;
         }
 
-        activeSessionId = savedSessionId;
-        sessionIdRef.current = savedSessionId;
         stateForRun = saved;
-        setInlineResume({ feature, state: saved });
+        setInlineResume({ prepared, state: saved });
         recoveryPromptAlreadyPublished = true;
       }
     } catch (err) {
@@ -316,22 +272,14 @@ export function useWorkflowRunner({
             phase: lifecycleStore.get().phase,
             message: toErrorMessage(err),
           },
-          { persistTranscript: activeConfig().workflow.persistTranscript },
+          { persistTranscript: config.workflow.persistTranscript },
         );
       }
     }
   });
 
   useEffect(() => {
-    if (!enabled) return undefined;
-
-    if (runFeatureRef.current !== feature) {
-      runFeatureRef.current = feature;
-      setInlineResume((resume) => (resume?.feature === feature ? resume : undefined));
-      if (initialSessionId === undefined) {
-        sessionIdRef.current = undefined;
-      }
-    }
+    if (prepared === undefined) return undefined;
 
     abortedRef.current = false;
     const controller = new AbortController();
@@ -344,15 +292,14 @@ export function useWorkflowRunner({
       closeApprovalPrompt();
       closeCostApprovalPrompt({ approved: false });
     };
-    // config is intentionally excluded from the dep array: config changes mid-workflow
-    // should NOT restart the workflow. The latest config is captured via useEffectEvent
-    // when startWorkflow fires.
-  }, [enabled, feature, projectDir, runId]);
+  }, [prepared, runId]);
 
   const handleResume = (injectedText?: string) => {
-    const sessionId = sessionIdRef.current ?? readActive(projectDir);
-    const saved = sessionId ? loadState({ projectDir, sessionId }) : null;
-    if (!saved || !sessionId) {
+    if (prepared === undefined) return;
+    const { session, config } = prepared;
+    const { projectDir, sessionId } = session.ref;
+    const saved = loadState(session.ref);
+    if (!saved) {
       feedbackStore.setError('No saved state to resume. Press esc to return home.');
       return;
     }
@@ -362,9 +309,7 @@ export function useWorkflowRunner({
       );
       return;
     }
-    sessionIdRef.current = sessionId;
-    const effectiveConfig = configForSessionTranscriptPolicy(config, { projectDir, sessionId });
-    const persistTranscript = effectiveConfig.workflow.persistTranscript;
+    const persistTranscript = config.workflow.persistTranscript;
     const text = injectedText?.trim();
     let next = saved;
     if (text) {
@@ -390,13 +335,13 @@ export function useWorkflowRunner({
       next = queued.state;
       if (queued.result.status === 'rejected') {
         feedbackStore.setError(queued.result.message);
-        setInlineResume({ feature, state: next });
+        setInlineResume({ prepared, state: next });
         return;
       }
     }
-    setInlineResume({ feature, state: next });
+    setInlineResume({ prepared, state: next });
     setRunId((id) => id + 1);
   };
 
-  return { startedAt, sessionId: sessionIdRef.current, handleResume };
+  return { startedAt, sessionId: prepared?.session.ref.sessionId, handleResume };
 }

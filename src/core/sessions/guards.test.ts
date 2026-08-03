@@ -2,7 +2,12 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { clearStaleSession } from './guards.js';
-import { writeActive } from './lifecycle.js';
+import {
+  readActiveRecord,
+  withSessionMutationLock,
+  writeActive,
+  writeActiveReceiptLocked,
+} from './lifecycle.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { activeFile, sessionDir, STATE_FILE, SPLITBRIEF_DIR, LOCKFILE } from '../paths.js';
@@ -54,6 +59,22 @@ describe('clearStaleSession', () => {
     clearStaleSession(dir);
 
     expect(existsSync(activeFile(dir))).toBe(false);
+  });
+
+  it('clears a stale v1 pointer through its exact active receipt', () => {
+    const dir = makeTmp();
+    const ref = { projectDir: dir, sessionId: '2026-04-18-prepared-old' };
+    const receipt = {
+      version: 1 as const,
+      sessionId: ref.sessionId,
+      generation: '33333333-3333-4333-8333-333333333333',
+    };
+    writeState(dir, ref.sessionId, 'complete');
+    withSessionMutationLock(dir, () => writeActiveReceiptLocked(ref, receipt));
+
+    clearStaleSession(dir);
+
+    expect(readActiveRecord(dir)).toBeNull();
   });
 
   it('preserves an in-progress active pointer when the session lockfile process is live', () => {

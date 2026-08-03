@@ -3,10 +3,9 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import { defaultApprovalConfig } from '../../../core/schemas/config.js';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { Planner } from '../../../engine/planners/types.js';
 import type { Implementer } from '../../../engine/implementers/types.js';
-import type { CliStartGates } from '../../../engine/runners/start-gate.js';
+import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
 import type { ClearQueueHandler, QueueHandler } from '../../../engine/orchestrator/types.js';
 import {
   runWorkflow,
@@ -14,13 +13,11 @@ import {
 } from '../../../engine/orchestrator/run/workflow.js';
 import type { RunWorkflowOptions } from '../../../engine/orchestrator/run/init.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { readActive } from '../../../core/sessions/lifecycle.js';
-import { configForSessionTranscriptPolicy } from '../../../core/sessions/io.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { eventPhase, isInfrastructurePhaseEvent } from '../../../core/event-phase.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
-import { resolveRunConfigWithBase } from '../../build-overrides.js';
+import { resolveRunConfigWithBase, type ResolvedRunConfig } from '../../build-overrides.js';
 import { installTerminalOutputErrorGuard } from '../../../lib/terminal/control.js';
 import { createApprovalGate, createGate } from '../gates.js';
 import { createCommandReader } from '../reader.js';
@@ -42,25 +39,15 @@ export interface RunRpcDeps {
 }
 
 export interface RunRpcOptions {
-  feature: string;
-  projectDir: string;
-  opts: WorkflowOpts;
-  savedState?: WorkflowState | undefined;
-  sessionId?: string | undefined;
+  prepared: PreparedExecution;
   planner?: Planner | undefined;
   implementer?: Implementer | undefined;
-  plannerContext?: string | undefined;
-  trustedCliGates?: CliStartGates | undefined;
   deps?: RunRpcDeps | undefined;
 }
 
 const rpcShutdownError = {
   shuttingDown: (reason: string) => error('rpc-shutting-down', reason, { reason }),
 } as const;
-
-function currentSessionId(projectDir: string, sessionId: string | undefined): string | undefined {
-  return sessionId ?? readActive(projectDir) ?? undefined;
-}
 
 function activeTurnGateError(reason: unknown): Error {
   const reasonText = String(reason ?? 'aborted');
@@ -70,36 +57,62 @@ function activeTurnGateError(reason: unknown): Error {
   return rpcShutdownError.shuttingDown(reasonText);
 }
 
-export async function runRpc(options: RunRpcOptions): Promise<void> {
-  const {
-    feature,
-    projectDir,
-    opts,
-    savedState,
-    sessionId,
-    planner,
-    implementer,
-    plannerContext,
-    trustedCliGates,
-    deps = {},
-  } = options;
-  installTerminalOutputErrorGuard();
-  let resolvedConfig = resolveRunConfigWithBase({ projectDir, opts });
-  let sessionApprovalEnabled = resolvedConfig.config.approval?.enabled !== false;
-  let rpcClosed = false;
-  let activeSessionId = currentSessionId(projectDir, sessionId);
-
-  function activeConfig() {
-    return configForSessionTranscriptPolicy(
-      resolvedConfig.config,
-      activeSessionId === undefined ? undefined : { projectDir, sessionId: activeSessionId },
-    );
+function preparedRunConfig(
+  prepared: PreparedExecution,
+  loadPersistence: () => ResolvedRunConfig,
+): ResolvedRunConfig {
+  let persistence: ResolvedRunConfig | undefined;
+  try {
+    persistence = loadPersistence();
+  } catch {
+    persistence = undefined;
   }
+  const getPersistence = (): ResolvedRunConfig => {
+    persistence ??= loadPersistence();
+    return persistence;
+  };
+  return {
+    config: prepared.config,
+    get persistedConfig() {
+      return getPersistence().persistedConfig;
+    },
+    get persistenceSnapshot() {
+      return getPersistence().persistenceSnapshot;
+    },
+  };
+}
+
+function runConfigWithEffectiveConfig(
+  current: ResolvedRunConfig,
+  config: ResolvedRunConfig['config'],
+): ResolvedRunConfig {
+  return {
+    config,
+    get persistedConfig() {
+      return current.persistedConfig;
+    },
+    get persistenceSnapshot() {
+      return current.persistenceSnapshot;
+    },
+  };
+}
+
+export async function runRpc(options: RunRpcOptions): Promise<void> {
+  const { prepared, planner, implementer, deps = {} } = options;
+  const projectDir = prepared.session.ref.projectDir;
+  const sessionId = prepared.session.ref.sessionId;
+  installTerminalOutputErrorGuard();
+  let resolvedConfig = preparedRunConfig(prepared, () =>
+    resolveRunConfigWithBase({ projectDir, opts: {} }),
+  );
+  let sessionApprovalEnabled = prepared.config.approval?.enabled !== false;
+  let rpcClosed = false;
+  let activeSessionId = sessionId;
 
   const writer = createResponseWriter({
     stream: deps.output ?? process.stdout,
     onClose: (reason) => shutdownRpc(reason),
-    getPersistTranscript: () => activeConfig().workflow.persistTranscript,
+    getPersistTranscript: () => prepared.config.workflow.persistTranscript,
   });
 
   const bus = createEventBus();
@@ -108,7 +121,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   const recoveryGate = createGate<string>();
   const transportController = new AbortController();
   const runWorkflowImpl = deps.runWorkflow ?? runWorkflow;
-  let currentPhase: Phase = savedState?.phase ?? 'idle';
+  let currentPhase: Phase = prepared.runtime.resumeState?.phase ?? 'idle';
   let queueHandler: QueueHandler | null = null;
   let clearQueueHandler: ClearQueueHandler | null = null;
   let abortTurnHandler: (() => void) | null = null;
@@ -147,12 +160,10 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   });
 
   const readCurrentState = (): WorkflowState | null => {
-    const id = activeSessionId ?? currentSessionId(projectDir, sessionId);
-    return id ? loadState({ projectDir, sessionId: id }) : null;
+    return loadState({ projectDir, sessionId: activeSessionId });
   };
 
-  const resolveSessionId = (): string | undefined =>
-    activeSessionId ?? currentSessionId(projectDir, sessionId);
+  const resolveSessionId = (): string => activeSessionId;
 
   const saveBriefDraft = createRpcBriefReviewDraftSaver({
     projectDir,
@@ -185,7 +196,8 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       activeSessionId = id;
     },
     readCurrentState,
-    activeConfig,
+    executionConfig: () => prepared.config,
+    active: prepared.session.active,
     bus,
     recoveryGate,
     writer,
@@ -200,6 +212,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   let rewindFeedback: string | undefined;
   const handleCommand = createCommandHandler({
     projectDir,
+    getPreparedExecution: () => prepared,
     getSessionId: () => activeSessionId,
     getState: readCurrentState,
     getRunConfig: () => resolvedConfig,
@@ -216,9 +229,9 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
               },
             };
     },
-    reloadRunConfig: () => resolveRunConfigWithBase({ projectDir, opts }),
+    reloadRunConfig: () => resolveRunConfigWithBase({ projectDir, opts: {} }),
     setEffectiveConfig: (config) => {
-      resolvedConfig = { ...resolvedConfig, config };
+      resolvedConfig = runConfigWithEffectiveConfig(resolvedConfig, config);
     },
     getApprovalEnabled: () => sessionApprovalEnabled,
     setApprovalEnabled: (enabled) => {
@@ -250,7 +263,7 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
   });
 
   try {
-    let stateForRun = savedState;
+    let stateForRun = prepared.runtime.resumeState;
     let retryProfileOverride: string | undefined;
     let retryProfileOverrideTaskId: TaskId | undefined;
     while (!transportController.signal.aborted) {
@@ -269,21 +282,14 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       });
       const latestState = readCurrentState();
       if (latestState) stateForRun = latestState;
-      const effectiveConfig = activeConfig();
-
       const turnController = new AbortController();
       activeTurnController = turnController;
       const rewindFeedbackForRun = rewindFeedback;
       rewindFeedback = undefined;
       await runWorkflowImpl({
-        feature,
-        plannerContext,
-        projectDir,
-        config: effectiveConfig,
+        prepared,
         getApprovalEnabled: () => sessionApprovalEnabled,
         eventBus: bus,
-        allowHooks: opts.allowHooks ?? false,
-        allowRepoRunners: opts.allowRepoRunners ?? false,
         sinks: {
           setAbortHandler: (handler) => {
             abortTurnHandler = handler;
@@ -300,10 +306,8 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
         signal: turnController.signal,
         callbacks,
         savedState: stateForRun,
-        sessionId: activeSessionId,
         _planner: planner,
         _implementer: implementer,
-        trustedCliGates,
         ...(rewindFeedbackForRun !== undefined && { rewindFeedback: rewindFeedbackForRun }),
         ...(retryProfileOverride !== undefined && { retryProfileOverride }),
         ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
@@ -313,10 +317,8 @@ export async function runRpc(options: RunRpcOptions): Promise<void> {
       retryProfileOverrideTaskId = undefined;
 
       if (transportController.signal.aborted) return;
-      const savedSessionId = activeSessionId ?? readActive(projectDir) ?? undefined;
-      const state = savedSessionId ? loadState({ projectDir, sessionId: savedSessionId }) : null;
+      const state = loadState({ projectDir, sessionId: activeSessionId });
       if (!state?.pendingRecovery && !state?.rewindPending) return;
-      activeSessionId = savedSessionId;
       stateForRun = state;
     }
   } catch (err) {

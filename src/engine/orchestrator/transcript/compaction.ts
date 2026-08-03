@@ -7,7 +7,6 @@ import {
 } from '../../../core/sessions/compaction.js';
 import { sessionDir } from '../../../core/paths.js';
 import { createPlanner } from '../../runners/factory.js';
-import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import type { Planner, PlannerSummaryMessage } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
@@ -22,6 +21,7 @@ import {
 import type { RunnerCallEvent } from '../../calls/types.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import type { RunnerGate } from '../../runners/prepared-execution.js';
 
 const MIN_COMPACTION_KEEP_RECENT = 1;
 
@@ -86,6 +86,19 @@ export type ResumeCompactionResult = TranscriptCompactionResult & {
   usage: TokenDelta | null;
 };
 
+function hasPreparedConfiguredPlanner(
+  gates: readonly RunnerGate[],
+  preparationId: string,
+): boolean {
+  return gates.some(
+    (gate) =>
+      gate.preparationId === preparationId &&
+      gate.slot.role === 'planner' &&
+      (gate.kind === 'shell' || gate.kind === 'agent') &&
+      gate.command.kind === 'configured-custom',
+  );
+}
+
 export async function compactResumeTranscript(opts: {
   projectDir: string;
   sessionId: string;
@@ -119,13 +132,20 @@ export async function compactResumeTranscript(opts: {
 export async function performManualCompaction(opts: {
   config: Config;
   ref: SessionRef;
+  preparationId: string;
+  gates: readonly RunnerGate[];
 }): Promise<CompactTranscriptResult> {
   const { config, ref } = opts;
   const plannerName = getRunnerDisplayName(config.planner);
-  if (resolveConfiguredCustomRunner(config, 'planner') !== null) {
+  if (hasPreparedConfiguredPlanner(opts.gates, opts.preparationId)) {
     return { status: 'unsupported', plannerName };
   }
-  const planner = await createPlanner(config);
+  const planner = await createPlanner(config, {
+    preparedConfig: config,
+    preparationId: opts.preparationId,
+    gates: opts.gates,
+    slot: { role: 'planner' },
+  });
   if (planner.capabilities.supportsSelfSummarisation !== true) {
     return { status: 'unsupported', plannerName };
   }

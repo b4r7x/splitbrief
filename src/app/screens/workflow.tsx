@@ -9,11 +9,8 @@ import type { Focus } from '../../stores/ui/focus.js';
 import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
 import { CostApprovalPromptConnected } from '../../features/workflow/components/cost-approval-prompt.js';
 import { QuestionPrompt } from '../../features/workflow/components/question-prompt.js';
-import { ReadinessPanel } from '../../features/workflow/components/readiness-panel.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { useTheme } from '../../components/theme.js';
 import { Divider } from '../../features/workflow/components/divider.js';
-import { Spinner } from '../../features/workflow/components/spinner.js';
 import { WorkflowBody } from '../../features/workflow/components/body.js';
 import { WorkflowFooter, WorkflowHeader } from '../../features/workflow/components/chrome.js';
 import {
@@ -57,7 +54,6 @@ export function WorkflowScreen({
   canCopyFocused,
   deps,
 }: WorkflowScreenProps) {
-  const t = useTheme();
   const [input, terminal] = useStores(inputHeightStore, terminalSizeStore);
   const { cols, rows, isSmall } = terminal;
   const inputRows = input.rows;
@@ -143,20 +139,6 @@ export function WorkflowScreen({
     model.inputMode.mode === 'review'
       ? getWorkflowReviewColumn({ cols, sidebarVisible, isSmall })
       : undefined;
-
-  if (!model.readinessLoaded) {
-    return (
-      <ScreenShell>
-        <Box paddingX={2}>
-          <Spinner label="Checking readiness…" color={t.textDim} />
-        </Box>
-      </ScreenShell>
-    );
-  }
-
-  if (model.readinessBlocked && model.readiness !== undefined) {
-    return <ReadinessPanel report={model.readiness} onOpenFix={model.onOpenReadinessFix} />;
-  }
 
   return (
     <ScreenShell

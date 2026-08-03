@@ -14,13 +14,19 @@ import {
   type CliToolDetection,
   type ProviderDetection,
 } from '../../core/discovery/detection.js';
+import type { ActiveRunnerRole } from '../../core/config/accessors/active-runner.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
 import { getSplitbriefPath, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CliToolIdSchema } from '../../core/schemas/enums.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1_000;
-const CACHE_VERSION = 3;
+const DETECTION_CACHE_VERSION = 3;
 const MAX_CACHE_ENTRIES = 100;
+// The generated key embeds a percent-encoded project path plus two runner
+// contexts; a PATH_MAX-sized path alone can expand beyond 12 KiB.
+const MAX_CACHE_CONTEXT_KEY_LENGTH = 16 * 1_024;
 const CACHE_RELATIVE_PATH = join(SPLITBRIEF_DIR, CACHE_FILENAME);
 const LEGACY_CONTEXT_KEY = 'legacy-detection-cache';
 
@@ -46,7 +52,7 @@ function hasPrivateContextIdentifier(value: string): boolean {
 const CacheContextKeySchema = z
   .string()
   .min(1)
-  .max(512)
+  .max(MAX_CACHE_CONTEXT_KEY_LENGTH)
   .regex(/^[A-Za-z0-9._~|%=-]+$/)
   .refine(
     (value) => !hasSensitiveCacheValue(value) && !hasPrivateContextIdentifier(value),
@@ -63,13 +69,54 @@ const CacheVersionStringSchema = z
     'Cache version metadata must not include credential material or hashes',
   );
 
+const MAX_CACHED_MODELS_PER_ENTRY = 500;
+
+const CachedModelIdSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(/^[\w.@:/+-]+$/)
+  .refine(
+    (value) => !hasSensitiveCacheValue(value),
+    'Cached model ids must not include credential material or hashes',
+  );
+
+/**
+ * Presentation-only projection of a detected model. Pricing, modality, and
+ * provenance fields stay memory-only; remembered rows only need identity,
+ * sizing, and ordering to render a picker before the live refresh lands.
+ */
+const CachedModelSchema = z
+  .object({
+    id: CachedModelIdSchema,
+    contextLength: z.number().int().positive().optional(),
+    releaseDate: z.iso.date().optional(),
+    nativeOrder: z.number().int().nonnegative().optional(),
+    nativeDefault: z.boolean().optional(),
+    isFree: z.boolean().optional(),
+  })
+  .strict();
+
+const CachedModelsSchema = z.array(CachedModelSchema).max(MAX_CACHED_MODELS_PER_ENTRY).readonly();
+
+const CachedCliCatalogSchema = z
+  .object({
+    role: z.enum(['planner', 'implementer']),
+    tool: CliToolIdSchema,
+    models: CachedModelsSchema,
+    probedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const CachedProviderDetectionSchema = ProviderDetectionSchema.pick({
   provider: true,
   available: true,
   isLocal: true,
   hasKey: true,
   failure: true,
-}).strict();
+})
+  .extend({ models: CachedModelsSchema.optional() })
+  .strict();
 
 const CachedCliToolDetectionSchema = z
   .object({
@@ -89,7 +136,7 @@ const CachedCliToolDetectionSchema = z
 
 const DetectionCacheSchema = z
   .object({
-    version: z.literal(CACHE_VERSION),
+    version: z.literal(DETECTION_CACHE_VERSION),
     contextKey: CacheContextKeySchema,
     fetchedAt: z.number().int().nonnegative(),
     validatedAt: z.number().int().nonnegative(),
@@ -97,11 +144,22 @@ const DetectionCacheSchema = z
     requestId: z.number().int().nonnegative(),
     providers: z.array(CachedProviderDetectionSchema).max(MAX_CACHE_ENTRIES),
     cliTools: z.array(CachedCliToolDetectionSchema).max(MAX_CACHE_ENTRIES),
+    /** Absent on rows cached before remembered model catalogs existed. */
+    cliCatalogs: z.array(CachedCliCatalogSchema).max(MAX_CACHE_ENTRIES).optional(),
   })
   .strict();
 
 type DetectionCache = z.infer<typeof DetectionCacheSchema>;
 type CachedCliToolDetection = z.infer<typeof CachedCliToolDetectionSchema>;
+type CachedModel = z.infer<typeof CachedModelSchema>;
+
+/** Presentation-only remembered model catalog for one configured CLI runner. */
+export interface RememberedCliCatalog {
+  readonly role: ActiveRunnerRole;
+  readonly tool: CliToolId;
+  readonly models: readonly DetectedModel[];
+  readonly probedAt: number;
+}
 
 export interface DetectionCacheSnapshot {
   readonly contextKey: string;
@@ -111,6 +169,7 @@ export interface DetectionCacheSnapshot {
   readonly requestId: number;
   readonly providers: ProviderDetection[];
   readonly cliTools: CliToolDetection[];
+  readonly cliCatalogs?: readonly RememberedCliCatalog[] | undefined;
 }
 
 export interface SaveDetectionCacheInput {
@@ -160,6 +219,27 @@ function restoreCliTool(cached: CachedCliToolDetection): CliToolDetection | null
   return result.success ? result.data : null;
 }
 
+/** Projects models to the cached subset, dropping any row that fails sanitization. */
+function cachedModels(models: readonly DetectedModel[]): CachedModel[] {
+  const sanitized: CachedModel[] = [];
+  for (const model of models) {
+    if (sanitized.length >= MAX_CACHED_MODELS_PER_ENTRY) break;
+    const result = CachedModelSchema.safeParse({
+      id: model.id,
+      ...(model.contextLength === undefined ? {} : { contextLength: model.contextLength }),
+      // A non-ISO release date drops the field, not the whole row.
+      ...(model.releaseDate === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(model.releaseDate)
+        ? {}
+        : { releaseDate: model.releaseDate }),
+      ...(model.nativeOrder === undefined ? {} : { nativeOrder: model.nativeOrder }),
+      ...(model.nativeDefault === undefined ? {} : { nativeDefault: model.nativeDefault }),
+      ...(model.isFree === undefined ? {} : { isFree: model.isFree }),
+    });
+    if (result.success) sanitized.push(result.data);
+  }
+  return sanitized;
+}
+
 function cachedProvider(
   provider: ProviderDetection,
 ): z.input<typeof CachedProviderDetectionSchema> {
@@ -169,6 +249,16 @@ function cachedProvider(
     isLocal: provider.isLocal,
     ...(provider.hasKey === undefined ? {} : { hasKey: provider.hasKey }),
     ...(provider.failure === undefined ? {} : { failure: provider.failure }),
+    ...(provider.models === undefined ? {} : { models: cachedModels(provider.models) }),
+  };
+}
+
+function cachedCliCatalog(catalog: RememberedCliCatalog): z.input<typeof CachedCliCatalogSchema> {
+  return {
+    role: catalog.role,
+    tool: catalog.tool,
+    models: cachedModels(catalog.models),
+    probedAt: catalog.probedAt,
   };
 }
 
@@ -189,7 +279,7 @@ function cachedCliTool(cli: CliToolDetection): z.input<typeof CachedCliToolDetec
 
 function buildCache(snapshot: DetectionCacheSnapshot): DetectionCache | null {
   const result = DetectionCacheSchema.safeParse({
-    version: CACHE_VERSION,
+    version: DETECTION_CACHE_VERSION,
     contextKey: snapshot.contextKey,
     fetchedAt: snapshot.fetchedAt,
     validatedAt: snapshot.validatedAt,
@@ -197,6 +287,9 @@ function buildCache(snapshot: DetectionCacheSnapshot): DetectionCache | null {
     requestId: snapshot.requestId,
     providers: snapshot.providers.map(cachedProvider),
     cliTools: snapshot.cliTools.map(cachedCliTool),
+    ...(snapshot.cliCatalogs === undefined || snapshot.cliCatalogs.length === 0
+      ? {}
+      : { cliCatalogs: snapshot.cliCatalogs.map(cachedCliCatalog) }),
   });
   return result.success ? result.data : null;
 }
@@ -215,8 +308,14 @@ function snapshotFromCache(cache: DetectionCache): DetectionCacheSnapshot | null
     validatedAt: cache.validatedAt,
     generation: cache.generation,
     requestId: cache.requestId,
-    providers: cache.providers.map((provider) => ({ ...provider })),
+    providers: cache.providers.map(({ models, ...provider }) => ({
+      ...provider,
+      ...(models === undefined ? {} : { models: models.map((model) => ({ ...model })) }),
+    })),
     cliTools,
+    ...(cache.cliCatalogs === undefined
+      ? {}
+      : { cliCatalogs: cache.cliCatalogs.map((catalog) => ({ ...catalog })) }),
   };
 }
 

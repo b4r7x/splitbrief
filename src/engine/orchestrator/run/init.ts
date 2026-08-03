@@ -28,9 +28,6 @@ import { createOtelSink } from '../../events/sinks/otel.js';
 import { createTreeRecorderSink } from '../../events/sinks/tree-recorder.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
-import { resolveHooksConfig } from '../../hooks/discover.js';
-import { isHooksConfigTrusted, markHooksConfigTrusted } from '../../../core/hooks/trust.js';
-import { error } from '../../../utils/error.js';
 import { createBranch } from '../../../lib/git/refs.js';
 import { slugify } from '../../../utils/slugify.js';
 import { generateOpaqueSessionSlug } from '../../../core/sessions/lifecycle.js';
@@ -54,13 +51,14 @@ import {
 import { transitionAndSave } from '../state-ops.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation/run.js';
-import { rejectUntrustedRunners } from '../../runners/trust.js';
-import { cliStartGateFor, type CliStartGates } from '../../runners/start-gate.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import {
   beginDeclaredArtifactReview as beginWorkflowDeclaredArtifactReview,
   cleanupStaleArtifactReviews as cleanupWorkflowArtifactReviews,
 } from '../approval/planner-artifact.js';
+import type { PreparedExecution } from '../../runners/prepared-execution.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { configForProfile } from '../task/routing.js';
 
 const initSinkUnsubscribers = new WeakMap<EventBus, Array<() => void>>();
 
@@ -75,26 +73,17 @@ function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Pl
 }
 
 export type RunWorkflowOptions = {
-  feature: string;
-  projectDir: string;
-  config: Config;
+  prepared: PreparedExecution;
   getApprovalEnabled?: (() => boolean) | undefined;
   callbacks: OrchestratorCallbacks;
   sinks: WorkflowSinks;
   savedState?: WorkflowState | undefined;
-  sessionId?: string | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   signal?: AbortSignal | undefined;
-  /** Transient @file text context appended to the planner prompt but never persisted in state, summaries, or events. */
-  plannerContext?: string | undefined;
   /** Transient rewind feedback used by same-process continuation when transcript persistence is disabled. */
   rewindFeedback?: string | undefined;
   /** Headless mode: emit events as NDJSON to stdout. TUI render is skipped at the CLI layer. */
   headless?: boolean | undefined;
-  /** When true, automatically trust hooks without prompting. Fail-closed otherwise in non-interactive paths. */
-  allowHooks?: boolean | undefined;
-  /** When true, trust repo-local shell/agent runner commands from project config. */
-  allowRepoRunners?: boolean | undefined;
   /** Optional TUI event sink — bridges engine events to React stores. Supplied by the React workflow layer. */
   tuiSink?: EventSink | undefined;
   /** Optional externally-owned bus, used by the detached IPC server/client path. */
@@ -112,8 +101,6 @@ export type RunWorkflowOptions = {
   modelCache?: ModelCacheAccessor | undefined;
   /** Implementer context length sourced from boot provider detection (not explicit config/CLI/env). Injected from composition layer. */
   detectedContextLength?: number | undefined;
-  /** Canonical trusted CLI identities emitted by the start-readiness gate. */
-  trustedCliGates?: CliStartGates | undefined;
   /** Drains pending attachments from the store — injected from composition layer. */
   drainPendingAttachments?: (() => Attachment[]) | undefined;
   streamingSink?: StreamingSink | undefined;
@@ -125,6 +112,7 @@ export type InitResult =
 
 export type InitializeWorkflowArgs = {
   opts: RunWorkflowOptions;
+  config: Config;
   sessionId: string;
   summaryBase: SummaryBase;
   metadata: SpecMetadata;
@@ -184,33 +172,22 @@ export function composeWorkflowCustomRunnerRuntime(
 }
 
 export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<InitResult> {
-  const { opts, sessionId, summaryBase, metadata, setTrackedState, resumeHolder } = args;
-  const { feature, projectDir, callbacks, sinks } = opts;
+  const { opts, config, sessionId, summaryBase, metadata, setTrackedState, resumeHolder } = args;
+  const { callbacks, sinks } = opts;
+  const { preparationId, gates, runtime } = opts.prepared;
+  const feature = runtime.feature;
+  const projectDir = opts.prepared.session.ref.projectDir;
 
   ensureSplitbriefDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
 
-  const hooks = await resolveHooksConfig(projectDir, opts.config.hooks);
-  if (hooks !== undefined && !isHooksConfigTrusted(projectDir, hooks)) {
-    if (opts.allowHooks) {
-      markHooksConfigTrusted(projectDir, hooks);
-    } else {
-      throw error(
-        'hooks-not-trusted',
-        'Hooks are not trusted. The merged hook configuration (config + discovered) has not been approved. Re-run with --allow-hooks or approve hooks interactively first.',
-      );
-    }
-  }
-  const config: Config = hooks === undefined ? opts.config : { ...opts.config, hooks };
   const customRuntime = composeWorkflowCustomRunnerRuntime({
     projectDir,
     sessionId,
     callbacks,
     interaction: opts.headless ? 'headless' : 'interactive',
-    allowRepoRunners: opts.allowRepoRunners ?? false,
+    allowRepoRunners: runtime.allowRepoRunners,
   });
-
-  rejectUntrustedRunners(config, projectDir, opts.allowRepoRunners ?? false);
 
   const bus = opts.eventBus ?? createEventBus();
   const prev = initSinkUnsubscribers.get(bus);
@@ -268,14 +245,14 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
 
   // Stateless backends receive priorMessages instead of plannerSessionId.
   const initialSessionId = savedState?.plannerSessionId ?? null;
-  const plannerStartGate =
-    opts._planner === undefined && config.planner.kind === 'cli'
-      ? cliStartGateFor(config.planner.tool, opts.trustedCliGates)
-      : undefined;
   const planner =
     opts._planner ??
-    (await createPlanner(config, initialSessionId, {
-      ...(plannerStartGate !== undefined && { trustedCli: plannerStartGate }),
+    (await createPlanner(config, {
+      initialSessionId,
+      preparedConfig: opts.prepared.config,
+      preparationId,
+      gates,
+      slot: { role: 'planner' },
       customRuntime,
     }));
   if (savedState && !hasPendingRecovery) {
@@ -317,26 +294,32 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }
   }
 
-  const createImplementerWithStartGate = async (
+  const resolvedDefaultProfile = resolveImplementerProfiles(config).defaultProfile;
+  const defaultProfile = resolvedDefaultProfile.name;
+  const createPreparedImplementer = async (
     runnerConfig: Config,
     factoryOptions: ImplementerFactoryOptions = {},
   ): Promise<Implementer> => {
-    const trustedCli =
-      runnerConfig.implementer.kind === 'cli'
-        ? (factoryOptions.trustedCli ??
-          cliStartGateFor(runnerConfig.implementer.tool, opts.trustedCliGates))
-        : undefined;
-    return createImplementer(runnerConfig, {
+    const slot = factoryOptions.slot ?? { role: 'implementer', profile: defaultProfile };
+    return createImplementer(config, {
       ...factoryOptions,
       customRuntime,
-      ...(trustedCli !== undefined && { trustedCli }),
+      preparedConfig: opts.prepared.config,
+      preparationId,
+      gates,
+      slot,
+      ...(slot.role === 'intermediate' &&
+        runnerConfig.implementer.contextLength !== undefined && {
+          intermediateContextLength: runnerConfig.implementer.contextLength,
+        }),
     });
   };
   const implementer =
     opts._implementer ??
-    (await createImplementerWithStartGate(config, {
+    (await createPreparedImplementer(configForProfile(config, resolvedDefaultProfile), {
       publisher: createImplementerPublisher(bus),
-      allowRepoRunners: opts.allowRepoRunners ?? false,
+      allowRepoRunners: runtime.allowRepoRunners,
+      slot: { role: 'implementer', profile: defaultProfile },
     }));
 
   let state: WorkflowState;
@@ -414,8 +397,8 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     planner,
     context,
     implementer,
-    createImplementer: createImplementerWithStartGate,
-    allowRepoRunners: opts.allowRepoRunners ?? false,
+    createImplementer: createPreparedImplementer,
+    allowRepoRunners: runtime.allowRepoRunners,
     signal: opts.signal,
     metadata,
     resumeHolder,
@@ -435,7 +418,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       drainPendingAttachments: opts.drainPendingAttachments,
     }),
     ...(opts.streamingSink !== undefined && { streamingSink: opts.streamingSink }),
-    ...(opts.plannerContext !== undefined && { plannerContext: opts.plannerContext }),
+    ...(runtime.plannerContext !== undefined && { plannerContext: runtime.plannerContext }),
   };
 
   return { ok: true, state, wctx };

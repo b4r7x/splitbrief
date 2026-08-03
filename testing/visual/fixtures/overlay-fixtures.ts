@@ -158,7 +158,7 @@ function seedCostBreakdown(): void {
       },
     },
     perTask: {
-      'T-001': {
+      T001: {
         title: 'Build terminal fixture',
         totalTokens: 8_400,
         attempts: [
@@ -177,7 +177,7 @@ function seedCostBreakdown(): void {
           },
         ],
       },
-      'T-002': {
+      T002: {
         title: 'Verify artifact geometry',
         totalTokens: 5_440,
         attempts: [
@@ -210,7 +210,15 @@ function createOverlayFixture(
       setupVisualFixture(context);
       routerStore.init(
         underlyingScreen === 'workflow'
-          ? { screen: 'workflow', feature: 'Inspect visual fixture' }
+          ? {
+              screen: 'workflow',
+              execution: {
+                kind: 'attached',
+                feature: 'Inspect visual fixture',
+                sessionId: 'visual-overlay-session',
+                attach: { sockPath: '/tmp/visual-overlay.sock', authToken: 'visual-token' },
+              },
+            }
           : { screen: underlyingScreen },
       );
       seedRunnerCatalog();

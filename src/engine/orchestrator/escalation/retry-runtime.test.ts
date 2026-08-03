@@ -15,13 +15,20 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { createImplementer } from '../../runners/factory.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
+import type { RunnerGate } from '../../runners/prepared-execution.js';
+import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
+import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
+import { customRunnerAdmissionError } from '../../runners/trust.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { stateForRetryProfile, createRetryRuntime } from './retry-runtime.js';
+import { configForProfile } from '../task/routing.js';
 import type { EscalationContext } from './types.js';
 
 let dirs: string[] = [];
@@ -197,6 +204,29 @@ async function configuredRetryContext(
 ): Promise<EscalationContext> {
   const { callbacks } = makeCallbacks();
   const { bus } = makeBusRecorder();
+  const preparationId = 'configured-retry-preparation';
+  const gates: RunnerGate[] = [];
+  for (const profile of resolveImplementerProfiles(input.config).profiles) {
+    const profileConfig = configForProfile(input.config, profile);
+    const runner = resolveConfiguredCustomRunner(profileConfig, 'implementer');
+    if (runner === null) continue;
+    const admission = await prepareCustomRunnerAdmission({
+      ...input.runtime.admission,
+      projectDir: input.runtime.authorizationProjectDir,
+      runner,
+      posture: customRunnerSecurityPosture('implementer', runner.command.contract),
+      phase: 'implementing',
+      authorizationPathEnv: input.runtime.authorizationPathEnv ?? '',
+      authorizationPathExt: input.runtime.authorizationPathExt ?? '',
+    });
+    if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('implementer');
+    gates.push({
+      kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+      slot: { role: 'implementer', profile: profile.name },
+      preparationId,
+      command: { kind: 'configured-custom', invocation: admission.invocation },
+    });
+  }
   return {
     projectDir: input.projectDir,
     sessionId: input.sessionId,
@@ -207,7 +237,18 @@ async function configuredRetryContext(
     context: { name: 'retry configured runner', dir: input.projectDir },
     implementer: makeImplementer(),
     createImplementer: (runnerConfig, factoryOptions) =>
-      createImplementer(runnerConfig, { ...factoryOptions, customRuntime: input.runtime }),
+      createImplementer(input.config, {
+        ...factoryOptions,
+        customRuntime: input.runtime,
+        preparedConfig: input.config,
+        preparationId,
+        gates,
+        slot: factoryOptions?.slot ?? { role: 'implementer', profile: 'default' },
+        ...(factoryOptions?.slot?.role === 'intermediate' &&
+          runnerConfig.implementer.contextLength !== undefined && {
+            intermediateContextLength: runnerConfig.implementer.contextLength,
+          }),
+      }),
     metadata: TEST_METADATA,
     sinks: TEST_SINKS,
     validator: createValidator(),
@@ -460,28 +501,14 @@ describe('createRetryRuntime', () => {
       stateDir,
       allowRepoRunners: false,
     });
-    const ctx = await configuredRetryContext({
-      projectDir,
-      sessionId,
-      config,
-      runtime: childRuntime,
-    });
-    const retryRuntime = await createRetryRuntime(ctx, 'retry-profile');
-    const result = await retryRuntime.implementer.retry({
-      task: makeTask({ id: 'T001', file: taskFile }),
-      projectDir,
-      config: retryRuntime.config,
-      context: ctx.context,
-      error: 'first attempt failed',
-      attempt: 1,
-      kind: 'local',
-      onOutput: () => {},
-    });
-
-    expect(result).toMatchObject({
-      success: false,
-      error: 'Configured custom runner admission was denied.',
-    });
+    await expect(
+      configuredRetryContext({
+        projectDir,
+        sessionId,
+        config,
+        runtime: childRuntime,
+      }),
+    ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
     expect(existsSync(retryMarker)).toBe(false);
     expect(existsSync(defaultMarker)).toBe(false);
   });

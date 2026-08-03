@@ -19,6 +19,7 @@ import { useStores } from '../stores/use-stores.js';
 import { assertNever } from '../utils/type-guards.js';
 import type { OverlayType } from '../core/navigation/types.js';
 import type { InterruptResult } from '../features/workflow/handlers.js';
+import { sessionSelectStore } from '../stores/navigation/session-select.js';
 
 type AppKeyAction =
   | { type: 'none' }
@@ -103,12 +104,13 @@ export function useAppKeys({
   interruptWorkflow = noop,
   cancelWorkflow = noop,
 }: UseAppKeysOptions) {
-  const [route, overlay, approval, cost, completion] = useStores(
+  const [route, overlay, approval, cost, completion, sessionSelection] = useStores(
     routerStore,
     overlayStore,
     approvalPromptStore,
     costApprovalStore,
     completionStore,
+    sessionSelectStore,
   );
   const { active: overlayActive, exclusive: overlayExclusive } = overlay;
   const isOpen = overlayActive !== 'none';
@@ -118,6 +120,7 @@ export function useAppKeys({
     (!overlayHasStack || GLOBAL_ESC_OVERLAYS.has(overlayActive));
   const promptPending = approval.status === 'pending' || cost.status === 'pending';
   const completionOpen = completion.open;
+  const sessionPreparationActive = sessionSelection.preparation.kind !== 'idle';
   // The inline briefs field editor is not an overlay (it renders inside the workflow screen), so
   // overlayStore.active stays 'none' while it owns input. Every app-level handler that could steal
   // a keystroke from it — the global shortcut chords and the workflow Escape ladder — must stand
@@ -130,7 +133,7 @@ export function useAppKeys({
     // Off the workflow screen there is no local turn to interrupt, and an attach client is a
     // thin remote viewer that mirrors a workflow running elsewhere — neither has anything to
     // arm against, so Ctrl+C exits immediately rather than starting a hidden two-press ladder.
-    if (route.screen !== 'workflow' || route.attach) {
+    if (route.screen !== 'workflow' || route.execution.kind === 'attached') {
       exit();
       return;
     }
@@ -191,8 +194,9 @@ export function useAppKeys({
         !overlayExclusive &&
         !promptPending &&
         !completionOpen &&
+        !sessionPreparationActive &&
         !fieldSessionOwned &&
-        !route.attach,
+        route.execution.kind === 'local',
     },
   );
 
@@ -212,7 +216,8 @@ export function useAppKeys({
         !isOpen &&
         !overlayExclusive &&
         !promptPending &&
-        !completionOpen,
+        !completionOpen &&
+        !sessionPreparationActive,
     },
   );
 
@@ -237,7 +242,9 @@ export function useAppKeys({
         return;
       }
     },
-    { isActive: !isOpen && !promptPending && !fieldSessionOwned },
+    {
+      isActive: !isOpen && !promptPending && !sessionPreparationActive && !fieldSessionOwned,
+    },
   );
 }
 
@@ -253,7 +260,7 @@ function handleShortcutKeys(
   if (input === '\x1f' || (key.ctrl && input === '/'))
     return { type: 'open-overlay', overlay: 'help' };
   if (key.ctrl && input === ',') {
-    if (route.screen === 'workflow' && route.attach !== undefined) return NONE;
+    if (route.screen === 'workflow' && route.execution.kind === 'attached') return NONE;
     return { type: 'open-overlay', overlay: 'settings' };
   }
   if (key.ctrl && input === 'q') return { type: 'exit' };

@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { routerStore } from './router.js';
 import { feedbackStore } from '../ui/feedback.js';
 import type { Summary } from '../../core/schemas/summary.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../engine/runners/prepared-execution.js';
+import type { NavigateArgs } from './router.js';
 
 const dummySummary: Summary = {
   feature: 'test',
@@ -23,6 +29,47 @@ const dummySummary: Summary = {
   escalationRate: 0,
 };
 
+function preparedExecution(feature: string): PreparedExecution {
+  const sessionId = 'router-test-session';
+  const active = {
+    version: 1 as const,
+    sessionId,
+    generation: '11111111-1111-4111-8111-111111111111',
+  };
+  return {
+    purpose: 'resume',
+    config: parsePreparedConfig(makeConfig()),
+    preparationId: 'router-test-preparation',
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir: '/router-test',
+      status: 'ready',
+      counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates: [],
+    session: {
+      kind: 'existing',
+      ref: { projectDir: '/router-test', sessionId },
+      active,
+    },
+    runtime: {
+      feature,
+      allowRepoRunners: false,
+      allowHooks: false,
+    },
+  };
+}
+
+function localWorkflow(feature: string): NavigateArgs {
+  return {
+    to: 'workflow',
+    execution: { kind: 'local', prepared: preparedExecution(feature) },
+  };
+}
+
 describe('routerStore', () => {
   beforeEach(() => {
     routerStore.reset();
@@ -30,22 +77,35 @@ describe('routerStore', () => {
   });
 
   it('navigates home → workflow', () => {
-    routerStore.navigate({ to: 'workflow', feature: 'auth' });
+    routerStore.navigate(localWorkflow('auth'));
     const s = routerStore.get();
     expect(s.screen).toBe('workflow');
-    if (s.screen === 'workflow') expect(s.feature).toBe('auth');
+    if (s.screen === 'workflow' && s.execution.kind === 'local') {
+      expect(s.execution.prepared.runtime.feature).toBe('auth');
+    }
   });
 
   it('navigates workflow → summary', () => {
-    routerStore.navigate({ to: 'workflow', feature: 'x' });
+    routerStore.navigate(localWorkflow('x'));
     routerStore.navigate({ to: 'summary', summary: dummySummary, status: 'complete' });
     const s = routerStore.get();
     expect(s.screen).toBe('summary');
     if (s.screen === 'summary') expect(s.summary).toBe(dummySummary);
   });
 
+  it('replaces a workflow route with an exactly prepared resumed workflow', () => {
+    routerStore.navigate(localWorkflow('first'));
+    routerStore.navigate(localWorkflow('resumed'));
+
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow' && route.execution.kind === 'local') {
+      expect(route.execution.prepared.runtime.feature).toBe('resumed');
+    }
+  });
+
   it('navigates summary → home', () => {
-    routerStore.navigate({ to: 'workflow', feature: 'x' });
+    routerStore.navigate(localWorkflow('x'));
     routerStore.navigate({ to: 'summary', summary: dummySummary, status: 'complete' });
     routerStore.navigate({ to: 'home' });
     expect(routerStore.get().screen).toBe('home');
@@ -70,7 +130,7 @@ describe('routerStore', () => {
   });
 
   it('reports error and stays put on invalid transition workflow → setup', () => {
-    routerStore.navigate({ to: 'workflow', feature: 'x' });
+    routerStore.navigate(localWorkflow('x'));
     feedbackStore.setTransientError('prior error');
     routerStore.navigate({ to: 'setup' });
     expect(routerStore.get().screen).toBe('workflow');
@@ -79,7 +139,7 @@ describe('routerStore', () => {
   });
 
   it('sessionId and status round-trip through navigate({ to: "summary" })', () => {
-    routerStore.navigate({ to: 'workflow', feature: 'x' });
+    routerStore.navigate(localWorkflow('x'));
     routerStore.navigate({
       to: 'summary',
       summary: dummySummary,
@@ -119,8 +179,35 @@ describe('routerStore', () => {
     expect(feedbackStore.get().message).toBeNull();
   });
 
-  it('init sets arbitrary route', () => {
-    routerStore.init({ screen: 'workflow', feature: 'resume' });
-    expect(routerStore.get().screen).toBe('workflow');
+  it('represents only prepared local or attached workflow routes', () => {
+    const prepared = preparedExecution('resume');
+    routerStore.init({ screen: 'workflow', execution: { kind: 'local', prepared } });
+
+    const local = routerStore.get();
+    expect(local.screen).toBe('workflow');
+    if (local.screen === 'workflow' && local.execution.kind === 'local') {
+      expect(local.execution.prepared).toBe(prepared);
+    }
+
+    routerStore.init({
+      screen: 'workflow',
+      execution: {
+        kind: 'attached',
+        feature: 'remote workflow',
+        sessionId: 'attached-session',
+        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'token' },
+      },
+    });
+
+    const attached = routerStore.get();
+    expect(attached.screen).toBe('workflow');
+    if (attached.screen === 'workflow' && attached.execution.kind === 'attached') {
+      expect(attached.execution.feature).toBe('remote workflow');
+      expect(attached.execution.attach.sockPath).toBe('/tmp/splitbrief.sock');
+    }
+
+    // @ts-expect-error partial local workflow routes are forbidden
+    const partial: NavigateArgs = { to: 'workflow', execution: { kind: 'local' } };
+    expect(partial).toBeDefined();
   });
 });

@@ -9,6 +9,7 @@ import {
   makeImplementer,
   makeBusRecorder,
   makeWctx,
+  makePreparedImplementerFactory,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
@@ -23,6 +24,20 @@ vi.setConfig({ testTimeout: 60_000 });
 
 let dirs: string[] = [];
 let savedOpenRouterKey: string | undefined;
+
+const preparedIntermediateFactory = makePreparedImplementerFactory({
+  preparationId: 'tier0-intermediate-preparation',
+  slot: { role: 'intermediate' },
+  gates: [
+    {
+      kind: 'api',
+      slot: { role: 'intermediate' },
+      preparationId: 'tier0-intermediate-preparation',
+      provider: 'openrouter',
+      endpointOrigin: 'https://openrouter.ai',
+    },
+  ],
+});
 
 beforeEach(() => {
   savedOpenRouterKey = process.env.OPENROUTER_API_KEY;
@@ -298,6 +313,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         planner,
         callbacks,
         implementer,
+        createImplementer: preparedIntermediateFactory,
         bus,
       }),
       task,
@@ -373,6 +389,7 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
         planner,
         callbacks,
         implementer,
+        createImplementer: preparedIntermediateFactory,
         bus,
       }),
       task,

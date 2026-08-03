@@ -9,8 +9,13 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import type { Config } from '../../../core/schemas/config.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
+import { reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
@@ -18,6 +23,66 @@ import { formatValidationError } from '../validation/format-error.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { SummaryBase } from '../summary/build.js';
 import { initializeWorkflow } from './init.js';
+import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
+import { resolveHooksConfig } from '../../hooks/discover.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+
+async function preparedTestExecution(
+  input: Readonly<{
+    projectDir: string;
+    sessionId: string;
+    feature: string;
+    inputConfig: Config;
+    allowHooks: boolean;
+    allowRepoRunners?: boolean;
+  }>,
+): Promise<Readonly<{ config: Config; execution: PreparedExecution }>> {
+  const hooks = await resolveHooksConfig(input.projectDir, input.inputConfig.hooks);
+  if (hooks !== undefined && input.allowHooks) markHooksConfigTrusted(input.projectDir, hooks);
+  const config = parsePreparedConfig(
+    hooks === undefined ? input.inputConfig : { ...input.inputConfig, hooks },
+  );
+  const preparationId = `initialize-workflow-${input.sessionId}`;
+  const gates = [
+    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
+    ...resolveImplementerProfiles(config).profiles.map((profile) =>
+      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
+    ),
+  ];
+  ensureSessionDir(input.projectDir, input.sessionId);
+  const active = reactivateExistingSession({
+    projectDir: input.projectDir,
+    sessionId: input.sessionId,
+  });
+  return {
+    config,
+    execution: {
+      purpose: 'new-workflow',
+      config,
+      preparationId,
+      report: {
+        generatedAt: new Date(0).toISOString(),
+        projectDir: input.projectDir,
+        status: 'ready',
+        counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'ready' },
+        sections: [],
+        metadata: {},
+      },
+      gates,
+      session: {
+        kind: 'existing',
+        ref: { projectDir: input.projectDir, sessionId: input.sessionId },
+        active,
+      },
+      runtime: {
+        feature: input.feature,
+        allowHooks: input.allowHooks,
+        allowRepoRunners: input.allowRepoRunners ?? false,
+      },
+    },
+  };
+}
 
 describe('initializeWorkflow', () => {
   it('registers discovered pre-task modules when config has no hooks', async () => {
@@ -53,18 +118,23 @@ describe('initializeWorkflow', () => {
         mode: 'quick',
       };
       let trackedState: WorkflowState | undefined;
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
 
       const init = await initializeWorkflow({
         opts: {
-          feature,
-          projectDir,
-          config,
+          prepared: prepared.execution,
           callbacks,
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           _planner: makePlanner(),
           _implementer: makeImplementer(),
-          allowHooks: true,
         },
+        config: prepared.config,
         sessionId,
         summaryBase,
         metadata,
@@ -129,17 +199,21 @@ describe('initializeWorkflow', () => {
         mode: 'quick',
       };
       let trackedState: WorkflowState | undefined;
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
 
       const init = await initializeWorkflow({
         opts: {
-          feature,
-          projectDir,
-          config,
+          prepared: prepared.execution,
           callbacks,
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           _planner: makePlanner(),
           _implementer: makeImplementer(),
-          allowHooks: true,
           selectedSkills: [
             {
               id: 'typescript',
@@ -157,6 +231,7 @@ describe('initializeWorkflow', () => {
             },
           ],
         },
+        config: prepared.config,
         sessionId,
         summaryBase,
         metadata,
@@ -205,12 +280,17 @@ describe('initializeWorkflow', () => {
         implementerTool: 'test-implementer',
         mode: 'quick',
       };
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
 
       const init = await initializeWorkflow({
         opts: {
-          feature,
-          projectDir,
-          config,
+          prepared: prepared.execution,
           callbacks,
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           _planner: makePlanner({
@@ -218,9 +298,9 @@ describe('initializeWorkflow', () => {
             unavailabilityReason: () => 'HTTP 401',
           }),
           _implementer: makeImplementer(),
-          allowHooks: true,
           _eventSink: (e) => events.push(e),
         },
+        config: prepared.config,
         sessionId,
         summaryBase,
         metadata,
@@ -264,20 +344,25 @@ describe('initializeWorkflow', () => {
         implementerTool: 'test-implementer',
         mode: 'quick',
       };
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
 
       const init = await initializeWorkflow({
         opts: {
-          feature,
-          projectDir,
-          config,
+          prepared: prepared.execution,
           callbacks,
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           savedState: { ...createInitialState(feature), phase: 'implementing' },
           _planner: makePlanner(),
           _implementer: makeImplementer(),
-          allowHooks: true,
           _eventSink: (e) => events.push(e),
         },
+        config: prepared.config,
         sessionId,
         summaryBase,
         metadata,
@@ -324,19 +409,24 @@ describe('initializeWorkflow', () => {
         implementerTool: 'test-implementer',
         mode: 'quick',
       };
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
 
       const init = await initializeWorkflow({
         opts: {
-          feature,
-          projectDir,
-          config,
+          prepared: prepared.execution,
           callbacks,
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           _planner: makePlanner({ isAvailable: vi.fn().mockResolvedValue(false) }),
           _implementer: makeImplementer(),
-          allowHooks: true,
           _eventSink: (e) => events.push(e),
         },
+        config: prepared.config,
         sessionId,
         summaryBase,
         metadata,
@@ -381,12 +471,17 @@ describe('initializeWorkflow', () => {
         implementerTool: 'test-implementer',
         mode: 'quick',
       };
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
 
       const init = await initializeWorkflow({
         opts: {
-          feature,
-          projectDir,
-          config,
+          prepared: prepared.execution,
           callbacks,
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           _planner: makePlanner({
@@ -394,9 +489,9 @@ describe('initializeWorkflow', () => {
             unavailabilityReason: () => 'probe timed out after 5s',
           }),
           _implementer: makeImplementer(),
-          allowHooks: true,
           _eventSink: (e) => events.push(e),
         },
+        config: prepared.config,
         sessionId,
         summaryBase,
         metadata,
@@ -444,18 +539,23 @@ describe('initializeWorkflow', () => {
         implementerTool: 'test-implementer',
         mode: 'quick',
       };
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
 
       const init = await initializeWorkflow({
         opts: {
-          feature,
-          projectDir,
-          config,
+          prepared: prepared.execution,
           callbacks,
           sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
           _planner: makePlanner(),
           _implementer: makeImplementer(),
-          allowHooks: true,
         },
+        config: prepared.config,
         sessionId,
         summaryBase,
         metadata,

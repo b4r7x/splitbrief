@@ -9,7 +9,12 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makeWctx } from '#testing/helpers/orchestrator-factories.js';
-import type { ConfiguredCustomRunner } from '../../runners/custom-trust.js';
+import {
+  customRunnerSecurityPosture,
+  type ConfiguredCustomRunner,
+} from '../../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
+import type { RunnerGate } from '../../runners/prepared-execution.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import { createConfiguredCustomImplementer } from '../../implementers/command-invoke.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
@@ -71,6 +76,32 @@ function runtimeFor(
   };
 }
 
+async function createPreparedImplementer(
+  runner: ConfiguredCustomRunner,
+  runtime: CustomRunnerRuntimePort,
+) {
+  const admission = await prepareCustomRunnerAdmission({
+    ...runtime.admission,
+    projectDir: runtime.authorizationProjectDir,
+    runner,
+    posture: customRunnerSecurityPosture('implementer', runner.command.contract),
+    phase: 'implementing',
+    authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw new Error('Expected configured runner admission.');
+  const gate = {
+    kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+    slot: { role: 'implementer', profile: 'default' },
+    preparationId: 'run-implementation-test',
+    command: { kind: 'configured-custom', invocation: admission.invocation },
+  } satisfies RunnerGate;
+  return createConfiguredCustomImplementer({
+    runtime,
+    admission: gate.command.invocation,
+  });
+}
+
 function setupDirectScenario(approval: 'approved' | 'rejected'): {
   projectDir: string;
   stateDir: string;
@@ -118,10 +149,10 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
     '];',
     "fs.writeFileSync('src/direct.ts', lines.join('\\n') + '\\n');",
   ].join('');
-  const implementer = createConfiguredCustomImplementer({
-    runner: configuredImplementer('direct', program),
+  const implementer = await createPreparedImplementer(
+    configuredImplementer('direct', program),
     runtime,
-  });
+  );
   const { callbacks } = makeCallbacks({
     onTieredApproval: vi
       .fn()
@@ -221,10 +252,10 @@ describe('runImplementation configured custom contracts', () => {
       '];',
       "process.stdout.write('```ts\\n' + lines.join('\\n') + '\\n```\\n');",
     ].join('');
-    const implementer = createConfiguredCustomImplementer({
-      runner: configuredImplementer('output', program),
+    const implementer = await createPreparedImplementer(
+      configuredImplementer('output', program),
       runtime,
-    });
+    );
     const wctx = makeWctx({
       projectDir,
       sessionId: 't028-session-must-not-reach-child',

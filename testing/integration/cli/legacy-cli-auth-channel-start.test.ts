@@ -11,7 +11,7 @@ import { projectRunnerDiscoveryContext } from '../../../src/core/config/accessor
 import { createDefaultConfig, loadConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../../src/core/paths.js';
-import type { CliStartGates } from '../../../src/engine/runners/start-gate.js';
+import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
 
 const API_KEY = 'legacy-claude-api-key-canary-6f21';
 
@@ -127,13 +127,13 @@ describe('CLI integration: legacy Claude auth-channel start', () => {
     expect(context.authChannel).toBe('session');
     expect(sameConfigContext.configGeneration).toBe(context.configGeneration);
 
-    let trustedCliGates: CliStartGates | undefined;
+    let gates: readonly RunnerGate[] | undefined;
     const result = await runCommand(
       ['start', '--project', projectDir, '--json', 'verify legacy auth'],
       {
         initStores: async () => {},
-        runHeadless: async ({ trustedCliGates: gates }) => {
-          trustedCliGates = gates;
+        runHeadless: async ({ prepared }) => {
+          gates = prepared.gates;
         },
       },
     );
@@ -143,7 +143,7 @@ describe('CLI integration: legacy Claude auth-channel start', () => {
     const emitted = [result.stdout, result.stderr, stdoutWrites.join('')].join('');
 
     expect(result.exitCode).toBe(0);
-    expect(trustedCliGates?.get('claude-code')).toBeDefined();
+    expect(gates?.find((gate) => gate.kind === 'cli' && gate.tool === 'claude-code')).toBeDefined();
     expect(readFileSync(authMarkerPath, 'utf-8')).toBe('session\n');
     expect(after).toBe(before);
     expect(createHash('sha256').update(after).digest('hex')).toBe(beforeHash);

@@ -112,8 +112,12 @@ function renderCommandPalette(): ReturnType<typeof render> {
 function renderAttachedCommandPalette(): ReturnType<typeof render> {
   routerStore.navigate({
     to: 'workflow',
-    feature: 'attached feature',
-    attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'tok' },
+    execution: {
+      kind: 'attached',
+      feature: 'attached feature',
+      sessionId: 'attached-session',
+      attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'tok' },
+    },
   });
   const commands = createTestCommands({ isAttached: true });
   return render(
