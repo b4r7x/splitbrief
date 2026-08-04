@@ -18,6 +18,9 @@ import { detectCapabilities } from '../engine/providers/capabilities.js';
 import * as capabilitiesModule from '../engine/providers/capabilities.js';
 import { loadDetectionCacheSnapshot, saveDetectionCache } from '../engine/detection/cache.js';
 import * as detectionServiceModule from '../engine/detection/service.js';
+import * as modelsDevCacheModule from '../engine/providers/models-dev-cache.js';
+import type { ModelsDevCatalogSnapshot } from '../engine/providers/models-dev-cache.js';
+import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { detectionContextsForCurrentConfig } from '../engine/detection/store-publication.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
@@ -67,7 +70,55 @@ afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
 });
 
+const rememberedCatalog: ModelsDevCatalogSnapshot = {
+  sourceUrl: 'https://models.dev/api.json',
+  parserVersion: 'models-dev-api-json-v1',
+  catalog: { anthropic: { id: 'anthropic', models: { 'claude-opus-5': { id: 'claude-opus-5' } } } },
+  catalogState: 'populated',
+  fetchedAt: 1_700_000_000_000,
+  validatedAt: 1_700_000_000_500,
+};
+
 describe('initStores', () => {
+  it('issues the models.dev catalog seed before the background refresh begins', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+      }),
+    );
+
+    const calls: string[] = [];
+    const catalogRead = Promise.withResolvers<ModelsDevCatalogSnapshot | null>();
+    vi.spyOn(modelsDevCacheModule, 'loadModelsDevCatalogCache').mockImplementation(() => {
+      calls.push('models-dev-cache');
+      return catalogRead.promise;
+    });
+    const loadDetection = vi.fn(async () => {
+      calls.push('load-detection');
+      return { providers: [], cliTools: [], catalog: null, cliModels: [] };
+    });
+    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+      loadDetection,
+      refreshDetection: vi.fn(),
+    });
+
+    await initStores(dir);
+
+    expect(calls).toEqual(['models-dev-cache', 'load-detection']);
+    // The seed is never awaited, so boot completes while the read is pending.
+    expect(modelCacheStore.getModelsDevCatalog()).toBeNull();
+
+    catalogRead.resolve(rememberedCatalog);
+    await vi.waitFor(() =>
+      expect(modelCacheStore.getModelsDevCatalog()).toEqual(rememberedCatalog.catalog),
+    );
+    expect(modelCacheStore.get().modelsDevFetchedAt).toBe(rememberedCatalog.fetchedAt);
+  }, 30_000);
+
   it('publishes remembered detection before background refresh settles', async () => {
     const dir = makeProjectDir();
     const config = {
@@ -87,7 +138,29 @@ describe('initStores', () => {
     const refresh = backgroundRefresh.promise.finally(() => {
       refreshSettled = true;
     });
-    const loadDetection = vi.fn(() => refresh);
+    const loadDetection = vi.fn(
+      async ({ deps, onLane }: detectionServiceModule.DetectionLoadInput) => {
+        const result = await refresh;
+        onLane?.({
+          lane: 'readiness',
+          outcome: {
+            kind: 'fresh',
+            origin: 'request',
+            snapshot: {
+              source: 'readiness',
+              contextKey: deps.sourceContexts?.readiness ?? 'missing-readiness-context',
+              generation: 4,
+              requestId: 8,
+              fetchedAt: 200,
+              validatedAt: 200,
+              stale: false,
+              value: { providers: result.providers, cliTools: result.cliTools },
+            },
+          },
+        });
+        return result;
+      },
+    );
     vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
       loadDetection,
       refreshDetection: vi.fn(),

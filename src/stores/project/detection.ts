@@ -1,4 +1,7 @@
-import type { DetectionServiceResult } from '../../engine/detection/service.js';
+import type {
+  DetectionLanePublication,
+  DetectionServiceResult,
+} from '../../engine/detection/service.js';
 import {
   modelCacheStore,
   type DetectionStoreHydration,
@@ -29,6 +32,13 @@ export const detectionStore = {
 
   hydrate(input: DetectionStoreHydration): boolean {
     return modelCacheStore.hydrateDetection(input);
+  },
+
+  publishLane(input: {
+    lane: DetectionLanePublication;
+    request: DiscoveryRefreshRequest;
+  }): boolean {
+    return modelCacheStore.publishLane(input);
   },
 
   publish(input: { result: DetectionServiceResult; request: DiscoveryRefreshRequest }): boolean {

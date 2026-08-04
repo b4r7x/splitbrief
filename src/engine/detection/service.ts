@@ -27,6 +27,7 @@ import type {
   ModelsDevCatalogSnapshot,
 } from '../providers/models-dev-cache.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { warnError } from '../../lib/warn.js';
 
 export type { DetectionProjection } from './coordinator.js';
 
@@ -102,6 +103,14 @@ export interface DetectionRefreshOutcomes {
   readonly cliModels: DetectionSourceOutcome<CliModelSnapshot>;
 }
 
+/** One settled lane of a refresh, carried to the store before its siblings finish. */
+export type DetectionLanePublication =
+  | Readonly<{ lane: 'readiness'; outcome: DetectionSourceOutcome<DetectionProjection> }>
+  | Readonly<{ lane: 'modelsDev'; outcome: ModelsDevRefreshOutcome }>
+  | Readonly<{ lane: 'cliModels'; outcome: DetectionSourceOutcome<CliModelSnapshot> }>;
+
+export type DetectionLaneListener = (lane: DetectionLanePublication) => void;
+
 export interface DetectionServiceResult extends DetectionProjection {
   readonly catalog: ModelsDevCatalog | null;
   readonly cliModels: CliModelSnapshot;
@@ -116,8 +125,19 @@ export interface DetectionRefreshInput {
   readonly projectDir?: string | undefined;
 }
 
+export interface DetectionLoadInput extends DetectionRefreshInput {
+  /**
+   * Receives each lane the moment it settles, including any lane that settled
+   * before this listener joined a load already in flight. Lane latency spans two
+   * orders of magnitude (models.dev tens of milliseconds, native CLI probes
+   * seconds), so a caller that publishes progressively must not wait for the
+   * awaited whole-result value.
+   */
+  readonly onLane?: DetectionLaneListener | undefined;
+}
+
 export interface DetectionService {
-  loadDetection(deps: DetectionDeps, projectDir?: string): Promise<DetectionServiceResult>;
+  loadDetection(input: DetectionLoadInput): Promise<DetectionServiceResult>;
   /**
    * A manual refresh must carry dependencies derived from the current runner
    * configuration. The service deliberately retains no prior dependencies.
@@ -134,6 +154,39 @@ const EMPTY_CLI_MODELS: CliModelSnapshot = [];
 const EMPTY_PROJECTION: DetectionProjection = { providers: [], cliTools: [] };
 const fallbackDependencyContexts = new WeakMap<object, string>();
 let nextFallbackDependencyContext = 1;
+
+interface LaneChannel {
+  announce(lane: DetectionLanePublication): void;
+  listen(listener: DetectionLaneListener): void;
+}
+
+function createLaneChannel(): LaneChannel {
+  const listeners = new Set<DetectionLaneListener>();
+  const settled: DetectionLanePublication[] = [];
+  // Announcement is best-effort notification and runs inside the awaited lane
+  // promises. A throwing listener must not reject the load, because `queueSave`
+  // runs after that await and losing it would silently stop the detection cache
+  // from persisting.
+  const deliver = (listener: DetectionLaneListener, lane: DetectionLanePublication): void => {
+    try {
+      listener(lane);
+    } catch (err) {
+      warnError('Detection lane listener failed', err);
+    }
+  };
+  return {
+    announce(lane) {
+      settled.push(lane);
+      for (const listener of listeners) deliver(listener, lane);
+    },
+    // A caller that joins a load already in flight is told about the lanes it
+    // missed; nothing else ever replays them.
+    listen(listener) {
+      listeners.add(listener);
+      for (const lane of settled) deliver(listener, lane);
+    },
+  };
+}
 
 function cloneCliToolDetection(cli: CliToolDetection): CliToolDetection {
   return {
@@ -394,12 +447,17 @@ function uninitializedResult(generation: number): DetectionServiceResult {
   };
 }
 
+interface PendingLoad {
+  readonly promise: Promise<DetectionServiceResult>;
+  readonly channel: LaneChannel;
+}
+
 export function createDetectionService() {
   let clock: () => number = Date.now;
   const coordinator = createDetectionCoordinator({ now: () => clock() });
   let pendingSave: Promise<void> = Promise.resolve();
   let nextGeneration = 0;
-  const pendingLoads = new Map<string, Promise<DetectionServiceResult>>();
+  const pendingLoads = new Map<string, PendingLoad>();
   const persistedRequestIds = new Set<number>();
   const modelsDevCacheOutcomes = new Map<string, ModelsDevCatalogCacheOutcome>();
 
@@ -650,6 +708,7 @@ export function createDetectionService() {
       projectDir: string | undefined;
       mode: 'automatic' | 'manual';
       generation: number;
+      channel: LaneChannel;
     }>,
   ): Promise<DetectionServiceResult> {
     const coordinator = coordinatorFor(input.deps);
@@ -691,31 +750,47 @@ export function createDetectionService() {
       }
     }
 
+    // Each lane announces itself the moment it settles; the whole result is
+    // still awaited below so persistence keeps pairing readiness with the CLI
+    // lane.
     const [readiness, modelsDev, cliModels] = await Promise.all([
-      coordinator.refresh({
-        source: 'readiness',
-        contextKey: readinessContext,
-        ttlMs: READINESS_TTL_MS,
-        mode: input.mode,
-        offline: input.deps.offline,
-        load: async (signal) => cloneProjection(await input.deps.detectAll({ signal })),
-        error: () => sourceError('readiness'),
-      }),
+      coordinator
+        .refresh({
+          source: 'readiness',
+          contextKey: readinessContext,
+          ttlMs: READINESS_TTL_MS,
+          mode: input.mode,
+          offline: input.deps.offline,
+          load: async (signal) => cloneProjection(await input.deps.detectAll({ signal })),
+          error: () => sourceError('readiness'),
+        })
+        .then((outcome) => {
+          input.channel.announce({ lane: 'readiness', outcome });
+          return outcome;
+        }),
       refreshModelsDev({
         contextKey: modelsDevContext,
         deps: input.deps,
         mode: input.mode,
+      }).then((outcome) => {
+        input.channel.announce({ lane: 'modelsDev', outcome });
+        return outcome;
       }),
-      coordinator.refresh({
-        source: 'cli-models',
-        contextKey: cliModelsContext,
-        ttlMs: CLI_MODELS_TTL_MS,
-        mode: input.mode,
-        offline: input.deps.offline,
-        load: async (signal) =>
-          cloneCliModels(await input.deps.discoverAllCliTools({ signal, mode: input.mode })),
-        error: () => sourceError('cli-models'),
-      }),
+      coordinator
+        .refresh({
+          source: 'cli-models',
+          contextKey: cliModelsContext,
+          ttlMs: CLI_MODELS_TTL_MS,
+          mode: input.mode,
+          offline: input.deps.offline,
+          load: async (signal) =>
+            cloneCliModels(await input.deps.discoverAllCliTools({ signal, mode: input.mode })),
+          error: () => sourceError('cli-models'),
+        })
+        .then((outcome) => {
+          input.channel.announce({ lane: 'cliModels', outcome });
+          return outcome;
+        }),
     ]);
     const outcomes: DetectionRefreshOutcomes = { readiness, modelsDev, cliModels };
     queueSave({ projectDir: input.projectDir, outcome: readiness, cliModels });
@@ -732,20 +807,29 @@ export function createDetectionService() {
     };
   }
 
-  function loadDetection(
-    deps: DetectionDeps,
-    projectDir?: string,
-  ): Promise<DetectionServiceResult> {
+  function loadDetection(input: DetectionLoadInput): Promise<DetectionServiceResult> {
+    const { deps, projectDir, onLane } = input;
     const key = loadKey({ deps, projectDir });
     const pending = pendingLoads.get(key);
-    if (pending !== undefined) return pending;
+    if (pending !== undefined) {
+      if (onLane !== undefined) pending.channel.listen(onLane);
+      return pending.promise;
+    }
 
+    const channel = createLaneChannel();
+    if (onLane !== undefined) channel.listen(onLane);
     const generation = nextGeneration + 1;
     nextGeneration = generation;
-    const promise = load({ deps, projectDir, mode: 'automatic', generation }).finally(() => {
-      if (pendingLoads.get(key) === promise) pendingLoads.delete(key);
+    const promise = load({
+      deps,
+      projectDir,
+      mode: 'automatic',
+      generation,
+      channel,
+    }).finally(() => {
+      if (pendingLoads.get(key)?.promise === promise) pendingLoads.delete(key);
     });
-    pendingLoads.set(key, promise);
+    pendingLoads.set(key, { promise, channel });
     return promise;
   }
 
@@ -784,6 +868,7 @@ export function createDetectionService() {
       projectDir: input.projectDir,
       mode: 'manual',
       generation,
+      channel: createLaneChannel(),
     });
   }
 

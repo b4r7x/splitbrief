@@ -6,6 +6,7 @@ import type {
 import type { DetectionSourceOutcome } from './coordinator.js';
 import { createProductionDetectionDeps } from './deps.js';
 import type {
+  DetectionLanePublication,
   DetectionService,
   DetectionServiceResult,
   ModelsDevRefreshOutcome,
@@ -21,11 +22,21 @@ export interface DetectionPublicationRequest {
  * The engine publishes an already-resolved generation through this small
  * store-facing port. The port deliberately receives no discovery dependencies
  * or context labels from its caller.
+ *
+ * Two publication shapes, one rule: a startup load lands lane by lane as the
+ * lanes settle, a manual refresh lands as one result because its caller
+ * reports a single all-lane verdict.
  */
 export interface DetectionPublicationPort {
   beginRefresh(
     input: Readonly<{ contexts: ResolvedDetectionSourceContexts }>,
   ): DetectionPublicationRequest;
+  publishLane(
+    input: Readonly<{
+      lane: DetectionLanePublication;
+      request: DetectionPublicationRequest;
+    }>,
+  ): boolean;
   publish(
     input: Readonly<{
       result: DetectionServiceResult;
@@ -157,8 +168,15 @@ export async function loadDetectionForCurrentConfig(
   if (hasUntrustedDependencyInput(input) || hasUntrustedDependencyInput(input.current)) return;
   const deps = createProductionDetectionDeps(input.current);
   const request = input.publication.beginRefresh({ contexts: deps.sourceContexts });
-  const result = await input.service.loadDetection(deps, input.current.projectDir);
-  input.publication.publish({ result, request });
+  // Startup lanes are seconds apart; withholding the fast ones behind the CLI
+  // probe lane is what leaves the model column on bundled fallbacks.
+  await input.service.loadDetection({
+    deps,
+    projectDir: input.current.projectDir,
+    onLane: (lane) => {
+      input.publication.publishLane({ lane, request });
+    },
+  });
 }
 
 export async function refreshDetectionForCurrentConfig(

@@ -270,7 +270,7 @@ describe('buildCommandContext', () => {
       },
     };
 
-    await getDefaultDetectionService().loadDetection(deps, projectDir);
+    await getDefaultDetectionService().loadDetection({ deps, projectDir });
     detectionStore.reset();
     expect(detectionStore.get().cliTools).toEqual([]);
 

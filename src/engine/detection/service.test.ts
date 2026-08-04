@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import http from 'node:http';
 import { join } from 'node:path';
@@ -10,6 +10,8 @@ import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { detectionContextKey } from './coordinator.js';
 import { saveDetectionCache } from './cache.js';
+import { detectionStore } from '../../stores/project/detection.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache.js';
 import type { ModelsDevCatalogCacheOutcome } from '../providers/models-dev-cache.js';
 import { fetchModelsDevCatalogWithCache } from '../providers/models-dev.js';
 import {
@@ -18,6 +20,7 @@ import {
   type DetectionRefreshOutcomes,
   type DetectionSourceContexts,
   type DetectionServiceResult,
+  type ResolvedDetectionSourceContexts,
 } from './service.js';
 
 const makeCliTool = (
@@ -87,7 +90,7 @@ function sourceContext(source: string): string {
   });
 }
 
-function sourceContexts(): DetectionSourceContexts {
+function sourceContexts(): ResolvedDetectionSourceContexts {
   return {
     readiness: sourceContext('readiness'),
     modelsDev: sourceContext('models-dev'),
@@ -161,11 +164,13 @@ describe('createDetectionService', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-detection-service-test-'));
     service = createDetectionService();
+    modelCacheStore.reset();
   });
 
   afterEach(async () => {
     await service.getPendingSave();
     await rm(tempDir, { recursive: true, force: true });
+    modelCacheStore.reset();
   });
 
   it('hydrates a project snapshot and keeps the public and CLI source snapshots available', async () => {
@@ -195,9 +200,9 @@ describe('createDetectionService', () => {
       ],
     });
 
-    const first = await service.loadDetection(deps, tempDir);
+    const first = await service.loadDetection({ deps, projectDir: tempDir });
     await service.getPendingSave();
-    const second = await service.loadDetection(deps, tempDir);
+    const second = await service.loadDetection({ deps, projectDir: tempDir });
 
     expect(first).toMatchObject({
       catalog,
@@ -245,7 +250,7 @@ describe('createDetectionService', () => {
       },
     };
 
-    const first = await service.loadDetection(deps, '/projects/alpha');
+    const first = await service.loadDetection({ deps, projectDir: '/projects/alpha' });
     contexts = projectSourceContexts({
       projectDir: '/projects/bravo',
       authChannel: 'api-key',
@@ -253,7 +258,7 @@ describe('createDetectionService', () => {
       credentialDomain: 'env:BRAVO_API_KEY',
       configGeneration: 'bravo-config',
     });
-    const second = await service.loadDetection(deps, '/projects/bravo');
+    const second = await service.loadDetection({ deps, projectDir: '/projects/bravo' });
 
     expect(first.cliTools[0]?.installedVersion).toBe('observation-1');
     expect(second.cliTools[0]?.installedVersion).toBe('observation-2');
@@ -304,7 +309,7 @@ describe('createDetectionService', () => {
           }),
       });
 
-      const first = await service.loadDetection(deps);
+      const first = await service.loadDetection({ deps });
       clock.advance(1_000);
       const revalidated = await service.refreshDetection({ deps });
       clock.advance(1_000);
@@ -398,9 +403,15 @@ describe('createDetectionService', () => {
         configGeneration: 'new-generation',
       });
 
-      const oldLoad = service.loadDetection(createSupersessionDeps(oldContexts), tempDir);
+      const oldLoad = service.loadDetection({
+        deps: createSupersessionDeps(oldContexts),
+        projectDir: tempDir,
+      });
       await firstRequest.promise;
-      const newLoad = service.loadDetection(createSupersessionDeps(newContexts), tempDir);
+      const newLoad = service.loadDetection({
+        deps: createSupersessionDeps(newContexts),
+        projectDir: tempDir,
+      });
 
       await Promise.all([firstRequestAborted.promise, firstSocketReleased.promise]);
       const [oldResult, newResult] = await Promise.all([oldLoad, newLoad]);
@@ -437,7 +448,7 @@ describe('createDetectionService', () => {
     });
     const deps = makeDeps({ now: clock.now, offline: true, sourceContexts: sourceContexts() });
 
-    const result = await service.loadDetection(deps, tempDir);
+    const result = await service.loadDetection({ deps, projectDir: tempDir });
 
     expect(result.cliTools[0]?.installedVersion).toBe('disk-version');
     expect(outcomes(result).readiness).toMatchObject({
@@ -465,7 +476,7 @@ describe('createDetectionService', () => {
     });
     const deps = makeDeps({ offline: true });
 
-    const result = await service.loadDetection(deps, tempDir);
+    const result = await service.loadDetection({ deps, projectDir: tempDir });
 
     expect(result.cliTools).toEqual([]);
     expect(outcomes(result).readiness).toMatchObject({ kind: 'not-run', reason: 'offline' });
@@ -497,7 +508,7 @@ describe('createDetectionService', () => {
             },
           }),
     });
-    const result = await service.loadDetection(deps, tempDir);
+    const result = await service.loadDetection({ deps, projectDir: tempDir });
     await service.getPendingSave();
 
     expect(outcomes(result).readiness).toMatchObject({ kind: expectedOutcome });
@@ -506,11 +517,11 @@ describe('createDetectionService', () => {
 
   it('keeps a prior in-memory success when the disk cache later becomes malformed', async () => {
     const deps = makeDeps();
-    const first = await service.loadDetection(deps, tempDir);
+    const first = await service.loadDetection({ deps, projectDir: tempDir });
     await service.getPendingSave();
     await writeFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'malformed', 'utf8');
 
-    const result = await service.loadDetection(deps, tempDir);
+    const result = await service.loadDetection({ deps, projectDir: tempDir });
 
     expect(result.cliTools[0]?.installedVersion).toBe(first.cliTools[0]?.installedVersion);
     expect(outcomes(result).readiness).toMatchObject({ kind: 'fresh', origin: 'snapshot' });
@@ -532,7 +543,7 @@ describe('createDetectionService', () => {
       ],
     });
 
-    const result = await service.loadDetection(deps, tempDir);
+    const result = await service.loadDetection({ deps, projectDir: tempDir });
     await service.getPendingSave();
     const cache = await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8');
 
@@ -563,11 +574,11 @@ describe('createDetectionService', () => {
         ],
       });
 
-    await service.loadDetection(makeProbeDeps(), tempDir);
+    await service.loadDetection({ deps: makeProbeDeps(), projectDir: tempDir });
     await service.getPendingSave();
 
     const restarted = createDetectionService();
-    await restarted.loadDetection(makeProbeDeps(), tempDir);
+    await restarted.loadDetection({ deps: makeProbeDeps(), projectDir: tempDir });
     await restarted.getPendingSave();
 
     const cache = JSON.parse(
@@ -587,9 +598,9 @@ describe('createDetectionService', () => {
     const clock = createClock();
     const deps = makeDeps({ now: clock.now });
 
-    const first = await service.loadDetection(deps);
+    const first = await service.loadDetection({ deps });
     clock.advance(100);
-    const automatic = await service.loadDetection(deps);
+    const automatic = await service.loadDetection({ deps });
     const beforeManual = automatic.cliTools[0]?.installedVersion;
     const manual = await service.refreshDetection({ deps });
 
@@ -631,7 +642,7 @@ describe('createDetectionService', () => {
       },
     });
 
-    await service.loadDetection(deps);
+    await service.loadDetection({ deps });
     failure = true;
     const refreshed = await service.refreshDetection({ deps });
 
@@ -654,10 +665,10 @@ describe('createDetectionService', () => {
   it('invalidates explicitly without making manual refresh delete snapshots first', async () => {
     const deps = makeDeps();
 
-    const first = await service.loadDetection(deps, tempDir);
+    const first = await service.loadDetection({ deps, projectDir: tempDir });
     await service.getPendingSave();
     await service.invalidateDetection({ deps, projectDir: tempDir });
-    const afterInvalidation = await service.loadDetection(deps, tempDir);
+    const afterInvalidation = await service.loadDetection({ deps, projectDir: tempDir });
 
     expect(first.cliTools[0]?.installedVersion).toBe('gen-1');
     expect(afterInvalidation.cliTools[0]?.installedVersion).toBe('gen-2');
@@ -665,6 +676,160 @@ describe('createDetectionService', () => {
       kind: 'fresh',
       origin: 'request',
     });
+  });
+
+  it('publishes each lane as it settles instead of behind the slowest one', async () => {
+    const contexts = sourceContexts();
+    const catalog: ModelsDevCatalog = {
+      openai: { id: 'openai', models: { demo: { id: 'demo' } } },
+    };
+    const readinessGate = Promise.withResolvers<void>();
+    const cliGate = Promise.withResolvers<void>();
+    const modelsDevPublished = Promise.withResolvers<void>();
+    const publishedLanes: string[] = [];
+    const deps = makeDeps({
+      sourceContexts: contexts,
+      detectAll: async () => {
+        await readinessGate.promise;
+        return { providers: [makeProvider()], cliTools: [makeCliTool()] };
+      },
+      fetchModelsDevCatalog: async () => modelsDevOutcome(catalog),
+      discoverAllCliTools: async () => {
+        await cliGate.promise;
+        return [];
+      },
+    });
+    const request = detectionStore.beginRefresh({ contexts });
+
+    const load = service.loadDetection({
+      deps,
+      onLane: (lane) => {
+        publishedLanes.push(lane.lane);
+        detectionStore.publishLane({ lane, request });
+        if (lane.lane === 'modelsDev') modelsDevPublished.resolve();
+      },
+    });
+    await modelsDevPublished.promise;
+
+    expect(publishedLanes).toEqual(['modelsDev']);
+    expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
+    expect(detectionStore.get().refresh.modelsDev).toMatchObject({
+      outcome: 'fresh',
+      refreshing: false,
+    });
+    expect(detectionStore.get().refresh.readiness).toMatchObject({
+      outcome: 'uninitialized',
+      refreshing: true,
+    });
+    expect(detectionStore.get().cliTools).toEqual([]);
+
+    readinessGate.resolve();
+    cliGate.resolve();
+    await load;
+
+    expect(publishedLanes[0]).toBe('modelsDev');
+    expect([...publishedLanes].sort()).toEqual(['cliModels', 'modelsDev', 'readiness']);
+    expect(detectionStore.get().cliTools).toHaveLength(1);
+    expect(detectionStore.get().refresh.cliModels.refreshing).toBe(false);
+  });
+
+  it('persists the detection cache even when a lane listener throws', async () => {
+    const deps = makeDeps({ sourceContexts: sourceContexts() });
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    const result = await service.loadDetection({
+      deps,
+      projectDir: tempDir,
+      onLane: () => {
+        throw new Error('lane listener exploded');
+      },
+    });
+    await service.getPendingSave();
+
+    // Publication is best-effort notification. A store or UI listener must not
+    // be able to reject the load and take `queueSave` down with it.
+    expect(result.cliTools).toHaveLength(1);
+    const cache = JSON.parse(
+      await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8'),
+    );
+    expect(cache.cliTools).toHaveLength(1);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('Detection lane listener failed'));
+    stderr.mockRestore();
+  });
+
+  it('replays already-settled lanes to a listener that joins a load in flight', async () => {
+    const gate = Promise.withResolvers<void>();
+    const modelsDevSettled = Promise.withResolvers<void>();
+    const deps = makeDeps({
+      sourceContexts: sourceContexts(),
+      detectAll: async () => {
+        await gate.promise;
+        return { providers: [makeProvider()], cliTools: [makeCliTool()] };
+      },
+    });
+
+    const first: string[] = [];
+    const load = service.loadDetection({
+      deps,
+      onLane: (lane) => {
+        first.push(lane.lane);
+        if (lane.lane === 'modelsDev') modelsDevSettled.resolve();
+      },
+    });
+    await modelsDevSettled.promise;
+
+    const late: string[] = [];
+    const joined = service.loadDetection({ deps, onLane: (lane) => late.push(lane.lane) });
+    // Lanes are announced once. A deduped caller that arrives afterwards would
+    // otherwise wait forever on a lane that has already spoken.
+    expect(late).toContain('modelsDev');
+
+    gate.resolve();
+    await Promise.all([load, joined]);
+
+    expect([...first].sort()).toEqual(['cliModels', 'modelsDev', 'readiness']);
+    expect([...late].sort()).toEqual(['cliModels', 'modelsDev', 'readiness']);
+  });
+
+  it('lets a slower lane publish under a generation the faster lane already outran', async () => {
+    const contexts = sourceContexts();
+    const readinessGate = Promise.withResolvers<void>();
+    const cliGate = Promise.withResolvers<void>();
+    const modelsDevPublished = Promise.withResolvers<void>();
+    const deps = makeDeps({
+      sourceContexts: contexts,
+      detectAll: async () => {
+        await readinessGate.promise;
+        return { providers: [makeProvider()], cliTools: [makeCliTool()] };
+      },
+      discoverAllCliTools: async () => {
+        await cliGate.promise;
+        return [];
+      },
+    });
+    const request = detectionStore.beginRefresh({ contexts });
+
+    const load = service.loadDetection({
+      deps,
+      onLane: (lane) => {
+        detectionStore.publishLane({ lane, request });
+        if (lane.lane === 'modelsDev') modelsDevPublished.resolve();
+      },
+    });
+    await modelsDevPublished.promise;
+    readinessGate.resolve();
+    cliGate.resolve();
+    await load;
+
+    // One monotonic coordinator generation is shared across sources, so the
+    // readiness lane carries a lower number than the models.dev lane that
+    // settled first. A single global guard would drop readiness silently.
+    const refresh = detectionStore.get().refresh;
+    expect(refresh.readiness.generation).toBeLessThan(refresh.modelsDev.generation ?? 0);
+    expect(refresh.readiness.outcome).toBe('fresh');
+    expect(detectionStore.get().providers).toEqual([makeProvider()]);
+    expect(detectionStore.get().cliTools).toHaveLength(1);
+    expect(refresh.generation).toBe(refresh.cliModels.generation);
   });
 
   it('records no remote source invocation while offline and returns structured uninitialized refresh outcomes', async () => {
@@ -685,7 +850,7 @@ describe('createDetectionService', () => {
       },
     });
 
-    const offlineResult = await service.loadDetection(offline);
+    const offlineResult = await service.loadDetection({ deps: offline });
     const neverLoaded = createDetectionService();
     const notRun = await neverLoaded.refreshDetection(undefined);
 
