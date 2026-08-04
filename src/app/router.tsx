@@ -18,6 +18,8 @@ import type { RuntimeCommandDef, CopyResult, CopyTarget } from '../core/runtime/
 import type { OverlayType, Screen } from '../core/navigation/types.js';
 import type { WorkflowScreenDeps } from '../features/workflow/hooks/workflow-screen/use-model.js';
 import { assertNever } from '../utils/type-guards.js';
+import { sessionSelectStore } from '../stores/navigation/session-select.js';
+import { SessionPreparation } from './session-preparation.js';
 
 interface RouterProps {
   screen: Screen;
@@ -38,8 +40,14 @@ export function Router({
   onWorkflowMode,
   workflowDeps,
 }: RouterProps) {
+  const sessionPreparationActive = sessionSelectStore.use(
+    (state) => state.preparation.kind !== 'idle',
+  );
+
   return (
     <Layout
+      sessionPreparation={<SessionPreparation />}
+      sessionPreparationActive={sessionPreparationActive}
       screen={renderScreen({ screen, commands, onRuntime, copyTarget, workflowDeps })}
       overlay={renderOverlay({
         active: overlayActive,

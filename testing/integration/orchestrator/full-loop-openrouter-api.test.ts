@@ -13,6 +13,11 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
+import { executableReceipt } from '#testing/helpers/custom-command-based.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../src/engine/runners/prepared-execution.js';
 
 const dirs: string[] = [];
 let originalOpenRouterApiKey: string | undefined;
@@ -84,10 +89,9 @@ describe('full workflow OpenRouter API implementer', { timeout: 90_000 }, () => 
       }),
     });
 
-    const summary = await runWorkflow({
-      feature: 'run an OpenRouter API implementer loop',
-      projectDir,
-      config: makeConfig({
+    const feature = 'run an OpenRouter API implementer loop';
+    const config = parsePreparedConfig(
+      makeConfig({
         implementer: {
           kind: 'api',
           provider: 'openrouter',
@@ -110,9 +114,50 @@ describe('full workflow OpenRouter API implementer', { timeout: 90_000 }, () => 
           persistTranscript: true,
         },
       }),
+    );
+    const preparationId = 'full-loop-openrouter-preparation';
+    const active = {
+      version: 1 as const,
+      sessionId,
+      generation: '6a666666-6666-4666-8666-666666666666',
+    };
+    const prepared: PreparedExecution = {
+      purpose: 'new-workflow',
+      config,
+      preparationId,
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [],
+        metadata: {},
+      },
+      gates: [
+        {
+          kind: 'cli',
+          slot: { role: 'planner' },
+          preparationId,
+          tool: 'claude-code',
+          executable: executableReceipt(),
+        },
+        {
+          kind: 'api',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          provider: 'openrouter',
+          endpointOrigin: 'https://openrouter.ai',
+        },
+      ],
+      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+      runtime: { feature, allowRepoRunners: false, allowHooks: false },
+    };
+
+    const summary = await runWorkflow({
+      prepared,
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
-      sessionId,
       _planner: planner,
       _eventSink: (event) => events.push(event),
     });

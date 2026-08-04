@@ -11,7 +11,7 @@ import { checkServerStatus } from '../../engine/ipc/lockfile.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
-import { deriveCliReadiness } from '../../core/schemas/readiness.js';
+import { parsePreparedConfig } from '../../engine/runners/prepared-execution.js';
 
 let tmp: string;
 
@@ -156,7 +156,39 @@ describe('resume command', () => {
               useMouse: false,
               useHover: false,
             }),
-            detectCliReadiness: async () => [],
+            prepareExecution: async (input) => {
+              if (!('existingSession' in input)) throw new Error('expected resume preparation');
+              const active = {
+                version: 1 as const,
+                sessionId: input.existingSession.sessionId,
+                generation: '44444444-4444-4444-8444-444444444444',
+              };
+              return {
+                kind: 'prepared',
+                execution: {
+                  purpose: 'resume',
+                  config: parsePreparedConfig(input.effectiveConfig),
+                  preparationId: 'private-resume-preparation',
+                  report: {
+                    generatedAt: '2026-08-04T00:00:00.000Z',
+                    projectDir: input.existingSession.projectDir,
+                    status: 'ready',
+                    counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+                    nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+                    sections: [],
+                    metadata: {},
+                  },
+                  gates: [],
+                  session: { kind: 'existing', ref: input.existingSession, active },
+                  runtime: {
+                    feature: input.feature,
+                    resumeState: input.resumeState,
+                    allowRepoRunners: input.policy.allowRepoRunners,
+                    allowHooks: input.policy.allowHooks,
+                  },
+                },
+              };
+            },
           },
         }),
     };
@@ -174,27 +206,12 @@ describe('resume command', () => {
     }
   });
 
-  it('passes only live trusted CLI identities into a resumed headless run', async () => {
+  it('passes only prepared CLI identities into a resumed headless run', async () => {
     tmp = createTempDir('resume-readiness-gate');
     const sessionId = '2026-04-18-readiness-gate';
     const sessDir = makeSessionDir(tmp, sessionId);
     writeState(sessDir, 'planning');
 
-    const readiness = deriveCliReadiness({
-      tool: 'claude-code',
-      enabled: true,
-      installation: 'installed',
-      executable: {
-        path: '/usr/local/bin/claude',
-        fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
-      },
-      trust: 'trusted',
-      installedVersion: '1.2.3',
-      testedVersion: '1.2.0',
-      compatibility: 'compatible',
-      auth: 'not-required',
-      probedAt: Date.now(),
-    });
     let gatePath: string | undefined;
 
     await resumeSavedSession({
@@ -205,8 +222,11 @@ describe('resume command', () => {
       deps: {
         initStores: async () => {},
         renderApp: async () => {},
-        runHeadless: async ({ trustedCliGates }) => {
-          gatePath = trustedCliGates?.get('claude-code')?.executable.path;
+        runHeadless: async ({ prepared }) => {
+          const gate = prepared.gates.find(
+            (gate) => gate.kind === 'cli' && gate.tool === 'claude-code',
+          );
+          if (gate?.kind === 'cli') gatePath = gate.executable.path;
         },
         runRpc: async () => {},
         setupWorkflow: async () => ({
@@ -215,7 +235,57 @@ describe('resume command', () => {
           useMouse: false,
           useHover: false,
         }),
-        detectCliReadiness: async () => [readiness],
+        prepareExecution: async (input) => {
+          if (!('existingSession' in input)) throw new Error('expected resume preparation');
+          const active = {
+            version: 1 as const,
+            sessionId: input.existingSession.sessionId,
+            generation: '55555555-5555-4555-8555-555555555555',
+          };
+          return {
+            kind: 'prepared',
+            execution: {
+              purpose: 'resume',
+              config: parsePreparedConfig(input.effectiveConfig),
+              preparationId: 'prepared-cli-resume',
+              report: {
+                generatedAt: '2026-08-04T00:00:00.000Z',
+                projectDir: input.existingSession.projectDir,
+                status: 'ready',
+                counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+                nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+                sections: [],
+                metadata: {},
+              },
+              gates: [
+                {
+                  kind: 'cli',
+                  tool: 'claude-code',
+                  slot: { role: 'planner' },
+                  preparationId: 'prepared-cli-resume',
+                  executable: {
+                    path: '/usr/local/bin/claude',
+                    fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+                    executableIdentity: {
+                      canonicalPath: '/usr/local/bin/claude',
+                      realPath: '/usr/local/bin/claude',
+                      platformFileId: '1:2',
+                      fingerprint: `1:2:3:4:sha256:${'a'.repeat(64)}`,
+                      resolvedAt: 1,
+                    },
+                  },
+                },
+              ],
+              session: { kind: 'existing', ref: input.existingSession, active },
+              runtime: {
+                feature: input.feature,
+                resumeState: input.resumeState,
+                allowRepoRunners: input.policy.allowRepoRunners,
+                allowHooks: input.policy.allowHooks,
+              },
+            },
+          };
+        },
       },
     });
 

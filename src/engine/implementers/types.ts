@@ -9,6 +9,7 @@ import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { CliStartGate } from '../runners/start-gate.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import type * as ImplementerConfig from '../../core/schemas/implementer-config.js';
+import type { RunnerSlot } from '../runners/prepared-execution.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -40,6 +41,7 @@ export interface ImplementerFactoryOptions {
   /** Canonical CLI identity admitted by the start-readiness gate. */
   trustedCli?: CliStartGate | undefined;
   customRuntime?: CustomRunnerRuntimePort | undefined;
+  slot?: Exclude<RunnerSlot, Readonly<{ role: 'planner' }>> | undefined;
 }
 
 export interface ImplementerOptions {

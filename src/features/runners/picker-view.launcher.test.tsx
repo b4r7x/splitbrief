@@ -79,6 +79,7 @@ describe('PickerView launcher filtering', () => {
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 
@@ -119,6 +120,7 @@ describe('PickerView launcher filtering', () => {
       currentCommand: 'my-tool --json',
       currentCommandKind: 'shell',
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 
@@ -154,6 +156,7 @@ describe('PickerView launcher filtering', () => {
       currentCommand: 'my-ai-tool --format stream-json',
       currentCommandKind: 'agent',
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 

@@ -1,5 +1,14 @@
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { isInternalGitStatusPath } from './paths.js';
+import { detachedBootstrapRoot, isInternalGitStatusPath } from './paths.js';
+
+describe('detachedBootstrapRoot', () => {
+  it('keeps temporary detached startup state outside final sessions', () => {
+    const projectDir = join('repo', 'project');
+
+    expect(detachedBootstrapRoot(projectDir)).toBe(join(projectDir, '.splitbrief', 'bootstrap'));
+  });
+});
 
 describe('isInternalGitStatusPath', () => {
   it('matches the internal artifact directories at the top level', () => {

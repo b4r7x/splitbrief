@@ -26,6 +26,8 @@ export interface RuntimeMembershipAccess {
 export interface ModelCacheAccessor {
   getModelsDevCatalog(): ModelsDevCatalog | null;
   getProviderModels(providerId: ProviderId): readonly DetectedModel[] | null;
+  /** Staleness of the generic memory backing getProviderModels (remembered rows). */
+  isProviderModelCacheStale?(providerId: ProviderId): boolean;
   /**
    * Current role-scoped API membership. When present, this is authoritative
    * for API and Agent SDK model lookup and prevents ambiguous generic reuse.
@@ -203,7 +205,11 @@ export function getRuntimeModelSnapshot(
   if (runtimeProviderId === null) return null;
   const entries = input.cache.getProviderModels(runtimeProviderId);
   if (entries === null) return null;
-  return { providerId: runtimeProviderId, entries, isStale: false };
+  return {
+    providerId: runtimeProviderId,
+    entries,
+    isStale: input.cache.isProviderModelCacheStale?.(runtimeProviderId) ?? false,
+  };
 }
 
 export function getModelsDevEntries(

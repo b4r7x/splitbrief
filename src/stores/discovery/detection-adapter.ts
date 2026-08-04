@@ -20,5 +20,8 @@ export function hydrateDetectionIntoStores(
     generation: input.snapshot.generation,
     requestId: input.snapshot.requestId,
     contexts: input.contexts,
+    ...(input.snapshot.cliCatalogs === undefined
+      ? {}
+      : { cliCatalogs: input.snapshot.cliCatalogs }),
   });
 }

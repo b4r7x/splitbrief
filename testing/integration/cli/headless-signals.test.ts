@@ -4,6 +4,7 @@ import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-fact
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   createHeadlessGitProject,
+  preparedHeadlessExecution,
   writeCurrentTranscriptHeadlessConfigYaml,
   writeMinimalHeadlessConfigYaml,
 } from '#testing/helpers/headless-project.js';
@@ -68,13 +69,15 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
       return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
     });
     const implementer = makeImplementer({ implement });
+    const state = makeTwoTaskState();
 
     await runHeadless({
-      feature: 'stop me',
-      projectDir,
-      opts: {},
-      savedState: makeTwoTaskState(),
-      sessionId,
+      prepared: preparedHeadlessExecution({
+        projectDir,
+        sessionId,
+        feature: 'stop me',
+        resumeState: state,
+      }),
       _planner: planner,
       _implementer: implementer,
     });
@@ -103,11 +106,12 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
     });
 
     await runHeadless({
-      feature: 'secret oauth login',
-      projectDir,
-      opts: {},
-      savedState: state,
-      sessionId,
+      prepared: preparedHeadlessExecution({
+        projectDir,
+        sessionId,
+        feature: 'secret oauth login',
+        resumeState: state,
+      }),
       _planner: planner,
       _implementer: implementer,
     });
@@ -122,13 +126,15 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
       return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
     });
     const implementer = makeImplementer({ implement });
+    const state = makeTwoTaskState();
 
     await runHeadless({
-      feature: 'stop me',
-      projectDir,
-      opts: {},
-      savedState: makeTwoTaskState(),
-      sessionId,
+      prepared: preparedHeadlessExecution({
+        projectDir,
+        sessionId,
+        feature: 'stop me',
+        resumeState: state,
+      }),
       _planner: planner,
       _implementer: implementer,
     });
@@ -150,13 +156,15 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
       return { success: false, output: '', error: 'broken code', usage: null };
     });
     const implementer = makeImplementer({ implement });
+    const state = makeTwoTaskState();
 
     await runHeadless({
-      feature: 'stop me',
-      projectDir,
-      opts: {},
-      savedState: makeTwoTaskState(),
-      sessionId,
+      prepared: preparedHeadlessExecution({
+        projectDir,
+        sessionId,
+        feature: 'stop me',
+        resumeState: state,
+      }),
       _planner: planner,
       _implementer: implementer,
     });
@@ -187,13 +195,15 @@ describe('runHeadless — SIGINT/SIGTERM stops the run', () => {
       return { success: true, output: 'done', usage: { inputTokens: 10, outputTokens: 5 } };
     });
     const implementer = makeImplementer({ implement });
+    const state = makeTwoTaskState();
 
     await runHeadless({
-      feature: 'stop me',
-      projectDir,
-      opts: {},
-      savedState: makeTwoTaskState(),
-      sessionId,
+      prepared: preparedHeadlessExecution({
+        projectDir,
+        sessionId,
+        feature: 'stop me',
+        resumeState: state,
+      }),
       _planner: planner,
       _implementer: implementer,
     });

@@ -26,8 +26,10 @@ import {
 } from './status.js';
 import type { Config } from '../schemas/config.js';
 import type { ApproveLevel, CommitStrategy } from '../schemas/enums.js';
-import type { CliReadinessResult } from '../schemas/readiness.js';
+import { cliReadinessCheckId, type CliReadinessResult } from '../schemas/readiness.js';
+import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import type { WorkflowOpts } from '../types/config-options.js';
+import type { SessionRef } from '../types/session-ref.js';
 import type { BuildReadinessReportInput } from './checks/build.js';
 import type { ConfigReadinessInput } from './checks/config.js';
 import type { PackageScriptsReadinessInput } from './checks/validation.js';
@@ -37,8 +39,6 @@ import type { ReadinessCheck, ReadinessReport } from './types.js';
 export interface CollectedReadiness {
   report: ReadinessReport;
   config?: Config | undefined;
-  /** Canonical CLI probe results retained for the execution start gate. */
-  cliReadiness?: readonly CliReadinessResult[] | undefined;
 }
 
 export interface CollectReadinessOptions {
@@ -47,9 +47,8 @@ export interface CollectReadinessOptions {
   config?: Config | undefined;
   cliReadiness?: readonly CliReadinessResult[] | undefined;
   /**
-   * Optional live CLI probe used by `start`. The callback is deliberately
-   * outside the generic doctor/readiness collector so cached discovery cannot
-   * be mistaken for an execution start-gate identity.
+   * Optional live CLI probe for doctor-style diagnostics. Execution admission
+   * performs its own fresh generic runner preparation.
    */
   detectCliReadiness?:
     | ((input: {
@@ -60,6 +59,36 @@ export interface CollectReadinessOptions {
     | undefined;
   defaultApprove?: ApproveLevel | undefined;
   probeValidation?: boolean | undefined;
+  resumeSession?: SessionRef | undefined;
+}
+
+const CLI_READINESS_CHECK_IDS = new Set(CLI_TOOL_IDS.map((tool) => cliReadinessCheckId(tool)));
+
+export function applyRunnerPreparationChecks(
+  report: ReadinessReport,
+  runnerChecks: readonly ReadinessCheck[],
+): ReadinessReport {
+  const sections = report.sections.map((section) =>
+    section.id === 'runners'
+      ? {
+          ...section,
+          checks: [
+            ...section.checks.filter((check) => !CLI_READINESS_CHECK_IDS.has(check.id)),
+            ...runnerChecks,
+          ],
+        }
+      : section,
+  );
+  const checks = flattenReadinessChecks(sections);
+  const counts = countReadinessChecks(checks);
+  const status = aggregateReadinessStatus(counts);
+  return {
+    ...report,
+    sections,
+    counts,
+    status,
+    nextAction: selectNextAction(checks, status),
+  };
 }
 
 export async function collectReadiness(
@@ -72,6 +101,7 @@ export async function collectReadiness(
   const repo = await readRepoPosture(
     options.projectDir,
     loaded.config?.workflow.git?.commitStrategy,
+    options.resumeSession,
   );
   let cliReadiness = options.cliReadiness;
   if (cliReadiness === undefined && loaded.config && options.detectCliReadiness) {
@@ -82,9 +112,8 @@ export async function collectReadiness(
         opts: options.opts ?? {},
       });
     } catch {
-      // A missing/failed live probe is represented by an empty result. Runner
-      // readiness then emits its existing blocker, and no start gate can be
-      // created from stale cache or an ambient environment fallback.
+      // A missing or failed live probe is represented by an empty diagnostic
+      // result so runner readiness emits its existing blocker.
       cliReadiness = [];
     }
   }
@@ -108,7 +137,6 @@ export async function collectReadiness(
   return {
     report,
     config: loaded.config,
-    ...(cliReadiness !== undefined && { cliReadiness }),
   };
 }
 
@@ -212,6 +240,7 @@ function readPackageScripts(projectDir: string): PackageScriptsReadinessInput {
 async function readRepoPosture(
   projectDir: string,
   commitStrategy?: CommitStrategy | undefined,
+  resumeSession?: SessionRef | undefined,
 ): Promise<RepoReadinessInput> {
   const repoExists = await isGitRepo(projectDir).catch(() => false);
   if (!repoExists) {
@@ -239,6 +268,10 @@ async function readRepoPosture(
   const inProgressGitOp = await getInProgressGitOp(projectDir).catch(() => null);
   const onDetachedHead = (await getCurrentBranch(projectDir).catch(() => '')) === 'HEAD';
   const activeSession = readActive(projectDir);
+  const activeSessionBelongsToResume =
+    activeSession !== null &&
+    resumeSession?.projectDir === projectDir &&
+    resumeSession.sessionId === activeSession;
   const commitsConfigured = commitStrategy !== undefined && commitStrategy !== 'none';
   const committerIdentityConfigured = commitsConfigured
     ? await hasCommitterIdentity(projectDir).catch(() => true)
@@ -253,9 +286,10 @@ async function readRepoPosture(
     inProgressGitOp,
     ...(commitStrategy !== undefined && { commitStrategy }),
     ...(committerIdentityConfigured !== undefined && { committerIdentityConfigured }),
-    ...(activeSession !== null && {
-      activeSession,
-      activeSessionLive: isSessionLive({ projectDir: projectDir, sessionId: activeSession }),
-    }),
+    ...(activeSession !== null &&
+      !activeSessionBelongsToResume && {
+        activeSession,
+        activeSessionLive: isSessionLive({ projectDir: projectDir, sessionId: activeSession }),
+      }),
   };
 }

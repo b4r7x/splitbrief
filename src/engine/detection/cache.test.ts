@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
+import { createDefaultConfig } from '../../core/config/load/io.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import { detectionContextsForCurrentConfig } from './store-publication.js';
 import type { DetectionCacheSnapshot } from './cache.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import {
@@ -120,11 +122,9 @@ describe('detection cache', () => {
     });
 
     const raw = await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8');
-    expect(raw).not.toContain('local-private-model-canary:7b');
     expect(raw).not.toContain('token-private-error-canary');
     expect(raw).not.toContain('/private/local-cli-path-canary');
     expect(raw).not.toContain('credential-private-remediation-canary');
-    expect(raw).not.toContain('models');
     expect(JSON.parse(raw)).toEqual({
       version: 3,
       contextKey: CACHE_CONTEXT,
@@ -132,7 +132,15 @@ describe('detection cache', () => {
       validatedAt: 1_786_000_001_000,
       generation: 12,
       requestId: 27,
-      providers: [{ provider: 'ollama', available: true, isLocal: true, hasKey: true }],
+      providers: [
+        {
+          provider: 'ollama',
+          available: true,
+          isLocal: true,
+          hasKey: true,
+          models: [{ id: 'local-private-model-canary:7b' }],
+        },
+      ],
       cliTools: [
         {
           tool: 'codex',
@@ -149,7 +157,100 @@ describe('detection cache', () => {
     });
   });
 
-  it('never serializes role-scoped provider outcomes, catalogs, diagnostics, or connection canaries', async () => {
+  it('serializes sanitized remembered model rows and drops credential-shaped ids', async () => {
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({
+        providers: [
+          {
+            provider: 'openrouter',
+            available: true,
+            isLocal: false,
+            hasKey: true,
+            models: [
+              {
+                id: 'deepseek/deepseek-chat',
+                contextLength: 131_072,
+                releaseDate: '2025-11-01',
+                pricingInput: 3,
+                displayName: 'DeepSeek Chat',
+              },
+              { id: 'sk-credential-shaped-model' },
+              { id: 'model id with spaces' },
+            ],
+          },
+        ],
+        cliCatalogs: [
+          {
+            role: 'planner',
+            tool: 'claude-code',
+            models: [{ id: 'claude-fable-5', contextLength: 200_000, nativeDefault: true }],
+            probedAt: 1_786_000_000_500,
+          },
+        ],
+      }),
+    });
+
+    const raw = await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8');
+    expect(raw).not.toContain('sk-credential-shaped-model');
+    expect(raw).not.toContain('model id with spaces');
+    expect(raw).not.toContain('pricingInput');
+    expect(raw).not.toContain('DeepSeek Chat');
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey: CACHE_CONTEXT }),
+    ).resolves.toMatchObject({
+      providers: [
+        {
+          provider: 'openrouter',
+          models: [{ id: 'deepseek/deepseek-chat', contextLength: 131_072 }],
+        },
+      ],
+      cliCatalogs: [
+        {
+          role: 'planner',
+          tool: 'claude-code',
+          models: [{ id: 'claude-fable-5', contextLength: 200_000, nativeDefault: true }],
+          probedAt: 1_786_000_000_500,
+        },
+      ],
+    });
+  });
+
+  it('drops a non-ISO release date but keeps the model row', async () => {
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({
+        cliCatalogs: [
+          {
+            role: 'planner',
+            tool: 'codex',
+            models: [{ id: 'model-with-odd-date', releaseDate: 'last tuesday' }],
+            probedAt: 1_786_000_000_500,
+          },
+        ],
+      }),
+    });
+
+    const snapshot = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(snapshot?.cliCatalogs?.[0]?.models).toEqual([{ id: 'model-with-odd-date' }]);
+  });
+
+  it('hydrates cache rows that predate remembered catalogs with the field undefined', async () => {
+    await saveDetectionCache({ projectDir: tempDir, snapshot: cacheSnapshot() });
+
+    const snapshot = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.cliCatalogs).toBeUndefined();
+  });
+
+  it('never serializes role-scoped provider outcomes, diagnostics, or connection canaries', async () => {
     const configuredProviderOutcomes: ConfiguredProviderOutcome[] = [
       {
         connection: {
@@ -188,9 +289,7 @@ describe('detection cache', () => {
     const raw = await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8');
     expect(raw).not.toContain('role-private-connection-canary');
     expect(raw).not.toContain('private-provider-diagnostic-canary');
-    expect(raw).not.toContain('private-runtime-model-canary');
     expect(raw).not.toContain('configuredProviderOutcomes');
-    expect(raw).not.toContain('models');
   });
 
   it('retains original observation metadata while returning a sanitized projection', async () => {
@@ -224,6 +323,39 @@ describe('detection cache', () => {
         },
       ],
     });
+  });
+
+  it('round-trips a realistic configured context longer than the legacy cache bound', async () => {
+    const contextKey = detectionContextsForCurrentConfig({
+      config: createDefaultConfig(),
+      projectDir: tempDir,
+    }).readiness;
+    const cliTool = cliDetectionFor('ready', 'claude-code');
+    expect(contextKey.length).toBeGreaterThan(512);
+
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ contextKey, cliTools: [cliTool] }),
+    });
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey }),
+    ).resolves.toMatchObject({
+      contextKey,
+      cliTools: [{ tool: 'claude-code', executable: null, diagnostic: { state: 'ready' } }],
+    });
+  });
+
+  it('keeps generated cache contexts bounded', async () => {
+    const contextKey = 'a'.repeat(16 * 1_024 + 1);
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ contextKey }),
+    });
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey }),
+    ).resolves.toBeNull();
   });
 
   it('round-trips detections carrying a failure kind without their diagnostics', async () => {

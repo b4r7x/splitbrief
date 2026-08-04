@@ -1,9 +1,7 @@
 import { ensureGitAndConfig } from '../../setup.js';
-import { configPath } from '../../../core/config/load/io.js';
 import { ensureHooksTrusted } from '../../hook-trust-prompt.js';
 import { resolveHooksConfig } from '../../../engine/hooks/discover.js';
-import { clearActive } from '../../../core/sessions/lifecycle.js';
-import { sessionDir } from '../../../core/paths.js';
+import { createSessionPreparationCandidate } from '../../../core/sessions/prepare.js';
 import {
   resolveCliWorkflowMode,
   workflowOptsToCLIOverrides,
@@ -12,11 +10,13 @@ import { resolveRunConfigWithBase } from '../../build-overrides.js';
 import { cliError } from '../../errors.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { formatDetachedAttachHint } from '../attach-hint.js';
-import { bootstrapSession } from './readiness.js';
 import type { RequiredFeatureDispatchArgs } from './types.js';
+import { assertDetachedOverridesTransportable } from '../../../engine/ipc/spawn-server.js';
 
 export async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
+  const overrides = workflowOptsToCLIOverrides(opts);
+  assertDetachedOverridesTransportable({ overrides });
   await ensureGitAndConfig(projectDir);
   const { config } = resolveRunConfigWithBase({ projectDir, opts });
   const mergedHooks = await resolveHooksConfig(projectDir, config.hooks);
@@ -27,42 +27,41 @@ export async function runDetachedStart(args: RequiredFeatureDispatchArgs): Promi
   });
 
   const mode = resolveCliWorkflowMode(opts, config);
-  const persistTranscript = config.workflow.persistTranscript;
-  const { sessionId: sessId, trustedCliGates } = await bootstrapSession({
+  const candidate = createSessionPreparationCandidate({
     projectDir,
     feature,
-    opts,
-    assertJson: opts.json ?? false,
-    emitReadiness: () => {},
-    ...(deps.detectCliReadiness !== undefined && {
-      detectCliReadiness: deps.detectCliReadiness,
-    }),
+    persistTranscript: config.workflow.persistTranscript,
   });
-  const sessDir = sessionDir(projectDir, sessId);
 
-  const overrides = workflowOptsToCLIOverrides(opts);
-
-  const result = await deps.spawnServer({
-    sessionDir: sessDir,
-    sessionId: sessId,
-    projectDir,
-    feature: enrichedFeature ?? feature,
-    mode,
-    configPath: configPath(projectDir),
-    overrides,
-    persistTranscript,
-    ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
-    ...(opts.allowRepoRunners !== undefined && { allowRepoRunners: opts.allowRepoRunners }),
-    ...(plannerContext !== undefined && { plannerContext }),
-    ...(args.attachments !== undefined &&
-      args.attachments.length > 0 && {
-        attachments: args.attachments,
+  const cancellation = new AbortController();
+  const abort = () => cancellation.abort();
+  process.once('SIGINT', abort);
+  process.once('SIGTERM', abort);
+  let result: Awaited<ReturnType<typeof deps.spawnServer>>;
+  try {
+    result = await deps.spawnServer({
+      candidate,
+      projectDir,
+      feature: enrichedFeature ?? feature,
+      overrides: { ...overrides, mode },
+      signal: cancellation.signal,
+      ...(opts.allowHooks !== undefined && { allowHooks: opts.allowHooks }),
+      ...(opts.allowRepoRunners !== undefined && { allowRepoRunners: opts.allowRepoRunners }),
+      ...(opts.allowUnverifiedAuth !== undefined && {
+        allowUnverifiedAuth: opts.allowUnverifiedAuth,
       }),
-    trustedCliGates,
-  });
+      ...(plannerContext !== undefined && { plannerContext }),
+      ...(args.attachments !== undefined &&
+        args.attachments.length > 0 && {
+          attachments: args.attachments,
+        }),
+    });
+  } finally {
+    process.off('SIGINT', abort);
+    process.off('SIGTERM', abort);
+  }
 
   if (!result.ok) {
-    clearActive({ projectDir, sessionId: sessId });
     throw cliError(`Failed to start server: ${result.reason}`, 1);
   }
 

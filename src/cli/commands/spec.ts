@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
 import { createPlanner } from '../../engine/runners/factory.js';
-import type { PlanResult } from '../../engine/planners/types.js';
+import type { Planner, PlanResult } from '../../engine/planners/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
 import { ensureGitAndConfig, resolveProjectDir, loadConfigOrExit } from '../setup.js';
@@ -9,11 +9,8 @@ import { withCliErrors } from '../errors.js';
 import { printConfigWarnings } from '../build-overrides.js';
 import { SPEC_FILE, PLAN_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
-import { beginSession } from '../../core/sessions/lifecycle.js';
-import { clearStaleSession } from '../../core/sessions/guards.js';
 import { ensureHooksTrusted } from '../hook-trust-prompt.js';
 import { resolveHooksConfig } from '../../engine/hooks/discover.js';
-import { rejectUntrustedRunners } from '../../engine/runners/trust.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import type {
   ArtifactApprovalReview,
@@ -29,17 +26,29 @@ import {
   promptCustomRunnerDisclosure,
 } from '../custom-runner-prompts.js';
 import { ALLOW_REPO_RUNNERS_HELP } from '../options.js';
+import { prepareExecution } from '../../engine/runners/prepare-execution.js';
+import {
+  releasePreparedExecutionOwnership,
+  rollbackPreparedExecutionOwnership,
+} from '../../engine/runners/prepared-execution.js';
+import {
+  cliPreparationPolicy,
+  clearStaleSessionForCli,
+  preparedExecutionOrThrow,
+} from './start/readiness.js';
 
 type SpecOpts = { project?: string; allowHooks: boolean; allowRepoRunners: boolean };
 
 interface SpecCommandDeps {
   createPlanner?: typeof createPlanner | undefined;
+  prepareExecution?: typeof prepareExecution | undefined;
   promptCustomRunnerDisclosure?: typeof promptCustomRunnerDisclosure | undefined;
   promptCustomRunnerArtifactApproval?: typeof promptCustomRunnerArtifactApproval | undefined;
 }
 
 export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}): void {
   const createPlannerForCommand = deps.createPlanner ?? createPlanner;
+  const prepareForCommand = deps.prepareExecution ?? prepareExecution;
   const promptForDisclosure = deps.promptCustomRunnerDisclosure ?? promptCustomRunnerDisclosure;
   const promptForArtifactApproval =
     deps.promptCustomRunnerArtifactApproval ?? promptCustomRunnerArtifactApproval;
@@ -53,16 +62,32 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       const projectDir = resolveProjectDir(opts.project);
       await ensureGitAndConfig(projectDir);
 
-      clearStaleSession(projectDir);
+      clearStaleSessionForCli(projectDir, 'defer-to-preparation');
 
       const { config: baseConfig, warnings } = loadConfigOrExit(projectDir);
       const mergedHooks = await resolveHooksConfig(projectDir, baseConfig.hooks);
       await ensureHooksTrusted({ projectDir, hooks: mergedHooks, allowHooks: opts.allowHooks });
-      rejectUntrustedRunners(baseConfig, projectDir, opts.allowRepoRunners);
       printConfigWarnings(warnings);
 
-      const sessionId = beginSession(projectDir, feature);
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
+      const execution = preparedExecutionOrThrow(
+        await prepareForCommand({
+          projectDir,
+          feature,
+          effectiveConfig: baseConfig,
+          policy: cliPreparationPolicy({
+            purpose: 'spec',
+            interaction,
+            opts,
+            ...(interaction === 'interactive' && {
+              onTieredApproval: (request) => promptForDisclosure({ request }),
+            }),
+          }),
+          signal: new AbortController().signal,
+        }),
+        interaction === 'headless',
+      );
+      const sessionId = execution.session.ref.sessionId;
       const sourceEnv = { ...process.env };
       const authorizationPathEnv = process.env.PATH;
       const authorizationPathExt = process.env.PATHEXT;
@@ -101,15 +126,29 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         },
       };
 
-      const planner = await createPlannerForCommand(baseConfig, undefined, { customRuntime });
+      let planner: Planner;
+      try {
+        planner = await createPlannerForCommand(execution.config, {
+          initialSessionId: undefined,
+          preparedConfig: execution.config,
+          customRuntime,
+          preparationId: execution.preparationId,
+          gates: execution.gates,
+          slot: { role: 'planner' },
+        });
+      } catch (cause) {
+        rollbackPreparedExecutionOwnership(execution);
+        throw cause;
+      }
 
       console.log(
         `Planning feature: ${feature} (planner: ${getRunnerDisplayName(baseConfig.planner)})\n`,
       );
 
+      releasePreparedExecutionOwnership(execution);
       const result: PlanResult = await withCliErrors(() =>
         planner.plan({
-          feature,
+          feature: execution.runtime.feature,
           projectDir,
           callbacks: {
             onOutput(text: string) {

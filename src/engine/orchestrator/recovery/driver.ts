@@ -4,6 +4,7 @@ import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import type { ActiveSessionReceipt } from '../../../core/sessions/lifecycle.js';
 import {
   getRunnerDisplayName,
   getRunnerModelName,
@@ -86,6 +87,7 @@ export function recoveryRetryTaskId(state: WorkflowState): TaskId | undefined {
 export function finalizeRecoveryResult(opts: {
   projectDir: string;
   sessionId: string;
+  active: ActiveSessionReceipt;
   state: WorkflowState;
   config: Config;
   status: string;
@@ -94,6 +96,7 @@ export function finalizeRecoveryResult(opts: {
     saveAbortedRecoverySession({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
+      active: opts.active,
       state: opts.state,
       config: opts.config,
     });
@@ -103,6 +106,7 @@ export function finalizeRecoveryResult(opts: {
 export function saveAbortedRecoverySession(opts: {
   projectDir: string;
   sessionId: string;
+  active: ActiveSessionReceipt;
   state: WorkflowState;
   config: Config;
 }): void {
@@ -131,6 +135,7 @@ export function saveAbortedRecoverySession(opts: {
   saveFinalSession({
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,
+    active: opts.active,
     feature: opts.state.feature,
     startTime,
     status: 'interrupted',

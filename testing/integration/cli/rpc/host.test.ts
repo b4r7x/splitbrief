@@ -18,8 +18,14 @@ import {
 } from '../../../../src/core/paths.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
 import { loadConfig } from '../../../../src/core/config/load/io.js';
+import { configForSessionTranscriptPolicy } from '../../../../src/core/sessions/io.js';
+import { reactivateExistingSession } from '../../../../src/core/sessions/lifecycle.js';
 import type { EventBus } from '../../../../src/engine/events/types.js';
 import type { RunWorkflowOptions } from '../../../../src/engine/orchestrator/run/init.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../../src/engine/runners/prepared-execution.js';
 import { WORKFLOW_REWIND_ABORT_REASON } from '../../../../src/engine/orchestrator/run/workflow.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import { runRpc } from '../../../../src/cli/rpc/run/host.js';
@@ -66,6 +72,42 @@ function setupProject(): string {
   dirs.push(projectDir);
   writeConfig(projectDir);
   return projectDir;
+}
+
+function preparedRpcExecution(input: {
+  projectDir: string;
+  sessionId: string;
+  feature: string;
+  resumeState?: WorkflowState | undefined;
+}): PreparedExecution {
+  const ref = { projectDir: input.projectDir, sessionId: input.sessionId };
+  ensureSessionDir(ref.projectDir, ref.sessionId);
+  const config = parsePreparedConfig(
+    configForSessionTranscriptPolicy(loadConfig(ref.projectDir).config, ref),
+  );
+  const active = reactivateExistingSession(ref);
+  return {
+    purpose: input.resumeState === undefined ? 'new-workflow' : 'resume',
+    config,
+    preparationId: `rpc-test-${input.sessionId}`,
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir: input.projectDir,
+      status: 'ready',
+      counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates: [],
+    session: { kind: 'existing', ref, active },
+    runtime: {
+      feature: input.feature,
+      ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
+      allowRepoRunners: false,
+      allowHooks: false,
+    },
+  };
 }
 
 function makeStateWithMixedQueue(feature: string): WorkflowState {
@@ -166,10 +208,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'ship rpc',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-session',
+        feature: 'ship rpc',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -219,7 +262,7 @@ describe('runRpc', () => {
     const { chunks, output } = captureWritable();
     let seenPersistTranscript: boolean | undefined;
     const runWorkflowStub = async (workflowOpts: RunWorkflowOptions) => {
-      seenPersistTranscript = workflowOpts.config.workflow.persistTranscript;
+      seenPersistTranscript = workflowOpts.prepared.config.workflow.persistTranscript;
       workflowOpts.eventBus?.publish({
         type: 'workflow_started',
         ts: 1,
@@ -229,11 +272,12 @@ describe('runRpc', () => {
     };
 
     await runRpc({
-      feature: 'secret oauth login',
-      projectDir,
-      opts: { rpc: true },
-      savedState: state,
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'secret oauth login',
+        resumeState: state,
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -267,10 +311,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'brief rpc correlation',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-brief-review-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-brief-review-session',
+        feature: 'brief rpc correlation',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -387,10 +432,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'brief rpc save draft',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'brief rpc save draft',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -473,10 +519,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'brief rpc external edit',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-brief-edit-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-brief-edit-session',
+        feature: 'brief rpc external edit',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -546,10 +593,7 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => workflowDone;
 
     const run = runRpc({
-      feature: 'status feature',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: sessionId,
+      prepared: preparedRpcExecution({ projectDir, sessionId, feature: 'status feature' }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -592,10 +636,7 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => workflowDone;
 
     const run = runRpc({
-      feature: 'status queue feature',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: sessionId,
+      prepared: preparedRpcExecution({ projectDir, sessionId, feature: 'status queue feature' }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -628,10 +669,7 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => workflowDone;
 
     const run = runRpc({
-      feature: 'slash queue feature',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: sessionId,
+      prepared: preparedRpcExecution({ projectDir, sessionId, feature: 'slash queue feature' }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -672,10 +710,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'regenerate test',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-regenerate-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-regenerate-session',
+        feature: 'regenerate test',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -714,10 +753,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'abort test',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-abort-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-abort-session',
+        feature: 'abort test',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -763,11 +803,12 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => {};
 
     await runRpc({
-      feature: 'applying recovery',
-      projectDir,
-      opts: { rpc: true },
-      savedState: stateWithApplyingRecovery,
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'applying recovery',
+        resumeState: stateWithApplyingRecovery,
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -825,11 +866,12 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => {};
 
     const run = runRpc({
-      feature: 'recovery feature',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      savedState: stateWithRecovery,
-      sessionId: sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'recovery feature',
+        resumeState: stateWithRecovery,
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -899,11 +941,12 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'paused recovery feature',
-      projectDir,
-      opts: { rpc: true },
-      savedState: stateWithPausedRecovery,
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'paused recovery feature',
+        resumeState: stateWithPausedRecovery,
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -942,10 +985,11 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => workflowDone;
 
     const run = runRpc({
-      feature: 'no recovery prompt',
-      projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-no-recovery-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-no-recovery-session',
+        feature: 'no recovery prompt',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -992,11 +1036,12 @@ describe('runRpc', () => {
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     const run = runRpc({
-      feature: 'invalid recovery feature',
-      projectDir,
-      opts: { rpc: true },
-      savedState: stateWithRecovery,
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'invalid recovery feature',
+        resumeState: stateWithRecovery,
+      }),
       deps: { input, output, runWorkflow: async () => {} },
     });
 
@@ -1079,11 +1124,12 @@ describe('runRpc', () => {
     const input = new PassThrough();
     const { chunks, output } = captureWritable();
     const run = runRpc({
-      feature: 'double recovery feature',
-      projectDir,
-      opts: { rpc: true },
-      savedState: stateWithRecovery,
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'double recovery feature',
+        resumeState: stateWithRecovery,
+      }),
       deps: { input, output, runWorkflow: async () => {} },
     });
 
@@ -1144,11 +1190,12 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'revise rpc feature',
-      projectDir,
-      opts: { rpc: true },
-      savedState: state,
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'revise rpc feature',
+        resumeState: state,
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -1218,11 +1265,12 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'approval revise rpc feature',
-      projectDir,
-      opts: { rpc: true },
-      savedState: state,
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'approval revise rpc feature',
+        resumeState: state,
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -1291,11 +1339,12 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'recovery revise rpc feature',
-      projectDir,
-      opts: { rpc: true },
-      savedState: stateWithRecovery,
-      sessionId,
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId,
+        feature: 'recovery revise rpc feature',
+        resumeState: stateWithRecovery,
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -1348,10 +1397,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'queue clear test',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-queue-clear-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-queue-clear-session',
+        feature: 'queue clear test',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -1394,10 +1444,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'rpc yolo active state test',
-      projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-yolo-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-yolo-session',
+        feature: 'rpc yolo active state test',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -1435,10 +1486,11 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => workflowDone;
 
     const run = runRpc({
-      feature: 'slash error test',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-slash-error-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-slash-error-session',
+        feature: 'slash error test',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -1471,10 +1523,11 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => workflowDone;
 
     const run = runRpc({
-      feature: 'slash typo test',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-slash-typo-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-slash-typo-session',
+        feature: 'slash typo test',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -1507,10 +1560,11 @@ describe('runRpc', () => {
     const runWorkflowStub = async () => workflowDone;
 
     const run = runRpc({
-      feature: 'eof test',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-eof-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-eof-session',
+        feature: 'eof test',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 
@@ -1534,10 +1588,11 @@ describe('runRpc', () => {
     };
 
     const run = runRpc({
-      feature: 'gate-close test',
-      projectDir: projectDir,
-      opts: { rpc: true },
-      sessionId: 'rpc-gate-close-session',
+      prepared: preparedRpcExecution({
+        projectDir,
+        sessionId: 'rpc-gate-close-session',
+        feature: 'gate-close test',
+      }),
       deps: { input, output, runWorkflow: runWorkflowStub },
     });
 

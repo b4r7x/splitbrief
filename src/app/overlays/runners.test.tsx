@@ -354,3 +354,40 @@ describe('ToolModelPicker provider choice', () => {
     ui.unmount();
   });
 });
+
+describe('ToolModelPicker discovery state', () => {
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 36, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
+  });
+
+  it('shows the initializing panel during cold discovery and reveals the picker on publish', async () => {
+    detectionStore.beginRefresh({ contexts: catalogContexts });
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await tick(20);
+    expect(frameText(ui)).toContain('Initializing your tools…');
+    expect(frameText(ui)).not.toContain('Tools');
+
+    publishOpenCodePlannerModels(['openrouter/deepseek-v4-flash']);
+    await vi.waitFor(() => {
+      const frame = frameText(ui);
+      expect(frame).not.toContain('Initializing your tools…');
+      expect(frame).toContain('Tools');
+      expect(frame).toContain('Models');
+    });
+    ui.unmount();
+  });
+
+  it('labels the picker as refreshing during a warm background refresh', async () => {
+    publishOpenCodePlannerModels(['openrouter/deepseek-v4-flash']);
+    detectionStore.beginRefresh({ contexts: catalogContexts });
+    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    await tick(20);
+    const frame = frameText(ui);
+    expect(frame).toContain('Refreshing your tools…');
+    expect(frame).toContain('Tools');
+    expect(frame).not.toContain('Initializing your tools…');
+    ui.unmount();
+  });
+});

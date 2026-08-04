@@ -1,26 +1,56 @@
-import { chmodSync, existsSync, statSync, utimesSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
-import { error } from '../../utils/error.js';
-import {
-  admitFreshCliStart,
-  cliStartGateFromReadiness,
-  cliStartGatesFromArray,
-  revalidateCliStartGates,
-} from './start-gate.js';
-import { deriveCliReadiness } from '../../core/schemas/readiness.js';
-import { resolveCliExecutable } from './resolve-cli-executable.js';
-import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { admitFreshCliStart, runnerGateFor } from './start-gate.js';
+import type { RunnerGate, RunnerGateExpectation } from './prepared-execution.js';
+import type { AdmittedCustomRunnerInvocation } from './trust.js';
 
 const EXECUTABLE_CONTENT_DIGEST = 'a'.repeat(64);
-const itUnix = process.platform === 'win32' ? it.skip : it;
 
-const legacyExecutable: CliExecutableIdentity = {
+const freshExecutable = CliExecutableReceiptSchema.parse({
   path: '/usr/local/bin/codex',
   fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+  executableIdentity: {
+    canonicalPath: '/usr/local/bin/codex',
+    realPath: '/usr/local/bin/codex',
+    platformFileId: '1:2',
+    fingerprint: `1:2:3:4:sha256:${EXECUTABLE_CONTENT_DIGEST}`,
+    resolvedAt: 1,
+  },
+});
+
+const customInvocation: AdmittedCustomRunnerInvocation = {
+  kind: 'custom-runner-invocation',
+  runner: {
+    source: 'configured',
+    command: {
+      id: 'review',
+      label: 'Review changes',
+      contract: 'output',
+      executable: '/usr/local/bin/reviewer',
+      argv: ['--format', 'text'],
+      outputFormat: 'text',
+      idleWarnMs: 300_000,
+      idleKillMs: 1_800_000,
+      env: [],
+    },
+  },
+  posture: {
+    role: 'implementer',
+    cwd: 'disposable-stage',
+    stage: 'filtered-disposable-stage',
+    filesystem: 'host-user-access',
+    network: 'host-network-access',
+    result: 'parsed-output-only',
+  },
+  executable: freshExecutable,
+  authorization: 'explicit-grant',
+  scope: {
+    projectIdentity: `sha256:${'b'.repeat(64)}`,
+    definitionId: 'review',
+    definitionDigest: `sha256:${'c'.repeat(64)}`,
+  },
 };
 
 type EvidenceOverrides = Readonly<{
@@ -205,20 +235,6 @@ describe('fresh CLI start gate', () => {
     expect(allowed).toMatchObject({ kind: 'admitted', gate: { tool: 'aider' } });
   });
 
-  it('revalidates the admitted identity before a session can be created', async () => {
-    const gates = cliStartGatesFromArray([{ tool: 'codex', executable: legacyExecutable }]);
-
-    await expect(
-      revalidateCliStartGates({
-        projectDir: '/project',
-        gates,
-        resolveExecutable: async () => {
-          throw error('cli-executable-identity-drift', 'identity changed');
-        },
-      }),
-    ).rejects.toMatchObject({ kind: 'cli-executable-identity-drift' });
-  });
-
   it('does not turn a legacy stat-only receipt into fresh start authorization', () => {
     const evidence = freshEvidence({
       executable: {
@@ -238,65 +254,130 @@ describe('fresh CLI start gate', () => {
       reason: { kind: 'executable', fact: 'unknown' },
     });
   });
-
-  itUnix('blocks metadata-preserving content replacement before session creation', async () => {
-    const projectDir = createTempDir('start-gate-digest-project');
-    const executableDir = createTempDir('start-gate-digest-executable');
-    const executablePath = join(executableDir, 'codex');
-    const markerPath = `${executablePath}.ran`;
-    const original = '#!/bin/sh\n:     "$0.ran"\nexit 0\n';
-    const replacement = '#!/bin/sh\ntouch "$0.ran"\nexit 0\n';
-    try {
-      expect(Buffer.byteLength(original)).toBe(Buffer.byteLength(replacement));
-      writeFileSync(executablePath, original, { mode: 0o755 });
-      chmodSync(executablePath, 0o755);
-      const fixedTime = new Date(1_700_000_000_000);
-      utimesSync(executablePath, fixedTime, fixedTime);
-      const trusted = await resolveCliExecutable(executablePath, projectDir);
-      const before = statSync(executablePath);
-
-      writeFileSync(executablePath, replacement, { mode: 0o755 });
-      chmodSync(executablePath, 0o755);
-      utimesSync(executablePath, fixedTime, fixedTime);
-      const after = statSync(executablePath);
-
-      expect(after.ino).toBe(before.ino);
-      expect(after.size).toBe(before.size);
-      expect(after.mtimeMs).toBe(before.mtimeMs);
-      await expect(
-        revalidateCliStartGates({
-          projectDir,
-          gates: cliStartGatesFromArray([{ tool: 'codex', executable: trusted }]),
-          resolveExecutable: (_command, currentProjectDir, trust) =>
-            resolveCliExecutable(executablePath, currentProjectDir, trust),
-        }),
-      ).rejects.toMatchObject({ kind: 'cli-executable-identity-drift' });
-      expect(existsSync(markerPath)).toBe(false);
-    } finally {
-      cleanupTempDir(projectDir);
-      cleanupTempDir(executableDir);
-    }
-  });
 });
 
-describe('legacy readiness compatibility', () => {
-  it('keeps legacy readiness conversion available without using it for fresh admission', () => {
-    const readiness = deriveCliReadiness({
-      tool: 'codex',
-      enabled: true,
-      installation: 'installed',
-      executable: legacyExecutable,
-      trust: 'trusted',
-      installedVersion: '1.0.0',
-      testedVersion: '1.0.0',
-      compatibility: 'compatible',
-      auth: 'not-required',
-      probedAt: 1,
-    });
+describe('prepared runner gates', () => {
+  it('binds every current runner kind to slot context and preparation', () => {
+    const preparationId = 'preparation-1';
+    const gates: readonly RunnerGate[] = [
+      {
+        kind: 'cli',
+        slot: { role: 'planner' },
+        preparationId,
+        tool: 'codex',
+        executable: freshExecutable,
+      },
+      {
+        kind: 'api',
+        slot: { role: 'implementer', profile: 'api' },
+        preparationId,
+        provider: 'openrouter',
+        endpointOrigin: 'https://openrouter.ai',
+      },
+      {
+        kind: 'agent-sdk',
+        slot: { role: 'implementer', profile: 'sdk' },
+        preparationId,
+        provider: 'anthropic',
+      },
+      {
+        kind: 'shell',
+        slot: { role: 'implementer', profile: 'shell' },
+        preparationId,
+        command: { kind: 'validated-config' },
+      },
+      {
+        kind: 'agent',
+        slot: { role: 'intermediate' },
+        preparationId,
+        command: { kind: 'configured-custom', invocation: customInvocation },
+      },
+    ];
+    const expectations: readonly RunnerGateExpectation[] = [
+      { kind: 'cli', slot: { role: 'planner' }, preparationId, tool: 'codex' },
+      {
+        kind: 'api',
+        slot: { role: 'implementer', profile: 'api' },
+        preparationId,
+        provider: 'openrouter',
+        endpointOrigin: 'https://openrouter.ai',
+      },
+      {
+        kind: 'agent-sdk',
+        slot: { role: 'implementer', profile: 'sdk' },
+        preparationId,
+        provider: 'anthropic',
+      },
+      {
+        kind: 'shell',
+        slot: { role: 'implementer', profile: 'shell' },
+        preparationId,
+        command: { kind: 'validated-config' },
+      },
+      {
+        kind: 'agent',
+        slot: { role: 'intermediate' },
+        preparationId,
+        command: { kind: 'configured-custom', definitionId: 'review' },
+      },
+    ];
 
-    expect(cliStartGateFromReadiness('codex', readiness)).toEqual({
-      tool: 'codex',
-      executable: legacyExecutable,
-    });
+    expect(expectations.map((expected) => runnerGateFor(gates, expected))).toEqual(gates);
+    expect(() =>
+      runnerGateFor(gates, {
+        kind: 'cli',
+        slot: { role: 'planner' },
+        preparationId: 'preparation-2',
+        tool: 'codex',
+      }),
+    ).toThrow('does not match the prepared planner context');
+  });
+
+  it('rejects a same-kind gate from another profile before adapter construction', () => {
+    const gates: readonly RunnerGate[] = [
+      {
+        kind: 'api',
+        slot: { role: 'implementer', profile: 'fast' },
+        preparationId: 'preparation-1',
+        provider: 'openrouter',
+        endpointOrigin: 'https://openrouter.ai',
+      },
+    ];
+    let adapterConstructed = false;
+
+    expect(() => {
+      runnerGateFor(gates, {
+        kind: 'api',
+        slot: { role: 'implementer', profile: 'cheap' },
+        preparationId: 'preparation-1',
+        provider: 'openrouter',
+        endpointOrigin: 'https://openrouter.ai',
+      });
+      adapterConstructed = true;
+    }).toThrow('does not match the prepared implementer context');
+    expect(adapterConstructed).toBe(false);
+  });
+
+  it('rejects a configured custom definition mismatch before adapter construction', () => {
+    const gates: readonly RunnerGate[] = [
+      {
+        kind: 'shell',
+        slot: { role: 'implementer', profile: 'reviewer' },
+        preparationId: 'preparation-1',
+        command: { kind: 'configured-custom', invocation: customInvocation },
+      },
+    ];
+    let adapterConstructed = false;
+
+    expect(() => {
+      runnerGateFor(gates, {
+        kind: 'shell',
+        slot: { role: 'implementer', profile: 'reviewer' },
+        preparationId: 'preparation-1',
+        command: { kind: 'configured-custom', definitionId: 'publish' },
+      });
+      adapterConstructed = true;
+    }).toThrow('does not match the prepared implementer context');
+    expect(adapterConstructed).toBe(false);
   });
 });

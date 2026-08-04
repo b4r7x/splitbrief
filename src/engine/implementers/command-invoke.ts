@@ -6,12 +6,7 @@ import type { ChangeDetector } from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { createChangeDetector } from '../change-detection.js';
-import {
-  customRunnerSecurityPosture,
-  type ConfiguredCustomRunner,
-} from '../runners/custom-trust.js';
-import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
-import { customRunnerAdmissionError } from '../runners/trust.js';
+import type { AdmittedCustomRunnerInvocation } from '../runners/trust.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import {
   invokeCommandBasedRunner,
@@ -81,8 +76,8 @@ export function createCommandBasedImplementer(
 }
 
 export interface ConfiguredCustomImplementerOptions {
-  readonly runner: ConfiguredCustomRunner;
   readonly runtime: CustomRunnerRuntimePort;
+  readonly admission: AdmittedCustomRunnerInvocation;
   readonly factoryOptions?: ImplementerFactoryOptions | undefined;
 }
 
@@ -93,11 +88,11 @@ export interface ConfiguredCustomImplementerOptions {
  * project stage for the configured command contract.
  */
 export function createConfiguredCustomImplementer({
-  runner,
   runtime,
+  admission,
   factoryOptions,
 }: ConfiguredCustomImplementerOptions): Implementer {
-  const extractsCode = runner.command.contract === 'output';
+  const extractsCode = admission.runner.command.contract === 'output';
 
   return createImplementerBase({
     extractsCode,
@@ -105,23 +100,9 @@ export function createConfiguredCustomImplementer({
     publisher: factoryOptions?.publisher,
 
     async invoke(invokeOpts: InvokeOpts) {
-      const admission = await prepareCustomRunnerAdmission({
-        ...runtime.admission,
-        projectDir: runtime.authorizationProjectDir,
-        runner,
-        posture: customRunnerSecurityPosture('implementer', runner.command.contract),
-        phase: 'implementing',
-        taskId: invokeOpts.task.id,
-        authorizationPathEnv: runtime.authorizationPathEnv ?? '',
-        authorizationPathExt: runtime.authorizationPathExt ?? '',
-      });
-      if (admission.kind !== 'admitted') {
-        throw customRunnerAdmissionError.denied('implementer');
-      }
-
       const invokeAdmittedRunner = (cwd: string) =>
         invokeCustomCommandBasedRunner({
-          admission: admission.invocation,
+          admission,
           prompt: invokeOpts.prompt,
           authorizationProjectDir: runtime.authorizationProjectDir,
           authorizationPathEnv: runtime.authorizationPathEnv ?? '',

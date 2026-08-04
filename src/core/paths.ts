@@ -9,12 +9,16 @@ export const CODEX_DIR = '.codex';
 export const SKILLS_DIR = 'skills';
 export const SESSIONS_DIR = 'sessions';
 export const ACTIVE_FILE = 'active';
+export const DETACHED_BOOTSTRAP_DIR = 'bootstrap';
 
 export const activeFile = (projectDir: string): string =>
   join(projectDir, SPLITBRIEF_DIR, ACTIVE_FILE);
 
 export const sessionsRoot = (projectDir: string): string =>
   join(projectDir, SPLITBRIEF_DIR, SESSIONS_DIR);
+
+export const detachedBootstrapRoot = (projectDir: string): string =>
+  join(projectDir, SPLITBRIEF_DIR, DETACHED_BOOTSTRAP_DIR);
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 

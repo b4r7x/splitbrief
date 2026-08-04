@@ -68,6 +68,78 @@ describe('startIpcServer — auth', () => {
     expect(socket.destroyed).toBe(true);
   });
 
+  it('accepts the detached parent exactly once with auth and the prepared receipt', async () => {
+    const candidate = {
+      version: 1 as const,
+      sessionId: 'test-session',
+      generation: '12345678-1234-4123-8123-123456789abc',
+    };
+    let accepted = false;
+    const { srv } = await harness.makeServer({
+      onParentAccept: (input) => {
+        if (
+          accepted ||
+          JSON.stringify(input) !== JSON.stringify({ ...candidate, childPid: 4242 })
+        ) {
+          return false;
+        }
+        accepted = true;
+        return true;
+      },
+    });
+    const first = await harness.connectClient(srv.sockPath);
+    harness.sockets.push(first);
+    first.write(
+      `${JSON.stringify({
+        kind: 'parent_accept',
+        token: harness.authToken,
+        ...candidate,
+        childPid: 4242,
+      })}\n`,
+    );
+
+    expect(await harness.readLines(first, 1)).toEqual([
+      { kind: 'parent_accepted', ...candidate, childPid: 4242 },
+    ]);
+
+    const repeated = await harness.connectClient(srv.sockPath);
+    harness.sockets.push(repeated);
+    repeated.write(
+      `${JSON.stringify({
+        kind: 'parent_accept',
+        token: harness.authToken,
+        ...candidate,
+        childPid: 4242,
+      })}\n`,
+    );
+    const response = await harness.readLines(repeated, 1);
+    expect(response[0]).toMatchObject({ kind: 'error', code: 'unauthorized' });
+  });
+
+  it('rejects detached parent acceptance with the wrong socket token', async () => {
+    const { srv } = await harness.makeServer({ onParentAccept: () => true });
+    const socket = await harness.connectClient(srv.sockPath);
+    harness.sockets.push(socket);
+    socket.write(
+      `${JSON.stringify({
+        kind: 'parent_accept',
+        token: 'wrong-token',
+        version: 1,
+        sessionId: 'test-session',
+        generation: '12345678-1234-4123-8123-123456789abc',
+        childPid: 4242,
+      })}\n`,
+    );
+
+    expect(await harness.readLines(socket, 1)).toEqual([
+      {
+        kind: 'error',
+        code: 'unauthorized',
+        message: 'IPC: invalid detached parent acceptance',
+      },
+    ]);
+  });
+
   it('rejects second connection with already_attached', async () => {
     const { srv } = await harness.makeServer();
 

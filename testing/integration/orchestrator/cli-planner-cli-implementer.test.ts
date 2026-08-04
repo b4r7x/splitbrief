@@ -10,11 +10,11 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
+import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import {
-  cliStartGatesFromArray,
-  type CliStartGate,
-} from '../../../src/engine/runners/start-gate.js';
-import { trustedCliGateFor } from '#testing/helpers/command-shim.js';
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../src/engine/runners/prepared-execution.js';
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
@@ -171,16 +171,10 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     const codexRunLogPath = installFakeCodexPlanner(binDir);
     const opencodeRunLogPath = installFakeOpencodeImplementer(binDir, marker);
     process.env.PATH = `${binDir}:${originalPath ?? ''}`;
-    const trustedCliGates = cliStartGatesFromArray([
-      trustedCliGateFor('codex', binDir),
-      trustedCliGateFor('opencode', binDir),
-    ] satisfies CliStartGate[]);
     const events: EngineEvent[] = [];
-
-    const summary = await runWorkflow({
-      feature: 'prove a Codex CLI planner can hand work to an OpenCode CLI implementer',
-      projectDir,
-      config: makeConfig({
+    const feature = 'prove a Codex CLI planner can hand work to an OpenCode CLI implementer';
+    const config = parsePreparedConfig(
+      makeConfig({
         planner: {
           kind: 'cli',
           tool: 'codex',
@@ -205,10 +199,59 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
           persistTranscript: true,
         },
       }),
+    );
+    const preparationId = 'cli-planner-cli-implementer-preparation';
+    const sessionId = 'sess-cli-planner-cli-implementer';
+    const plannerResolution = await resolveCustomExecutable({ command: 'codex', projectDir });
+    const implementerResolution = await resolveCustomExecutable({
+      command: 'opencode',
+      projectDir,
+    });
+    if (plannerResolution.kind !== 'resolved' || implementerResolution.kind !== 'resolved') {
+      throw new Error('CLI fixture executables did not resolve.');
+    }
+    const active = {
+      version: 1 as const,
+      sessionId,
+      generation: '1a111111-1111-4111-8111-111111111111',
+    };
+    const prepared: PreparedExecution = {
+      purpose: 'new-workflow',
+      config,
+      preparationId,
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [],
+        metadata: {},
+      },
+      gates: [
+        {
+          kind: 'cli',
+          slot: { role: 'planner' },
+          preparationId,
+          tool: 'codex',
+          executable: plannerResolution.executable,
+        },
+        {
+          kind: 'cli',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          tool: 'opencode',
+          executable: implementerResolution.executable,
+        },
+      ],
+      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+      runtime: { feature, allowRepoRunners: false, allowHooks: false },
+    };
+
+    const summary = await runWorkflow({
+      prepared,
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
-      sessionId: 'sess-cli-planner-cli-implementer',
-      trustedCliGates,
       _eventSink: (event) => events.push(event),
     });
 

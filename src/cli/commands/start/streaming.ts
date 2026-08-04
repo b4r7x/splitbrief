@@ -1,63 +1,50 @@
 import { ensureGitAndConfig } from '../../setup.js';
 import { serializeReadinessReportJson } from '../../../core/readiness/format.js';
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
+import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
 import { createResponseWriter } from '../../rpc/writer.js';
-import { bootstrapSession } from './readiness.js';
+import { prepareStartExecution } from './readiness.js';
 import type { RequiredFeatureDispatchArgs } from './types.js';
 
 export async function runJsonStart(args: RequiredFeatureDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   await ensureGitAndConfig(projectDir);
-  const { sessionId, trustedCliGates } = await bootstrapSession({
+  const execution = await prepareStartExecution({
     projectDir,
-    feature,
+    feature: enrichedFeature ?? feature,
+    plannerContext,
     opts,
-    assertJson: true,
+    transport: 'json',
     defaultApprove: 'none',
-    ...(deps.detectCliReadiness !== undefined && {
-      detectCliReadiness: deps.detectCliReadiness,
-    }),
     emitReadiness: (report) => {
       writeHeadlessJsonRecord({
         type: 'readiness_report',
         report: serializeReadinessReportJson(report),
       });
     },
+    ...(deps.prepareExecution !== undefined && { prepare: deps.prepareExecution }),
   });
-  await deps.runHeadless({
-    feature: enrichedFeature ?? feature,
-    projectDir,
-    opts,
-    sessionId,
-    plannerContext,
-    trustedCliGates,
-  });
+  releasePreparedExecutionOwnership(execution);
+  await deps.runHeadless({ prepared: execution });
 }
 
 export async function runRpcStart(args: RequiredFeatureDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
   await ensureGitAndConfig(projectDir);
-  const { sessionId, trustedCliGates } = await bootstrapSession({
+  const execution = await prepareStartExecution({
     projectDir,
-    feature,
+    feature: enrichedFeature ?? feature,
+    plannerContext,
     opts,
-    assertJson: true,
-    ...(deps.detectCliReadiness !== undefined && {
-      detectCliReadiness: deps.detectCliReadiness,
-    }),
+    transport: 'rpc',
     emitReadiness: (report) => {
       createResponseWriter({ stream: process.stdout, onClose: () => {} }).status({
         type: 'readiness_report',
         report: serializeReadinessReportJson(report),
       });
     },
+    ...(deps.prepareExecution !== undefined && { prepare: deps.prepareExecution }),
   });
-  await deps.runRpc({
-    feature: enrichedFeature ?? feature,
-    projectDir,
-    opts,
-    sessionId,
-    plannerContext,
-    trustedCliGates,
-  });
+  releasePreparedExecutionOwnership(execution);
+  await deps.runRpc({ prepared: execution });
 }

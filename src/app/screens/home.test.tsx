@@ -1,3 +1,5 @@
+import { existsSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   installClipboardExecFixture,
@@ -6,25 +8,49 @@ import {
   restoreClipboardExecFixture,
 } from '#testing/helpers/clipboard-exec-fixture.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { saveSummary } from '../../core/sessions/io.js';
+import { prepareNewSession } from '../../core/sessions/prepare.js';
 import { saveState } from '../../core/state/persistence.js';
+import { loadState } from '../../core/state/persistence.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { configStore } from '../../stores/project/config.js';
+import { detectionStore } from '../../stores/project/detection.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
+import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import type { TieredApprovalResponse } from '../../core/approval/types.js';
+import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
+import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution.js';
+import type {
+  PreparationOutcome,
+  PreparedExecution,
+} from '../../engine/runners/prepared-execution.js';
+import {
+  approvalPromptStore,
+  closeApprovalPrompt,
+  openApprovalPrompt,
+} from '../../stores/approval-prompt/prompt.js';
 import { getLogo } from '../../features/home/logo.js';
-import { HomeScreen } from './home.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../features/workflow/prompt-grace.js';
+import { HomeScreen, type HomeScreenDeps } from './home.js';
+import { Layout } from '../layout.js';
+import { SessionPreparation } from '../session-preparation.js';
+
+const prepareExecutionMock = vi.fn<(input: PrepareExecutionInput) => Promise<PreparationOutcome>>();
 
 const originalPlatform = process.platform;
 
@@ -40,6 +66,11 @@ const FOCUS_BAR = '▌';
 // Real session-file I/O (saveSummary + load/loadAll) can outlive vi.waitFor's 1s default
 // under full-suite load; filter-settle polls need more headroom.
 const SESSION_FILTER_WAIT_MS = 5000;
+const DISCOVERY_CONTEXTS = {
+  readiness: 'home:readiness',
+  modelsDev: 'home:models-dev',
+  cliModels: 'home:cli-models',
+};
 
 const COMMANDS: RuntimeCommandDef[] = [
   {
@@ -59,6 +90,132 @@ const COMMANDS: RuntimeCommandDef[] = [
     handler: () => {},
   },
 ];
+
+function readinessReport(checks: ReadinessCheck[] = []): ReadinessReport {
+  const counts = {
+    ok: checks.filter((check) => check.severity === 'ok').length,
+    info: checks.filter((check) => check.severity === 'info').length,
+    warning: checks.filter((check) => check.severity === 'warning').length,
+    blocker: checks.filter((check) => check.severity === 'blocker').length,
+  };
+  const blocked = counts.blocker > 0;
+  return {
+    generatedAt: '2026-08-04T00:00:00.000Z',
+    projectDir: '/project',
+    status: blocked ? 'blocked' : 'ready',
+    counts,
+    nextAction: blocked
+      ? { kind: 'exit', label: 'Exit', reason: 'Resolve the blocker.' }
+      : { kind: 'continue', label: 'Continue', reason: 'Ready.' },
+    sections: checks.length > 0 ? [{ id: 'tools', title: 'Configured tools', checks }] : [],
+    metadata: {},
+  };
+}
+
+function preparedExecution(input: PrepareExecutionInput): PreparedExecution {
+  const report = readinessReport();
+  const sessionId = 'existingSession' in input ? input.existingSession.sessionId : 'home-prepared';
+  const receipt = {
+    version: 1 as const,
+    sessionId,
+    generation: '11111111-1111-4111-8111-111111111111',
+  };
+  return {
+    purpose: input.policy.purpose,
+    config: input.effectiveConfig,
+    preparationId: 'home-preparation',
+    report,
+    gates: [],
+    session:
+      'existingSession' in input
+        ? { kind: 'existing', ref: input.existingSession, active: receipt }
+        : newPreparedSession(input, report),
+    runtime: {
+      feature: input.feature,
+      ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
+      ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
+      allowRepoRunners: input.policy.allowRepoRunners,
+      allowHooks: input.policy.allowHooks,
+    },
+  };
+}
+
+function newPreparedSession(
+  input: Exclude<PrepareExecutionInput, { existingSession: object }>,
+  report: ReadinessReport,
+): Extract<PreparedExecution['session'], { kind: 'new' }> {
+  const prepared = prepareNewSession({
+    projectDir: input.projectDir,
+    feature: input.feature,
+    config: input.effectiveConfig,
+    report,
+  });
+  if (prepared.kind === 'aborted') throw new Error('Expected the test session to be prepared.');
+  return { kind: 'new', ...prepared.session };
+}
+
+function preparedResumeExecution(
+  input: Parameters<HomeScreenDeps['sessionSelect']['prepareResume']>[0],
+): PreparedExecution {
+  const active = {
+    version: 1 as const,
+    sessionId: input.ref.sessionId,
+    generation: '22222222-2222-4222-8222-222222222222',
+  };
+  return {
+    purpose: 'resume',
+    config: makeConfig(),
+    preparationId: 'home-resume-preparation',
+    report: readinessReport(),
+    gates: [],
+    session: { kind: 'existing', ref: input.ref, active },
+    runtime: {
+      feature: input.state.feature,
+      resumeState: input.state,
+      allowRepoRunners: false,
+      allowHooks: false,
+    },
+  };
+}
+
+const HOME_DEPS: HomeScreenDeps = {
+  prepareExecution: prepareExecutionMock,
+  sessionSelect: {
+    loadState,
+    prepareResume: async (input) => ({
+      kind: 'prepared',
+      execution: preparedResumeExecution(input),
+    }),
+  },
+};
+
+function renderHome(deps: HomeScreenDeps = HOME_DEPS) {
+  return renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} deps={deps} />);
+}
+
+function HomeWithSessionPreparation({ deps }: { deps: HomeScreenDeps }) {
+  const preparationActive = sessionSelectStore.use((state) => state.preparation.kind !== 'idle');
+  return (
+    <Layout
+      screen={<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} deps={deps} />}
+      overlay={null}
+      sessionPreparation={<SessionPreparation />}
+      sessionPreparationActive={preparationActive}
+    />
+  );
+}
+
+function renderHomeWithSessionPreparation(deps: HomeScreenDeps) {
+  return renderFeature(<HomeWithSessionPreparation deps={deps} />);
+}
+
+beforeEach(() => {
+  prepareExecutionMock.mockReset();
+  prepareExecutionMock.mockImplementation(async (input) => ({
+    kind: 'prepared',
+    execution: preparedExecution(input),
+  }));
+});
 
 function lineContaining(frame: string, text: string): string {
   const line = stripAnsiStyles(frame)
@@ -95,10 +252,114 @@ describe('HomeScreen', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   });
 
+  it('shows the cold initialization notice while first discovery runs, then hides it', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+
+    const ui = renderHome();
+    await flushEffects();
+    const coldFrame = ui.lastFrame() ?? '';
+    expect(coldFrame).toContain('Initializing your tools…');
+    const anchorRow = coldFrame.split('\n').findIndex((line) => line.includes('Recent sessions'));
+
+    detectionStore.hydrate({
+      providers: [],
+      cliTools: [],
+      fetchedAt: 100,
+      validatedAt: 100,
+      generation: 1,
+      requestId: 1,
+      contexts: DISCOVERY_CONTEXTS,
+    });
+    await flushEffects();
+    const settledFrame = ui.lastFrame() ?? '';
+    expect(settledFrame).not.toContain('Initializing your tools…');
+    expect(settledFrame).not.toContain('Tools ready');
+    // The box floats in the slack between content and the bottom-anchored
+    // composer: neither the recent-sessions block nor the input may move when
+    // it disappears, and nothing may linger in its place.
+    expect(settledFrame.split('\n').findIndex((line) => line.includes('Recent sessions'))).toBe(
+      anchorRow,
+    );
+    expect(settledFrame.split('\n').findIndex((line) => line.includes('›'))).toBe(
+      coldFrame.split('\n').findIndex((line) => line.includes('›')),
+    );
+    ui.unmount();
+  });
+
+  it('shows the refreshing notice during a warm background refresh', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    detectionStore.hydrate({
+      providers: [],
+      cliTools: [],
+      fetchedAt: 100,
+      validatedAt: 100,
+      generation: 1,
+      requestId: 1,
+      contexts: DISCOVERY_CONTEXTS,
+    });
+    detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+
+    const ui = renderHome();
+    await flushEffects();
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('Refreshing your tools…');
+    expect(frame).not.toContain('Initializing your tools…');
+    ui.unmount();
+  });
+
+  it('shows an actionable failure line when cold discovery fails', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    const request = detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+    expect(
+      detectionStore.publish({
+        request,
+        result: {
+          providers: [],
+          cliTools: [],
+          catalog: null,
+          cliModels: [],
+          generation: 1,
+          outcomes: {
+            readiness: {
+              kind: 'failed',
+              source: 'readiness',
+              contextKey: DISCOVERY_CONTEXTS.readiness,
+              generation: 1,
+              requestId: 1,
+              checkedAt: 100,
+              error: { kind: 'timeout', message: 'Discovery request timed out.' },
+            },
+            modelsDev: {
+              kind: 'not-run',
+              source: 'models-dev',
+              contextKey: DISCOVERY_CONTEXTS.modelsDev,
+              reason: 'offline',
+            },
+            cliModels: {
+              kind: 'not-run',
+              source: 'cli-models',
+              contextKey: DISCOVERY_CONTEXTS.cliModels,
+              reason: 'offline',
+            },
+          },
+        },
+      }),
+    ).toBe(true);
+
+    const ui = renderHome();
+    await flushEffects();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Tool check failed');
+    expect(frame).toContain('Open /settings to retry.');
+    expect(frame).not.toContain('Initializing your tools…');
+    ui.unmount();
+  });
+
   it('centers the main content on wide terminals while keeping the input visible', async () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 42, isSmall: false });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -112,7 +373,7 @@ describe('HomeScreen', () => {
   it('keeps useful compact content on short terminals', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: true });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -125,7 +386,7 @@ describe('HomeScreen', () => {
   it('renders slash suggestions with the docked input', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 34, isSmall: false });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
     ui.stdin.write('/');
     await flushEffects();
@@ -148,7 +409,7 @@ describe('HomeScreen', () => {
       }),
     });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -174,7 +435,7 @@ describe('HomeScreen', () => {
       );
     }
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -194,7 +455,7 @@ describe('HomeScreen', () => {
       }),
     );
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     expect(ui.lastFrame() ?? '').toContain('short feature');
@@ -205,7 +466,7 @@ describe('HomeScreen', () => {
   it('opens slash suggestions as an overlay while keeping centered content visible', async () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 42, isSmall: false });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const before = ui.lastFrame() ?? '';
@@ -226,7 +487,7 @@ describe('HomeScreen', () => {
   it('renders the full ASCII wordmark on large terminals', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 30, isSmall: false });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -241,7 +502,7 @@ describe('HomeScreen', () => {
   it('renders compact ASCII art on small terminals', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 15, isSmall: true });
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -263,7 +524,7 @@ describe('HomeScreen', () => {
       );
     }
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -290,7 +551,7 @@ describe('HomeScreen', () => {
       }),
     );
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const frame = ui.lastFrame() ?? '';
@@ -298,6 +559,287 @@ describe('HomeScreen', () => {
     expect(frame).toContain('|____/| .__/');
     expect(frame).toContain('gap test feature');
     expect(frame).toContain(HOME_HINT);
+    ui.unmount();
+  });
+
+  it('cached ready cannot bypass a fresh blocked preparation', async () => {
+    detectionStore.hydrate({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+      fetchedAt: 100,
+      validatedAt: 100,
+      generation: 1,
+      requestId: 1,
+      contexts: DISCOVERY_CONTEXTS,
+    });
+    prepareExecutionMock.mockResolvedValue({
+      kind: 'blocked',
+      report: readinessReport([
+        {
+          id: 'runners.planner.fresh-evidence',
+          severity: 'blocker',
+          summary: 'The configured planner could not be verified.',
+          fix: 'Review the configured runner and retry.',
+        },
+      ]),
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('fresh denial');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Start is blocked');
+    });
+    expect(prepareExecutionMock).toHaveBeenCalledOnce();
+    expect(prepareExecutionMock.mock.calls[0]?.[0]).toMatchObject({
+      projectDir,
+      feature: 'fresh denial',
+      policy: { purpose: 'new-workflow', interaction: 'interactive' },
+    });
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    expect(existsSync(join(projectDir, '.splitbrief', 'sessions'))).toBe(false);
+    ui.unmount();
+  });
+
+  it('start while background refresh is pending uses independent fresh preparation', async () => {
+    detectionStore.hydrate({
+      providers: [],
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+      fetchedAt: 100,
+      validatedAt: 100,
+      generation: 1,
+      requestId: 1,
+      contexts: DISCOVERY_CONTEXTS,
+    });
+    detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockReturnValue(pending.promise);
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('independent preparation');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
+    expect(detectionStore.get().refresh.readiness.refreshing).toBe(true);
+    const input = prepareExecutionMock.mock.calls[0]?.[0];
+    if (!input) throw new Error('Expected a preparation input.');
+    const exactExecution = preparedExecution(input);
+    pending.resolve({ kind: 'prepared', execution: exactExecution });
+
+    await vi.waitFor(() => expect(routerStore.get().screen).toBe('workflow'));
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow') {
+      expect(route.execution).toEqual({ kind: 'local', prepared: exactExecution });
+      if (route.execution.kind === 'local') {
+        expect(route.execution.prepared).toBe(exactExecution);
+        expect(route.execution.prepared.config).toBe(exactExecution.config);
+        expect(route.execution.prepared.gates).toBe(exactExecution.gates);
+        expect(route.execution.prepared.session).toBe(exactExecution.session);
+        expect(route.execution.prepared.session.active).toBe(exactExecution.session.active);
+      }
+    }
+    const exactSessionDir = join(
+      exactExecution.session.ref.projectDir,
+      '.splitbrief',
+      'sessions',
+      exactExecution.session.ref.sessionId,
+    );
+    expect(existsSync(join(exactSessionDir, '.prepare-owner.json'))).toBe(false);
+    expect(existsSync(join(exactSessionDir, 'readiness.json'))).toBe(true);
+    ui.unmount();
+  });
+
+  it('failed preparation stays on Home with generic retry back settings and prioritized blockers', async () => {
+    const checks: ReadinessCheck[] = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: `runners.warning-${index + 1}`,
+        severity: 'warning' as const,
+        summary: `Configured runner warning ${index + 1}.`,
+      })),
+      {
+        id: 'runners.blocker',
+        severity: 'blocker',
+        summary: 'A configured runner must be fixed before starting.',
+        fix: 'Open settings and review the runner.',
+      },
+    ];
+    prepareExecutionMock.mockResolvedValue({
+      kind: 'failed',
+      report: readinessReport(checks),
+      error: new Error('Fresh tool preparation could not finish.'),
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('actionable failure');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('Tool preparation · Failed');
+      expect(frame).toContain('runners.blocker');
+      expect(frame).toContain('2 checks hidden');
+      expect(frame).toContain('r retry · esc back · s settings');
+    });
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    expect(existsSync(join(projectDir, '.splitbrief', 'sessions'))).toBe(false);
+
+    ui.stdin.write('s');
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('settings'));
+    overlayStore.close();
+    await flushEffects();
+    ui.stdin.write(ESC);
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain(DEFAULT_HOME_HINT);
+      expect(frame).not.toContain('Tool preparation');
+    });
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    ui.unmount();
+  });
+
+  it('aborts on Escape and rolls back a late prepared completion without navigation', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    let signal: AbortSignal | undefined;
+    prepareExecutionMock.mockImplementation((input) => {
+      signal = input.signal;
+      return pending.promise;
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('cancel preparation');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
+    expect(ui.lastFrame() ?? '').toContain('Preparing your tools');
+
+    ui.stdin.write(ESC);
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    const input = prepareExecutionMock.mock.calls[0]?.[0];
+    if (!input) throw new Error('Expected a preparation input.');
+    const lateExecution = preparedExecution(input);
+    const lateSessionDir = join(
+      lateExecution.session.ref.projectDir,
+      '.splitbrief',
+      'sessions',
+      lateExecution.session.ref.sessionId,
+    );
+    expect(existsSync(lateSessionDir)).toBe(true);
+    pending.resolve({ kind: 'prepared', execution: lateExecution });
+
+    await vi.waitFor(() => expect(existsSync(lateSessionDir)).toBe(false));
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    expect(existsSync(join(projectDir, '.splitbrief', 'active'))).toBe(false);
+    ui.unmount();
+  });
+
+  it('aborts an in-flight preparation on unmount', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    let signal: AbortSignal | undefined;
+    prepareExecutionMock.mockImplementation((input) => {
+      signal = input.signal;
+      return pending.promise;
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('unmount preparation');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
+
+    ui.unmount();
+    expect(signal?.aborted).toBe(true);
+    const input = prepareExecutionMock.mock.calls[0]?.[0];
+    if (!input) throw new Error('Expected a preparation input.');
+    const lateExecution = preparedExecution(input);
+    const lateSessionDir = join(
+      lateExecution.session.ref.projectDir,
+      '.splitbrief',
+      'sessions',
+      lateExecution.session.ref.sessionId,
+    );
+    expect(existsSync(lateSessionDir)).toBe(true);
+    pending.resolve({ kind: 'prepared', execution: lateExecution });
+    await vi.waitFor(() => expect(existsSync(lateSessionDir)).toBe(false));
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+  });
+
+  it('reports a stale cleanup failure without navigating or rejecting unobserved', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    let signal: AbortSignal | undefined;
+    prepareExecutionMock.mockImplementation((input) => {
+      signal = input.signal;
+      return pending.promise;
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('cleanup failure');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => expect(prepareExecutionMock).toHaveBeenCalledOnce());
+    ui.stdin.write(ESC);
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+
+    const input = prepareExecutionMock.mock.calls[0]?.[0];
+    if (!input) throw new Error('Expected a preparation input.');
+    const lateExecution = preparedExecution(input);
+    const ownershipFile = join(
+      lateExecution.session.ref.projectDir,
+      '.splitbrief',
+      'sessions',
+      lateExecution.session.ref.sessionId,
+      '.prepare-owner.json',
+    );
+    unlinkSync(ownershipFile);
+    pending.resolve({ kind: 'prepared', execution: lateExecution });
+
+    await vi.waitFor(() =>
+      expect(feedbackStore.get().message).toContain('Could not clean up tool preparation'),
+    );
+    expect(ui.lastFrame() ?? '').toContain('Could not clean up tool preparation');
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    ui.unmount();
+  });
+
+  it('renders the existing tiered approval prompt during fresh preparation', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockImplementation(async (input) => {
+      const onTieredApproval = input.policy.onTieredApproval;
+      if (!onTieredApproval) throw new Error('Expected the interactive approval callback.');
+      await onTieredApproval({
+        tier: 'sticky',
+        actionClass: 'network',
+        actionDescription: 'Run the configured custom tool',
+        phase: 'planning',
+      });
+      return pending.promise;
+    });
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('custom tool approval');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('Run the configured custom tool');
+      expect(frame).not.toContain('Preparing your tools');
+    });
+    closeApprovalPrompt();
+    pending.resolve({ kind: 'aborted' });
+    await flushEffects();
     ui.unmount();
   });
 });
@@ -339,7 +881,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   it('Ctrl+R focuses the recent-sessions list', async () => {
     seedSessions(3);
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     expect(ui.lastFrame() ?? '').not.toContain(FOCUS_BAR);
@@ -368,7 +910,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
         phase: 'implementing',
       },
     );
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write('preserved draft');
@@ -403,18 +945,22 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     await vi.waitFor(() => {
       expect(routerStore.get().screen).toBe('workflow');
     }, SESSION_FILTER_WAIT_MS);
-    expect(routerStore.get()).toMatchObject({
-      screen: 'workflow',
-      feature: target.feature,
-      sessionId: target.id,
-    });
+    const route = routerStore.get();
+    expect(route.screen).toBe('workflow');
+    if (route.screen === 'workflow') {
+      expect(route.execution.kind).toBe('local');
+      if (route.execution.kind === 'local') {
+        expect(route.execution.prepared.runtime.feature).toBe(target.feature);
+        expect(route.execution.prepared.session.ref.sessionId).toBe(target.id);
+      }
+    }
     ui.unmount();
   });
 
   it('engages the bordered focused recent-sessions chrome at a viable small height', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
     seedSessions(30);
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -431,7 +977,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   it('Ctrl+R is a no-op at 80x16 where the bordered filter cannot fit', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 16, isSmall: true });
     seedSessions(30);
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -447,7 +993,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   it('Ctrl+R does not shift the recent-session rows horizontally', async () => {
     seedSessions(3);
     const marker = 'focus feature 1';
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     const before = columnIndexOf(ui.lastFrame() ?? '', marker);
@@ -462,7 +1008,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
   });
 
   it('Ctrl+R is a no-op when there are no sessions', async () => {
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -476,7 +1022,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   it('Down moves the cursor to the next visible session', async () => {
     seedSessions(3);
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -507,7 +1053,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       );
     }
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     expect(ui.lastFrame() ?? '').not.toContain('ancient hidden focus target');
@@ -530,7 +1076,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   it('Esc returns focus to the composer', async () => {
     seedSessions(3);
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -550,7 +1096,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   it('Up at the top returns focus to the composer without wrapping', async () => {
     seedSessions(3);
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -581,7 +1127,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       }),
     );
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -618,7 +1164,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       }),
     );
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -659,7 +1205,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     };
     saveState({ projectDir, sessionId: 'resume-me' }, savedState);
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -675,8 +1221,135 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     const route = routerStore.get();
     expect(route.screen).toBe('workflow');
     if (route.screen === 'workflow') {
-      expect(route.sessionId).toBe('resume-me');
+      expect(route.execution.kind).toBe('local');
+      if (route.execution.kind === 'local') {
+        expect(route.execution.prepared.session.ref.sessionId).toBe('resume-me');
+      }
     }
+    ui.unmount();
+  });
+
+  it('renders and denies a recent-session custom-runner approval without hanging', async () => {
+    saveSummary(
+      { projectDir, sessionId: 'resume-custom-runner' },
+      makeSession({
+        id: 'resume-custom-runner',
+        feature: 'resume custom runner',
+        status: 'interrupted',
+        summary: null,
+        startedAt: 1_700_000_525,
+      }),
+    );
+    saveState(
+      { projectDir, sessionId: 'resume-custom-runner' },
+      {
+        ...createInitialState('resume custom runner'),
+        phase: 'implementing',
+      },
+    );
+    let approvalResponse: TieredApprovalResponse | undefined;
+    let resumeSettled = false;
+    const deps: HomeScreenDeps = {
+      ...HOME_DEPS,
+      sessionSelect: {
+        ...HOME_DEPS.sessionSelect,
+        prepareResume: async () => {
+          approvalResponse = await openApprovalPrompt({
+            tier: 'sticky',
+            actionClass: 'network',
+            actionDescription: 'Run the configured custom tool for this session',
+            phase: 'implementing',
+          });
+          resumeSettled = true;
+          return {
+            kind: 'blocked',
+            report: readinessReport([
+              {
+                id: 'runners.custom-approval',
+                severity: 'blocker',
+                summary: 'The configured custom runner was not approved.',
+              },
+            ]),
+          };
+        },
+      },
+    };
+
+    const ui = renderHomeWithSessionPreparation(deps);
+    await flushEffects();
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR));
+    ui.stdin.write(ENTER);
+
+    // Anchor on the store before polling the frame: the prompt mounts one
+    // render after the approval request settles into the store.
+    await vi.waitFor(() => expect(approvalPromptStore.get().status).toBe('pending'));
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('Run the configured custom tool for this session');
+      expect(frame).not.toContain(RECENT_SESSIONS_HINT);
+      expect(frame).not.toContain(DEFAULT_HOME_HINT);
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    ui.stdin.write(ESC);
+
+    await vi.waitFor(() => expect(resumeSettled).toBe(true));
+    expect(approvalResponse).toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('Tool preparation');
+      expect(frame).toContain('Blocked');
+      expect(frame).toContain('The configured custom runner was');
+      expect(frame).toContain('not approved.');
+      expect(frame).toContain('r retry');
+      expect(frame).toContain('esc back');
+      expect(frame).toContain('s settings');
+    });
+    ui.unmount();
+  });
+
+  it('renders a rejected recent-session preparation on the shared failed surface', async () => {
+    saveSummary(
+      { projectDir, sessionId: 'resume-rejected' },
+      makeSession({
+        id: 'resume-rejected',
+        feature: 'resume rejected boundary',
+        status: 'interrupted',
+        summary: null,
+        startedAt: 1_700_000_526,
+      }),
+    );
+    saveState(
+      { projectDir, sessionId: 'resume-rejected' },
+      {
+        ...createInitialState('resume rejected boundary'),
+        phase: 'implementing',
+      },
+    );
+    const deps: HomeScreenDeps = {
+      ...HOME_DEPS,
+      sessionSelect: {
+        ...HOME_DEPS.sessionSelect,
+        prepareResume: async () => {
+          throw new Error('home resume boundary rejected');
+        },
+      },
+    };
+    const ui = renderHomeWithSessionPreparation(deps);
+    await flushEffects();
+    ui.stdin.write(CTRL_R);
+    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(FOCUS_BAR));
+    ui.stdin.write(ENTER);
+
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('Tool preparation');
+      expect(frame).toContain('Failed');
+      expect(frame).toContain('home resume boundary rejected');
+      expect(frame).toContain('r retry');
+    });
+    expect(routerStore.get()).toEqual({ screen: 'home' });
     ui.unmount();
   });
 
@@ -693,7 +1366,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       }),
     );
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -726,7 +1399,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
       }),
     );
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);
@@ -748,7 +1421,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
     seedSessions(3);
     inputHistoryStore.push('recalled prompt');
 
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(ARROW_UP);
@@ -762,7 +1435,7 @@ describe('HomeScreen recent-sessions focus (Ctrl+R navigation)', () => {
 
   it('drops focus and keeps the composer usable when the terminal shrinks below the list', async () => {
     seedSessions(3);
-    const ui = renderFeature(<HomeScreen commands={COMMANDS} onRuntimeCommand={() => {}} />);
+    const ui = renderHome();
     await flushEffects();
 
     ui.stdin.write(CTRL_R);

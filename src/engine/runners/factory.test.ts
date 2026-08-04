@@ -1,15 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { realpathSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import { matches } from '../../utils/error.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { prependPath, writeCommandShim } from '#testing/helpers/command-shim.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { customRunnerFactoryError, createImplementer, createPlanner } from './factory.js';
+import {
+  customRunnerFactoryError,
+  createImplementer as createPreparedImplementer,
+  createPlanner as createPreparedPlanner,
+  type RunnerFactoryAuthority,
+} from './factory.js';
 import type { CliStartGate } from './start-gate.js';
 import type { CustomRunnerRuntimePort } from './types.js';
+import { executableReceipt } from '#testing/helpers/custom-command-based.js';
+import type { RunnerSlot } from './prepared-execution.js';
+import { resolveConfiguredCustomRunner } from './configured-custom.js';
+import { customRunnerSecurityPosture } from './custom-trust.js';
+import type { AdmittedCustomRunnerInvocation } from './trust.js';
+import type { PlannerFactoryOptions } from '../planners/types.js';
+import type { ImplementerFactoryOptions } from '../implementers/types.js';
+import { resolveCliExecutableAliases } from './resolve-cli-executable.js';
+import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 
 function withPlanner(planner: Config['planner']): Config {
   return { ...makeConfig(), planner };
@@ -17,6 +30,110 @@ function withPlanner(planner: Config['planner']): Config {
 
 function withImplementer(implementer: Config['implementer']): Config {
   return { ...makeConfig(), implementer };
+}
+
+function customInvocation(
+  config: Config,
+  role: CustomRunnerRole,
+): AdmittedCustomRunnerInvocation | null {
+  const runner = resolveConfiguredCustomRunner(config, role);
+  if (runner === null) return null;
+  return {
+    kind: 'custom-runner-invocation',
+    runner,
+    posture: customRunnerSecurityPosture(role, runner.command.contract),
+    executable: executableReceipt(runner.command.executable),
+    authorization: 'explicit-grant',
+    scope: {
+      projectIdentity: `sha256:${'a'.repeat(64)}`,
+      definitionId: runner.command.id,
+      definitionDigest: `sha256:${'b'.repeat(64)}`,
+    },
+  };
+}
+
+type PlannerAuthority = RunnerFactoryAuthority & {
+  slot: Extract<RunnerSlot, { role: 'planner' }>;
+};
+type ImplementerAuthority = RunnerFactoryAuthority & {
+  slot: Exclude<RunnerSlot, { role: 'planner' }>;
+};
+
+function authorityFor(
+  config: Config,
+  role: 'planner',
+  trustedCli?: CliStartGate | undefined,
+): PlannerAuthority;
+function authorityFor(
+  config: Config,
+  role: 'implementer',
+  trustedCli?: CliStartGate | undefined,
+): ImplementerAuthority;
+function authorityFor(
+  config: Config,
+  role: CustomRunnerRole,
+  trustedCli?: CliStartGate | undefined,
+): RunnerFactoryAuthority {
+  const preparationId = `factory-${role}`;
+  const slot: RunnerSlot =
+    role === 'planner'
+      ? { role: 'planner' }
+      : { role: 'implementer', profile: resolveImplementerProfiles(config).defaultProfile.name };
+  const configured = customInvocation(config, role);
+  if (configured !== null) {
+    return {
+      preparedConfig: config,
+      preparationId,
+      slot,
+      gates: [
+        {
+          kind: configured.runner.command.contract === 'output' ? 'shell' : 'agent',
+          slot,
+          preparationId,
+          command: { kind: 'configured-custom', invocation: configured },
+        },
+      ],
+    };
+  }
+  const runner = config[role];
+  const gate = makeRunnerGate(runner, slot, preparationId);
+  if (gate.kind === 'cli' && trustedCli !== undefined) {
+    const executable =
+      'executableIdentity' in trustedCli.executable
+        ? trustedCli.executable
+        : executableReceipt(trustedCli.executable.path);
+    return {
+      preparedConfig: config,
+      preparationId,
+      slot,
+      gates: [
+        {
+          ...gate,
+          executable,
+        },
+      ],
+    };
+  }
+  return { preparedConfig: config, preparationId, slot, gates: [gate] };
+}
+
+function createPlanner(
+  config: Config,
+  initialSessionId?: string | null,
+  options: PlannerFactoryOptions = {},
+) {
+  return createPreparedPlanner(config, {
+    ...options,
+    initialSessionId,
+    ...authorityFor(config, 'planner', options.trustedCli),
+  });
+}
+
+function createImplementer(config: Config, options: ImplementerFactoryOptions = {}) {
+  return createPreparedImplementer(config, {
+    ...options,
+    ...authorityFor(config, 'implementer', options.trustedCli),
+  });
 }
 
 type CustomRunnerRole = 'planner' | 'implementer';
@@ -203,14 +320,13 @@ describe('createPlanner', () => {
         model: 'test',
         idleWarnMs: 30,
       });
-      const path = realpathSync(join(shimDir, 'claude'));
-      const info = statSync(path);
+      const resolved = await resolveCliExecutableAliases({
+        commands: ['claude'],
+        projectDir: process.cwd(),
+      });
       const trustedCli: CliStartGate = {
         tool: 'claude-code',
-        executable: {
-          path,
-          fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
-        },
+        executable: resolved.executable,
       };
       const planner = await createPlanner(config, undefined, { trustedCli });
 
@@ -394,5 +510,163 @@ describe('CLI role enforcement', () => {
     });
 
     await expect(createImplementer(config)).rejects.toThrow(/implementer/);
+  });
+});
+
+describe('prepared generic gate enforcement', () => {
+  it('requires matching generic gates for planner and implementer construction across every runner kind', async () => {
+    const plannerConfigs = [
+      withPlanner({ kind: 'cli', tool: 'claude-code', authChannel: 'session', model: 'test' }),
+      withPlanner({
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'test',
+      }),
+      withPlanner({ kind: 'agent-sdk', model: 'claude-sonnet-4-5', apiKey: 'test-key' }),
+      withPlanner({ kind: 'shell', command: 'cat', outputFormat: 'text' }),
+      withPlanner({ kind: 'agent', command: 'cat', outputFormat: 'text' }),
+    ];
+    const implementerConfigs = [
+      withImplementer({ kind: 'cli', tool: 'codex', authChannel: 'session', model: 'test' }),
+      withImplementer({
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'test',
+      }),
+      withImplementer({ kind: 'agent-sdk', model: 'claude-sonnet-4-5', apiKey: 'test-key' }),
+      withImplementer({ kind: 'shell', command: 'cat', outputFormat: 'text', model: 'test' }),
+      withImplementer({ kind: 'agent', command: 'cat', outputFormat: 'text', model: 'test' }),
+    ];
+
+    for (const config of plannerConfigs) {
+      await expect(
+        createPreparedPlanner(config, authorityFor(config, 'planner')),
+      ).resolves.toBeDefined();
+    }
+    for (const config of implementerConfigs) {
+      await expect(
+        createPreparedImplementer(config, authorityFor(config, 'implementer')),
+      ).resolves.toBeDefined();
+    }
+
+    const config = plannerConfigs[1];
+    if (config === undefined) throw new Error('Missing API planner fixture.');
+    const authority = authorityFor(config, 'planner');
+    await expect(
+      createPreparedPlanner(config, {
+        ...authority,
+        preparationId: 'different-preparation',
+      }),
+    ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });
+  });
+
+  it('rejects missing authority at runtime while the public signatures require it statically', async () => {
+    const plannerConfig = withPlanner({
+      kind: 'api',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'planner',
+    });
+    const implementerConfig = withImplementer({
+      kind: 'api',
+      provider: 'ollama',
+      service: 'ollama',
+      offering: 'local',
+      apiBase: 'http://localhost:11434/v1',
+      model: 'implementer',
+    });
+
+    // @ts-expect-error Prepared authority is statically required.
+    await expect(createPreparedPlanner(plannerConfig)).rejects.toMatchObject({
+      kind: 'runner-gate-mismatch',
+    });
+    // @ts-expect-error Prepared authority is statically required.
+    await expect(createPreparedImplementer(implementerConfig)).rejects.toMatchObject({
+      kind: 'runner-gate-mismatch',
+    });
+  });
+
+  it.each([
+    [
+      'API',
+      withPlanner({
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'model-a',
+      }),
+      withPlanner({
+        kind: 'api',
+        provider: 'ollama',
+        service: 'ollama',
+        offering: 'local',
+        apiBase: 'http://localhost:11434/v1',
+        model: 'model-b',
+      }),
+    ],
+    [
+      'CLI',
+      withPlanner({ kind: 'cli', tool: 'codex', authChannel: 'session', model: 'model-a' }),
+      withPlanner({ kind: 'cli', tool: 'codex', authChannel: 'session', model: 'model-b' }),
+    ],
+    [
+      'shell',
+      withPlanner({ kind: 'shell', command: 'cat', args: ['a'], outputFormat: 'text' }),
+      withPlanner({ kind: 'shell', command: 'cat', args: ['b'], outputFormat: 'text' }),
+    ],
+    [
+      'agent',
+      withPlanner({ kind: 'agent', command: 'cat', args: ['a'] }),
+      withPlanner({ kind: 'agent', command: 'cat', args: ['b'] }),
+    ],
+  ] as const)('rejects %s config A paired with same-safe-identity authority B', async (_kind, configA, configB) => {
+    await expect(
+      createPreparedPlanner(configA, authorityFor(configB, 'planner')),
+    ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });
+  });
+
+  it('rejects a named profile config paired with authority from another preparation', async () => {
+    const withProfileModel = (model: string) =>
+      ConfigSchema.parse({
+        ...makeConfig(),
+        implementerProfiles: {
+          default: 'review',
+          profiles: {
+            review: {
+              kind: 'api',
+              provider: 'ollama',
+              service: 'ollama',
+              offering: 'local',
+              apiBase: 'http://localhost:11434/v1',
+              model,
+            },
+          },
+        },
+      });
+    const configA = withProfileModel('model-a');
+    const configB = withProfileModel('model-b');
+    const runnerB = configB.implementerProfiles?.profiles.review;
+    if (runnerB === undefined) throw new Error('Missing named profile fixture.');
+    const preparationId = 'named-profile-b';
+    const slot = { role: 'implementer' as const, profile: 'review' };
+
+    await expect(
+      createPreparedImplementer(configA, {
+        preparedConfig: configB,
+        preparationId,
+        slot,
+        gates: [makeRunnerGate(runnerB, slot, preparationId)],
+      }),
+    ).rejects.toMatchObject({ kind: 'runner-gate-mismatch' });
   });
 });

@@ -1,7 +1,5 @@
-import { chmodSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
-import type { CliStartGate } from '../../src/engine/runners/start-gate.js';
 
 export interface CommandShimOptions {
   dir: string;
@@ -32,23 +30,6 @@ export function prependPath(dir: string): () => void {
   return () => {
     if (original === undefined) delete process.env['PATH'];
     else process.env['PATH'] = original;
-  };
-}
-
-export function trustedCliGateFor(
-  tool: CliToolId,
-  shimDir: string,
-  command: string = tool,
-): CliStartGate {
-  const commandPath = join(shimDir, command);
-  const path = realpathSync(commandPath);
-  const info = statSync(path);
-  return {
-    tool,
-    executable: {
-      path,
-      fingerprint: { dev: info.dev, ino: info.ino, size: info.size, mtimeMs: info.mtimeMs },
-    },
   };
 }
 

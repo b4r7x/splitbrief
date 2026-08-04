@@ -127,8 +127,9 @@ function modelGuidancePreview(
   item: PickerOption,
   counts: PickerModelCounts,
   diagnostic: ModelCatalogDiagnostic | undefined,
+  refreshing: boolean,
 ): string {
-  const guidance = formatModelCatalogGuidance(item, counts, diagnostic);
+  const guidance = formatModelCatalogGuidance(item, counts, diagnostic, refreshing);
   const parts = [guidance.headline];
   if (guidance.detail) parts.push(guidance.detail);
   const staleCopy = staleModelCopy(counts.stale);
@@ -141,17 +142,19 @@ function ModelGuidance({
   currentItem,
   counts,
   diagnostic,
+  refreshing,
 }: {
   currentItem: PickerOption | undefined;
   counts: PickerModelCounts;
   diagnostic: ModelCatalogDiagnostic | undefined;
+  refreshing: boolean;
 }) {
   const t = useTheme();
   if (!currentItem) {
     return <Text color={t.textDim}>Select a tool</Text>;
   }
 
-  const guidance = formatModelCatalogGuidance(currentItem, counts, diagnostic);
+  const guidance = formatModelCatalogGuidance(currentItem, counts, diagnostic, refreshing);
   const posture = formatToolPostureSummary(currentItem);
   const staleCopy = staleModelCopy(counts.stale);
 
@@ -334,7 +337,14 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
       const toolName = tool?.displayName ?? role;
       const parts = [`add a model id ${toolName} can't auto-detect`];
       if (tool) {
-        parts.push(modelGuidancePreview(tool, catalog.modelCounts, catalog.catalogDiagnostic));
+        parts.push(
+          modelGuidancePreview(
+            tool,
+            catalog.modelCounts,
+            catalog.catalogDiagnostic,
+            catalog.discovery.refreshing,
+          ),
+        );
       }
       return parts.join(SOFT_SEP);
     }
@@ -344,7 +354,12 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
     const tool = ctx.leftItem ?? catalog.currentItem;
     if (!tool) return undefined;
     if (ctx.activeColumn === 'right' && catalog.rightModels.length === 0) {
-      return modelGuidancePreview(tool, catalog.modelCounts, catalog.catalogDiagnostic);
+      return modelGuidancePreview(
+        tool,
+        catalog.modelCounts,
+        catalog.catalogDiagnostic,
+        catalog.discovery.refreshing,
+      );
     }
     return [
       staleModelCopy(catalog.modelCounts.stale),
@@ -354,6 +369,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
         resolveAuthAction(tool),
         catalog.catalogDiagnostic,
         credentialNoteFor(tool),
+        catalog.discovery.refreshing,
       ),
     ]
       .filter(Boolean)
@@ -439,6 +455,7 @@ export function PickerView({ role, stepLabel, onCancel, catalog, actions }: Pick
             currentItem={catalog.currentItem}
             counts={catalog.modelCounts}
             diagnostic={catalog.catalogDiagnostic}
+            refreshing={catalog.discovery.refreshing}
           />
         ),
         ...(allowsCustom

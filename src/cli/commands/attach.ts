@@ -53,9 +53,12 @@ export async function renderAttachClient(
   await deps.initStores(opts.projectDir);
   routerStore.init({
     screen: 'workflow',
-    feature: opts.feature,
-    sessionId: opts.sessionId,
-    attach: { sockPath: opts.sockPath, authToken: opts.authToken },
+    execution: {
+      kind: 'attached',
+      feature: opts.feature,
+      sessionId: opts.sessionId,
+      attach: { sockPath: opts.sockPath, authToken: opts.authToken },
+    },
   });
 
   await deps.renderApp(createElement(App), {

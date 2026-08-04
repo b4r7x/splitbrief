@@ -29,6 +29,7 @@ import { CostPredictionSchema } from '../../core/schemas/summary.js';
 import { IpcRecoveryIssueSchema } from '../../core/schemas/recovery/ipc.js';
 import { PLANNER_ARTIFACT_MAX_BYTES } from '../runners/types.js';
 import { isRecord } from '../../utils/type-guards.js';
+import { isValidSessionId } from '../../core/paths.js';
 
 const IPC_MAX_AUTH_TOKEN_BYTES = 512;
 export const IPC_MAX_FRAME_BYTES = 1024 * 1024;
@@ -145,6 +146,15 @@ const ServerMessageSchema = z.discriminatedUnion('kind', [
     message: z.string(),
   }),
   z.object({ kind: z.literal('server_complete') }),
+  z
+    .object({
+      kind: z.literal('parent_accepted'),
+      version: z.literal(1),
+      sessionId: z.string().refine(isValidSessionId),
+      generation: z.uuid(),
+      childPid: z.number().int().positive(),
+    })
+    .strict(),
 ]);
 
 export type IpcPromptRequest = z.infer<typeof IpcPromptRequestSchema>;
@@ -184,6 +194,14 @@ export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 export type ClientMessage =
   | { kind: 'authenticate'; token: string }
+  | {
+      kind: 'parent_accept';
+      token: string;
+      version: 1;
+      sessionId: string;
+      generation: string;
+      childPid: number;
+    }
   | { kind: 'user_input'; text: string }
   | { kind: 'queue_clear' }
   | { kind: 'prompt_response'; requestId: string; response: IpcPromptResponse }
@@ -357,6 +375,24 @@ export function parseClientMessage(value: unknown): ClientMessage | null {
     return isBoundedString(value.token, IPC_MAX_AUTH_TOKEN_BYTES)
       ? { kind: value.kind, token: value.token }
       : null;
+  }
+  if (value.kind === 'parent_accept') {
+    if (!isBoundedString(value.token, IPC_MAX_AUTH_TOKEN_BYTES)) return null;
+    if (!hasExactKeys(value, ['kind', 'token', 'version', 'sessionId', 'generation', 'childPid'])) {
+      return null;
+    }
+    const parsed = z
+      .object({
+        kind: z.literal('parent_accept'),
+        token: z.string(),
+        version: z.literal(1),
+        sessionId: z.string().refine(isValidSessionId),
+        generation: z.uuid(),
+        childPid: z.number().int().positive(),
+      })
+      .strict()
+      .safeParse(value);
+    return parsed.success ? parsed.data : null;
   }
   if (value.kind === 'user_input') {
     return isBoundedString(value.text, IPC_MAX_TEXT_BYTES)

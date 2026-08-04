@@ -2,9 +2,9 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
-import { createImplementer } from '../../runners/factory.js';
 import { createImplementerPublisher } from '../events.js';
 import type { Implementer } from '../../implementers/types.js';
+import { error } from '../../../utils/error.js';
 
 export function configForProfile(
   config: WorkflowContext['config'],
@@ -41,10 +41,14 @@ export async function createTaskImplementer(opts: {
   singleImplementerMode: boolean;
 }): Promise<Implementer> {
   if (opts.singleImplementerMode && opts.profile.isDefault) return opts.wctx.implementer;
-  const factory = opts.wctx.createImplementer ?? createImplementer;
+  const factory = opts.wctx.createImplementer;
+  if (factory === undefined) {
+    throw error('runner-gate-mismatch', 'Prepared implementer factory is unavailable.');
+  }
   return factory(opts.taskConfig, {
     publisher: createImplementerPublisher(opts.wctx.bus),
     allowRepoRunners: opts.wctx.allowRepoRunners ?? false,
+    slot: { role: 'implementer', profile: opts.profile.name },
   });
 }
 

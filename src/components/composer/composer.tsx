@@ -193,7 +193,7 @@ export function Composer({
 
   const handleFileDrop = (path: string) => {
     const route = routerStore.get();
-    if (route.screen === 'workflow' && route.attach !== undefined) {
+    if (route.screen === 'workflow' && route.execution.kind === 'attached') {
       feedbackStore.setError('Attachments are unavailable while attached.');
       return;
     }

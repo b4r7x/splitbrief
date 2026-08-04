@@ -12,8 +12,12 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { seedValidationProject } from '#testing/helpers/validation-project.js';
-import { cliStartGatesFromArray } from '../../../src/engine/runners/start-gate.js';
-import { trustedCliGateFor } from '#testing/helpers/command-shim.js';
+import { executableReceipt } from '#testing/helpers/custom-command-based.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../src/engine/runners/prepared-execution.js';
+import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
@@ -101,9 +105,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     const targetFile = 'src/loop.ts';
     const requiredPromptText = 'OpenCode CLI backed module';
     const fakeOpencode = prependFakeOpencodeToPath({ marker, requiredPromptText });
-    const trustedCliGates = cliStartGatesFromArray([
-      trustedCliGateFor('opencode', fakeOpencode.binDir),
-    ]);
     const events: EngineEvent[] = [];
 
     const task = makeTask({
@@ -132,10 +133,9 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       }),
     });
 
-    const summary = await runWorkflow({
-      feature: 'run an OpenCode CLI implementer loop',
-      projectDir,
-      config: makeConfig({
+    const feature = 'run an OpenCode CLI implementer loop';
+    const config = parsePreparedConfig(
+      makeConfig({
         implementer: {
           kind: 'cli',
           tool: 'opencode',
@@ -170,10 +170,57 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
           persistTranscript: true,
         },
       }),
+    );
+    const preparationId = 'full-loop-opencode-preparation';
+    const implementerResolution = await resolveCustomExecutable({
+      command: 'opencode',
+      projectDir,
+    });
+    if (implementerResolution.kind !== 'resolved') {
+      throw new Error('OpenCode fixture executable did not resolve.');
+    }
+    const active = {
+      version: 1 as const,
+      sessionId,
+      generation: '5a555555-5555-4555-8555-555555555555',
+    };
+    const prepared: PreparedExecution = {
+      purpose: 'new-workflow',
+      config,
+      preparationId,
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [],
+        metadata: {},
+      },
+      gates: [
+        {
+          kind: 'cli',
+          slot: { role: 'planner' },
+          preparationId,
+          tool: 'claude-code',
+          executable: executableReceipt(),
+        },
+        {
+          kind: 'cli',
+          slot: { role: 'implementer', profile: 'opencode-cli' },
+          preparationId,
+          tool: 'opencode',
+          executable: implementerResolution.executable,
+        },
+      ],
+      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+      runtime: { feature, allowRepoRunners: false, allowHooks: false },
+    };
+
+    const summary = await runWorkflow({
+      prepared,
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
-      sessionId,
-      trustedCliGates,
       _planner: planner,
       _eventSink: (event) => events.push(event),
     });

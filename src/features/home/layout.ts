@@ -16,6 +16,8 @@ interface HomeLayout {
   inputBottomMargin: number;
   recentSessionLimit: number;
   showHiddenCount: boolean;
+  /** Rows the session list may spend; unspent rows are the body's slack. */
+  sessionCapacity: number;
 }
 
 interface SessionLimitInput {
@@ -33,6 +35,7 @@ const FOCUSED_SELECTION_ERROR_ROWS = 1;
 function getContentAwareSessionLimit(input: SessionLimitInput): {
   recentSessionLimit: number;
   showHiddenCount: boolean;
+  sessionCapacity: number;
 } {
   const { rows, isSmall, logoTier, inputBottomMargin, sessionCount, sessionsFocused } = input;
   const inputDock = 1 + 3 + inputBottomMargin;
@@ -47,15 +50,27 @@ function getContentAwareSessionLimit(input: SessionLimitInput): {
       0,
       baseCapacity - FOCUSED_FILTER_BLOCK_ROWS - FOCUSED_SELECTION_ERROR_ROWS,
     );
-    return { recentSessionLimit: capacity, showHiddenCount: false };
+    return { recentSessionLimit: capacity, showHiddenCount: false, sessionCapacity: capacity };
   }
   if (sessionCount <= baseCapacity) {
-    return { recentSessionLimit: baseCapacity, showHiddenCount: false };
+    return {
+      recentSessionLimit: baseCapacity,
+      showHiddenCount: false,
+      sessionCapacity: baseCapacity,
+    };
   }
   if (baseCapacity <= 1) {
-    return { recentSessionLimit: baseCapacity, showHiddenCount: false };
+    return {
+      recentSessionLimit: baseCapacity,
+      showHiddenCount: false,
+      sessionCapacity: baseCapacity,
+    };
   }
-  return { recentSessionLimit: baseCapacity - 1, showHiddenCount: true };
+  return {
+    recentSessionLimit: baseCapacity - 1,
+    showHiddenCount: true,
+    sessionCapacity: baseCapacity,
+  };
 }
 
 export function getHomeLayout({
@@ -74,7 +89,7 @@ export function getHomeLayout({
   const bodyWidth = isSmall ? inputWidth : Math.min(inputWidth, 72);
   const logoTier = getLogoTier(rows, cols);
   const inputBottomMargin = rows >= 38 ? 2 : rows >= 30 ? 1 : 0;
-  const { recentSessionLimit, showHiddenCount } = getContentAwareSessionLimit({
+  const { recentSessionLimit, showHiddenCount, sessionCapacity } = getContentAwareSessionLimit({
     rows,
     isSmall,
     logoTier,
@@ -90,5 +105,6 @@ export function getHomeLayout({
     inputBottomMargin,
     recentSessionLimit,
     showHiddenCount,
+    sessionCapacity,
   };
 }

@@ -1,9 +1,8 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ApiImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
+import { resolveIntermediateRunner } from '../../../core/config/accessors/intermediate-runner.js';
 import { getApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
-import { getProviderBaseURL } from '../../../core/providers/catalog.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
 import {
   findKnownModel,
@@ -12,7 +11,6 @@ import {
   lookupRuntimeModel,
 } from '../../providers/model/resolution.js';
 import type { Implementer } from '../../implementers/types.js';
-import { createImplementer } from '../../runners/factory.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import {
   createBusTextHandler,
@@ -24,6 +22,7 @@ import {
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep } from './step.js';
 import type { EscalationContext, RetryStepOutcome, TierStepInput } from './types.js';
+import { error } from '../../../utils/error.js';
 
 export async function runIntermediateTier(input: TierStepInput): Promise<RetryStepOutcome> {
   const { ctx, task: initialTask, state, lastError, priorAttempts } = input;
@@ -56,8 +55,12 @@ export async function runIntermediateTier(input: TierStepInput): Promise<RetrySt
 
   let intermediateImplementer: Implementer;
   try {
-    intermediateImplementer = await createImplementer(intermediateConfig, {
+    if (ctx.createImplementer === undefined) {
+      throw error('runner-gate-mismatch', 'Prepared intermediate factory is unavailable.');
+    }
+    intermediateImplementer = await ctx.createImplementer(intermediateConfig, {
       publisher: createImplementerPublisher(ctx.bus),
+      slot: { role: 'intermediate' },
     });
   } catch (err) {
     publishWarningFromError(
@@ -132,9 +135,13 @@ export function resolveIntermediateConfig(
   const escalation = ctx.config.escalation;
   if (!escalation?.intermediateProvider || !escalation.intermediateModel) return null;
   const intermediateModel = escalation.intermediateModel;
-  const intermediateDescriptor = getApiProviderDescriptor(escalation.intermediateProvider);
-  const resolvedApiBase = getProviderBaseURL(escalation.intermediateProvider);
-  if (!resolvedApiBase) {
+  const contextLength = resolveIntermediateContextLength(
+    ctx,
+    escalation.intermediateProvider,
+    intermediateModel,
+  );
+  const resolved = resolveIntermediateRunner(ctx.config, { contextLength });
+  if (getApiProviderDescriptor(escalation.intermediateProvider) === undefined) {
     publishWarning({
       bus: ctx.bus,
       phase: state.phase,
@@ -142,12 +149,7 @@ export function resolveIntermediateConfig(
     });
   }
 
-  const currentImplementer = ctx.config.implementer;
-  const currentApiBase = currentImplementer.kind === 'api' ? currentImplementer.apiBase : undefined;
-  const effectiveApiBase = resolvedApiBase || currentApiBase;
-  const intermediateIdentity =
-    intermediateDescriptor ?? (currentImplementer.kind === 'api' ? currentImplementer : undefined);
-  if (!effectiveApiBase || !intermediateIdentity) {
+  if (resolved === null) {
     publishWarning({
       bus: ctx.bus,
       phase: state.phase,
@@ -156,24 +158,7 @@ export function resolveIntermediateConfig(
     return null;
   }
 
-  const contextLength = resolveIntermediateContextLength(
-    ctx,
-    escalation.intermediateProvider,
-    intermediateModel,
-  );
-
-  const intermediateImplConfig: ApiImplementerConfig = {
-    kind: 'api',
-    provider: escalation.intermediateProvider,
-    service: intermediateIdentity.service,
-    offering: intermediateIdentity.offering,
-    model: intermediateModel,
-    apiBase: effectiveApiBase,
-    ...(contextLength !== undefined && { contextLength }),
-    timeout: ctx.config.implementer.timeout,
-  };
-
-  const intermediateConfig = { ...ctx.config, implementer: intermediateImplConfig };
+  const intermediateConfig = { ...ctx.config, implementer: resolved.runner };
   delete intermediateConfig.implementerProfiles;
   return intermediateConfig;
 }

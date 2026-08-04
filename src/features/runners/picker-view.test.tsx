@@ -104,6 +104,7 @@ describe('PickerView model confirmation', () => {
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
   }
@@ -176,6 +177,7 @@ describe('PickerView previews', () => {
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 
@@ -243,6 +245,7 @@ describe('PickerView previews', () => {
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 
@@ -298,6 +301,7 @@ describe('PickerView previews', () => {
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 
@@ -368,6 +372,7 @@ describe('PickerView previews', () => {
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 
@@ -412,6 +417,7 @@ describe('PickerView previews', () => {
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 
@@ -454,6 +460,7 @@ describe('PickerView previews', () => {
       currentCommand: undefined,
       currentCommandKind: undefined,
       customModels: [],
+      discovery: { cold: false, refreshing: false },
       setCurrentItem: () => {},
     };
 

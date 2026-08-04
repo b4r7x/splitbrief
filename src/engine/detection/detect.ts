@@ -388,8 +388,8 @@ async function runAdmittedCatalogProbe(
     Number.isSafeInteger(command.maxOutputBytes) && command.maxOutputBytes > 0
       ? Math.min(command.maxOutputBytes, CATALOG_PROBE_OUTPUT_CEILING_BYTES)
       : CATALOG_PROBE_OUTPUT_CEILING_BYTES;
-  const stdout = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'tail' });
-  const stderr = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'tail' });
+  const stdout = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'prefix-tail' });
+  const stderr = createBoundedOutput({ maxBytes: maxOutputBytes, policy: 'prefix-tail' });
   const timeout = new AbortController();
   const signal =
     externalSignal === undefined
@@ -462,8 +462,9 @@ function catalogOutcomeFromProbe(
   probe: Exclude<CliCatalogProbe, { kind: 'not-run' }>,
   output: CliProbeOutput,
 ): ProbeOutcome<readonly DetectedModel[]> {
+  if (output.outputExceeded) return { kind: 'malformed' };
   if (output.timedOut) return { kind: 'timeout' };
-  if (output.outputExceeded || output.exitCode === null || output.exitCode !== 0) {
+  if (output.exitCode === null || output.exitCode !== 0) {
     return { kind: 'malformed' };
   }
   try {

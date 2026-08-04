@@ -43,7 +43,15 @@ function seedVisibleBriefReview(sources: string[], visibleCount = sources.length
 describe('useBriefReviewKeys: y yank', () => {
   beforeEach(() => {
     resetAllStores();
-    routerStore.navigate({ to: 'workflow', feature: 'test' });
+    routerStore.navigate({
+      to: 'workflow',
+      execution: {
+        kind: 'attached',
+        feature: 'test',
+        sessionId: 'attached-session',
+        attach: { sockPath: '/tmp/splitbrief.sock', authToken: 'test-token' },
+      },
+    });
   });
 
   afterEach(() => {

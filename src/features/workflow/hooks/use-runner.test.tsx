@@ -11,10 +11,17 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+  type RunnerGate,
+} from '../../../engine/runners/prepared-execution.js';
 import { useInputMode } from './use-input-mode.js';
 import { useWorkflowRunner } from './use-runner.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
@@ -23,6 +30,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
+import { configStore } from '../../../stores/project/config.js';
 import {
   abortTurn,
   interruptTurn,
@@ -30,10 +38,14 @@ import {
   requestRewind,
   clearAllHandlers,
 } from '../handlers.js';
-import { writeActive } from '../../../core/sessions/lifecycle.js';
+import {
+  clearActiveReceipt,
+  reactivateExistingSession,
+  writeActive,
+} from '../../../core/sessions/lifecycle.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState, loadState } from '../../../core/state/persistence.js';
-import { saveSummary } from '../../../core/sessions/io.js';
+import { configForSessionTranscriptPolicy, saveSummary } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { sessionDir } from '../../../core/paths.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -50,41 +62,18 @@ interface RunnerHandle {
 }
 
 interface HarnessProps {
-  feature: string;
-  projectDir: string;
+  prepared: PreparedExecution;
   onComplete: (completion: WorkflowCompletion) => void;
-  initialResumeState?: WorkflowState | undefined;
-  sessionId?: string | undefined;
   captureRunner?: { current: RunnerHandle | null };
-  planner?: PlannerConfig | undefined;
-  workflow?: Partial<Config['workflow']> | undefined;
   runWorkflow?: RunWorkflowFn | undefined;
 }
 
-function Harness({
-  feature,
-  projectDir,
-  onComplete,
-  initialResumeState,
-  sessionId,
-  captureRunner,
-  planner,
-  workflow,
-  runWorkflow,
-}: HarnessProps) {
+function Harness({ prepared, onComplete, captureRunner, runWorkflow }: HarnessProps) {
   const inputMode = useInputMode();
-  const config = makeConfig({
-    planner: planner ?? { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
-    ...(workflow !== undefined && { workflow }),
-  });
   const runner = useWorkflowRunner({
-    feature,
-    projectDir,
-    config,
+    prepared,
     onComplete,
-    initialResumeState,
     inputMode,
-    sessionId,
     runWorkflow,
   });
   useEffect(() => {
@@ -95,6 +84,61 @@ function Harness({
       <Text>{inputMode.mode === 'normal' ? 'idle' : inputMode.hint}</Text>
     </Box>
   );
+}
+
+function preparedExecution(input: {
+  projectDir: string;
+  feature: string;
+  sessionId?: string | undefined;
+  resumeState?: WorkflowState | undefined;
+  planner?: PlannerConfig | undefined;
+  workflow?: Partial<Config['workflow']> | undefined;
+}): PreparedExecution {
+  const sessionId = input.sessionId ?? 'prepared-workflow-session';
+  const ref = { projectDir: input.projectDir, sessionId };
+  ensureSessionDir(input.projectDir, sessionId);
+  const config = parsePreparedConfig(
+    configForSessionTranscriptPolicy(
+      makeConfig({
+        planner: input.planner ?? {
+          kind: 'agent',
+          command: 'splitbrief-non-existent-planner-x7q9',
+        },
+        ...(input.workflow !== undefined && { workflow: input.workflow }),
+      }),
+      ref,
+    ),
+  );
+  const preparationId = `workflow-hook-${sessionId}`;
+  const gates: readonly RunnerGate[] = [
+    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
+    ...resolveImplementerProfiles(config).profiles.map((profile) =>
+      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
+    ),
+  ];
+  const active = reactivateExistingSession(ref);
+  return {
+    purpose: input.resumeState === undefined ? 'new-workflow' : 'resume',
+    config,
+    preparationId,
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir: input.projectDir,
+      status: 'ready',
+      counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates,
+    session: { kind: 'existing', ref, active },
+    runtime: {
+      feature: input.feature,
+      ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
+      allowRepoRunners: false,
+      allowHooks: false,
+    },
+  };
 }
 
 async function flush(ms = 60) {
@@ -110,6 +154,7 @@ beforeEach(() => {
   resetWorkflow();
   controlsStore.reset();
   feedbackStore.reset();
+  configStore.__testReset();
   clearAllHandlers();
 });
 
@@ -118,22 +163,49 @@ afterEach(() => {
   resetWorkflow();
   controlsStore.reset();
   feedbackStore.reset();
+  configStore.__testReset();
   cleanupTempDir(projectDir);
 });
 
 describe('useWorkflowRunner', () => {
+  it('runs once from prepared config session report and gates', async () => {
+    const prepared = preparedExecution({ projectDir, feature: 'prepared authority' });
+    const received: PreparedExecution[] = [];
+    const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
+      received.push(options.prepared);
+      return makeSummary();
+    });
+
+    const inst = render(
+      <Harness prepared={prepared} onComplete={() => {}} runWorkflow={runWorkflowStub} />,
+    );
+
+    await vi.waitFor(() => {
+      expect(received).toHaveLength(1);
+    });
+    await flush();
+
+    const authority = received[0];
+    expect(authority).toBe(prepared);
+    expect(authority?.config).toBe(prepared.config);
+    expect(authority?.session).toBe(prepared.session);
+    expect(authority?.session.active).toBe(prepared.session.active);
+    expect(authority?.report).toBe(prepared.report);
+    expect(authority?.gates).toBe(prepared.gates);
+    expect(Object.isFrozen(authority?.config)).toBe(true);
+    expect(runWorkflowStub).toHaveBeenCalledTimes(1);
+
+    inst.unmount();
+  });
+
   it('resets workflow stores on mount and produces a valid startedAt timestamp', async () => {
     // Seed the stores so the test proves they were reset on mount.
     lifecycleStore.__testReset({ cancelled: true, queueDepth: 5 });
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({ projectDir, feature: 'add auth' });
 
     const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        captureRunner={captureRunner}
-      />,
+      <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
     );
     await flush();
 
@@ -153,15 +225,13 @@ describe('useWorkflowRunner', () => {
       ...createInitialState('add auth'),
       phase: 'reviewing-spec',
     };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      resumeState: resume,
+    });
 
-    const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        initialResumeState={resume}
-      />,
-    );
+    const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
 
     // Stale fields were cleared (reset ran) and the resume phase was applied
     // (reset received the resume state) — proving a single reset carries the
@@ -178,7 +248,6 @@ describe('useWorkflowRunner', () => {
   it('keeps opaque resumed sessions transcript-private when current config allows transcripts', async () => {
     const sessionId = '2026-06-18-session-abcdef123456';
     ensureSessionDir(projectDir, sessionId);
-    writeActive({ projectDir, sessionId });
     const resume: WorkflowState = {
       ...createInitialState('secret oauth login'),
       phase: 'implementing',
@@ -187,20 +256,19 @@ describe('useWorkflowRunner', () => {
     saveState({ projectDir, sessionId }, resume);
     let seenPersistTranscript: boolean | undefined;
     const runWorkflowStub: RunWorkflowFn = vi.fn(async (opts) => {
-      seenPersistTranscript = opts.config.workflow.persistTranscript;
+      seenPersistTranscript = opts.prepared.config.workflow.persistTranscript;
       return makeSummary();
+    });
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'secret oauth login',
+      sessionId,
+      resumeState: resume,
+      workflow: { mode: 'quick', persistTranscript: true },
     });
 
     const inst = render(
-      <Harness
-        feature="secret oauth login"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        initialResumeState={resume}
-        sessionId={sessionId}
-        workflow={{ mode: 'quick', persistTranscript: true }}
-        runWorkflow={runWorkflowStub}
-      />,
+      <Harness prepared={prepared} onComplete={() => {}} runWorkflow={runWorkflowStub} />,
     );
 
     await vi.waitFor(() => {
@@ -217,15 +285,14 @@ describe('useWorkflowRunner', () => {
     saveSummary({ projectDir, sessionId }, makeSession({ id: sessionId, status: 'failed' }));
     const runWorkflowStub: RunWorkflowFn = vi.fn(async () => makeSummary());
     let completion: WorkflowCompletion | undefined;
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
 
     const inst = render(
       <Harness
-        feature="add auth"
-        projectDir={projectDir}
+        prepared={prepared}
         onComplete={(c) => {
           completion = c;
         }}
-        sessionId={sessionId}
         runWorkflow={runWorkflowStub}
       />,
     );
@@ -258,15 +325,14 @@ describe('useWorkflowRunner', () => {
       return makeSummary();
     });
     let completion: WorkflowCompletion | undefined;
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
 
     const inst = render(
       <Harness
-        feature="add auth"
-        projectDir={projectDir}
+        prepared={prepared}
         onComplete={(c) => {
           completion = c;
         }}
-        sessionId={sessionId}
         runWorkflow={runWorkflowStub}
       />,
     );
@@ -295,17 +361,14 @@ describe('useWorkflowRunner', () => {
       pendingRecovery: { ...issue, status: 'paused' },
     };
     saveState({ projectDir, sessionId }, paused);
-    writeActive({ projectDir, sessionId });
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId,
+      resumeState: paused,
+    });
 
-    const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        initialResumeState={paused}
-        sessionId={sessionId}
-      />,
-    );
+    const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
     await flush();
 
     // The paused issue is carried, not resolved: the host never resumes the run,
@@ -323,9 +386,8 @@ describe('useWorkflowRunner', () => {
   });
 
   it('requestCancel marks the workflow cancelled and clears the review input mode', async () => {
-    const inst = render(
-      <Harness feature="add auth" projectDir={projectDir} onComplete={() => {}} />,
-    );
+    const prepared = preparedExecution({ projectDir, feature: 'add auth' });
+    const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
     await flush();
 
     // Simulate a pending review mode (as if the engine had called onApprovalNeeded).
@@ -358,16 +420,15 @@ describe('useWorkflowRunner', () => {
         finishRun();
       }
     };
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'cancel reason',
+      sessionId,
+      planner: { kind: 'shell', command: 'sleep', args: ['10'] },
+      workflow: { mode: 'quick', persistTranscript: false },
+    });
     const inst = render(
-      <Harness
-        feature="cancel reason"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        sessionId={sessionId}
-        planner={{ kind: 'shell', command: 'sleep', args: ['10'] }}
-        workflow={{ mode: 'quick', persistTranscript: false }}
-        runWorkflow={runWorkflowWithCompletion}
-      />,
+      <Harness prepared={prepared} onComplete={() => {}} runWorkflow={runWorkflowWithCompletion} />,
     );
     const logPath = join(sessionDir(projectDir, sessionId), 'session.jsonl');
     await vi.waitFor(
@@ -400,15 +461,9 @@ describe('useWorkflowRunner', () => {
       phase: 'reviewing-spec',
     };
     saveState({ projectDir, sessionId }, saved);
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
 
-    const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        sessionId={sessionId}
-      />,
-    );
+    const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
     await flush();
     // No `.splitbrief/active` pointer is hand-written. The rewind handler must use the
     // in-scope sessionId prop (F-317), so the rewind still lands even though the bogus
@@ -436,15 +491,9 @@ describe('useWorkflowRunner', () => {
       phase: 'implementing',
     };
     saveState({ projectDir, sessionId }, saved);
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
 
-    const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        sessionId={sessionId}
-      />,
-    );
+    const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
     await flush();
 
     const didRewind = requestRewind({ target: 'task', taskId: 'T001' });
@@ -455,6 +504,60 @@ describe('useWorkflowRunner', () => {
     const log = readFileSync(logPath, 'utf-8');
     expect(log).toContain('task_reset');
     expect(log).toContain('T001');
+
+    inst.unmount();
+  });
+
+  it('rewind retry reuses prepared runner authority after store changes', async () => {
+    const sessionId = '2024-01-01-prepared-rewind';
+    const saved: WorkflowState = {
+      ...createInitialState('prepared rewind'),
+      phase: 'reviewing-spec',
+    };
+    ensureSessionDir(projectDir, sessionId);
+    saveState({ projectDir, sessionId }, saved);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'prepared rewind',
+      sessionId,
+      resumeState: saved,
+    });
+    const attempts: PreparedExecution[] = [];
+    const runWorkflowStub: RunWorkflowFn = async (options) => {
+      attempts.push(options.prepared);
+      if (attempts.length === 1 && !options.signal?.aborted) {
+        await new Promise<void>((resolve) => {
+          options.signal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+      }
+      return makeSummary();
+    };
+    const inst = render(
+      <Harness prepared={prepared} onComplete={() => {}} runWorkflow={runWorkflowStub} />,
+    );
+
+    await vi.waitFor(() => {
+      expect(attempts).toHaveLength(1);
+    });
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        planner: { kind: 'agent', command: '/changed/after/admission' },
+      }),
+    });
+
+    expect(requestRewind({ target: 'spec', comment: 'reuse prepared authority' })).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(attempts).toHaveLength(2);
+    });
+    expect(attempts).toEqual([prepared, prepared]);
+    expect(attempts[1]?.config).toBe(prepared.config);
+    expect(attempts[1]?.gates).toBe(prepared.gates);
+    expect(attempts[1]?.report).toBe(prepared.report);
+    expect(attempts[1]?.session).toBe(prepared.session);
+    expect(attempts[1]?.session.active).toBe(prepared.session.active);
+    expect(Object.isFrozen(attempts[1]?.config)).toBe(true);
 
     inst.unmount();
   });
@@ -476,18 +579,17 @@ describe('useWorkflowRunner', () => {
     };
     saveState({ projectDir, sessionId: foreignSessionId }, foreignState);
     saveState({ projectDir, sessionId: scopedSessionId }, scopedState);
+    const prepared = preparedExecution({
+      projectDir,
+      feature: 'add auth',
+      sessionId: scopedSessionId,
+    });
 
-    const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        sessionId={scopedSessionId}
-      />,
-    );
+    const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
     await flush();
     // The pointer now names a FOREIGN interrupted session while the screen stays scoped to B.
     // A pointer-keyed rewind would corrupt the foreign session; the in-scope id (B) must win.
+    clearActiveReceipt(prepared.session.ref, prepared.session.active);
     writeActive({ projectDir, sessionId: foreignSessionId });
 
     const didRewind = requestRewind({ target: 'spec', comment: 'scope-correct rewind' });
@@ -510,14 +612,10 @@ describe('useWorkflowRunner', () => {
 
   it('handleResume shows a feedback error when there is no saved state on disk', async () => {
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({ projectDir, feature: 'add auth' });
 
     const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        captureRunner={captureRunner}
-      />,
+      <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
     );
     await flush();
 
@@ -544,14 +642,9 @@ describe('useWorkflowRunner', () => {
     saveState({ projectDir, sessionId }, saved);
 
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
     const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        sessionId={sessionId}
-        captureRunner={captureRunner}
-      />,
+      <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
     );
     await flush();
 
@@ -581,14 +674,9 @@ describe('useWorkflowRunner', () => {
     saveState({ projectDir, sessionId }, saved);
 
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
     const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        sessionId={sessionId}
-        captureRunner={captureRunner}
-      />,
+      <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
     );
     await flush();
 
@@ -620,14 +708,9 @@ describe('useWorkflowRunner', () => {
     saveState({ projectDir, sessionId }, saved);
 
     const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const prepared = preparedExecution({ projectDir, feature: 'add auth', sessionId });
     const inst = render(
-      <Harness
-        feature="add auth"
-        projectDir={projectDir}
-        onComplete={() => {}}
-        sessionId={sessionId}
-        captureRunner={captureRunner}
-      />,
+      <Harness prepared={prepared} onComplete={() => {}} captureRunner={captureRunner} />,
     );
     await flush();
 
@@ -644,9 +727,8 @@ describe('useWorkflowRunner', () => {
   });
 
   it('cleans up all handlers on unmount so later events do not leak into the suite', async () => {
-    const inst = render(
-      <Harness feature="add auth" projectDir={projectDir} onComplete={() => {}} />,
-    );
+    const prepared = preparedExecution({ projectDir, feature: 'add auth' });
+    const inst = render(<Harness prepared={prepared} onComplete={() => {}} />);
     await flush();
 
     inst.unmount();

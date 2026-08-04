@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import '#testing/helpers/cli/ink-mocks.js';
@@ -14,6 +14,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { createDefaultConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../../src/core/paths.js';
+import { readActive } from '../../../src/core/sessions/lifecycle.js';
 
 let tmp: string;
 let shimDir: string;
@@ -65,6 +66,6 @@ describe('CLI integration: start happy path', { timeout: 90_000 }, () => {
     const [sessionId] = ids;
     if (!sessionId) throw new Error('session id missing');
     expect(sessionId).toMatch(/add-endpoint/);
-    expect(readFileSync(join(tmp, SPLITBRIEF_DIR, 'active'), 'utf-8').trim()).toBe(sessionId);
+    expect(readActive(tmp)).toBe(sessionId);
   }, 90_000);
 });

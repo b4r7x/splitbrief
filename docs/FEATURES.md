@@ -70,7 +70,9 @@ splitbrief start "add endpoint" @api-spec.yaml @existing-handler.ts
 | `agent` | Subprocess that writes files directly; no shell/network sandbox | File-writing tools (no stdout extraction) |
 | `agent-sdk` | `@anthropic-ai/claude-agent-sdk` library call | In-process Anthropic Agent SDK |
 
-**Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the picker overlays (`/planner`, `/implementer`) surface only what is available.
+**Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the picker overlays (`/planner`, `/implementer`) surface only what is available. A first setup with no remembered result shows a generic "Initializing your tools…" state and advances when discovery succeeds. On later TUI setup loads, SPLITBRIEF publishes the sanitized, project/config-scoped remembered result — including remembered model rows — before discovery refreshes in the background; a failed refresh leaves those rows visible with a refresh-failure indication. The home screen shows a spinner with "Initializing your tools…" during a cold first discovery and "Refreshing your tools…" during warm background refreshes, and the runner pickers mirror the same cold/warm states.
+
+Remembered detection is presentation-only. It can populate a picker, but it cannot authorize a workflow, resume, or `spec` run, and it is not an offline execution mode. Every local run still performs fresh execution preparation against its exact effective configuration.
 
 ```yaml
 planner:  { kind: cli, tool: claude-code }
@@ -97,7 +99,7 @@ splitbrief start "add profile settings"
 splitbrief start --json "fix parser edge case"
 ```
 
-`splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, model calls, validation runs, or network probes. Every interactive workflow start writes a compact `.splitbrief/sessions/<id>/readiness.json` record inside the active execution session before model calls — CLI starts (`splitbrief start`) write it at session bootstrap, and TUI starts (home composer, setup completion) write the client-computed report once the session id exists. In headless mode the readiness report is emitted as the first structured JSON line.
+`splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, model calls, validation runs, or network probes. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
 
 **When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
 

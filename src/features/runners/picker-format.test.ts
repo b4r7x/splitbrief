@@ -60,6 +60,21 @@ describe('formatModelCatalogGuidance', () => {
     });
   });
 
+  it('reports detection in progress instead of an empty catalog while discovery refreshes', () => {
+    expect(formatModelCatalogGuidance(readyCliTool(), zeroCounts, undefined, true)).toEqual({
+      headline: 'Detecting models…',
+      detail: undefined,
+    });
+    expect(
+      formatModelCatalogGuidance(readyCliTool(), { ...zeroCounts, suggestions: 2 }, undefined, true)
+        .detail,
+    ).toBe('Detecting models…');
+    expect(
+      formatModelCatalogGuidance(readyCliTool(), { ...zeroCounts, confirmed: 1 }, undefined, true)
+        .headline,
+    ).toContain('1 model detected');
+  });
+
   it('attaches the diagnostic detail to the suggested-catalog headline', () => {
     const diagnostic: ModelCatalogDiagnostic = { kind: 'not-probed' };
 

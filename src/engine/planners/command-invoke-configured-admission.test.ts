@@ -4,9 +4,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
 import { matches } from '../../utils/error.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
-import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
+import {
+  customRunnerSecurityPosture,
+  type ConfiguredCustomRunner,
+} from '../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
+import { customRunnerAdmissionError } from '../runners/trust.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
-import { createConfiguredCustomPlanner } from './command-invoke.js';
+import { createConfiguredCustomPlanner as createPreparedConfiguredCustomPlanner } from './command-invoke.js';
 import {
   configuredPlanner,
   createCommandInvokeTestFixtures,
@@ -19,6 +24,23 @@ import { createTempDir } from '#testing/helpers/temp-dir.js';
 
 const { testProject, trackDirectories } = createCommandInvokeTestFixtures();
 
+async function createConfiguredCustomPlanner(
+  runner: ConfiguredCustomRunner,
+  runtime: CustomRunnerRuntimePort,
+) {
+  const admission = await prepareCustomRunnerAdmission({
+    ...runtime.admission,
+    projectDir: runtime.authorizationProjectDir,
+    runner,
+    posture: customRunnerSecurityPosture('planner', runner.command.contract),
+    phase: 'planning',
+    authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('planner');
+  return createPreparedConfiguredCustomPlanner(runner, runtime, admission.invocation);
+}
+
 describe('createConfiguredCustomPlanner admission and output behavior', () => {
   it('runs output planners in a fresh child stage and discards their writes', async () => {
     const { projectDir, stateDir } = testProject('configured-output');
@@ -27,7 +49,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
     mkdirSync(join(staleReviewRoot, 'stale-call'), { recursive: true });
     writeFileSync(stalePath, 'stale');
     let childStagePath = '';
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'output',
         script: [
@@ -87,7 +109,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
           env: ['PLANNER_OUTPUT_CANARY'],
         }),
       };
-      const planner = createConfiguredCustomPlanner(
+      const planner = await createConfiguredCustomPlanner(
         runner,
         runtimeFor({
           projectDir,
@@ -147,11 +169,9 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
         throw new Error('Output planner must not begin declared artifact review.');
       },
     };
-    const planner = createConfiguredCustomPlanner(runner, runtime);
-
     let denial: unknown;
     try {
-      await planner.review('review this', projectDir, { onOutput: vi.fn() });
+      await createConfiguredCustomPlanner(runner, runtime);
     } catch (err) {
       denial = err;
     }
@@ -169,23 +189,21 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
   it('rejects admission before creating a child stage or starting a child', async () => {
     const { projectDir, stateDir } = testProject('configured-admission-denied');
     const childSentinel = join(projectDir, 'child-started');
-    const planner = createConfiguredCustomPlanner(
-      configuredPlanner({
-        contract: 'output',
-        script: `require('node:fs').writeFileSync(${JSON.stringify(childSentinel)}, 'started');`,
-      }),
-      runtimeFor({
-        projectDir,
-        stateDir,
-        allowRepoRunners: false,
-        createStage: async () => {
-          throw new Error('stage must not be created after denied admission');
-        },
-      }),
-    );
-
     await expect(
-      planner.review('review this', projectDir, { onOutput: vi.fn() }),
+      createConfiguredCustomPlanner(
+        configuredPlanner({
+          contract: 'output',
+          script: `require('node:fs').writeFileSync(${JSON.stringify(childSentinel)}, 'started');`,
+        }),
+        runtimeFor({
+          projectDir,
+          stateDir,
+          allowRepoRunners: false,
+          createStage: async () => {
+            throw new Error('stage must not be created after denied admission');
+          },
+        }),
+      ),
     ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
 
     expect(existsSync(childSentinel)).toBe(false);
@@ -243,7 +261,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
           throw new Error('Output planner must not begin declared artifact review.');
         },
       };
-      const planner = createConfiguredCustomPlanner(runner, runtime);
+      const planner = await createConfiguredCustomPlanner(runner, runtime);
 
       await expect(
         planner.review('review this', projectDir, { onOutput: vi.fn() }),

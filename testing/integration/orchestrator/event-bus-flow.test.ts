@@ -8,6 +8,10 @@ import { TASK_MARKDOWN, CODE_RESPONSE } from '#testing/helpers/faux/shell-runner
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../src/engine/runners/prepared-execution.js';
 
 const dirs: string[] = [];
 
@@ -25,31 +29,68 @@ describe('EventBus end-to-end flow', { timeout: 90_000 }, () => {
     const recorded: EngineEvent[] = [];
     const { callbacks } = makeCallbacks();
 
-    const config = makeConfig({
-      planner: {
-        kind: 'shell',
-        command: 'node',
-        args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
+    const config = parsePreparedConfig(
+      makeConfig({
+        planner: {
+          kind: 'shell',
+          command: 'node',
+          args: ['-e', `process.stdout.write(${JSON.stringify(TASK_MARKDOWN)})`],
+        },
+        implementer: {
+          kind: 'shell',
+          command: 'node',
+          args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
+          model: 'fake-model',
+          contextLength: 4096,
+          temperature: 0,
+        },
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
+      }),
+    );
+    const feature = 'add foo';
+    const sessionId = 'event-bus-flow-session';
+    const preparationId = 'event-bus-flow-preparation';
+    const active = {
+      version: 1 as const,
+      sessionId,
+      generation: '3a333333-3333-4333-8333-333333333333',
+    };
+    const prepared: PreparedExecution = {
+      purpose: 'new-workflow',
+      config,
+      preparationId,
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [],
+        metadata: {},
       },
-      implementer: {
-        kind: 'shell',
-        command: 'node',
-        args: ['-e', `process.stdout.write(${JSON.stringify(CODE_RESPONSE)})`],
-        model: 'fake-model',
-        contextLength: 4096,
-        temperature: 0,
-      },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
-      workflow: { mode: 'quick', persistTranscript: false, maxRetries: 1 },
-    });
+      gates: [
+        {
+          kind: 'shell',
+          slot: { role: 'planner' },
+          preparationId,
+          command: { kind: 'validated-config' },
+        },
+        {
+          kind: 'shell',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          command: { kind: 'validated-config' },
+        },
+      ],
+      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+      runtime: { feature, allowRepoRunners: false, allowHooks: true },
+    };
 
     await runWorkflow({
-      feature: 'add foo',
-      projectDir,
-      config,
+      prepared,
       callbacks,
       sinks: TEST_WORKFLOW_SINKS,
-      allowHooks: true,
       _eventSink: (e) => recorded.push(e),
     });
 

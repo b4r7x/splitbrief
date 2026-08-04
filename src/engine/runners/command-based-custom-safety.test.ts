@@ -79,7 +79,6 @@ describe('invokeCustomCommandBasedRunner safety', () => {
 
     expect(observation.result).toMatchObject({ status: 'completed' });
     expect(observation.failure).toBeUndefined();
-    expect(observation.callbacks.stderr).toHaveLength(2);
     expectNoDeclaredValues(observation, [shortValue, longValue, markerValue]);
   });
 

@@ -1,7 +1,14 @@
 import { useReducer } from 'react';
-import { useInput } from 'ink';
+import { Text, useInput } from 'ink';
 import type { Config } from '../../core/schemas/config.js';
+import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ARROW_SEP, SOFT_SEP } from '../../components/separators.js';
+import { useTheme } from '../../components/theme.js';
+import {
+  INITIALIZING_TOOLS_BODY,
+  INITIALIZING_TOOLS_TITLE,
+  REFRESHING_TOOLS_TITLE,
+} from '../../core/discovery/copy.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { usePickerCatalog } from '../../features/runners/use-picker-catalog.js';
 import { usePickerActions } from '../../features/runners/use-picker-actions.js';
@@ -21,6 +28,7 @@ interface ToolModelPickerProps {
 }
 
 export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolModelPickerProps) {
+  const t = useTheme();
   const [viewState, dispatchView] = useReducer(viewReducer, initialViewState);
   const catalog = usePickerCatalog(role, viewState.preservedLeftIndex);
   const actions = usePickerActions({ role, onConfirm, catalog, viewState, dispatchView });
@@ -29,18 +37,31 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
     (s) =>
       s.active === 'none' || s.active === 'planner-picker' || s.active === 'implementer-picker',
   );
+  const coldDiscovery = catalog.discovery.cold && catalog.discovery.refreshing;
 
   useInput(
     (_input, key) => {
       if (!key.escape) return;
+      if (coldDiscovery) {
+        (onCancel ?? overlayStore.close)();
+        return;
+      }
       if (viewState.view.kind === 'custom-command') {
         dispatchView({ type: 'back-to-contract' });
         return;
       }
       actions.closeOverlay();
     },
-    { isActive: isSubView && overlayAllowsKeys },
+    { isActive: (isSubView || coldDiscovery) && overlayAllowsKeys },
   );
+
+  if (coldDiscovery) {
+    return (
+      <OverlayPanel title={INITIALIZING_TOOLS_TITLE} maxWidth={72} hint="esc close">
+        <Text color={t.textDim}>{INITIALIZING_TOOLS_BODY}</Text>
+      </OverlayPanel>
+    );
+  }
 
   if (viewState.view.kind === 'custom-command-contract') {
     return (
@@ -121,7 +142,7 @@ export function ToolModelPicker({ role, stepLabel, onConfirm, onCancel }: ToolMo
   return (
     <PickerView
       role={role}
-      stepLabel={stepLabel}
+      stepLabel={stepLabel ?? (catalog.discovery.refreshing ? REFRESHING_TOOLS_TITLE : undefined)}
       onCancel={onCancel}
       catalog={catalog}
       actions={actions}

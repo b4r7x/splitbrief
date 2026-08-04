@@ -6,14 +6,85 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { approvalsFile, sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { resolveCustomRunnerTrustFile } from '../../runners/custom-trust.js';
+import { executableReceipt } from '#testing/helpers/custom-command-based.js';
+import type { RunnerGate } from '../../runners/prepared-execution.js';
+import {
+  customRunnerSecurityPosture,
+  resolveCustomRunnerTrustFile,
+} from '../../runners/custom-trust.js';
+import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
 import {
   compactResumeTranscript,
   keepRecentCountForThreshold,
-  performManualCompaction,
+  performManualCompaction as performPreparedManualCompaction,
 } from './compaction.js';
 
 let dirs: string[] = [];
+
+function plannerGate(config: Config, preparationId: string): RunnerGate {
+  const slot = { role: 'planner' as const };
+  const configured = resolveConfiguredCustomRunner(config, 'planner');
+  if (configured !== null) {
+    return {
+      kind: configured.command.contract === 'output' ? 'shell' : 'agent',
+      slot,
+      preparationId,
+      command: {
+        kind: 'configured-custom',
+        invocation: {
+          kind: 'custom-runner-invocation',
+          runner: configured,
+          posture: customRunnerSecurityPosture('planner', configured.command.contract),
+          executable: executableReceipt(configured.command.executable),
+          authorization: 'explicit-grant',
+          scope: {
+            projectIdentity: `sha256:${'a'.repeat(64)}`,
+            definitionId: configured.command.id,
+            definitionDigest: `sha256:${'b'.repeat(64)}`,
+          },
+        },
+      },
+    };
+  }
+
+  const runner = config.planner;
+  switch (runner.kind) {
+    case 'cli':
+      return {
+        kind: 'cli',
+        slot,
+        preparationId,
+        tool: runner.tool,
+        executable: executableReceipt(),
+      };
+    case 'api':
+      return {
+        kind: 'api',
+        slot,
+        preparationId,
+        provider: runner.provider,
+        endpointOrigin: new URL(runner.apiBase).origin,
+      };
+    case 'agent-sdk':
+      return { kind: 'agent-sdk', slot, preparationId, provider: 'anthropic' };
+    case 'shell':
+      return { kind: 'shell', slot, preparationId, command: { kind: 'validated-config' } };
+    case 'agent':
+      return { kind: 'agent', slot, preparationId, command: { kind: 'validated-config' } };
+  }
+}
+
+function performManualCompaction(opts: {
+  config: Config;
+  ref: { projectDir: string; sessionId: string };
+}) {
+  const preparationId = 'manual-compaction-preparation';
+  return performPreparedManualCompaction({
+    ...opts,
+    preparationId,
+    gates: [plannerGate(opts.config, preparationId)],
+  });
+}
 
 afterEach(() => {
   for (const d of dirs) cleanupTempDir(d);
@@ -155,7 +226,7 @@ describe('compactResumeTranscript', () => {
 });
 
 describe('performManualCompaction', () => {
-  it('retains first-class planner compaction when no custom command matches', async () => {
+  it('manual compaction uses the prepared planner snapshot and gate', async () => {
     const { projectDir, sessionId } = setupProject();
 
     await expect(

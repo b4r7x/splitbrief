@@ -1,4 +1,3 @@
-import { statSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,34 +6,24 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { ConfigSchema } from '../../../core/schemas/config.js';
 import { SANDBOX_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
+import { reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createStagedProject } from '../approval/staged-project.js';
 import { createRetryRuntime } from '../escalation/retry-runtime.js';
-import { cliStartGatesFromArray } from '../../runners/start-gate.js';
+import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
+import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
+import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
 import { runTaskLoop } from '../task/loop.js';
+import { configForProfile } from '../task/routing.js';
 import { initializeWorkflow } from './init.js';
-
-function codexStartGate() {
-  const executable = statSync(process.execPath);
-  return cliStartGatesFromArray([
-    {
-      tool: 'codex',
-      executable: {
-        path: process.execPath,
-        fingerprint: {
-          dev: executable.dev,
-          ino: executable.ino,
-          size: executable.size,
-          mtimeMs: executable.mtimeMs,
-        },
-      },
-    },
-  ]);
-}
 
 type DirectRunnerInput = Readonly<{
   id: string;
@@ -108,20 +97,71 @@ async function initializeConfiguredDirectWorkflow(
     config: Config;
   }>,
 ) {
+  const config = parsePreparedConfig(input.config);
+  const preparationId = `configured-direct-${input.sessionId}`;
+  const gates: RunnerGate[] = [makeRunnerGate(config.planner, { role: 'planner' }, preparationId)];
+  for (const profile of resolveImplementerProfiles(config).profiles) {
+    const runner = resolveConfiguredCustomRunner(configForProfile(config, profile), 'implementer');
+    if (runner === null) throw new Error(`Expected configured runner for ${profile.name}.`);
+    const admission = await prepareCustomRunnerAdmission({
+      projectDir: input.projectDir,
+      runner,
+      posture: customRunnerSecurityPosture('implementer', runner.command.contract),
+      phase: 'implementing',
+      interaction: 'headless',
+      allowRepoRunners: true,
+      authorizationPathEnv: process.env.PATH ?? '',
+      authorizationPathExt: process.env.PATHEXT ?? '',
+    });
+    if (admission.kind !== 'admitted') {
+      throw new Error(`Expected configured runner admission for ${profile.name}.`);
+    }
+    gates.push({
+      kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+      slot: { role: 'implementer', profile: profile.name },
+      preparationId,
+      command: { kind: 'configured-custom', invocation: admission.invocation },
+    });
+  }
+  ensureSessionDir(input.projectDir, input.sessionId);
+  const active = reactivateExistingSession({
+    projectDir: input.projectDir,
+    sessionId: input.sessionId,
+  });
   const { callbacks } = makeCallbacks();
   return initializeWorkflow({
     opts: {
-      feature: 'exercise direct configured stages',
-      projectDir: input.projectDir,
-      config: input.config,
+      prepared: {
+        purpose: 'new-workflow',
+        config,
+        preparationId,
+        report: {
+          generatedAt: new Date(0).toISOString(),
+          projectDir: input.projectDir,
+          status: 'ready',
+          counts: { ok: gates.length, info: 0, warning: 0, blocker: 0 },
+          nextAction: { kind: 'continue', label: 'Continue', reason: 'ready' },
+          sections: [],
+          metadata: {},
+        },
+        gates,
+        session: {
+          kind: 'existing',
+          ref: { projectDir: input.projectDir, sessionId: input.sessionId },
+          active,
+        },
+        runtime: {
+          feature: 'exercise direct configured stages',
+          allowHooks: true,
+          allowRepoRunners: true,
+        },
+      },
       callbacks,
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
       _planner: makePlanner(),
-      allowHooks: true,
-      allowRepoRunners: true,
       headless: true,
-      trustedCliGates: codexStartGate(),
     },
+    config,
     sessionId: input.sessionId,
     summaryBase: {
       feature: 'exercise direct configured stages',

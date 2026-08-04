@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
-import { readActive, writeActive } from '../../../core/sessions/lifecycle.js';
+import {
+  readActive,
+  readActiveRecord,
+  reactivateExistingSession,
+  type ActiveSessionReceipt,
+} from '../../../core/sessions/lifecycle.js';
+import { randomUUID } from 'node:crypto';
 import { activeFile, sessionDir } from '../../../core/paths.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { Summary, CostBreakdown } from '../../../core/schemas/summary.js';
@@ -47,6 +53,10 @@ function makeSummary(): Summary {
   };
 }
 
+function receipt(sessionId: string): ActiveSessionReceipt {
+  return { version: 1, sessionId, generation: randomUUID() };
+}
+
 function makeCostBreakdown(): CostBreakdown {
   return {
     hypotheticalCost: 0.95,
@@ -81,6 +91,7 @@ describe('saveFinalSession — lifetime stats gate', () => {
     saveFinalSession({
       projectDir,
       sessionId: 'sess-interrupted',
+      active: receipt('sess-interrupted'),
       feature: 'f',
       startTime: 1,
       status: 'interrupted',
@@ -95,6 +106,7 @@ describe('saveFinalSession — lifetime stats gate', () => {
     saveFinalSession({
       projectDir,
       sessionId: 'sess-complete',
+      active: receipt('sess-complete'),
       feature: 'f',
       startTime: 1,
       status: 'complete',
@@ -113,6 +125,7 @@ describe('saveFinalSession — lifetime stats gate', () => {
     saveFinalSession({
       projectDir,
       sessionId,
+      active: receipt(sessionId),
       feature: 'f',
       startTime: 1,
       status: 'interrupted',
@@ -121,6 +134,7 @@ describe('saveFinalSession — lifetime stats gate', () => {
     saveFinalSession({
       projectDir,
       sessionId,
+      active: receipt(sessionId),
       feature: 'f',
       startTime: 1,
       status: 'complete',
@@ -138,11 +152,12 @@ describe('saveFinalSession', () => {
   it('clears the active session by default', () => {
     const projectDir = makeProjectDir();
     const sessionId = 'sess-final';
-    writeActive({ projectDir: projectDir, sessionId: sessionId });
+    const active = reactivateExistingSession({ projectDir, sessionId });
 
     saveFinalSession({
       projectDir,
       sessionId,
+      active,
       feature: 'final feature',
       startTime: 1,
       status: 'interrupted',
@@ -155,11 +170,12 @@ describe('saveFinalSession', () => {
   it('preserves the active session for recoverable pending recovery stops', () => {
     const projectDir = makeProjectDir();
     const sessionId = 'sess-recovery';
-    writeActive({ projectDir: projectDir, sessionId: sessionId });
+    const active = reactivateExistingSession({ projectDir, sessionId });
 
     saveFinalSession({
       projectDir,
       sessionId,
+      active,
       feature: 'recoverable feature',
       startTime: 1,
       status: 'interrupted',
@@ -177,6 +193,7 @@ describe('saveFinalSession', () => {
     saveFinalSession({
       projectDir,
       sessionId,
+      active: receipt(sessionId),
       feature: 'f',
       startTime: 1,
       status: 'complete',
@@ -190,11 +207,12 @@ describe('saveFinalSession', () => {
 
   it('does not clear a pointer the active session no longer owns (compare-and-clear)', () => {
     const projectDir = makeProjectDir();
-    writeActive({ projectDir: projectDir, sessionId: 'sess-other' });
+    const other = reactivateExistingSession({ projectDir, sessionId: 'sess-other' });
 
     saveFinalSession({
       projectDir,
       sessionId: 'sess-final',
+      active: receipt('sess-final'),
       feature: 'f',
       startTime: 1,
       status: 'complete',
@@ -202,6 +220,27 @@ describe('saveFinalSession', () => {
     });
 
     expect(readActive(projectDir)).toBe('sess-other');
+    expect(readActiveRecord(projectDir)).toEqual({ kind: 'v1', receipt: other });
+  });
+
+  it('resume and finalization use an exact active receipt while a newer same-session generation survives', () => {
+    const projectDir = makeProjectDir();
+    const sessionId = 'sess-resume-generation';
+    const ref = { projectDir, sessionId };
+    const stale = reactivateExistingSession(ref);
+    const newer = reactivateExistingSession(ref);
+
+    saveFinalSession({
+      projectDir,
+      sessionId,
+      active: stale,
+      feature: 'resumed feature',
+      startTime: 1,
+      status: 'interrupted',
+      summary: makeSummary(),
+    });
+
+    expect(readActiveRecord(projectDir)).toEqual({ kind: 'v1', receipt: newer });
   });
 });
 

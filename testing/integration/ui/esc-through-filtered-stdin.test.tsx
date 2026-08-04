@@ -3,6 +3,9 @@ import { Box, Text } from 'ink';
 import { renderThroughFilteredStdin } from '#testing/helpers/filtered-stdin-harness.js';
 import { tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { ThemeProvider } from '../../../src/components/theme.js';
 import { useAppKeys } from '../../../src/app/keys.js';
 import { useWorkflowKeys } from '../../../src/features/workflow/hooks/use-keys.js';
@@ -56,11 +59,23 @@ function InstantWorkflowApp({
 }
 
 describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', () => {
+  let projectDir = '';
+
   beforeEach(() => {
     resetAllStores();
     handlers.clearAllHandlers();
     cancelEscapeAction();
-    routerStore.navigate({ to: 'workflow', feature: 'instant feature' });
+    projectDir = createTempDir('filtered-stdin-workflow');
+    const prepared = prepareWorkflowExecution({
+      projectDir,
+      feature: 'instant feature',
+      config: makeConfig(),
+      sessionId: 'filtered-stdin-session',
+    });
+    routerStore.navigate({
+      to: 'workflow',
+      execution: { kind: 'local', prepared },
+    });
     // Instant mode runs planning under the 'researching' live phase (init.ts dispatches
     // START before runInstantPlanning, and 'researching' is a live phase).
     lifecycleStore.__testReset({ phase: 'researching' });
@@ -72,6 +87,8 @@ describe('ESC through the real FilteredStdin pipeline (instant-mode workflow)', 
     handlers.clearAllHandlers();
     lifecycleStore.__testReset();
     resetAllStores();
+    cleanupTempDir(projectDir);
+    projectDir = '';
   });
 
   it('arms interrupt and renders a feedback hint on the FIRST lone ESC during a live phase', async () => {

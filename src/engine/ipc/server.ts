@@ -8,6 +8,7 @@ import {
   IPC_MAX_FRAME_BYTES,
   type IpcPromptRequestInput,
   type IpcPromptResponse,
+  type ClientMessage,
   type ServerMessage,
 } from './protocol.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -33,6 +34,11 @@ export type IpcServerOptions = {
   sessionJsonlPath?: string;
   noClientPromptBehavior?: 'wait' | 'fail-closed';
   persistTranscript?: boolean | undefined;
+  onParentAccept?:
+    | ((
+        acceptance: Omit<Extract<ClientMessage, { kind: 'parent_accept' }>, 'kind' | 'token'>,
+      ) => boolean)
+    | undefined;
 };
 
 export type IpcServer = {
@@ -82,6 +88,7 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
     sessionJsonlPath,
     noClientPromptBehavior = 'wait',
     persistTranscript = true,
+    onParentAccept,
   } = opts;
   const sockPath = ipcSockPath(sessionDir);
   const writeMessage = (socket: Socket, msg: ServerMessage) =>
@@ -268,6 +275,35 @@ export async function startIpcServer(opts: IpcServerOptions): Promise<IpcServer>
           }
           authenticated = true;
           void startAuthenticatedSession();
+          return;
+        }
+
+        if (msg.kind === 'parent_accept') {
+          const accepted =
+            tokensMatch(msg.token, authToken) &&
+            onParentAccept?.({
+              version: msg.version,
+              sessionId: msg.sessionId,
+              generation: msg.generation,
+              childPid: msg.childPid,
+            }) === true;
+          if (!accepted) {
+            writeMessage(socket, {
+              kind: 'error',
+              code: 'unauthorized',
+              message: 'IPC: invalid detached parent acceptance',
+            });
+            socket.end();
+            return;
+          }
+          writeMessage(socket, {
+            kind: 'parent_accepted',
+            version: msg.version,
+            sessionId: msg.sessionId,
+            generation: msg.generation,
+            childPid: msg.childPid,
+          });
+          socket.end();
           return;
         }
 

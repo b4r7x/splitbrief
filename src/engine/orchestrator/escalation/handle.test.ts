@@ -16,7 +16,12 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
-import type { ConfiguredCustomRunner } from '../../runners/custom-trust.js';
+import {
+  customRunnerSecurityPosture,
+  type ConfiguredCustomRunner,
+} from '../../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
+import type { RunnerGate } from '../../runners/prepared-execution.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import { createConfiguredCustomPlanner } from '../../planners/command-invoke.js';
 import { cleanupStaleArtifactReviews } from '../approval/planner-artifact.js';
@@ -581,7 +586,23 @@ describe('handleRetryAndEscalation', () => {
           throw new Error('Direct full escalation must not begin planner artifact review.');
         },
       };
-      const planner = createConfiguredCustomPlanner(runner, runtime);
+      const admission = await prepareCustomRunnerAdmission({
+        ...runtime.admission,
+        projectDir,
+        runner,
+        posture: customRunnerSecurityPosture('planner', runner.command.contract),
+        phase: 'planning',
+        authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+        authorizationPathExt: runtime.authorizationPathExt ?? '',
+      });
+      if (admission.kind !== 'admitted') throw new Error('Expected configured runner admission.');
+      const gate = {
+        kind: 'agent',
+        slot: { role: 'planner' },
+        preparationId: 'escalation-direct-planner',
+        command: { kind: 'configured-custom', invocation: admission.invocation },
+      } satisfies RunnerGate;
+      const planner = createConfiguredCustomPlanner(runner, runtime, gate.command.invocation);
       const implementer = makeImplementer({
         retry: vi.fn().mockResolvedValue({
           success: false,

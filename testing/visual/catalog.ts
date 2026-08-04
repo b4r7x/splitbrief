@@ -237,7 +237,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'ready',
         title: 'Planner setup ready',
         kind: 'ready',
-        marker: 'Setup · planner · 1 of 2',
+        marker: 'Initializing your tools…',
       },
       elements: [
         { id: 'header', title: 'Setup header' },

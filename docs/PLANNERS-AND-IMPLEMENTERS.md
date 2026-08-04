@@ -8,12 +8,32 @@ How the two roles are created, what interfaces they expose, how the five runner 
 
 Both roles are created by `src/engine/runners/factory.ts`:
 
-- `createPlanner(config, initialSessionId?)` returns a `Planner`
-- `createImplementer(config, options?)` returns an `Implementer`
+- `createPlanner(config, { preparedConfig, preparationId, gates, slot, initialSessionId?, ... })` returns a `Planner`
+- `createImplementer(config, { preparedConfig, preparationId, gates, slot, ... })` returns an `Implementer`
+
+Both option objects are required. `config` and `preparedConfig` must be the same object returned by execution preparation; the factory rejects a different configuration even when its runner has the same tool, provider, endpoint, or command identity. The selected slot lets the implementer factory derive named-profile and intermediate configuration from that prepared snapshot.
 
 Factory dispatch is async and lazy. Backend modules load via memoized dynamic imports (`lazy()` wrapper), so startup only imports the configured kind. If you set `kind: api` for your planner, the `cli`, `shell`, `agent`, and `agent-sdk` modules never load.
 
 The factory reads `config.planner.kind` and `config.implementer.kind` to pick a backend. Each backend is a thin module that calls `createPlannerBase()` or `createImplementerBase()` with a backend-specific invoke function and a capabilities struct.
+
+### Execution preparation and runner gates
+
+Local execution is admitted by `prepareExecution()` in `src/engine/runners/prepare-execution.ts`, not by the discovery cache or picker state. It parses and recursively freezes the exact effective config, evaluates the runner contexts required by the command, and returns one prepared bundle containing the readiness report, configuration, `preparationId`, session reference, and generic `gates`. Factories reject a gate whose preparation, slot, kind, or safe runner identity does not match that bundle.
+
+`gates` is an exhaustive per-kind union:
+
+| `kind` | Authority carried into execution |
+|---|---|
+| `cli` | Fresh exact-context trust, compatibility, authentication, and executable receipt. The executable identity is resolved again before session creation and revalidated immediately before each spawn. |
+| `api` | The current provider credential and endpoint-policy validation, bound to the provider and endpoint origin. |
+| `agent-sdk` | The current SDK installation and credential validation, bound to the provider. |
+| `shell` | The current configured-command trust/admission result. |
+| `agent` | The current configured-command trust/admission result. |
+
+Non-CLI gates reuse the validation or admitted invocation already produced during that preparation; execution does not turn cached discovery into a second authority decision. Every gate is also bound to its exact role: planner, intermediate escalation runner, or named implementer profile. New workflows and resumes prepare the planner, every configured implementer profile, and the configured intermediate runner when enabled. `spec` prepares only the planner.
+
+Entry points express policy differences while sharing this boundary. Interactive CLI starts, Home, and Setup use disclosure/approval policy. JSON, RPC, and detached starts use headless policy, which denies unverified authentication unless the caller explicitly enables it. Resume reauthorizes the existing session's required runner contexts without creating another session. An attached TUI is only a client for a workflow already running elsewhere, so it uses an explicit attached route and does not perform local runner admission.
 
 ---
 
@@ -429,9 +449,11 @@ Step by step:
 
 4. **Add lazy imports and factory cases** in `src/engine/runners/factory.ts`. Add a `const load<Name>Planner = lazy(...)` and `const load<Name>Implementer = lazy(...)` at the top, then add `case '<name>':` branches in both `loadPlanner()` and `createImplementer()`.
 
-5. **Add config schema variants** for your kind in the planner and implementer config schemas. The `kind` field is the discriminant.
+5. **Extend execution admission.** Add the kind to the exhaustive `RunnerGate` and `RunnerGateExpectation` unions, evaluate it during `prepareExecution()`, and validate its slot-bound authority in the factory before loading the adapter.
 
-6. **Write tests.** Colocated as `<name>.test.ts` next to each module.
+6. **Add config schema variants** for your kind in the planner and implementer config schemas. The `kind` field is the discriminant.
+
+7. **Write tests.** Colocated as `<name>.test.ts` next to each module. Cover fresh admission, factory gate mismatch, named-profile selection when supported, and adapter behavior.
 
 ---
 

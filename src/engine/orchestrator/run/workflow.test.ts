@@ -11,7 +11,9 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ReadinessReport } from '../../../core/readiness/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { RunnerCallContext } from '../../../engine/calls/types.js';
@@ -24,6 +26,8 @@ import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-s
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import {
   TRANSCRIPT_OMITTED_FEATURE,
+  generateSessionId,
+  reactivateExistingSession,
   readActive,
   writeActive,
 } from '../../../core/sessions/lifecycle.js';
@@ -32,11 +36,28 @@ import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
 import { registerProcess } from '../../../lib/process/registry.js';
 import { readRunnerPids } from '../../../core/sessions/runner-pids.js';
 import { simpleGit } from 'simple-git';
-import { runWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
+import { runWorkflow as runPreparedWorkflow, WORKFLOW_REWIND_ABORT_REASON } from './workflow.js';
+import type { RunWorkflowOptions } from './init.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../types.js';
 import { error } from '../../../utils/error.js';
+import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-execution.js';
+import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { resolveHooksConfig } from '../../hooks/discover.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 
 let dirs: string[] = [];
+
+function readyReport(projectDir: string): ReadinessReport {
+  return {
+    generatedAt: new Date(0).toISOString(),
+    projectDir,
+    status: 'ready',
+    counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+    nextAction: { kind: 'continue', label: 'Continue', reason: 'ready' },
+    sections: [],
+    metadata: {},
+  };
+}
 
 afterEach(() => {
   for (const d of dirs) cleanupTempDir(d);
@@ -48,6 +69,60 @@ function setupProject(): string {
   dirs.push(projectDir);
   createTestGitRepo(projectDir);
   return projectDir;
+}
+
+type WorkflowTestOptions = Omit<RunWorkflowOptions, 'prepared'> & {
+  feature: string;
+  projectDir: string;
+  config: Config;
+  sessionId?: string | undefined;
+  allowHooks?: boolean | undefined;
+};
+
+async function runWorkflow(input: WorkflowTestOptions) {
+  const {
+    feature,
+    projectDir,
+    config: inputConfig,
+    sessionId: explicitSessionId,
+    allowHooks: _allowHooks,
+    ...options
+  } = input;
+  const hooks = await resolveHooksConfig(projectDir, inputConfig.hooks);
+  if (hooks !== undefined && input.allowHooks === true) {
+    markHooksConfigTrusted(projectDir, hooks);
+  }
+  const config = parsePreparedConfig(hooks === undefined ? inputConfig : { ...inputConfig, hooks });
+  const sessionId =
+    explicitSessionId ??
+    generateSessionId(projectDir, feature, new Date(), {
+      persistTranscript: config.workflow.persistTranscript,
+    });
+  ensureSessionDir(projectDir, sessionId);
+  const active = reactivateExistingSession({ projectDir, sessionId });
+  const preparationId = `workflow-test-${sessionId}`;
+  const gates: RunnerGate[] = [
+    makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
+    ...resolveImplementerProfiles(config).profiles.map((profile) =>
+      makeRunnerGate(profile.config, { role: 'implementer', profile: profile.name }, preparationId),
+    ),
+  ];
+  return runPreparedWorkflow({
+    ...options,
+    prepared: {
+      purpose: 'new-workflow',
+      config,
+      preparationId,
+      report: readyReport(projectDir),
+      gates,
+      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+      runtime: {
+        feature,
+        allowRepoRunners: false,
+        allowHooks: true,
+      },
+    },
+  });
 }
 
 // An "agent" planner whose command does not exist — planner.isAvailable() returns false,
@@ -69,6 +144,53 @@ function unavailablePlannerConfig(): Config {
 }
 
 describe('runWorkflow — smoke', () => {
+  it('keeps the prepared runner config after mutable config changes', async () => {
+    const projectDir = setupProject();
+    const mutableConfig = makeConfig({
+      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+    });
+    const config = parsePreparedConfig(mutableConfig);
+    const feature = 'prepared snapshot';
+    const sessionId = 'prepared-config-snapshot';
+    ensureSessionDir(projectDir, sessionId);
+    const active = reactivateExistingSession({ projectDir, sessionId });
+    const preparationId = 'prepared-config-snapshot';
+    const { callbacks } = makeCallbacks();
+
+    mutableConfig.planner = {
+      kind: 'agent',
+      command: '/changed/after/preparation',
+    };
+
+    const summary = await runPreparedWorkflow({
+      prepared: {
+        purpose: 'new-workflow',
+        config,
+        preparationId,
+        report: readyReport(projectDir),
+        gates: [
+          makeRunnerGate(config.planner, { role: 'planner' }, preparationId),
+          makeRunnerGate(
+            config.implementer,
+            { role: 'implementer', profile: 'default' },
+            preparationId,
+          ),
+        ],
+        session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+        runtime: { feature, allowRepoRunners: false, allowHooks: false },
+      },
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _planner: makePlanner(),
+      _implementer: makeImplementer(),
+    });
+
+    expect(Object.isFrozen(config)).toBe(true);
+    expect(Object.isFrozen(config.planner)).toBe(true);
+    expect(summary.plannerTool).toBe('claude-code');
+  });
+
   it('returns a summary without throwing when the configured planner is unavailable', async () => {
     const projectDir = setupProject();
     const { callbacks } = makeCallbacks();

@@ -117,7 +117,7 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
   const [overlay, route, completion] = useStores(overlayStore, routerStore, completionStore);
   const { active: overlayActive } = overlay;
   const isOpen = overlayActive !== 'none';
-  const isAttachedClient = route.screen === 'workflow' && route.attach !== undefined;
+  const isAttachedClient = route.screen === 'workflow' && route.execution.kind === 'attached';
 
   useInput(
     (input, key) => {

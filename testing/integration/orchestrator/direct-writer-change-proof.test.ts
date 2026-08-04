@@ -17,10 +17,7 @@ import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
 import { runImplementation } from '../../../src/engine/orchestrator/task/run-implementation.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { getChangedFilesSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/capture.js';
-import {
-  cliStartGatesFromArray,
-  type CliStartGate,
-} from '../../../src/engine/runners/start-gate.js';
+import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -39,6 +36,11 @@ import {
   type ContractShimMode,
   type ContractShimProfile,
 } from '#testing/helpers/command-shim.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../src/engine/runners/prepared-execution.js';
+import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 
 const TARGET_SRC = 'src/change-proof.ts';
 const TARGET_TEST = 'tests/change-proof.test.mjs';
@@ -362,12 +364,9 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       }),
     });
 
-    const summary = await runWorkflow({
-      feature: 'prove direct writer promotion',
-      projectDir,
-      sessionId,
-      trustedCliGates: cliStartGatesFromArray([fixture.trustedGate]),
-      config: makeConfig({
+    const feature = 'prove direct writer promotion';
+    const config = parsePreparedConfig(
+      makeConfig({
         planner: {
           kind: 'shell',
           command: 'node',
@@ -390,6 +389,54 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
         approval: { enabled: false, feedRejectionsToPlanner: false },
         escalation: { enabled: false },
       }),
+    );
+    const preparationId = 'direct-writer-change-proof-preparation';
+    const implementerResolution = await resolveCustomExecutable({
+      command: 'opencode',
+      projectDir,
+    });
+    if (implementerResolution.kind !== 'resolved') {
+      throw new Error('OpenCode fixture executable did not resolve.');
+    }
+    const active = {
+      version: 1 as const,
+      sessionId,
+      generation: '2a222222-2222-4222-8222-222222222222',
+    };
+    const prepared: PreparedExecution = {
+      purpose: 'new-workflow',
+      config,
+      preparationId,
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [],
+        metadata: {},
+      },
+      gates: [
+        {
+          kind: 'shell',
+          slot: { role: 'planner' },
+          preparationId,
+          command: { kind: 'validated-config' },
+        },
+        {
+          kind: 'cli',
+          slot: { role: 'implementer', profile: 'default' },
+          preparationId,
+          tool: 'opencode',
+          executable: implementerResolution.executable,
+        },
+      ],
+      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+      runtime: { feature, allowRepoRunners: false, allowHooks: false },
+    };
+
+    const summary = await runWorkflow({
+      prepared,
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       _planner: planner,

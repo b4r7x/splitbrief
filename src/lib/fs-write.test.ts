@@ -113,7 +113,7 @@ describe('writeSecureFile', () => {
     expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
-  it('chmods existing files to 0o600 when overwriting wider permissions', () => {
+  it('replaces wider-permission files with a 0o600 file', () => {
     const dir = makeTmp();
     const file = join(dir, 'widened.txt');
     writeFileSync(file, 'orig', { mode: 0o666 });
@@ -210,6 +210,18 @@ describe('writeSecureFileAsync', () => {
     expect(readFileSync(file, 'utf-8')).toBe('second');
     const stray = readdirSync(dir).filter((f) => f.includes('.tmp.'));
     expect(stray).toEqual([]);
+  });
+
+  it('publishes the owner-only temp mode without post-rename permission repair', async () => {
+    const dir = makeTmp();
+    const file = join(dir, 'widened.json');
+    writeFileSync(file, 'old', { mode: 0o666 });
+    chmodSync(file, 0o644);
+
+    await writeSecureFileAsync(file, 'replacement');
+
+    expect(readFileSync(file, 'utf8')).toBe('replacement');
+    expect(statSync(file).mode & 0o777).toBe(0o600);
   });
 
   it('refuses to write through a file symlink', async () => {

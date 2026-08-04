@@ -9,12 +9,17 @@ import { useStores } from '../../stores/use-stores.js';
 import { FilterableList } from '../../components/pickers/filterable-list.js';
 import { SessionRow } from '../../components/session-row.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import { handleSessionSelect, sessionSelectStore } from '../../stores/navigation/session-select.js';
+import {
+  handleSessionSelect,
+  sessionSelectStore,
+  type SessionSelectDeps,
+} from '../../stores/navigation/session-select.js';
 import { filterSession } from '../../core/sessions/search.js';
+import { sessionSelectDeps } from '../prepare-resume.js';
 
 const SESSION_PICKER_HINT = `\u2191\u2193 navigate${SOFT_SEP}type filter${SOFT_SEP}\u23ce resume/view${SOFT_SEP}esc close`;
 
-export function SessionsPicker() {
+export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSelectDeps } = {}) {
   const t = useTheme();
   const selectionError = sessionSelectStore.use((s) => s.error);
   const [{ cols, isSmall }, { projectDir }, { allSessions: sessions }] = useStores(
@@ -40,7 +45,7 @@ export function SessionsPicker() {
       items={sessions}
       filterFn={filterSession}
       getKey={(session) => session.id}
-      onConfirm={(session) => handleSessionSelect(session, projectDir)}
+      onConfirm={(session) => handleSessionSelect(session, projectDir, deps)}
       title={`Sessions${SOFT_SEP}${sessions.length}`}
       hint={hint}
       chromeRows={12}

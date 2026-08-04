@@ -22,14 +22,12 @@ import { reviewStore } from '../../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../../../stores/cost-approval/prompt.js';
 import { useStores } from '../../../../stores/use-stores.js';
-import { type CollectReadinessFn, useWorkflowReadiness } from './use-readiness.js';
 import { useWorkflowAttachment } from './use-attachment.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
 import { canResumeCancelledWorkflow } from './resume.js';
 
 export interface WorkflowScreenDeps {
   runWorkflow?: RunWorkflowFn | undefined;
-  collectReadiness?: CollectReadinessFn | undefined;
 }
 
 interface UseWorkflowScreenOptions {
@@ -45,28 +43,17 @@ export function useWorkflowScreen({
   canCopyFocused,
   deps,
 }: UseWorkflowScreenOptions) {
-  const config = configStore.useConfig();
-  const projectDir = configStore.use((s) => s.projectDir);
+  const configuredProjectDir = configStore.use((s) => s.projectDir);
   const [skills] = useStores(skillsStore);
   const selectedSkillMetas = skills.available.filter((m) => skills.selected.has(m.id));
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
-  const onWorkflowScreen = routerStore.use((s) => s.screen === 'workflow');
-  const feature = routerStore.use((s) => (s.screen === 'workflow' ? s.feature : ''));
-  const plannerContext = routerStore.use((s) =>
-    s.screen === 'workflow' ? s.plannerContext : undefined,
-  );
-  const resumeState = routerStore.use((s) => (s.screen === 'workflow' ? s.resumeState : undefined));
-  const sessionId = routerStore.use((s) => (s.screen === 'workflow' ? s.sessionId : undefined));
-  const allowRepoRunners = routerStore.use((s) =>
-    s.screen === 'workflow' ? s.allowRepoRunners : undefined,
-  );
-  const routeReadiness = routerStore.use((s) =>
-    s.screen === 'workflow' ? s.readiness : undefined,
-  );
-  const trustedCliGates = routerStore.use((s) =>
-    s.screen === 'workflow' ? s.trustedCliGates : undefined,
-  );
-  const attach = routerStore.use((s) => (s.screen === 'workflow' ? s.attach : undefined));
+  const route = routerStore.use((s) => s);
+  const execution = route.screen === 'workflow' ? route.execution : undefined;
+  const prepared = execution?.kind === 'local' ? execution.prepared : undefined;
+  const attached = execution?.kind === 'attached' ? execution : undefined;
+  const projectDir = prepared?.session.ref.projectDir ?? configuredProjectDir;
+  const sessionId = prepared?.session.ref.sessionId ?? attached?.sessionId;
+  const attach = attached?.attach;
 
   const inputMode = useInputMode();
   const review = createReviewInputHandler(inputMode);
@@ -88,35 +75,15 @@ export function useWorkflowScreen({
     reviewStore,
   );
 
-  const { readiness, readinessLoaded, readinessBlocked } = useWorkflowReadiness({
-    isAttachedClient,
-    routeReadiness,
-    projectDir,
-    config,
-    phase,
-    collectReadiness: deps?.collectReadiness,
-  });
-
   const onComplete = ({ summary, sessionId: completedSessionId, status }: WorkflowCompletion) =>
     routerStore.navigate({ to: 'summary', summary, sessionId: completedSessionId, status });
 
   const runner = useWorkflowRunner({
-    feature,
-    plannerContext,
-    projectDir,
-    config,
+    prepared,
     onComplete,
-    initialResumeState: resumeState,
     selectedSkills: selectedSkillMetas,
-    sessionId,
-    allowRepoRunners: allowRepoRunners ?? false,
     inputMode,
-    // Stop the runner as soon as the route leaves workflow. Otherwise a still-mounted
-    // WorkflowScreen (tests, or any delayed unmount) sees feature collapse to '' and
-    // restarts with a fresh `…-unknown` session id that overwrites the summary route.
-    enabled: onWorkflowScreen && !isAttachedClient && readinessLoaded && !readinessBlocked,
     runWorkflow: deps?.runWorkflow,
-    trustedCliGates,
   });
 
   const approvalPromptState = approvalPromptStore.use((s) => s);
@@ -151,8 +118,8 @@ export function useWorkflowScreen({
     projectDir,
     sessionId,
     runnerSessionId: runner.sessionId,
-    routeSessionId: sessionId,
-    routeResumeState: resumeState,
+    routeSessionId: prepared?.session.ref.sessionId,
+    routeResumeState: prepared?.runtime.resumeState,
   });
 
   const handleInput = isAttachedClient
@@ -190,18 +157,9 @@ export function useWorkflowScreen({
       ? resolveAttachBoxHint(ipcStatus)
       : undefined;
 
-  const fixCommand = readiness?.nextAction.command;
-  const onOpenReadinessFix = fixCommand?.startsWith('/')
-    ? () => onRuntimeCommand(fixCommand)
-    : undefined;
-
   return {
-    readiness,
-    readinessLoaded,
-    readinessBlocked,
     isAttachedClient,
     hasOverlay,
-    onOpenReadinessFix,
     phase,
     cancelled,
     inputMode,

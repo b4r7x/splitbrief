@@ -14,6 +14,7 @@ import { writeSecureFileAsync } from '../../lib/fs.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { throwIfAborted } from '../../utils/abort.js';
 
 const CUSTOM_RUNNER_TRUST_VERSION = 1;
 const CUSTOM_RUNNER_TRUST_DIRECTORY = 'trust';
@@ -84,7 +85,11 @@ export type CustomRunnerTrustLookup =
   | Readonly<{ kind: 'invalid' }>;
 
 export type MarkCustomRunnerTrustedResult =
-  | Readonly<{ kind: 'trusted'; receipt: CustomRunnerTrustReceipt }>
+  | Readonly<{
+      kind: 'trusted';
+      receipt: CustomRunnerTrustReceipt;
+      abortedAfterPublication: boolean;
+    }>
   | Readonly<{ kind: 'invalid' }>;
 
 export type CustomRunnerDisclosure = Readonly<{
@@ -305,14 +310,20 @@ export async function markCustomRunnerTrusted(
     executable: unknown;
     stateDir?: string | undefined;
     now?: (() => number) | undefined;
+    signal?: AbortSignal | undefined;
+    _beforeWrite?: (() => void) | undefined;
+    _afterWrite?: (() => void) | undefined;
   }>,
 ): Promise<MarkCustomRunnerTrustedResult> {
+  throwIfAborted(input.signal);
   const scope = await trustScope(input);
+  throwIfAborted(input.signal);
   const executable = CliExecutableReceiptSchema.safeParse(input.executable);
   if (scope === null || !executable.success) return { kind: 'invalid' };
 
   const path = resolveCustomRunnerTrustFile(input.stateDir);
   const file = await readTrustFile(path);
+  throwIfAborted(input.signal);
   if (file.kind === 'invalid') return { kind: 'invalid' };
   const receipt = CustomRunnerTrustReceiptSchema.parse({
     version: CUSTOM_RUNNER_TRUST_VERSION,
@@ -328,11 +339,18 @@ export async function markCustomRunnerTrusted(
       candidate.definitionId !== scope.definitionId,
   );
   const receipts = [...otherReceipts, receipt].slice(-CUSTOM_RUNNER_TRUST_MAX_RECEIPTS);
+  input._beforeWrite?.();
+  throwIfAborted(input.signal);
   await writeSecureFileAsync(
     path,
     `${JSON.stringify({ version: CUSTOM_RUNNER_TRUST_VERSION, receipts }, null, 2)}\n`,
   );
-  return { kind: 'trusted', receipt };
+  input._afterWrite?.();
+  return {
+    kind: 'trusted',
+    receipt,
+    abortedAfterPublication: input.signal?.aborted === true,
+  };
 }
 
 export function escapeCustomRunnerLiteral(value: string): string {

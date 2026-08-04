@@ -103,9 +103,12 @@ describe('WorkflowScreen attached client', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
     routerStore.navigate({
       to: 'workflow',
-      feature: 'attached feature',
-      sessionId: 'attached-session',
-      attach: { sockPath: server.sockPath, authToken: 'token' },
+      execution: {
+        kind: 'attached',
+        feature: 'attached feature',
+        sessionId: 'attached-session',
+        attach: { sockPath: server.sockPath, authToken: 'token' },
+      },
     });
 
     const ui = renderFeature(
@@ -208,9 +211,12 @@ describe('WorkflowScreen attached client', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
     routerStore.navigate({
       to: 'workflow',
-      feature: 'attached prompt feature',
-      sessionId: attachedSessionId,
-      attach: { sockPath: server.sockPath, authToken: 'token' },
+      execution: {
+        kind: 'attached',
+        feature: 'attached prompt feature',
+        sessionId: attachedSessionId,
+        attach: { sockPath: server.sockPath, authToken: 'token' },
+      },
     });
 
     const ui = renderFeature(

@@ -3,6 +3,49 @@ import { join } from 'node:path';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../src/core/paths.js';
+import { loadConfig } from '../../src/core/config/load/io.js';
+import { configForSessionTranscriptPolicy } from '../../src/core/sessions/io.js';
+import { reactivateExistingSession } from '../../src/core/sessions/lifecycle.js';
+import type { WorkflowState } from '../../src/core/schemas/workflow.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../src/engine/runners/prepared-execution.js';
+
+export function preparedHeadlessExecution(input: {
+  projectDir: string;
+  sessionId: string;
+  feature: string;
+  resumeState?: WorkflowState | undefined;
+}): PreparedExecution {
+  const ref = { projectDir: input.projectDir, sessionId: input.sessionId };
+  const config = parsePreparedConfig(
+    configForSessionTranscriptPolicy(loadConfig(input.projectDir).config, ref),
+  );
+  const active = reactivateExistingSession(ref);
+  return {
+    purpose: input.resumeState === undefined ? 'new-workflow' : 'resume',
+    config,
+    preparationId: `headless-test-${input.sessionId}`,
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir: input.projectDir,
+      status: 'ready',
+      counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates: [],
+    session: { kind: 'existing', ref, active },
+    runtime: {
+      feature: input.feature,
+      ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
+      allowRepoRunners: false,
+      allowHooks: false,
+    },
+  };
+}
 
 export function writeHeadlessConfigYaml(projectDir: string, yamlLines: string[]): void {
   const dir = join(projectDir, SPLITBRIEF_DIR);

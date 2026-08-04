@@ -18,6 +18,16 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
 
+const WORKFLOW_ROUTE = {
+  screen: 'workflow',
+  execution: {
+    kind: 'attached',
+    feature: 'demo',
+    sessionId: 'composer-hints-session',
+    attach: { sockPath: '/tmp/composer-hints.sock', authToken: 'test-token' },
+  },
+} as const;
+
 const originalForceColor = vi.hoisted(() => {
   const saved = process.env['FORCE_COLOR'];
   process.env['FORCE_COLOR'] = '3';
@@ -101,7 +111,7 @@ describe('composer integration: in-box hint click zones fire store actions', () 
   beforeEach(() => {
     resetAllStores();
     _resetMouseZones();
-    routerStore.init({ screen: 'workflow', feature: 'demo' });
+    routerStore.init(WORKFLOW_ROUTE);
     terminalSizeStore.__testReset({ cols: 80, rows: 20, isSmall: false });
   });
 
@@ -204,7 +214,7 @@ describe('composer review-column hint zones register against the inset box', () 
   beforeEach(() => {
     resetAllStores();
     _resetMouseZones();
-    routerStore.init({ screen: 'workflow', feature: 'demo' });
+    routerStore.init(WORKFLOW_ROUTE);
     terminalSizeStore.__testReset({ cols: 120, rows: 20, isSmall: false });
   });
 

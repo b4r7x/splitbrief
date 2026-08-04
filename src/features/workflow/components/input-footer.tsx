@@ -37,7 +37,9 @@ export function InputFooter({
   const t = useTheme();
   const [lifecycle, { cols }] = useStores(lifecycleStore, terminalSizeStore);
   const worktreeName = routerStore.use((s) =>
-    s.screen === 'workflow' ? s.worktreeName : undefined,
+    s.screen === 'workflow' && s.execution.kind === 'local'
+      ? s.execution.prepared.runtime.worktreeName
+      : undefined,
   );
   const { currentTask, totalTasks, taskCompletionTimes } = useCostStats();
   const etaText = computeEta(taskCompletionTimes, currentTask, totalTasks);

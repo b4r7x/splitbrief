@@ -139,6 +139,7 @@ function catalogForItem(
     currentCommand: undefined,
     currentCommandKind: undefined,
     customModels: [],
+    discovery: { cold: false, refreshing: false },
     setCurrentItem: () => {},
   };
 }

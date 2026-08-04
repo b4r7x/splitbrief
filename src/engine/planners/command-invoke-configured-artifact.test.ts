@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
-import { createConfiguredCustomPlanner } from './command-invoke.js';
+import { createConfiguredCustomPlanner as createAdmittedConfiguredCustomPlanner } from './command-invoke.js';
+import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
+import { customRunnerSecurityPosture } from '../runners/custom-trust.js';
+import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
+import type { RunnerGate } from '../runners/prepared-execution.js';
+import type { CustomRunnerRuntimePort } from '../runners/types.js';
+import { customRunnerAdmissionError } from '../runners/trust.js';
 import {
   configuredPlanner,
   createCommandInvokeTestFixtures,
@@ -15,11 +21,34 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 
 const { testProject } = createCommandInvokeTestFixtures();
 
+async function createConfiguredCustomPlanner(
+  runner: ConfiguredCustomRunner,
+  runtime: CustomRunnerRuntimePort,
+) {
+  const admission = await prepareCustomRunnerAdmission({
+    ...runtime.admission,
+    projectDir: runtime.authorizationProjectDir,
+    runner,
+    posture: customRunnerSecurityPosture('planner', runner.command.contract),
+    phase: 'planning',
+    authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('planner');
+  const gate = {
+    kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+    slot: { role: 'planner' },
+    preparationId: 'configured-artifact-test',
+    command: { kind: 'configured-custom', invocation: admission.invocation },
+  } satisfies RunnerGate;
+  return createAdmittedConfiguredCustomPlanner(runner, runtime, gate.command.invocation);
+}
+
 describe('createConfiguredCustomPlanner direct artifact behavior', () => {
   it('returns only an approved declared artifact for normal direct planner calls', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-approve');
     const output: string[] = [];
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script: [
@@ -42,7 +71,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
   it('orders the direct artifact lease around child execution and stage cleanup', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-lease-order');
     const operations: string[] = [];
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script:
@@ -102,7 +131,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
 
   it('does not promote a rejected normal direct planner artifact', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-reject');
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script:
@@ -125,7 +154,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
 
   it('delivers direct planner artifact text as an immutable review without a candidate path', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-candidate-race');
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script:
@@ -154,7 +183,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
 
   it('rejects an extra direct planner stage write instead of promoting its artifact', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-extra-write');
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script: [
@@ -177,7 +206,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
     const { projectDir, stateDir } = testProject('configured-direct-existing-parent');
     const childSentinel = join(projectDir, 'child-started');
     let childStagePath = '';
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script: `require('node:fs').writeFileSync(${JSON.stringify(childSentinel)}, 'started');`,
@@ -208,7 +237,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
     const symlinkTarget = join(projectDir, 'symlink-target');
     let childStagePath = '';
     mkdirSync(symlinkTarget);
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script: `require('node:fs').writeFileSync(${JSON.stringify(childSentinel)}, 'started');`,
@@ -235,7 +264,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
 
   it('uses sourceEnv rather than a child stage sandbox environment for declared values', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-source-env');
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script: [
@@ -264,7 +293,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
   it('does not start a child when a declared sourceEnv value is missing', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-missing-source-env');
     const childSentinel = join(projectDir, 'child-started');
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script: `require('node:fs').writeFileSync(${JSON.stringify(childSentinel)}, 'started');`,
@@ -289,31 +318,25 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
     expect(existsSync(childSentinel)).toBe(false);
   });
 
-  it('cleans stale direct artifact reviews before denied admission', async () => {
+  it('rejects denied preparation before creating a planner or child stage', async () => {
     const { projectDir, stateDir } = testProject('configured-direct-admission-cleanup');
-    const stalePath = join(reviewCandidateRoot(projectDir), 'stale-call', 'result');
-    mkdirSync(join(reviewCandidateRoot(projectDir), 'stale-call'), { recursive: true });
-    writeFileSync(stalePath, 'stale');
-    const planner = createConfiguredCustomPlanner(
-      configuredPlanner({
-        contract: 'direct',
-        script: "throw new Error('child must not start');",
-      }),
-      runtimeFor({
-        projectDir,
-        stateDir,
-        allowRepoRunners: false,
-        createStage: async () => {
-          throw new Error('stage must not be created after denied admission');
-        },
-      }),
-    );
-
     await expect(
-      planner.review('review this', projectDir, { onOutput: vi.fn() }),
+      createConfiguredCustomPlanner(
+        configuredPlanner({
+          contract: 'direct',
+          script: "throw new Error('child must not start');",
+        }),
+        runtimeFor({
+          projectDir,
+          stateDir,
+          allowRepoRunners: false,
+          createStage: async () => {
+            throw new Error('stage must not be created after denied admission');
+          },
+        }),
+      ),
     ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
-
-    expect(existsSync(stalePath)).toBe(false);
+    expect(existsSync(reviewCandidateRoot(projectDir))).toBe(false);
   });
 
   it('uses the supplied outer stage for direct full escalation without a nested stage', async () => {
@@ -323,7 +346,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
     const stalePath = join(staleReviewRoot, 'stale-call', 'result');
     mkdirSync(join(staleReviewRoot, 'stale-call'), { recursive: true });
     writeFileSync(stalePath, 'stale');
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createConfiguredCustomPlanner(
       configuredPlanner({
         contract: 'direct',
         script: [

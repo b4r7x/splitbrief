@@ -1,4 +1,9 @@
-import { invalidateCache, loadDetectionCacheSnapshot, saveDetectionCache } from './cache.js';
+import {
+  invalidateCache,
+  loadDetectionCacheSnapshot,
+  saveDetectionCache,
+  type RememberedCliCatalog,
+} from './cache.js';
 import {
   createDetectionCoordinator,
   type CliModelSnapshot,
@@ -417,21 +422,46 @@ export function createDetectionService() {
       .join('|');
   }
 
+  function rememberedCliCatalogs(
+    outcome: DetectionSourceOutcome<CliModelSnapshot>,
+  ): RememberedCliCatalog[] {
+    if (outcome.kind !== 'fresh') return [];
+    const probedAt = outcome.snapshot.fetchedAt;
+    return outcome.snapshot.value.flatMap((attempt) =>
+      attempt.outcome.kind === 'success'
+        ? [
+            {
+              role: attempt.connection.role,
+              tool: attempt.connection.tool,
+              models: attempt.outcome.value.map(cloneDetectedModel),
+              probedAt,
+            },
+          ]
+        : [],
+    );
+  }
+
   function queueSave(
     input: Readonly<{
       projectDir: string | undefined;
       outcome: DetectionSourceOutcome<DetectionProjection>;
+      cliModels: DetectionSourceOutcome<CliModelSnapshot>;
     }>,
   ): void {
     const projectDir = input.projectDir;
     if (projectDir === undefined || input.outcome.kind !== 'fresh') return;
-    if (input.outcome.origin !== 'request') return;
+    // A TTL-hydrated readiness snapshot still persists when the CLI catalog
+    // lane ran a real probe this request — fresh model rows must not be lost.
+    const cliModelsProbed =
+      input.cliModels.kind === 'fresh' && input.cliModels.origin === 'request';
+    if (input.outcome.origin !== 'request' && !cliModelsProbed) return;
     const requestId = input.outcome.snapshot.requestId;
     if (persistedRequestIds.has(requestId)) return;
 
     persistedRequestIds.add(requestId);
     const snapshot = input.outcome.snapshot;
     const projection = cloneProjection(snapshot.value);
+    const cliCatalogs = rememberedCliCatalogs(input.cliModels);
     pendingSave = pendingSave.then(() =>
       saveDetectionCache({
         projectDir,
@@ -441,11 +471,13 @@ export function createDetectionService() {
           validatedAt: snapshot.validatedAt,
           generation: snapshot.generation,
           requestId: snapshot.requestId,
-          // Disk cache is deliberately the legacy safe projection. Role scoped
+          // Disk cache stays the sanitized presentation projection. Role scoped
           // provider outcomes remain memory-only because they carry catalog
-          // membership and connection-scoped diagnostics.
+          // membership and connection-scoped diagnostics; remembered model rows
+          // are re-sanitized to the cached subset inside saveDetectionCache.
           providers: projection.providers,
           cliTools: projection.cliTools,
+          ...(cliCatalogs.length === 0 ? {} : { cliCatalogs }),
         },
       }),
     );
@@ -686,7 +718,7 @@ export function createDetectionService() {
       }),
     ]);
     const outcomes: DetectionRefreshOutcomes = { readiness, modelsDev, cliModels };
-    queueSave({ projectDir: input.projectDir, outcome: readiness });
+    queueSave({ projectDir: input.projectDir, outcome: readiness, cliModels });
 
     const detection = cloneProjection(sourceValue(readiness, EMPTY_PROJECTION));
     const cliModelsValue = cloneCliModels(sourceValue(cliModels, EMPTY_CLI_MODELS));

@@ -1,63 +1,31 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Text, useApp, useInput } from 'ink';
-import { useTheme } from '../../components/theme.js';
-import { glyph } from '../../lib/glyphs.js';
-import { ListRow } from '../../components/list-row.js';
-import { RowZone, ROW_ZONE_Z_SCREEN } from '../../components/pickers/row-zone.js';
+import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { SOFT_SEP } from '../../components/separators.js';
+import { useTheme } from '../../components/theme.js';
+import type { Config } from '../../core/schemas/config.js';
 import {
-  OverlayPanel,
-  computeOverlayInnerRowCapacity,
-} from '../../components/overlays/overlay-panel.js';
+  INITIALIZING_TOOLS_BODY,
+  INITIALIZING_TOOLS_TITLE,
+  REFRESHING_TOOLS_TITLE,
+} from '../../core/discovery/copy.js';
+import { prepareExecution } from '../../engine/runners/prepare-execution.js';
+import { refreshPickerDetection } from '../../features/runners/picker-view.js';
+import { ApprovalPrompt } from '../../features/workflow/components/approval-prompt.js';
+import { StartPreparationPanel } from '../../features/start-preparation/panel.js';
+import { observePreparationCleanup } from '../../features/start-preparation/observe-cleanup.js';
+import { useStartPreparation } from '../../features/start-preparation/use-start-preparation.js';
+import { approvalPromptStore, closeApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
 import { routerStore } from '../../stores/navigation/router.js';
+import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { useStores } from '../../stores/use-stores.js';
-import { copyToClipboard } from '../../lib/clipboard/clipboard.js';
-import { formatCopyResult } from '../../core/runtime/commands/types.js';
-import { cliToolSupportsRole } from '../../core/runners/cli-tool-catalog.js';
-import { getResponsivePanelWidth } from '../../utils/terminal-width.js';
-import type { Config } from '../../core/schemas/config.js';
-import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
+import { interactivePreparationPolicy } from '../prepare-resume.js';
 
-type Step = 'no-planners' | 'planner' | 'implementer';
-
-const INSTALL_ACTIONS = [
-  { id: 'claude-code', command: 'npm i -g @anthropic-ai/claude-code' },
-  { id: 'codex', command: 'npm i -g @openai/codex' },
-] as const;
-
-type InstallActionId = (typeof INSTALL_ACTIONS)[number]['id'];
-
-const SETUP_NO_PLANNER_TITLE_ROWS = 2;
-const SETUP_NO_PLANNER_STATUS_ROWS = 1;
-const SETUP_NO_PLANNER_GAP_ROWS = 1;
-const SETUP_NO_PLANNER_GUIDANCE_ROWS = 2;
-const SETUP_NO_PLANNER_FOOTER_ROWS = 3;
-
-function setupNoPlannerChromeRows(): number {
-  return (
-    SETUP_NO_PLANNER_TITLE_ROWS +
-    SETUP_NO_PLANNER_STATUS_ROWS +
-    SETUP_NO_PLANNER_GAP_ROWS +
-    SETUP_NO_PLANNER_GUIDANCE_ROWS +
-    SETUP_NO_PLANNER_GAP_ROWS +
-    SETUP_NO_PLANNER_GAP_ROWS +
-    SETUP_NO_PLANNER_FOOTER_ROWS
-  );
-}
-
-function visibleInstallCommandCount(terminalRows: number): number {
-  const rowBudget = computeOverlayInnerRowCapacity({
-    terminalRows,
-    outerChromeRows: setupNoPlannerChromeRows(),
-  });
-  return Math.min(INSTALL_ACTIONS.length, Math.max(0, rowBudget));
-}
+type Step = 'discovery' | 'planner' | 'implementer';
 
 export interface SetupToolPickerArgs {
   role: 'planner' | 'implementer';
@@ -68,169 +36,221 @@ export interface SetupToolPickerArgs {
 
 interface SetupScreenProps {
   renderToolPicker: (args: SetupToolPickerArgs) => ReactNode;
+  prepare?: typeof prepareExecution | undefined;
 }
 
-export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
+type SetupPreparationInput = Readonly<{
+  projectDir: string;
+  feature: string;
+  plannerContext?: string | undefined;
+  allowRepoRunners: boolean;
+}>;
+
+type DiscoveryPanelProps = Readonly<{
+  state: 'initializing' | 'failed';
+  onBack: () => void;
+  onRetry: () => void;
+  onOpenSettings: () => void;
+}>;
+
+function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPanelProps) {
   const t = useTheme();
-  const { exit } = useApp();
-  const [{ cliTools }, { projectDir }, { cols, rows, isSmall }] = useStores(
-    detectionStore,
-    configStore,
-    terminalSizeStore,
-  );
-  const onComplete = routerStore.use((s) => (s.screen === 'setup' ? s.onComplete : undefined));
-  const pendingFeature = routerStore.use((s) => (s.screen === 'setup' ? s.feature : undefined));
-  const pendingPlannerContext = routerStore.use((s) =>
-    s.screen === 'setup' ? s.plannerContext : undefined,
-  );
-  const pendingAllowRepoRunners = routerStore.use((s) =>
-    s.screen === 'setup' ? s.allowRepoRunners : undefined,
-  );
-  const hasOverlay = overlayStore.use((s) => s.active !== 'none');
-
-  const [step, setStep] = useState<Step>(() =>
-    cliTools.some(
-      (cliTool) =>
-        cliTool.diagnostic.state === 'ready' && cliToolSupportsRole(cliTool.tool, 'planner'),
-    )
-      ? 'planner'
-      : 'no-planners',
-  );
-  const [focusedInstallId, setFocusedInstallId] = useState<InstallActionId>('claude-code');
-  const visibleInstallCount =
-    step === 'no-planners' ? visibleInstallCommandCount(rows) : INSTALL_ACTIONS.length;
-  const visibleInstallActions = INSTALL_ACTIONS.slice(0, visibleInstallCount);
-  const focusedInstallIndex = visibleInstallActions.findIndex(
-    (action) => action.id === focusedInstallId,
-  );
-  const clampedFocusIndex = focusedInstallIndex >= 0 ? focusedInstallIndex : 0;
-  const focusedInstallAction = visibleInstallActions[clampedFocusIndex];
-
-  const copyCommand = (id: InstallActionId) => {
-    const action = visibleInstallActions.find((candidate) => candidate.id === id);
-    if (!action) return;
-    void (async () => {
-      try {
-        const result = await copyToClipboard(action.command);
-        if (result === 'unavailable') {
-          feedbackStore.setError('Could not copy: no clipboard available over this connection');
-        } else {
-          feedbackStore.setMessage(formatCopyResult(result));
-        }
-      } catch {
-        feedbackStore.setError('Could not copy to clipboard');
-      }
-    })();
-  };
+  const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
 
   useInput(
     (input, key) => {
       if (key.escape) {
-        exit();
+        onBack();
         return;
       }
-      if (key.upArrow) {
-        const action = visibleInstallActions[Math.max(0, clampedFocusIndex - 1)];
-        if (action) setFocusedInstallId(action.id);
+      if (state !== 'failed') return;
+      if (input === 'r' || input === 'R') {
+        onRetry();
         return;
       }
-      if (key.downArrow) {
-        const action =
-          visibleInstallActions[Math.min(visibleInstallCount - 1, clampedFocusIndex + 1)];
-        if (action) setFocusedInstallId(action.id);
-        return;
-      }
-      if (input === 'y' && focusedInstallAction) copyCommand(focusedInstallAction.id);
+      if (input === 's' || input === 'S') onOpenSettings();
     },
-    { isActive: step === 'no-planners' && !hasOverlay },
+    { isActive: !hasOverlay },
   );
 
-  const finalize = async (finalConfig: Config) => {
-    if (!projectDir) return;
-    const result = await configStore.save(finalConfig);
-    if (result.kind !== 'saved') {
-      if (result.kind === 'failure') {
-        feedbackStore.setError(`Failed to save config: ${result.error.message}`);
-      } else if (result.kind === 'durability-uncertain') {
-        feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
-      } else {
-        feedbackStore.setError('Config changed on disk. Reload before saving again.');
-      }
-      return;
-    }
-    if (onComplete === 'workflow' && pendingFeature) {
-      routerStore.navigate({
-        to: 'workflow',
-        feature: pendingFeature,
-        plannerContext: pendingPlannerContext,
-        allowRepoRunners: pendingAllowRepoRunners,
-      });
-    } else {
-      routerStore.navigate({ to: 'home' });
-    }
-  };
-
-  if (step === 'no-planners') {
-    const panelWidth = getResponsivePanelWidth({ cols, size: isSmall ? 'small' : 'large' });
+  if (state === 'initializing') {
     return (
-      <OverlayPanel width={panelWidth} title={`Setup${SOFT_SEP}planner${SOFT_SEP}1 of 2`}>
-        <Text color={t.textDim}>{`${glyph('statusPending')} No planner detected`}</Text>
-        <Box height={1} />
-        <Text color={t.textDim}>
-          {`${SPLITBRIEF_IDENTITY.displayName} compiles task briefs with a planner. Install one, then re-run init:`}
-        </Text>
-        <Box height={1} />
-        {visibleInstallActions.map((action, i) => {
-          const active = i === clampedFocusIndex;
-          return (
-            <Box key={action.id} width="100%">
-              <RowZone
-                zoneId={`setup-install:${action.id}`}
-                z={ROW_ZONE_Z_SCREEN}
-                onActivate={() => setFocusedInstallId(action.id)}
-              >
-                <ListRow label={action.command} state={active ? 'active' : 'default'} />
-              </RowZone>
-              {active ? (
-                <RowZone
-                  zoneId="setup-copy"
-                  z={ROW_ZONE_Z_SCREEN}
-                  onActivate={() => copyCommand(action.id)}
-                >
-                  <Text color={t.textDim}> y copy</Text>
-                </RowZone>
-              ) : null}
-            </Box>
-          );
-        })}
-        <Box height={1} />
-        <Box width="100%" overflow="hidden">
-          <Text color={t.border}>{glyph('divider').repeat(panelWidth)}</Text>
-        </Box>
-        <Text color={t.textDim}>
-          {visibleInstallCount > 0 ? `↑↓ navigate${SOFT_SEP}y copy${SOFT_SEP}esc quit` : `esc quit`}
-        </Text>
+      <OverlayPanel title={INITIALIZING_TOOLS_TITLE} maxWidth={72} hint="esc back">
+        <Text color={t.textDim}>{INITIALIZING_TOOLS_BODY}</Text>
       </OverlayPanel>
     );
   }
 
-  if (step === 'planner') {
+  return (
+    <OverlayPanel
+      title="Tool check failed"
+      maxWidth={72}
+      hint={`r retry${SOFT_SEP}esc back${SOFT_SEP}s settings`}
+    >
+      <Text color={t.error}>Your configured tools could not be checked.</Text>
+      <Box marginTop={1}>
+        <Text color={t.textDim}>Retry the check or review runner settings.</Text>
+      </Box>
+    </OverlayPanel>
+  );
+}
+
+export function SetupScreen({ renderToolPicker, prepare = prepareExecution }: SetupScreenProps) {
+  const { exit } = useApp();
+  const projectDir = configStore.use((state) => state.projectDir);
+  const refresh = detectionStore.use((state) => state.refresh);
+  const readiness = refresh.readiness;
+  const onComplete = routerStore.use((state) =>
+    state.screen === 'setup' ? state.onComplete : undefined,
+  );
+  const pendingFeature = routerStore.use((state) =>
+    state.screen === 'setup' ? state.feature : undefined,
+  );
+  const pendingPlannerContext = routerStore.use((state) =>
+    state.screen === 'setup' ? state.plannerContext : undefined,
+  );
+  const pendingAllowRepoRunners = routerStore.use((state) =>
+    state.screen === 'setup' ? state.allowRepoRunners : undefined,
+  );
+  const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
+  const [step, setStep] = useState<Step>('discovery');
+
+  const preparation = useStartPreparation<SetupPreparationInput>({
+    prepare: async (input, signal) => {
+      const currentConfig = configStore.get().config;
+      if (currentConfig === null) {
+        return { kind: 'failed', error: new Error('Project configuration is not loaded.') };
+      }
+      return prepare({
+        projectDir: input.projectDir,
+        feature: input.feature,
+        effectiveConfig: currentConfig,
+        signal,
+        policy: {
+          ...interactivePreparationPolicy,
+          purpose: 'new-workflow',
+          allowRepoRunners: input.allowRepoRunners,
+        },
+        ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
+      });
+    },
+    onPrepared: (execution) => {
+      routerStore.navigate({
+        to: 'workflow',
+        execution: { kind: 'local', prepared: execution },
+      });
+    },
+  });
+
+  const hasRememberedDiscovery = readiness.fetchedAt !== null;
+  const discoveryRefreshing =
+    readiness.refreshing || refresh.modelsDev.refreshing || refresh.cliModels.refreshing;
+  const warmRefreshFailed =
+    hasRememberedDiscovery &&
+    !discoveryRefreshing &&
+    [readiness, refresh.modelsDev, refresh.cliModels].some(
+      (source) =>
+        source.outcome === 'failed' || (source.outcome === 'stale' && source.error !== null),
+    );
+  const effectiveStep = step === 'discovery' && hasRememberedDiscovery ? 'planner' : step;
+
+  useEffect(() => {
+    if (step === 'discovery' && readiness.outcome === 'fresh' && !readiness.refreshing) {
+      setStep('planner');
+    }
+  }, [readiness.outcome, readiness.refreshing, step]);
+
+  useEffect(
+    () => () => {
+      if (sessionSelectStore.get().preparation.kind === 'idle') closeApprovalPrompt();
+    },
+    [],
+  );
+
+  const retryDiscovery = () => {
+    if (!projectDir) return;
+    void refreshPickerDetection(projectDir);
+  };
+
+  const cancelPreparation = () => {
+    preparation.cancel(() => {
+      closeApprovalPrompt();
+      setStep('implementer');
+    });
+  };
+
+  const saveFailure = (result: Awaited<ReturnType<typeof configStore.save>>): boolean => {
+    if (result.kind === 'saved') return false;
+    if (result.kind === 'failure') {
+      feedbackStore.setError(`Failed to save config: ${result.error.message}`);
+    } else if (result.kind === 'durability-uncertain') {
+      feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
+    } else {
+      feedbackStore.setError('Config changed on disk. Reload before saving again.');
+    }
+    return true;
+  };
+
+  const finalize = async (finalConfig: Config) => {
+    if (!projectDir) return;
+    const result = await configStore.save(finalConfig);
+    if (saveFailure(result)) return;
+
+    if (onComplete === 'workflow' && pendingFeature) {
+      observePreparationCleanup(
+        preparation.submit({
+          projectDir,
+          feature: pendingFeature,
+          ...(pendingPlannerContext !== undefined && { plannerContext: pendingPlannerContext }),
+          allowRepoRunners: pendingAllowRepoRunners ?? false,
+        }),
+      );
+      return;
+    }
+
+    routerStore.navigate({ to: 'home' });
+  };
+
+  if (preparation.state.kind !== 'idle') {
+    return (
+      <StartPreparationPanel
+        state={preparation.state}
+        onRetry={() => observePreparationCleanup(preparation.retry())}
+        onBack={cancelPreparation}
+        onOpenSettings={() => overlayStore.open('settings')}
+        approvalPrompt={approvalPending ? <ApprovalPrompt /> : undefined}
+      />
+    );
+  }
+
+  if (effectiveStep === 'discovery') {
+    const coldFailed = readiness.outcome === 'failed' && !readiness.refreshing;
+    return (
+      <DiscoveryPanel
+        state={coldFailed ? 'failed' : 'initializing'}
+        onBack={exit}
+        onRetry={retryDiscovery}
+        onOpenSettings={() => overlayStore.open('settings')}
+      />
+    );
+  }
+
+  let rememberedStepLabel: string | undefined;
+  if (hasRememberedDiscovery && discoveryRefreshing) {
+    rememberedStepLabel = `${REFRESHING_TOOLS_TITLE}${SOFT_SEP}remembered results`;
+  } else if (warmRefreshFailed) {
+    rememberedStepLabel = `Refresh failed${SOFT_SEP}remembered results`;
+  }
+
+  if (effectiveStep === 'planner') {
     return (
       <Fragment key="planner">
         {renderToolPicker({
           role: 'planner',
-          stepLabel: `Choose planner${SOFT_SEP}1 of 2`,
+          stepLabel: rememberedStepLabel ?? `Choose planner${SOFT_SEP}1 of 2`,
           onConfirm: async (updated) => {
             const result = await configStore.save(updated);
-            if (result.kind === 'saved') {
-              setStep('implementer');
-            } else if (result.kind === 'failure') {
-              feedbackStore.setError(`Failed to save config: ${result.error.message}`);
-            } else if (result.kind === 'durability-uncertain') {
-              feedbackStore.setError(`Config save could not be confirmed: ${result.warning}`);
-            } else {
-              feedbackStore.setError('Config changed on disk. Reload before saving again.');
-            }
+            if (!saveFailure(result)) setStep('implementer');
           },
           onCancel: exit,
         })}
@@ -242,7 +262,7 @@ export function SetupScreen({ renderToolPicker }: SetupScreenProps) {
     <Fragment key="implementer">
       {renderToolPicker({
         role: 'implementer',
-        stepLabel: `Choose model${SOFT_SEP}2 of 2`,
+        stepLabel: rememberedStepLabel ?? `Choose model${SOFT_SEP}2 of 2`,
         onConfirm: finalize,
         onCancel: () => setStep('planner'),
       })}

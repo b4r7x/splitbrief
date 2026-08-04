@@ -1,29 +1,26 @@
 import { createStore, storeBase } from '../create-store.js';
 import { publishFeedbackError, publishFeedbackReset } from '../channels/feedback.js';
 import { assertNever } from '../../utils/type-guards.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Session } from '../../core/schemas/session.js';
-import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { Screen } from '../../core/navigation/types.js';
-import type { CliStartGates } from '../../engine/runners/start-gate.js';
+import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 
 export type WorkflowAttach = {
   sockPath: string;
   authToken: string;
 };
 
-type WorkflowPayload = {
-  feature: string;
-  plannerContext?: string | undefined;
-  resumeState?: WorkflowState | undefined;
-  sessionId?: string | undefined;
-  worktreeName?: string | undefined;
-  allowRepoRunners?: boolean | undefined;
-  attach?: WorkflowAttach | undefined;
-  readiness?: ReadinessReport | undefined;
-  trustedCliGates?: CliStartGates | undefined;
-};
+export type WorkflowExecution =
+  | Readonly<{ kind: 'local'; prepared: PreparedExecution }>
+  | Readonly<{
+      kind: 'attached';
+      feature: string;
+      sessionId: string;
+      attach: WorkflowAttach;
+    }>;
+
+type WorkflowPayload = { execution: WorkflowExecution };
 type SummaryPayload = {
   summary: Summary;
   sessionId?: string | undefined;
@@ -44,7 +41,7 @@ export type RouteData =
 
 const transitions: Record<Screen, Screen[]> = {
   home: ['workflow', 'summary', 'setup'],
-  workflow: ['summary', 'home'],
+  workflow: ['workflow', 'summary', 'home'],
   summary: ['home', 'workflow', 'summary'],
   setup: ['home', 'workflow', 'summary'],
 };
@@ -76,15 +73,7 @@ function navigate(args: NavigateArgs) {
     case 'workflow':
       store.set({
         screen: 'workflow',
-        feature: args.feature,
-        plannerContext: args.plannerContext,
-        resumeState: args.resumeState,
-        sessionId: args.sessionId,
-        worktreeName: args.worktreeName,
-        allowRepoRunners: args.allowRepoRunners,
-        attach: args.attach,
-        readiness: args.readiness,
-        trustedCliGates: args.trustedCliGates,
+        execution: args.execution,
       });
       return;
     case 'summary':

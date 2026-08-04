@@ -15,6 +15,10 @@ import { SPLITBRIEF_DIR } from '../core/paths.js';
 import { toYaml } from '../core/config/load/transform.js';
 import { createDefaultConfig } from '../core/config/load/io.js';
 import { detectCapabilities } from '../engine/providers/capabilities.js';
+import * as capabilitiesModule from '../engine/providers/capabilities.js';
+import { loadDetectionCacheSnapshot, saveDetectionCache } from '../engine/detection/cache.js';
+import * as detectionServiceModule from '../engine/detection/service.js';
+import { detectionContextsForCurrentConfig } from '../engine/detection/store-publication.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 
@@ -56,6 +60,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   resetAllStores();
   if (savedContextLengthEnv === undefined) delete process.env.SPLITBRIEF_CONTEXT_LENGTH;
   else process.env.SPLITBRIEF_CONTEXT_LENGTH = savedContextLengthEnv;
@@ -63,6 +68,79 @@ afterEach(() => {
 });
 
 describe('initStores', () => {
+  it('publishes remembered detection before background refresh settles', async () => {
+    const dir = makeProjectDir();
+    const config = {
+      ...createDefaultConfig(),
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4-6' },
+    } as const;
+    writeConfigYaml(dir, toYaml(config));
+
+    const rememberedCli = cliDetectionFor('ready', 'claude-code');
+    const capabilities = Promise.withResolvers<Awaited<ReturnType<typeof detectCapabilities>>>();
+    vi.spyOn(capabilitiesModule, 'detectCapabilities').mockReturnValue(capabilities.promise);
+
+    const backgroundRefresh =
+      Promise.withResolvers<detectionServiceModule.DetectionServiceResult>();
+    let refreshSettled = false;
+    const refresh = backgroundRefresh.promise.finally(() => {
+      refreshSettled = true;
+    });
+    const loadDetection = vi.fn(() => refresh);
+    vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
+      loadDetection,
+      refreshDetection: vi.fn(),
+    });
+
+    const initialization = initStores(dir);
+    await vi.waitFor(() => expect(configStore.get().config).not.toBeNull());
+    const contexts = detectionContextsForCurrentConfig({
+      config: requireConfig(),
+      projectDir: dir,
+    });
+    expect(contexts.readiness.length).toBeGreaterThan(512);
+    await saveDetectionCache({
+      projectDir: dir,
+      snapshot: {
+        contextKey: contexts.readiness,
+        fetchedAt: 100,
+        validatedAt: 110,
+        generation: 3,
+        requestId: 7,
+        providers: [{ provider: 'ollama', available: true, isLocal: true }],
+        cliTools: [rememberedCli],
+      },
+    });
+    expect(
+      await loadDetectionCacheSnapshot({ projectDir: dir, contextKey: contexts.readiness }),
+    ).not.toBeNull();
+    capabilities.resolve({ contextLength: 32_768, origin: 'fallback' });
+    await vi.waitFor(() => expect(loadDetection).toHaveBeenCalledOnce());
+
+    const remembered = detectionStore.get();
+    expect(remembered.refresh.readiness).toMatchObject({
+      outcome: 'stale',
+      refreshing: true,
+      fetchedAt: 100,
+      validatedAt: 110,
+    });
+    expect(remembered.providers).toEqual([{ provider: 'ollama', available: true, isLocal: true }]);
+    expect(remembered.cliTools).toEqual([
+      {
+        ...rememberedCli,
+        executable: null,
+      },
+    ]);
+
+    await initialization;
+    expect(refreshSettled).toBe(false);
+
+    backgroundRefresh.resolve({ providers: [], cliTools: [], catalog: null, cliModels: [] });
+    await vi.waitFor(() => expect(refreshSettled).toBe(true));
+    await vi.waitFor(() => expect(detectionStore.get().refresh.readiness.outcome).toBe('fresh'));
+  }, 30_000);
+
   it('loads config from disk into configStore (cli planner / cli implementer)', async () => {
     const dir = makeProjectDir();
     writeConfigYaml(

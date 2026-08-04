@@ -2,13 +2,15 @@ import { createElement } from 'react';
 import { App } from '../../../app/root.js';
 import { initStores } from '../../init-stores.js';
 import { renderApp } from '../../render/app.js';
-import { writeActive } from '../../../core/sessions/lifecycle.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { consoleWorkflowFeature } from '../../../core/transcript-policy.js';
-import { readSessionPersistTranscript } from '../../../core/sessions/io.js';
+import {
+  configForSessionTranscriptPolicy,
+  readSessionPersistTranscript,
+} from '../../../core/sessions/io.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { skillsStore } from '../../../stores/project/skills.js';
-import { runHeadless } from '../../headless.js';
+import { assertHeadlessTaskReviewDisabled, runHeadless } from '../../headless.js';
 import { runRpc } from '../../rpc/run/host.js';
 import { assertResumableState } from '../../sessions/resolve.js';
 import { setupWorkflow } from '../../setup.js';
@@ -18,12 +20,12 @@ import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import type { ContinueDeps } from './command.js';
-import { detectConfiguredCliReadiness } from '../start/readiness.js';
-import { cliStartGatesFromReadiness } from '../../../engine/runners/start-gate.js';
+import { cliPreparationPolicy, preparedExecutionOrThrow } from '../start/readiness.js';
+import { prepareExecution } from '../../../engine/runners/prepare-execution.js';
 
 export type ResumeTailDeps = Pick<
   ContinueDeps,
-  'initStores' | 'renderApp' | 'runHeadless' | 'runRpc' | 'setupWorkflow' | 'detectCliReadiness'
+  'initStores' | 'renderApp' | 'runHeadless' | 'runRpc' | 'setupWorkflow' | 'prepareExecution'
 >;
 
 const defaultResumeTailDeps: ResumeTailDeps = {
@@ -32,6 +34,7 @@ const defaultResumeTailDeps: ResumeTailDeps = {
   runHeadless,
   runRpc,
   setupWorkflow,
+  prepareExecution,
 };
 
 function reconcileResumeMode(
@@ -58,67 +61,50 @@ export async function resumeSavedSession(args: {
 
   assertResumableState(state, sessionId);
 
-  // A resumed workflow is a fresh execution attempt. Re-probe configured CLI
-  // tools and carry only identities observed by that live probe into every
-  // execution surface; cached detection, ambient PATH, and saved state never
-  // establish a start gate.
-  const config = resolveEffectiveConfig({
+  const currentConfig = resolveEffectiveConfig({
     base: loadConfig(projectDir).config,
     overrides: workflowOptsToCLIOverrides(opts),
   }).config;
-  const detectCliReadiness = deps.detectCliReadiness ?? detectConfiguredCliReadiness;
-  const cliReadiness = await detectCliReadiness({ projectDir, config, opts });
-  const trustedCliGates = cliStartGatesFromReadiness(cliReadiness);
+  const ref = { projectDir, sessionId };
+  const config = configForSessionTranscriptPolicy(currentConfig, ref);
+  const interaction = opts.json || opts.rpc ? 'headless' : 'interactive';
+  if (opts.json) assertHeadlessTaskReviewDisabled(config);
 
-  writeActive({ projectDir, sessionId });
+  const prepareResume = async (mode: 'interactive' | 'headless') =>
+    preparedExecutionOrThrow(
+      await deps.prepareExecution({
+        existingSession: ref,
+        feature: state.feature,
+        effectiveConfig: config,
+        policy: cliPreparationPolicy({ purpose: 'resume', interaction: mode, opts }),
+        signal: new AbortController().signal,
+        resumeState: state,
+      }),
+      mode === 'headless',
+    );
 
-  if (opts.json) {
-    await deps.runHeadless({
-      feature: state.feature,
-      projectDir,
-      opts,
-      savedState: state,
-      sessionId,
-      trustedCliGates,
-    });
-    return;
-  }
-
-  if (opts.rpc) {
-    await deps.runRpc({
-      feature: state.feature,
-      projectDir,
-      opts,
-      savedState: state,
-      sessionId,
-      trustedCliGates,
-    });
+  if (interaction === 'headless') {
+    const execution = await prepareResume(interaction);
+    if (opts.json) await deps.runHeadless({ prepared: execution });
+    else await deps.runRpc({ prepared: execution });
     return;
   }
 
   console.log(
-    `Resuming: ${consoleWorkflowFeature({ feature: state.feature, persistTranscript: config.workflow.persistTranscript && readSessionPersistTranscript({ projectDir, sessionId }) })} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`,
+    `Resuming: ${consoleWorkflowFeature({ feature: state.feature, persistTranscript: config.workflow.persistTranscript && readSessionPersistTranscript(ref) })} (phase: ${state.phase}, task ${state.currentTaskIndex + 1}/${state.tasks.length})`,
   );
-
-  const { useFullscreen, useMouse, useHover } = await deps.setupWorkflow(opts);
-
+  const renderOptions = await deps.setupWorkflow(opts);
   await deps.initStores(projectDir, opts);
   if (state.selectedSkills && state.selectedSkills.length > 0) {
     skillsStore.setSelected(new Set(state.selectedSkills));
   }
-  routerStore.init({
-    screen: 'workflow',
-    feature: state.feature,
-    resumeState: state,
-    sessionId,
-    allowRepoRunners: opts.allowRepoRunners ?? false,
-    trustedCliGates,
-  });
+  const execution = await prepareResume(interaction);
+  routerStore.init({ screen: 'workflow', execution: { kind: 'local', prepared: execution } });
 
   await deps.renderApp(createElement(App), {
-    fullscreen: useFullscreen,
-    mouse: useMouse,
-    hover: useHover,
+    fullscreen: renderOptions.useFullscreen,
+    mouse: renderOptions.useMouse,
+    hover: renderOptions.useHover,
     projectDir,
   });
 }

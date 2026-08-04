@@ -16,6 +16,11 @@ import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { ServerMessage } from '../../../src/engine/ipc/protocol.js';
 import { runWorkflowLoop } from '../../../src/engine/ipc/workflow-loop/run.js';
+import { executableReceipt } from '#testing/helpers/custom-command-based.js';
+import {
+  parsePreparedConfig,
+  type PreparedExecution,
+} from '../../../src/engine/runners/prepared-execution.js';
 
 const AUTH_TOKEN = 'workflow-loop-token';
 const SESSION_ID = 's';
@@ -116,6 +121,48 @@ function failedPersistedState(): WorkflowState {
   );
 }
 
+function preparedExecution(projectDir: string, feature: string): PreparedExecution {
+  const config = parsePreparedConfig(makeConfig());
+  const preparationId = `ipc-${SESSION_ID}-preparation`;
+  const active = {
+    version: 1 as const,
+    sessionId: SESSION_ID,
+    generation: 'aa111111-1111-4111-8111-111111111111',
+  };
+  return {
+    purpose: 'new-workflow',
+    config,
+    preparationId,
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir,
+      status: 'ready',
+      counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates: [
+      {
+        kind: 'cli',
+        slot: { role: 'planner' },
+        preparationId,
+        tool: 'claude-code',
+        executable: executableReceipt(),
+      },
+      {
+        kind: 'api',
+        slot: { role: 'implementer', profile: 'default' },
+        preparationId,
+        provider: 'ollama',
+        endpointOrigin: 'http://localhost:11434',
+      },
+    ],
+    session: { kind: 'existing', ref: { projectDir, sessionId: SESSION_ID }, active },
+    runtime: { feature, allowRepoRunners: false, allowHooks: false },
+  };
+}
+
 describe('runWorkflowLoop detached retry', () => {
   it('retry re-runs only failed work from the freshly saved state, not boot-time undefined', async () => {
     const projectDir = createTempDir('wl');
@@ -153,11 +200,10 @@ describe('runWorkflowLoop detached retry', () => {
     };
 
     const summary = await runWorkflowLoop(
-      { projectDir, sessionId: SESSION_ID, feature: 'detached retry' },
+      { prepared: preparedExecution(projectDir, 'detached retry') },
       srv,
       ipcBridge,
       bus,
-      makeConfig(),
       fakeRunWorkflow,
     );
 
@@ -221,11 +267,10 @@ describe('runWorkflowLoop detached retry', () => {
     };
 
     const summary = await runWorkflowLoop(
-      { projectDir, sessionId: SESSION_ID, feature: 'paused recovery' },
+      { prepared: preparedExecution(projectDir, 'paused recovery') },
       srv,
       ipcBridge,
       bus,
-      makeConfig(),
       fakeRunWorkflow,
     );
 
@@ -264,11 +309,10 @@ describe('runWorkflowLoop detached retry', () => {
     };
 
     await runWorkflowLoop(
-      { projectDir, sessionId: SESSION_ID, feature: 'detached run' },
+      { prepared: preparedExecution(projectDir, 'detached run') },
       srv,
       ipcBridge,
       bus,
-      makeConfig(),
       fakeRunWorkflow,
     );
 
@@ -308,11 +352,10 @@ describe('runWorkflowLoop detached retry', () => {
     };
 
     const summary = await runWorkflowLoop(
-      { projectDir, sessionId: SESSION_ID, feature: 'detached retry' },
+      { prepared: preparedExecution(projectDir, 'detached retry') },
       srv,
       ipcBridge,
       bus,
-      makeConfig(),
       fakeRunWorkflow,
     );
 

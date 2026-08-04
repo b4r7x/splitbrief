@@ -40,6 +40,7 @@ function minimalCatalog(item: RunnerPickerOption): PickerCatalog {
     currentCommand: undefined,
     currentCommandKind: undefined,
     customModels: [],
+    discovery: { cold: false, refreshing: false },
     setCurrentItem: () => {},
   };
 }

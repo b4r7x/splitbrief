@@ -2,7 +2,7 @@ import type { Session } from '../../../core/schemas/session.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from '../../../core/state/machine.js';
-import { clearActive } from '../../../core/sessions/lifecycle.js';
+import { clearActiveReceipt, type ActiveSessionReceipt } from '../../../core/sessions/lifecycle.js';
 import { saveSummary } from '../../../core/sessions/io.js';
 import { isResumable } from '../../../core/phases.js';
 import { updateStats } from '../../../core/stats/persistence.js';
@@ -11,6 +11,7 @@ import { warnError } from '../../../lib/warn.js';
 export type SaveFinalSessionOpts = {
   projectDir: string;
   sessionId: string;
+  active: ActiveSessionReceipt;
   feature: string;
   startTime: number;
   status: Session['status'];
@@ -52,8 +53,9 @@ export function saveFinalSession(opts: SaveFinalSessionOpts): void {
         // stats update is best-effort; don't fail session save
       }
     }
-    if (!opts.preserveActive)
-      clearActive({ projectDir: opts.projectDir, sessionId: opts.sessionId });
+    if (!opts.preserveActive) {
+      clearActiveReceipt({ projectDir: opts.projectDir, sessionId: opts.sessionId }, opts.active);
+    }
   } catch (err) {
     warnError('Failed to save final session', err);
   }

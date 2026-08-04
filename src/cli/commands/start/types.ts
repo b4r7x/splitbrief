@@ -4,13 +4,10 @@ import type { runRpc } from '../../rpc/run/host.js';
 import type { initStores } from '../../init-stores.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../../engine/ipc/spawn-server.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
-import type { Config } from '../../../core/schemas/config.js';
-import type { ApproveLevel } from '../../../core/schemas/enums.js';
-import type { CollectedReadiness } from '../../../core/readiness/collect.js';
-import type { ReadinessReport } from '../../../core/readiness/types.js';
-import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
-import type { CliStartGates } from '../../../engine/runners/start-gate.js';
 import type { GitClient } from '../../../lib/git/client.js';
+import type { prepareExecution } from '../../../engine/runners/prepare-execution.js';
+
+export type { DetectCliReadiness } from './readiness.js';
 
 export interface StartDeps {
   spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
@@ -18,31 +15,13 @@ export interface StartDeps {
   runRpc: typeof runRpc;
   initStores: typeof initStores;
   renderApp: typeof renderApp;
-  /** Live, uncached CLI readiness used to establish execution start gates. */
-  detectCliReadiness?: DetectCliReadiness | undefined;
+  prepareExecution?: typeof prepareExecution | undefined;
 }
-
-export type DetectCliReadiness = (input: {
-  projectDir: string;
-  config: Config;
-  opts: WorkflowOpts;
-}) => Promise<readonly CliReadinessResult[]>;
 
 export interface CreatedWorktree {
   slug: string;
   baseProjectDir: string;
   git: GitClient;
-}
-
-export interface BootstrapSessionArgs {
-  projectDir: string;
-  feature: string;
-  opts: WorkflowOpts;
-  assertJson: boolean;
-  emitReadiness: (report: ReadinessReport) => void;
-  cliReadiness?: readonly CliReadinessResult[] | undefined;
-  detectCliReadiness?: DetectCliReadiness | undefined;
-  defaultApprove?: ApproveLevel | undefined;
 }
 
 export interface DispatchArgs {
@@ -56,9 +35,3 @@ export interface DispatchArgs {
 }
 
 export type RequiredFeatureDispatchArgs = DispatchArgs & { feature: string };
-
-export type BootstrapSessionResult = {
-  sessionId: string;
-  readiness: CollectedReadiness;
-  trustedCliGates: CliStartGates;
-};

@@ -7,11 +7,7 @@ import { DEFAULT_WORKFLOW_MODE } from '../../../core/schemas/config.js';
 import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import {
-  featureForTranscriptPolicy,
-  generateSessionId,
-  writeActive,
-} from '../../../core/sessions/lifecycle.js';
+import { featureForTranscriptPolicy } from '../../../core/sessions/lifecycle.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import {
@@ -282,7 +278,13 @@ function resolveSessionStart(savedState: WorkflowState | undefined): number {
 }
 
 export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
-  const { feature, projectDir, config, savedState, selectedSkills } = opts;
+  const { runtime, session } = opts.prepared;
+  const config = opts.prepared.config;
+  const feature = runtime.feature;
+  const projectDir = session.ref.projectDir;
+  const sessionId = session.ref.sessionId;
+  const savedState = opts.savedState ?? runtime.resumeState;
+  const { selectedSkills } = opts;
   // A boundary interrupt raised before this run started (Esc-Esc in a dead zone
   // of a previous run that then ended into recovery without passing a call
   // boundary) is stale: drain it so it cannot park this run's first call
@@ -291,8 +293,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const startTime = resolveSessionStart(savedState);
   const ident = runPricingIdentity(config);
   const persistTranscript = config.workflow.persistTranscript;
-  const sessionId =
-    opts.sessionId ?? generateSessionId(projectDir, feature, new Date(), { persistTranscript });
   const plannerTool = savedState?.plannerTool ?? ident.plannerTool;
   const plannerModel = savedState?.plannerModel ?? ident.plannerModel;
   const implementerTool = savedState?.implementerTool ?? ident.implementerTool;
@@ -361,8 +361,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   };
   setProcessLedger(runProcessLedger);
 
-  writeActive({ projectDir, sessionId });
-
   try {
     const { cancelled } = await withShutdownHandlers(
       {
@@ -376,6 +374,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
           const resumeHolder: ResumeContextHolder = { messages: [] };
           const init = await initializeWorkflow({
             opts,
+            config,
             sessionId,
             summaryBase,
             metadata,
@@ -531,6 +530,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         saveFinalSession({
           projectDir,
           sessionId,
+          active: session.active,
           feature: featureForTranscriptPolicy(feature, persistTranscript),
           startTime,
           status: sessionStatus,
@@ -544,6 +544,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     saveFinalSession({
       projectDir,
       sessionId,
+      active: session.active,
       feature: featureForTranscriptPolicy(feature, persistTranscript),
       startTime,
       status: sessionStatus,

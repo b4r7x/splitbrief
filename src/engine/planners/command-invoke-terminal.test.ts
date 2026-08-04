@@ -4,7 +4,13 @@ import { describe, expect, it } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
-import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
+import {
+  customRunnerSecurityPosture,
+  type ConfiguredCustomRunner,
+} from '../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
+import type { RunnerGate } from '../runners/prepared-execution.js';
+import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import { createConfiguredCustomPlanner } from './command-invoke.js';
 import {
   createCommandInvokeTestFixtures,
@@ -17,6 +23,29 @@ import {
 } from '#testing/helpers/custom-command-based.js';
 
 const { testProject } = createCommandInvokeTestFixtures();
+
+async function createPreparedPlanner(
+  runner: ConfiguredCustomRunner,
+  runtime: CustomRunnerRuntimePort,
+) {
+  const admission = await prepareCustomRunnerAdmission({
+    ...runtime.admission,
+    projectDir: runtime.authorizationProjectDir,
+    runner,
+    posture: customRunnerSecurityPosture('planner', runner.command.contract),
+    phase: 'planning',
+    authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw new Error('Expected configured runner admission.');
+  const gate = {
+    kind: 'agent',
+    slot: { role: 'planner' },
+    preparationId: 'configured-terminal-test',
+    command: { kind: 'configured-custom', invocation: admission.invocation },
+  } satisfies RunnerGate;
+  return createConfiguredCustomPlanner(runner, runtime, gate.command.invocation);
+}
 
 describe('configured direct planner terminal cleanup', () => {
   type TerminalRunnerOptions = Readonly<{
@@ -68,7 +97,7 @@ describe('configured direct planner terminal cleanup', () => {
         approvalRequests += 1;
         return { approved: true as const };
       });
-    const planner = createConfiguredCustomPlanner(
+    const planner = await createPreparedPlanner(
       terminalRunner(input.name, input.script, input.runnerOptions),
       runtimeFor({
         projectDir,

@@ -3,6 +3,7 @@ import type { Phase } from '../../core/schemas/enums.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EventBus } from '../../engine/events/types.js';
 import type { ClearQueueHandler, QueueHandler } from '../../engine/orchestrator/types.js';
+import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../../core/runtime/commands/dispatch.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -14,6 +15,7 @@ import type { ResolvedRunConfig } from '../build-overrides.js';
 
 export function createCommandHandler(deps: {
   projectDir: string;
+  getPreparedExecution: () => PreparedExecution | null;
   getSessionId: () => string | undefined;
   getState: () => WorkflowState | null;
   getRunConfig: () => ResolvedRunConfig | null;
@@ -54,6 +56,7 @@ export function createCommandHandler(deps: {
     const errors: string[] = [];
     const context = createRpcCommandContext({
       projectDir: deps.projectDir,
+      getPreparedExecution: deps.getPreparedExecution,
       getSessionId: deps.getSessionId,
       getState: deps.getState,
       getRunConfig: deps.getRunConfig,

@@ -135,7 +135,7 @@ describe('attachCommand', () => {
     }
   });
 
-  it('renders the workflow app in attached-client mode when server is alive', async () => {
+  it('attached entry bypasses local preparation and runner factories', async () => {
     Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 
     const sessDir = join(testDir, '.splitbrief', 'sessions', 'alive-session');
@@ -161,10 +161,14 @@ describe('attachCommand', () => {
 
     expect(routerStore.get()).toMatchObject({
       screen: 'workflow',
-      feature: 'do a thing',
-      sessionId: 'alive-session',
-      attach: {
-        sockPath: join(sessDir, 'ipc.sock'),
+      execution: {
+        kind: 'attached',
+        feature: 'do a thing',
+        sessionId: 'alive-session',
+        attach: {
+          sockPath: join(sessDir, 'ipc.sock'),
+          authToken: 'test-auth-token',
+        },
       },
     });
     expect(renderCalls).toHaveLength(1);
@@ -201,9 +205,15 @@ describe('attachCommand', () => {
 
     expect(routerStore.get()).toMatchObject({
       screen: 'workflow',
-      feature: 'solo feature',
-      sessionId: 'solo-session',
-      attach: { sockPath: join(sessDir, 'ipc.sock') },
+      execution: {
+        kind: 'attached',
+        feature: 'solo feature',
+        sessionId: 'solo-session',
+        attach: {
+          sockPath: join(sessDir, 'ipc.sock'),
+          authToken: 'test-auth-token',
+        },
+      },
     });
   });
 });

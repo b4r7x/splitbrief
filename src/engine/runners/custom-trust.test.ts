@@ -185,6 +185,55 @@ describe('custom runner trust receipts', () => {
     ).resolves.toMatchObject({ kind: 'match' });
   });
 
+  it('checks cancellation at the final boundary before publishing trust', async () => {
+    const projectDir = createTempDir('custom-trust-abort-before-write-project');
+    const stateDir = createTempDir('custom-trust-abort-before-write-state');
+    directories.push(projectDir, stateDir);
+    const controller = new AbortController();
+
+    await expect(
+      markCustomRunnerTrusted({
+        projectDir,
+        runner: runner(),
+        posture: customRunnerSecurityPosture('planner', 'output'),
+        executable: await executable(projectDir),
+        stateDir,
+        signal: controller.signal,
+        _beforeWrite: () => controller.abort(),
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(existsSync(resolveCustomRunnerTrustFile(stateDir))).toBe(false);
+  });
+
+  it('reports a successful publication when cancellation arrives after the durable write', async () => {
+    const projectDir = createTempDir('custom-trust-abort-after-write-project');
+    const stateDir = createTempDir('custom-trust-abort-after-write-state');
+    directories.push(projectDir, stateDir);
+    const controller = new AbortController();
+
+    const marked = await markCustomRunnerTrusted({
+      projectDir,
+      runner: runner(),
+      posture: customRunnerSecurityPosture('planner', 'output'),
+      executable: await executable(projectDir),
+      stateDir,
+      signal: controller.signal,
+      _afterWrite: () => controller.abort(),
+    });
+
+    expect(marked).toMatchObject({ kind: 'trusted', abortedAfterPublication: true });
+    expect(existsSync(resolveCustomRunnerTrustFile(stateDir))).toBe(true);
+    await expect(
+      readCustomRunnerTrust({
+        projectDir,
+        runner: runner(),
+        posture: customRunnerSecurityPosture('planner', 'output'),
+        stateDir,
+      }),
+    ).resolves.toMatchObject({ kind: 'match' });
+  });
+
   it('invalidates every definition and security-posture field', async () => {
     const projectDir = createTempDir('custom-trust-invalidation-project');
     const stateDir = createTempDir('custom-trust-invalidation-state');

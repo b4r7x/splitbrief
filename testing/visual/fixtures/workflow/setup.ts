@@ -72,7 +72,7 @@ async function setupProjection(
     );
   }
   closeApprovalPrompt();
-  await createWorkflowBaseFixture().setup(context);
+  await createWorkflowBaseFixture(projection.feature).setup(context);
   if (projection.review !== undefined) {
     const filePath = getReviewFilePath(projection.review);
     await mkdir(dirname(filePath), { recursive: true });
@@ -86,11 +86,6 @@ async function setupProjection(
     if (route.screen !== 'workflow') {
       throw new Error(`Workflow fixture ${projection.scenarioId} failed to initialize its route`);
     }
-    routerStore.init({
-      screen: 'workflow',
-      feature: projection.feature,
-      readiness: route.readiness,
-    });
   }
 
   applyProjection(projection);

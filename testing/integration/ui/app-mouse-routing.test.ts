@@ -24,6 +24,16 @@ import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { TieredApprovalRequest } from '../../../src/core/approval/types.js';
 import { makeCostPrediction } from '#testing/helpers/factories/cost-prediction.js';
 
+const WORKFLOW_ROUTE = {
+  screen: 'workflow',
+  execution: {
+    kind: 'attached',
+    feature: 'feat',
+    sessionId: 'app-mouse-session',
+    attach: { sockPath: '/tmp/app-mouse.sock', authToken: 'test-token' },
+  },
+} as const;
+
 function createMockFilteredStdin() {
   let listener: ((event: MouseEvent) => void) | undefined;
   return {
@@ -69,7 +79,7 @@ function seedConversation(): void {
 }
 
 function openBriefReview(taskCount: number) {
-  routerStore.init({ screen: 'workflow', feature: 'feat' });
+  routerStore.init(WORKFLOW_ROUTE);
   lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
   reviewStore.setReviewFile('briefs.md', taskCount);
   const snapshot = readBriefListSnapshot();
@@ -98,7 +108,7 @@ describe('wireAppMouse', () => {
   });
 
   it('routes clicks only to overlay-layer zones while an overlay is open', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     const screenClick = vi.fn();
     registerMouseZone({
       id: 'screen-row',
@@ -154,7 +164,7 @@ describe('wireAppMouse', () => {
   });
 
   it('routes prompt-owned clicks only to prompt-layer zones', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     approvalPromptStore.__testReset({
       status: 'pending',
       request: makePendingApprovalRequest(),
@@ -224,7 +234,7 @@ describe('wireAppMouse', () => {
   });
 
   it('ignores workflow wheel input while overlays or prompts own input', () => {
-    routerStore.init({ screen: 'workflow', feature: 'feat' });
+    routerStore.init(WORKFLOW_ROUTE);
     seedConversation();
     const mock = createMockFilteredStdin();
     const dispose = wireAppMouse(mock.filtered);

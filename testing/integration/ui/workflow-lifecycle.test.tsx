@@ -7,9 +7,8 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import type { IpcServer } from '../../../src/engine/ipc/server.js';
-import { readActive } from '../../../src/core/sessions/lifecycle.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
-import { readyReadiness } from '#testing/helpers/workflow-screen.js';
+import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -55,7 +54,7 @@ describe('WorkflowScreen lifecycle', () => {
     routerStore.init({ screen: 'home' });
   });
 
-  it('routes completion with the runner-generated session id without reading the active pointer', async () => {
+  it('routes completion with the prepared session id without reading ambient session state', async () => {
     const projectDir = createTempDir('workflow-screen-complete');
     try {
       const summary = makeSummary({ feature: 'generated completion id' });
@@ -63,12 +62,18 @@ describe('WorkflowScreen lifecycle', () => {
         opts.callbacks.onComplete(summary);
         return summary;
       });
-      configStore.__testReset({ config: makeConfig(), projectDir });
+      const config = makeConfig();
+      const prepared = prepareWorkflowExecution({
+        projectDir,
+        feature: 'generated completion id',
+        config,
+        sessionId: 'prepared-completion-id',
+      });
+      configStore.__testReset({ config, projectDir });
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        feature: 'generated completion id',
-        readiness: readyReadiness(projectDir),
+        execution: { kind: 'local', prepared },
       });
 
       const ui = renderFeature(
@@ -82,11 +87,10 @@ describe('WorkflowScreen lifecycle', () => {
       const firstCall = runWorkflow.mock.calls[0];
       if (!firstCall) throw new Error('expected runWorkflow to be called');
       const route = routerStore.get();
-      expect(readActive(projectDir)).toBeNull();
-      expect(firstCall[0].sessionId).toMatch(/^\d{4}-\d{2}-\d{2}-generated-completion-id/);
+      expect(firstCall[0].prepared).toBe(prepared);
       if (route.screen === 'summary') {
         expect(route.summary).toEqual(summary);
-        expect(route.sessionId).toBe(firstCall[0].sessionId);
+        expect(route.sessionId).toBe(prepared.session.ref.sessionId);
         expect(route.status).toBe('complete');
       }
 
@@ -101,19 +105,25 @@ describe('WorkflowScreen lifecycle', () => {
     try {
       const summary = makeSummary({ feature: 'final review failure' });
       runWorkflow.mockImplementation(async (opts) => {
-        if (!opts.sessionId) throw new Error('expected generated session id');
+        const sessionId = opts.prepared.session.ref.sessionId;
         saveState(
-          { projectDir, sessionId: opts.sessionId },
+          { projectDir, sessionId },
           { ...createInitialState('final review failure'), phase: 'final-review' },
         );
         return summary;
       });
-      configStore.__testReset({ config: makeConfig(), projectDir });
+      const config = makeConfig();
+      const prepared = prepareWorkflowExecution({
+        projectDir,
+        feature: 'final review failure',
+        config,
+        sessionId: 'final-review-failure',
+      });
+      configStore.__testReset({ config, projectDir });
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        feature: 'final review failure',
-        readiness: readyReadiness(projectDir),
+        execution: { kind: 'local', prepared },
       });
 
       const ui = renderFeature(
@@ -142,14 +152,19 @@ describe('WorkflowScreen lifecycle', () => {
       const sessionId = 'cancelled-researching';
       const saved = workflowStateInResearching('cancel before planning');
       saveState({ projectDir, sessionId }, saved);
-      configStore.__testReset({ config: makeConfig(), projectDir });
+      const config = makeConfig();
+      const prepared = prepareWorkflowExecution({
+        projectDir,
+        feature: saved.feature,
+        config,
+        sessionId,
+        resumeState: saved,
+      });
+      configStore.__testReset({ config, projectDir });
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        feature: saved.feature,
-        resumeState: saved,
-        sessionId,
-        readiness: readyReadiness(projectDir),
+        execution: { kind: 'local', prepared },
       });
 
       const ui = renderFeature(
@@ -185,14 +200,19 @@ describe('WorkflowScreen lifecycle', () => {
       const sessionId = 'cancelled-planning';
       const saved = workflowStateInPlanning('cancel during planning');
       saveState({ projectDir, sessionId }, saved);
-      configStore.__testReset({ config: makeConfig(), projectDir });
+      const config = makeConfig();
+      const prepared = prepareWorkflowExecution({
+        projectDir,
+        feature: saved.feature,
+        config,
+        sessionId,
+        resumeState: saved,
+      });
+      configStore.__testReset({ config, projectDir });
       terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
       routerStore.navigate({
         to: 'workflow',
-        feature: saved.feature,
-        resumeState: saved,
-        sessionId,
-        readiness: readyReadiness(projectDir),
+        execution: { kind: 'local', prepared },
       });
 
       const ui = renderFeature(

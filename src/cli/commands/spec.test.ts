@@ -98,7 +98,10 @@ describe('spec command', () => {
         '--allow-hooks',
         'add health endpoint',
       ]),
-    ).rejects.toMatchObject({ kind: 'runner-not-trusted' });
+    ).rejects.toMatchObject({
+      kind: 'cli-error',
+      message: expect.stringContaining('readiness blocked'),
+    });
     if (existsSync(sessionsRoot())) {
       expect(readdirSync(sessionsRoot(), { withFileTypes: true })).toHaveLength(0);
     }

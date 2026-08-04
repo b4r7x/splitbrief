@@ -7,7 +7,6 @@ import type { Summary } from '../../../core/schemas/summary.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskId } from '../../../core/schemas/task.js';
-import type { Config } from '../../../core/schemas/config.js';
 import { buildDetachedRetryState } from '../retry-state.js';
 import type { EventBus } from '../../events/types.js';
 import { assertPromptResponse, makeCallbacks } from './prompts.js';
@@ -26,10 +25,10 @@ export async function runWorkflowLoop(
   ipcServer: IpcServer,
   ipcBridge: IpcWorkflowBridge,
   ipcBus: EventBus,
-  config: Config,
   runWorkflow: RunWorkflowFn = runWorkflowDefault,
 ): Promise<Summary> {
-  const sessionRef = { projectDir: ctx.projectDir, sessionId: ctx.sessionId };
+  const sessionRef = ctx.prepared.session.ref;
+  const config = ctx.prepared.config;
   let stateForRun: WorkflowState | undefined = loadState(sessionRef) ?? undefined;
   let retryProfileOverride: string | undefined;
   let retryProfileOverrideTaskId: TaskId | undefined;
@@ -53,13 +52,7 @@ export async function runWorkflowLoop(
     }
 
     const summary = await runWorkflow({
-      feature: ctx.feature,
-      plannerContext: ctx.plannerContext,
-      projectDir: ctx.projectDir,
-      config,
-      allowHooks: ctx.allowHooks ?? false,
-      allowRepoRunners: ctx.allowRepoRunners ?? false,
-      sessionId: ctx.sessionId,
+      prepared: ctx.prepared,
       eventBus: ipcBus,
       sinks: ipcBridge.sinks,
       signal: ipcBridge.signal,
@@ -68,7 +61,6 @@ export async function runWorkflowLoop(
       ...(stateForRun !== undefined && { savedState: stateForRun }),
       ...(retryProfileOverride !== undefined && { retryProfileOverride }),
       ...(retryProfileOverrideTaskId !== undefined && { retryProfileOverrideTaskId }),
-      trustedCliGates: ctx.trustedCliGates,
     });
     retryProfileOverride = undefined;
     retryProfileOverrideTaskId = undefined;

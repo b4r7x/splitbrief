@@ -1,6 +1,6 @@
-import type { Config } from '../../core/schemas/config.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import {
   applySelectedRecoveryAction,
@@ -26,14 +26,12 @@ export type PendingRecoveryResult =
 
 interface PromptPendingRecoveryArgs {
   state: WorkflowState;
-  activeSessionId: string;
   controller: AbortController;
   republishPrompt: boolean;
 }
 
 interface UseRecoveryDriverOptions {
-  projectDir: string;
-  config: Config;
+  prepared: PreparedExecution;
   inputMode: UseInputModeResult;
   abortedRef: { current: boolean };
   setInlineResume: (state: WorkflowState) => void;
@@ -43,20 +41,22 @@ export function createRecoveryDriver(): (
   opts: UseRecoveryDriverOptions,
 ) => (args: PromptPendingRecoveryArgs) => Promise<PendingRecoveryResult> {
   return (opts: UseRecoveryDriverOptions) => {
-    const { projectDir, config, inputMode, abortedRef, setInlineResume } = opts;
+    const { prepared, inputMode, abortedRef, setInlineResume } = opts;
+    const { ref, active } = prepared.session;
+    const { projectDir, sessionId } = ref;
+    const config = prepared.config;
 
     return async function promptPendingRecovery({
       state,
-      activeSessionId,
       controller,
       republishPrompt,
     }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
-      const loaded = loadPendingRecoveryState({ projectDir, sessionId: activeSessionId }, state);
+      const loaded = loadPendingRecoveryState(ref, state);
       if (!loaded.pending) return { shouldRun: true, state: loaded.state };
 
       const bus = createRecoveryBus({
         projectDir,
-        sessionId: activeSessionId,
+        sessionId,
         persistTranscript: config.workflow.persistTranscript,
         sinks: [createTuiSink({ persistTranscript: config.workflow.persistTranscript })],
       });
@@ -70,7 +70,7 @@ export function createRecoveryDriver(): (
         const retryProfileOverrideTaskId = recoveryRetryTaskId(currentState);
         const result = applySelectedRecoveryAction({
           projectDir,
-          sessionId: activeSessionId,
+          sessionId,
           state: currentState,
           action,
           bus,
@@ -94,7 +94,8 @@ export function createRecoveryDriver(): (
         if (result.status === 'aborted') {
           finalizeRecoveryResult({
             projectDir,
-            sessionId: activeSessionId,
+            sessionId,
+            active,
             state: result.state,
             config,
             status: result.status,
@@ -130,20 +131,14 @@ export function createRecoveryDriver(): (
       publishPendingRecoveryPrompt(bus, loaded.issue, republishPrompt);
 
       while (true) {
-        const promptLoaded = loadPendingRecoveryState(
-          { projectDir, sessionId: activeSessionId },
-          loaded.state,
-        );
+        const promptLoaded = loadPendingRecoveryState(ref, loaded.state);
         const promptIssue = promptLoaded.pending ? promptLoaded.issue : loaded.issue;
         const answer = await inputMode.setQuestionMode(formatRecoveryPrompt(promptIssue));
         if (controller.signal.aborted || abortedRef.current) {
           return { shouldRun: false, state: loaded.state };
         }
 
-        const latest = loadPendingRecoveryState(
-          { projectDir, sessionId: activeSessionId },
-          loaded.state,
-        );
+        const latest = loadPendingRecoveryState(ref, loaded.state);
         if (!latest.pending) return { shouldRun: true, state: latest.state };
 
         const action = parseRecoveryActionAnswer(answer, latest.issue);

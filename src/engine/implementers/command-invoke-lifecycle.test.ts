@@ -5,7 +5,12 @@ import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import type { ConfiguredCustomRunner } from '../runners/custom-trust.js';
+import {
+  customRunnerSecurityPosture,
+  type ConfiguredCustomRunner,
+} from '../runners/custom-trust.js';
+import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
+import type { RunnerGate } from '../runners/prepared-execution.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import { createConfiguredCustomImplementer } from './command-invoke.js';
 
@@ -108,8 +113,34 @@ function runtimeHarness(
   return { runtime, stages };
 }
 
+async function createPreparedImplementer(
+  runner: ConfiguredCustomRunner,
+  runtime: CustomRunnerRuntimePort,
+) {
+  const admission = await prepareCustomRunnerAdmission({
+    ...runtime.admission,
+    projectDir: runtime.authorizationProjectDir,
+    runner,
+    posture: customRunnerSecurityPosture('implementer', runner.command.contract),
+    phase: 'implementing',
+    authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw new Error('Expected configured runner admission.');
+  const gate = {
+    kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+    slot: { role: 'implementer', profile: 'default' },
+    preparationId: 'command-invoke-lifecycle',
+    command: { kind: 'configured-custom', invocation: admission.invocation },
+  } satisfies RunnerGate;
+  return createConfiguredCustomImplementer({
+    runtime,
+    admission: gate.command.invocation,
+  });
+}
+
 async function implement(
-  implementer: ReturnType<typeof createConfiguredCustomImplementer>,
+  implementer: Awaited<ReturnType<typeof createPreparedImplementer>>,
   projectDir: string,
   options: Readonly<{
     file: string;
@@ -145,8 +176,8 @@ describe('createConfiguredCustomImplementer', () => {
     const targetPath = join(projectDir, 'src', 'timeout.ts');
     writeFileSync(targetPath, 'export const preserved = true;\n');
     const harness = runtimeHarness(projectDir, { sourceEnv: {} });
-    const implementer = createConfiguredCustomImplementer({
-      runner: configuredRunner({
+    const implementer = await createPreparedImplementer(
+      configuredRunner({
         argv: [
           '-e',
           [
@@ -155,11 +186,11 @@ describe('createConfiguredCustomImplementer', () => {
             'setInterval(() => undefined, 1_000);',
           ].join(''),
         ],
-        idleWarnMs: 250,
-        idleKillMs: 750,
+        idleWarnMs: 1_000,
+        idleKillMs: 3_000,
       }),
-      runtime: harness.runtime,
-    });
+      harness.runtime,
+    );
 
     const result = await implement(implementer, projectDir, { file: 'src/timeout.ts' });
 
@@ -179,8 +210,8 @@ describe('createConfiguredCustomImplementer', () => {
     const childStarted = join(outsideDir, 'output-limit-child-started');
     writeFileSync(targetPath, 'export const preserved = true;\n');
     const harness = runtimeHarness(projectDir, { sourceEnv: {} });
-    const implementer = createConfiguredCustomImplementer({
-      runner: configuredRunner({
+    const implementer = await createPreparedImplementer(
+      configuredRunner({
         argv: [
           '-e',
           [
@@ -190,8 +221,8 @@ describe('createConfiguredCustomImplementer', () => {
           ].join(''),
         ],
       }),
-      runtime: harness.runtime,
-    });
+      harness.runtime,
+    );
 
     const result = await implement(implementer, projectDir, { file: 'src/output-limit.ts' });
 
@@ -212,8 +243,8 @@ describe('createConfiguredCustomImplementer', () => {
     const promotedPath = join(authorizationProjectDir, 'src', 'should-not-promote.ts');
     writeFileSync(promotedPath, 'export const canonical = true;\n');
     const harness = runtimeHarness(authorizationProjectDir, { sourceEnv: {} });
-    const implementer = createConfiguredCustomImplementer({
-      runner: configuredRunner({
+    const implementer = await createPreparedImplementer(
+      configuredRunner({
         contract: 'direct',
         argv: [
           '-e',
@@ -226,8 +257,8 @@ describe('createConfiguredCustomImplementer', () => {
           ].join(''),
         ],
       }),
-      runtime: harness.runtime,
-    });
+      harness.runtime,
+    );
 
     const result = await implement(implementer, outerStageDir, {
       file: 'src/should-not-promote.ts',
@@ -275,10 +306,10 @@ describe('createConfiguredCustomImplementer', () => {
     ];
 
     for (const testCase of cases) {
-      const implementer = createConfiguredCustomImplementer({
-        runner: configuredRunner({ argv: testCase.argv }),
-        runtime: harness.runtime,
-      });
+      const implementer = await createPreparedImplementer(
+        configuredRunner({ argv: testCase.argv }),
+        harness.runtime,
+      );
       const controller = new AbortController();
       const abortTimer = testCase.abort ? setTimeout(() => controller.abort(), 100) : undefined;
       try {

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { Config } from '../../core/schemas/config.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import type { ImplementerPublisher } from './types.js';
+import type { RunnerGate } from '../runners/prepared-execution.js';
 import { makeConfig as makeBaseConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createImplementer } from '../runners/factory.js';
@@ -24,6 +25,20 @@ function makeConfig(extra?: Partial<ShellConfig>): Config {
 
 const context = { ...defaultContext, dir: '/tmp' };
 
+function implementerAuthority(config: Config) {
+  const preparationId = 'shell-implementer-test';
+  const slot = { role: 'implementer', profile: 'default' } as const;
+  const gates: readonly RunnerGate[] = [
+    {
+      kind: 'shell',
+      slot,
+      preparationId,
+      command: { kind: 'validated-config' },
+    },
+  ];
+  return { preparedConfig: config, preparationId, gates, slot };
+}
+
 async function implementTask(
   task: ReturnType<typeof makeTask>,
   opts: {
@@ -33,7 +48,7 @@ async function implementTask(
     onOutput: (text: string) => void;
   },
 ) {
-  const implementer = await createImplementer(opts.config);
+  const implementer = await createImplementer(opts.config, implementerAuthority(opts.config));
   return implementer.implement({ ...opts, task });
 }
 
@@ -48,13 +63,13 @@ async function retryTask(
     onOutput: (text: string) => void;
   },
 ) {
-  const implementer = await createImplementer(opts.config);
+  const implementer = await createImplementer(opts.config, implementerAuthority(opts.config));
   return implementer.retry({ ...opts, task, kind: 'local' });
 }
 
 describe('shell implementer', () => {
   it('implementTask dispatches to shell when kind is shell (empty stdout → extraction fails)', async () => {
-    const config = makeConfig({ command: '/bin/echo' });
+    const config = makeConfig({ command: '/bin/sh', args: ['-c', 'cat >/dev/null'] });
     const task = makeTask();
 
     const result = await implementTask(task, {
@@ -168,7 +183,10 @@ describe('shell implementer', () => {
       publishFailed: () => {},
     };
 
-    const implementer = await createImplementer(config, { publisher });
+    const implementer = await createImplementer(config, {
+      ...implementerAuthority(config),
+      publisher,
+    });
     await implementer.implement({
       task,
       projectDir: '/tmp',

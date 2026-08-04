@@ -45,6 +45,8 @@ export interface PickerCatalog {
   currentCommand: string | undefined;
   currentCommandKind: 'shell' | 'agent' | undefined;
   customModels: string[];
+  /** Live discovery lane state: cold means no readiness result has ever landed. */
+  discovery: Readonly<{ cold: boolean; refreshing: boolean }>;
   setCurrentItem: (item: PickerOption) => void;
 }
 
@@ -68,7 +70,8 @@ export function usePickerCatalog(
   const config = configStore.useConfig();
   const focusModels = overlayStore.use((s) => s.focus) === 'models';
 
-  const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes }] = useStores(detectionStore);
+  const [{ cliTools, providers, providerOutcomes, cliCatalogOutcomes, refresh }] =
+    useStores(detectionStore);
 
   const [uncontrolledItemId, setUncontrolledItemId] = useState<string | null>(null);
 
@@ -129,6 +132,12 @@ export function usePickerCatalog(
   const catalogDiagnostic =
     modelCounts.confirmed > 0 ? undefined : deriveCatalogDiagnostic(role, currentItem);
 
+  const discovery = {
+    cold: refresh.readiness.fetchedAt === null,
+    refreshing:
+      refresh.readiness.refreshing || refresh.modelsDev.refreshing || refresh.cliModels.refreshing,
+  };
+
   const roleLabel = isPlanner ? 'Planner' : 'Implementer';
   const isCurrentTool = currentItem?.isCurrent ?? false;
   const currentModel = isCurrentTool ? persistedModel : undefined;
@@ -152,6 +161,7 @@ export function usePickerCatalog(
     currentCommand,
     currentCommandKind,
     customModels,
+    discovery,
     setCurrentItem: (item) => {
       if (selectedItemId !== undefined) return;
       setUncontrolledItemId(item.id);

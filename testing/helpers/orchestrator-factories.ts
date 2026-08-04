@@ -7,6 +7,10 @@ import type {
 } from '../../src/engine/orchestrator/types.js';
 import type { Planner } from '../../src/engine/planners/types.js';
 import type { Implementer } from '../../src/engine/implementers/types.js';
+import {
+  createImplementer,
+  type ImplementerCreationOptions,
+} from '../../src/engine/runners/factory.js';
 import { makeTask } from './factories/task.js';
 import { createEventBus } from '../../src/engine/events/bus.js';
 import type { EngineEvent, EventBus } from '../../src/engine/events/types.js';
@@ -107,6 +111,13 @@ export function makeImplementer(overrides?: Partial<Implementer>): Implementer {
     getVersion: vi.fn().mockResolvedValue('1.0'),
     ...overrides,
   };
+}
+
+export function makePreparedImplementerFactory(
+  authority: Pick<ImplementerCreationOptions, 'preparationId' | 'gates' | 'slot'>,
+): NonNullable<WorkflowContext['createImplementer']> {
+  return (config, options) =>
+    createImplementer(config, { ...options, ...authority, preparedConfig: config });
 }
 
 export const passingResults: ValidationResult[] = [

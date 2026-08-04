@@ -6,6 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { formatConfigLoaderDiagnostic } from '../../core/config/load/io.js';
 import type { ConfigLoaderDiagnostic } from '../../core/config/load/io.js';
 import { sessionDir } from '../../core/paths.js';
+import { readActive } from '../../core/sessions/lifecycle.js';
+import {
+  acceptDetachedSessionHandoff,
+  prepareNewSession,
+  settleDetachedSessionHandoff,
+} from '../../core/sessions/prepare.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../core/transcript-policy.js';
 import { readLockfile } from './lockfile.js';
 import {
@@ -18,31 +24,43 @@ import type { IpcServerArgs } from './server-args.js';
 import {
   createServerCleanup,
   createServerExitHandlers,
+  createParentAcceptanceBarrier,
   createServerProcessCleanup,
   emitConfigWarnings,
   getArgv,
+  main,
   writeStartupLockfile,
 } from './server-entry.js';
 import { writeIpcServerArgsFile } from './server-args.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
+import type { PreparedExecution } from '../runners/prepared-execution.js';
+import type { IpcServer } from './server.js';
 
 describe('getArgv', () => {
   let tmp: string;
   let projectDir: string;
+  let bootstrapDir: string;
   const sessionId = 'session-1';
 
   const validArgs = (): IpcServerArgs => ({
-    sessionId,
+    version: 1,
+    parentPid: process.pid,
+    candidate: {
+      version: 1,
+      sessionId,
+      generation: '12345678-1234-4123-8123-123456789abc',
+    },
     projectDir,
     feature: 'add login',
-    mode: 'standard',
-    configPath: '/tmp/splitbrief.yaml',
     overrides: {},
   });
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'server-entry-'));
     projectDir = tmp;
-    mkdirSync(sessionDir(projectDir, sessionId), { recursive: true });
+    bootstrapDir = join(projectDir, '.splitbrief', 'bootstrap', 'server-test');
+    mkdirSync(bootstrapDir, { recursive: true });
     vi.spyOn(process, 'exit').mockImplementation((code) => {
       throw new Error(`process.exit(${typeof code === 'number' ? code : 0})`);
     });
@@ -55,17 +73,16 @@ describe('getArgv', () => {
   });
 
   it('resolves the single args-file positional into parsed server args', () => {
-    const argsFile = writeIpcServerArgsFile(sessionDir(projectDir, sessionId), validArgs());
+    const argsFile = writeIpcServerArgsFile({ bootstrapDir, args: validArgs() });
 
     const result = getArgv(['node', 'server-entry.js', argsFile]);
 
     expect(result).toMatchObject({
-      sessionId,
+      candidate: { sessionId },
       projectDir,
       feature: 'add login',
-      mode: 'standard',
-      configPath: '/tmp/splitbrief.yaml',
     });
+    expect(existsSync(argsFile)).toBe(false);
   });
 
   it('exits when no args-file positional is provided', () => {
@@ -73,7 +90,7 @@ describe('getArgv', () => {
   });
 
   it('exits when the args file cannot be read', () => {
-    const missing = join(sessionDir(projectDir, sessionId), 'server-args.json');
+    const missing = join(bootstrapDir, 'server-args.json');
 
     expect(() => getArgv(['node', 'server-entry.js', missing])).toThrow('process.exit(1)');
   });
@@ -130,6 +147,153 @@ describe('emitConfigWarnings', () => {
   });
 });
 
+describe('detached parent acceptance barrier', () => {
+  it('fails promptly when the parent process dies before acceptance', async () => {
+    const barrier = createParentAcceptanceBarrier({
+      candidate: {
+        version: 1,
+        sessionId: 'parent-died',
+        generation: '12345678-1234-4123-8123-123456789abc',
+      },
+      parentPid: 99_999_999,
+      childPid: process.pid,
+      timeoutMs: 5_000,
+      acceptHandoff: () => false,
+      settleHandoff: () => 'rolled-back',
+    });
+
+    await expect(barrier.wait()).rejects.toMatchObject({ kind: 'detached-parent-exited' });
+  });
+
+  it('does not treat the socket ACK as authoritative when the parent dies before handoff', async () => {
+    const candidate = {
+      version: 1 as const,
+      sessionId: 'handoff-parent-exit',
+      generation: '12345678-1234-4123-8123-123456789abc',
+    };
+    const barrier = createParentAcceptanceBarrier({
+      candidate,
+      parentPid: 99_999_999,
+      childPid: process.pid,
+      timeoutMs: 1_000,
+      acceptHandoff: () => false,
+      settleHandoff: () => 'rolled-back',
+    });
+
+    expect(barrier.accept({ ...candidate, childPid: process.pid })).toBe(true);
+    await expect(barrier.wait()).rejects.toMatchObject({
+      kind: 'detached-parent-exited',
+    });
+  });
+
+  it('closes the barrier after timing out before socket acceptance', async () => {
+    const candidate = {
+      version: 1 as const,
+      sessionId: 'acceptance-timeout',
+      generation: '12345678-1234-4123-8123-123456789abc',
+    };
+    const barrier = createParentAcceptanceBarrier({
+      candidate,
+      parentPid: process.pid,
+      childPid: process.pid,
+      timeoutMs: 0,
+      acceptHandoff: () => false,
+      settleHandoff: () => 'rolled-back',
+    });
+
+    await expect(barrier.wait()).rejects.toMatchObject({
+      kind: 'detached-parent-acceptance-timeout',
+    });
+    expect(barrier.accept({ ...candidate, childPid: process.pid })).toBe(false);
+  });
+
+  it('accepts a durable handoff even when the parent exits immediately afterward', async () => {
+    const candidate = {
+      version: 1 as const,
+      sessionId: 'handoff-before-parent-exit',
+      generation: '12345678-1234-4123-8123-123456789abc',
+    };
+    const barrier = createParentAcceptanceBarrier({
+      candidate,
+      parentPid: 99_999_999,
+      childPid: process.pid,
+      timeoutMs: 1_000,
+      acceptHandoff: () => true,
+      settleHandoff: () => 'accepted',
+    });
+
+    expect(barrier.accept({ ...candidate, childPid: process.pid })).toBe(true);
+    await expect(barrier.wait()).resolves.toBeUndefined();
+  });
+
+  it('rejects an ACK that arrives after the deadline before the event-loop poll runs', async () => {
+    const candidate = {
+      version: 1 as const,
+      sessionId: 'late-acceptance',
+      generation: '12345678-1234-4123-8123-123456789abc',
+    };
+    const barrier = createParentAcceptanceBarrier({
+      candidate,
+      parentPid: process.pid,
+      childPid: process.pid,
+      timeoutMs: 1,
+      acceptHandoff: () => false,
+      settleHandoff: () => 'rolled-back',
+    });
+    const waiting = barrier.wait();
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+
+    expect(barrier.accept({ ...candidate, childPid: process.pid })).toBe(false);
+    await expect(waiting).rejects.toMatchObject({ kind: 'detached-parent-acceptance-timeout' });
+  });
+
+  it('bounds the post-ACK wait and rolls back before rejecting', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'server-entry-handoff-timeout-'));
+    const candidate = {
+      version: 1 as const,
+      sessionId: '2026-08-04-handoff-timeout',
+      generation: '12345678-1234-4123-8123-123456789abc',
+    };
+    const prepared = prepareNewSession({
+      projectDir,
+      feature: 'bounded detached handoff',
+      config: makeConfig(),
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [],
+        metadata: {},
+      },
+      candidate,
+    });
+    expect(prepared.kind).toBe('prepared');
+    if (prepared.kind !== 'prepared') return;
+    let ran = false;
+    const barrier = createParentAcceptanceBarrier({
+      candidate,
+      parentPid: process.pid,
+      childPid: process.pid,
+      timeoutMs: 1,
+      acceptHandoff: () => acceptDetachedSessionHandoff(prepared.session),
+      settleHandoff: () => settleDetachedSessionHandoff(prepared.session),
+    });
+
+    expect(barrier.accept({ ...candidate, childPid: process.pid })).toBe(true);
+    const guardedRun = barrier.wait().then(() => {
+      ran = true;
+    });
+
+    await expect(guardedRun).rejects.toMatchObject({ kind: 'detached-parent-acceptance-timeout' });
+    expect(ran).toBe(false);
+    expect(existsSync(sessionDir(projectDir, candidate.sessionId))).toBe(false);
+    expect(readActive(projectDir)).toBeNull();
+    rmSync(projectDir, { recursive: true, force: true });
+  });
+});
+
 // The detached `start --detach` host runs in a process spawned by spawn-server.ts; main() must call
 // bootstrapOtel() first or every span is a NonRecordingSpan (the original F-540 defect). This probe
 // invokes the real main() — bootstrapOtel() runs synchronously before main's first await — with the
@@ -150,11 +314,15 @@ function runDetachedHostOtelProbe(forwardedExporter: string | undefined): string
 
     const projectDir = mkdtempSync(join(tmpdir(), 'server-entry-probe-'));
     const argv = {
-      sessionId: 'probe',
+      version: 1,
+      parentPid: process.pid,
+      candidate: {
+        version: 1,
+        sessionId: 'probe',
+        generation: '12345678-1234-4123-8123-123456789abc',
+      },
       projectDir,
       feature: 'probe',
-      mode: 'standard',
-      configPath: join(projectDir, 'splitbrief.yaml'),
       overrides: {},
     };
 
@@ -165,7 +333,7 @@ function runDetachedHostOtelProbe(forwardedExporter: string | undefined): string
     // main() is async; bootstrapOtel() is its synchronous first statement, so it runs before the
     // first await returns control here. Sample the provider before the heavy startup proceeds, then
     // exit so the IPC server / workflow loop never starts.
-    void main(argv, join(projectDir, 'session'));
+    void main({ argv, bootstrapDir: join(projectDir, 'bootstrap') });
     const span = trace.getTracer('detached-host').startSpan('detached-span');
     process.stdout.write(span.isRecording() ? 'recording' : 'nonrecording');
     span.end();
@@ -202,18 +370,26 @@ describe('writeStartupLockfile ps-facing redaction', () => {
 
   function makeArgv(overrides: Partial<IpcServerArgs>): IpcServerArgs {
     return {
-      sessionId: basename(testDir),
+      version: 1,
+      parentPid: process.pid,
+      candidate: {
+        version: 1,
+        sessionId: basename(testDir),
+        generation: '12345678-1234-4123-8123-123456789abc',
+      },
       projectDir: testDir,
       feature: 'add secret oauth login',
-      mode: 'standard',
-      configPath: join(testDir, 'config.yaml'),
       overrides: {},
       ...overrides,
     };
   }
 
   it('redacts the lockfile feature `splitbrief ps` prints under persistTranscript:false', async () => {
-    await writeStartupLockfile(testDir, makeArgv({ persistTranscript: false }));
+    await writeStartupLockfile(testDir, {
+      argv: makeArgv({}),
+      mode: 'standard',
+      persistTranscript: false,
+    });
 
     const lock = await readLockfile(testDir);
     expect(lock?.feature).toBe(TRANSCRIPT_OMITTED_MESSAGE);
@@ -221,17 +397,155 @@ describe('writeStartupLockfile ps-facing redaction', () => {
   });
 
   it('keeps the raw lockfile feature under persistTranscript:true', async () => {
-    await writeStartupLockfile(testDir, makeArgv({ persistTranscript: true }));
+    await writeStartupLockfile(testDir, {
+      argv: makeArgv({}),
+      mode: 'standard',
+      persistTranscript: true,
+    });
 
     const lock = await readLockfile(testDir);
     expect(lock?.feature).toBe('add secret oauth login');
   });
 
-  it('keeps the raw lockfile feature when persistTranscript is unset', async () => {
-    await writeStartupLockfile(testDir, makeArgv({}));
+  it('keeps the raw lockfile feature when persistence is enabled', async () => {
+    await writeStartupLockfile(testDir, {
+      argv: makeArgv({}),
+      mode: 'standard',
+      persistTranscript: true,
+    });
 
     const lock = await readLockfile(testDir);
     expect(lock?.feature).toBe('add secret oauth login');
+  });
+});
+
+describe('detached preparation handoff', () => {
+  it('detached child prepares before publishing final session artifacts', async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'server-entry-prepare-'));
+    const bootstrapDir = join(projectDir, '.splitbrief', 'bootstrap', 'server-test');
+    const candidate = {
+      version: 1 as const,
+      sessionId: 'detached-prepared',
+      generation: '12345678-1234-4123-8123-123456789abc',
+    };
+    const argv: IpcServerArgs = {
+      version: 1,
+      parentPid: process.pid,
+      candidate,
+      projectDir,
+      feature: 'prepare first',
+      overrides: {},
+    };
+    const prepared: PreparedExecution = {
+      purpose: 'new-workflow',
+      config: makeConfig(),
+      preparationId: 'prepared-in-child',
+      report: {
+        generatedAt: '2026-08-04T00:00:00.000Z',
+        projectDir,
+        status: 'ready',
+        counts: { ok: 1, info: 0, warning: 0, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+        sections: [],
+        metadata: {},
+      },
+      gates: [],
+      session: {
+        kind: 'new',
+        ref: { projectDir, sessionId: candidate.sessionId },
+        ownership: candidate,
+        active: candidate,
+      },
+      runtime: {
+        feature: argv.feature,
+        allowRepoRunners: false,
+        allowHooks: false,
+      },
+    };
+    const order: string[] = [];
+    const server: IpcServer = {
+      sockPath: join(sessionDir(projectDir, candidate.sessionId), 'ipc.sock'),
+      requestClientPrompt: async () => {
+        throw new Error('not used');
+      },
+      close: async () => {
+        order.push('close');
+      },
+    };
+    mkdirSync(bootstrapDir, { recursive: true });
+
+    try {
+      let acceptParent:
+        | ((acceptance: {
+            version: 1;
+            sessionId: string;
+            generation: string;
+            childPid: number;
+          }) => boolean)
+        | undefined;
+      let handedOff = false;
+      const mainPromise = main({
+        argv,
+        bootstrapDir,
+        cleanupProcesses: async () => {},
+        dependencies: {
+          prepare: async () => {
+            order.push('prepare');
+            mkdirSync(sessionDir(projectDir, candidate.sessionId), { recursive: true });
+            return { kind: 'prepared', execution: prepared };
+          },
+          startServer: async (options) => {
+            order.push('socket');
+            acceptParent = options.onParentAccept;
+            return server;
+          },
+          writePreparedResult: ({ result }) => {
+            order.push('publish');
+            expect(result.ownership).toEqual(candidate);
+            expect(result.active).toEqual(candidate);
+            return join(bootstrapDir, 'server-result.json');
+          },
+          runLoop: async (ctx) => {
+            order.push('run');
+            expect(ctx.prepared).toBe(prepared);
+            return makeSummary({ totalTasks: 0 });
+          },
+          acceptHandoff: () => {
+            if (!handedOff) return false;
+            order.push('handoff-accepted');
+            return true;
+          },
+          settleHandoff: () => (handedOff ? 'accepted' : 'rolled-back'),
+        },
+      });
+
+      await vi.waitFor(() => expect(order).toEqual(['prepare', 'socket', 'publish']));
+      expect(order).not.toContain('run');
+      expect(
+        acceptParent?.({
+          ...candidate,
+          generation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          childPid: process.pid,
+        }),
+      ).toBe(false);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(order).not.toContain('run');
+      expect(acceptParent?.({ ...candidate, childPid: process.pid })).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(order).not.toContain('run');
+      handedOff = true;
+      await mainPromise;
+
+      expect(order.slice(0, 5)).toEqual([
+        'prepare',
+        'socket',
+        'publish',
+        'handoff-accepted',
+        'run',
+      ]);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 });
 
