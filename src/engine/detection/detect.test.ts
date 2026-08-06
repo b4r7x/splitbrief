@@ -127,7 +127,6 @@ function declaredCatalogProbe(): CliProbeContract {
         kind: 'catalog',
         parse: () => ({ kind: 'success', value: [] }),
       },
-      sessionPresence: { kind: 'none' },
     },
   };
 }

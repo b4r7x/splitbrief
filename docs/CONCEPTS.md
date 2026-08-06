@@ -9,11 +9,11 @@ Shared vocabulary for anyone (human or AI agent) reading the codebase. All terms
 SPLITBRIEF is a CLI that splits AI coding work across two roles:
 
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and compiles the request into a Task Brief, with optional supporting spec/plan artifacts when the work needs more structure.
-- An **implementer** — a cheap or local model (Ollama, LM Studio, DeepSeek, …) does the *typing*: turns each task from the list into code, one task at a time.
+- An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, DeepSeek, …) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
 
 The orchestrator in the middle owns the workflow: it runs the planner, persists the Task Brief transport and supporting artifacts, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and escalates back to the planner when the implementer gets stuck. Git commit strategies are optional and off by default; the default leaves changes unstaged for manual review.
 
-The goal is *same planning quality, lower total cost*. Typical split: ~350K planner tokens per feature, ~$0 implementer tokens when running locally.
+The goal is a change that holds up: the tool that wrote the code never signs it off, and a deterministic pipeline — not the implementer's own opinion — decides whether the task passed. Lower total cost follows from the split; it is a reported outcome, not the promise.
 
 ---
 
@@ -38,7 +38,7 @@ The "typing" side. Responsibilities:
 
 1. Receive a self-contained task prompt (signature, types, tests, constraints, implementation steps, code context).
 2. Produce code: either whole-file write or search/replace markers.
-3. Return code to the orchestrator for extraction-based runners, or write files directly for `agent` / `agent-sdk`; SPLITBRIEF inspects filesystem changes afterward.
+3. Return code to the orchestrator for extraction-based runners (`api`, `shell`), or write files directly in an isolated directory for `cli` / `agent` / `agent-sdk`; SPLITBRIEF inspects filesystem changes afterward and promotes them into the project under a hash guard.
 
 The implementer is *stateless per task*. No conversation is maintained between tasks. This is deliberate: atomic tasks keep the context small enough to fit in an 8K model.
 
@@ -58,13 +58,15 @@ The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrato
 
 Both the planner and the implementer are configured with a `kind` field. There are five kinds — each corresponds to a different way of invoking a model. The factory in `src/engine/runners/factory.ts` dispatches on this field.
 
-| Kind | What it is | Example | When to use |
-|------|-----------|---------|-------------|
-| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` | Default planner path; uses existing subscriptions |
-| `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, DeepSeek, OpenRouter, Together | Default implementer path |
-| `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | Users who want to plug in a tool we don't know |
-| `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | When the tool handles file writing itself |
-| `agent-sdk` | Programmatic call into the Anthropic Agent SDK (no subprocess) | `@anthropic-ai/claude-agent-sdk` | When you want SDK-level control and already have `ANTHROPIC_API_KEY` |
+| Kind | What it is | Example | Write mode as implementer | When to use |
+|------|-----------|---------|---------------------------|-------------|
+| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a cheaper model |
+| `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, DeepSeek, OpenRouter, Together | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
+| `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | `extracted-code` | Users who want to plug in a tool we don't know |
+| `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | `direct` | When the tool handles file writing itself |
+| `agent-sdk` | Programmatic call into the Anthropic Agent SDK (no subprocess) | `@anthropic-ai/claude-agent-sdk` | `direct` | When you want SDK-level control and already have `ANTHROPIC_API_KEY` |
+
+Write mode follows mechanically from the kind and cannot be chosen: `capabilities.writesFiles` may be restated per profile, but config load rejects any value that differs from the kind's mode. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#write-modes) for what each mode means for isolation and promotion.
 
 All five kinds implement the same `Planner` / `Implementer` interface (`src/engine/planners/types.ts`, `src/engine/implementers/types.ts`). The orchestrator doesn't care which kind is active.
 
@@ -142,7 +144,9 @@ Runs after every implementer response. Defined in `src/engine/orchestrator/valid
 
 A stage that resolves to no command is recorded as *skipped* (not a pass). When every enabled stage is skipped, the run emits a warning so a nothing-validated task is not mistaken for all-green.
 
-Each step *stops on first failure* and reports the error back to the orchestrator, which either retries or escalates.
+A failing stage that was already red at baseline is a third outcome: *failed but pre-existing*. It is recorded separately from skipped — a missing linter and a broken linter do not read the same — and it does not fail the task when the failure names none of the task's changed files. The evidence ledger marks such entries `baselineExempt` and records a `failed (pre-existing)` observed-evidence line so the exemption stays reviewable after the run.
+
+Each step stops at the first failure *attributable to the task* and reports it back to the orchestrator, which either retries or escalates. A stage that was already red at baseline continues the pipeline so the stages behind it still get a verdict, and never produces a retry prompt.
 
 ---
 
@@ -276,7 +280,7 @@ Workflow lifecycle hooks let users run custom commands or in-process modules at 
 
 ## Hook trust
 
-First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes a hash from the hook section plus module hook file digests; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time (`Trust these hooks for this project? [y/N]`) and stores the accepted hash in `.splitbrief/hook-trust.json`. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config or hook-file edit.
+First-time trust gate for hook configs. `src/core/hooks/trust.ts` computes a hash from the hook section plus module hook file digests; `src/cli/hook-trust-prompt.ts` prompts in a TTY the first time, showing each hook's executable, the absolute path it resolves to here, and its argv, then asking `Trust these hooks for this project? [y/N]`. Answering `y` writes a receipt to `~/.splitbrief/trust/hooks.json` keyed by the canonical path of this checkout, so the grant belongs to this machine and this checkout and a repository can neither ship nor forge one. Any edit to the hooks section or module hook files invalidates the hash and re-prompts. In CI (non-TTY), `--allow-hooks` is required — otherwise SPLITBRIEF refuses to start. This prevents silent RCE via a config or hook-file edit.
 
 ## Repo-map
 
@@ -361,8 +365,10 @@ planner:     # discriminated union on `kind` — cli | api | shell | agent | age
 implementer: # same five kinds
   kind: api
   provider: ollama
+  service: ollama
+  offering: local
   model: qwen2.5-coder:7b
   apiBase: http://localhost:11434/v1
 ```
 
-Optional `implementerProfiles` add named cheap/local/fallback implementer configs for routing while preserving the same single implementer role. Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. Any config version other than 3 is rejected at load.
+Optional `implementerProfiles` add named implementer configs that task routing and recovery select between, while preserving the same single implementer role. Schemas: `src/core/schemas/planner-config.ts`, `src/core/schemas/implementer-config.ts`. Any config version other than 3 is rejected at load.

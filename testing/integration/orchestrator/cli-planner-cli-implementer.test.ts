@@ -270,14 +270,17 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
       env: { HOME: string | null; TMPDIR: string | null; npm_config_cache: string | null };
     };
     expect(opencodeRun.cwd).not.toBe(projectDir);
+    // The implementer's sandbox is rooted at its own role, not at the worktree's
+    // shared sandbox: the planner running in the same worktree gets a sibling
+    // root, so neither role's bridged credential state is the other's destination.
     expect(normalizeMacTmpPath(opencodeRun.env.HOME)).toBe(
-      normalizeMacTmpPath(join(opencodeRun.cwd, SANDBOX_DIR, 'home')),
+      normalizeMacTmpPath(join(opencodeRun.cwd, SANDBOX_DIR, 'implementer', 'home')),
     );
     expect(normalizeMacTmpPath(opencodeRun.env.TMPDIR)).toBe(
-      normalizeMacTmpPath(join(opencodeRun.cwd, SANDBOX_DIR, 'tmp')),
+      normalizeMacTmpPath(join(opencodeRun.cwd, SANDBOX_DIR, 'implementer', 'tmp')),
     );
     expect(normalizeMacTmpPath(opencodeRun.env.npm_config_cache)).toBe(
-      normalizeMacTmpPath(join(opencodeRun.cwd, SANDBOX_DIR, 'npm-cache')),
+      normalizeMacTmpPath(join(opencodeRun.cwd, SANDBOX_DIR, 'implementer', 'npm-cache')),
     );
     expect(opencodeRun.args).toEqual(
       expect.arrayContaining(['--model', 'opencode/test-cheap-model']),

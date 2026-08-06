@@ -427,6 +427,7 @@ describe('createAgentSdkImplementer', () => {
       publishCallEvent: ({ event }) => events.push(event),
       publishDone: () => {},
       publishFailed: () => {},
+      publishWarning: () => {},
     };
     const implementer = createAgentSdkImplementer(cfg, { publisher });
 

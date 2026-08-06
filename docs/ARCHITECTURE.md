@@ -133,7 +133,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 |---------|---------------|-------------------------------|
 | `splitbrief start "feature"` | `workflow` or `setup` | Creates a new session folder. Foreground/headless/RPC runs write `.splitbrief/active`; detached runs write a lockfile. |
 | `splitbrief resume` | `workflow` with `resumeState` | Reads `.splitbrief/active`, loads `sessions/<id>/state.json`; fails if missing or version mismatched |
-| `splitbrief spec "feature"` | `workflow` (engine returns after planning artifacts) | Creates session like `start`, but exits after planning phases |
+| `splitbrief spec "feature"` | `workflow` (engine returns after planning artifacts) | Creates session like `start`, but exits after planning phases. The mode decides which planning phases run (`--mode` is among its flags) |
 | `splitbrief init` | `setup` (interactive config builder) | No session created |
 | `splitbrief status` | Prints active session's `state.json` to stdout, no TUI | Read-only; doesn't claim the lock |
 
@@ -145,7 +145,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 2. `cli/commands/start/register.ts` boots stores, initialises router with the feature, renders `<App/>`.
 3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
 4. `useWorkflowRunner()` is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/workflow.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the sinks described in [Event bus + sinks](#5-event-bus--sinks). The bus is threaded through `WorkflowContext.bus`.
-5. `runWorkflow` creates planner + implementer via factories, compiles Task Briefs, produces supporting spec/plan artifacts when the selected mode includes them, then runs the task loop and final review.
+5. `runWorkflow` creates planner + implementer via factories, compiles Task Briefs, produces supporting spec/plan artifacts when the selected mode includes them, then runs the task loop and final review. When the implementer writes files itself, the run also gets one isolation worktree up front; each task's changed set is gated and promoted into the project before validation runs there.
 6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
    - `tuiSink` (`src/features/workflow/tui-sink.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
    - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent` in `src/core/sessions/log-writer.ts`.
@@ -179,13 +179,15 @@ src/engine/runners/factory.ts
 
 Factory dispatch is async and lazy: backend modules are loaded with memoized dynamic imports, so startup only imports the factory and the configured runner kind. Each backend for a given kind lives in a matched pair of files:
 
-| Kind | Planner file | Implementer file |
-|------|--------------|------------------|
-| `cli` | `planners/cli.ts` (+ `claude-code.ts`) | `implementers/cli.ts` |
-| `api` | `planners/api.ts` | `implementers/api.ts` |
-| `shell` | `planners/shell.ts` | `implementers/shell.ts` |
-| `agent` | `planners/agent.ts` | `implementers/agent.ts` |
-| `agent-sdk` | `planners/agent-sdk.ts` | `implementers/agent-sdk.ts` |
+| Kind | Planner file | Implementer file | Implementer write mode |
+|------|--------------|------------------|------------------------|
+| `cli` | `planners/cli.ts` (+ `claude-code.ts`) | `implementers/cli.ts` | `direct` |
+| `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` |
+| `shell` | `planners/shell.ts` | `implementers/shell.ts` | `extracted-code` |
+| `agent` | `planners/agent.ts` | `implementers/agent.ts` | `direct` |
+| `agent-sdk` | `planners/agent-sdk.ts` | `implementers/agent-sdk.ts` | `direct` |
+
+What separates the two roles is model strength, not transport. A CLI tool pointed at a cheap model and a cheap model behind an OpenAI-compatible endpoint are both first-class implementers; the write mode just records who writes the file. `direct` runners work in the run's isolation directory and their output is promoted into the project; `extracted-code` runners return the file body and SPLITBRIEF writes it. See [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#write-modes).
 
 The shared pipeline for each role lives in planner `base.ts` (`createPlannerBase`) and implementer `pipeline/run.ts` (`createImplementerBase`). Each concrete backend provides `invoke*` functions; the base wraps them with token accounting, artifact resolution, retry, and callback dispatch.
 
@@ -222,6 +224,8 @@ One session = one folder. All per-session state lives inside it. See `docs/CONCE
 | Skills metadata | `.claude/skills/`, `~/.claude/skills/`, `.splitbrief/skills/`, `~/.splitbrief/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` | Read-only; never written by SPLITBRIEF | Per-project or global, cross-session |
 
 Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing, corrupt, or from an older `stateVersion`, resume refuses. `session.jsonl` is consulted as a fallback context source when the stored `plannerSessionId` is rejected by the backend (see `docs/WORKFLOW.md` §1.5).
+
+A run's isolation directory is not session state. It lives under `.trees/<slug>/`, outside `.splitbrief/`, and it is a working directory rather than a record — once a task's changes are promoted into the project, the project is the authority on what happened.
 
 **Concurrency model:** at most one foreground active session per project directory. The presence of `.splitbrief/active` is the foreground lock; detached sessions use lockfiles. Users needing true parallel workflows are expected to use git worktrees, which give each worktree its own `.splitbrief/` and therefore its own lock.
 
@@ -398,7 +402,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 - Parallel task execution — tasks run sequentially so validation and git stay linear.
 - Concurrent foreground workflows in the same project directory — one active session at a time, enforced by the `.splitbrief/active` lock. Detached sessions use lockfiles, and users wanting isolated parallel runs use git worktrees, which give each worktree its own `.splitbrief/`.
 - Mid-task interjection at the implementer level — small models lose coherence when their self-contained task prompt is perturbed. User messages during implementing are not queued into the implementer; the user aborts and uses `/redo-task` instead.
-- Tool-call output from the implementer — small models can't reliably produce it; we extract code from plain text.
+- A SPLITBRIEF-defined tool-call protocol for the implementer — an `extracted-code` implementer answers with the file body in plain text; a `direct` implementer uses whatever tools its own harness already gives it. We do not define a third calling convention in between.
 - Full message-level rewind (Claude Code "double-Esc" style) and Cursor-style code snapshot undo — see `docs/FUTURE.md`.
 - Anything Windows-specific — not tested there.
 - ~~Non-TypeScript language support~~ — implemented via polyglot validation, polyglot codebase analysis (tree-sitter grammars for Python, Go, Rust, JavaScript), and language-aware planner/implementer prompts. See `docs/FUTURE.md`.
@@ -415,10 +419,10 @@ A snapshot of the codebase as it actually stands today, generated for an AI agen
 
 ## 1. System overview
 
-SPLITBRIEF is a cost-aware task compiler for AI coding agents. It composes two roles around a strict workflow:
+SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retry, the escalation, and the evidence between them. It composes two roles around a strict workflow:
 
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of single-file `Task` objects with scope, validation, and evidence.
-2. **Implementer** — a cheaper, smaller model that executes one task at a time against its self-contained brief, with typecheck / lint / test gates resolved from config, planner-discovered validation, heuristic fallback, or defaults.
+2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the typecheck / lint / test gates that judge the result are SPLITBRIEF's, resolved from config, planner-discovered validation, heuristic fallback, or defaults.
 
 The repository layers many supporting subsystems on top of that core loop:
 
@@ -429,7 +433,7 @@ The repository layers many supporting subsystems on top of that core loop:
 - **Handoff packs** (`src/engine/handoff/`) — render the compiled brief into formats other agents consume (`spec-kit`, `agents-md`, `claude-code`, `copilot-issue`) plus user-supplied custom renderers under `.splitbrief/handoff-renderers/`.
 - **MCP server** (`src/engine/mcp/`) — exposes session artifacts (sessions index, manifest, spec, plan, tasks, evidence, drift report, state, and summary) as read-only MCP resources for external clients, plus constrained evidence-ledger tools. It is not an execution path.
 - **IPC server** (`src/engine/ipc/`) — UNIX-domain socket per session so a `splitbrief attach` TUI client can re-bind to a long-running background workflow; `splitbrief ps` lists status.
-- **Worktree management** (`src/engine/worktree/`) — `splitbrief worktree list / switch / path / remove` for isolated parallel sessions under `.trees/<name>/`.
+- **Run isolation and promotion** (`src/engine/orchestrator/isolation/`, `src/engine/worktree/`, `src/engine/orchestrator/approval/`) — an implementer that writes files itself works in a git worktree created once per run under `.trees/<name>/`, with project dependencies reachable so it can run the project's own checks; `createRunIsolation` (`src/engine/orchestrator/isolation/create.ts`) is the run-scoped handle that acquires the worktree per task (falling back to a staged copy when the worktree cannot be created) and disposes it at the end of the run: the worktree is removed with force and its branch deleted when nothing unpromoted remains, retained with a retention notice otherwise. Approved changes are promoted into the real project directory under a hash guard (`gate-and-promote.ts`, `staged-project.ts`). A worktree isolates files, not the machine — it shares refs, config, and hooks with the repository and is not a security boundary. `splitbrief worktree list / switch / path / remove` manages the same directories for parallel sessions.
 - **Tiered approval** (`src/engine/orchestrator/approval/tiered-approval.ts` dispatches `gateAction`; `types.ts`, `sticky.ts`, `confirm.ts`, `events.ts`) — declared/promoted file-write requests are classified as `read`, `write_in_scope`, `write_out_of_scope`, `destructive`, or `package_change` and go through `auto` / `sticky` / `confirm` tiers, with sticky grants persisted at `.splitbrief/approvals.json` and managed via `splitbrief approval list / clear`. `network` is accepted only for config compatibility; it is not shell/network sandboxing.
 - **Repo-map context** (`src/engine/codebase/`) — token-budgeted PageRank-based codebase summary fed to every planner call.
 - **Hooks** (`src/engine/hooks/`) — `pre_*` (sync) and `post_*` / `on_*` (fire-and-forget) commands declared in config and dispatched on matching events.
@@ -477,7 +481,8 @@ src/
 │   │   ├── runtime/               build-runner, overrides, resolve
 │   │   └── errors.ts              ConfigError types
 │   ├── formatting.ts              formatCost, formatDuration, etc.
-│   ├── hooks/trust.ts             Hook trust store (.splitbrief/hook-trust.json)
+│   ├── hooks/trust.ts             Hook trust receipts (~/.splitbrief/trust/hooks.json)
+│   ├── trust/receipt-store.ts     Machine-scoped receipt store shared by hook and custom runner trust
 │   ├── sections/                  pure section builders:
 │   │                              completed-task-summary-rows,
 │   │                              event-sections
@@ -535,6 +540,7 @@ src/
 │   │                              EventSink, EventBus
 │   ├── worktree/                  create, status, remove, detect,
 │   │                              path, cleanliness, errors
+│   │                              (run isolation + parallel sessions)
 │   ├── handoff/
 │   │   ├── load-renderer.ts       Dynamic import of custom .ts/.js
 │   │   │                          renderers from .splitbrief/handoff-renderers/
@@ -556,8 +562,9 @@ src/
 │   │   └── types.ts               HookConfig types
 │   ├── implementers/              5 backends: agent, agent-sdk, api, cli,
 │   │                              shell + apply (file-write helpers),
-│   │                              base (shared pipeline), command-invoke,
-│   │                              types
+│   │                              pipeline/ (shared pipeline: run,
+│   │                              call-result, extracted-code),
+│   │                              command-invoke, types
 │   ├── ipc/                       Per-session IPC server for attach/detach
 │   │                              client, crash-diagnostic, heartbeat,
 │   │                              lockfile, protocol, server, server-entry,
@@ -566,8 +573,15 @@ src/
 │   │                              auth-token, discovery, handlers,
 │   │                              resolver, server, types
 │   ├── orchestrator/
-│   │   ├── approval/              approval loop, action classifier, staged
-│   │   │                          project, file snapshots, tiered approval
+│   │   ├── isolation/             run-scoped isolation handle (createRunIsolation:
+│   │   │                          acquire per task, conditional retention on
+│   │   │                          dispose), worktree + staged-copy strategies
+│   │   ├── approval/              approval loop, action classifier,
+│   │   │                          gate-files + gate-and-promote (gate the
+│   │   │                          changed set, then promote it into the
+│   │   │                          project under a hash guard),
+│   │   │                          staged-project, planner-artifact,
+│   │   │                          file-snapshots, tiered approval
 │   │   │                          (`tiered-approval`, `types`, `sticky`,
 │   │   │                          `confirm`, `events`) gates
 │   │   ├── budget/                budget gates, prediction, estimates
@@ -625,7 +639,8 @@ src/
 │   │                              wrapper), claude/ (Claude-Code CLI
 │   │                              subprocess: invoke, stream), cli-tools (CLI-tool
 │   │                              spawn helpers), sandbox-env (HOME/XDG/cache
-│   │                              env redirect; not shell/network sandbox), trust (runner trust
+│   │                              env redirect, host HOME/USER kept for an OS-keychain
+│   │                              channel; not shell/network sandbox), trust (runner trust
 │   │                              prompts)
 │   ├── session-expiry.ts          Session-expired error detection +
 │   │                              resume-fallback (runWithResumeFallback)
@@ -644,11 +659,20 @@ src/
 │   ├── spec/
 │   │   ├── brief-quality.ts       Quality scorer + issue codes
 │   │   ├── formatter.ts           tasks.md transport writer
-│   │   ├── parser.ts              tasks.md transport reader
-│   │   ├── prompts/               analyze, clarify, constitution,
+│   │   ├── headings.ts            Task-Brief headings + required sections
+│   │   ├── prompt-formatter.ts    Implementer task/retry prompt assembly
+│   │   │                          (write-mode aware)
+│   │   ├── prompts/               analyze, builder, constitution,
 │   │   │                          escalation (incl. few-shot examples
-│   │   │                          via escalation-examples.ts), instant, plan, quick-plan,
-│   │   │                          research, review, shared, spec, tasks
+│   │   │                          via escalation-examples.ts),
+│   │   │                          estimate-review, instant,
+│   │   │                          language-context, plan, quick-plan,
+│   │   │                          required-sections, research, review,
+│   │   │                          spec, system (implementer system
+│   │   │                          preamble per write mode),
+│   │   │                          task-format-example, tasks
+│   │   ├── tasks/                 tasks.md transport reader
+│   │   │                          (parse, blocks, sections)
 │   │   └── token-budget.ts        Per-mode planner token budgets
 │   └── streaming/                 output-parsers (stream-json, jsonl,
 │                                  text, opencode), spawn-collect,
@@ -801,6 +825,7 @@ Four modes are canonical (`'instant' | 'quick' | 'standard' | 'speckit'`); any o
 Implementation: `src/engine/orchestrator/planning/{instant,quick,full,speckit}.ts`. `full.ts` is `standard`. The shared helpers each live in their own file:
 
 - `runBriefQualityGate(...)` (`planning/brief-quality-gate.ts`) — runs `BriefQualityScorer` (`src/engine/spec/brief-quality.ts`) and writes `brief-quality.json`. Error codes: `missing_scope`, `missing_validation`, `vague_validation`, `missing_evidence`, `missing_escalation`, `missing_code_context`, `empty_task_list`, `multi_file_task`, `missing_implementation_steps`. Warning code: `missing_type_definitions`. Publishes `brief_quality_passed` or `brief_quality_failed`.
+- `runBriefReadinessGateAndReport({...})` (`planning/brief-readiness-gate.ts`) — runs `evaluateBriefReadiness` over routing-preview metadata, writes `brief-readiness.json`, and publishes `brief_readiness_passed` or `brief_readiness_blocked`.
 - `runBriefsApprovalLoop({...})` (`planning/briefs-approval-loop.ts`) — invoked from `full.ts` (standard), `speckit.ts`, and `rewind.ts`. Enters `reviewing-briefs` phase; awaits `callbacks.onApprovalNeeded('briefs', tasksFilePath)`.
 
 A `mode-advisor` (`planning/mode-advisor.ts`) emits `mode_advice` for trivial requests in higher modes; user can /mode to switch.
@@ -841,8 +866,8 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`
 
-**Planning milestones (18):**
-`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`
+**Planning milestones (20):**
+`spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `brief_quality_passed`, `brief_quality_failed`, `brief_readiness_passed`, `brief_readiness_blocked`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`
 
 **Task lifecycle:**
 `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_full_fail`, `task_reset`, `task_tokens`, `task_review_needed`, `hint_failed`
@@ -850,8 +875,8 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 **Implementer (3):**
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
 
-**Validation / escalation / git (5):**
-`validate`, `escalate`, `git_commit`, `git_checkpoint`, `git_branch_created`
+**Validation / escalation / git (6):**
+`validate`, `validation_baseline`, `escalate`, `git_commit`, `git_checkpoint`, `git_branch_created`
 
 **Clarifications / queue / messages (7):**
 `clarifications_collected`, `clarification_answered`, `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`
@@ -894,7 +919,6 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
 ├── active                          plain text — single session-id (the lock)
 ├── config.yaml                     Project config (version: 3 — the only accepted version)
 ├── approvals.json                  Sticky approval grants (cross-session)
-├── hook-trust.json                 Hook-trust state (created on first prompt)
 ├── handoff-renderers/              User-supplied custom renderers
 │   └── <name>.ts | <name>.js
 └── sessions/
@@ -916,6 +940,7 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
         ├── drift-report.json       Final deterministic drift report for the whole run/diff
         ├── drift-chains.json       Chained-drift detector state
         ├── brief-quality.json      Latest brief-quality report
+        ├── brief-readiness.json    Latest brief-readiness report (when the gate ran)
         ├── summary.json            Final aggregates (written once at end-of-run)
         ├── handoffs/               In-session handoffs (when written via /handoff)
         │   └── <target>/
@@ -937,7 +962,7 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
 
 Also relative to project root, **outside** `.splitbrief/`:
 
-- `./.trees/<slug>/` — git worktrees managed by `splitbrief worktree`.
+- `./.trees/<slug>/` — git worktrees (`src/engine/worktree/`): the run's implementer isolation directory, and the checkout for a `--worktree` session. Also managed by `splitbrief worktree`.
 - `./.claude/skills/`, `~/.claude/skills/`, `./.splitbrief/skills/`, `~/.splitbrief/skills/`, `AGENTS.md`, `~/.codex/skills/`, `CONVENTIONS.md` — skill sources, read-only to SPLITBRIEF.
 
 Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
@@ -952,15 +977,17 @@ Path encoding: snapshots URL-encode each path segment then join with `__` to fla
 
 The `kind` discriminant is required in every planner / implementer config. Factory: `src/engine/runners/factory.ts` — `createPlanner(config)` / `createImplementer(config)` are async and dispatch on `kind` through memoized dynamic imports. Pairs of files match by role:
 
-| `kind` | Planner file | Implementer file | Examples |
-|---|---|---|---|
-| `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | claude-code, codex, opencode, aider, copilot, kilo-code |
-| `api` | `planners/api.ts` | `implementers/api.ts` | anthropic, openrouter, deepseek, openai, groq, together (any OpenAI-compatible) |
-| `shell` | `planners/shell.ts` | `implementers/shell.ts` | arbitrary subprocess, stdin-prompt → stdout-response, no shell/network sandbox |
-| `agent` | `planners/agent.ts` | `implementers/agent.ts` | subprocess that writes files directly, no stdout extraction or shell/network sandbox |
-| `agent-sdk` | `planners/agent-sdk.ts` | `implementers/agent-sdk.ts` | `@anthropic-ai/claude-agent-sdk` library call |
+| `kind` | Planner file | Implementer file | Implementer write mode | Examples |
+|---|---|---|---|---|
+| `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | `direct` | claude-code, codex, opencode, aider, copilot, kilo-code |
+| `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` | anthropic, openrouter, deepseek, openai, groq, together (any OpenAI-compatible) |
+| `shell` | `planners/shell.ts` | `implementers/shell.ts` | `extracted-code` | arbitrary subprocess, stdin-prompt → stdout-response, no shell/network sandbox |
+| `agent` | `planners/agent.ts` | `implementers/agent.ts` | `direct` | subprocess that writes files directly, no stdout extraction or shell/network sandbox |
+| `agent-sdk` | `planners/agent-sdk.ts` | `implementers/agent-sdk.ts` | `direct` | `@anthropic-ai/claude-agent-sdk` library call |
 
 Each backend implements `Planner` / `Implementer` via a `base.ts`-built shared pipeline; only `invoke*` differs per backend. The orchestrator branches on `PlannerCapabilities` (declared per backend), never on backend identity. See Part 1 §Capability matrix for the full capability table and fallback strategy.
+
+The two implementer write modes are peers. `extracted-code` returns the whole file as text and SPLITBRIEF writes it through the pre-write approval gate; `direct` edits files itself inside the run's isolation directory (a git worktree by default) and the changed set is promoted into the project under a hash guard. Both get the same brief, the same prompt contract, and the same post-promotion validation. Details in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#write-modes).
 
 ---
 
@@ -1018,7 +1045,7 @@ export async function acquireSnapshotLock(projectDir, sessionId): Promise<() => 
 export async function createSnapshot(opts: CreateSnapshotOptions): Promise<CreateSnapshotResult>
 ```
 
-`ALWAYS_EXCLUDED = ['.git', '.splitbrief', 'node_modules']` — non-negotiable; see invariants.
+`ALWAYS_EXCLUDED` is `INTERNAL_SKIP_DIRS` from `core/paths.ts` — `['.git', '.splitbrief', 'node_modules', '.trees']` — non-negotiable; see invariants.
 
 ### `engine/snapshots/restore.ts`
 
@@ -1155,7 +1182,7 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 | Command | Subcommands | Purpose |
 |---|---|---|
 | `splitbrief start` | — | Begin a new workflow. Args: `[feature] [files...]`. Flags: `--mode`, `--planner`, `--implementer`, `--json`, `--detach`, `--worktree [name]`. Foreground/headless/RPC runs write `.splitbrief/active`; detached runs create a session folder and lockfile. |
-| `splitbrief spec` | — | Same as start but exits after planning artifacts are produced. |
+| `splitbrief spec` | — | Same as start but exits after planning artifacts are produced. The mode decides which planning phases run; `--mode` is among its flags. |
 | `splitbrief init` | — | Interactive setup; writes `.splitbrief/config.yaml`. |
 | `splitbrief status` | — | Print active session state to stdout. Read-only; doesn't acquire the lock. |
 | `splitbrief resume` | — | Re-enter the workflow at the saved phase. Refuses if `state.json` is missing or stateVersion-mismatched. |
@@ -1247,7 +1274,7 @@ All sections are optional; absence means the feature is off (snapshots) or uses 
 
 Colocated test files (`foo.test.ts` next to `foo.ts`). Engine tests are headless; stores reset in `beforeEach`. Agent-implementer tests spawn real subprocesses (slow, ~30s per test).
 
-Full verification: `npm run test-ci` (format:check, typecheck, lint, test:coverage, then invariants). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
+Full verification: `npm run test-ci` (format:check, typecheck, lint, test:coverage, e2e, then invariants). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
 
 ---
 
@@ -1256,7 +1283,7 @@ Full verification: `npm run test-ci` (format:check, typecheck, lint, test:covera
 Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breaking any of these silently corrupts state or causes exponential I/O.
 
 1. **NEVER commit, NEVER stage** — `.claude/hooks/block-git-commits.sh` (`PreToolUse` hook, exit code 2) blocks `git add` / `git stage` / `git commit` (and `git -c …` variants). The user reviews and commits.
-2. **`.splitbrief/`, `.git/`, `node_modules/` MUST be excluded from snapshots / drift / file collection.** `ALWAYS_EXCLUDED` in `engine/snapshots/files.ts` enforces this for snapshots; the same set is honoured by `collectTrackedFiles`. Including `.splitbrief/` causes exponential snapshot growth (snapshots-of-snapshots).
+2. **`.git/`, `.splitbrief/`, `node_modules/`, `.trees/` MUST be excluded from snapshots / drift / file collection.** `INTERNAL_SKIP_DIRS` (`core/paths.ts`), re-exported as `ALWAYS_EXCLUDED` from `engine/snapshots/files.ts` and honoured by `collectTrackedFiles`. Including `.splitbrief/` causes exponential snapshot growth (snapshots-of-snapshots); including `.trees/` pulls the run's own isolation worktree into its snapshots and diffs.
 3. **`briefHash` must propagate** from `createEvidenceLedger` (or the existing-ledger fallback) to every `record*` call in the per-task path. Lost propagation produces `briefHash: null` entries that break post-hoc evidence audits.
 4. **`TaskStatus` value is `'done'` NOT `'completed'`.** The enum is `['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped']` (`core/schemas/enums.ts`). `task_completed` is the *event* name; the *status* string is `'done'`. Auto-snapshot `postTask` checks `completedTask?.status === 'done'`.
 5. **Every terminal point in `runSingleTask` must call `runChainAnalysisSafe`** (drift chain analysis) — otherwise chain state desyncs from per-task drift. There are five+ such points (success, fail, escalate-success, escalate-fail, skip).

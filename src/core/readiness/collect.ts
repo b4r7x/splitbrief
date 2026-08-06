@@ -31,6 +31,7 @@ import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import type { WorkflowOpts } from '../types/config-options.js';
 import type { SessionRef } from '../types/session-ref.js';
 import type { BuildReadinessReportInput } from './checks/build.js';
+import type { RunnerAvailabilityFact } from './checks/availability.js';
 import type { ConfigReadinessInput } from './checks/config.js';
 import type { PackageScriptsReadinessInput } from './checks/validation.js';
 import type { RepoReadinessInput } from './checks/repo.js';
@@ -56,6 +57,14 @@ export interface CollectReadinessOptions {
         config: Config;
         opts: WorkflowOpts;
       }) => Promise<readonly CliReadinessResult[]>)
+    | undefined;
+  /**
+   * Live reachability probe for the `api` and `agent-sdk` runners a run will
+   * actually call. Without it readiness makes no availability claim, and an
+   * unreachable implementer only surfaces after the planning phase is paid for.
+   */
+  probeRunnerAvailability?:
+    | ((input: { config: Config }) => Promise<readonly RunnerAvailabilityFact[]>)
     | undefined;
   defaultApprove?: ApproveLevel | undefined;
   probeValidation?: boolean | undefined;
@@ -117,6 +126,16 @@ export async function collectReadiness(
       cliReadiness = [];
     }
   }
+  let availability: readonly RunnerAvailabilityFact[] | undefined;
+  if (loaded.config && options.probeRunnerAvailability) {
+    try {
+      availability = await options.probeRunnerAvailability({ config: loaded.config });
+    } catch {
+      // A probe that could not run makes no claim, so readiness falls back to
+      // its "not probed" notice rather than reporting the runners as available.
+      availability = undefined;
+    }
+  }
   const input: BuildReadinessReportInput = {
     projectDir: options.projectDir,
     configLoad: loaded.configLoad,
@@ -124,6 +143,7 @@ export async function collectReadiness(
     repo,
     ...(loaded.config !== undefined && { config: loaded.config }),
     ...(cliReadiness !== undefined && { cliReadiness }),
+    ...(availability !== undefined && { availability }),
   };
 
   const report = buildReadinessReport(input);

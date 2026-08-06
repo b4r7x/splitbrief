@@ -220,6 +220,10 @@ async function runNewPlanning(
   if (!opts.deferBriefGate) {
     const briefsLoop = await runBriefsApprovalLoop({
       tasks,
+      ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
+      ...(wctx.detectedContextLength !== undefined && {
+        detectedContextLength: wctx.detectedContextLength,
+      }),
       planner,
       projectDir,
       sessionId,

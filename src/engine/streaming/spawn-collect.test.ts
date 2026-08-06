@@ -486,11 +486,11 @@ describe('spawnAndCollect', () => {
         const previousHome = process.env.HOME;
         process.env.HOME = hostHome;
         try {
-          const env = await createRunnerSandboxEnv(projectDir, {
-            kind: 'cli',
-            tool: 'codex',
-            authChannel: 'session',
-          });
+          const env = await createRunnerSandboxEnv(
+            projectDir,
+            { kind: 'cli', tool: 'codex', authChannel: 'session' },
+            'implementer',
+          );
           const events: RunnerCallEvent[] = [];
           const result = await spawnAndCollect({
             command: 'node',

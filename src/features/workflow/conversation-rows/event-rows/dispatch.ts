@@ -21,6 +21,7 @@ import {
 import { taskStartedRowBlock } from '../task-started-row-block.js';
 import { isRunnerCallTranscriptRowSuppressed } from '../runner-call-classification.js';
 import {
+  baselineValidationRowBlock,
   escalateRowBlock,
   implementerDoneRowBlock,
   runningImplementerRowBlock,
@@ -133,6 +134,23 @@ export function eventRowBlock(options: {
         labelTone: 'error',
         valueTone: 'textDim',
       });
+    case 'brief_readiness_passed':
+      return borderedCardRowsBlock({
+        keyPrefix,
+        label: 'brief readiness',
+        value: `passed · ${countNoun(event.taskCount, 'task')}`,
+        width: ctx.width,
+        labelTone: 'success',
+      });
+    case 'brief_readiness_blocked':
+      return borderedCardRowsBlock({
+        keyPrefix,
+        label: 'brief readiness',
+        value: `blocked · ${countNoun(event.blockedCount, 'task')} of ${event.taskCount}`,
+        width: ctx.width,
+        labelTone: 'error',
+        valueTone: 'textDim',
+      });
     case 'drift_report':
       return borderedCardRowsBlock({
         keyPrefix,
@@ -201,6 +219,8 @@ export function eventRowBlock(options: {
       });
     case 'validate':
       return validateRowBlock(keyPrefix, event, ctx.width);
+    case 'validation_baseline':
+      return baselineValidationRowBlock(keyPrefix, event, ctx.width);
     case 'escalate':
       return escalateRowBlock(keyPrefix, event, ctx.width);
     case 'git_commit':

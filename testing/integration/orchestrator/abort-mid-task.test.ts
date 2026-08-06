@@ -7,6 +7,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import {
   makeCallbacks,
+  makeCopyingIsolation,
   makeImplementer,
   makePlanner,
   makeBusRecorder,
@@ -72,6 +73,7 @@ describe('abort during implementer phase terminates the task loop cleanly', {
       wctx: {
         projectDir,
         sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
         callbacks,
         planner: makePlanner(),

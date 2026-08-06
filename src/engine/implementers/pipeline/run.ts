@@ -27,6 +27,7 @@ import {
 } from '../../change-detection.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../../core/schemas/runner-fields.js';
 import {
+  ABORTED_OUTCOME_TEXT,
   createImplementerCallContext,
   defaultShouldThrow,
   errorOutput,
@@ -35,6 +36,7 @@ import {
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
+import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 
 const MAX_RETRY_TEMPERATURE = 2;
 
@@ -52,6 +54,7 @@ export interface ImplementerBaseConfig {
   shouldThrow?(err: unknown): boolean;
 
   isAvailable?: () => Promise<boolean>;
+  unavailabilityReason?: () => string | undefined;
   publisher?: ImplementerPublisher | undefined;
 }
 
@@ -125,6 +128,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     let changeBaseline: ChangeDetectorBaseline | undefined;
     if (!baseConfig.extractsCode && baseConfig.detectChanges) {
       changeBaseline = await captureChangeDetectorBaseline(projectDir, {
+        kind: opts.changeDetection,
         ignoreProjectDir: opts.fileIgnoreProjectDir,
       });
     }
@@ -174,7 +178,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     } catch (err) {
       if (opts.signal?.aborted) {
         implBuffer?.flushInterrupted();
-        return { success: false, output: '', error: 'Aborted' };
+        return { success: false, output: '', error: ABORTED_OUTCOME_TEXT };
       }
       if (shouldThrow(err)) throw err;
       const output = errorOutput(err);
@@ -239,6 +243,18 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       if (baseConfig.detectChanges && changeBaseline) {
         const changes = await baseConfig.detectChanges(projectDir, changeBaseline);
         if (!changes.changed) {
+          if (phase) {
+            baseConfig.publisher?.publishWarning({
+              phase,
+              taskId: task.id,
+              message: `Implementer ${getRunnerDisplayName(config.implementer)} wrote nothing for task ${task.id}: ${changes.output}`,
+              safety: {
+                category: 'implementer',
+                code: 'implementer_wrote_nothing',
+                transcriptSafe: true,
+              },
+            });
+          }
           failTask();
           return {
             success: false,
@@ -294,5 +310,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     ...DEFAULT_AVAILABILITY,
     capabilities: { writesFiles },
     ...(baseConfig.isAvailable && { isAvailable: baseConfig.isAvailable }),
+    ...(baseConfig.unavailabilityReason && {
+      unavailabilityReason: baseConfig.unavailabilityReason,
+    }),
   };
 }

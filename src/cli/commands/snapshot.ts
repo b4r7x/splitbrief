@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { createSnapshot } from '../../engine/snapshots/create.js';
 import { listSnapshots } from '../../engine/snapshots/manifest.js';
 import { resolveSnapshot, restoreSnapshot } from '../../engine/snapshots/restore.js';
@@ -30,7 +30,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--session <id>', 'Session ID (defaults to active session)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { name?: string; session?: string; project?: string }) => {
-      const projectDir = resolveProjectDir(opts.project);
+      const projectDir = await canonicalizeProjectDir(opts);
       const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
       assertSessionExists(projectDir, sessionId);
 
@@ -70,7 +70,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--session <id>', 'Session ID (defaults to active session)')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { session?: string; project?: string }) => {
-      const projectDir = resolveProjectDir(opts.project);
+      const projectDir = await canonicalizeProjectDir(opts);
       const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
       const { manifests } = await withCliErrors(() => listSnapshots(projectDir, sessionId));
@@ -96,7 +96,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--force', 'Overwrite files even if modified after snapshot')
     .action(
       async (idOrName: string, opts: { session?: string; project?: string; force?: boolean }) => {
-        const projectDir = resolveProjectDir(opts.project);
+        const projectDir = await canonicalizeProjectDir(opts);
         const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
         const result = await withCliErrors(() =>
@@ -165,7 +165,7 @@ export function registerSnapshotCommand(program: Command): void {
     .option('--no-color', 'Disable color output')
     .action(
       async (idOrName: string, opts: { session?: string; project?: string; color?: boolean }) => {
-        const projectDir = resolveProjectDir(opts.project);
+        const projectDir = await canonicalizeProjectDir(opts);
         const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
         const manifest = await withCliErrors(() =>

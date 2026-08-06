@@ -12,6 +12,8 @@ import type { ReadinessReport } from '../../../core/readiness/types.js';
 import { SANDBOX_DIR } from '../../../core/paths.js';
 import { DECLARED_PLANNER_ARTIFACT_PATH } from '../../runners/types.js';
 import { composeWorkflowCustomRunnerRuntime, initializeWorkflow } from './init.js';
+import { createRunIsolation } from '../isolation/create.js';
+import type { RunIsolation } from '../isolation/types.js';
 import { prepareCustomRunnerAdmission } from '../../runners/custom-admission.js';
 import { customRunnerSecurityPosture } from '../../runners/custom-trust.js';
 import { resolveConfiguredCustomRunner } from '../../runners/configured-custom.js';
@@ -21,6 +23,16 @@ import {
   type RunnerGate,
   type RunnerSlot,
 } from '../../runners/prepared-execution.js';
+
+function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
+  return createRunIsolation({
+    projectDir,
+    sessionId,
+    strategy: 'staged-copy',
+    onFallback: () => {},
+    onRetained: () => {},
+  });
+}
 
 function readyReport(projectDir: string): ReadinessReport {
   return {
@@ -258,6 +270,7 @@ describe('configured custom workflow runtime', () => {
             },
             setTrackedState: () => {},
             resumeHolder: { messages: [] },
+            isolation: makeCopyingIsolation(projectDir, sessionId),
           });
 
           expect(init.ok).toBe(true);
@@ -387,6 +400,7 @@ describe('configured custom workflow runtime', () => {
         },
         setTrackedState: () => {},
         resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
       expect(init.ok).toBe(true);
       if (!init.ok) return;

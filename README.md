@@ -1,14 +1,22 @@
 # SPLITBRIEF
 
-A cost-aware task compiler for AI coding agents.
+An orchestrator for two AI coding tools: one plans and reviews, the other executes.
+
+> **Maturity.** Early software, pre-1.0. The orchestration loop — brief, validation, retry, escalation, review, evidence — is covered end to end by the test suite. What is thin is mileage against live models: no evaluation run has been recorded yet, so nothing below is a claim about output quality on your repo (see [Measurement](#measurement)). Config keys and CLI surfaces can still change between versions.
 
 ## What is SPLITBRIEF?
 
-An open-source CLI that compiles user requests into precise Task Briefs with an expensive planner, then executes them with a cheaper implementer. It keeps cost, validation, retry, escalation, and evidence in the loop instead of treating them as afterthoughts.
+An open-source CLI that runs two coding tools against one job. The stronger tool researches your repo and compiles Task Briefs. The weaker one executes them, one brief at a time, in fresh context. The stronger one then reviews what came back.
 
-## The idea
+Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./docs/TASK-CONTRACT.md), the isolated directory the implementer writes in, promotion of those changes into your project, validation, retry, escalation, and the evidence trail that records what actually happened.
 
-Most AI coding tokens go to reasoning and handoff churn, not to the mechanical parts of implementation. SPLITBRIEF keeps an expensive planner on the hard work: codebase research, Task Brief compilation, and deciding when a spec is worth the cost. The cheaper implementer gets a narrow brief and executes it directly.
+## Why two tools instead of one
+
+A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is never the tool that signs it off.
+
+Same-lab still works — two instances of one tool are a valid configuration. You give up the blind-spot argument, not the pipeline.
+
+Cost falls out of the same split rather than driving it: the expensive tool spends its tokens on research, brief compilation, review, and escalation; the cheap one spends its tokens typing. See [Cost](#cost) for what that does and does not promise.
 
 ## How it works
 
@@ -16,24 +24,25 @@ Most AI coding tokens go to reasoning and handoff churn, not to the mechanical p
 You: "add user authentication with JWT"
           │
           ▼
-┌─────────────────────┐
-│  PLANNER             │  Research codebase, compile a Task Brief,
-│  (any CLI tool)      │  add support docs when they buy down risk
-└─────────┬───────────┘
+┌──────────────────────┐
+│  PLANNER              │  The stronger tool. Researches the codebase,
+│  (CLI tool or API)    │  compiles Task Briefs, adds support docs
+└─────────┬────────────┘  when they buy down risk
           │ may ask clarifying questions
           │ tasks.md transport, optional spec/plan support
           │ you approve, edit, comment, or quit
           ▼
-┌─────────────────────┐
-│  IMPLEMENTER         │  Execute precise Task Briefs one-by-one
-│  (cheap/local worker)│  using fresh, self-contained prompts
-└─────────┬───────────┘
-          │ code changes
+┌──────────────────────┐
+│  IMPLEMENTER          │  The weaker model. One Task Brief at a time,
+│  (CLI tool or API)    │  fresh context, no memory of the last one
+└─────────┬────────────┘
+          │ changes reach your project only
+          │ through the approval gate
           ▼
-┌─────────────────────┐
-│  VALIDATION          │  typecheck → lint → tests → evidence
-│  Per task            │  Retry, then escalate if needed
-└─────────┬───────────┘
+┌──────────────────────┐
+│  VALIDATION           │  typecheck → lint → test, in your project,
+│  (owned by SPLITBRIEF)│  first failure the task caused stops it → evidence
+└─────────┬────────────┘
           │
     ┌─────┴─────┐
     │           │
@@ -43,46 +52,27 @@ You: "add user authentication with JWT"
                 │
                 fail again
                 │
-            escalate to planner
+            escalate, in order:
+              mid-tier model (if configured)
+              planner hint, implementer retries
+              planner takes the task over
                 │
-          ┌─────┴─────┐
-          │           │
-        hints       planner fix
-        to local    by planner
-          │
-          ▼
-┌─────────────────────┐
-│  PLANNER (Review)    │  Compare the result against the brief and evidence
-└─────────────────────┘
+                ▼
+┌──────────────────────┐
+│  PLANNER (review)     │  Reads the result against the brief and the
+│                       │  evidence — it did not write this code
+└──────────────────────┘
 ```
+
+How the changes land depends on which kind of implementer you picked. A tool that writes files itself (`writesFiles: direct` — the `cli`, `agent`, and `agent-sdk` kinds) works in an isolated directory; SPLITBRIEF promotes the result into your project and refuses to overwrite a file that changed while the task was running. A model that returns file contents (`writesFiles: extracted-code` — the `api` and `shell` kinds) never touches your working tree; SPLITBRIEF writes each file itself, one approval gate at a time. Isolation covers files only — same ports, same database, same hooks and config — so it is not a security boundary.
 
 The TUI shows planner and implementer working together as a conversation flow — event cards, inline diffs, real-time cost tracking.
 
 ## Quick start
 
-Requires Node.js 22 or newer.
+Needs **Node.js 22+** and a **git** repository to work in.
 
-```bash
-npm install -g splitbrief   # or run it ad hoc with: npx splitbrief
-
-# Have a planner ready (pick one):
-#   Claude Code (default) — uses existing subscription, $0 extra
-#   Codex: npm install -g @openai/codex
-#   Copilot: npm install -g @github/copilot
-#   Kilo Code: npm install -g @kilocode/cli
-#   Any stdin/stdout CLI tool: configure as shell planner
-
-# Have an implementer ready (pick one):
-#   Ollama (default): ollama pull qwen2.5-coder:7b
-#   LM Studio: download a coding model
-#   Any OpenAI-compatible API: set apiBase in config
-
-cd your-project
-splitbrief init        # auto-detects running models
-splitbrief start "add user authentication with JWT"
-```
-
-To hack on SPLITBRIEF itself, install from source instead:
+SPLITBRIEF is not published to npm yet. Install from source:
 
 ```bash
 git clone https://github.com/b4r7x/splitbrief.git
@@ -90,6 +80,28 @@ cd splitbrief
 npm install
 npm run build
 npm link               # exposes the `splitbrief` binary on your PATH
+```
+
+Then bring a planner — the stronger of the two:
+
+```bash
+# Claude Code (config default) — uses your existing subscription, $0 extra
+npm install -g @openai/codex      # Codex
+npm install -g @github/copilot    # Copilot
+npm install -g @kilocode/cli      # Kilo Code
+# OpenCode and Aider work the same way; any stdin/stdout tool can be a shell planner
+# Or an API planner: anthropic, openai, openrouter, deepseek, groq, together, ollama-cloud
+```
+
+And an implementer — the weaker **model**. It reaches SPLITBRIEF by either transport, and SPLITBRIEF favours neither:
+
+- **A CLI tool running a cheaper model.** Any of the tools above, pointed at a cheap model. The tool writes files itself, in an isolated directory.
+- **An API model.** OpenRouter, DeepSeek, Groq, Together, Anthropic or OpenAI, or a local daemon — `ollama pull qwen3-coder:30b`, or a coding model loaded in LM Studio. The model returns file contents; SPLITBRIEF writes them.
+
+```bash
+cd your-project
+splitbrief init        # checks installed CLI tools and reachable providers, then you pick both sides
+splitbrief start "add user authentication with JWT"
 ```
 
 After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `.splitbrief/` folder in your project:
@@ -107,8 +119,6 @@ After `splitbrief init` and the first `splitbrief start`, SPLITBRIEF creates a `
         ├── plan.md
         └── tasks.md     ← markdown transport for Task Briefs
 ```
-
-Needs **Node.js 22+** and **git** in the project.
 
 Sessions are durable workflow records for resume, history, filtering/search, and artifact review. They are scoped to one workflow each — see [docs/VISION.md](./docs/VISION.md) for the full list of non-goals.
 
@@ -139,6 +149,8 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | `splitbrief resume` | Resume an interrupted workflow |
 | `splitbrief status` | Show current workflow state |
 
+`start` and `spec` both take `--mode instant|quick|standard|speckit`, which sets how much planning ceremony runs before the Task Briefs exist. The default is `standard`.
+
 `--approve none` auto-approves spec/plan review gates only. Briefs review and file-write tiered approvals still follow workflow and approval config; use `--yolo` or approval tiers for unattended file writes.
 
 ## Slash commands
@@ -153,7 +165,7 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 
 ## Configuration
 
-`splitbrief init` creates `.splitbrief/config.yaml`:
+`splitbrief init` writes `.splitbrief/config.yaml`. Keys are accepted in `camelCase` or `snake_case`; `init` writes `snake_case`:
 
 <!-- config-example: readme-init -->
 ```yaml
@@ -164,9 +176,11 @@ planner:
   tool: claude-code          # claude-code | codex | opencode | aider | copilot | kilo-code
 
 implementer:
-  kind: api
-  provider: ollama           # catalog ID; custom names also need service + offering, see below
-  model: qwen2.5-coder:7b
+  kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a cheaper model
+  provider: ollama           # catalog ID, or any custom name
+  service: ollama            # required on every api runner — nothing is back-filled
+  offering: local            # payg | free-quota | coding-subscription | local
+  model: qwen3-coder:30b
   apiBase: http://localhost:11434/v1
   contextLength: 32768
   temperature: 0.3
@@ -191,7 +205,7 @@ Git commit strategies are opt-in. The default (`commitStrategy: none`) leaves ch
 
 ### Planner backends
 
-Fifteen admitted planner IDs — six CLI tools, six API providers, plus `agent-sdk`, `shell`, and `agent`:
+Sixteen admitted planner IDs — six CLI tools, seven API providers, plus `agent-sdk`, `shell`, and `agent`:
 
 | Tool | Kind | Output Format | Notes |
 |------|------|---------------|-------|
@@ -207,6 +221,7 @@ Fifteen admitted planner IDs — six CLI tools, six API providers, plus `agent-s
 | `openai` | api | — | |
 | `groq` | api | — | |
 | `together` | api | — | |
+| `ollama-cloud` | api | — | Fixed origin `https://ollama.com`, `OLLAMA_API_KEY` |
 | `agent-sdk` | agent-sdk | — | Requires `ANTHROPIC_API_KEY` |
 | `shell` | shell | configurable | Any stdin/stdout command, see below |
 | `agent` | agent | configurable | Subprocess that writes files directly |
@@ -236,6 +251,7 @@ Anything that speaks the OpenAI chat completions protocol works.
 | Provider | Default Base URL | API Key |
 |----------|-----------------|---------|
 | `ollama` | `http://localhost:11434/v1` | Not needed |
+| `ollama-cloud` | `https://ollama.com` | `OLLAMA_API_KEY` |
 | `lm-studio` | `http://localhost:1234/v1` | Not needed |
 | `anthropic` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` |
 | `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` |
@@ -246,7 +262,7 @@ Anything that speaks the OpenAI chat completions protocol works.
 
 #### Custom providers
 
-Any string works as `provider` when you set `service`, `offering`, `apiBase`, and `apiKey`. Built-in providers get `service` and `offering` back-filled from the catalog; custom ones are not auto-filled, so declare both:
+Any string works as `provider` when you set `service`, `offering`, `apiBase`, and `apiKey`. Nothing is back-filled at load — built-in provider IDs must spell out the catalog's `service`/`offering` too, and a custom name picks its own:
 
 ```yaml
 implementer:
@@ -314,18 +330,21 @@ For large files (300+ LOC), SPLITBRIEF switches from whole-file to function-leve
 | Qwen 2.5 Coder 14B | ~9 GB | ~30-40 tok/s |
 | Qwen 3.5 27B | ~16 GB | ~18-25 tok/s |
 
-### API (cheap)
+### API
 
-| Provider | Cost |
-|----------|------|
-| DeepSeek V3.2 | $0.28/M input, ~$0.20/feature |
-| OpenRouter | Varies, free tier for some models |
+Per-token prices are not hardcoded here. They come from models.dev at startup and are shown next to each model in the picker, so the number you see is the one your provider charges today.
 
-## Cost model
+## Cost
 
-SPLITBRIEF is designed to keep expensive models on planning, review, and escalation while routing routine implementation to cheaper or local models. The actual savings depend on current provider pricing, subscription limits, task size, local model quality, validation coverage, and escalation rate.
+Keeping the expensive tool on research, brief compilation, review, and escalation, and the cheap one on typing, is what makes a run cost less than doing the whole thing on the expensive tool. That is arithmetic, not a benchmark: what you actually save depends on provider pricing, subscription limits, task size, how good the implementer is, how much validation you have, and how often escalation fires.
 
-The planner handles research, Task Brief compilation, and escalation. Implementation can be local for routine tasks when the brief is specific enough and validation is available.
+SPLITBRIEF reports the token and dollar split per run. It does not promise a ratio.
+
+## Measurement
+
+Two numbers decide whether this design earns its complexity: **first-pass rate** — how often the implementer satisfies a Task Brief without escalation — and **cross-lab review effectiveness** — how much the planner's review catches that validation did not. Those are what will be published here.
+
+Neither is measured yet. The `evals/` harness can be driven from a cassette alone — `--replay` needs no API key and no base URL, because the endpoint and a placeholder credential are resolved from the provider catalog — but it has never produced a recorded run, which is also why every model in the bundled catalog is marked `compatible-only` — `recommended` is reserved for models with recorded evaluation metrics, and none exist. Until those numbers appear in this section, nothing in this README is a performance claim. Cost is reported, never promised: a run that recorded no priced usage reports that explicitly instead of a fabricated zero.
 
 ## Development
 

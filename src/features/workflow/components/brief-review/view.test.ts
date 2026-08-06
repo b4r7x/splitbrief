@@ -13,7 +13,7 @@ import { reviewStore } from '../../../../stores/workflow/review.js';
 import { focusStore } from '../../../../stores/ui/focus.js';
 import { hoverStore } from '../../../../stores/ui/hover.js';
 import { formatTasks } from '../../../../engine/spec/formatter.js';
-import { TASKS_FILE } from '../../../../core/paths.js';
+import { TASKS_FILE, BRIEF_READINESS_FILE } from '../../../../core/paths.js';
 import { SIMPLE_REVIEW_BASE_CHROME_ROWS } from '../../layout/brief-review.js';
 import { briefListTopOffset } from '../../layout/hit-test.js';
 import { BriefReviewView } from './view.js';
@@ -459,6 +459,7 @@ describe('BriefReviewView focus and hover', () => {
       pending[2]?.resolve({
         tasks: [currentTask],
         quality: null,
+        readiness: null,
         reviewMetadata: new Map(),
         briefSources: ['id: T003\nCurrent owner'],
       });
@@ -470,6 +471,7 @@ describe('BriefReviewView focus and hover', () => {
       pending[0]?.resolve({
         tasks: [makeTask({ id: 'T001', title: 'First owner', file: 'src/first.ts' })],
         quality: null,
+        readiness: null,
         reviewMetadata: new Map(),
         briefSources: ['id: T001\nFirst owner'],
       });
@@ -485,6 +487,97 @@ describe('BriefReviewView focus and hover', () => {
       loader.mockRestore();
       focusStore.clear();
       reviewStore.clearReview();
+      configStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders the readiness block and the override instruction in one frame', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-readiness-block-test-'));
+    try {
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      const filePath = join(projectDir, TASKS_FILE);
+      await writeFile(
+        filePath,
+        formatTasks([makeTask({ id: 'T001', title: 'Blocked brief', file: 'src/blocked.ts' })]),
+        'utf-8',
+      );
+      await writeFile(
+        join(projectDir, BRIEF_READINESS_FILE),
+        JSON.stringify({
+          ok: false,
+          metadata: [],
+          blocks: [
+            {
+              taskId: 'T001',
+              kind: 'no-capable-worker',
+              message: 'no worker',
+              nextAction: 'route',
+            },
+          ],
+        }),
+        'utf-8',
+      );
+
+      const ui = renderFeature(
+        createElement(BriefReviewView, { filePath, height: 16, width: 120 }),
+      );
+      await vi.waitFor(() => {
+        const frame = ui.lastFrame() ?? '';
+        expect(frame).toContain('readiness 1 blocked');
+        expect(frame).toContain('approve again overrides');
+      });
+      ui.unmount();
+    } finally {
+      configStore.__testReset();
+      await rm(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('renders the no-worker word instead of the generic stale word', async () => {
+    const projectDir = await mkdtemp(join(tmpdir(), 'brief-review-no-worker-test-'));
+    const loaderModule = await import('../../brief-review-loader.js');
+    const noWorkerTask = makeTask({
+      id: 'T001',
+      title: 'No worker brief',
+      file: 'src/no-worker.ts',
+    });
+    const loader = vi.spyOn(loaderModule, 'loadBriefReviewData').mockResolvedValue({
+      tasks: [noWorkerTask],
+      quality: null,
+      readiness: null,
+      reviewMetadata: new Map([
+        [
+          noWorkerTask.id,
+          {
+            taskId: noWorkerTask.id,
+            routingBlockKind: 'no-capable-worker',
+            estimateStatus: 'missing-current-code',
+          },
+        ],
+      ]),
+      briefSources: ['id: T001\nNo worker brief'],
+    });
+    try {
+      configStore.__testReset({ config: makeConfig(), projectDir });
+      const filePath = join(projectDir, TASKS_FILE);
+      await writeFile(
+        filePath,
+        formatTasks([makeTask({ id: 'T001', title: 'No worker brief', file: 'src/no-worker.ts' })]),
+        'utf-8',
+      );
+
+      const ui = renderFeature(
+        createElement(BriefReviewView, { filePath, height: 16, width: 120 }),
+      );
+      await vi.waitFor(() => {
+        const frame = ui.lastFrame() ?? '';
+        expect(frame).toContain('no worker');
+        expect(frame).not.toContain('stale');
+      });
+      ui.unmount();
+    } finally {
+      loader.mockRestore();
       configStore.__testReset();
       await rm(projectDir, { recursive: true, force: true });
     }

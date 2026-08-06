@@ -70,4 +70,27 @@ describe('loadCassette + createCassetteReplayer', () => {
       }
     });
   });
+
+  it('reports a mismatch the caller swallowed and leaves its entry unconsumed', async () => {
+    await withTempDir(async (dir) => {
+      const cassettePath = join(dir, 'fake-baseline.json');
+      writeFileSync(cassettePath, JSON.stringify(makeCassette(), null, 2));
+
+      const cassette = loadCassette(cassettePath);
+      const replayer = createCassetteReplayer(cassette);
+      try {
+        replayer.install();
+        await fetch('https://example.test/models', { method: 'GET' }).catch(() => undefined);
+
+        expect(() => replayer.assertReplayComplete()).toThrow(
+          'mismatch at entry 0: expected POST /messages, got GET /models',
+        );
+
+        const response = await fetch('https://example.test/messages', { method: 'POST' });
+        expect(response.status).toBe(202);
+      } finally {
+        replayer.uninstall();
+      }
+    });
+  });
 });

@@ -1,4 +1,6 @@
 import { resolve } from 'node:path';
+import { resolveEvalConnection } from './connection.js';
+import { formatCliSummary } from './report.js';
 import { runEvalSuite } from './runner.js';
 import { addEndpointScenario } from './scenarios/add-endpoint.js';
 import { addTestScenario } from './scenarios/add-test.js';
@@ -52,6 +54,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const connection = resolveEvalConnection({ provider, baseUrl, apiKey, replay });
+
   console.log(
     `Eval: ${scenarios.length} scenarios | planner=${plannerModel} | baseline=${baselineModel} | routed=${routedModel}`,
   );
@@ -64,8 +68,8 @@ async function main(): Promise<void> {
     baselineImplementerModel: baselineModel,
     routedImplementerModel: routedModel,
     provider,
-    baseUrl,
-    apiKey,
+    baseUrl: connection.baseUrl,
+    apiKey: connection.apiKey,
     cassetteDir: resolve(import.meta.dirname, 'cassettes'),
     outputDir: resolve(import.meta.dirname, 'results'),
     record,
@@ -73,9 +77,9 @@ async function main(): Promise<void> {
   });
 
   console.log(`\n${'='.repeat(60)}`);
-  console.log(`Avg cost savings: ${report.aggregate.avgCostSavingsPercent}%`);
-  console.log(`Avg quality retention: ${report.aggregate.avgQualityRetentionPercent}%`);
-  console.log(`Total savings: $${report.aggregate.totalSavingsUSD.toFixed(4)}`);
+  for (const line of formatCliSummary(report)) {
+    console.log(line);
+  }
   console.log('='.repeat(60));
 }
 

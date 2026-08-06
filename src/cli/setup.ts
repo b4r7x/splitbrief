@@ -10,10 +10,16 @@ import type { WorkflowOpts } from '../core/types/config-options.js';
 
 const NO_CONFIG_MSG = `No config found. Creating default ${SPLITBRIEF_DIR}/${CONFIG_FILE}`;
 
-export function resolveProjectDir(dir?: string): string {
+function resolveProjectDir(dir?: string): string {
   return resolve(dir ?? process.cwd());
 }
 
+/**
+ * Every command resolves its project through here, so a session started from
+ * `packages/web` is the same session `ps`, `status` and `doctor` see from the
+ * repository root, and `spec` never auto-creates a second config next to a
+ * nested package.json.
+ */
 export async function canonicalizeProjectDir(opts: {
   project?: string | undefined;
 }): Promise<string> {
@@ -40,9 +46,12 @@ export function isInteractiveTty(): boolean {
   return Boolean(process.stdout.isTTY) && !process.env['CI'];
 }
 
-export function assertInteractiveTty(): void {
+// The remedy is the caller's, not this helper's: `start` has `--json` and
+// `--detach`, `init` has `--yes`. Naming a flag the command does not define is
+// the failure this parameter exists to prevent.
+export function assertInteractiveTty(remedy: string): void {
   if (!process.stdin.isTTY) {
-    throw cliError('interactive mode needs a TTY — use --json or --detach', 1);
+    throw cliError(`interactive mode needs a TTY — ${remedy}`, 1);
   }
 }
 

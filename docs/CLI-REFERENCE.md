@@ -3,13 +3,15 @@
 Complete reference for every `splitbrief` command. Maintained against `src/cli.ts` and `src/cli/commands/*.ts`.
 
 ```
-splitbrief — Cost-optimized AI coding orchestrator (v0.1.0)
+SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the other executes, and it holds the contract, validation, retry, escalation and evidence
 ```
 
 ## Global behavior
 
 - **Binary name:** `splitbrief`. The `npm run dev -- <cmd>` form is equivalent during local development.
-- **Working directory:** Most commands accept `--project <dir>`. When omitted, the project resolves to the current working directory.
+- **Working directory:** Most commands accept `--project <dir>`. When omitted, the project starts from the current working directory. Every command then canonicalizes it to the git toplevel (`canonicalizeProjectDir` in `src/cli/setup.ts`), so a session started from `packages/web` is the same session `ps`, `status`, `doctor` and `resume` see from the repository root, and `spec` never auto-creates a second config next to a nested `package.json`. An explicit `--project` pointing inside a repository prints a one-line relocation warning; a bare subdirectory invocation relocates silently.
+- **Runtime requirement:** the CLI reads `process.versions.node` before it parses anything and refuses a Node older than `package.json`'s `engines.node` (`>=22`) with `splitbrief requires Node.js 22 or newer; this process is Node.js <version>.` — see `src/cli/node-guard.ts`.
+- **Mistyped subcommands:** `start` is the default command, so a bare token becomes a feature description. To stop `splitbrief doctro` from buying a planner call, a single bare operand that is not a registered command but is within one edit of a short command name (≤ 4 characters) or two edits of a longer one is rejected: `unknown command 'doctro' — did you mean 'doctor'?`, exit `1`. Transpositions count as one edit. The guard only looks at an invocation whose leading operand run is exactly one whitespace-free token, so `splitbrief "fix the typo"`, `splitbrief fix the typo` and the explicit `splitbrief start doctro` all still run. See `src/cli/unknown-command.ts`.
 - **Exit codes:**
   - `0` — success.
   - `1` — generic CLI failure. Almost every command throws via `cliError(message)` which defaults to `exitCode: 1`. The top-level handler in `src/cli.ts` prints `Error: <message>` to stderr and exits with the carried code.
@@ -23,7 +25,7 @@ splitbrief — Cost-optimized AI coding orchestrator (v0.1.0)
 | # | Command | Purpose |
 |---|---|---|
 | 1 | `splitbrief start` | Launch a workflow (TUI, headless, or detached). Also the default command: `splitbrief "feature"` works without `start`. |
-| 2 | `splitbrief spec` | Run the planner only — produce spec/plan/tasks, no implementation. |
+| 2 | `splitbrief spec` | Run the planner only — produce the planning artifacts for a mode, no implementation. |
 | 3 | `splitbrief init` | Create `.splitbrief/config.yaml` with detected models. |
 | 4 | `splitbrief status` | Show the active session and optional cost history. |
 | 5 | `splitbrief explain` | Explain routing, cost, review, and warnings from session artifacts. |
@@ -39,7 +41,7 @@ splitbrief — Cost-optimized AI coding orchestrator (v0.1.0)
 | 15 | `splitbrief worktree` | List / switch / path / remove `.trees/<slug>` git worktrees. |
 | 16 | `splitbrief attach` | Attach a TUI client to a detached background session. |
 | 17 | `splitbrief detach` | Detach a TUI client without stopping the background server. |
-| 18 | `splitbrief ps` | List sessions in the current project with status. |
+| 18 | `splitbrief ps` | List sessions in the current project; collect non-session directories with `--prune`. |
 | 19 | `splitbrief doctor` | Check run readiness without creating a workflow session. |
 
 ---
@@ -72,7 +74,8 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
   [--budget <amount>] [--planner-effort <level>] [--yolo] \
   [--project <dir>] [--worktree [name]] [--detach] \
   [--no-fullscreen] [--no-mouse] [--hover] \
-  [--allow-hooks] [--allow-repo-runners] [--json] [--rpc] [--otel-exporter <name>]
+  [--allow-hooks] [--allow-repo-runners] [--allow-unverified-auth] \
+  [--json] [--rpc] [--otel-exporter <name>]
 ```
 
 ### Options
@@ -81,7 +84,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 |---|---|---|---|
 | `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. See [WORKFLOW.md](./WORKFLOW.md). |
 | `--approve <level>` | enum | `default` | Spec/plan document gates: `none`, `spec`, `plan`, `all`, `default`. `default` follows the mode's built-in policy. |
-| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `anthropic`, `openai`, `groq`, `together`, `deepseek`, `openrouter`, `shell`, `agent`, `agent-sdk`. |
+| `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `ollama-cloud`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together`, `shell`, `agent`, `agent-sdk`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.js`), so `splitbrief start --help` always prints the admitted set. |
 | `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -90,7 +93,7 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--planner-output-format <format>` | enum | from config | Planner output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--planner-context-length <tokens>` | number | from config | Planner context length in tokens. Consumed only by the `api` planner kind, where it sizes the request's `max_tokens` output budget; other kinds delegate the budget to their backend and ignore it. |
 | `--planner-effort <level>` | enum | — | Effort hint: `low`, `medium`, `high`, `xhigh`. Silently dropped on backends that don't support it. |
-| `--implementer <provider>` | string | from config | Implementer provider: `ollama`, `lm-studio`, `anthropic`, `openai`, `groq`, `together`, `deepseek`, `openrouter`, `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `shell`, `agent`, `agent-sdk`. |
+| `--implementer <provider>` | string | from config | Implementer provider: `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code`, `ollama`, `ollama-cloud`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together`, `shell`, `agent`, `agent-sdk`. The flag's help text is derived from the catalog's implementer role admission (`src/cli/options.ts`), so `splitbrief start --help` always prints the admitted set. |
 | `--implementer-model <model>` | string | from config | Implementer model identifier. |
 | `--implementer-command <cmd>` | string | from config | Custom implementer command (when `--implementer=shell`). |
 | `--implementer-api-base <url>` | string | from config | Implementer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
@@ -109,7 +112,8 @@ splitbrief start [feature] [--mode <mode>] [--approve <level>] \
 | `--no-mouse` | boolean | mouse on | Disable Ink mouse tracking. |
 | `--hover` | boolean | `false` | Opt in to hover highlighting under the mouse. Requires both mouse tracking and fullscreen; a no-op with `--no-mouse` or `--no-fullscreen`. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
-| `--allow-repo-runners` | boolean | `false` | Trust repo-local `shell`/`agent` runner commands from project config, including profile runners, package-manager script indirection, and project-local PATH resolution. Command strings containing `{prompt}` are rejected by config validation; pass prompts through stdin or args. |
+| `--allow-repo-runners` | boolean | `false` | Grant this run every `shell`/`agent` runner command the project config declares, including profile runners, package-manager script indirection, and project-local PATH resolution. Headless runs have no other way past the trust prompt; the grant is not persisted. Command strings containing `{prompt}` are rejected by config validation; pass prompts through stdin or args. |
+| `--allow-unverified-auth` | boolean | `false` | Let a headless run proceed when a compatible CLI runner's authentication could not be verified. Only affects headless transports (`--json`, `--rpc`, `--detach`); interactive runs disclose the unverified state and prompt instead. |
 | `--json` | boolean | `false` | Headless: emit public NDJSON records to stdout, skip TUI. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`. Requires a `feature`. |
 | `--rpc` | boolean | `false` | RPC: bidirectional NDJSON. Reads commands from stdin and writes `ack` / `error` / `status` / wrapped `event` responses to stdout. Requires a `feature`; mutually exclusive with `--json`. |
 | `--otel-exporter <name>` | string | — | Bootstrap an OTel exporter (currently only `console`). Requires `otel.enabled: true` in config. |
@@ -191,29 +195,38 @@ splitbrief start "sensitive customer migration" --worktree
 splitbrief spec <feature> [options]
 ```
 
-Run only the planner. Produces `spec.md`, `plan.md`, and `tasks.md` for the feature in a fresh session folder, then exits without invoking the implementer. Useful for review-only flows, scripting, or bootstrapping a Handoff Pack.
+Run only the planner. Produces the planning artifacts for the selected mode in a fresh session folder, then exits without invoking the implementer. In `standard` and `speckit` that is `spec.md`, `plan.md`, and `tasks.md`; in `instant` and `quick`, a single planner call produces `tasks.md`. Useful for review-only flows, scripting, or bootstrapping a Handoff Pack.
 
 Planner stream output is stripped of terminal control sequences before writing to stdout.
 
 ### Usage
 
 ```
-splitbrief spec <feature> [--project <dir>] [--allow-hooks] [--allow-repo-runners]
+splitbrief spec <feature> [--mode <mode>] [--project <dir>] [--allow-hooks] [--allow-repo-runners]
 ```
 
 ### Options
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
+| `--mode <mode>` | enum | `standard` (or `workflow.mode` from config) | One of `instant`, `quick`, `standard`, `speckit`. Same validation and precedence as `splitbrief start`: the flag wins over `workflow.mode`, and an unrecognized value fails the command. See [WORKFLOW.md](./WORKFLOW.md). |
 | `--project <dir>` | path | cwd | Project directory. |
 | `--allow-hooks` | boolean | `false` | Trust the hook config without prompting (CI). |
-| `--allow-repo-runners` | boolean | `false` | Trust repo-local planner runner commands from project config. |
+| `--allow-repo-runners` | boolean | `false` | Grant this run the planner runner command the project config declares. |
 
 ### Examples
 
 ```bash
 # Generate a spec for review
 splitbrief spec "add SSO via Okta"
+
+# Just the Task Brief, one planner call
+splitbrief spec --mode quick "rename the config loader"
+
+# Full ceremony for a risky change
+# (writes the standard artifact set: spec --mode speckit never produces the
+# speckit-only orchestrator artifacts)
+splitbrief spec --mode speckit "replace the auth provider"
 
 # Run in another repo
 splitbrief spec --project ../service-a "add health endpoint"
@@ -224,13 +237,14 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 
 ### Exit codes
 
-- `0` — all three artifacts written.
-- `1` — not a git repo, invalid or unwritable config, hooks distrusted, planner failure, init failure, or any other failure (the underlying error message is preserved through `Error.cause`).
+- `0` — the mode's planner artifacts were written.
+- `1` — not a git repo, invalid or unwritable config, invalid `--mode` value, hooks distrusted, planner failure, init failure, or any other failure (the underlying error message is preserved through `Error.cause`).
 
 ### Files affected
 
-- **Reads:** `.splitbrief/config.yaml`, repo files passed to the planner, `.splitbrief/hook-trust.json`.
-- **Writes:** `.splitbrief/sessions/<id>/spec.md`, `.splitbrief/sessions/<id>/plan.md`, `.splitbrief/sessions/<id>/tasks.md`, the `.splitbrief/active` pointer.
+- **Reads:** `.splitbrief/config.yaml`, repo files passed to the planner, `~/.splitbrief/trust/hooks.json`.
+- **Writes:** the planning artifacts under `.splitbrief/sessions/<id>/` for the resolved mode (`research.md`, `spec.md`, `plan.md`, `tasks.md` in `standard` / `speckit`; `tasks.md` in `instant` / `quick`), and the `.splitbrief/active` pointer.
+- **On a failed planner call:** the session directory it allocated is removed again via the preparation rollback (including the `.splitbrief/active` pointer); no directory is left behind.
 
 ### See also
 
@@ -241,8 +255,10 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 ### Behavior notes
 
 - Planner output streams to stdout in real time via the `onOutput` callback. Phase headings appear as bold `--- <phase> ---` separators.
+- The line printed before planning starts names the planner and the resolved mode, so the mode in force is visible at the point of decision.
+- `spec` runs no approval gate. `--approve` is not accepted here; the mode's approval defaults apply to `splitbrief start`, not to planning-only runs.
 - `clearStaleSession()` runs before `beginSession()` — a crashed prior run will not block this one.
-- Session id is generated from the feature; the final summary prints the absolute paths to the three artifacts.
+- Session id is generated from the feature; the final summary prints the absolute path of every artifact the mode produced.
 - The number of generated tasks is reported as `... (N tasks)` after the run.
 
 ---
@@ -252,15 +268,15 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 **Synopsis**
 
 ```
-splitbrief doctor [--project <dir>] [--json]
+splitbrief doctor [--project <dir>] [--json] [--probe-validation]
 ```
 
-Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. `doctor` is read-only: it does not create `.splitbrief/active`, session folders, worktrees, snapshots, config rewrites, validation subprocesses, planner calls, or implementer calls.
+Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. `doctor` is read-only: it does not create `.splitbrief/active`, session folders, worktrees, snapshots, config rewrites, planner calls, or implementer calls. It probes each configured CLI runner the way `start` does — installation, trust, version, authentication, and the arg vector SPLITBRIEF would emit compared against that binary's own `--help` — and runs no validation subprocesses unless `--probe-validation` is given.
 
 ### Usage
 
 ```
-splitbrief doctor [--project <dir>] [--json]
+splitbrief doctor [--project <dir>] [--json] [--probe-validation]
 ```
 
 ### Options
@@ -269,6 +285,7 @@ splitbrief doctor [--project <dir>] [--json]
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
 | `--json` | boolean | `false` | Emit one stable JSON readiness object to stdout for automation (`doctor --json`). |
+| `--probe-validation` | boolean | `false` | Run the configured validation commands against the working tree and report a `validation.already-failing` warning naming every stage that is already red before any task. It runs real commands (`validation.timeoutMs` per stage) and can take minutes. The resolved commands are listed in the check details, and the check notes that during a run SPLITBRIEF may resolve different commands from planner discovery. |
 
 ### Examples
 
@@ -278,6 +295,9 @@ splitbrief doctor --project ../service-a
 
 # Automation: stable stateId + remediation per check
 splitbrief doctor --json
+
+# Pre-run diagnostic: which validation stages are already red?
+splitbrief doctor --probe-validation
 ```
 
 ### Exit codes
@@ -287,7 +307,7 @@ splitbrief doctor --json
 
 ### Files affected
 
-- **Reads:** git status, `.splitbrief/config.yaml` when present, `.splitbrief/active` when present, `package.json` when present.
+- **Reads:** git status, `.splitbrief/config.yaml` when present, `.splitbrief/active` when present, `package.json` when present, and each configured CLI runner's own version, auth, and `--help` output (read-only probes of the trusted executable identity).
 - **Writes:** none.
 
 ### JSON output (`doctor --json`)
@@ -356,8 +376,10 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 ### Behavior notes
 
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
-- Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands.
-- Runner availability is conservative. Network/API and CLI auth probes are not required for a ready result.
+- Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands; the exception is `--probe-validation`, which runs the configured commands.
+- Runner availability is probed for the `api` and `agent-sdk` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase is paid for before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
+- The arg-vector preflight runs here too, so a blocker `start` would raise can be inspected without starting a run: a flag the installed binary's help does not advertise is a blocker (`runners.cli.<tool>.arg-vector.<role>`), a flag it marks deprecated is a warning, and a help text that cannot be read reports ok. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
+- A `shell` or `agent` runner reaches execution only through an owner-only trust receipt, so `doctor` replays that admission read-only (`runners.consent.planner`, `runners.consent.implementer.<profile>`) instead of only warning that the runner can execute commands. The verdict is reported for a run started the way `doctor` was started: on a TTY it is a warning naming the one-time confirmation `start` would prompt for, and with `--json` or a non-TTY stdin it is the blocker a non-interactive run receives. Nothing is written and no receipt is granted — `doctor` takes no `--allow-repo-runners`, so a run that passes that flag can be admitted where `doctor` reports a blocker, and the check's remediation names the flag.
 - `doctor --json` never prints decorative section banners; checks are serialized semantically for parsers.
 
 ---
@@ -367,22 +389,26 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 **Synopsis**
 
 ```
-splitbrief init [--reconfigure]
+splitbrief init [--project <dir>] [--reconfigure] [--yes]
 ```
 
 Bootstrap a project. Creates `.splitbrief/config.yaml` populated with detected planner / implementer providers and models, then opens the TUI setup screen for review. Safe to re-run with `--reconfigure` to start over.
 
+`--yes` skips the setup screen and writes the default config directly — the same defaults `start` and `spec` fall back to when no config exists, written on purpose instead of as a side effect. That is the mode for CI, container builds and piped shells: the setup screen needs a TTY, and without `--yes` a non-TTY invocation refuses and points at `--yes`.
+
 ### Usage
 
 ```
-splitbrief init [--reconfigure]
+splitbrief init [--project <dir>] [--reconfigure] [--yes]
 ```
 
 ### Options
 
 | Flag | Type | Default | Description |
 |---|---|---|---|
+| `--project <dir>` | string | cwd | Project directory. Canonicalized to the git toplevel, like every other command. |
 | `--reconfigure` | boolean | `false` | Overwrite an existing `.splitbrief/config.yaml`. Without this flag, init refuses to overwrite. |
+| `--yes` | boolean | `false` | Write the default config without the interactive picker. Requires no TTY. |
 
 ### Examples
 
@@ -390,14 +416,20 @@ splitbrief init [--reconfigure]
 # First-time setup in a repo
 splitbrief init
 
+# Non-interactive: CI, Dockerfile, or a piped shell
+splitbrief init --yes
+
+# Bootstrap another checkout without cd-ing into it
+splitbrief init --yes --project ~/code/other-repo
+
 # Throw away current config and start over
 splitbrief init --reconfigure
 ```
 
 ### Exit codes
 
-- `0` — config exists / was created and the TUI exited cleanly.
-- `1` — TUI render failure or unexpected I/O error.
+- `0` — config exists / was created and the TUI exited cleanly, or `--yes` wrote the config.
+- `1` — no TTY and no `--yes`, TUI render failure, or unexpected I/O error.
 
 ### Files affected
 
@@ -414,7 +446,7 @@ splitbrief init --reconfigure
 
 - If `.splitbrief/config.yaml` already exists and `--reconfigure` is not passed, init prints "Config already exists at .splitbrief/config.yaml" plus a hint and exits `0`.
 - The TUI launches in fullscreen mode. The `setup` screen handoffs to the home screen when the user finishes.
-- `init` always uses cwd; it does not honor `--project`.
+- `--project` pointing inside a repository writes to the repository root, not the directory you named: init prints `Warning: --project <dir> is inside git repository <root>; using repository root.` and configures `<root>`.
 
 ---
 
@@ -615,7 +647,7 @@ splitbrief resume --implementer claude-code --implementer-model claude-sonnet-4-
 ### Behavior notes
 
 - The version guard rejects resume with: `saved state is from an older version and cannot be resumed. Please start a new workflow with 'splitbrief start'.`
-- `isResumable(state)` rejects any non-resumable phase (anything outside `RESUMABLE_PHASES` — `planning`, `implementing`, `final-review` — without `awaitingContinue`) with: `session '<id>' is in phase "<phase>" which cannot be resumed.`
+- `isResumable(state)` rejects any non-resumable phase (anything outside `RESUMABLE_PHASES` — `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `final-review` — without `awaitingContinue`) with: `session '<id>' is in phase "<phase>" which cannot be resumed.`
 - A short `Resuming: <feature> (phase: <phase>, task N/M)` line prints before the TUI mounts.
 - The workflow mode is pinned in `state.json` alongside `plannerModel`; resume reuses the saved mode and approval level unless `--mode` is passed explicitly, in which case the override applies and a warning is printed.
 
@@ -1531,15 +1563,15 @@ splitbrief detach 2026-04-26-abcd1234
 **Synopsis**
 
 ```
-splitbrief ps [--project <dir>]
+splitbrief ps [--project <dir>] [--prune]
 ```
 
-List every session in the current project (running, exited, crashed, unknown), newest first. Mirrors `ps`/`docker ps` ergonomics.
+List every session in the current project (running, exited, crashed, unknown), newest first. Mirrors `ps`/`docker ps` ergonomics. Directories that hold no lockfile, no `state.json` and no `summary.json` are not sessions and are omitted. `--prune` collects the collectable **subset** of them, not all of them: only a directory that is empty or holds exactly `readiness.json`, and is older than 24 hours, is collected (`isCollectableOrphan`, `src/core/sessions/orphans.ts`). One holding, say, only `tasks.md` stays hidden from `ps` and is never collected — see [SUBSYSTEMS.md](./SUBSYSTEMS.md).
 
 ### Usage
 
 ```
-splitbrief ps [--project <dir>]
+splitbrief ps [--project <dir>] [--prune]
 ```
 
 ### Options
@@ -1547,6 +1579,7 @@ splitbrief ps [--project <dir>]
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
+| `--prune` | boolean | `false` | Remove collectable session directories before listing, print one line per removed directory plus a total, then render the remaining table. A directory is collectable when it holds nothing but `readiness.json` (or is empty) and is older than 24 hours; see [SUBSYSTEMS.md](./SUBSYSTEMS.md). |
 
 ### Examples
 
@@ -1556,6 +1589,9 @@ splitbrief ps
 
 # Sessions in a sibling project
 splitbrief ps --project ../service-b
+
+# Collect orphaned session directories, then list what remains
+splitbrief ps --prune
 ```
 
 ### Exit codes
@@ -1566,7 +1602,7 @@ splitbrief ps --project ../service-b
 ### Files affected
 
 - **Reads:** `.splitbrief/sessions/<id>/lockfile.json` for every session directory.
-- **Writes:** none.
+- **Writes:** with `--prune`, the collectable session directories under `.splitbrief/sessions/` are removed.
 
 ### Output
 
@@ -1575,6 +1611,7 @@ Columns (whitespace-aligned): `#`, `SESSION ID`, `STATUS`, `PID`, `MODE`, `ELAPS
 - `#` is a numeric alias (1, 2, 3...) usable with `splitbrief attach 1`, `splitbrief continue 1`, etc.
 - `STATUS` is one of `running`, `exited`, `crashed`, `unknown`.
 - `ELAPSED` shows `Hh Mm Ss` / `Mm Ss` / `Ss`. For running sessions it's measured against the current clock; for finished sessions, against `exitedAt`.
+- When collectable directories exist, a trailing line names the count and the `--prune` flag. An isolation worktree whose session directory no longer exists is also named, with the `splitbrief worktree remove <name> --force --delete-branch` cleanup.
 
 ### See also
 
@@ -1603,8 +1640,10 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | `--project <dir>` | most | cwd | Project directory. |
 | `-p, --project <dir>` | `export` | `.` / cwd | Short project-dir alias. |
 | `--session <id>` | `explain`, `handoff`, `snapshot *`, `mcp serve` | active session | Accepts a session ID or numeric alias from `splitbrief ps`. When omitted, the active session is read from `.splitbrief/active`. |
+| `--mode <mode>` | `start`, `spec`, `resume`, `continue`, `last` | `workflow.mode`, else `standard` | One of `instant`, `quick`, `standard`, `speckit`. Validated against the same enum everywhere; on the resume family it overrides the mode saved in `state.json` and prints a warning. |
 | `--allow-hooks` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--allow-repo-runners` | `start`, `resume`, `continue`, `last`, `spec` | `false` | Trust repo-local shell/agent runner execution from project config. Separate from hook trust. |
+| `--allow-unverified-auth` | `start`, `resume`, `continue`, `last` | `false` | Let a headless run proceed with unverified CLI authentication. No effect on interactive runs, which disclose and prompt. |
 | `--json` | `start`, `resume`, `continue`, `last`, `doctor`, `explain`, `stats` | `false` | Public NDJSON record stream for workflow commands; single JSON object for `doctor` / `explain` / `stats`. Workflow events are wrapped as `{ "type": "event", "data": ... }`. For `continue` / `last`, applies only when the target is an interrupted resumable session; live sessions attach through the TUI. |
 | `--rpc` | `start`, `resume`, `continue`, `last` | `false` | Bidirectional NDJSON. Mutually exclusive with `--json`; command responses are wrapped as `ack`, `error`, `status`, or `event`. For `continue` / `last`, applies only to interrupted resumable sessions and is rejected for live detached sessions. |
 
@@ -1623,14 +1662,16 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | `.splitbrief/sessions/<id>/lockfile.json` | `start --detach` | Background server lockfile. |
 | `.splitbrief/sessions/<id>/ipc.sock` | `start --detach` | Unix domain socket for IPC. |
 | `.splitbrief/approvals.json` | `approval`, runtime `/approval` | Sticky grants. |
-| `.splitbrief/hook-trust.json` | `start`/`resume`/`spec` trust prompt | Hook trust ledger. |
+| `~/.splitbrief/trust/hooks.json` | `start`/`resume`/`spec` trust prompt | Hook trust receipts, owner-only, keyed by checkout. Never inside the project. |
 | `.splitbrief/handoff-renderers/` | user | Custom Handoff Pack renderers. |
 | `.trees/<slug>/` | `worktree`, `start --worktree` | Linked git worktrees on branch `splitbrief/<slug>`. |
 | `.splitbrief/handoffs/<target>/` | `handoff` | Default Handoff Pack output (overridden by `--out`). |
 
 ### Headless event stream (`--json`)
 
-When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. Workflow review gates approve by default, questions resolve non-interactively, continuation retry prompts never park (a watchdog idle-kill fails the run instead), recovery pauses such as unknown paid pricing exit non-zero, failed sessions exit non-zero, and file-write tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
+When `start`, `resume`, or an interrupted resumable `continue` / `last` runs with `--json`, stdout emits one public JSON record per line (NDJSON). Live workflow events use `{ "type": "event", "data": <EngineEvent> }`. Other records use named top-level types such as `readiness_report`, `recovery_required`, `final_review_failed`, `warning`, and `error`. Public records are bounded and secret-redacted before writing. The TUI is not started, the alternate screen buffer is never entered, and `--no-fullscreen`/`--no-mouse`/`--hover` are no-ops in this mode. Workflow review gates approve by default (a blocked brief-readiness report therefore proceeds after the second internal approval), questions resolve non-interactively, continuation retry prompts never park (a watchdog idle-kill fails the run instead), recovery pauses such as unknown paid pricing exit non-zero, failed sessions exit non-zero, and file-write tiered sticky/confirm approvals fail closed instead of waiting for input. Live `continue` / `last` targets attach through the TUI instead.
+
+The `recovery_required` record carries `reason`, `status` (`awaiting-user` | `paused` | `applying`), message, task/files when known, `availableActions`, and `recommendedAction`; `status` was added after the initial release and older consumers must treat it as optional. The command fails with exit code 1 for **every** pending recovery status — `paused` and `applying` exit non-zero exactly like `awaiting-user` — and the error message names the available resolution actions.
 
 ### RPC stream (`--rpc`)
 
@@ -1645,14 +1686,14 @@ When `start`, `resume`, or an interrupted resumable `continue` / `last` runs wit
 | `standard` (default) | 4 | supporting spec + briefs | Ordinary feature work. |
 | `speckit` | 6–7 | supporting spec + plan + briefs | Large, risky, or externally visible work. |
 
-Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
+`--mode` is accepted by `start`, `spec`, `resume`, `continue`, and `last`. On `spec` it selects planning depth only — that command never implements and runs no approval gate. Detailed semantics in [WORKFLOW.md](./WORKFLOW.md).
 
 ### Runner kinds (`--planner` / `--implementer`)
 
 | `kind` | What it is | Examples |
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `aider`, `copilot`, `kilo-code` |
-| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together` |
+| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `ollama-cloud`, `lm-studio`, `anthropic`, `openrouter`, `deepseek`, `openai`, `groq`, `together` |
 | `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
 | `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |
 | `agent-sdk` | Anthropic Agent SDK library call | Via `@anthropic-ai/claude-agent-sdk` |

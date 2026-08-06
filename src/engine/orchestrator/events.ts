@@ -43,6 +43,7 @@ interface OperationalMessageSafety {
 
 interface PublishOperationalMessageOptions extends BusContext {
   message: string;
+  taskId?: TaskId | undefined;
   safety?: OperationalMessageSafety | undefined;
 }
 
@@ -66,6 +67,17 @@ export function publishRunnerCallEvent(
 const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
 
 type ValidationPhase =
+  | { phase: 'start'; commands?: ValidationStageCommands | undefined }
+  | {
+      phase: 'progress';
+      stages: ValidationStages;
+      startTime: number;
+      activeStage?: ValidationResult['stage'] | undefined;
+      commands?: ValidationStageCommands | undefined;
+    }
+  | { phase: 'result'; results: ValidationResult[]; startTime: number };
+
+type BaselineProbePhase =
   | { phase: 'start'; commands?: ValidationStageCommands | undefined }
   | {
       phase: 'progress';
@@ -233,6 +245,56 @@ export function publishValidation(ctx: BusContext, taskId: TaskId, opts: Validat
   });
 }
 
+export function publishValidationBaseline(ctx: BusContext, opts: BaselineProbePhase): void {
+  if (opts.phase === 'start') {
+    ctx.bus.publish({
+      type: 'validation_baseline',
+      ts: Date.now(),
+      phase: ctx.phase,
+      status: 'running',
+      stages: { ...EMPTY_STAGES },
+      ...(hasValidationCommands(opts.commands) && { commands: opts.commands }),
+    });
+    return;
+  }
+
+  if (opts.phase === 'progress') {
+    ctx.bus.publish({
+      type: 'validation_baseline',
+      ts: opts.startTime,
+      phase: ctx.phase,
+      status: 'running',
+      stages: opts.stages,
+      ...(opts.activeStage !== undefined && { activeStage: opts.activeStage }),
+      ...(hasValidationCommands(opts.commands) && { commands: opts.commands }),
+    });
+    return;
+  }
+
+  const stages: ValidationStages = { ...EMPTY_STAGES };
+  const failing: ValidationStageSkips = {};
+  const commands: ValidationStageCommands = {};
+  for (const r of opts.results) {
+    if (r.command !== undefined) commands[r.stage] = r.command;
+    if (r.skipped) continue;
+    if (r.stage === 'typecheck') stages.typecheck = r.passed;
+    else if (r.stage === 'lint') stages.lint = r.passed;
+    else if (r.stage === 'test') stages.test = r.passed;
+    if (!r.passed) failing[r.stage] = true;
+  }
+  const hasFailing = Object.keys(failing).length > 0;
+  ctx.bus.publish({
+    type: 'validation_baseline',
+    ts: Date.now(),
+    phase: ctx.phase,
+    status: 'done',
+    stages,
+    ...(hasValidationCommands(commands) && { commands }),
+    ...(hasFailing && { failing }),
+    duration: Date.now() - opts.startTime,
+  });
+}
+
 function hasValidationCommands(commands: ValidationStageCommands | undefined): boolean {
   if (commands === undefined) return false;
   return Object.values(commands).some((command) => command !== undefined && command.length > 0);
@@ -356,12 +418,13 @@ export function publishError(options: PublishOperationalMessageOptions): void {
 }
 
 export function publishWarning(options: PublishOperationalMessageOptions): void {
-  const { bus, phase, message, safety } = options;
+  const { bus, phase, message, taskId, safety } = options;
   bus.publish({
     type: 'warning',
     ts: Date.now(),
     phase,
     message,
+    ...(taskId !== undefined && { taskId }),
     ...(safety?.category !== undefined && { category: safety.category }),
     ...(safety?.code !== undefined && { code: safety.code }),
     ...(safety?.transcriptSafe !== undefined && { transcriptSafe: safety.transcriptSafe }),
@@ -558,6 +621,8 @@ export function createImplementerPublisher(bus: EventBus): ImplementerPublisher 
     publishDone: ({ phase, ...opts }) => publishImplementerGenerateDone({ bus, phase }, opts),
     publishFailed: ({ phase, taskId, model }) =>
       publishImplementerGenerateFailed({ bus, phase }, taskId, model),
+    publishWarning: ({ phase, taskId, message, safety }) =>
+      publishWarning({ bus, phase, taskId, message, safety }),
   };
 }
 

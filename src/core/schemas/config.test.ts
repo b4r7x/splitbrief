@@ -144,6 +144,27 @@ describe('ConfigSchema user config contracts', () => {
     ).toBe(true);
   });
 
+  it('round-trips an explicit workflow.isolation strategy', () => {
+    expect(
+      ConfigSchema.parse({
+        ...validConfig,
+        workflow: { ...validConfig.workflow, isolation: 'staged-copy' },
+      }).workflow.isolation,
+    ).toBe('staged-copy');
+  });
+
+  it('rejects an unknown workflow.isolation strategy with a Zod enum error', () => {
+    expect(
+      hasIssueAtPath(
+        issuesFor({
+          ...validConfig,
+          workflow: { ...validConfig.workflow, isolation: 'none' },
+        }),
+        'workflow.isolation',
+      ),
+    ).toBe(true);
+  });
+
   it('requires escalation.intermediateModel when intermediateProvider is set', () => {
     expect(
       ConfigSchema.safeParse({

@@ -1,6 +1,7 @@
 import {
   makeCallbacks,
   makeBusRecorder,
+  makeCopyingIsolation,
   makeImplementer,
   makePlanner,
 } from './orchestrator-factories.js';
@@ -45,6 +46,7 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
     }),
     callbacks,
     bus: makeBusRecorder().bus,
+    isolation: makeCopyingIsolation({ projectDir: proj.projectDir, sessionId: proj.sessionId }),
     planner: makePlanner(),
     implementer: makeImplementer(),
     context: { ...defaultContext, dir: proj.projectDir },

@@ -11,6 +11,7 @@ import type { CustomRunnerRuntimePort } from '../../runners/types.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
+import type { RunIsolation } from '../isolation/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
@@ -118,6 +119,7 @@ export type InitializeWorkflowArgs = {
   metadata: SpecMetadata;
   setTrackedState: (s: WorkflowState) => void;
   resumeHolder: ResumeContextHolder;
+  isolation: RunIsolation;
 };
 
 export function composeWorkflowCustomRunnerRuntime(
@@ -172,7 +174,16 @@ export function composeWorkflowCustomRunnerRuntime(
 }
 
 export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<InitResult> {
-  const { opts, config, sessionId, summaryBase, metadata, setTrackedState, resumeHolder } = args;
+  const {
+    opts,
+    config,
+    sessionId,
+    summaryBase,
+    metadata,
+    setTrackedState,
+    resumeHolder,
+    isolation,
+  } = args;
   const { callbacks, sinks } = opts;
   const { preparationId, gates, runtime } = opts.prepared;
   const feature = runtime.feature;
@@ -391,6 +402,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     projectDir,
     sessionId,
     config,
+    isolation,
     ...(opts.getApprovalEnabled !== undefined && { getApprovalEnabled: opts.getApprovalEnabled }),
     callbacks,
     bus,

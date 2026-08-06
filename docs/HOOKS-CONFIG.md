@@ -324,12 +324,14 @@ Claude Code `PreToolUse` hooks do not sandbox or intercept child processes spawn
 
 Adding a hook to `.splitbrief/config.yaml` is RCE on the next `splitbrief start`. A malicious PR could drop a `hooks:` block and own the reviewer's machine. To prevent this:
 
-- The first time SPLITBRIEF sees a hook config, it computes `sha256(canonical-JSON + module dependency digests + local command script digests)` and prompts in TTY: `Trust these hooks for this project? [y/N]`
-- On `y`: hash stored in `.splitbrief/hook-trust.json`. Future runs compare against the stored hash.
+- The first time SPLITBRIEF sees a hook config, it computes `sha256(canonical-JSON + module dependency digests + local command script digests)`. The prompt is the disclosure: it names each hook's executable, the absolute path that executable resolves to on this machine, its argv, and the trust boundary the hook runs inside, and ends with `Trust these hooks for this project? [y/N]`. A config-supplied `name:` is never shown in its place — you authorize the command, not the label the repository chose for itself.
+- On `y`: a receipt is written to `~/.splitbrief/trust/hooks.json` (mode `0600`, in a `0700` directory), keyed by the canonical path of this checkout and the config digest. This is the same owner-only store that holds custom runner receipts.
 - On `N`: refuses to start.
 - Editing the config, a module hook file/dependency, or a local command hook script invalidates the trust. The next run re-prompts, and an in-flight run refuses configured hook execution if the trusted bytes change before the hook runs.
 
-**In CI** (non-TTY): you must pass `--allow-hooks` explicitly. Without it, SPLITBRIEF refuses to start with an actionable error message.
+**The grant never travels.** It lives on the machine that gave it, outside the repository, so a repository cannot ship one: a receipt committed into `.splitbrief/` is a file SPLITBRIEF never reads. A second `git clone`, a `cp -a` of a granted checkout, or the same checkout under another account resolves to a different key and prompts again. Receipts written by versions that stored `.splitbrief/hook-trust.json` inside the project are ignored; trust those hooks once more and the file can be deleted.
+
+**In CI** (non-TTY): you must pass `--allow-hooks` explicitly. Without it, SPLITBRIEF refuses to start with an actionable error message. With it, the same disclosure is written to stderr before the grant, so the build log records what was authorized.
 
 ## Built-in hooks
 
@@ -402,8 +404,9 @@ Module: `src/engine/hooks/`
 - `builtins/{registry,prettier-on-change,block-secrets}.ts` — built-in hook implementations
 
 Trust:
-- `src/core/hooks/trust.ts` — sha256 + canonical JSON
-- `src/cli/hook-trust-prompt.ts` — `ensureHooksTrusted()` interactive prompt + non-TTY refusal
+- `src/core/hooks/trust.ts` — sha256 + canonical JSON, receipts in the owner's trust store
+- `src/core/trust/receipt-store.ts` — the machine-scoped receipt store shared with custom runner trust (`~/.splitbrief/trust/`, canonical-checkout identity, owner-only read)
+- `src/cli/hook-trust-prompt.ts` — `ensureHooksTrusted()` disclosure + prompt + non-TTY refusal
 
 Schema: `src/core/schemas/hooks.ts`.
 

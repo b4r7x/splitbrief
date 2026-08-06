@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
 import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
+import type { BriefReadinessGateReport } from '../../../../engine/orchestrator/planning/brief-readiness-gate.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
 import { loadBriefReviewData } from '../../brief-review-loader.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
@@ -10,6 +11,7 @@ import { reviewStore } from '../../../../stores/workflow/review.js';
 interface BriefData {
   tasks: Task[];
   quality: BriefQualityReport | null;
+  readiness: BriefReadinessGateReport | null;
   reviewMetadata: ReadonlyMap<string, PlanTaskReviewMetadata>;
   briefSources: string[];
 }
@@ -23,6 +25,7 @@ interface LoadedBriefData extends BriefData {
 const EMPTY_BRIEF_DATA: BriefData = {
   tasks: [],
   quality: null,
+  readiness: null,
   reviewMetadata: new Map<string, PlanTaskReviewMetadata>(),
   briefSources: [],
 };
@@ -48,11 +51,13 @@ export function useBriefData(filePath: string): BriefData {
     if (loadStillCurrent()) reviewStore.setLoadError(null);
 
     async function load() {
-      const { tasks, quality, reviewMetadata, briefSources } = await loadBriefReviewData({
-        filePath,
-        sessionDirPath: dirname(filePath),
-        signal,
-      });
+      const { tasks, quality, readiness, reviewMetadata, briefSources } = await loadBriefReviewData(
+        {
+          filePath,
+          sessionDirPath: dirname(filePath),
+          signal,
+        },
+      );
       if (!loadStillCurrent()) return;
       setLoaded({
         filePath,
@@ -60,6 +65,7 @@ export function useBriefData(filePath: string): BriefData {
         revision: loadRevision,
         tasks,
         quality,
+        readiness,
         reviewMetadata,
         briefSources,
       });

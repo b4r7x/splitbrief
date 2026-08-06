@@ -1,4 +1,4 @@
-const DEFAULT_REDACTION_MARKER = '***REDACTED***';
+export const DEFAULT_REDACTION_MARKER = '***REDACTED***';
 
 type RedactionReplacement = string | ((substring: string, ...args: string[]) => string);
 

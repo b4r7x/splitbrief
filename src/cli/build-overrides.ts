@@ -7,19 +7,12 @@ import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
 } from '../core/config/runtime/effective-config.js';
-import type { EffectiveConfigWarning } from '../core/config/runtime/effective-config.js';
 
 export type ResolvedRunConfig = Readonly<{
   config: Config;
   persistedConfig: Config;
   persistenceSnapshot: ConfigDocumentSnapshot;
 }>;
-
-export function printConfigWarnings(warnings: readonly string[]): void {
-  emitEffectiveConfigWarnings(
-    warnings.map((message): EffectiveConfigWarning => ({ source: 'validation', message })),
-  );
-}
 
 export function resolveRunConfigWithBase(args: {
   projectDir: string;

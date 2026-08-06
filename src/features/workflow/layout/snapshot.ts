@@ -135,14 +135,13 @@ export interface BriefListSnapshot {
 
 export function readBriefListSnapshot(): BriefListSnapshot | null {
   if (lifecycleStore.get().phase !== 'reviewing-briefs') return null;
-  const { rows, cols, isSmall } = terminalSizeStore.get();
+  const { rows, cols } = terminalSizeStore.get();
   const promptRows = readWorkflowPromptRows();
   const contentRect = getWorkflowContentRect({
     cols,
     rows,
     inputRows: inputHeightStore.get().rows,
     sidebarVisible: controlsStore.get().sidebarVisible,
-    isSmall,
     promptRows,
   });
   // The brief column spans the full content pane (no width cap). Routing the width through
@@ -178,7 +177,7 @@ export function readBriefListSnapshot(): BriefListSnapshot | null {
 }
 
 function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
-  const { rows, cols, isSmall } = terminalSizeStore.get();
+  const { rows, cols } = terminalSizeStore.get();
   const promptRows = readWorkflowPromptRows();
   const viewportHeight = getWorkflowViewportHeight({
     rows,
@@ -195,14 +194,12 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
   const contentWidth = getWorkflowContentWidth({
     cols,
     sidebarVisible,
-    isSmall,
   });
   const contentRect = getWorkflowContentRect({
     cols,
     rows,
     inputRows: inputHeightStore.get().rows,
     sidebarVisible,
-    isSmall,
     promptRows,
   });
   return {

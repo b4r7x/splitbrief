@@ -5,6 +5,7 @@ import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   makeBusRecorder,
+  makeCopyingIsolation,
   makeImplementer,
   makePlanner,
   makeCallbacks,
@@ -175,11 +176,11 @@ function configuredRetryRuntime(
     authorizationPathEnv: process.env.PATH ?? '',
     ...(process.env.PATHEXT === undefined ? {} : { authorizationPathExt: process.env.PATHEXT }),
     createStage: async (projectDir) => {
-      const staged = await createStagedProject(projectDir);
+      const workspace = await createStagedProject(projectDir);
       return {
-        projectDir: staged.projectDir,
-        snapshot: staged.snapshot,
-        cleanup: staged.cleanup,
+        projectDir: workspace.projectDir,
+        snapshot: workspace.snapshot,
+        cleanup: workspace.cleanup,
       };
     },
     admission: {
@@ -252,6 +253,7 @@ async function configuredRetryContext(
     metadata: TEST_METADATA,
     sinks: TEST_SINKS,
     validator: createValidator(),
+    isolation: makeCopyingIsolation({ projectDir: input.projectDir, sessionId: input.sessionId }),
     taskStartSnapshot: await getChangedFilesSnapshot(input.projectDir),
     dependsOnFiles: [],
   };
@@ -327,6 +329,7 @@ describe('createRetryRuntime', () => {
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
       taskStartSnapshot,
       dependsOnFiles: [],
     };
@@ -357,6 +360,7 @@ describe('createRetryRuntime', () => {
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
       taskStartSnapshot,
       dependsOnFiles: [],
     };
@@ -414,27 +418,27 @@ describe('createRetryRuntime', () => {
     const task = makeTask({ id: 'T001', file: taskFile });
 
     if (retryContract === 'direct') {
-      const staged = await createStagedProject(projectDir, retryRuntime.config);
+      const workspace = await createStagedProject(projectDir, retryRuntime.config);
       try {
         const result = await retryRuntime.implementer.retry({
           task,
-          projectDir: staged.projectDir,
+          projectDir: workspace.projectDir,
           config: retryRuntime.config,
           context: ctx.context,
           error: 'first attempt failed',
           attempt: 1,
           kind: 'local',
           onOutput: () => {},
-          sandboxEnv: staged.sandboxEnv,
+          sandboxEnv: workspace.sandboxEnv,
           fileIgnoreProjectDir: projectDir,
         });
 
         expect(result.success).toBe(true);
-        expect(readFileSync(join(staged.projectDir, taskFile), 'utf8')).toContain(
+        expect(readFileSync(join(workspace.projectDir, taskFile), 'utf8')).toContain(
           runnerRecord('retry-id', retryContract),
         );
       } finally {
-        staged.cleanup();
+        workspace.cleanup();
       }
     } else {
       const result = await retryRuntime.implementer.retry({

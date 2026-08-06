@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { Command, InvalidArgumentError } from 'commander';
+import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
+import { IMPLEMENTER_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
+import { META_PROVIDER_IDS, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import {
   addWorkflowOptions,
@@ -15,6 +18,13 @@ function parseWorkflowOptions(args: string[]): WorkflowOpts {
   const command = addWorkflowOptions(new Command());
   command.parse(['node', 'splitbrief', ...args]);
   return command.opts<WorkflowOpts>();
+}
+
+function idsListedInHelp(label: string): string[] {
+  const help = addWorkflowOptions(new Command()).helpInformation().replace(/\s+/g, ' ');
+  const listed = new RegExp(`${label} \\(([^)]+)\\)`).exec(help)?.[1];
+  if (listed === undefined) throw new Error(`no "${label}" entry in --help`);
+  return listed.split(', ');
 }
 
 describe('parseNumberOption', () => {
@@ -98,12 +108,36 @@ describe('--allow-unverified-auth', () => {
 });
 
 describe('--allow-repo-runners', () => {
-  it('explains its legacy-runner and headless custom-command grant', () => {
+  // The flag grants every shell/agent command the project config declares, not
+  // only the repo-local ones, so the help must not say "repo-local".
+  it('explains the headless grant it actually gives', () => {
     const help = addWorkflowOptions(new Command()).helpInformation();
 
     expect(help).toContain(
-      'Grant repo-local legacy runners and configured custom commands in headless use',
+      'Grant this run the shell/agent runner commands the project config declares (headless use)',
     );
+    expect(help).not.toContain('Grant repo-local legacy runners');
+  });
+});
+
+describe('runner selection help', () => {
+  it.each([
+    { label: 'Planner tool', admitted: [...PLANNER_TOOL_IDS] },
+    {
+      label: 'Implementer provider',
+      admitted: [
+        ...IMPLEMENTER_CLI_TOOL_IDS,
+        ...IMPLEMENTER_API_PROVIDER_IDS,
+        ...META_PROVIDER_IDS,
+      ],
+    },
+  ])('$label enumerates every id the catalog admits', ({ label, admitted }) => {
+    expect(idsListedInHelp(label)).toEqual(admitted);
+  });
+
+  it('offers ollama-cloud for both roles', () => {
+    expect(idsListedInHelp('Planner tool')).toContain('ollama-cloud');
+    expect(idsListedInHelp('Implementer provider')).toContain('ollama-cloud');
   });
 });
 

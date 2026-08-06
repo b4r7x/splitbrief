@@ -19,6 +19,7 @@ import {
   readinessCheckRemediation,
   serializeReadinessReportJson,
 } from '../../core/readiness/format.js';
+import type { RunnerAvailabilityFact } from '../../core/readiness/checks/availability.js';
 import type { ReadinessCheck } from '../../core/readiness/types.js';
 import { isCliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
@@ -105,10 +106,17 @@ async function runDoctor(
   args: string[],
   detectCliReadiness: () => Promise<readonly CliReadinessResult[]> = async () =>
     deterministicCliReadiness(),
+  runArgVectorHelp: () => Promise<string | null> = async () => null,
+  // Availability is a live network claim; unit runs make none unless they say so.
+  probeRunnerAvailability: () => Promise<readonly RunnerAvailabilityFact[]> = async () => [],
 ): Promise<void> {
   const program = new Command();
   program.exitOverride();
-  registerDoctorCommand(program, { detectCliReadiness });
+  registerDoctorCommand(program, {
+    detectCliReadiness,
+    runArgVectorHelp,
+    probeRunnerAvailability,
+  });
   await program.parseAsync(['node', 'splitbrief', 'doctor', ...args]);
 }
 
@@ -123,6 +131,7 @@ function captureStdout(): string[] {
 
 interface DoctorJsonCheck {
   id: string;
+  severity: ReadinessCheck['severity'];
   summary: string;
   modelSelection?: string;
 }
@@ -136,6 +145,19 @@ async function doctorJsonChecks(configYaml: string): Promise<DoctorJsonCheck[]> 
   };
   return parsed.report?.checks ?? [];
 }
+
+// An older `claude` whose help advertises every long flag the planner emits
+// except --include-partial-messages.
+const CLAUDE_HELP_WITHOUT_PARTIAL_MESSAGES = [
+  'Usage: claude [options] [command] [prompt]',
+  '',
+  'Options:',
+  '  -p, --print                Print response and exit',
+  '  --output-format <format>   Output format: text, json, stream-json',
+  '  --verbose                  Override verbose mode',
+  '  --session-id <uuid>        Use a specific session ID',
+  '  -h, --help                 Display help for command',
+].join('\n');
 
 function syntheticCheck(
   stateId: ReadinessDiagnosticStateId,
@@ -228,6 +250,85 @@ describe('doctor command', () => {
     expect(parsed.type).toBe('readiness_report');
     expect(severities).toContain('warning');
     expect(severities).toContain('info');
+  });
+
+  it('fails with an actionable blocker when the default implementer is unreachable', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const failure = await runDoctor(['--project', tmp], undefined, undefined, async () => [
+      {
+        slot: { role: 'implementer', profile: 'default' },
+        provider: 'ollama',
+        endpoint: 'http://localhost:11434/v1',
+        verdict: { state: 'unavailable', diagnostic: 'fetch failed' },
+      },
+    ]).catch((err: unknown) => err);
+
+    const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(output).toContain(
+      'blocker runners.availability.implementer.default: Default implementer ollama (qwen2.5-coder:7b) is not reachable at http://localhost:11434/v1.',
+    );
+    expect(output).toContain(
+      'Fix: Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
+    );
+    expect(isCliError(failure)).toBe(true);
+    expect(toErrorMessage(failure)).toContain('runners.availability.implementer.default');
+  });
+
+  it('runs no validation command without --probe-validation', async () => {
+    initGitRepo(tmp);
+    writeConfig(
+      tmp,
+      validConfigYaml().replace(
+        '  testCommand: npm test',
+        '  testCommand: node -e "process.exit(1)"',
+      ),
+    );
+    const writes = captureStdout();
+
+    await runDoctor(['--project', tmp, '--json']);
+
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { checks?: Array<{ id: string }> };
+    };
+    expect(parsed.report?.checks?.map((check) => check.id)).not.toContain(
+      'validation.already-failing',
+    );
+  });
+
+  it('--probe-validation reports a stage that already fails and names the command it ran', async () => {
+    initGitRepo(tmp);
+    writeConfig(
+      tmp,
+      validConfigYaml().replace(
+        '  testCommand: npm test',
+        '  testCommand: node -e "process.exit(1)"',
+      ),
+    );
+    const writes = captureStdout();
+
+    await runDoctor(['--project', tmp, '--json', '--probe-validation']);
+
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { checks?: Array<{ id: string; summary: string; details?: string[] }> };
+    };
+    const probe = parsed.report?.checks?.find((check) => check.id === 'validation.already-failing');
+    expect(probe?.summary).toContain('test');
+    expect(probe?.details?.[0]).toContain('test: node -e "process.exit(1)"');
+    expect(probe?.details?.[1]).toContain('pre-run commands');
+  });
+
+  it('lists --probe-validation in help', async () => {
+    const program = new Command();
+    program.exitOverride();
+    registerDoctorCommand(program);
+    const writes = captureStdout();
+
+    await program.parseAsync(['node', 'splitbrief', 'doctor', '--help']).catch(() => undefined);
+
+    expect(writes.join('')).toContain('--probe-validation');
   });
 
   it('reports automatic CLI model selection as auto, not as an unset model', async () => {
@@ -544,6 +645,45 @@ describe('doctor command', () => {
     expect(human).toContain(unverified.remediation ?? '');
   });
 
+  it('blocks on an emitted flag the installed binary does not advertise', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp);
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    let captured: unknown;
+    try {
+      await runDoctor(
+        ['--project', tmp],
+        undefined,
+        async () => CLAUDE_HELP_WITHOUT_PARTIAL_MESSAGES,
+      );
+    } catch (err) {
+      captured = err;
+    }
+
+    const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    const argVectorLine = human
+      .split('\n')
+      .find((line) => line.includes('runners.cli.claude-code.arg-vector.planner'));
+    expect(argVectorLine).toContain('blocker');
+    expect(argVectorLine).toContain('does not support: --include-partial-messages.');
+    expect(isCliError(captured)).toBe(true);
+    expect(toErrorMessage(captured)).toContain('runners.cli.claude-code.arg-vector.planner');
+  });
+
+  it('reports no arg-vector blocker when the installed binary yields no help text', async () => {
+    initGitRepo(tmp);
+
+    const checks = await doctorJsonChecks(validConfigYaml());
+
+    const argVector = checks.find(
+      (check) => check.id === 'runners.cli.claude-code.arg-vector.planner',
+    );
+    expect(argVector?.severity).toBe('ok');
+    expect(argVector?.summary).toContain('could not be compared');
+    expect(checks.map((check) => check.id)).toContain('runners.cli.claude-code.readiness');
+  });
+
   it('serializes semantic JSON without decorative section layout or secrets', async () => {
     initGitRepo(tmp);
     writeConfig(tmp);
@@ -642,5 +782,77 @@ describe('doctor command', () => {
         metadata: report.metadata,
       }),
     ).toContain(READINESS_DIAGNOSTIC_REMEDIATION['conflicting-args']);
+  });
+});
+
+describe('custom runner consent preflight', () => {
+  function shellPlannerConfigYaml(): string {
+    return [
+      'version: 3',
+      'planner:',
+      '  kind: shell',
+      '  command: /bin/echo',
+      '  model: planner-default',
+      'implementer:',
+      '  kind: api',
+      '  provider: ollama',
+      '  apiBase: http://localhost:11434/v1',
+      '  model: qwen2.5-coder:7b',
+      '  contextLength: 32768',
+      'workflow:',
+      '  mode: quick',
+    ].join('\n');
+  }
+
+  async function withStdinTty(isTTY: boolean, run: () => Promise<void>): Promise<void> {
+    const original = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { value: isTTY, configurable: true });
+    try {
+      await run();
+    } finally {
+      if (original === undefined) delete (process.stdin as { isTTY?: boolean }).isTTY;
+      else Object.defineProperty(process.stdin, 'isTTY', original);
+    }
+  }
+
+  it('blocks on a shell runner this machine has not trusted, like a headless start', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, shellPlannerConfigYaml());
+    const writes = captureStdout();
+    await expect(runDoctor(['--project', tmp, '--json'])).rejects.toThrow();
+
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { checks?: DoctorJsonCheck[] };
+    };
+    const consent = parsed.report?.checks?.find((check) => check.id === 'runners.consent.planner');
+    expect(consent).toMatchObject({ severity: 'blocker' });
+  });
+
+  it('exits non-zero on that config instead of reporting ready-with-warnings', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, shellPlannerConfigYaml());
+    captureStdout();
+    let captured: unknown;
+    try {
+      await runDoctor(['--project', tmp, '--json']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as { exitCode: number }).exitCode).toBe(1);
+  });
+
+  it('reports the same runner as a warning when a run would be able to prompt', async () => {
+    initGitRepo(tmp);
+    writeConfig(tmp, shellPlannerConfigYaml());
+    const logged: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+      logged.push(String(line));
+    });
+
+    await withStdinTty(true, () => runDoctor(['--project', tmp]));
+
+    expect(logged.join('\n')).toContain('Planner needs a one-time confirmation before it can run.');
   });
 });

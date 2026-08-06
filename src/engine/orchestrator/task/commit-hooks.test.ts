@@ -1,11 +1,12 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { execSync } from 'node:child_process';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, passingResults } from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupCommitTestProjects,
   firstCommitTask,
@@ -14,9 +15,23 @@ import {
   setupCommitProject,
 } from '#testing/helpers/orchestrator-commit.js';
 import { validateCommitAndAdvance } from './commit.js';
+import type { ValidationAcceptance } from '../validation/acceptance.js';
+
+const acceptedAcceptance: ValidationAcceptance = {
+  accepted: true,
+  exemptStages: [],
+  blockingStages: [],
+};
+
+let trustHome: ReturnType<typeof useTrustHome>;
+
+beforeEach(() => {
+  trustHome = useTrustHome('commit-hooks-trust-home');
+});
 
 afterEach(() => {
   cleanupCommitTestProjects();
+  trustHome.restore();
 });
 
 describe('validateCommitAndAdvance — commit hooks', () => {
@@ -37,7 +52,7 @@ describe('validateCommitAndAdvance — commit hooks', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({
@@ -85,7 +100,7 @@ describe('validateCommitAndAdvance — commit hooks', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({
@@ -141,7 +156,7 @@ describe('validateCommitAndAdvance — commit hooks', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({

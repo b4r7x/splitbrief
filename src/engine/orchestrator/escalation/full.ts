@@ -37,7 +37,7 @@ export async function runFullTier(
     commitSuffix: 'escalated',
     usageCategory: 'escalation',
     retryFailureFallback: 'Tier-2 escalation failed to produce valid code',
-    stagedProjectRole: 'planner',
+    isolationRole: 'planner',
     invokeRetry: async ({
       task: t,
       lastError: err,
@@ -45,6 +45,7 @@ export async function runFullTier(
       signal,
       sandboxEnv,
       fileIgnoreProjectDir,
+      changeDetection,
     }) =>
       ctx.planner.escalateFull({
         task: t,
@@ -54,6 +55,7 @@ export async function runFullTier(
         languageContext,
         sandboxEnv,
         fileIgnoreProjectDir,
+        changeDetection,
       }),
     onValidationAfterRetryFail: (validationError) => {
       publishWarning({

@@ -27,16 +27,23 @@ describe('buildSystemPreamble', () => {
 });
 
 describe('buildImplementerSystemPreamble', () => {
-  it('keeps the direct-writer editing contract', () => {
+  it('gives the direct writer a full prompt contract', () => {
     const languageContext = buildLanguageContext('python');
+    const prompt = buildImplementerSystemPreamble(languageContext, 'direct');
 
-    expect(buildImplementerSystemPreamble(languageContext, 'direct')).toBe(
-      `SYSTEM: You are a coding agent for Python. You write clean, working code directly in the staged working directory.
-Rules:
-- Do NOT add comments unless specified in the task
-- Use Python import statements (from/import)
-- Follow the exact function signatures provided`,
-    );
+    expect(prompt).toContain('SYSTEM:');
+    expect(prompt).toContain('Python');
+    expect(prompt).toContain('Python import statements (from/import)');
+    expect(prompt).toMatch(/edit only the file/i);
+    expect(prompt).toMatch(/out of bounds/i);
+    expect(prompt).toMatch(/stop and report/i);
+    expect(prompt).toMatch(/validation commands/i);
+    expect(prompt).toMatch(/completion report/i);
+  });
+
+  it('no longer describes the direct workspace as staged', () => {
+    const prompt = buildImplementerSystemPreamble(buildLanguageContext('typescript'), 'direct');
+    expect(prompt).not.toMatch(/staged/i);
   });
 
   it('reuses the complete-file preamble for extracted-code implementers', () => {

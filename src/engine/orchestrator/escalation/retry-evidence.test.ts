@@ -5,6 +5,7 @@ import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeBusRecorder,
   makeCallbacks,
+  makeCopyingIsolation,
   makePlanner,
   makeImplementer,
   TEST_METADATA,
@@ -54,6 +55,7 @@ describe('persistRetryApprovalEvidence', () => {
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
       taskStartSnapshot,
       dependsOnFiles: [] as string[],
     };
@@ -98,6 +100,7 @@ describe('persistRetryApprovalEvidence', () => {
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
       taskStartSnapshot: { head: 'abc', files: [], dirtyFileContents: {} },
       dependsOnFiles: [] as string[],
     };
@@ -130,6 +133,7 @@ describe('persistRetryRejectionEvidence', () => {
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
       taskStartSnapshot,
       dependsOnFiles: [] as string[],
     };
@@ -170,6 +174,7 @@ describe('persistRetryRejectionEvidence', () => {
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
       taskStartSnapshot: { head: 'abc', files: [], dirtyFileContents: {} },
       dependsOnFiles: [] as string[],
     };

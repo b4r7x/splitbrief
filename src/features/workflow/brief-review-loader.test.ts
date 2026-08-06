@@ -3,7 +3,7 @@ import { linkSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { BRIEF_QUALITY_FILE, TASKS_FILE } from '../../core/paths.js';
+import { BRIEF_QUALITY_FILE, BRIEF_READINESS_FILE, TASKS_FILE } from '../../core/paths.js';
 import { formatTasks } from '../../engine/spec/formatter.js';
 import { loadBriefReviewData } from './brief-review-loader.js';
 
@@ -59,5 +59,57 @@ describe('loadBriefReviewData', () => {
         sessionDirPath: sessionDir,
       }),
     ).rejects.toThrow(/hardlink/i);
+  });
+
+  it('loads with readiness null when the readiness artifact is absent', async () => {
+    const sessionDir = createTempDir('brief-review-loader-no-readiness');
+    tmpDirs.push(sessionDir);
+    writeTasks(sessionDir);
+
+    const result = await loadBriefReviewData({
+      filePath: join(sessionDir, TASKS_FILE),
+      sessionDirPath: sessionDir,
+    });
+
+    expect(result.readiness).toBeNull();
+    expect(result.tasks).toHaveLength(1);
+  });
+
+  it('loads with readiness null when the readiness artifact is malformed', async () => {
+    const sessionDir = createTempDir('brief-review-loader-malformed-readiness');
+    tmpDirs.push(sessionDir);
+    writeTasks(sessionDir);
+    writeFileSync(join(sessionDir, BRIEF_READINESS_FILE), '{not json', 'utf8');
+
+    const result = await loadBriefReviewData({
+      filePath: join(sessionDir, TASKS_FILE),
+      sessionDirPath: sessionDir,
+    });
+
+    expect(result.readiness).toBeNull();
+  });
+
+  it('loads a blocking readiness artifact when it is valid', async () => {
+    const sessionDir = createTempDir('brief-review-loader-blocked-readiness');
+    tmpDirs.push(sessionDir);
+    writeTasks(sessionDir);
+    writeFileSync(
+      join(sessionDir, BRIEF_READINESS_FILE),
+      JSON.stringify({
+        ok: false,
+        metadata: [],
+        blocks: [{ taskId: 'T001', kind: 'overflow', message: 'blocked', nextAction: 'split' }],
+      }),
+      'utf8',
+    );
+
+    const result = await loadBriefReviewData({
+      filePath: join(sessionDir, TASKS_FILE),
+      sessionDirPath: sessionDir,
+    });
+
+    expect(result.readiness).not.toBeNull();
+    expect(result.readiness?.ok).toBe(false);
+    expect(result.readiness?.blocks).toHaveLength(1);
   });
 });

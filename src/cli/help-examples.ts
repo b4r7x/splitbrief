@@ -14,6 +14,7 @@ Examples:
     $ splitbrief "rename variable" --mode instant
     $ splitbrief "add caching layer" --mode quick
     $ splitbrief "rebuild auth system" --mode speckit
+    $ splitbrief spec "planning only" --mode quick
 
   Provider overrides:
     $ splitbrief "add tests" --planner anthropic --implementer ollama

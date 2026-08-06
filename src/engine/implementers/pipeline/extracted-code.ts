@@ -3,10 +3,39 @@ import { confinedExists, confinedReadFileAsync } from '../../../lib/confined-fs.
 import { pathConfinementError } from '../../../lib/path-confinement.js';
 import { matches } from '../../../utils/error.js';
 import { extractCode } from '../../parsers/response-extractor.js';
-import { applyCode } from '../apply.js';
+import { applyCode, hasApplicablePatch } from '../apply.js';
 import { computeDiff } from '../../../utils/diff.js';
 
 const isPathEscape = matches('path-confined-escape');
+
+const MIN_GUARDED_BASELINE_LINES = 5;
+const MAX_WHOLE_FILE_SHRINK = 0.5;
+
+function countNonEmptyLines(content: string): number {
+  return content.split('\n').filter((line) => line.trim().length > 0).length;
+}
+
+function refuseImplausibleRewrite(opts: {
+  task: Task;
+  baseline: string | null;
+  candidate: string;
+}): string | undefined {
+  if (opts.task.action !== 'modify') return undefined;
+  if (opts.baseline === null || hasApplicablePatch(opts.candidate)) return undefined;
+  const had = countNonEmptyLines(opts.baseline);
+  const kept = countNonEmptyLines(opts.candidate);
+  if (had < MIN_GUARDED_BASELINE_LINES || kept >= had * MAX_WHOLE_FILE_SHRINK) return undefined;
+  return [
+    `Refusing to overwrite ${opts.task.file}: the response keeps ${kept} of ${had} non-empty lines, which is not a plausible whole-file rewrite.`,
+    'Return the complete new file content, or apply an exact patch:',
+    '',
+    '<<<<<<< SEARCH',
+    '<exact lines to replace>',
+    '=======',
+    '<replacement lines>',
+    '>>>>>>> REPLACE',
+  ].join('\n');
+}
 
 export async function readTaskFileContent(
   projectDir: string,
@@ -59,6 +88,15 @@ export async function processImplementerOutput(opts: {
       success: false,
       error: extractedCodeApprovalRaceError(task.file),
     };
+  }
+
+  const implausibleRewrite = refuseImplausibleRewrite({
+    task,
+    baseline: approvedBaselineContent,
+    candidate: extractResult.code,
+  });
+  if (implausibleRewrite !== undefined) {
+    return { success: false, error: implausibleRewrite };
   }
 
   const applyResult = await applyCode(extractResult.code, task, projectDir);

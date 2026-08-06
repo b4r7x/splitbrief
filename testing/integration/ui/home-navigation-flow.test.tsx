@@ -7,6 +7,7 @@ import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { writeConfig } from '../../../src/core/config/load/io.js';
 import { saveSummary } from '../../../src/core/sessions/io.js';
 import { saveState } from '../../../src/core/state/persistence.js';
@@ -61,21 +62,29 @@ function seedInterruptedSession(
 
 describe('home navigation flow (through real App)', () => {
   let projectDir = '';
+  let trustHome = '';
 
-  beforeEach(() => {
+  beforeEach(async () => {
     forceUnicodeGlyphs();
     resetAllStores();
     projectDir = createTempDir('home-nav-flow');
+    trustHome = createTempDir('home-nav-flow-home');
     createTestGitRepo(projectDir);
     const config = makeConfig({
-      planner: { kind: 'agent', command: 'splitbrief-test-missing-planner' },
+      planner: { kind: 'agent', command: process.execPath, args: ['-e', ''] },
       implementer: {
         kind: 'agent',
-        command: 'splitbrief-test-missing-implementer',
+        command: process.execPath,
+        args: ['-e', ''],
         model: 'test-model',
       },
     });
     writeConfig(projectDir, config);
+    // Resuming admits the declared command runners, so this fixture models an
+    // owner who already granted them — into a throwaway home, never the
+    // developer's own trust store.
+    vi.stubEnv('HOME', trustHome);
+    await trustDeclaredRunners({ projectDir, config });
     configStore.__testReset({
       config,
       projectDir,
@@ -84,9 +93,12 @@ describe('home navigation flow (through real App)', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     resetAllStores();
     cleanupTempDir(projectDir);
+    cleanupTempDir(trustHome);
     projectDir = '';
+    trustHome = '';
   });
 
   it('Ctrl+R then Enter resumes the focused session on the workflow screen', async () => {

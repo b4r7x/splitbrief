@@ -3,12 +3,15 @@ import { API_PROVIDER_CATALOG, KNOWN_API_PROVIDER_IDS } from '../providers/api-p
 import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
 import {
   CLI_READINESS_STATES,
+  CliExecutableFingerprintSchema,
   CliToolDetectionSchema,
   DetectedModelSchema,
   DetectedPricingProvenanceSchema,
   DetectedPricingTierSchema,
   PROVIDER_DETECTION_FAILURE_KINDS,
   ProviderDetectionSchema,
+  formatDigestBoundExecutableFingerprint,
+  parseDigestBoundExecutableFingerprint,
   type CliCompatibilityState,
   type CliDiagnostic,
   type CliToolDetection,
@@ -64,6 +67,28 @@ function detectionFor(state: CliReadinessState): CliToolDetection {
 }
 
 describe('detection schemas', () => {
+  it('fingerprints an executable whose inode exceeds the safe integer range', () => {
+    // Every executable on the macOS Sealed System Volume — /bin/sh included —
+    // reports an inode above Number.MAX_SAFE_INTEGER.
+    const ino = 1_152_921_500_312_522_400;
+    expect(Number.isSafeInteger(ino)).toBe(false);
+    const fingerprint = { dev: 16_777_233, ino, size: 101_232, mtimeMs: 1_746_337_162_000 };
+
+    expect(CliExecutableFingerprintSchema.safeParse(fingerprint).success).toBe(true);
+    const bound = formatDigestBoundExecutableFingerprint({
+      fingerprint,
+      contentDigest: 'b'.repeat(64),
+    });
+    expect(bound).not.toBeNull();
+    expect(parseDigestBoundExecutableFingerprint(bound ?? '')).toEqual(fingerprint);
+    expect(CliExecutableFingerprintSchema.safeParse({ ...fingerprint, ino: 1.5 }).success).toBe(
+      false,
+    );
+    expect(CliExecutableFingerprintSchema.safeParse({ ...fingerprint, ino: -1 }).success).toBe(
+      false,
+    );
+  });
+
   it('accepts per-provider oracle facts as an additive, legacy-tolerant field', () => {
     const legacy = detectionFor('ready');
     expect(CliToolDetectionSchema.parse(legacy).providerAuth).toBeUndefined();

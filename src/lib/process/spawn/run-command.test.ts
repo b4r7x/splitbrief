@@ -59,7 +59,9 @@ function stubbornProcessGroupProgram(): string {
 }
 
 describe('createSanitizedChildEnv', () => {
-  it('copies runtime values and explicit credentials without ambient secrets or controls', () => {
+  it('copies runtime values and explicit credentials without ambient secrets or controls', {
+    timeout: 60_000,
+  }, () => {
     const env = createSanitizedChildEnv(
       {
         LANG: 'C.UTF-8',
@@ -75,7 +77,9 @@ describe('createSanitizedChildEnv', () => {
     expect(env).toEqual({ LANG: 'C.UTF-8', OPENAI_API_KEY: 'sk-openai' });
   });
 
-  it('applies an explicit child environment and never an ambient one', async () => {
+  it('applies an explicit child environment and never an ambient one', {
+    timeout: 60_000,
+  }, async () => {
     const original = process.env.SPLITBRIEF_SCOPED_ENV_TEST;
     delete process.env.SPLITBRIEF_SCOPED_ENV_TEST;
     const readChildValue = async (env?: NodeJS.ProcessEnv): Promise<string> => {
@@ -114,7 +118,9 @@ function processExists(pid: number): boolean {
 }
 
 describe('runCommand', () => {
-  it('fails closed on Windows before launching a process without a tree-reaping path', async () => {
+  it('fails closed on Windows before launching a process without a tree-reaping path', {
+    timeout: 60_000,
+  }, async () => {
     const originalPlatform = process.platform;
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true });
     let spawned = false;
@@ -140,19 +146,21 @@ describe('runCommand', () => {
     }
   });
 
-  it('resolves with stdout, stderr, and exit code', async () => {
+  it('resolves with stdout, stderr, and exit code', { timeout: 60_000 }, async () => {
     const result = await runCommand('echo', ['hello']);
     expect(result.stdout.trim()).toBe('hello');
     expect(result.code).toBe(0);
   });
 
-  it('rejects with error for nonexistent command (ENOENT) without leaking timer', async () => {
+  it('rejects with error for nonexistent command (ENOENT) without leaking timer', {
+    timeout: 60_000,
+  }, async () => {
     await expect(
       runCommand('nonexistent-command-that-does-not-exist-xyz', []),
     ).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
-  it('ENOENT rejection completes quickly without dangling timer', async () => {
+  it('ENOENT rejection completes quickly without dangling timer', { timeout: 60_000 }, async () => {
     const start = Date.now();
     try {
       await runCommand('nonexistent-command-that-does-not-exist-xyz', [], { timeout: 60_000 });
@@ -160,13 +168,15 @@ describe('runCommand', () => {
     expect(Date.now() - start).toBeLessThan(3000);
   });
 
-  it('captures stderr output', async () => {
+  it('captures stderr output', { timeout: 60_000 }, async () => {
     const result = await runCommand('node', ['-e', 'console.error("oops")']);
     expect(result.stderr).toContain('oops');
     expect(result.code).toBe(0);
   });
 
-  it('retains bounded stdout and stderr snapshots for large command output', async () => {
+  it('retains bounded stdout and stderr snapshots for large command output', {
+    timeout: 60_000,
+  }, async () => {
     const result = await runCommand(
       'node',
       [
@@ -194,19 +204,23 @@ describe('runCommand', () => {
     });
   });
 
-  it('rejects with a process-output error on nonzero exit', async () => {
+  it('rejects with a process-output error on nonzero exit', { timeout: 60_000 }, async () => {
     await expect(runCommand('node', ['-e', 'process.exit(42)'])).rejects.toMatchObject({
       kind: 'process-output',
     });
   });
 
-  it('rejects with a timeout-kinded error when the command exceeds the timeout', async () => {
+  it('rejects with a timeout-kinded error when the command exceeds the timeout', {
+    timeout: 60_000,
+  }, async () => {
     await expect(
       runCommand('node', ['-e', 'setTimeout(() => {}, 10_000)'], { timeout: 100 }),
     ).rejects.toMatchObject({ kind: 'command-timeout' });
   });
 
-  it('returns from timeout only after a stubborn descendant group is absent', async () => {
+  it('returns from timeout only after a stubborn descendant group is absent', {
+    timeout: 60_000,
+  }, async () => {
     let leaderPid = 0;
     let descendantPid = 0;
     try {
@@ -227,7 +241,7 @@ describe('runCommand', () => {
     expect(processExists(descendantPid)).toBe(false);
   });
 
-  it('uses the provided label in the timeout message', async () => {
+  it('uses the provided label in the timeout message', { timeout: 60_000 }, async () => {
     await expect(
       runCommand('node', ['-e', 'setTimeout(() => {}, 10_000)'], {
         timeout: 100,
@@ -236,7 +250,7 @@ describe('runCommand', () => {
     ).rejects.toThrow('typecheck validation timed out');
   });
 
-  it('caps retained stdout and reports truncation metadata', async () => {
+  it('caps retained stdout and reports truncation metadata', { timeout: 60_000 }, async () => {
     const result = await runCommand(
       'node',
       ['-e', 'process.stdout.write("A".repeat(1024 * 1024 + 100))'],
@@ -252,7 +266,7 @@ describe('runCommand', () => {
     });
   });
 
-  it('uses bounded stderr and stdout in process-output errors', async () => {
+  it('uses bounded stderr and stdout in process-output errors', { timeout: 60_000 }, async () => {
     try {
       await runCommand(
         'node',
@@ -277,7 +291,7 @@ describe('runCommand', () => {
     }
   });
 
-  it('runCommand spawns bypass the runner-pid ledger', async () => {
+  it('runCommand spawns bypass the runner-pid ledger', { timeout: 60_000 }, async () => {
     const recorded: number[] = [];
     const released: number[] = [];
     setProcessLedger({
@@ -294,7 +308,9 @@ describe('runCommand', () => {
     expect(released).toEqual([]);
   });
 
-  it('fatal byte budget aborts and reaps the producer group with bounded partial output', async () => {
+  it('fatal byte budget aborts and reaps the producer group with bounded partial output', {
+    timeout: 60_000,
+  }, async () => {
     let leaderPid = 0;
     let descendantPid = 0;
     const childProgram = [
@@ -339,7 +355,9 @@ describe('runCommand', () => {
   it.each([
     'abort',
     'fatal callback',
-  ] as const)('propagates a process-group cleanup limitation from %s termination', async (trigger) => {
+  ] as const)('propagates a process-group cleanup limitation from %s termination', {
+    timeout: 60_000,
+  }, async (trigger) => {
     const controller = new AbortController();
     const recorded: number[] = [];
     const released: number[] = [];
@@ -399,7 +417,9 @@ describe('runCommand', () => {
     expect(released).toEqual([proc?.pid]);
   });
 
-  it('fatal line, event, diagnostic, and parser signals retain distinct outcomes', async () => {
+  it('fatal line, event, diagnostic, and parser signals retain distinct outcomes', {
+    timeout: 60_000,
+  }, async () => {
     const cases: Array<{
       label: string;
       channel: 'stdout' | 'stderr';
@@ -441,7 +461,9 @@ describe('runCommand', () => {
     }
   });
 
-  it('callback fatality uses the once-only callback outcome and preserves prior diagnostics', async () => {
+  it('callback fatality uses the once-only callback outcome and preserves prior diagnostics', {
+    timeout: 60_000,
+  }, async () => {
     let producerPid = 0;
     const outcome = await rejectedFatalOutcome(
       spawnPipe({

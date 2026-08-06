@@ -5,7 +5,7 @@ import {
   assertModeFlagsExclusive,
   assertWorktreeStartOnly,
 } from '../options.js';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { checkServerStatus } from '../../engine/ipc/lockfile.js';
@@ -66,7 +66,7 @@ export function registerResumeCommand(program: Command): void {
   addWorkflowOptions(
     program.command('resume').description('Resume an interrupted workflow'),
   ).action(async (opts: WorkflowOpts) => {
-    const projectDir = resolveProjectDir(opts.project);
+    const projectDir = await canonicalizeProjectDir(opts);
     await resumeCommand({ ...opts, projectDir });
   });
 }

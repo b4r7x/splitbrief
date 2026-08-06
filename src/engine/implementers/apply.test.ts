@@ -8,7 +8,7 @@ import {
   chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { applyCode } from './apply.js';
+import { applyCode, hasApplicablePatch } from './apply.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
 import type { Task } from '../../core/schemas/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -254,6 +254,48 @@ describe('applyCode', () => {
     expect(content).toContain('const d = "$$ escaped dollar";');
   });
 
+  const baseline40 = Array.from({ length: 40 }, (_, i) => `// line ${i + 1}`).join('\n');
+
+  it.each([
+    [
+      'a trailing space after the opening marker',
+      '<<<<<<< SEARCH \n// line 11\n=======\n// patched 11\n>>>>>>> REPLACE',
+    ],
+    [
+      'a six-character terminator',
+      '<<<<<<< SEARCH\n// line 11\n=======\n// patched 11\n>>>>>> REPLACE',
+    ],
+    ['a block truncated mid-patch', '<<<<<<< SEARCH\n// line 11\n=======\n// patched 11'],
+  ])('fails a malformed patch with %s instead of overwriting the file', async (_label, patchCode) => {
+    tempDir = createTempDir('impl-test');
+    const filePath = join(tempDir, 'src', 'malformed.ts');
+    const task = makeTask({ action: 'modify', file: 'src/malformed.ts' });
+
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(filePath, baseline40);
+
+    const result = await applyCode(patchCode, task, tempDir);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Malformed SEARCH/REPLACE block in src/malformed.ts');
+    expect(readFileSync(filePath, 'utf-8')).toBe(baseline40);
+  });
+
+  it('writes a whole-file rewrite that only mentions the marker token inside a line', async () => {
+    tempDir = createTempDir('impl-test');
+    const filePath = join(tempDir, 'src', 'mentions-marker.ts');
+    const task = makeTask({ action: 'modify', file: 'src/mentions-marker.ts' });
+
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(filePath, 'export const marker = "old";\nexport const keep = 1;\n');
+
+    const newCode = 'export const marker = "<<<<<<< SEARCH";\nexport const keep = 1;\n';
+    const result = await applyCode(newCode, task, tempDir);
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(filePath, 'utf-8')).toBe(newCode);
+  });
+
   it('modify action falls back to whole-file create when the file is absent (ENOENT)', async () => {
     tempDir = createTempDir('impl-test');
     const task = makeTask({ action: 'modify', file: 'src/missing.ts' });
@@ -336,5 +378,22 @@ describe('applyCode', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('escapes project directory');
     expect(readFileSync(gitConfig, 'utf-8')).toBe('[core]\n  bare = false\n');
+  });
+});
+
+describe('hasApplicablePatch', () => {
+  const complete = '<<<<<<< SEARCH\nconst a = 1;\n=======\nconst a = 2;\n>>>>>>> REPLACE';
+
+  it('accepts a complete block and rejects a malformed one, repeatably', () => {
+    const malformed = complete.replace('<<<<<<< SEARCH', '<<<<<<< SEARCH ');
+
+    expect(hasApplicablePatch(complete)).toBe(true);
+    expect(hasApplicablePatch(complete)).toBe(true);
+    expect(hasApplicablePatch(malformed)).toBe(false);
+    expect(hasApplicablePatch(malformed)).toBe(false);
+  });
+
+  it('rejects a response that only mentions the marker token', () => {
+    expect(hasApplicablePatch('const marker = "<<<<<<< SEARCH";\n')).toBe(false);
   });
 });

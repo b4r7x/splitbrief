@@ -191,7 +191,7 @@ export function createCliPlanner(
           baseArgs,
           promptTransport: adapter.promptTransport,
           environment: toCliEnvironment(
-            sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg)),
+            sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner')),
           ),
           cwd: projectDir,
           timeoutMs: timeout ?? CLI_NO_DEADLINE_MS,

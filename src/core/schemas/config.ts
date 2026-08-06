@@ -5,6 +5,7 @@ import {
   ApproveLevelSchema,
   ThemeModeSchema,
   SessionScopeSchema,
+  IsolationStrategySchema,
 } from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
@@ -110,6 +111,7 @@ export const ConfigSchema = z.object({
     approve: ApproveLevelSchema.optional(),
     maxRetries: z.number().int().min(0),
     git: GitWorkflowConfigSchema.optional(),
+    isolation: IsolationStrategySchema.optional(),
     speckit: SpeckitWorkflowConfigSchema.optional(),
     mode: WorkflowModeSchema.optional(),
     briefReview: z.enum(['simple', 'rich']).optional(),

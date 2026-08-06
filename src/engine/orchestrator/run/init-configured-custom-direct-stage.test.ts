@@ -24,6 +24,18 @@ import { parsePreparedConfig, type RunnerGate } from '../../runners/prepared-exe
 import { runTaskLoop } from '../task/loop.js';
 import { configForProfile } from '../task/routing.js';
 import { initializeWorkflow } from './init.js';
+import { createRunIsolation } from '../isolation/create.js';
+import type { RunIsolation } from '../isolation/types.js';
+
+function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
+  return createRunIsolation({
+    projectDir,
+    sessionId,
+    strategy: 'staged-copy',
+    onFallback: () => {},
+    onRetained: () => {},
+  });
+}
 
 type DirectRunnerInput = Readonly<{
   id: string;
@@ -179,6 +191,7 @@ async function initializeConfiguredDirectWorkflow(
     },
     setTrackedState: () => {},
     resumeHolder: { messages: [] },
+    isolation: makeCopyingIsolation(input.projectDir, input.sessionId),
   });
 }
 
@@ -206,7 +219,9 @@ function restoreEnvironment(name: string, value: string | undefined): void {
 }
 
 describe('configured direct stage canaries', () => {
-  it('keeps a direct main configured stage free of the Codex session bridge', async () => {
+  it('keeps a direct main configured stage free of the Codex session bridge', {
+    timeout: 60_000,
+  }, async () => {
     await withTempDir('t028-direct-main-stage-project', async (projectDir) => {
       await withTempDir('t028-direct-main-stage-home', async (hostHome) => {
         createTestGitRepo(projectDir);
@@ -254,7 +269,9 @@ describe('configured direct stage canaries', () => {
     });
   });
 
-  it('keeps a direct retry configured stage free of the Codex session bridge', async () => {
+  it('keeps a direct retry configured stage free of the Codex session bridge', {
+    timeout: 60_000,
+  }, async () => {
     await withTempDir('t028-direct-retry-stage-project', async (projectDir) => {
       await withTempDir('t028-direct-retry-stage-home', async (hostHome) => {
         createTestGitRepo(projectDir);

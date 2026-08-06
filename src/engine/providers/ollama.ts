@@ -13,6 +13,7 @@ import { DISCOVERY_HTTP_TIMEOUT_MS } from '../constants.js';
 import { stripV1Suffix } from './constants.js';
 import { resolveApiKeyOverride } from './client/api-key.js';
 import { createMetadataProvider } from './client/metadata.js';
+import { isEndpointUnreachable, sanitizeProviderDiagnostic } from './client/request.js';
 import { providerError } from './errors.js';
 import type { ProviderDefWithMetadata, ProviderOverrides } from './types.js';
 import type { EndpointPolicyFetch } from '../../lib/http/policy-fetch.js';
@@ -114,7 +115,11 @@ async function detectContextLengthFromShow(
     const match = params.match(/num_ctx\s+(\d+)/);
     return match?.[1] ? parseInt(match[1], 10) : null;
   } catch (error) {
-    warnError('detectContextLength(ollama)', error);
+    if (isEndpointUnreachable(error)) return null;
+    warnError(
+      'detectContextLength(ollama)',
+      sanitizeProviderDiagnostic(error, { credentialValues: [input.apiKey] }),
+    );
     return null;
   }
 }

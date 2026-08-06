@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -34,10 +35,15 @@ const DENY_PRE_TASK_HOOKS: HooksConfig = {
 };
 
 const dirs: string[] = [];
+let trustHome: ReturnType<typeof useTrustHome>;
 
-beforeEach(() => resetAllStores());
+beforeEach(() => {
+  trustHome = useTrustHome('hooks-flow-trust-home');
+  resetAllStores();
+});
 afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
+  trustHome.restore();
 });
 
 function postTaskMarkerHooks(projectDir: string): HooksConfig {

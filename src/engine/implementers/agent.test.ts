@@ -168,7 +168,7 @@ describe('agent implementer', () => {
     const prompt = readFileSync(outFile, 'utf-8');
     expect(prompt).toContain('test prompt content');
     expect(prompt).toContain(
-      `Edit ${task.file} directly in the staged working directory. Run the validation commands listed in this Task Brief before finishing.`,
+      `Edit ${task.file} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`,
     );
     expect(prompt).not.toContain('{prompt}');
   });
@@ -272,6 +272,7 @@ describe('agent implementer', () => {
       publishCallEvent: ({ event }) => events.push(event),
       publishDone: () => {},
       publishFailed: () => {},
+      publishWarning: () => {},
     };
 
     const implementer = createAgentImplementer(config, { publisher });

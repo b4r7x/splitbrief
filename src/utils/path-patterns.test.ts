@@ -1,5 +1,45 @@
 import { describe, expect, it } from 'vitest';
-import { matchesGlob } from './path-patterns.js';
+import { matchesGlob, scopePathPatterns } from './path-patterns.js';
+
+describe('scopePathPatterns', () => {
+  it('extracts exactly the backticked path from a prose bullet', () => {
+    expect(scopePathPatterns('Modify only `src/core/state/types.ts`.')).toEqual([
+      'src/core/state/types.ts',
+    ]);
+  });
+
+  it('returns nothing for a prose bullet naming no path', () => {
+    expect(scopePathPatterns('Do not touch anything outside the task file.')).toEqual([]);
+  });
+
+  it('does not treat a bare filename with no directory as a path', () => {
+    expect(scopePathPatterns('helpers.ts')).toEqual([]);
+    expect(scopePathPatterns('package.json')).toEqual([]);
+  });
+
+  it('does not treat a dotted identifier as a path', () => {
+    expect(scopePathPatterns('process.stdout.write')).toEqual([]);
+  });
+
+  it('keeps a glob scope pattern', () => {
+    expect(scopePathPatterns('src/features/**')).toEqual(['src/features/**']);
+    expect(scopePathPatterns('Update all `*.md` docs.')).toEqual(['*.md']);
+  });
+
+  it('extracts an unquoted path embedded in a sentence', () => {
+    expect(scopePathPatterns('Keep src/core/state/types.ts in sync with the plan.')).toEqual([
+      'src/core/state/types.ts',
+    ]);
+  });
+
+  it('drops backticked tokens that are not paths', () => {
+    expect(scopePathPatterns('Call `process.stdout.write` once.')).toEqual([]);
+  });
+
+  it('trims surrounding whitespace from a bare bullet', () => {
+    expect(scopePathPatterns('  src/main.ts  ')).toEqual(['src/main.ts']);
+  });
+});
 
 describe('matchesGlob', () => {
   it('exact path equality matches', () => {

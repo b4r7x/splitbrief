@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import type { Command } from 'commander';
 import { createElement } from 'react';
 import { App } from '../../app/root.js';
-import { resolveProjectDir, setupWorkflow } from '../setup.js';
+import { canonicalizeProjectDir, setupWorkflow } from '../setup.js';
 import { initStores } from '../init-stores.js';
 import { renderApp } from '../render/app.js';
 import { cliError } from '../errors.js';
@@ -110,7 +110,7 @@ export function registerAttachCommand(program: Command): void {
       .command('attach [session-id]')
       .description('Connect a TUI client to a running background session'),
   ).action(async (sessionId: string | undefined, opts: WorkflowOpts) => {
-    const projectDir = resolveProjectDir(opts.project);
+    const projectDir = await canonicalizeProjectDir(opts);
     const resolvedId = await resolveSessionAlias(sessionId, projectDir);
     await attachCommand(resolvedId, { ...opts, projectDir });
   });

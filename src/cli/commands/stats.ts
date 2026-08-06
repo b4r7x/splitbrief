@@ -1,6 +1,6 @@
 import type { Command } from 'commander';
 import ansis from 'ansis';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { readStats, rebuildStats } from '../../core/stats/persistence.js';
 import { formatCost } from '../../core/formatting.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
@@ -18,8 +18,8 @@ export function registerStatsCommand(program: Command): void {
     .option('--rebuild', 'Rebuild stats from session history')
     .option('--json', 'Emit machine-readable JSON output', false)
     .action((opts: { project?: string; rebuild?: boolean; json?: boolean }) =>
-      withCliErrors(() => {
-        const projectDir = resolveProjectDir(opts.project);
+      withCliErrors(async () => {
+        const projectDir = await canonicalizeProjectDir(opts);
 
         if (opts.rebuild) {
           const sessions = listAllSessions(projectDir);

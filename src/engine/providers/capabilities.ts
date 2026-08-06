@@ -1,7 +1,7 @@
 import type { Config } from '../../core/schemas/config.js';
-import { isAutomaticModel } from '../../core/providers/automatic-model.js';
+import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
 import type { ProviderDef } from './types.js';
-import { lookupCatalogContextLength } from './model/catalog.js';
+import { resolveRunnerContextWindow } from './model/context-window.js';
 import { warnError } from '../../lib/warn.js';
 import { providerError } from './errors.js';
 import { getProvider } from './registry.js';
@@ -24,12 +24,17 @@ function getImplementerProvider(config: Config): ProviderDef {
 
 function lookupConfiguredCatalogContextLength(config: Config): number | undefined {
   const implementer = config.implementer;
-  if (implementer.model === undefined || isAutomaticModel(implementer.model)) return undefined;
   if (implementer.kind === 'api') {
-    return lookupCatalogContextLength(implementer.provider, implementer.model);
+    return resolveRunnerContextWindow({
+      providerId: implementer.provider,
+      model: implementer.model,
+    })?.contextLength;
   }
   if (implementer.kind === 'cli') {
-    return lookupCatalogContextLength(implementer.tool, implementer.model);
+    return resolveRunnerContextWindow({
+      providerId: implementer.tool,
+      model: implementer.model,
+    })?.contextLength;
   }
   return undefined;
 }
@@ -60,5 +65,5 @@ export async function detectCapabilities(config: Config): Promise<DetectedCapabi
     return { contextLength: catalogContextLength, origin: 'catalog' };
   }
 
-  return { contextLength: 32768, origin: 'fallback' };
+  return { contextLength: DEFAULT_UNKNOWN_CONTEXT_LENGTH, origin: 'fallback' };
 }

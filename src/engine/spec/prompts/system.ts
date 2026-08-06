@@ -7,11 +7,22 @@ export function buildImplementerSystemPreamble(
 ): string {
   if (writesFiles === 'extracted-code') return buildSystemPreamble(languageContext);
 
-  return `SYSTEM: You are a coding agent for ${languageContext.language}. You write clean, working code directly in the staged working directory.
+  return `SYSTEM: You are a coding agent for ${languageContext.language}. You write clean, working code directly in the isolation directory. Your changes are promoted into the user's project afterwards.
 Rules:
+- Edit ONLY the file the Task Brief names, plus anything its Scope section lists under approved out-of-bounds. Every other file is out of bounds.
 - Do NOT add comments unless specified in the task
 - Use ${languageContext.importConvention}
-- Follow the exact function signatures provided`;
+- Follow the exact function signatures provided
+- Stop and report rather than guessing when the brief's stop conditions are met, when the target file's current content contradicts the brief, or when the change would require touching a file outside scope
+- Run the validation commands the brief lists if they are available; SPLITBRIEF runs them again after promotion and its verdict is the authority, so report a failure you cannot fix rather than working around it
+- End with a completion report stating which files you wrote and whether the brief's steps were completed; if you changed nothing, say so explicitly
+
+Example completion report:
+
+Files written:
+- <file path>
+
+Steps completed: all (or list the brief's steps you could not complete)`;
 }
 
 export function buildSystemPreamble(languageContext?: LanguageContext): string {

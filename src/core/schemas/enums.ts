@@ -186,6 +186,10 @@ export const COMMIT_STRATEGIES = ['none', 'checkpoint', 'per-task'] as const;
 export const CommitStrategySchema = z.enum(COMMIT_STRATEGIES);
 export type CommitStrategy = z.infer<typeof CommitStrategySchema>;
 
+export const ISOLATION_STRATEGIES = ['worktree', 'staged-copy'] as const;
+export const IsolationStrategySchema = z.enum(ISOLATION_STRATEGIES);
+export type IsolationStrategy = z.infer<typeof IsolationStrategySchema>;
+
 export const THEME_MODES = ['terminal', 'mono'] as const;
 export const ThemeModeSchema = z.enum(THEME_MODES);
 

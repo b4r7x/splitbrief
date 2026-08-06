@@ -2,7 +2,7 @@ import type { Task } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
 import type { UserEditConflict } from '../../../events/workflow-events.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
-import { looksLikeFilePath } from '../../../../utils/path-patterns.js';
+import { scopePathPatterns } from '../../../../utils/path-patterns.js';
 import { summarizeText } from './issue.js';
 
 export function summarizeValidation(opts: {
@@ -58,8 +58,8 @@ export function taskFiles(task: Task): string[] {
   return uniqueSorted(
     [
       task.file,
-      ...(task.scope?.inBounds ?? []).filter(looksLikeFilePath),
-      ...(task.scope?.approvedOutOfBounds ?? []).filter(looksLikeFilePath),
+      ...(task.scope?.inBounds ?? []).flatMap(scopePathPatterns),
+      ...(task.scope?.approvedOutOfBounds ?? []).flatMap(scopePathPatterns),
     ],
     { trim: true, nonEmpty: true },
   );

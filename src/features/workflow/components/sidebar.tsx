@@ -15,6 +15,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { formatRoleLabel, formatStageLabel } from '../../../core/phase-display.js';
 import { formatStageElapsed } from '../display/live-activity.js';
 import { getActiveRailStage } from '../layout/chrome-rows.js';
+import { getSidebarTaskTitleWidth } from '../layout/rect.js';
 import { useAdvisory } from '../hooks/use-advisory.js';
 import { useCostStats } from '../hooks/use-cost-stats.js';
 import { useSpinnerFrame } from '../hooks/use-spinner-frame.js';
@@ -158,7 +159,6 @@ export function Sidebar({ width }: SidebarProps) {
   const localCount = tasks.filter((tk) => tk.status === 'done').length;
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
   const completedCount = localCount + escalatedCount;
-  const labelWidth = Math.max(10, width - 6);
   const innerWidth = Math.max(0, width - 5);
 
   const costFmt = formatCostDisplay(cost.localRate, cost.costBreakdown, cost.pricingState);
@@ -189,7 +189,7 @@ export function Sidebar({ width }: SidebarProps) {
           const reserved = spec.tail ? spec.tail.text.length + 2 : 0;
           const title = truncateTerminalDisplayText(
             sanitizeTerminalDisplayText(task.title),
-            Math.max(labelWidth - 2 - reserved, 10),
+            getSidebarTaskTitleWidth({ width, reservedTailCells: reserved }),
           );
           return (
             <Box key={task.id}>

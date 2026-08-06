@@ -6,7 +6,7 @@ Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates
 
 ---
 
-SPLITBRIEF is an open-source CLI that orchestrates expensive AI (planner) and cheap/local AI (implementer) to cut AI coding costs by 50%+.
+SPLITBRIEF is an open-source CLI that orchestrates two AI coding tools: the stronger one plans, compiles Task Briefs, and reviews; the weaker one executes them. SPLITBRIEF holds the contract between them — the brief, validation, retry, escalation, and the evidence trail.
 
 **`CLAUDE.md` is the single source of truth.** It carries the tech stack, commands, the full documentation map, and the core conventions (zero classes, ESM `.js` import suffixes, zero memoization, no `forwardRef`, external stores over Context, etc.). Read `CLAUDE.md` first; this file only exists as the root agent entry point that the skill-discovery layer (`src/engine/skill-discovery.ts`) picks up.
 

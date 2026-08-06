@@ -4,15 +4,11 @@ import type {
 } from '../../../core/schemas/implementer-config.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { uniqueSorted } from '../../../utils/collections.js';
-import { looksLikeFilePath } from '../../../utils/path-patterns.js';
+import { scopePathPatterns } from '../../../utils/path-patterns.js';
 import type { ProfileFit } from './types.js';
 
 function normalizeScopePattern(pattern: string): string {
   return pattern.trim().replace(/^\.\//, '');
-}
-
-function matchesTaskFilePattern(pattern: string, taskFile: string): boolean {
-  return normalizeScopePattern(pattern) === normalizeScopePattern(taskFile);
 }
 
 export function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
@@ -21,14 +17,10 @@ export function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
     ...(task.scope?.approvedOutOfBounds ?? []),
   ];
 
-  const hasAdditionalPathScope = scopedWritePatterns.some((pattern) => {
-    const normalized = normalizeScopePattern(pattern);
-    return (
-      normalized.length > 0 &&
-      looksLikeFilePath(normalized) &&
-      !matchesTaskFilePattern(normalized, task.file)
-    );
-  });
+  const namedScopePaths = scopedWritePatterns.flatMap(scopePathPatterns);
+  const hasAdditionalPathScope = namedScopePaths.some(
+    (pattern) => normalizeScopePattern(pattern) !== normalizeScopePattern(task.file),
+  );
 
   return hasAdditionalPathScope ? 'direct' : 'extracted-code';
 }

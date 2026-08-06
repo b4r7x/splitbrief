@@ -8,7 +8,7 @@ export function seedValidationProject(projectDir: string, expectedMarker = 'from
       "import { readFileSync } from 'node:fs';",
       "const content = readFileSync('src/loop.ts', 'utf-8');",
       `if (!content.includes(${JSON.stringify(expectedMarker)})) {`,
-      `  console.error(${JSON.stringify(`expected ${expectedMarker} implementation`)});`,
+      `  console.error(${JSON.stringify(`src/loop.ts: expected ${expectedMarker} implementation`)});`,
       '  process.exit(1);',
       '}',
     ].join('\n') + '\n',

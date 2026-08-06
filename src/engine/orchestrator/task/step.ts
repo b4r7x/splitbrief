@@ -197,7 +197,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   setTrackedState(state);
 
   if (!implState.implResult.success) {
-    implState.staged?.cleanup();
+    implState.workspace?.cleanup();
     if (implState.preApplyApprovalDenied) {
       return state;
     }
@@ -235,8 +235,8 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     wctx,
     task,
     state,
-    staged: implState.staged,
-    usesStaging: implState.usesStaging,
+    workspace: implState.workspace,
+    usesIsolation: implState.usesIsolation,
     preApplyApprovedFiles: implState.preApplyApprovedFiles,
     taskStartSnapshot,
     recordApprovalDenial: (s, decision, message) =>
@@ -312,12 +312,18 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       phase: state.phase,
       discoveredValidation: state.discoveredValidation,
       signal: wctx.signal,
+      changedFiles: taskChangedFiles,
     });
   } catch (err) {
     if (isAbortError(err) || wctx.signal?.aborted) return state;
     throw err;
   }
   if (wctx.signal?.aborted) return state;
+
+  const acceptance = wctx.validator.decideAcceptance({
+    results: validationResults,
+    changedFiles: taskChangedFiles,
+  });
 
   const commitResult = await validateCommitAndAdvance({
     task,
@@ -329,7 +335,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     method: 'local',
     transitionType: 'VALIDATION_PASS',
     taskStartTime,
-    results: validationResults,
+    acceptance,
     implementerProfile: wctx.implementerProfile,
     taskChangedFiles,
   });
@@ -362,6 +368,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
         durationMs: Date.now() - taskStartTime,
         validation: validationResults,
         changedFiles: taskChangedFiles,
+        exemptStages: acceptance.exemptStages,
       },
     });
     await runChainAnalysisSafe({
@@ -389,10 +396,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (userEdit.diverted) return userEdit.state;
   state = userEdit.state;
 
-  const errorText = formatValidationError(
-    validationResults,
-    wctx.validator.getBaselineFailingStages?.(),
-  );
+  const errorText = formatValidationError(validationResults, acceptance);
   const retry = await retryAndRecord({
     wctx,
     task,
@@ -405,6 +409,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     setTrackedState,
     initialValidation: validationResults,
     initialChangedFiles: taskChangedFiles,
+    initialExemptStages: acceptance.exemptStages,
   });
   if (!retry.completed && retry.state.pendingRecovery) {
     await restoreExhaustedTaskFiles({

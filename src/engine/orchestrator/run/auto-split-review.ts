@@ -6,14 +6,19 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { AutoSplitOverflowSkippedSplit } from '../auto-split-overflow.js';
 import { runBriefQualityGate } from '../planning/brief-quality-gate.js';
+import { runBriefReadinessGateAndReport } from '../planning/brief-readiness-gate.js';
 import {
-  firstBriefReadinessBlockMessage,
-  runBriefReadinessGate,
-} from '../planning/brief-readiness-gate.js';
+  MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS,
+  briefReviewFingerprint,
+  createBriefReviewTracker,
+  publishReadinessBlockWarning,
+  readinessBlockDetail,
+  recordReadinessOverride,
+} from '../planning/brief-review-gate.js';
 import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
 import { createBusTextHandler, publishError, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
+import { readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { parseTasksStrict } from '../../spec/tasks/parse.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
@@ -68,6 +73,26 @@ export async function reviewAutoSplitOutput(opts: {
 
   let tasks = opts.tasks;
 
+  const tracker = createBriefReviewTracker();
+
+  const briefsBody = (): string =>
+    readSpecFile(
+      { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
+      TASKS_FILE,
+    ) ?? '';
+
+  const rejectNoProgress = (): { state: WorkflowState; tasks: Task[]; approved: false } => {
+    publishError({
+      bus: opts.wctx.bus,
+      phase: state.phase,
+      message: `Task Brief review made no progress after ${MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS} consecutive attempts; rejecting the Task Briefs.`,
+      safety: { category: 'workflow', code: 'brief_review_no_progress', transcriptSafe: true },
+    });
+    const rejectedState = transitionAndSave(opts.wctx, state, { type: 'REJECT_BRIEFS' });
+    opts.setTrackedState(rejectedState);
+    return { state: rejectedState, tasks, approved: false };
+  };
+
   while (true) {
     if (opts.wctx.signal?.aborted) return { state, tasks, approved: false };
     const result = await opts.wctx.callbacks.onApprovalNeeded('briefs', tasksFilePath);
@@ -84,6 +109,9 @@ export async function reviewAutoSplitOutput(opts: {
           phase: state.phase,
           message: `Auto-split overflow review failed: ${edited.message}`,
         });
+        if (tracker.registerFailure(briefReviewFingerprint(tasks, briefsBody(), edited.message))) {
+          return rejectNoProgress();
+        }
         continue;
       }
       const { ok, report } = runBriefQualityGate({
@@ -99,6 +127,44 @@ export async function reviewAutoSplitOutput(opts: {
           phase: state.phase,
           message: `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
         });
+        if (
+          tracker.registerFailure(
+            briefReviewFingerprint(
+              edited.tasks,
+              briefsBody(),
+              `quality:${firstBriefErrorMessage(report)}`,
+            ),
+          )
+        ) {
+          return rejectNoProgress();
+        }
+        continue;
+      }
+      const editReadiness = await runBriefReadinessGateAndReport({
+        tasks: edited.tasks,
+        config: opts.wctx.config,
+        projectDir: opts.wctx.projectDir,
+        sessionId: opts.wctx.sessionId,
+        bus: opts.wctx.bus,
+        phase: state.phase,
+        ...(opts.wctx.modelCache !== undefined && { modelCache: opts.wctx.modelCache }),
+        ...(opts.wctx.detectedContextLength !== undefined && {
+          detectedContextLength: opts.wctx.detectedContextLength,
+        }),
+      });
+      if (!editReadiness.ok) {
+        publishReadinessBlockWarning({
+          bus: opts.wctx.bus,
+          phase: state.phase,
+          report: editReadiness,
+        });
+        if (
+          tracker.registerFailure(
+            briefReviewFingerprint(edited.tasks, briefsBody(), readinessBlockDetail(editReadiness)),
+          )
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
       tasks = edited.tasks;
@@ -179,6 +245,13 @@ export async function reviewAutoSplitOutput(opts: {
         phase: state.phase,
         message: `Auto-split overflow review failed: ${approvedTasksResult.message}`,
       });
+      if (
+        tracker.registerFailure(
+          briefReviewFingerprint(tasks, briefsBody(), approvedTasksResult.message),
+        )
+      ) {
+        return rejectNoProgress();
+      }
       continue;
     }
     const approvedTasks = approvedTasksResult.tasks;
@@ -196,20 +269,58 @@ export async function reviewAutoSplitOutput(opts: {
         phase: state.phase,
         message: `Auto-split overflow review failed quality gate: ${firstBriefErrorMessage(report)}`,
       });
+      if (
+        tracker.registerFailure(
+          briefReviewFingerprint(
+            approvedTasks,
+            briefsBody(),
+            `quality:${firstBriefErrorMessage(report)}`,
+          ),
+        )
+      ) {
+        return rejectNoProgress();
+      }
       continue;
     }
-    const readiness = await runBriefReadinessGate({
+    const readiness = await runBriefReadinessGateAndReport({
       tasks: approvedTasks,
       config: opts.wctx.config,
       projectDir: opts.wctx.projectDir,
+      sessionId: opts.wctx.sessionId,
+      bus: opts.wctx.bus,
+      phase: state.phase,
+      ...(opts.wctx.modelCache !== undefined && { modelCache: opts.wctx.modelCache }),
+      ...(opts.wctx.detectedContextLength !== undefined && {
+        detectedContextLength: opts.wctx.detectedContextLength,
+      }),
     });
     if (!readiness.ok) {
-      publishError({
-        bus: opts.wctx.bus,
-        phase: state.phase,
-        message: firstBriefReadinessBlockMessage(readiness),
-      });
-      continue;
+      const fingerprint = briefReviewFingerprint(
+        approvedTasks,
+        briefsBody(),
+        readinessBlockDetail(readiness),
+      );
+      if (tracker.isOverrideOffered(fingerprint)) {
+        recordReadinessOverride({
+          projectDir: opts.wctx.projectDir,
+          sessionId: opts.wctx.sessionId,
+          bus: opts.wctx.bus,
+          phase: state.phase,
+          report: readiness,
+        });
+        tracker.reset();
+      } else {
+        tracker.offerOverride(fingerprint);
+        publishReadinessBlockWarning({
+          bus: opts.wctx.bus,
+          phase: state.phase,
+          report: readiness,
+        });
+        if (tracker.registerFailure(fingerprint)) {
+          return rejectNoProgress();
+        }
+        continue;
+      }
     }
 
     state = transitionAndSave(opts.wctx, state, {

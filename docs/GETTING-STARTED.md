@@ -1,21 +1,23 @@
 # Getting started with SPLITBRIEF
 
-> You installed it. Now what? This page gets you from `npm install` to a validated feature in under five minutes. If you only read one SPLITBRIEF doc, read this one.
+> You installed it. Now what? This page takes you from a fresh clone to your first validated run. If you only read one SPLITBRIEF doc, read this one.
+
+> **Maturity.** SPLITBRIEF is early software, pre-1.0. The orchestration loop — brief, validation, retry, escalation, review, evidence — is covered end to end by the test suite. Mileage against live models is thin: no evaluation run has been recorded yet, so nothing here is a quality claim about what a real planner and implementer will produce on your repo. Read the diffs, and expect config keys and CLI surfaces to still move. Details: [README §Measurement](../README.md#measurement).
 
 ---
 
 ## 1. What is SPLITBRIEF
 
-**SPLITBRIEF is a cost-aware task compiler for AI coding agents.**
+**SPLITBRIEF orchestrates two coding tools: one plans and reviews, the other executes.**
 
 It splits the work an AI normally does in one shot into two roles:
 
-- A **planner** — an expensive, smart model that *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**. Admitted planners (CLI subscriptions, APIs, shells, agents) are listed in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
-- An **implementer** — a cheap or local model that *types*: it executes one task at a time against the brief, with the resolved typecheck, lint, and test pipeline after each. Admitted implementers and API/local providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
+- A **planner** — the stronger of the two, which *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**. Admitted planners (CLI subscriptions, APIs, shells, agents) are listed in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
+- An **implementer** — a weaker **model** that *types*: it executes one task at a time against the brief, with the resolved typecheck, lint, and test pipeline after each. It reaches SPLITBRIEF over either of two equally supported transports — a CLI tool driving a cheaper model, which writes files itself, or an API model, which returns file contents that SPLITBRIEF writes. You pick; SPLITBRIEF favours neither. Admitted implementers and API/local providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
 
-The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; abort and continue preserve resumable phases, and the brief is durable on disk.
+The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; abort and continue preserve resumable phases, and the brief is durable on disk. The implementer never certifies its own work, and the advantage compounds when the two sides come from different labs: a reviewer from another model family does not inherit the implementer's blind spots.
 
-The economic story is simple: a typical feature costs ~350K planner tokens (one Opus session) and can use ~$0 implementer tokens when a local model handles the mechanical typing. Savings depend on the task mix, model choices, and escalation rate.
+Cost falls out of the same split rather than driving it: the strong tool spends its tokens on research, brief compilation, review, and escalation; the weak one spends its tokens typing. What you actually save depends on the task mix, model choices, and escalation rate — SPLITBRIEF reports the split per run and promises no ratio.
 
 ---
 
@@ -25,12 +27,13 @@ Today's AI coding workflow has four sharp edges that SPLITBRIEF is designed to f
 
 | Problem | What goes wrong | What SPLITBRIEF does |
 |---|---|---|
-| **Token burn** | Frontier models spend expensive tokens on mechanical edits. | The planner writes the brief. A cheaper or local implementer writes the code. |
+| **Self-review** | A model reviewing its own output repeats its own blind spots. | The tool that wrote the code never signs it off — the planner reviews, a deterministic pipeline decides. |
+| **Token burn** | Frontier models spend expensive tokens on mechanical edits. | The planner writes the brief. A weaker implementer writes the code. |
 | **Plan drift** | The agent forgets the plan halfway and starts inventing. | The brief is on disk, the planner reviews the final diff against it. |
 | **Destructive actions** | A bad rename or migration trashes the working tree, no undo. | Checkpoints, file-level snapshots, hash-guarded restore. |
 | **Vendor lock-in** | Switching from Claude → Codex means re-learning the tool. | Five interchangeable runner kinds (`cli`, `api`, `shell`, `agent`, `agent-sdk`) on both sides. |
 
-SPLITBRIEF is **not** a multi-agent orchestrator. There are exactly two roles, in a clear hierarchy. It is **not** a "universal AI connector". It is opinionated about one thing: cost-optimal coding work that doesn't go off the rails.
+SPLITBRIEF is **not** a multi-agent orchestrator. There are exactly two roles, in a clear hierarchy. It is **not** a "universal AI connector". It is opinionated about one thing: two tools on one job, with the contract, the validation and the review held by the orchestrator rather than by either model.
 
 For the long version, see [docs/VISION.md](./VISION.md).
 
@@ -38,13 +41,9 @@ For the long version, see [docs/VISION.md](./VISION.md).
 
 ## 3. Installation
 
-Requires **Node.js 22 or newer** (ESM-only).
+Requires **Node.js 22 or newer** (ESM-only) and a **git** repository to work in.
 
-```bash
-npm install -g splitbrief   # or run it ad hoc with: npx splitbrief
-```
-
-To hack on SPLITBRIEF itself, install from source instead:
+SPLITBRIEF is not published to npm yet. Install from source:
 
 ```bash
 git clone https://github.com/b4r7x/splitbrief.git
@@ -74,6 +73,8 @@ splitbrief start "fix the typo in src/auth.ts"     # your first task
 ```
 
 SPLITBRIEF operates on the git repository root. If you run it from a subdirectory, it canonicalizes the project to the repository toplevel (via `git rev-parse --show-toplevel`); pass `--project <dir>` to target an explicit directory.
+
+The setup screen needs a terminal. In CI, a Dockerfile, or any piped shell, `splitbrief init --yes` writes the default config without it — Claude Code as planner, a local Ollama model as implementer — and `splitbrief doctor` then tells you what is missing on that machine.
 
 Here is what happens, step by step:
 
@@ -169,7 +170,7 @@ Full workflow-mode semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
 
 Fastest path from install to a validated run using **admitted** runners only. Full support tables: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (CLI matrix, readiness states, billing posture per tool) and [CONFIGURATION.md](./CONFIGURATION.md) (API providers, model catalog, profiles).
 
-**1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue.
+**1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue. If your tree already has failing checks, `splitbrief doctor --probe-validation` runs the configured validation commands and names the stages that are already red — use it before a run, not inside one (it can take minutes).
 
 **2. Hybrid recipe (subscription planner + cheap API implementer).** The admitted CLI `claude-code` (evidence as-of 2026-07-31, tested version 2.0.0) uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with the bundled **`compatible-only`** Groq row `openai/gpt-oss-120b` (`provider-dependent` API billing; set `GROQ_API_KEY` in your environment — never inline in YAML). No bundled model is `recommended` — see the note below:
 
@@ -220,25 +221,23 @@ For every other planner/implementer combination, swap tools and models via the c
 
 ## 8. Cost transparency
 
-SPLITBRIEF shows you what you are spending, in real time, without ceremony.
+Spend is not painted across the top of the screen. There is no persistent cost header; these are the four places a number actually appears.
 
-**Top status line** (always visible during a run):
+**Sidebar footer** — `/sidebar` toggles the workflow sidebar, which starts hidden and is unavailable below 120 columns. Its last line reads `Local NN%`, the share of tasks the implementer finished without escalating, followed by the run's spend when there is something priced to report:
 
 ```
-[standard] · spent $0.42 · proj $1.18 · budget $2.00 · 21% plan · cache 73%
+Local 80% · $0.42
 ```
 
-- `spent` — actual dollars spent so far this session
-- `proj` — projected total cost based on the Task Brief size
-- `budget` — your `workflow.maxBudget` ceiling
-- `NN% plan` — fraction of the projected cost already burned
-- `cache NN%` — prompt-cache hit rate (where the runner reports it; else `n/a`)
+The spend token is omitted entirely when nothing in the run is priced, rather than showing `$0.00`. A mixed run reads `$0.42 + unpriced`; a run whose priced total is incomplete reads `$0.42 + unknown`; a subscription runner shows its billing label instead of a dollar figure. `/copy cost` puts the same string on your clipboard.
 
-**Drill-down overlay**: press `Ctrl+G` at any time to open a per-phase / per-task breakdown with horizontal bars showing input vs output token split (output is typically 3–5× more expensive) and cache-hit % per phase.
+**Ctrl+G — `Cost · breakdown`** — the one full accounting surface. Per phase: cost, the input/output token split (output is the expensive half), `cache NN%` where the runner reports a cache read, and cache-create tokens when there are any. Per task: total tokens and per-attempt detail, so a task that took three attempts shows all three.
 
-**Budget gate**: at `workflow.budgetPauseThreshold` (default **85%**) of `workflow.maxBudget`, the task loop pauses and asks you to approve continuing. In headless `--json` mode, the same threshold exits non-zero with a machine-readable error so CI doesn't keep burning.
+**Summary screen** — when the run produced a savings estimate, the completion screen leads with `$0.42 actual vs $1.80 baseline · 77% saved` and, under it, how much of that came from routing locally. No estimate, no line.
 
-Local/subscription runners that don't expose pricing data show `local` instead of a dollar amount — SPLITBRIEF never invents fake savings.
+**Budget gate** — with `workflow.maxBudget` set, the task loop warns at 80% of it, pauses at `workflow.budgetPauseThreshold` (default `0.85`) and asks you to continue, and stops at the ceiling. It also pauses when paid usage has unknown pricing, because spend that cannot be proven against the cap is not spend that can be ignored. In headless `--json` mode the pause emits a `recovery_required` record and exits non-zero, so CI stops instead of burning.
+
+Local and subscription runners that expose no pricing are reported as unpriced, never as `$0.00` — SPLITBRIEF does not invent a saving it cannot compute.
 
 ---
 
@@ -275,7 +274,7 @@ Explicit non-goals, so you don't go looking:
 - **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
 - **Not Windows-supported.** macOS and Linux only. The IPC server (`splitbrief attach` / `splitbrief ps`) and the snapshot path encoding need POSIX semantics. Windows support is planned but not yet available.
 - **No fixed validator language.** Validation is command-based and can be resolved for TypeScript, JavaScript, Python, Go, and Rust projects.
-- **No tool-call format for implementers.** Small models (7B–27B) cannot reliably produce tool-call JSON. Some implementers use extraction; direct-file runners (`agent`, `agent-sdk`) write to the working tree and SPLITBRIEF inspects the resulting diff. See [docs/VISION.md §Strategic decisions](./VISION.md).
+- **No SPLITBRIEF-defined tool-call protocol for implementers.** SPLITBRIEF does not layer a second control protocol on top of the runner. An implementer either returns file contents that SPLITBRIEF writes (`extracted-code`), or writes into its working directory itself (`direct` — `cli`, `agent`, and `agent-sdk` runners) and SPLITBRIEF inspects the resulting diff. Whatever tools the runner exposes internally are the runner's business. See [docs/VISION.md §Strategic decisions](./VISION.md).
 - **No cloud-side state.** Everything lives under `.splitbrief/` in your project. No accounts, no SaaS, no telemetry-by-default (OpenTelemetry is opt-in via `otel.enabled: true`).
 
 ---
@@ -315,6 +314,6 @@ These features are active by default unless noted:
 | Understand the architecture end-to-end | [docs/ARCHITECTURE.md](./ARCHITECTURE.md) |
 | See what is intentionally out of scope | [docs/FUTURE.md](./FUTURE.md) |
 
-Two minutes in and you should be ready to type `splitbrief start "..."`. Start with something small. Watch the planner ask a clarifying question. Review the brief. Let the implementer churn. Read `review.md` at the end.
+That is enough to type `splitbrief start "..."`. Start with something small. Watch the planner ask a clarifying question. Review the brief. Let the implementer churn. Read `review.md` at the end.
 
 That is the whole loop.

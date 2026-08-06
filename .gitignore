@@ -64,3 +64,6 @@ Thumbs.db
 
 .omc
 .trees/
+
+# npm pack output
+*.tgz

@@ -3,6 +3,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EventBus } from '../events/types.js';
 import type { RoutingDecision } from './context-routing/types.js';
+import { publishWarning } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';
 
@@ -200,6 +201,15 @@ export function recordTaskUsage(opts: RecordTaskUsageOptions): void {
     delta.escalationTokens > 0 ||
     delta.escalationCacheReadTokens > 0 ||
     delta.escalationCacheCreateTokens > 0;
+  if (!hasImplementerUsage && !hasEscalationUsage) {
+    publishWarning({
+      bus,
+      phase: state.phase,
+      taskId: task.id,
+      message: `${tool ?? 'implementer'} completed task ${task.id} without reporting token usage; the run records zero implementer tokens for it.`,
+      safety: { category: 'cost', code: 'implementer_usage_not_reported', transcriptSafe: true },
+    });
+  }
   const usage: TaskTokenUsage = {
     taskId: task.id,
     taskTitle: task.title,

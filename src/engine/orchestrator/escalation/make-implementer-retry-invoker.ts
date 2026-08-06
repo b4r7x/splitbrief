@@ -24,6 +24,7 @@ export function makeImplementerRetryInvoker(opts: {
     signal,
     sandboxEnv,
     fileIgnoreProjectDir,
+    changeDetection,
   }) =>
     (opts.implementer ?? implementer).retry({
       task,
@@ -39,5 +40,6 @@ export function makeImplementerRetryInvoker(opts: {
       signal,
       sandboxEnv,
       fileIgnoreProjectDir,
+      changeDetection,
     });
 }

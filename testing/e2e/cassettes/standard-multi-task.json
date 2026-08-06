@@ -29,6 +29,50 @@
       "index": 1,
       "recordedAt": "2026-04-30T12:10:01.000Z",
       "request": {
+        "method": "GET",
+        "url": "http://localhost:11434/v1/models",
+        "headers": {
+          "authorization": "***",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
+      },
+      "provider": "anthropic",
+      "durationMs": 44
+    },
+    {
+      "index": 2,
+      "recordedAt": "2026-04-30T12:10:02.000Z",
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:11434/v1/models",
+        "headers": {
+          "authorization": "***",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
+      },
+      "provider": "anthropic",
+      "durationMs": 44
+    },
+    {
+      "index": 3,
+      "recordedAt": "2026-04-30T12:10:03.000Z",
+      "request": {
         "method": "POST",
         "url": "http://localhost:11434/v1/messages",
         "headers": {
@@ -49,8 +93,8 @@
       "durationMs": 920
     },
     {
-      "index": 2,
-      "recordedAt": "2026-04-30T12:10:02.000Z",
+      "index": 4,
+      "recordedAt": "2026-04-30T12:10:04.000Z",
       "request": {
         "method": "POST",
         "url": "http://localhost:11434/v1/messages",
@@ -72,8 +116,8 @@
       "durationMs": 990
     },
     {
-      "index": 3,
-      "recordedAt": "2026-04-30T12:10:03.000Z",
+      "index": 5,
+      "recordedAt": "2026-04-30T12:10:05.000Z",
       "request": {
         "method": "POST",
         "url": "http://localhost:11434/v1/messages",
@@ -95,8 +139,8 @@
       "durationMs": 1010
     },
     {
-      "index": 4,
-      "recordedAt": "2026-04-30T12:10:04.000Z",
+      "index": 6,
+      "recordedAt": "2026-04-30T12:10:06.000Z",
       "request": {
         "method": "POST",
         "url": "http://localhost:11434/v1/messages",
@@ -118,8 +162,30 @@
       "durationMs": 1720
     },
     {
-      "index": 5,
-      "recordedAt": "2026-04-30T12:10:05.000Z",
+      "index": 7,
+      "recordedAt": "2026-04-30T12:10:07.000Z",
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:11434/v1/models",
+        "headers": {
+          "authorization": "***",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
+      },
+      "provider": "anthropic",
+      "durationMs": 44
+    },
+    {
+      "index": 8,
+      "recordedAt": "2026-04-30T12:10:08.000Z",
       "request": {
         "method": "POST",
         "url": "http://localhost:11434/v1/messages",
@@ -141,8 +207,30 @@
       "durationMs": 870
     },
     {
-      "index": 6,
-      "recordedAt": "2026-04-30T12:10:06.000Z",
+      "index": 9,
+      "recordedAt": "2026-04-30T12:10:09.000Z",
+      "request": {
+        "method": "GET",
+        "url": "http://localhost:11434/v1/models",
+        "headers": {
+          "authorization": "***",
+          "anthropic-version": "2023-06-01"
+        },
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "body": "{\"data\":[{\"id\":\"claude-sonnet-4-6\",\"created_at\":\"2026-04-01T00:00:00Z\"},{\"id\":\"claude-haiku-4-5-20251001\",\"created_at\":\"2025-10-01T00:00:00Z\"}]}"
+      },
+      "provider": "anthropic",
+      "durationMs": 44
+    },
+    {
+      "index": 10,
+      "recordedAt": "2026-04-30T12:10:10.000Z",
       "request": {
         "method": "POST",
         "url": "http://localhost:11434/v1/messages",
@@ -164,8 +252,8 @@
       "durationMs": 910
     },
     {
-      "index": 7,
-      "recordedAt": "2026-04-30T12:10:07.000Z",
+      "index": 11,
+      "recordedAt": "2026-04-30T12:10:11.000Z",
       "request": {
         "method": "POST",
         "url": "http://localhost:11434/v1/messages",

@@ -10,7 +10,7 @@ import type { DispatchArgs } from './types.js';
 
 export async function runInteractiveStart(args: DispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
-  assertInteractiveTty();
+  assertInteractiveTty('use --json or --detach');
   const { useFullscreen, useMouse, useHover, needsSetup } = await setupWorkflow(opts);
   await deps.initStores(projectDir, opts);
   let worktreeName: string | null = null;

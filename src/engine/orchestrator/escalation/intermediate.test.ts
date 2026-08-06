@@ -11,6 +11,7 @@ import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factori
 import {
   makeBusRecorder,
   makeCallbacks,
+  makeCopyingIsolation,
   makeImplementer,
   makePreparedImplementerFactory,
   makePlanner,
@@ -74,6 +75,7 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
         metadata: TEST_METADATA,
         sinks: TEST_SINKS,
         validator: createValidator(),
+        isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
         taskStartSnapshot,
         dependsOnFiles: [],
       };
@@ -126,6 +128,7 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
       taskStartSnapshot,
       dependsOnFiles: [],
     };
@@ -229,6 +232,7 @@ describe('runEscalationTier intermediate tier guard ordering', () => {
           metadata: TEST_METADATA,
           sinks: TEST_SINKS,
           validator: createValidator(),
+          isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
           taskStartSnapshot,
           dependsOnFiles: [],
         },
@@ -293,6 +297,7 @@ describe('resolveIntermediateConfig', () => {
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
       validator: createValidator(),
+      isolation: makeCopyingIsolation({ projectDir: projectDir, sessionId }),
       taskStartSnapshot: { head: '', files: [], dirtyFileContents: {} },
       dependsOnFiles: [],
     };

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { formatTaskPrompt } from './prompt-formatter.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
-import { truncateMiddle, computeTokenBudget, DEFAULT_API_CONTEXT_LENGTH } from './token-budget.js';
+import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
+import { truncateMiddle, computeTokenBudget } from './token-budget.js';
 import { makeTask as makeBaseTask } from '#testing/helpers/factories/task.js';
 import { defaultContext } from '#testing/helpers/factories/config.js';
 import type { Task } from '../../core/schemas/task.js';
@@ -119,13 +120,17 @@ describe('formatTaskPrompt with contextLength', () => {
     expect(prompt).not.toContain('truncated');
   });
 
-  it('truncates large currentCode at the default api context window when that window is passed', () => {
+  it('truncates large currentCode at the shared default context window when that window is passed', () => {
     const largeCode = 'x'.repeat(150_000);
     const task = makeTask({
       action: 'modify',
       currentCode: largeCode,
     });
-    const prompt = formatTaskPrompt({ task, context, contextLength: DEFAULT_API_CONTEXT_LENGTH });
+    const prompt = formatTaskPrompt({
+      task,
+      context,
+      contextLength: DEFAULT_UNKNOWN_CONTEXT_LENGTH,
+    });
 
     expect(prompt).toContain('// ... truncated to fit context window ...');
     expect(prompt.length).toBeLessThan(largeCode.length);

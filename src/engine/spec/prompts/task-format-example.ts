@@ -6,16 +6,24 @@ import {
 
 export function buildTaskFormatExample(languageContext?: LanguageContext): string {
   const ctx = languageContext ?? buildLanguageContext(undefined);
-  const fenceLanguage = codeFenceLanguage(ctx);
-  const codeFenceStart = fenceLanguage ? `\\\`\\\`\\\`${fenceLanguage}` : '\\`\\`\\`';
+  const codeFenceStart = `\`\`\`${codeFenceLanguage(ctx)}`;
 
-  return `\`\`\`markdown
+  return `Frontmatter values are parsed literally. Never emit an alternation such as \`create | modify\` — choose one value:
+
+- \`id\` — unique brief id: \`T001\`, \`T002\`, ... in emission order.
+- \`title\` — one short line.
+- \`action\` — exactly \`create\` or \`modify\`.
+- \`file\` — one project-relative path (no leading \`/\`, no \`..\`).
+- \`depends_on\` — YAML list of brief ids this one must follow: \`[]\` when independent, \`[T001, T002]\` when it must run after both.
+
+Copy this shape and substitute real values:
+
 ---
 id: T001
 title: Short descriptive title
-action: create | modify
+action: create
 file: src/path/to/file${ctx.fileExtension}
-depends_on: [] | [T001, T002]
+depends_on: []
 ---
 
 ### Description
@@ -24,17 +32,17 @@ What to implement and why. Include all context the implementer needs.
 ### Signature
 ${codeFenceStart}
 ${signatureExample(ctx)}
-\\\`\\\`\\\`
+\`\`\`
 
 ### Type Definitions
 ${codeFenceStart}
 ${typeDefinitionsExample(ctx)}
-\\\`\\\`\\\`
+\`\`\`
 
 ### Current Code
 ${codeFenceStart}
 ${currentCodeExample(ctx)}
-\\\`\\\`\\\`
+\`\`\`
 
 ### Pattern
 Existing codebase pattern or exact snippet the implementer should follow.
@@ -63,8 +71,7 @@ Existing codebase pattern or exact snippet the implementer should follow.
 
 ### Constraints
 - ${ctx.importConvention}
-- Follow existing codebase patterns
-\`\`\``;
+- Follow existing codebase patterns`;
 }
 
 function signatureExample(ctx: LanguageContext): string {

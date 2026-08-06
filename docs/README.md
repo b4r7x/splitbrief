@@ -5,7 +5,7 @@
 > 2. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md) — the complete data flow with file paths
 > 3. [WORKFLOW.md](./WORKFLOW.md) — the state machine, phases, modes
 
-**SPLITBRIEF** is a cost-aware task compiler for AI coding agents. An expensive planner compiles Task Briefs; a cheaper implementer executes them. Two roles, one job.
+**SPLITBRIEF** orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retries, the escalation, and the evidence between them. Lower cost follows from the split; it is not the promise.
 
 ---
 
@@ -78,7 +78,7 @@ Specialized subsystem docs linked from the main chapters above.
 - [FEATURES.md](./FEATURES.md) — Feature catalog
 - [CHANGELOG.md](../CHANGELOG.md) — Release notes
 - [MIGRATION.md](./MIGRATION.md) — Migration guide for the 2026-04-20 EventBus architecture release
-- [COST-AWARE-IMPLEMENTER-DIRECTION.md](./COST-AWARE-IMPLEMENTER-DIRECTION.md) — Cost-aware implementer: design direction
+- [COST-AWARE-IMPLEMENTER-DIRECTION.md](./COST-AWARE-IMPLEMENTER-DIRECTION.md) — Implementer direction
 
 ## Project-level
 

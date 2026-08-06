@@ -50,7 +50,7 @@ function getVisibleBriefTaskWindow(
 
 export function BriefReviewView({ filePath, height, width }: BriefReviewViewProps) {
   const t = useTheme();
-  const { tasks, quality, reviewMetadata, briefSources } = useBriefData(filePath);
+  const { tasks, quality, readiness, reviewMetadata, briefSources } = useBriefData(filePath);
   const reviewScrollOffset = reviewStore.use((s) => s.scrollOffset);
   const loadError = reviewStore.use((s) => s.loadError);
   const focusedBriefIndex = focusStore.use((f) =>
@@ -128,6 +128,7 @@ export function BriefReviewView({ filePath, height, width }: BriefReviewViewProp
       <PlanReviewHeader
         tasks={tasks}
         quality={quality}
+        readiness={readiness}
         filePath={filePath}
         width={innerWidth}
         hasLoadError={hasLoadError}

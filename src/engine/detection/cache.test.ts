@@ -346,6 +346,39 @@ describe('detection cache', () => {
     });
   });
 
+  it('caches a context naming the api-key channel without reading it as credential material', async () => {
+    const contextKey = detectionContextsForCurrentConfig({
+      config: {
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code', authChannel: 'api-key' },
+      },
+      projectDir: tempDir,
+    }).readiness;
+    expect(contextKey).toContain('api-key');
+
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ contextKey, cliTools: [cliDetectionFor('ready', 'claude-code')] }),
+    });
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey }),
+    ).resolves.toMatchObject({ contextKey });
+  });
+
+  it('still refuses a context carrying real credential material', async () => {
+    const contextKey = 'detection-context-v1|darwin|api-key|sk-live-abcdefghijklmnop';
+
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ contextKey, cliTools: [cliDetectionFor('ready', 'claude-code')] }),
+    });
+
+    await expect(
+      loadDetectionCacheSnapshot({ projectDir: tempDir, contextKey }),
+    ).resolves.toBeNull();
+  });
+
   it('keeps generated cache contexts bounded', async () => {
     const contextKey = 'a'.repeat(16 * 1_024 + 1);
     await saveDetectionCache({

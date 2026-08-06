@@ -424,6 +424,26 @@ describe('createOtelSink', () => {
     expect(exporter.getFinishedSpans()).toHaveLength(0);
   });
 
+  it('passes brief readiness events through without adding spans', () => {
+    const sink = createOtelSink({ provider });
+    sink({ type: 'workflow_started', ts: 1, phase: 'planning', feature: 'x' });
+    sink({ type: 'brief_readiness_passed', ts: 2, phase: 'planning', taskCount: 5 });
+    sink({
+      type: 'brief_readiness_blocked',
+      ts: 3,
+      phase: 'planning',
+      taskCount: 5,
+      blockedCount: 2,
+      blockedTaskIds: ['T001', 'T002'],
+      kinds: ['stale-conflict'],
+    });
+    sink({ type: 'workflow_complete', ts: 4, phase: 'complete' });
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.name).toBe('splitbrief.workflow');
+  });
+
   it('keeps runner-call child output out of traces without adding runner telemetry', () => {
     const childOutputCanary = 'custom-public-child-output-48152';
     const sink = createOtelSink({ provider });

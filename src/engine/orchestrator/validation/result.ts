@@ -7,4 +7,5 @@ export interface ValidationResult {
   error?: string | undefined;
   output?: string | undefined;
   command?: string | undefined;
+  failureFiles?: readonly string[] | undefined;
 }

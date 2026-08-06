@@ -169,7 +169,7 @@ describe('createCliPlanner', () => {
       await planner.review('prompt', projectDir, { onOutput: vi.fn() });
 
       expect(readFileSync(envFile, 'utf8')).toBe(
-        `sk-openai||${join(projectDir, SANDBOX_DIR, 'home')}`,
+        `sk-openai||${join(projectDir, SANDBOX_DIR, 'planner', 'home')}`,
       );
     } finally {
       if (originalOpenAi === undefined) delete process.env.OPENAI_API_KEY;

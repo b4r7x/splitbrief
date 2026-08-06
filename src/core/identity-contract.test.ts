@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { extname, join, relative } from 'node:path';
 import { afterEach, assert, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ConfigSchema } from './schemas/config.js';
@@ -19,11 +19,47 @@ const IDENTITY_LABELS = [
   'package',
   'bin',
   'commands',
+  'positioning',
   'prior-state-ignored',
   'v3',
   'v2-rejected',
   'full-rejected',
 ] as const;
+const SUPERSEDED_POSITIONING = [
+  'claude',
+  'anthropic',
+  'openai',
+  'gemini',
+  'ollama',
+  'codex',
+  'copilot',
+  'cost',
+  'cheap',
+  'expensive',
+  'saving',
+  'local model',
+] as const;
+// Assembled, not written literally: this file is inside the swept tree and a literal
+// spelling would make the sweep match its own assertion.
+const SUPERSEDED_IDENTITY_PHRASES = [
+  ['cost', 'optimized'].join('-'),
+  ['plan with', 'claude'].join(' '),
+  ['cheap', 'local'].join('/'),
+] as const;
+const SWEPT_SURFACES = ['src', 'docs', 'package.json', 'README.md', 'CLAUDE.md'] as const;
+const SWEPT_EXTENSIONS = new Set(['.ts', '.tsx', '.md', '.json']);
+
+function helpHeader(args: readonly string[]): string {
+  const result = spawnSync(TSX, [CLI_ENTRY, ...args], {
+    cwd: ROOT,
+    timeout: 60_000,
+    encoding: 'utf-8',
+  });
+  expect(result.status).toBe(0);
+  const optionsAt = result.stdout.indexOf('\nOptions:');
+  assert(optionsAt > 0, `"splitbrief ${args.join(' ')}" printed no Options section`);
+  return result.stdout.slice(0, optionsAt).toLowerCase();
+}
 
 let tempDir: string | undefined;
 
@@ -33,7 +69,7 @@ afterEach(() => {
 });
 
 describe('SPLITBRIEF identity', () => {
-  it('identity contract matrix has exactly 7 labeled cases', async () => {
+  it('identity contract matrix has exactly 8 labeled cases', async () => {
     const workingRoot = createTempDir('splitbrief-identity');
     tempDir = workingRoot;
     const packageManifest = readPackageJson(ROOT, { throwOnInvalid: true });
@@ -76,6 +112,31 @@ describe('SPLITBRIEF identity', () => {
           expect(result.stdout).toContain('SPLITBRIEF');
           for (const command of REQUIRED_COMMANDS) {
             expect(result.stdout).toMatch(new RegExp(`^  ${command}(?: |$)`, 'm'));
+          }
+        },
+      },
+      {
+        label: 'positioning',
+        run: () => {
+          const description = packageManifest['description'];
+          assert(typeof description === 'string', 'package.json description must be a string');
+          expect(
+            description.startsWith(SPLITBRIEF_IDENTITY.displayName),
+            'package description must lead with the identity display name',
+          ).toBe(true);
+
+          const surfaces = [
+            ['splitbrief --help', helpHeader(['--help'])],
+            ['splitbrief start --help', helpHeader(['start', '--help'])],
+            ['package.json description', description.toLowerCase()],
+          ] as const;
+          for (const [surface, text] of surfaces) {
+            for (const term of SUPERSEDED_POSITIONING) {
+              expect(
+                text,
+                `${surface} must not carry the superseded framing "${term}"`,
+              ).not.toContain(term);
+            }
           }
         },
       },
@@ -128,11 +189,31 @@ describe('SPLITBRIEF identity', () => {
       run: () => void | Promise<void>;
     }>;
 
-    expect(cases).toHaveLength(7);
+    expect(cases).toHaveLength(8);
     expect(cases.map(({ label }) => label)).toEqual(IDENTITY_LABELS);
 
     for (const contractCase of cases) {
       await contractCase.run();
     }
   }, 60_000);
+
+  it('no maintained source or doc surface carries a superseded cost-framed phrase', () => {
+    const files = SWEPT_SURFACES.flatMap((surface) => {
+      const absolute = join(ROOT, surface);
+      if (!statSync(absolute).isDirectory()) return [absolute];
+      return readdirSync(absolute, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => join(entry.parentPath, entry.name));
+    }).filter((file) => SWEPT_EXTENSIONS.has(extname(file)));
+
+    const offenders = files.flatMap((file) => {
+      const text = readFileSync(file, 'utf-8').toLowerCase();
+      return SUPERSEDED_IDENTITY_PHRASES.filter((phrase) => text.includes(phrase)).map(
+        (phrase) => `${relative(ROOT, file)}: ${phrase}`,
+      );
+    });
+
+    expect(files.length).toBeGreaterThan(500);
+    expect(offenders).toEqual([]);
+  });
 });

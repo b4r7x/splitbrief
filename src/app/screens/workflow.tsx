@@ -55,7 +55,7 @@ export function WorkflowScreen({
   deps,
 }: WorkflowScreenProps) {
   const [input, terminal] = useStores(inputHeightStore, terminalSizeStore);
-  const { cols, rows, isSmall } = terminal;
+  const { cols, rows } = terminal;
   const inputRows = input.rows;
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
   const [scrollAboveLabel, setScrollAboveLabel] = useState('');
@@ -109,7 +109,6 @@ export function WorkflowScreen({
   const sidebarWidth = getWorkflowSidebarWidth({
     cols,
     sidebarVisible,
-    isSmall,
   });
   const showSidebar = sidebarWidth > 0;
   const questionHint = model.inputMode.mode === 'question' ? model.inputMode.hint : null;
@@ -133,11 +132,10 @@ export function WorkflowScreen({
   const contentWidth = getWorkflowContentWidth({
     cols,
     sidebarVisible,
-    isSmall,
   });
   const reviewColumn =
     model.inputMode.mode === 'review'
-      ? getWorkflowReviewColumn({ cols, sidebarVisible, isSmall })
+      ? getWorkflowReviewColumn({ cols, sidebarVisible })
       : undefined;
 
   return (

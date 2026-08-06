@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
@@ -472,6 +472,26 @@ Skill body for bootstrap proof.
 
     expect(requireConfig().implementer.contextLength).toBeUndefined();
     expect(configStore.getDetectedContextLength()).toBeUndefined();
+  }, 30_000);
+
+  it('pushes a real codex/auto window into the store without rewriting config.yaml', async () => {
+    const dir = makeProjectDir();
+    writeConfigYaml(
+      dir,
+      toYaml({
+        ...createDefaultConfig(),
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'codex', model: 'auto' },
+      }),
+    );
+    const configPath = join(dir, SPLITBRIEF_DIR, 'config.yaml');
+    const before = readFileSync(configPath, 'utf-8');
+
+    await initStores(dir);
+
+    expect(requireConfig().implementer.contextLength).toBe(1_050_000);
+    expect(configStore.getDetectedContextLength()).toBe(1_050_000);
+    expect(readFileSync(configPath, 'utf-8')).toBe(before);
   }, 30_000);
 
   it('pushes a live-detected context length with detected=true', async () => {

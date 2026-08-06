@@ -228,6 +228,30 @@ describe('canonicalizeProjectDir', () => {
       errorSpy.mockRestore();
     }
   });
+
+  it('relocates a subdirectory cwd to the toplevel without a warning when no --project is given', async () => {
+    const real = realpathSync(tmp);
+    createTestGitRepo(real);
+    const subdir = join(real, 'packages', 'web');
+    mkdirSync(subdir, { recursive: true });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousCwd = process.cwd();
+
+    try {
+      process.chdir(subdir);
+
+      const result = await canonicalizeProjectDir({});
+
+      // `cd packages/web && splitbrief ps` is the ordinary case, not a
+      // mistake worth a warning — the commands simply have to agree on
+      // which directory the project is.
+      expect(result).toBe(real);
+      expect(errorSpy).not.toHaveBeenCalled();
+    } finally {
+      process.chdir(previousCwd);
+      errorSpy.mockRestore();
+    }
+  });
 });
 
 describe('assertInteractiveTty', () => {
@@ -235,12 +259,12 @@ describe('assertInteractiveTty', () => {
     delete (process.stdin as { isTTY?: boolean }).isTTY;
   });
 
-  it('throws a CLI error directing to --json or --detach when stdin is not a TTY', () => {
+  it('throws a CLI error carrying the calling command remedy when stdin is not a TTY', () => {
     delete (process.stdin as { isTTY?: boolean }).isTTY;
 
     let captured: unknown;
     try {
-      assertInteractiveTty();
+      assertInteractiveTty('use --json or --detach');
       throw new Error('expected assertInteractiveTty to throw');
     } catch (err) {
       captured = err;
@@ -255,7 +279,7 @@ describe('assertInteractiveTty', () => {
 
   it('returns without throwing when stdin is a TTY', () => {
     process.stdin.isTTY = true;
-    expect(() => assertInteractiveTty()).not.toThrow();
+    expect(() => assertInteractiveTty('use --json or --detach')).not.toThrow();
   });
 });
 

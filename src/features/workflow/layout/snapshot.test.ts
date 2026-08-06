@@ -364,7 +364,6 @@ describe('readBriefListSnapshot phantom-hotspot clamp', () => {
     const fullContentWidth = getWorkflowContentWidth({
       cols: 300,
       sidebarVisible: false,
-      isSmall: false,
     });
     expect(fullContentWidth).toBeGreaterThan(120);
     expect(snap.rect.width).toBe(fullContentWidth);

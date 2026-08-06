@@ -13,6 +13,9 @@ import {
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
+import type { ValidationStage } from '../../../core/schemas/enums.js';
+import { decideValidationAcceptance } from '../validation/acceptance.js';
+import type { Validator } from '../validation/types.js';
 import { TASK_REVIEW_COMMANDS } from '../../events/workflow-events.js';
 import { runTaskLoop } from './loop.js';
 
@@ -190,7 +193,7 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001', file: 'src/recovered.ts' });
     const state = makeImplState([task]);
     let validationCalls = 0;
-    const validator = {
+    const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
       runValidation: vi.fn().mockImplementation(async () => {
         validationCalls += 1;
@@ -204,6 +207,12 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
             ]
           : [{ passed: true as const, stage: 'test' as const }];
       }),
+      decideAcceptance: ({ results, changedFiles }) =>
+        decideValidationAcceptance({
+          results,
+          changedFiles,
+          baselineFailingStages: new Set<ValidationStage>(),
+        }),
     };
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async () => {

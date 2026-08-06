@@ -17,6 +17,7 @@ import {
   NATIVE_CLI_CATALOG_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
   classifyCliAdmittedVersion,
+  cliAuthChannelHostStateAccess,
   cliModelPolicyViolations,
   cliToolSupportsRole,
   defaultCliAuthChannel,
@@ -300,12 +301,14 @@ describe('CLI tool catalog', () => {
       env: [],
       stateBridge: 'host-cli-state',
       billing: 'subscription-included',
+      hostKeychainPlatforms: [],
     });
     expect(selectCliAuthChannel('codex', { channel: 'api-key' })).toEqual({
       id: 'api-key',
       env: ['OPENAI_API_KEY'],
       stateBridge: 'none',
       billing: 'api-metered',
+      hostKeychainPlatforms: [],
     });
     expect(selectCliAuthChannel('codex', undefined)).toBeUndefined();
     expect(selectCliAuthChannel('copilot', { channel: 'api-key' })).toBeUndefined();
@@ -327,5 +330,57 @@ describe('CLI tool catalog', () => {
     });
     expect(defaultCliAuthChannel('opencode').id).toBe('provider-dependent');
     expect(defaultCliAuthChannel('kilo-code').id).toBe('provider-dependent');
+  });
+
+  it('declares the Claude Code session credential a keychain item on macOS and nowhere else', () => {
+    for (const tool of CLI_TOOL_IDS) {
+      for (const channel of CLI_TOOL_CATALOG[tool].auth.channels) {
+        expect({ tool, channel: channel.id, platforms: channel.hostKeychainPlatforms }).toEqual({
+          tool,
+          channel: channel.id,
+          platforms: tool === 'claude-code' && channel.id === 'session' ? ['darwin'] : [],
+        });
+      }
+    }
+  });
+
+  it('routes the Claude Code session channel through the host account only on macOS', () => {
+    const session = selectCliAuthChannel('claude-code', { channel: 'session' });
+    const apiKey = selectCliAuthChannel('claude-code', { channel: 'api-key' });
+    if (session === undefined || apiKey === undefined) throw new Error('missing Claude channel');
+
+    expect(cliAuthChannelHostStateAccess(session, 'darwin')).toBe('host-account');
+    expect(cliAuthChannelHostStateAccess(session, 'linux')).toBe('bridged-files');
+    expect(cliAuthChannelHostStateAccess(session, 'win32')).toBe('bridged-files');
+    expect(cliAuthChannelHostStateAccess(apiKey, 'darwin')).toBe('none');
+  });
+
+  it('keeps every other session channel on the file bridge, including on macOS', () => {
+    for (const tool of CLI_TOOL_IDS) {
+      for (const channel of CLI_TOOL_CATALOG[tool].auth.channels) {
+        if (tool === 'claude-code' && channel.id === 'session') continue;
+        expect({
+          tool,
+          channel: channel.id,
+          access: cliAuthChannelHostStateAccess(channel, 'darwin'),
+        }).toEqual({
+          tool,
+          channel: channel.id,
+          access: channel.stateBridge === 'host-cli-state' ? 'bridged-files' : 'none',
+        });
+      }
+    }
+  });
+
+  it('names the subscription channel as the default on every platform', () => {
+    // The subscription the user already pays for is the planner default
+    // everywhere; no platform resolves a fresh Claude Code runner to metered
+    // billing. `.specify/memory/constitution.md` Principle I.
+    expect(defaultCliAuthChannel('claude-code')).toMatchObject({
+      id: 'session',
+      billing: 'subscription-included',
+    });
+    expect(defaultCliAuthChannel('codex').id).toBe('session');
+    expect(defaultCliAuthChannel('aider').id).toBe('provider-dependent');
   });
 });

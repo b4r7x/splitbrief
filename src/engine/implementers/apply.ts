@@ -5,6 +5,11 @@ import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 
+const searchReplaceRegex = /<<<<<<< SEARCH\r?\n([\s\S]*?)=======\r?\n([\s\S]*?)>>>>>>> REPLACE/g;
+// Line-anchored: a whole-file rewrite that merely mentions the token inside a string or regex
+// literal is still written, while a response that opens a patch block must complete it.
+const openingMarkerRegex = /^<<<<<<< SEARCH/m;
+
 export async function applyCode(
   code: string,
   task: Task,
@@ -31,10 +36,19 @@ export async function applyCode(
     return { success: true };
   }
 
-  const searchReplaceRegex = /<<<<<<< SEARCH\r?\n([\s\S]*?)=======\r?\n([\s\S]*?)>>>>>>> REPLACE/g;
-  const matches = [...code.matchAll(searchReplaceRegex)];
+  const matches = findPatchBlocks(code);
 
   if (matches.length === 0) {
+    const markerIndex = code.search(openingMarkerRegex);
+    if (markerIndex !== -1) {
+      return {
+        success: false,
+        error:
+          `Malformed SEARCH/REPLACE block in ${task.file}: nothing was written because a block opens with ` +
+          '<<<<<<< SEARCH but never closes with ======= and >>>>>>> REPLACE:\n' +
+          code.slice(markerIndex, markerIndex + 200),
+      };
+    }
     await writeConfinedSecureFileAsync(projectDir, task.file, code);
     return { success: true };
   }
@@ -71,6 +85,15 @@ export async function applyCode(
 
   await writeConfinedSecureFileAsync(projectDir, task.file, restoreEnding(result, fileEnding));
   return { success: true };
+}
+
+export function hasApplicablePatch(code: string): boolean {
+  return findPatchBlocks(code).length > 0;
+}
+
+// matchAll leaves the shared global regex's lastIndex alone; test/exec would not.
+function findPatchBlocks(code: string): RegExpExecArray[] {
+  return [...code.matchAll(searchReplaceRegex)];
 }
 
 type SearchMatch =

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   getStartCommandTmp,
   prepareExecutionMock,
+  probeRunnerAvailabilityMock,
   readSingleSessionArtifact,
   renderCalls,
   runHeadlessMock,
@@ -137,6 +138,51 @@ describe('start command — readiness', () => {
     expect(blocker?.remediation).toEqual(expect.any(String));
   });
 
+  it('refuses to start when the default implementer is unreachable, before any planner call', async () => {
+    const tmp = getStartCommandTmp();
+    writeReadyReadinessFixtures(tmp);
+    probeRunnerAvailabilityMock.mockResolvedValue([
+      {
+        slot: { role: 'implementer', profile: 'default' },
+        provider: 'ollama',
+        endpoint: 'http://localhost:11434/v1',
+        verdict: { state: 'unavailable', diagnostic: 'fetch failed' },
+      },
+    ]);
+    const stdoutChunks: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+
+    let captured: unknown;
+    try {
+      await runStart(['--project', tmp, '--json', 'implement X']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect(runHeadlessMock).not.toHaveBeenCalled();
+    expect(existsSync(activeFile(tmp))).toBe(false);
+    const firstLine = JSON.parse(stdoutChunks[0]?.trim() ?? '{}') as {
+      report?: {
+        status?: string;
+        checks?: Array<{ id: string; severity: string; remediation: string | null }>;
+      };
+    };
+    expect(firstLine.report?.status).toBe('blocked');
+    expect(
+      firstLine.report?.checks?.find(
+        (check) => check.id === 'runners.availability.implementer.default',
+      ),
+    ).toMatchObject({
+      severity: 'blocker',
+      remediation:
+        'Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
+    });
+  });
+
   it('rejects JSON task review before preparing or activating a session', async () => {
     const tmp = getStartCommandTmp();
     writeReadyReadinessFixtures(tmp);
@@ -181,14 +227,16 @@ describe('start command — readiness', () => {
     };
     expect(firstLine.type).toBe('status');
     expect(firstLine.data?.type).toBe('readiness_report');
-    expect(firstLine.data?.report?.status).toBe('ready');
+    // The fixture planner is a declared shell command, which always carries a
+    // trust-boundary warning now.
+    expect(firstLine.data?.report?.status).toBe('ready-with-warnings');
 
     const readinessRecord = readSingleSessionArtifact(tmp, 'readiness.json') as {
       type?: string;
       status?: string;
     };
     expect(readinessRecord.type).toBe('start-readiness');
-    expect(readinessRecord.status).toBe('ready');
+    expect(readinessRecord.status).toBe('ready-with-warnings');
   });
 
   it('keeps task review available for RPC starts', async () => {

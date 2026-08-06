@@ -292,4 +292,23 @@ describe('createTreeRecorderSink', () => {
     expect(tree).not.toBeNull();
     expect(tree!.meta.entryCount).toBe(6);
   });
+
+  it('passes brief readiness events through without recording entries', () => {
+    const sink = createTreeRecorderSink({ projectDir: tmpDir, sessionId });
+    sink({ type: 'workflow_started', ts: 1000, phase: 'planning', feature: 'x' });
+    sink({ type: 'brief_readiness_passed', ts: 2000, phase: 'planning', taskCount: 5 });
+    sink({
+      type: 'brief_readiness_blocked',
+      ts: 3000,
+      phase: 'planning',
+      taskCount: 5,
+      blockedCount: 2,
+      blockedTaskIds: ['T001', 'T002'],
+      kinds: ['stale-conflict'],
+    });
+
+    const tree = reconstructTree(join(tmpDir, '.splitbrief', 'sessions', sessionId));
+    expect(tree).not.toBeNull();
+    expect(tree!.meta.entryCount).toBe(1);
+  });
 });

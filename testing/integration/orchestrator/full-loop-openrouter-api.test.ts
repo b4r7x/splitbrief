@@ -53,14 +53,23 @@ describe('full workflow OpenRouter API implementer', { timeout: 90_000 }, () => 
     const implementation = 'export const loop = "from-openrouter";\n';
     const events: EngineEvent[] = [];
     process.env.OPENROUTER_API_KEY = 'sk-or-workflow-test';
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new Request(input, init).url;
+      if (url.endsWith('/models/user')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ data: [{ id: 'test-model' }] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(
         makeOpenAiSseResponse([
           { content: `\`\`\`ts\n${implementation}\`\`\`` },
           { usage: { prompt_tokens: 123, completion_tokens: 45 } },
         ]),
       );
+    });
     vi.stubGlobal('fetch', fetchMock);
 
     const task = makeTask({

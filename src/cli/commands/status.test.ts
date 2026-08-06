@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { registerStatusCommand } from './status.js';
 import { SPLITBRIEF_DIR, STATE_FILE, SESSION_LOG_FILE } from '../../core/paths.js';
 import { createInitialState } from '../../core/state/machine.js';
@@ -122,6 +123,22 @@ describe('status command', () => {
     const out = captureOutput();
     expect(out.length).toBeGreaterThan(0);
     expect(out).not.toMatch(/Run .*--history/);
+  });
+
+  it('reports the repository-root session when run from a package subdirectory', async () => {
+    createTestGitRepo(tmp);
+    const subdir = join(tmp, 'packages', 'web');
+    mkdirSync(subdir, { recursive: true });
+    writeActiveSession(tmp, '2026-04-18-add-auth', 'add auth');
+
+    const program = new Command();
+    program.exitOverride();
+    registerStatusCommand(program);
+    await program.parseAsync(['node', 'splitbrief', 'status', '--project', subdir]);
+
+    const out = captureOutput();
+    expect(out).toContain('add auth');
+    expect(out).not.toContain('No active workflow');
   });
 
   it('uses all sessions for --history instead of the recent-session cap', async () => {

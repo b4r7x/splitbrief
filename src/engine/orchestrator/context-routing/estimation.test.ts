@@ -66,14 +66,11 @@ describe('estimateFormattedTaskPromptTokens', () => {
     expect(estimatedTokens).toBe(
       promptOnlyTokens + estimateTokens(formatImplementerSystemPreamble(languageContext, 'direct')),
     );
-    expect(estimatedTokens).toBeLessThan(
-      estimateFormattedTaskPromptTokens({
-        task,
-        context,
-        contextLength: 10_000,
-        languageContext,
-        writesFiles: 'extracted-code',
-      }),
-    );
+
+    // The equality above already pins the estimate to the prompt actually sent, so this
+    // budget is an absolute bloat cap rather than a relative one: the contract allows the
+    // direct preamble to be heavier than extracted-code's, but a direct implementer that
+    // nearly doubles in size would silently raise every task's cost.
+    expect(estimatedTokens).toBeLessThan(600);
   });
 });

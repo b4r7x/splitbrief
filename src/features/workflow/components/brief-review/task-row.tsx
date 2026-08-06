@@ -3,7 +3,10 @@ import { CursorCell } from '../../../../components/pickers/cursor-cell.js';
 import { useTheme } from '../../../../components/theme.js';
 import type { Theme } from '../../../../components/theme.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text.js';
-import { STALE_ESTIMATE_STATUSES } from '../../../../core/plan-review/predicates.js';
+import {
+  STALE_ESTIMATE_STATUSES,
+  hasNoCapableWorker,
+} from '../../../../core/plan-review/predicates.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../../../core/plan-review/types.js';
 import type { BriefQualityIssue } from '../../../../engine/spec/brief-quality.js';
@@ -24,6 +27,8 @@ function getTaskStateWord(
   if (metadata?.contextFit === 'overflow')
     return { text: 'overflow', color: theme.error, dim: true };
   if (metadata?.conflict !== undefined) return { text: 'conflict', color: theme.error, dim: true };
+  if (metadata !== undefined && hasNoCapableWorker(metadata))
+    return { text: 'no worker', color: theme.warning, dim: true };
   if (metadata?.validationStatus === 'fail' || issues.some((i) => i.severity === 'error'))
     return { text: 'failed', color: theme.error, dim: true };
   if (

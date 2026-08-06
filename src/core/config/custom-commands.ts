@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { canonicalJSON } from '../../utils/canonical-json.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { OutputFormatSchema, type OutputFormat } from '../schemas/enums.js';
 import {
@@ -307,18 +308,37 @@ export const CustomCommandDefinitionSchema = z
 
 export type CustomCommandDefinition = z.infer<typeof CustomCommandDefinitionSchema>;
 
-export const NormalizedCustomCommandSchema = z
+const CustomCommandShape = {
+  id: CustomCommandIdSchema,
+  label: z.string().min(1).max(MAX_LABEL_LENGTH),
+  contract: CustomCommandContractSchema,
+  executable: LiteralStringSchema,
+  argv: z.array(LiteralStringSchema).max(MAX_ARGV_LENGTH).readonly(),
+  outputFormat: OutputFormatSchema,
+  idleWarnMs: z.number().int().positive().max(3_600_000),
+  idleKillMs: z.number().int().positive().max(3_600_000),
+  env: z.array(EnvironmentReferenceNameSchema).max(64).readonly(),
+} as const;
+
+/**
+ * A runner declared inline in `planner`/`implementer` carries the same
+ * execution tuple as a `customCommands` entry but not its literal policy: the
+ * runner block has always accepted interpreter command strings, empty argv
+ * entries, and unbounded lists. Admission has to be able to describe one in
+ * order to ask about it, so these three fields mirror the runner block rather
+ * than the stricter `customCommands` definition.
+ */
+export const InlineRunnerCommandSchema = z
   .strictObject({
-    id: CustomCommandIdSchema,
-    label: z.string().min(1).max(MAX_LABEL_LENGTH),
-    contract: CustomCommandContractSchema,
-    executable: LiteralStringSchema,
-    argv: z.array(LiteralStringSchema).max(MAX_ARGV_LENGTH).readonly(),
-    outputFormat: OutputFormatSchema,
-    idleWarnMs: z.number().int().positive().max(3_600_000),
-    idleKillMs: z.number().int().positive().max(3_600_000),
-    env: z.array(EnvironmentReferenceNameSchema).max(64).readonly(),
+    ...CustomCommandShape,
+    executable: z.string().min(1),
+    argv: z.array(z.string()).readonly(),
+    env: z.array(EnvironmentReferenceNameSchema).readonly(),
   })
+  .readonly();
+
+export const NormalizedCustomCommandSchema = z
+  .strictObject(CustomCommandShape)
   .superRefine((command, ctx) => {
     const definition = CustomCommandDefinitionSchema.safeParse({
       label: command.label,
@@ -398,6 +418,28 @@ export function customCommandTupleForRunner(
     idleWarnMs: runner.idleWarnMs,
     idleKillMs: runner.idleKillMs,
     env: runner.env,
+  });
+}
+
+const INLINE_RUNNER_ID_DIGEST_CHARS = 16;
+
+export type InlineRunnerCommand = z.infer<typeof InlineRunnerCommandSchema>;
+
+/**
+ * Names an inline `planner`/`implementer` runner declaration for owner-only
+ * trust receipts. The id is derived from the role and the execution tuple, so
+ * a receipt survives unrelated config edits and never carries to a command the
+ * owner did not see.
+ */
+export function inlineRunnerCommand(
+  input: Readonly<{ runner: CustomCommandRunner; role: 'planner' | 'implementer' }>,
+): InlineRunnerCommand {
+  const tuple = customCommandTupleForRunner(input.runner);
+  const digest = sha256Hex(canonicalJSON(tuple)).slice(0, INLINE_RUNNER_ID_DIGEST_CHARS);
+  return InlineRunnerCommandSchema.parse({
+    id: `inline-${input.role}-${digest}`,
+    label: `Inline ${input.runner.kind} runner`,
+    ...tuple,
   });
 }
 

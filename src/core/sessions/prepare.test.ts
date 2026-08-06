@@ -6,19 +6,28 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
+  type PathLike,
 } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, renameSync: vi.fn(actual.renameSync) };
+});
+
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { lockSibling } from '../../lib/file-lock.js';
-import { activeFile, READINESS_FILE, sessionDir } from '../paths.js';
+import { activeFile, READINESS_FILE, sessionDir, sessionsRoot } from '../paths.js';
 import { readActive, writeActive } from './lifecycle.js';
 import {
   acceptDetachedSessionHandoff,
   createSessionPreparationCandidate,
+  discardOrphanSessionDirectory,
   prepareNewSession,
   releasePreparedSession,
   rollbackDetachedSessionHandoff,
@@ -1071,5 +1080,123 @@ describe('prepareNewSession', () => {
       }),
     );
     expect(readFileSync(readinessPath, 'utf8')).toBe(existing);
+  });
+});
+
+describe('discardOrphanSessionDirectory', () => {
+  it('removes a readiness-only directory no active record names', () => {
+    const project = projectDir();
+    const sessionId = '2026-08-03-discard-orphan';
+    const directory = sessionDir(project, sessionId);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, READINESS_FILE), '{}');
+
+    expect(discardOrphanSessionDirectory({ projectDir: project, sessionId })).toBe(true);
+    expect(existsSync(directory)).toBe(false);
+    expect(readdirSync(sessionsRoot(project))).toEqual([]);
+  });
+
+  it('refuses to discard the session named by a legacy active pointer', () => {
+    const project = projectDir();
+    const sessionId = '2026-08-03-discard-active-legacy';
+    const directory = sessionDir(project, sessionId);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, READINESS_FILE), '{}');
+    writeActive({ projectDir: project, sessionId });
+
+    expect(discardOrphanSessionDirectory({ projectDir: project, sessionId })).toBe(false);
+    expect(existsSync(directory)).toBe(true);
+    expect(readFileSync(join(directory, READINESS_FILE), 'utf8')).toBe('{}');
+  });
+
+  it('refuses to discard the session named by a v1 active receipt', () => {
+    const project = projectDir();
+    const sessionId = '2026-08-03-discard-active-v1';
+    const directory = sessionDir(project, sessionId);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, READINESS_FILE), '{}');
+    writeFileSync(
+      activeFile(project),
+      `${JSON.stringify({
+        version: 1,
+        sessionId,
+        generation: '44444444-4444-4444-8444-444444444444',
+      })}\n`,
+      { mode: 0o600 },
+    );
+
+    expect(discardOrphanSessionDirectory({ projectDir: project, sessionId })).toBe(false);
+    expect(existsSync(directory)).toBe(true);
+    expect(readFileSync(join(directory, READINESS_FILE), 'utf8')).toBe('{}');
+  });
+
+  it('leaves a directory holding any other file in place', () => {
+    const project = projectDir();
+    const sessionId = '2026-08-03-discard-foreign-file';
+    const directory = sessionDir(project, sessionId);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, READINESS_FILE), '{}');
+    writeFileSync(join(directory, 'stray-editor-swap'), 'keep me');
+
+    expect(discardOrphanSessionDirectory({ projectDir: project, sessionId })).toBe(false);
+    expect(existsSync(directory)).toBe(true);
+    expect(readFileSync(join(directory, 'stray-editor-swap'), 'utf8')).toBe('keep me');
+  });
+
+  it('restores a directory that gains a file between the scan and the claim', () => {
+    const project = projectDir();
+    const sessionId = '2026-08-03-discard-gained-file';
+    const directory = sessionDir(project, sessionId);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, READINESS_FILE), '{}');
+    const renameMock = vi.mocked(renameSync);
+    const actualRename = renameMock.getMockImplementation();
+    if (actualRename === undefined) throw new Error('renameSync mock lost its implementation');
+    try {
+      renameMock.mockImplementation((from: PathLike, to: PathLike) => {
+        actualRename(from, to);
+        writeFileSync(join(String(to), 'intruder'), 'surprise');
+      });
+
+      const removed = discardOrphanSessionDirectory({ projectDir: project, sessionId });
+
+      expect(removed).toBe(false);
+      expect(existsSync(directory)).toBe(true);
+      expect(readFileSync(join(directory, READINESS_FILE), 'utf8')).toBe('{}');
+      expect(readFileSync(join(directory, 'intruder'), 'utf8')).toBe('surprise');
+      expect(readdirSync(sessionsRoot(project))).toEqual([sessionId]);
+    } finally {
+      renameMock.mockImplementation(actualRename);
+    }
+  });
+
+  it('refuses to follow a symlink standing in for a session directory', () => {
+    const project = projectDir();
+    const sessionId = '2026-08-03-discard-symlink';
+    const target = join(project, 'outside-target');
+    mkdirSync(target, { recursive: true });
+    mkdirSync(sessionsRoot(project), { recursive: true });
+    symlinkSync(target, sessionDir(project, sessionId));
+
+    let caught: unknown;
+    try {
+      discardOrphanSessionDirectory({ projectDir: project, sessionId });
+    } catch (cause) {
+      caught = cause;
+    }
+
+    expect(caught).toMatchObject({
+      kind: 'session-prepare-io',
+      data: { operation: 'discard-orphan-session', sessionId },
+    });
+    expect(existsSync(sessionDir(project, sessionId))).toBe(true);
+    expect(readdirSync(target)).toEqual([]);
+  });
+
+  it('returns false when the session path is gone', () => {
+    const project = projectDir();
+    const sessionId = '2026-08-03-discard-gone';
+
+    expect(discardOrphanSessionDirectory({ projectDir: project, sessionId })).toBe(false);
   });
 });

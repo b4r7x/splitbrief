@@ -60,6 +60,15 @@ function createCliImplementer(
 }
 
 function installRecordingClaudeShim(writtenRelPath: string): { argvFile: string } {
+  return installClaudeShimWithLines(writtenRelPath, [
+    '{"type":"result","result":"done","usage":{"input_tokens":5,"output_tokens":2}}',
+  ]);
+}
+
+function installClaudeShimWithLines(
+  writtenRelPath: string,
+  terminalLines: readonly string[],
+): { argvFile: string } {
   const argvFile = join(shimDir, 'argv.txt');
   const target = join(projectDir, writtenRelPath);
   const shimPath = join(shimDir, 'claude');
@@ -69,7 +78,26 @@ function installRecordingClaudeShim(writtenRelPath: string): { argvFile: string 
     'cat > /dev/null',
     `mkdir -p "$(dirname '${target}')"`,
     `printf '%s' 'generated' > '${target}'`,
-    `printf '%s\\n' '{"type":"result","result":"done","usage":{"input_tokens":5,"output_tokens":2}}'`,
+    ...terminalLines.map((line) => `printf '%s\\n' '${line}'`),
+  ].join('\n');
+  writeFileSync(shimPath, `${script}\n`, 'utf8');
+  chmodSync(shimPath, 0o755);
+  return { argvFile };
+}
+
+function installRecordingCodexShim(
+  writtenRelPath: string,
+  terminalLines: readonly string[],
+): { argvFile: string } {
+  const argvFile = join(shimDir, 'argv.txt');
+  const target = join(projectDir, writtenRelPath);
+  const shimPath = join(shimDir, 'codex');
+  const script = [
+    '#!/bin/bash',
+    `printf '%s\\n' "$@" > '${argvFile}'`,
+    `mkdir -p "$(dirname '${target}')"`,
+    `printf '%s' 'generated' > '${target}'`,
+    ...terminalLines.map((line) => `printf '%s\\n' '${line}'`),
   ].join('\n');
   writeFileSync(shimPath, `${script}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
@@ -86,6 +114,18 @@ const cliClaudeImplementer: CliImplementerConfig = {
 
 function makeClaudeConfig(): Config {
   return makeConfig({ implementer: cliClaudeImplementer });
+}
+
+const cliCodexImplementer: CliImplementerConfig = {
+  kind: 'cli',
+  tool: 'codex',
+  authChannel: 'session',
+  contextLength: 8192,
+  temperature: 0.3,
+};
+
+function makeCodexConfig(): Config {
+  return makeConfig({ implementer: cliCodexImplementer });
 }
 
 beforeEach(() => {
@@ -202,7 +242,7 @@ describe('createCliImplementer (claude-code)', () => {
 
       expect(result.success).toBe(true);
       expect(readFileSync(envFile, 'utf8')).toBe(
-        `sk-anthropic||${join(projectDir, '.splitbrief', 'sandbox', 'home')}`,
+        `sk-anthropic||${join(projectDir, '.splitbrief', 'sandbox', 'implementer', 'home')}`,
       );
     } finally {
       if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
@@ -257,6 +297,102 @@ describe('createCliImplementer (claude-code)', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('reports result usage from the structured terminal as implementer usage', async () => {
+    installRecordingClaudeShim('src/hello.ts');
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
+  });
+
+  it('prefers terminal usage over mid-stream usage samples', async () => {
+    installClaudeShimWithLines('src/hello.ts', [
+      '{"type":"stream_event","event":{"type":"message_delta","usage":{"input_tokens":5,"output_tokens":2}}}',
+      '{"type":"result","result":"done","usage":{"input_tokens":100,"output_tokens":40}}',
+    ]);
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40 });
+  });
+
+  it('keeps mid-stream usage when the terminal result carries none', async () => {
+    installClaudeShimWithLines('src/hello.ts', [
+      '{"type":"stream_event","event":{"type":"message_delta","usage":{"input_tokens":5,"output_tokens":2}}}',
+      '{"type":"result","result":"done"}',
+    ]);
+    const config = makeClaudeConfig();
+
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.usage).toEqual({ inputTokens: 5, outputTokens: 2 });
+  });
+});
+
+describe('createCliImplementer (codex usage capture)', () => {
+  it('reports turn usage as implementer usage, excluding cached input from input tokens', async () => {
+    const { argvFile } = installRecordingCodexShim('src/hello.ts', [
+      '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":4,"cached_input_tokens":6}}',
+    ]);
+    const config = makeCodexConfig();
+
+    const implementer = createCliImplementer(cliCodexImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(readArgv(argvFile).at(-1)).toContain('src/hello.ts');
+    expect(result.usage).toEqual({ inputTokens: 4, outputTokens: 4, cacheReadTokens: 6 });
+  });
+
+  it('succeeds and reports no usage when the turn carries no usage key', async () => {
+    installRecordingCodexShim('src/hello.ts', ['{"type":"turn.completed"}']);
+    const config = makeCodexConfig();
+
+    const implementer = createCliImplementer(cliCodexImplementer);
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config,
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.usage).toBeUndefined();
   });
 });
 
@@ -451,6 +587,7 @@ describe('createCliImplementer (opencode arg vector)', () => {
       publishCallEvent: ({ event }) => events.push(event),
       publishDone: () => {},
       publishFailed: () => {},
+      publishWarning: () => {},
     };
 
     const implementer = createCliImplementer(opencodeImplementer, { publisher });

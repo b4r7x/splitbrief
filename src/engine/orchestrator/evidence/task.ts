@@ -11,15 +11,33 @@ const VALIDATION_PASSED_LABEL: Record<EvidenceValidationEntry['stage'], string> 
   test: 'test passed',
 };
 
+const VALIDATION_PRE_EXISTING_LABEL: Record<EvidenceValidationEntry['stage'], string> = {
+  typecheck: 'typecheck failed (pre-existing)',
+  lint: 'lint failed (pre-existing)',
+  test: 'test failed (pre-existing)',
+};
+
+function isExemptStage(
+  stage: EvidenceValidationEntry['stage'],
+  exemptStages: readonly EvidenceValidationEntry['stage'][] | undefined,
+): boolean {
+  return exemptStages ? exemptStages.includes(stage) : false;
+}
+
 export function validationEntries(
   results: ValidationResult[],
   metadata?:
-    | { retryState?: EvidenceValidationEntry['retryState']; changedFiles?: string[] | undefined }
+    | {
+        retryState?: EvidenceValidationEntry['retryState'];
+        changedFiles?: string[] | undefined;
+        exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
+      }
     | undefined,
 ): EvidenceValidationEntry[] {
   return results.map((r) => {
     const entry: EvidenceValidationEntry = { stage: r.stage, passed: r.passed };
     if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
+    if (!r.passed && isExemptStage(r.stage, metadata?.exemptStages)) entry.baselineExempt = true;
     if (metadata?.retryState) entry.retryState = metadata.retryState;
     if (metadata?.changedFiles && metadata.changedFiles.length > 0) {
       entry.changedFiles = [...metadata.changedFiles];
@@ -51,6 +69,7 @@ export type RecordLocalTaskEvidenceInput = {
   changedFiles?: string[] | undefined;
   briefHash?: string | null;
   validationRetryState?: EvidenceValidationEntry['retryState'] | undefined;
+  exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
 };
 
 export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): EvidenceLedger {
@@ -66,10 +85,15 @@ export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): Ev
   next.validation = validationEntries(input.validation, {
     retryState: input.validationRetryState,
     changedFiles: input.changedFiles,
+    exemptStages: input.exemptStages,
   });
   if (input.status === 'done') uniquePush(next.observedEvidence, 'task reached done');
   for (const r of input.validation) {
-    if (r.passed) uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
+    if (r.passed) {
+      uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
+    } else if (isExemptStage(r.stage, input.exemptStages)) {
+      uniquePush(next.observedEvidence, VALIDATION_PRE_EXISTING_LABEL[r.stage]);
+    }
   }
   if (next.changedFiles.length > 0) {
     uniquePush(next.observedEvidence, `diff written for ${input.task.file}`);
@@ -89,6 +113,7 @@ export type RecordRetryOrEscalationEvidenceInput = {
   escalated: boolean;
   briefHash?: string | null;
   validationRetryState?: EvidenceValidationEntry['retryState'] | undefined;
+  exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
 };
 
 export function recordRetryOrEscalationEvidence(
@@ -112,6 +137,7 @@ export function recordRetryOrEscalationEvidence(
           input.validationRetryState ??
           (input.escalated ? 'escalated' : input.status === 'failed' ? 'failed' : 'retry'),
         changedFiles: input.changedFiles,
+        exemptStages: input.exemptStages,
       }),
     );
   }
@@ -123,7 +149,11 @@ export function recordRetryOrEscalationEvidence(
   }
   if (input.validation) {
     for (const r of input.validation) {
-      if (r.passed) uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
+      if (r.passed) {
+        uniquePush(next.observedEvidence, VALIDATION_PASSED_LABEL[r.stage]);
+      } else if (isExemptStage(r.stage, input.exemptStages)) {
+        uniquePush(next.observedEvidence, VALIDATION_PRE_EXISTING_LABEL[r.stage]);
+      }
     }
   }
   if ((input.status === 'done' || input.status === 'escalated') && next.changedFiles.length === 0) {

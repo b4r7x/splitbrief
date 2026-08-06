@@ -9,16 +9,22 @@ import { error } from '../../../utils/error.js';
 export function configForProfile(
   config: WorkflowContext['config'],
   profile: ResolvedImplementerProfile,
+  contextLength?: number | undefined,
 ): WorkflowContext['config'] {
   const profiles = config.implementerProfiles;
 
+  const implementer =
+    contextLength !== undefined && profile.config.contextLength === undefined
+      ? { ...profile.config, contextLength }
+      : profile.config;
+
   if (profiles === undefined) {
-    return { ...config, implementer: profile.config };
+    return { ...config, implementer };
   }
 
   return {
     ...config,
-    implementer: profile.config,
+    implementer,
     implementerProfiles: {
       ...profiles,
       default: profile.name,

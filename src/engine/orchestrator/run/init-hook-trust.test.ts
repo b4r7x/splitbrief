@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -10,6 +11,8 @@ import {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { initializeWorkflow } from './init.js';
+import { createRunIsolation } from '../isolation/create.js';
+import type { RunIsolation } from '../isolation/types.js';
 import { markHooksConfigTrusted, isHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import { ensureHooksTrusted } from '../../../cli/hook-trust-prompt.js';
@@ -24,6 +27,16 @@ import type { SummaryBase } from '../summary/build.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { parsePreparedConfig } from '../../runners/prepared-execution.js';
 
+function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
+  return createRunIsolation({
+    projectDir,
+    sessionId,
+    strategy: 'staged-copy',
+    onFallback: () => {},
+    onRetained: () => {},
+  });
+}
+
 const HOOK: HooksConfig = {
   post_task: [
     {
@@ -37,9 +50,15 @@ const HOOK: HooksConfig = {
 };
 
 const dirs: string[] = [];
+let trustHome: ReturnType<typeof useTrustHome>;
+
+beforeEach(() => {
+  trustHome = useTrustHome('init-hook-trust-home');
+});
 
 afterEach(() => {
   while (dirs.length) cleanupTempDir(dirs.pop() as string);
+  trustHome.restore();
 });
 
 function setupProjectDir(prefix: string) {
@@ -154,6 +173,7 @@ async function initializeFromCaller(args: ReturnType<typeof makeInitArgs>) {
     metadata: args.metadata,
     setTrackedState: args.setTracked,
     resumeHolder: { messages: [] },
+    isolation: makeCopyingIsolation(args.projectDir, args.sessionId),
   });
 }
 

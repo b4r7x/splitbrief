@@ -80,7 +80,7 @@ export async function resumeSavedSession(args: {
         signal: new AbortController().signal,
         resumeState: state,
       }),
-      mode === 'headless',
+      mode === 'headless' ? 'structured' : 'prose',
     );
 
   if (interaction === 'headless') {

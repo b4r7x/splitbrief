@@ -37,7 +37,7 @@ npm run format                # Biome format --write
 npm test                      # vitest run
 npm run test:watch            # vitest watch mode
 npm run test:coverage         # vitest run --coverage
-npm run test-ci               # format -> typecheck -> lint -> test:coverage -> invariants
+npm run test-ci               # format -> typecheck -> lint -> test:coverage -> e2e -> invariants
 ```
 
 **Before submitting a PR, `npm run test-ci` MUST pass.**

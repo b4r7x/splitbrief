@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { resolveProjectDir } from '../../setup.js';
+import { canonicalizeProjectDir } from '../../setup.js';
 import { addWorkflowOptions } from '../../options.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import { continueCommand, defaultContinueDeps, type ContinueDeps } from './command.js';
@@ -13,7 +13,7 @@ export function registerContinueCommand(
       .command('continue [session-id]')
       .description('Continue a session: attaches if running, resumes if interrupted'),
   ).action(async (sessionId: string | undefined, opts: WorkflowOpts) => {
-    const projectDir = resolveProjectDir(opts.project);
+    const projectDir = await canonicalizeProjectDir(opts);
     await continueCommand(sessionId, { ...opts, projectDir }, deps);
   });
 }

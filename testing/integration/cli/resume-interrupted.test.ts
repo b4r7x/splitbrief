@@ -1,25 +1,44 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import '#testing/helpers/cli/ink-mocks.js';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runCommand } from '#testing/helpers/commander.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createDefaultConfig } from '../../../src/core/config/load/io.js';
+import { defaultCliAuthChannel } from '../../../src/core/runners/cli-tool-catalog.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { saveState, loadState } from '../../../src/core/state/persistence.js';
 import { writeLockfile } from '../../../src/engine/ipc/lockfile.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE, sessionDir } from '../../../src/core/paths.js';
 
+// Resume runs the same readiness gate as start, and the default config points the
+// implementer at a local Ollama. The shared no-claim mock keeps the verdict off
+// whatever daemon this machine happens to be running.
+vi.mock('../../../src/engine/runners/probe-availability.js', () => ({
+  probeRunnerAvailability: async (
+    ...args: Parameters<
+      typeof import('../../../src/engine/runners/probe-availability.js').probeRunnerAvailability
+    >
+  ) => (await import('#testing/helpers/start-command.js')).probeRunnerAvailabilityMock(...args),
+}));
+
 let tmp: string;
+let shimDir: string;
+let restoreCompatibleCliShim: (() => void) | undefined;
 
 beforeEach(() => {
   resetAllStores();
   tmp = createTempDir('cli-resume-interrupted');
+  shimDir = createTempDir('cli-resume-interrupted-shim');
   createTestGitRepo(tmp);
   const splitbriefDir = join(tmp, SPLITBRIEF_DIR);
   mkdirSync(splitbriefDir, { recursive: true });
@@ -28,9 +47,23 @@ beforeEach(() => {
     YAML.stringify(toYaml(createDefaultConfig())),
     'utf-8',
   );
+  // Resume runs the same readiness gate as start. Without a shim the result
+  // depends on whether the developer's own machine happens to satisfy the
+  // default planner's credentials.
+  restoreCompatibleCliShim = activateCompatibleCliShim(
+    installCompatibleCliShim({
+      directory: shimDir,
+      tool: 'claude-code',
+      authChannel: defaultCliAuthChannel('claude-code').id,
+    }),
+    'test-only-resume-interrupted-key',
+  );
 });
 
 afterEach(() => {
+  restoreCompatibleCliShim?.();
+  restoreCompatibleCliShim = undefined;
+  cleanupTempDir(shimDir);
   cleanupTempDir(tmp);
 });
 

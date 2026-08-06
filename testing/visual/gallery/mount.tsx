@@ -15,7 +15,12 @@ import { screenFixtureRegistry } from '../fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from '../fixtures/workflow/setup.js';
 import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
 import { workflowFixtureRegistry } from '../fixtures/workflow/registry.js';
-import { flushEffects, renderFeature, type RenderFeatureResult } from '../../helpers/ink.js';
+import {
+  flushEffects,
+  renderFeature,
+  type RenderFeatureResult,
+  type RenderViewport,
+} from '../../helpers/ink.js';
 import { enterCaptureEnvironment } from './environment.js';
 import { waitForCheckpoint } from './checkpoints.js';
 
@@ -147,10 +152,15 @@ async function setupAndRender(options: {
       isSmall: options.viewport.cols < 120,
     });
     const projection = workflowFixtureProjections.get(options.scenario.id);
+    const renderViewport: RenderViewport = {
+      cols: options.viewport.cols,
+      rows: options.viewport.rows,
+    };
     const rendered = renderFeature(
       React.createElement<AppProps>(App, {
         workflowDeps: createWorkflowFixtureAppDeps(projection),
       }),
+      renderViewport,
     );
     await flushEffects();
     return rendered;

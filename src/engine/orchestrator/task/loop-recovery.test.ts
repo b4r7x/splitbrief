@@ -258,6 +258,161 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(result.state.pendingRecovery).toEqual(state.pendingRecovery);
   });
 
+  it('carries the runner own unavailability reason into the recovery issue', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const implementer = makeImplementer({
+      implement: vi.fn(),
+      isAvailable: vi.fn().mockResolvedValue(false),
+      unavailabilityReason: () => 'the endpoint is unreachable',
+    });
+    const { bus } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        implementer,
+        bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'implementation-error',
+      taskId: 'T001',
+      details: expect.arrayContaining(['Availability: the endpoint is unreachable']),
+    });
+  });
+
+  it('falls back to the generic guidance when the implementer cannot explain', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const implementer = makeImplementer({
+      implement: vi.fn(),
+      isAvailable: vi.fn().mockResolvedValue(false),
+    });
+    const { bus } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        implementer,
+        bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(result.state.pendingRecovery).toMatchObject({
+      reason: 'implementation-error',
+      taskId: 'T001',
+      details: expect.arrayContaining([
+        expect.stringContaining(
+          'is unavailable. Check runner installation, API credentials, or endpoint reachability.',
+        ),
+      ]),
+    });
+  });
+
+  it('publishes a transcript-safe warning naming the unresolved recovery before stopping', async () => {
+    const { projectDir, sessionId } = setupSessionOnly();
+    const task = makeTask({ id: 'T001' });
+    const issue = buildContextOverflowRecoveryIssue({
+      task,
+      phase: 'implementing',
+      createdAt: '2026-04-28T12:00:00.000Z',
+    });
+    const state = { ...makeImplState([task]), pendingRecovery: issue };
+    const implementer = makeImplementer({ implement: vi.fn() });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        implementer,
+        bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        code: 'recovery_pending_unresolved',
+        category: 'recovery',
+        transcriptSafe: true,
+        message: expect.stringContaining('context-overflow'),
+      }),
+    );
+    const warning = events.find((event) => event.type === 'warning');
+    expect(warning).toMatchObject({
+      message: expect.stringContaining('status: awaiting-user'),
+    });
+    expect(warning).toMatchObject({
+      message: expect.stringContaining('pause-run'),
+    });
+    expect(result.state.pendingRecovery).toEqual(issue);
+    expect(result.state.pendingRecovery?.status).toBe('awaiting-user');
+  });
+
+  it('reports a paused recovery on resume with its paused status, unchanged', async () => {
+    const { projectDir, sessionId } = setupSessionOnly();
+    const task = makeTask({ id: 'T001' });
+    const pausedRecovery = {
+      ...buildContextOverflowRecoveryIssue({
+        task,
+        phase: 'implementing',
+        createdAt: '2026-04-28T12:00:00.000Z',
+      }),
+      status: 'paused' as const,
+    };
+    const state = { ...makeImplState([task]), pendingRecovery: pausedRecovery };
+    const implementer = makeImplementer({ implement: vi.fn() });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+        implementer,
+        bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('stopped');
+    expect(implementer.implement).not.toHaveBeenCalled();
+    expect(result.state.pendingRecovery).toEqual(pausedRecovery);
+    expect(result.state.pendingRecovery?.status).toBe('paused');
+    const warning = events.find((event) => event.type === 'warning');
+    expect(warning).toMatchObject({
+      type: 'warning',
+      code: 'recovery_pending_unresolved',
+      message: expect.stringContaining('status: paused'),
+    });
+  });
+
   it('stops on resume of a paused recovery without re-entering or clearing the issue', async () => {
     const { projectDir, sessionId } = setupSessionOnly();
     const task = makeTask({ id: 'T001' });

@@ -427,12 +427,3 @@ export function resolveModelCatalog(
     role: options.role,
   });
 }
-
-export function lookupCatalogContextLength(
-  providerId: string,
-  modelId: string,
-): number | undefined {
-  return resolveModelCatalog(providerId).find((entry) =>
-    areExactModelSelectionIdsEqual({ left: entry.selectionId, right: modelId }),
-  )?.contextLength;
-}

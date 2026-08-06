@@ -7,6 +7,7 @@ import {
 } from '../../../../utils/display-text.js';
 import type { Task } from '../../../../core/schemas/task.js';
 import type { BriefQualityReport } from '../../../../engine/spec/brief-quality.js';
+import type { BriefReadinessGateReport } from '../../../../engine/orchestrator/planning/brief-readiness-gate.js';
 import {
   formatQualityDisplay,
   formatTaskCount,
@@ -19,12 +20,14 @@ const MIN_FILEPATH_CELLS = 8;
 export function PlanReviewHeader({
   tasks,
   quality,
+  readiness,
   filePath,
   width,
   hasLoadError = false,
 }: {
   tasks: Task[];
   quality: BriefQualityReport | null;
+  readiness: BriefReadinessGateReport | null;
   filePath: string;
   width: number;
   hasLoadError?: boolean | undefined;
@@ -35,12 +38,17 @@ export function PlanReviewHeader({
   const qualityColor = quality !== null && !quality.passed ? t.error : t.textDim;
   const meta = `${countText}${SOFT_SEP}`;
   const displayFilePath = sanitizeTaskDisplayText(filePath);
+  const blockedCount = readiness !== null && !readiness.ok ? readiness.blocks.length : 0;
+  const readinessDisplay = blockedCount > 0 ? `readiness ${blockedCount} blocked` : '';
+  const overrideDisplay = readiness !== null && !readiness.ok ? 'approve again overrides' : '';
 
   const leftCells =
     getTerminalCellWidth('task briefs') +
     2 +
     getTerminalCellWidth(meta) +
-    getTerminalCellWidth(qualityDisplay);
+    getTerminalCellWidth(qualityDisplay) +
+    (readinessDisplay !== '' ? getTerminalCellWidth(readinessDisplay) + 2 : 0) +
+    (overrideDisplay !== '' ? getTerminalCellWidth(overrideDisplay) + 2 : 0);
   const filePathBudget = width - leftCells - 2;
   const showFilePath =
     displayFilePath !== '' &&
@@ -58,6 +66,18 @@ export function PlanReviewHeader({
       <Text>{'  '}</Text>
       <Text color={t.textDim}>{meta}</Text>
       <Text color={qualityColor}>{qualityDisplay}</Text>
+      {readinessDisplay !== '' && (
+        <Text color={t.warning} wrap="truncate">
+          {' '}
+          {readinessDisplay}
+        </Text>
+      )}
+      {overrideDisplay !== '' && (
+        <Text color={t.textDim} wrap="truncate">
+          {' '}
+          {overrideDisplay}
+        </Text>
+      )}
       {showFilePath && (
         <>
           <Box flexGrow={1} />

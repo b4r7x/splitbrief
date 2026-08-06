@@ -10,6 +10,11 @@ export function loadCassette(path: string): Cassette {
 
 export function createCassetteReplayer(cassette: Cassette) {
   let cursor = 0;
+  // Callers swallow fetch failures — the availability probes report an
+  // unreachable provider rather than propagating. Remembering the first
+  // mismatch keeps a swallowed one from passing as a clean replay, and leaving
+  // the entry unconsumed keeps the reported remainder equal to the real one.
+  let mismatch: string | undefined;
   const originalFetch = globalThis.fetch;
 
   function install(): void {
@@ -29,10 +34,9 @@ export function createCassetteReplayer(cassette: Cassette) {
       }
 
       const entry = cassette.entries[cursor];
-      cursor++;
 
       if (entry === undefined) {
-        throw new Error(`Cassette "${cassette.name}" missing entry ${cursor - 1}.`);
+        throw new Error(`Cassette "${cassette.name}" missing entry ${cursor}.`);
       }
 
       const expectedPath = urlPath(entry.request.url);
@@ -40,6 +44,9 @@ export function createCassetteReplayer(cassette: Cassette) {
       const expectedMethod = entry.request.method.toUpperCase();
 
       if (expectedMethod !== method || expectedPath !== actualPath) {
+        mismatch ??=
+          `entry ${entry.index}: expected ${expectedMethod} ${expectedPath}, ` +
+          `got ${method} ${actualPath}`;
         throw new Error(
           `Cassette "${cassette.name}" mismatch at entry ${entry.index}:\n` +
             `  Expected: ${expectedMethod} ${expectedPath}\n` +
@@ -48,6 +55,7 @@ export function createCassetteReplayer(cassette: Cassette) {
         );
       }
 
+      cursor++;
       return new Response(entry.response.body, {
         status: entry.response.status,
         headers: new Headers(entry.response.headers),
@@ -59,7 +67,12 @@ export function createCassetteReplayer(cassette: Cassette) {
     globalThis.fetch = originalFetch;
   }
 
-  function assertAllEntriesConsumed(): void {
+  function assertReplayComplete(): void {
+    if (mismatch !== undefined) {
+      throw new Error(
+        `Cassette "${cassette.name}" mismatch at ${mismatch}. Re-record this cassette.`,
+      );
+    }
     if (cursor < cassette.entries.length) {
       throw new Error(
         `Cassette "${cassette.name}" has ${cassette.entries.length - cursor} unconsumed entries. ` +
@@ -68,5 +81,5 @@ export function createCassetteReplayer(cassette: Cassette) {
     }
   }
 
-  return { install, uninstall, assertAllEntriesConsumed };
+  return { install, uninstall, assertReplayComplete };
 }

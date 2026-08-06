@@ -87,15 +87,20 @@ export function clearStaleSessionForCli(
   }
 }
 
+/**
+ * The stdout contract, not the terminal, decides whether the blocker report is
+ * printed: withholding it on every headless run left `spec` telling the reader
+ * to resolve blockers it had not printed.
+ */
 export function preparedExecutionOrThrow(
   outcome: PreparationOutcome,
-  json: boolean,
+  stdout: 'prose' | 'structured',
 ): PreparedExecution {
   switch (outcome.kind) {
     case 'prepared':
       return outcome.execution;
     case 'blocked':
-      if (!json) console.log(formatReadinessBlockers(outcome.report));
+      if (stdout === 'prose') console.log(formatReadinessBlockers(outcome.report));
       throw cliError(readinessBlockerPointer(outcome.report), 1);
     case 'failed':
       throw cliError(toErrorMessage(outcome.error), 1);
@@ -181,5 +186,8 @@ export async function prepareStartExecution(
       }
     }
   }
-  return preparedExecutionOrThrow(outcome, input.transport !== 'interactive');
+  return preparedExecutionOrThrow(
+    outcome,
+    input.transport === 'interactive' ? 'prose' : 'structured',
+  );
 }

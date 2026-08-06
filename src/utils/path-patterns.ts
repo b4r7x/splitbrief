@@ -1,26 +1,27 @@
 import { isAbsolute, resolve } from 'node:path';
 
-const ROOT_FILE_NAMES = new Set([
-  'Dockerfile',
-  'Makefile',
-  'README',
-  'LICENSE',
-  'CHANGELOG',
-  'NOTICE',
-  'Procfile',
-]);
-
-export function looksLikeFilePath(value: string): boolean {
-  const trimmed = value.trim();
-  if (trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('*')) return true;
-  if (/\s/.test(trimmed)) return false;
-  if (trimmed.startsWith('.') && trimmed.length > 1) return true;
-  if (/^[A-Za-z0-9_.-]+\.[A-Za-z0-9]+$/.test(trimmed)) return true;
-  return ROOT_FILE_NAMES.has(trimmed);
-}
-
 export const CONCRETE_FILE_PATH_PATTERN =
   /\b(?:[a-zA-Z][a-zA-Z0-9_-]*\/)+[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z]{1,5}\b/g;
+
+function isPathToken(value: string): boolean {
+  return value.includes('/') || value.includes('\\') || value.includes('*');
+}
+
+export function scopePathPatterns(value: string): string[] {
+  const backtickTokens = [...value.matchAll(/`([^`]+)`/g)]
+    .map((match) => match[1])
+    .filter((token): token is string => token !== undefined);
+  const candidates =
+    backtickTokens.length > 0
+      ? backtickTokens
+      : /\s/.test(value)
+        ? [...value.matchAll(CONCRETE_FILE_PATH_PATTERN)].map((match) => match[0])
+        : [value.trim()];
+  return candidates.filter((candidate) => {
+    const token = candidate.trim();
+    return token.length > 0 && isPathToken(token);
+  });
+}
 
 export function resolveFromProject(projectDir: string, p: string): string {
   return isAbsolute(p) ? p : resolve(projectDir, p);

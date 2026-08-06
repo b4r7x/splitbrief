@@ -15,10 +15,16 @@ export type ChangeDetectorBaseline =
       ignoreProjectDir?: string | undefined;
     };
 
+export type ChangeDetectionKind = ChangeDetectorBaseline['kind'];
+
+export type ChangeDetectionResult =
+  | { changed: true; output: '' }
+  | { changed: false; output: string; reason: 'no-files-changed' };
+
 export type ChangeDetector = (
   projectDir: string,
   before: ChangeDetectorBaseline,
-) => Promise<{ changed: boolean; output: string }>;
+) => Promise<ChangeDetectionResult>;
 
 const HASH_CONCURRENCY = 16;
 
@@ -59,11 +65,16 @@ function hasHashChanges(
   return false;
 }
 
+// A caller that knows what it handed the runner says so: a linked git worktree
+// carries a `.git` file but its status is seeded with the source's dirty files,
+// and the git-status comparator only sees paths that were not already in it.
+// Only a caller with no such knowledge falls back to sniffing the directory.
 export async function captureChangeDetectorBaseline(
   projectDir: string,
-  opts: { ignoreProjectDir?: string | undefined } = {},
+  opts: { kind?: ChangeDetectionKind | undefined; ignoreProjectDir?: string | undefined } = {},
 ): Promise<ChangeDetectorBaseline> {
-  if (hasGitMetadata(projectDir)) {
+  const kind = opts.kind ?? (hasGitMetadata(projectDir) ? 'git-status' : 'file-hashes');
+  if (kind === 'git-status') {
     return { kind: 'git-status', files: await getCurrentChangedFiles(projectDir) };
   }
   return {
@@ -73,7 +84,9 @@ export async function captureChangeDetectorBaseline(
   };
 }
 
-export function createChangeDetector(label: string) {
+export function createChangeDetector(
+  label: string,
+): (projectDir: string, before: ChangeDetectorBaseline) => Promise<ChangeDetectionResult> {
   return async (projectDir: string, before: ChangeDetectorBaseline) => {
     let changed = false;
     if (before.kind === 'git-status') {
@@ -88,7 +101,11 @@ export function createChangeDetector(label: string) {
     }
 
     if (!changed) {
-      return { changed: false, output: `${label} exited without changing any files` };
+      return {
+        changed: false,
+        output: `${label} exited without changing any files`,
+        reason: 'no-files-changed',
+      };
     }
     return { changed: true, output: '' };
   };

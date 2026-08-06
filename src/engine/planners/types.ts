@@ -5,6 +5,7 @@ import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DiscoveredValidation } from '../../core/schemas/workflow.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
+import type { ChangeDetectionKind } from '../change-detection.js';
 import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
@@ -180,6 +181,8 @@ export interface EscalateOptions {
   languageContext?: LanguageContext | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
   fileIgnoreProjectDir?: string | undefined;
+  /** Baseline the caller's workspace declares; sniffed from the directory when absent. */
+  changeDetection?: ChangeDetectionKind | undefined;
 }
 
 export interface RegenerateOptions {

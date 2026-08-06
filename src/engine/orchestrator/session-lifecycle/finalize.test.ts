@@ -276,6 +276,7 @@ describe('shouldPreserveActiveState', () => {
 
   it.each([
     'planning',
+    'reviewing-briefs',
     'implementing',
     'final-review',
   ] as const)('preserves resumable %s phase', (phase) => {

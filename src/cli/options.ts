@@ -1,9 +1,17 @@
 import { InvalidArgumentError, type Command } from 'commander';
-import { OutputFormatSchema } from '../core/schemas/enums.js';
+import { IMPLEMENTER_API_PROVIDER_IDS } from '../core/providers/api-provider-catalog.js';
+import { IMPLEMENTER_CLI_TOOL_IDS } from '../core/runners/cli-tool-catalog.js';
+import { META_PROVIDER_IDS, OutputFormatSchema, PLANNER_TOOL_IDS } from '../core/schemas/enums.js';
 import { cliError } from './errors.js';
 
+const IMPLEMENTER_TOOL_IDS = [
+  ...IMPLEMENTER_CLI_TOOL_IDS,
+  ...IMPLEMENTER_API_PROVIDER_IDS,
+  ...META_PROVIDER_IDS,
+];
+
 export const ALLOW_REPO_RUNNERS_HELP =
-  'Grant repo-local legacy runners and configured custom commands in headless use';
+  'Grant this run the shell/agent runner commands the project config declares (headless use)';
 
 function collectOption(value: string, previous: string[] | undefined): string[] {
   return [...(previous ?? []), value];
@@ -68,10 +76,7 @@ export function addWorkflowOptions(cmd: Command): Command {
     .option('--approve <level>', 'Approval gates: none, spec, plan, all, default (follows mode)')
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
-    .option(
-      '--planner <tool>',
-      'Planner tool (claude-code, codex, opencode, aider, copilot, kilo-code, anthropic, openai, groq, together, deepseek, openrouter, shell, agent, agent-sdk)',
-    )
+    .option('--planner <tool>', `Planner tool (${PLANNER_TOOL_IDS.join(', ')})`)
     .option('--planner-model <model>', 'Planner model (for API planners)')
     .option('--planner-command <cmd>', 'Custom planner command (when --planner=shell)')
     .option('--planner-api-base <url>', 'Planner API base URL for API providers')
@@ -91,10 +96,7 @@ export function addWorkflowOptions(cmd: Command): Command {
       'Planner context length',
       parsePositiveIntegerOption,
     )
-    .option(
-      '--implementer <provider>',
-      'Implementer provider (ollama, lm-studio, anthropic, openai, groq, together, deepseek, openrouter, claude-code, codex, opencode, aider, copilot, kilo-code, shell, agent, agent-sdk)',
-    )
+    .option('--implementer <provider>', `Implementer provider (${IMPLEMENTER_TOOL_IDS.join(', ')})`)
     .option('--implementer-model <model>', 'Implementer model')
     .option('--implementer-command <cmd>', 'Custom implementer command (when --implementer=shell)')
     .option('--implementer-api-base <url>', 'Implementer API base URL for API providers')

@@ -108,6 +108,7 @@ Contract: output
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "ADMISSION_TEST_SECRET"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Parsed output only; stage-local writes are discarded

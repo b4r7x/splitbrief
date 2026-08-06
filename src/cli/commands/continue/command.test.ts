@@ -279,6 +279,24 @@ describe('continueCommand', () => {
     });
   });
 
+  it('resumes a reviewing-briefs session listed by ps and addressed by alias number', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-parked';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    writeState(sessDir, 'reviewing-briefs');
+
+    await continueCommand('1', { projectDir, rpc: true }, deps);
+
+    expect(rpcRuns).toHaveLength(1);
+    expect(rpcRuns[0]).toMatchObject({
+      feature: 'test-feature',
+      projectDir,
+      state: { phase: 'reviewing-briefs' },
+      sessionId,
+    });
+  });
+
   it('resume reauthorizes the existing session without creating another', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-exact-resume';

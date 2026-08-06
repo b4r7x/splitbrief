@@ -3,9 +3,11 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
-import type { WorkflowContext } from '../types.js';
+import type { WorkflowContext, PlannerCallbacksContext } from '../types.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent } from '../../events/types.js';
+import type { Phase } from '../../../core/schemas/enums.js';
+import type { Planner } from '../../planners/types.js';
 
 import { buildSummary, type SummaryBase } from '../summary/build.js';
 import { publishCostPrediction, publishWarning } from '../events.js';
@@ -17,11 +19,14 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 import { reviewPlannerEstimate, runningPlannerEstimateReview } from '../estimate-review/run.js';
 import { autoSplitOverflowTasks } from '../auto-split-overflow.js';
 import { runPlanningPhase } from '../planning/run.js';
+import { resumeBriefsApproval } from '../planning/resume-briefs.js';
+import { resumeArtifactApproval } from '../planning/resume-artifact-approval.js';
+import { regeneratePlanAndTasks, regenerateTasksIfNeeded } from '../planning/regen.js';
 import { runTaskLoop } from '../task/loop.js';
 import { runFinalReviewPhase } from '../final-review.js';
 import { transitionAndSave } from '../state-ops.js';
 import { formatSkippedSplitNotice, reviewAutoSplitOutput } from './auto-split-review.js';
-import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
+import { PLAN_FILE, SPEC_FILE, TASKS_FILE, sessionDir } from '../../../core/paths.js';
 
 export type RunPlanningPhasesOptions = {
   wctx: WorkflowContext;
@@ -39,6 +44,63 @@ function isInterruptedPlanningTurn(state: WorkflowState): boolean {
     state.awaitingContinue &&
     (state.phase === 'researching' || state.phase === 'specifying' || state.phase === 'planning')
   );
+}
+
+// Continues a resumed artifact approval from the persisted artifacts, never from a fresh
+// planning turn: an approved spec.md drives plan/brief regeneration and then the plan gate,
+// and a plan the planner revised at either gate invalidates the briefs it produced, so they
+// are regenerated before the briefs gate reads tasks.md. This is what rewind.ts does after
+// its own APPROVE_SPEC; re-planning would overwrite the artifact just approved and re-prompt
+// the same gate.
+async function continueApprovedArtifact(opts: {
+  wctx: PlannerCallbacksContext & { planner: Planner };
+  phase: 'reviewing-spec' | 'reviewing-plan';
+  approval: { state: WorkflowState; regenerated: boolean };
+  setTrackedState: (s: WorkflowState) => void;
+}): Promise<{ state: WorkflowState; cancelled: boolean }> {
+  const { wctx, setTrackedState } = opts;
+  const { projectDir, sessionId, callbacks, bus, metadata, sinks, signal, planner } = wctx;
+  const ref = { projectDir, sessionId };
+  let { state, regenerated } = opts.approval;
+  let tasks = state.tasks;
+
+  if (opts.phase === 'reviewing-spec') {
+    state = transitionAndSave(ref, state, { type: 'APPROVE_SPEC' });
+    const planAndTasks = await regeneratePlanAndTasks({
+      ...ref,
+      planner,
+      callbacks,
+      bus,
+      state,
+      metadata,
+      signal,
+      sinks,
+    });
+    tasks = planAndTasks.tasks;
+    state = transitionAndSave(ref, planAndTasks.state, { type: 'PLAN_DONE', tasks });
+    setTrackedState(state);
+
+    const planApproval = await resumeArtifactApproval({ wctx, state, phase: 'reviewing-plan' });
+    if (planApproval.cancelled) return { state: planApproval.state, cancelled: true };
+    state = planApproval.state;
+    regenerated = planApproval.regenerated;
+  }
+
+  const regen = await regenerateTasksIfNeeded({
+    ...ref,
+    regenerated,
+    planner,
+    callbacks,
+    bus,
+    state,
+    tasks,
+    metadata,
+    signal,
+    sinks,
+  });
+  state = transitionAndSave(ref, regen.state, { type: 'BRIEFS_READY', tasks: regen.tasks });
+  const briefs = await resumeBriefsApproval({ wctx, state });
+  return { state: briefs.state, cancelled: briefs.cancelled };
 }
 
 export async function runPlanningPhases(
@@ -69,6 +131,51 @@ export async function runPlanningPhases(
   if (interrupted) {
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'CONTINUE_TURN' });
     setTrackedState(state);
+  }
+
+  const parkedArtifact = APPROVAL_PARKED_ARTIFACT[state.phase];
+  if (parkedArtifact !== undefined) {
+    const resumeWctx: PlannerCallbacksContext & { planner: Planner } = {
+      projectDir,
+      sessionId,
+      config,
+      callbacks,
+      bus: wctx.bus,
+      signal: wctx.signal,
+      metadata: wctx.metadata,
+      sinks: wctx.sinks,
+      drainPendingAttachments: wctx.drainPendingAttachments,
+      ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
+      ...(wctx.detectedContextLength !== undefined && {
+        detectedContextLength: wctx.detectedContextLength,
+      }),
+      planner,
+    };
+
+    if (state.phase === 'reviewing-briefs') {
+      const resumed = await resumeBriefsApproval({ wctx: resumeWctx, state });
+      state = resumed.state;
+      setTrackedState(state);
+      phaseTimings.planning = Date.now() - startTime;
+      return { state, cancelled: resumed.cancelled, failed: false };
+    }
+
+    const resumePhase = state.phase;
+    if (resumePhase === 'reviewing-spec' || resumePhase === 'reviewing-plan') {
+      const resumed = await resumeArtifactApproval({ wctx: resumeWctx, state, phase: resumePhase });
+      const continued = resumed.cancelled
+        ? { state: resumed.state, cancelled: true }
+        : await continueApprovedArtifact({
+            wctx: resumeWctx,
+            phase: resumePhase,
+            approval: resumed,
+            setTrackedState,
+          });
+      state = continued.state;
+      setTrackedState(state);
+      phaseTimings.planning = Date.now() - startTime;
+      return { state, cancelled: continued.cancelled, failed: false };
+    }
   }
 
   if (shouldRunPlanning) {
@@ -107,6 +214,10 @@ export async function runPlanningPhases(
         metadata: wctx.metadata,
         sinks: wctx.sinks,
         drainPendingAttachments: wctx.drainPendingAttachments,
+        ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
+        ...(wctx.detectedContextLength !== undefined && {
+          detectedContextLength: wctx.detectedContextLength,
+        }),
       },
       planner,
       state,
@@ -168,6 +279,12 @@ function predictTasksCost(opts: {
   };
 }
 
+const APPROVAL_PARKED_ARTIFACT: Partial<Record<Phase, string>> = {
+  'reviewing-spec': SPEC_FILE,
+  'reviewing-plan': PLAN_FILE,
+  'reviewing-briefs': TASKS_FILE,
+};
+
 export async function runTasksAndReview(
   opts: RunTasksAndReviewOptions,
 ): Promise<{ summary: Summary; completed: boolean; cancelled: boolean; state: WorkflowState }> {
@@ -176,8 +293,9 @@ export async function runTasksAndReview(
   let { state } = opts;
   const { callbacks } = wctx;
 
-  if (state.phase === 'reviewing-briefs') {
-    const tasksFilePath = join(sessionDir(wctx.projectDir, wctx.sessionId), TASKS_FILE);
+  const parkedArtifact = APPROVAL_PARKED_ARTIFACT[state.phase];
+  if (parkedArtifact !== undefined) {
+    const artifactPath = join(sessionDir(wctx.projectDir, wctx.sessionId), parkedArtifact);
     publishWarning({
       bus: wctx.bus,
       phase: state.phase,
@@ -186,7 +304,7 @@ export async function runTasksAndReview(
         code: 'approval_prompt_not_restored',
         transcriptSafe: true,
       },
-      message: `Refusing to continue from reviewing-briefs without a restored approval prompt. Review artifact: ${tasksFilePath}`,
+      message: `Refusing to continue from ${state.phase} without a restored approval prompt. Review artifact: ${artifactPath}`,
     });
     return {
       summary: buildSummary({ ...summaryBase, state, phaseTimings }),

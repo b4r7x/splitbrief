@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getConfigValue, applyEdits } from './values.js';
+import { getConfigValue, applyEdits, getIsolationStrategy } from './values.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 
 const mockConfig = makeConfig({
@@ -28,6 +28,17 @@ describe('getConfigValue', () => {
 
   it('returns undefined when traversing through a non-object', () => {
     expect(getConfigValue(mockConfig, 'theme.nested')).toBeUndefined();
+  });
+});
+
+describe('getIsolationStrategy', () => {
+  it('defaults to worktree when workflow.isolation is omitted', () => {
+    expect(getIsolationStrategy(mockConfig)).toBe('worktree');
+  });
+
+  it('returns the configured strategy', () => {
+    const config = makeConfig({ workflow: { isolation: 'staged-copy' } });
+    expect(getIsolationStrategy(config)).toBe('staged-copy');
   });
 });
 

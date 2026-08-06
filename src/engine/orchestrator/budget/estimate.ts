@@ -16,16 +16,14 @@ import type {
 } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ProjectContext } from '../../../core/state/types.js';
+import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import { calculateCost } from '../../providers/cost-math.js';
 import { countByValue, uniquePush } from '../../../utils/collections.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { resolvePricing } from '../../providers/pricing-resolver.js';
 import { estimateFormattedTaskPromptTokens } from '../context-routing/estimation.js';
-import {
-  DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
-  resolveProfileContextLength,
-} from '../context-routing/context-length.js';
+import { resolveProfileContextLength } from '../context-routing/context-length.js';
 import { buildRouteTaskOptions } from '../context-routing/route-input.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import type { ContextLengthSource } from '../context-routing/types.js';
@@ -75,7 +73,8 @@ interface TaskEstimateInput {
 function contextConfidence(source: ContextLengthSource | null): EstimateContextConfidence {
   if (source === 'explicit') return 'context-explicit';
   if (source === 'detected') return 'context-detected';
-  if (source === 'models-dev' || source === 'known-catalog') return 'context-known-catalog';
+  if (source === 'models-dev' || source === 'known-catalog' || source === 'automatic-catalog')
+    return 'context-known-catalog';
   if (source === 'runtime') return 'context-cached-provider';
   if (source === 'conservative-fallback') return 'context-conservative-fallback';
   return 'profile-unavailable';
@@ -156,7 +155,7 @@ function estimateTask(opts: TaskEstimateInput): DeterministicTaskEstimate {
   const contextSource = confidenceProfile
     ? resolveProfileContextLength(
         confidenceProfile,
-        routeOptions.conservativeContextLength ?? DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
+        routeOptions.conservativeContextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH,
         opts.pricingCache,
         opts.detectedContextLength,
       ).source

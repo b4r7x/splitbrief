@@ -3,11 +3,13 @@ import { execSync } from 'node:child_process';
 import { chmodSync, lstatSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  UNREADABLE_FINGERPRINT,
   captureChangedFilesBaseline,
   changedFilesSinceBaseline,
   deserializeChangedFilesBaseline,
   refreshChangedFilesBaseline,
   serializeChangedFilesBaseline,
+  unreadableChangedFiles,
   userVisibleChangedFiles,
   withActiveTaskSnapshot,
 } from './changed-files-baseline.js';
@@ -31,7 +33,7 @@ describe('userVisibleChangedFiles', () => {
 });
 
 describe('captureChangedFilesBaseline', () => {
-  itUnix('rejects an existing final symlink without reading its target', async () => {
+  itUnix('records an existing final symlink as unreadable without reading its target', async () => {
     const dir = createTempDir('changed-files-baseline-symlink');
     const outside = createTempDir('changed-files-baseline-outside');
     createTestGitRepo(dir);
@@ -40,25 +42,26 @@ describe('captureChangedFilesBaseline', () => {
       writeFileSync(join(outside, 'secret.ts'), 'outside');
       symlinkSync(join(outside, 'secret.ts'), join(dir, 'src', 'leak.ts'));
 
-      await expect(captureChangedFilesBaseline(dir, ['src/leak.ts'])).rejects.toMatchObject({
-        kind: 'path-symlink-read',
-      });
+      const baseline = await captureChangedFilesBaseline(dir, ['src/leak.ts']);
+
+      expect(baseline.fingerprints.get('src/leak.ts')).toBe(UNREADABLE_FINGERPRINT);
     } finally {
       cleanupTempDir(outside);
       cleanupTempDir(dir);
     }
   });
 
-  itUnix('rejects a dangling final symlink instead of treating it as missing', async () => {
+  itUnix('records a dangling final symlink as unreadable, not as missing', async () => {
     const dir = createTempDir('changed-files-baseline-dangling-symlink');
     createTestGitRepo(dir);
     try {
       mkdirSync(join(dir, 'src'), { recursive: true });
       symlinkSync('missing.ts', join(dir, 'src', 'dangling.ts'));
 
-      await expect(captureChangedFilesBaseline(dir, ['src/dangling.ts'])).rejects.toMatchObject({
-        kind: 'path-symlink-read',
-      });
+      const baseline = await captureChangedFilesBaseline(dir, ['src/dangling.ts']);
+
+      expect(baseline.fingerprints.get('src/dangling.ts')).toBe(UNREADABLE_FINGERPRINT);
+      expect(baseline.fingerprints.get('src/dangling.ts')).not.toBe('missing');
     } finally {
       cleanupTempDir(dir);
     }
@@ -77,24 +80,25 @@ describe('captureChangedFilesBaseline', () => {
     }
   });
 
-  it('propagates an operational failure while fingerprinting an existing path', async () => {
+  it('records an unreadable entry while other changed files still fingerprint', async () => {
     const dir = createTempDir('changed-files-baseline-read-failure');
     createTestGitRepo(dir);
     try {
       mkdirSync(join(dir, 'unreadable'));
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'ok.ts'), 'export const ok = true;\n');
 
-      await expect(captureChangedFilesBaseline(dir, ['unreadable'])).rejects.toMatchObject({
-        kind: 'changed-file-fingerprint-read',
-        data: { file: 'unreadable' },
-        cause: expect.objectContaining({ code: 'EISDIR' }),
-      });
+      const baseline = await captureChangedFilesBaseline(dir, ['unreadable', 'src/ok.ts']);
+
+      expect(baseline.fingerprints.get('unreadable')).toBe(UNREADABLE_FINGERPRINT);
+      expect(baseline.fingerprints.get('src/ok.ts')).toMatch(/^[0-9a-f]{64}$/);
     } finally {
       cleanupTempDir(dir);
     }
   });
 
   itUnix(
-    'wraps an EACCES from initial path inspection without classifying the file as missing',
+    'records an EACCES entry as unreadable instead of classifying the file as missing',
     async ({ skip }) => {
       const dir = createTempDir('changed-files-baseline-inspection-eacces');
       const blockedDir = join(dir, 'blocked');
@@ -113,19 +117,76 @@ describe('captureChangedFilesBaseline', () => {
           expect(cause).toMatchObject({ code: 'EACCES' });
         }
 
-        await expect(captureChangedFilesBaseline(dir, ['blocked/secret.ts'])).rejects.toMatchObject(
-          {
-            kind: 'changed-file-fingerprint-read',
-            data: { file: 'blocked/secret.ts' },
-            cause: expect.objectContaining({ code: 'EACCES' }),
-          },
-        );
+        const baseline = await captureChangedFilesBaseline(dir, ['blocked/secret.ts']);
+
+        expect(baseline.fingerprints.get('blocked/secret.ts')).toBe(UNREADABLE_FINGERPRINT);
       } finally {
         chmodSync(blockedDir, 0o700);
         cleanupTempDir(dir);
       }
     },
   );
+
+  itUnix('reports an entry unreadable at both ends as unchanged', async () => {
+    const dir = createTempDir('changed-files-baseline-unreadable-both-ends');
+    const outside = createTempDir('changed-files-baseline-outside-both-ends');
+    createTestGitRepo(dir);
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(outside, 'secret.ts'), 'outside');
+      symlinkSync(join(outside, 'secret.ts'), join(dir, 'src', 'leak.ts'));
+
+      const baseline = await captureChangedFilesBaseline(dir, ['src/leak.ts']);
+
+      expect(await changedFilesSinceBaseline(dir, baseline)).toEqual([]);
+    } finally {
+      cleanupTempDir(outside);
+      cleanupTempDir(dir);
+    }
+  });
+
+  itUnix('reports a regular file replaced by a symlink after the baseline as changed', async () => {
+    const dir = createTempDir('changed-files-baseline-replaced-by-symlink');
+    const outside = createTempDir('changed-files-baseline-outside-replaced');
+    createTestGitRepo(dir);
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, 'src', 'swap.ts'), 'original\n');
+      await stageAll(dir);
+      await commitChanges(dir, 'seed swap file');
+      const baseline = await captureChangedFilesBaseline(dir);
+
+      unlinkSync(join(dir, 'src', 'swap.ts'));
+      writeFileSync(join(outside, 'secret.ts'), 'outside');
+      symlinkSync(join(outside, 'secret.ts'), join(dir, 'src', 'swap.ts'));
+
+      expect(await changedFilesSinceBaseline(dir, baseline)).toEqual(['src/swap.ts']);
+    } finally {
+      cleanupTempDir(outside);
+      cleanupTempDir(dir);
+    }
+  });
+});
+
+describe('unreadableChangedFiles', () => {
+  itUnix('returns the sorted project-relative paths of unreadable entries', async () => {
+    const dir = createTempDir('changed-files-baseline-unreadable-list');
+    const outside = createTempDir('changed-files-baseline-unreadable-list-outside');
+    createTestGitRepo(dir);
+    try {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(outside, 'secret.ts'), 'outside');
+      symlinkSync(join(outside, 'secret.ts'), join(dir, 'src', 'leak.ts'));
+      mkdirSync(join(dir, 'zzz'), { recursive: true });
+
+      const baseline = await captureChangedFilesBaseline(dir, ['src/leak.ts', 'zzz']);
+
+      expect(unreadableChangedFiles(baseline)).toEqual(['src/leak.ts', 'zzz']);
+    } finally {
+      cleanupTempDir(outside);
+      cleanupTempDir(dir);
+    }
+  });
 });
 
 describe('changed-files baseline persistence', () => {

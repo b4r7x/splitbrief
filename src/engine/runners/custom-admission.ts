@@ -110,7 +110,7 @@ function snapshotRunner(input: unknown): ConfiguredCustomRunner | null {
   const parsed = parseConfiguredCustomRunner(input);
   if (parsed === null) return null;
   return {
-    source: 'configured',
+    source: parsed.source,
     command: {
       id: parsed.command.id,
       label: parsed.command.label,
@@ -130,8 +130,10 @@ function snapshotPosture(input: unknown): CustomRunnerSecurityPosture | null {
   if (parsed === null) return null;
   return {
     role: parsed.role,
+    source: parsed.source,
     cwd: parsed.cwd,
     stage: parsed.stage,
+    environmentAccess: parsed.environmentAccess,
     filesystem: parsed.filesystem,
     network: parsed.network,
     result: parsed.result,

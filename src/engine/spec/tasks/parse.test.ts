@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type { Task } from '../../../core/schemas/task.js';
 import { parseTasks, parseTasksStrict } from './parse.js';
 
 const validTasksMd = `---
@@ -417,6 +418,139 @@ file: src/dangling.ts
     expect(() => parseTasksStrict(input)).toThrow(
       expect.objectContaining({ kind: 'parse-tasks-unterminated-block' }),
     );
+  });
+});
+
+describe('parseTasks — rejection diagnostics', () => {
+  function metaSyntaxBlock(overrides: { action: string; dependsOn: string }): string {
+    return `---
+id: T001
+title: Short descriptive title
+action: ${overrides.action}
+file: src/path/to/file.ts
+depends_on: ${overrides.dependsOn}
+---
+
+### Description
+What to implement and why.
+`;
+  }
+
+  function collectWarnings(input: string): { tasks: Task[]; warnings: string[] } {
+    const warnings: string[] = [];
+    const tasks = parseTasks(input, { onWarning: (message) => warnings.push(message) });
+    return { tasks, warnings };
+  }
+
+  it('names the task, the field and the rejected value for an enum alternation', () => {
+    const { tasks, warnings } = collectWarnings(
+      metaSyntaxBlock({ action: 'create | modify', dependsOn: '[]' }),
+    );
+
+    expect(tasks).toHaveLength(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('task T001');
+    expect(warnings[0]).toContain('`action`');
+    expect(warnings[0]).toContain('"create | modify"');
+  });
+
+  it('names the field and the rejected value when the value is not valid YAML', () => {
+    const { tasks, warnings } = collectWarnings(
+      metaSyntaxBlock({ action: 'create', dependsOn: '[] | [T001, T002]' }),
+    );
+
+    expect(tasks).toHaveLength(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('task T001');
+    expect(warnings[0]).toContain('`depends_on`');
+    expect(warnings[0]).toContain('"[] | [T001, T002]"');
+  });
+
+  it('names the field when a confinement-violating path is rejected', () => {
+    const { warnings } = collectWarnings(
+      metaSyntaxBlock({ action: 'create', dependsOn: '[]' }).replace(
+        'file: src/path/to/file.ts',
+        'file: ../escape.ts',
+      ),
+    );
+
+    expect(warnings[0]).toContain('`file`');
+    expect(warnings[0]).toContain('"../escape.ts"');
+  });
+
+  it('explains a zero-task parse caused by the whole document being fenced', () => {
+    const { tasks, warnings } = collectWarnings(
+      `\`\`\`markdown\n${metaSyntaxBlock({ action: 'create', dependsOn: '[]' })}\`\`\``,
+    );
+
+    expect(tasks).toHaveLength(0);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('wrapped in a ``` code fence');
+  });
+
+  it('explains a zero-task parse of planner narration that has no task block', () => {
+    const { tasks, warnings } = collectWarnings('I reviewed the repo and here is my plan.');
+
+    expect(tasks).toHaveLength(0);
+    expect(warnings).toEqual([
+      'No Task Brief was parsed: the output has no --- delimited block with an id: field.',
+    ]);
+  });
+
+  it('stays quiet for empty input', () => {
+    expect(collectWarnings('   \n  ').warnings).toEqual([]);
+  });
+
+  it('does not report narration blocks alongside tasks that parsed', () => {
+    const { tasks, warnings } = collectWarnings(
+      `Here is the plan.\n\n${dependencyTaskBlock('T001')}`,
+    );
+
+    expect(tasks.map((t) => t.id)).toEqual(['T001']);
+    expect(warnings).toEqual([]);
+  });
+
+  it('strips terminal control sequences out of the value it quotes back', () => {
+    const { warnings } = collectWarnings(
+      metaSyntaxBlock({ action: 'create', dependsOn: '[]' }).replace(
+        'action: create',
+        'action: "\\u001b[2Jspoofed"',
+      ),
+    );
+
+    expect(warnings[0]).toContain('"spoofed"');
+    expect(warnings[0]).not.toContain('\u001b');
+    expect(warnings[0]).not.toContain('[2J');
+  });
+
+  it('clips an oversized rejected value instead of pasting it whole', () => {
+    const { warnings } = collectWarnings(
+      metaSyntaxBlock({ action: 'create', dependsOn: '[]' }).replace(
+        'action: create',
+        `action: ${'x'.repeat(400)}`,
+      ),
+    );
+
+    expect(warnings[0]).toContain('...');
+    expect(warnings[0]?.length).toBeLessThan(200);
+  });
+
+  it('carries the same detail into the strict throw', () => {
+    expect(() =>
+      parseTasksStrict(metaSyntaxBlock({ action: 'create | modify', dependsOn: '[]' })),
+    ).toThrow(/task T001: frontmatter field `action` rejected "create \| modify"/);
+  });
+
+  it('reports a zero-task fenced document without throwing in strict mode', () => {
+    const warnings: string[] = [];
+    const tasks = parseTasksStrict(
+      `\`\`\`markdown\n${metaSyntaxBlock({ action: 'create', dependsOn: '[]' })}\`\`\``,
+      (message) => warnings.push(message),
+    );
+
+    expect(tasks).toEqual([]);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('wrapped in a ``` code fence');
   });
 });
 

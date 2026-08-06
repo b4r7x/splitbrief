@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import type { ImplementerCostTier } from '../../../core/schemas/implementer-config.js';
 import type { ProjectContext } from '../../../core/state/types.js';
+import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { routeTaskToImplementerProfile } from './route.js';
@@ -276,7 +277,7 @@ describe('routeTaskToImplementerProfile', () => {
     expect(decision.rejected[0]?.reason).toContain('requires direct file writes');
   });
 
-  it('treats root-level additional files as direct-write scope', () => {
+  it('does not treat a bare root-level filename without a directory as direct-write scope', () => {
     const task = makeTask({
       file: 'src/main.ts',
       scope: { inBounds: ['src/main.ts', 'package.json'] },
@@ -291,12 +292,11 @@ describe('routeTaskToImplementerProfile', () => {
       ],
     });
 
-    expect(decision.selectedProfile).toBe('agent-worker');
-    expect(decision.requiredWriteMode).toBe('direct');
-    expect(decision.rejected[0]?.reason).toContain('requires direct file writes');
+    expect(decision.selectedProfile).toBe('local-api');
+    expect(decision.requiredWriteMode).toBe('extracted-code');
   });
 
-  it('treats nested paths with spaces as direct-write scope', () => {
+  it('does not treat unquoted paths with spaces as direct-write scope', () => {
     const task = makeTask({
       file: 'src/main.ts',
       scope: { inBounds: ['src/main.ts', 'docs/User Guide.md'] },
@@ -311,8 +311,51 @@ describe('routeTaskToImplementerProfile', () => {
       ],
     });
 
-    expect(decision.selectedProfile).toBe('agent-worker');
-    expect(decision.requiredWriteMode).toBe('direct');
+    expect(decision.selectedProfile).toBe('local-api');
+    expect(decision.requiredWriteMode).toBe('extracted-code');
+  });
+
+  it('requires direct writes for a second concrete path and for a glob scope pattern', () => {
+    const secondPath = routeTaskToImplementerProfile({
+      task: makeTask({ file: 'src/main.ts', scope: { inBounds: ['src/sidecar.ts'] } }),
+      context,
+      profiles: [
+        profile('local-api', 'local', 20_000),
+        directProfile('agent-worker', 'standard', 20_000),
+      ],
+    });
+    expect(secondPath.requiredWriteMode).toBe('direct');
+    expect(secondPath.selectedProfile).toBe('agent-worker');
+
+    const globPath = routeTaskToImplementerProfile({
+      task: makeTask({ file: 'src/main.ts', scope: { inBounds: ['src/features/**'] } }),
+      context,
+      profiles: [
+        profile('local-api', 'local', 20_000),
+        directProfile('agent-worker', 'standard', 20_000),
+      ],
+    });
+    expect(globPath.requiredWriteMode).toBe('direct');
+    expect(globPath.selectedProfile).toBe('agent-worker');
+  });
+
+  it('does not treat prose naming the task file itself as direct-write scope', () => {
+    const task = makeTask({
+      file: 'src/main.ts',
+      scope: { inBounds: ['Modify only `src/main.ts`.'] },
+    });
+
+    const decision = routeTaskToImplementerProfile({
+      task,
+      context,
+      profiles: [
+        profile('local-api', 'local', 20_000),
+        directProfile('agent-worker', 'standard', 20_000),
+      ],
+    });
+
+    expect(decision.selectedProfile).toBe('local-api');
+    expect(decision.requiredWriteMode).toBe('extracted-code');
   });
 
   it('does not treat prose scope entries as direct-write file scope', () => {
@@ -369,7 +412,7 @@ describe('routeTaskToImplementerProfile', () => {
 
   it('assesses a cache-resolvable model at its catalog context length, matching the estimate path', () => {
     const task = makeTask();
-    const contextCache: ModelCacheAccessor = {
+    const modelCache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: (providerId) =>
         providerId === 'deepseek'
@@ -397,13 +440,13 @@ describe('routeTaskToImplementerProfile', () => {
       context,
       profiles: [runtimeWorker],
     });
-    expect(withoutCache.contextLength).toBe(8192);
+    expect(withoutCache.contextLength).toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);
 
     const withCache = routeTaskToImplementerProfile({
       task,
       context,
       profiles: [runtimeWorker],
-      contextCache,
+      modelCache,
     });
     expect(withCache.selectedProfile).toBe('runtime-worker');
     expect(withCache.contextLength).toBe(12_000);

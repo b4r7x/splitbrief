@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -10,12 +10,13 @@ import {
   makeBusRecorder,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
-import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];
+const itUnix = process.platform === 'win32' ? it.skip : it;
 
 afterEach(() => {
   for (const d of dirs) cleanupTempDir(d);
@@ -69,6 +70,50 @@ describe('runTaskLoop', { timeout: 90_000 }, () => {
     expect(result.state.currentTaskIndex).toBe(1);
     expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
   });
+
+  itUnix(
+    'warns and lets the loop start when a changed file at run start cannot be read',
+    async () => {
+      const { projectDir, sessionId } = setupProject();
+      const task = makeTask({ id: 'T001' });
+      const state = makeImplState([task]);
+      const outside = createTempDir('task-loop-unreadable-outside');
+      try {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(outside, 'secret.ts'), 'outside');
+        symlinkSync(join(outside, 'secret.ts'), join(projectDir, 'src', 'leak.ts'));
+
+        const { callbacks } = makeCallbacks();
+        const { bus, events } = makeBusRecorder();
+        const implementer = makeImplementer();
+
+        const result = await runTaskLoop({
+          wctx: makeWctx({
+            projectDir,
+            sessionId,
+            config: makeNoValidationConfig({ workflow: defaultWorkflow }),
+            callbacks,
+            implementer,
+            bus,
+          }),
+          initialState: state,
+          setTrackedState: vi.fn(),
+          setCurrentTask: vi.fn(),
+        });
+
+        const warning = events.find((event) => event.type === 'warning');
+        expect(warning).toBeDefined();
+        if (warning && warning.type === 'warning') {
+          expect(warning.message).toContain('src/leak.ts');
+        }
+        expect(events.find((event) => event.type === 'task_started')).toBeDefined();
+        expect(events.find((event) => event.type === 'paused_external_changes')).toBeUndefined();
+        expect(result.state.pendingRecovery).toBeUndefined();
+      } finally {
+        cleanupTempDir(outside);
+      }
+    },
+  );
 
   it('current task dirty file present before the loop starts is treated as baseline worktree state', async () => {
     const { projectDir, sessionId } = setupProject();

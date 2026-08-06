@@ -36,6 +36,28 @@ describe('probeValidationBaseline', () => {
     expect(failing?.summary).not.toContain('typecheck');
   });
 
+  it('names the exact commands the probe ran in the check details', async () => {
+    const config = makeConfig({
+      validation: {
+        typecheck: true,
+        lint: true,
+        test: true,
+        typecheckCommand: 'node -e "process.exit(1)"',
+        lintCommand: 'node -e "process.exit(0)"',
+        testCommand: 'node -e "process.exit(1)"',
+      },
+    });
+
+    const checks = await probeValidationBaseline(config, tempDir);
+
+    const failing = checks.find((c) => c.id === 'validation.already-failing');
+    expect(failing?.details?.[0]).toContain('typecheck: node -e "process.exit(1)"');
+    expect(failing?.details?.[0]).toContain('lint: node -e "process.exit(0)"');
+    expect(failing?.details?.[0]).toContain('test: node -e "process.exit(1)"');
+    expect(failing?.details?.[1]).toContain('pre-run commands');
+    expect(failing?.details?.[1]).toContain('planner discovery');
+  });
+
   it('reports nothing when every enabled stage passes', async () => {
     const config = makeConfig({
       validation: {

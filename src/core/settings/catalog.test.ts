@@ -68,3 +68,12 @@ describe('SETTINGS_DEFS workflow compaction', () => {
     });
   });
 });
+
+describe('SETTINGS_DEFS workflow.mode description', () => {
+  it('reports one planner call for instant and never claims zero', () => {
+    const def = SETTINGS_DEFS.find((d) => d.id === 'workflow.mode');
+    expect(def).toBeDefined();
+    expect(def?.description).toMatch(/instant \(1,/);
+    expect(def?.description).not.toContain('0 calls');
+  });
+});

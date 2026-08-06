@@ -77,6 +77,56 @@ describe('collectReadiness validation probe wiring', () => {
   });
 });
 
+describe('collectReadiness runner availability wiring', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir('collect-availability');
+  });
+
+  afterEach(() => {
+    cleanupTempDir(tempDir);
+  });
+
+  it('turns an unreachable default implementer into a blocker', async () => {
+    const { report } = await collectReadiness({
+      projectDir: tempDir,
+      config: makeConfig(),
+      probeRunnerAvailability: async () => [
+        {
+          slot: { role: 'implementer', profile: 'default' },
+          provider: 'ollama',
+          endpoint: 'http://localhost:11434/v1',
+          verdict: { state: 'unavailable', diagnostic: 'fetch failed' },
+        },
+      ],
+    });
+
+    const checks = flattenReadinessChecks(report.sections);
+    expect(
+      checks.find((check) => check.id === 'runners.availability.implementer.default'),
+    ).toMatchObject({ severity: 'blocker' });
+    expect(checks.find((check) => check.id === 'runners.availability')).toBeUndefined();
+    expect(report.status).toBe('blocked');
+  });
+
+  it('falls back to the no-claim notice when the probe itself fails', async () => {
+    const { report } = await collectReadiness({
+      projectDir: tempDir,
+      config: makeConfig(),
+      probeRunnerAvailability: async () => {
+        throw new Error('probe exploded');
+      },
+    });
+
+    const checks = flattenReadinessChecks(report.sections);
+    expect(checks.find((check) => check.id === 'runners.availability')).toMatchObject({
+      severity: 'info',
+      summary: 'Provider availability was not probed.',
+    });
+  });
+});
+
 describe('preparation readiness projection', () => {
   it('replaces tool-level CLI placeholders with exact slot checks', async () => {
     const projectDir = createTempDir('collect-preparation-checks');

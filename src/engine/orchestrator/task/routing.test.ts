@@ -1,6 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, afterEach } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCallbacks,
+  makeBusRecorder,
+  makeWctx,
+} from '#testing/helpers/orchestrator-factories.js';
+import { makeImplementer } from '#testing/helpers/orchestrator-factories.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { ConfigSchema, type Config } from '../../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
@@ -11,7 +18,12 @@ import { createImplementer } from '../../runners/factory.js';
 import type { RunnerSlot } from '../../runners/prepared-execution.js';
 import { runnerGateFor } from '../../runners/start-gate.js';
 import type { ImplementerFactoryOptions } from '../../implementers/types.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { configForProfile, createTaskImplementer, routingBlockMessage } from './routing.js';
+import { runTaskLoop } from './loop.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 
 type CustomContract = 'output' | 'direct';
@@ -115,6 +127,52 @@ describe('configForProfile', () => {
     expect(
       customRunnerSecurityPosture('implementer', configured?.command.contract ?? 'output').result,
     ).toBe(resultPosture);
+  });
+
+  it('carries the routed window into the selected implementer config when the profile declares none', () => {
+    const config = configWithProfileContracts('output', 'direct');
+    const sourceProfiles = config.implementerProfiles;
+    const sourceImplementer = config.implementer;
+    const selected = resolveImplementerProfiles(config).profiles.find(
+      (candidate) => candidate.name === 'selected-profile',
+    );
+    if (selected === undefined) throw new Error('Expected selected profile fixture');
+
+    const routed = configForProfile(config, selected, 64_000);
+
+    expect(routed.implementer).toEqual({ ...selected.config, contextLength: 64_000 });
+    expect(routed.implementerProfiles?.default).toBe('selected-profile');
+    expect(config.implementer).toBe(sourceImplementer);
+    expect(config.implementerProfiles).toBe(sourceProfiles);
+  });
+
+  it('never overrides a context window the profile declared for itself', () => {
+    const config = configWithProfileContracts('output', 'direct');
+    const selected = resolveImplementerProfiles(config).profiles.find(
+      (candidate) => candidate.name === 'selected-profile',
+    );
+    if (selected === undefined) throw new Error('Expected selected profile fixture');
+    const withDeclaredWindow = {
+      ...selected,
+      config: { ...selected.config, contextLength: 50_000 },
+    };
+
+    const routed = configForProfile(config, withDeclaredWindow, 64_000);
+
+    expect(routed.implementer.contextLength).toBe(50_000);
+  });
+
+  it('leaves the selected implementer config untouched when no window was decided', () => {
+    const config = configWithProfileContracts('output', 'direct');
+    const selected = resolveImplementerProfiles(config).profiles.find(
+      (candidate) => candidate.name === 'selected-profile',
+    );
+    if (selected === undefined) throw new Error('Expected selected profile fixture');
+
+    const routed = configForProfile(config, selected);
+
+    expect(routed.implementer).toBe(selected.config);
+    expect(routed.implementer.contextLength).toBeUndefined();
   });
 });
 
@@ -233,5 +291,71 @@ describe('routingBlockMessage', () => {
     } as RoutingDecision;
     const message = routingBlockMessage(decision);
     expect(message).toContain('5000/4000 estimated tokens');
+  });
+});
+
+describe('runTaskLoop routed context window', { timeout: 90_000 }, () => {
+  let dirs: string[] = [];
+
+  afterEach(() => {
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  function setupProject(): { projectDir: string; sessionId: string } {
+    const { projectDir, sessionId } = setupGitSessionProject({
+      prefix: 'task-loop-test',
+      sessionId: 'sess-routed-window',
+    });
+    dirs.push(projectDir);
+    return { projectDir, sessionId };
+  }
+
+  it('budgets the implementer prompt against the window the router decided for an automatic CLI profile', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001' });
+    const state = makeImplState([task]);
+    const sourceConfig = makeNoValidationConfig({
+      workflow: {},
+      implementer: { kind: 'cli', tool: 'codex', model: 'auto' },
+    });
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        mkdirSync(join(projectDir, 'src'), { recursive: true });
+        writeFileSync(join(projectDir, task.file), 'implementation');
+        return { success: true, output: 'code', usage: { inputTokens: 100, outputTokens: 50 } };
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskLoop({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        config: sourceConfig,
+        callbacks,
+        implementer,
+        bus,
+      }),
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.status).toBe('complete');
+    const taskStart = events.find((event) => event.type === 'task_started');
+    if (taskStart?.type !== 'task_started') throw new Error('Expected task_started event');
+    const routedWindow = taskStart.contextLength;
+    if (routedWindow === undefined) throw new Error('Expected routed window on task_started');
+
+    expect(implementer.implement).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          implementer: expect.objectContaining({ contextLength: routedWindow }),
+        }),
+      }),
+    );
+    expect(sourceConfig.implementer.contextLength).toBeUndefined();
   });
 });

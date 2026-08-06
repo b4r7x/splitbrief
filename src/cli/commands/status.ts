@@ -6,7 +6,7 @@ import {
   getEscalatedTaskIds,
   getFailedTaskIds,
 } from '../../core/state/selectors.js';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { readActive } from '../../core/sessions/lifecycle.js';
 import { listAllSessions, readSessionPersistTranscript } from '../../core/sessions/io.js';
 import { aggregateSessionCosts } from '../../core/sessions/analytics.js';
@@ -63,8 +63,8 @@ export function registerStatusCommand(program: Command): void {
     .description('Show current workflow state')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--history', 'Show cost history across sessions')
-    .action((opts: { project?: string; history?: boolean }) => {
-      const projectDir = resolveProjectDir(opts.project);
+    .action(async (opts: { project?: string; history?: boolean }) => {
+      const projectDir = await canonicalizeProjectDir(opts);
 
       const sessionId = readActive(projectDir);
       const state = sessionId ? loadState({ projectDir, sessionId }) : null;

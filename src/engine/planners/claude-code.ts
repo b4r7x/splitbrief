@@ -75,7 +75,7 @@ export function createClaudeCodePlanner(opts: {
           resumeId === undefined ? null : createRunnerAttemptCallbackBuffer(callbacks);
         const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
         try {
-          const env = await createRunnerSandboxEnv(projectDir, runnerConfig);
+          const env = await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner');
           const result = await runClaudePlannerStream({
             prompt,
             projectDir,
@@ -135,7 +135,7 @@ export function createClaudeCodePlanner(opts: {
 
     async invokeEscalate({ prompt, projectDir, callbacks, callContext, signal, sandboxEnv }) {
       const effectiveSignal = composeAbortSignal(signal, timeout);
-      const env = sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, runnerConfig));
+      const env = sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner'));
       return runClaudeOneShot({
         prompt,
         projectDir,
@@ -167,7 +167,7 @@ export function createClaudeCodePlanner(opts: {
       });
       let flushCallbacks = true;
       try {
-        const env = await createRunnerSandboxEnv(injection.projectDir, runnerConfig);
+        const env = await createRunnerSandboxEnv(injection.projectDir, runnerConfig, 'planner');
         const result = await runClaudePlannerStream({
           prompt: injection.text,
           projectDir: injection.projectDir,

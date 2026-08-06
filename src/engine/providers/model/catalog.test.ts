@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
-import { lookupCatalogContextLength, resolveModelCatalog } from './catalog.js';
+import { resolveModelCatalog } from './catalog.js';
 import type { ModelCacheAccessor } from './resolution.js';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
@@ -468,12 +468,5 @@ describe('runner-owned catalog resolution', () => {
       ['vendor-b', 'runtime', 'confirmed'],
     ]);
     expect(rows.some((row) => row.source === 'configured-recovery')).toBe(false);
-  });
-});
-
-describe('lookupCatalogContextLength', () => {
-  it('uses only the exact selection ID', () => {
-    expect(lookupCatalogContextLength('deepseek', 'deepseek-v4-pro')).toBe(1_000_000);
-    expect(lookupCatalogContextLength('deepseek', 'deepseek/deepseek-v4-pro')).toBeUndefined();
   });
 });

@@ -4,6 +4,7 @@ import {
   API_PROVIDER_CATALOG,
   type ApiOffering,
 } from '../../../src/core/providers/api-provider-catalog.js';
+import { defaultCliAuthChannel } from '../../../src/core/runners/cli-tool-catalog.js';
 import { ConfigSchema, type Config } from '../../../src/core/schemas/config.js';
 import type {
   ApiImplementerConfig,
@@ -79,7 +80,11 @@ function apiIdentity(provider: string): { service: string; offering: ApiOffering
 }
 
 function makePlannerConfig(planner?: PlannerFixture): unknown {
-  const config = planner ?? { kind: 'cli', tool: 'claude-code', authChannel: 'session' };
+  const config = planner ?? {
+    kind: 'cli' as const,
+    tool: 'claude-code' as const,
+    authChannel: defaultCliAuthChannel('claude-code').id,
+  };
   if (config.kind !== 'api') return config;
   return { ...apiIdentity(config.provider), ...config };
 }

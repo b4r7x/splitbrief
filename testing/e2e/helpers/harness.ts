@@ -8,6 +8,7 @@ import { getApiProviderDescriptor } from '../../../src/core/providers/api-provid
 import { markHooksConfigTrusted } from '../../../src/core/hooks/trust.js';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { applyCLIOverrides } from '../../../src/core/config/runtime/overrides/apply.js';
+import type { ReadinessReport } from '../../../src/core/readiness/types.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { createEventBus } from '../../../src/engine/events/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
@@ -17,6 +18,7 @@ import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
 import { createTestGitRepo } from '../../helpers/git.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '../../helpers/temp-dir.js';
+import { useTrustHome } from '../../helpers/trust-home.js';
 import { createCassetteRecorder } from '../../helpers/cassette/recorder.js';
 import { createCassetteReplayer, loadCassette } from '../../helpers/cassette/replayer.js';
 import { TEST_WORKFLOW_SINKS } from '../../helpers/orchestrator-context.js';
@@ -48,8 +50,10 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
     recorder: null,
   };
   let originalApiKey: string | undefined;
+  let trustHome: ReturnType<typeof useTrustHome>;
 
   beforeEach(() => {
+    trustHome = useTrustHome(`e2e-trust-home-${scenario.cassetteName}`);
     resetAllStores();
     ctx.events = [];
     ctx.replayer = null;
@@ -82,7 +86,7 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
   afterEach(() => {
     try {
       if (ctx.recorder) ctx.recorder.save();
-      if (ctx.replayer) ctx.replayer.assertAllEntriesConsumed();
+      if (ctx.replayer) ctx.replayer.assertReplayComplete();
     } finally {
       if (ctx.recorder) ctx.recorder.uninstall();
       if (ctx.replayer) ctx.replayer.uninstall();
@@ -95,6 +99,7 @@ export function setupE2eScenario(scenario: E2eScenario): E2eContext {
       ctx.projectDir = '';
       ctx.recorder = null;
       ctx.replayer = null;
+      trustHome.restore();
     }
   });
 
@@ -124,6 +129,11 @@ export async function runE2eWorkflow(
     signal: new AbortController().signal,
   });
   if (preparation.kind === 'failed') throw preparation.error;
+  if (preparation.kind === 'blocked') {
+    throw new Error(
+      `E2E runner preparation was blocked:\n${blockerLines(preparation.report).join('\n')}`,
+    );
+  }
   if (preparation.kind !== 'prepared') {
     throw new Error(`E2E runner preparation ended with '${preparation.kind}'.`);
   }
@@ -147,6 +157,19 @@ export async function runE2eWorkflow(
       onComplete: () => undefined,
     },
   });
+}
+
+/**
+ * A blocked preparation is how cassette drift shows up first: the readiness
+ * probe hits an entry the workflow was going to use. Naming the blockers here
+ * is the difference between "ended with 'blocked'" and a diagnosis.
+ */
+function blockerLines(report: ReadinessReport): string[] {
+  return report.sections.flatMap((section) =>
+    section.checks
+      .filter((check) => check.severity === 'blocker')
+      .map((check) => `  ${check.id}: ${[check.summary, ...(check.details ?? [])].join(' ')}`),
+  );
 }
 
 function replayRunner(runner: Config['planner'] | Config['implementer']): unknown {

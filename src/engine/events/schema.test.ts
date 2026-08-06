@@ -485,6 +485,50 @@ describe('parseEngineEvent', () => {
     );
   });
 
+  it('accepts validation_baseline events with only the required members', () => {
+    expect(
+      parseEngineEvent({
+        type: 'validation_baseline',
+        ts: 1,
+        phase: 'implementing',
+        status: 'running',
+        stages: { typecheck: false, lint: false, test: false },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'validation_baseline',
+        status: 'running',
+        stages: { typecheck: false, lint: false, test: false },
+      }),
+    );
+  });
+
+  it('accepts validation_baseline done events with commands, failing and duration', () => {
+    expect(
+      parseEngineEvent({
+        type: 'validation_baseline',
+        ts: 1,
+        phase: 'implementing',
+        status: 'done',
+        stages: { typecheck: true, lint: true, test: true },
+        commands: { typecheck: 'npm run typecheck', test: 'npm test -- src/x.test.ts' },
+        failing: { typecheck: true },
+        duration: 12_000,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'validation_baseline',
+        status: 'done',
+        commands: {
+          typecheck: 'npm run typecheck',
+          test: 'npm test -- src/x.test.ts',
+        },
+        failing: { typecheck: true },
+        duration: 12_000,
+      }),
+    );
+  });
+
   it('accepts queued message events with preview text', () => {
     expect(
       parseEngineEvent({
@@ -542,5 +586,60 @@ describe('parseEngineEvent', () => {
     expect(parseEngineEvent({ type: 'runner_call_stall_cleared', ...base })).toEqual(
       expect.objectContaining({ type: 'runner_call_stall_cleared' }),
     );
+  });
+
+  it('round-trips both brief readiness events', () => {
+    expect(
+      parseEngineEvent({
+        type: 'brief_readiness_passed',
+        ts: 1,
+        phase: 'reviewing-briefs',
+        taskCount: 4,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'brief_readiness_passed',
+        taskCount: 4,
+      }),
+    );
+    expect(
+      parseEngineEvent({
+        type: 'brief_readiness_blocked',
+        ts: 1,
+        phase: 'reviewing-briefs',
+        taskCount: 4,
+        blockedCount: 2,
+        blockedTaskIds: ['T001', 'T002'],
+        kinds: ['stale-conflict', 'context-overflow'],
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'brief_readiness_blocked',
+        taskCount: 4,
+        blockedCount: 2,
+        blockedTaskIds: ['T001', 'T002'],
+        kinds: ['stale-conflict', 'context-overflow'],
+      }),
+    );
+  });
+
+  it('rejects brief readiness events missing required fields', () => {
+    expect(
+      parseEngineEvent({
+        type: 'brief_readiness_passed',
+        ts: 1,
+        phase: 'reviewing-briefs',
+      }),
+    ).toBeNull();
+    expect(
+      parseEngineEvent({
+        type: 'brief_readiness_blocked',
+        ts: 1,
+        phase: 'reviewing-briefs',
+        taskCount: 4,
+        blockedCount: 1,
+        blockedTaskIds: ['T001'],
+      }),
+    ).toBeNull();
   });
 });

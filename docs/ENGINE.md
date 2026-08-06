@@ -37,8 +37,8 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 - **`approval/`** — Tiered approval system for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change) and gates those writes at auto/sticky/confirm tiers.
 - **`budget/`** — Cost prediction and budget enforcement. `cost-prediction.ts` estimates prompt-input cost before tasks start; `check.ts` holds pure threshold math; `knownness.ts` resolves usage-price knownness for runtime spend; `enforce.ts` publishes budget events, drives recovery, and runs post-task enforcement via `checkBudgetAfterTask`.
 - **`drift/`** — Brief drift detection. Checks whether implementer output drifted from the Task Brief and reports a score. `chain.ts` tracks chains of drifting tasks.
-- **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the planner.
-- **`user-edit/`** — Detects when the user edits files outside of SPLITBRIEF during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output.
+- **`evidence/`** — Collects evidence of task completion for the final review. The `review-packet/` subfolder assembles all evidence into a structured packet for the planner. The planner's review text is parsed into a structured verdict, per-criterion marks and categorised findings by `parseFinalReview()` in `src/engine/parsers/final-review.ts`; an unrecognised review degrades to an unknown verdict. The verdict, criteria counts and finding counts land in the packet's final-review section and are rolled up into `summary.json` (`reviewPacket.finalReviewVerdict`, `reviewPacket.finalReviewFindingCounts`).
+- **`user-edit/`** — Detects when the user edits files outside of SPLITBRIEF during a running workflow. `conflicts.ts` handles merge conflicts between user edits and implementer output. The pre-task gate no longer stops the run on an inspection failure: a failed changed-file scan degrades to a warning and the task proceeds, and a conflict is raised only from a scan that produced a file list.
 - **`explain/`** — Post-hoc explanation of workflow decisions. Formats artifacts, routing choices, and section breakdowns for the `splitbrief explain` CLI command.
 
 ---
@@ -58,12 +58,14 @@ signal                     — optional AbortSignal for cancellation
 metadata                   — SpecMetadata for written artifacts
 sinks                      — WorkflowSinks (abort handler, queue handler)
 validator                  — validation pipeline
+isolation                  — run-scoped isolation handle (worktree default, staged-copy fallback)
 resumeHolder               — prior messages for stateless resume
 modelCache                 — pricing/cost lookups
 drainPendingAttachments    — pulls attachments from store
+detectedContextLength      — boot-probed implementer context window
 ```
 
-This is the "god object" of the orchestrator. It's created once in `initializeWorkflow()` and threaded through every function call. Functions that need a subset of it use `Pick<WorkflowContext, ...>` or narrower types like `PlannerCallbacksContext`.
+This is the "god object" of the orchestrator. It's created once in `initializeWorkflow()` and threaded through every function call. Functions that need a subset of it use `Pick<WorkflowContext, ...>` or narrower types like `PlannerCallbacksContext`, which carries the routing inputs (`modelCache`, `detectedContextLength`) so the readiness gate and the task-loop router resolve context from the same sources.
 
 ---
 
@@ -213,7 +215,7 @@ Two complementary paths:
 
 A persisted changed-files baseline has two provenance states: `head: null` records a known unborn start, and a SHA records the exact run-start commit. State without a baseline is rejected at final review (`finalReviewError.missingRunBaseline`) rather than reconstructed from commit subjects.
 
-`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones.
+`runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. An entry SPLITBRIEF refuses to read — a symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after baseline capture and before validation priming, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are excluded from user-edit detection and never opened.
 
 **`jsonlSink`** — appends protected events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source when transcript persistence is enabled. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
 
@@ -341,6 +343,12 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'validate'; taskId: TaskId; status: 'running' | 'done';
   passed: boolean; stages: ValidationStages; error?: string; duration?: number }
 // where ValidationStages = { typecheck: boolean; lint: boolean; test: boolean }
+
+{ type: 'validation_baseline'; status: 'running' | 'done';
+  stages: ValidationStages; activeStage?: 'typecheck' | 'lint' | 'test';
+  commands?: ValidationStageCommands; failing?: ValidationStageSkips; duration?: number }
+// The run-start probe. stages[s] === true means probed and green; failing[s] === true
+// means probed and red; a stage in neither was not probed.
 
 // Recovery
 { type: 'recovery_prompted'; issueId: string; reason: RecoveryReason;

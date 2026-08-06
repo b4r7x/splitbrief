@@ -9,15 +9,19 @@ import { createEventBus } from '../events/bus.js';
 import { taskId } from '../../core/schemas/task.js';
 import { markHooksConfigTrusted } from '../../core/hooks/trust.js';
 import { makeCommandHookEntry, makeAllowHook } from '#testing/helpers/factories/hook-entry.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 
 let projectDir: string;
+let trustHome: ReturnType<typeof useTrustHome>;
 
 beforeEach(() => {
+  trustHome = useTrustHome('splitbrief-hook-sink-home');
   projectDir = mkdtempSync(join(tmpdir(), 'splitbrief-hook-sink-'));
 });
 
 afterEach(() => {
   rmSync(projectDir, { recursive: true, force: true });
+  trustHome.restore();
 });
 
 function ctx() {

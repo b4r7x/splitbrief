@@ -278,6 +278,8 @@ describe('SummaryScreen', () => {
           evidenceValidatedTasks: 2,
           evidenceTotalTasks: 2,
           missingArtifactCount: 0,
+          finalReviewVerdict: null,
+          finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
         },
       }),
     });
@@ -324,6 +326,8 @@ describe('SummaryScreen', () => {
           evidenceValidatedTasks: 1,
           evidenceTotalTasks: 3,
           missingArtifactCount: 2,
+          finalReviewVerdict: null,
+          finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
         },
       }),
     });
@@ -380,6 +384,8 @@ describe('SummaryScreen', () => {
           evidenceValidatedTasks: 2,
           evidenceTotalTasks: 3,
           missingArtifactCount: 0,
+          finalReviewVerdict: null,
+          finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
         },
       }),
     });
@@ -557,6 +563,8 @@ describe('SummaryScreen', () => {
           evidenceValidatedTasks: 1,
           evidenceTotalTasks: 1,
           missingArtifactCount: 0,
+          finalReviewVerdict: null,
+          finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
         },
       }),
     });

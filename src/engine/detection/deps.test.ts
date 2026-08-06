@@ -328,6 +328,7 @@ async function withAdmittedCliHost(
   input: Readonly<{
     shims: readonly CliToolId[];
     sessionState: readonly string[];
+    credentialEnv?: Readonly<Record<string, string>> | undefined;
     argvLogTool?: CliToolId | undefined;
     run: (host: Readonly<{ argvLog: string }>) => Promise<void>;
   }>,
@@ -349,6 +350,9 @@ async function withAdmittedCliHost(
     for (const name of HOST_DETECTION_ENV) delete process.env[name];
     process.env.PATH = shimDir;
     process.env.HOME = stateHome;
+    for (const [name, value] of Object.entries(input.credentialEnv ?? {})) {
+      process.env[name] = value;
+    }
     await input.run({ argvLog });
   } finally {
     for (const [name, value] of saved) {
@@ -374,6 +378,10 @@ describe('all-admitted-tools auth channels', () => {
       await withAdmittedCliHost({
         shims: [...CLI_TOOL_IDS],
         sessionState: SEEDED_SESSION_STATE_PATHS,
+        // Claude Code's default channel is `api-key` where its session
+        // credential is not a bridgeable file, so both credential shapes have
+        // to be present for every tool to report on the channel it defaults to.
+        credentialEnv: { ANTHROPIC_API_KEY: 'sk-ant-fixture-not-a-real-key' },
         run: async () => {
           const result = await createProductionDetectionDeps({
             config: shellRolesConfig(),

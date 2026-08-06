@@ -9,7 +9,6 @@ import {
   isDeclaredCliProbeContract,
   type CliProbeContract,
   type CliProbeOutput,
-  type CliSessionPresenceProbe,
 } from './contract.js';
 import { probeCliReadiness, probeDeclaredCliReadinessEvidence } from './readiness-probe.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
@@ -56,7 +55,6 @@ function declaredProbe(
     catalogScript?: string;
     parseAuth?: (input: CliProbeOutput) => AuthFact;
     authNotRun?: boolean;
-    sessionPresence?: CliSessionPresenceProbe;
   } = {},
 ): CliProbeContract {
   const version = {
@@ -117,7 +115,6 @@ function declaredProbe(
             .map((id) => ({ id })),
         }),
       },
-      sessionPresence: options.sessionPresence ?? { kind: 'none' },
     },
   };
 }

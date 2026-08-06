@@ -2,16 +2,17 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { PlanTaskReviewMetadata } from '../../../core/plan-review/types.js';
 import {
-  STALE_ESTIMATE_STATUSES,
+  BLOCKING_ESTIMATE_STATUSES,
   hasNoCapableWorker,
 } from '../../../core/plan-review/predicates.js';
 import { buildRoutingPreviewMetadata } from '../../routing-preview.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { EventBus } from '../../events/types.js';
+import type { Phase } from '../../../core/schemas/enums.js';
+import { BRIEF_READINESS_FILE } from '../../../core/paths.js';
+import { writeSpecFile, type SpecFileRef } from '../../../core/paths-io.js';
 
-export type BriefReadinessBlockKind =
-  | 'overflow'
-  | 'no-capable-worker'
-  | 'stale-conflict'
-  | 'routing-pending';
+export type BriefReadinessBlockKind = 'overflow' | 'no-capable-worker' | 'stale-conflict';
 
 export interface BriefReadinessBlock {
   taskId: TaskId;
@@ -20,26 +21,17 @@ export interface BriefReadinessBlock {
   nextAction: string;
 }
 
+export interface BriefReadinessOverride {
+  at: string;
+  blockedTaskIds: string[];
+  kinds: string[];
+}
+
 export interface BriefReadinessGateReport {
   ok: boolean;
   metadata: PlanTaskReviewMetadata[];
   blocks: BriefReadinessBlock[];
-}
-
-function hasCurrentTaskEstimate(task: Task, metadata: PlanTaskReviewMetadata): boolean {
-  if (metadata.estimatedTokens === undefined) return false;
-  return task.action !== 'modify' || metadata.estimateStatus !== undefined;
-}
-
-function hasPendingRoutingMetadata(
-  task: Task,
-  metadata: PlanTaskReviewMetadata | undefined,
-): boolean {
-  if (metadata === undefined) return true;
-  if (metadata.contextFit === undefined) return true;
-  if (metadata.workerProfile === undefined && !hasNoCapableWorker(metadata)) return true;
-  if (metadata.validationStatus === 'pending') return true;
-  return !hasCurrentTaskEstimate(task, metadata);
+  override?: BriefReadinessOverride | undefined;
 }
 
 function classifyReadinessBlock(
@@ -67,22 +59,13 @@ function classifyReadinessBlock(
   if (
     metadata?.stale === true ||
     metadata?.conflict !== undefined ||
-    STALE_ESTIMATE_STATUSES.has(metadata?.estimateStatus)
+    BLOCKING_ESTIMATE_STATUSES.has(metadata?.estimateStatus)
   ) {
     return {
       taskId: task.id,
       kind: 'stale-conflict',
       message: `Task ${task.id} has stale or conflicting routing context`,
       nextAction: 'resolve the conflict or revise the brief with current code context',
-    };
-  }
-
-  if (hasPendingRoutingMetadata(task, metadata)) {
-    return {
-      taskId: task.id,
-      kind: 'routing-pending',
-      message: `Task ${task.id} has unresolved routing metadata`,
-      nextAction: 'refresh routing readiness before approval',
     };
   }
 
@@ -105,17 +88,83 @@ export async function runBriefReadinessGate(opts: {
   tasks: Task[];
   config: Config;
   projectDir: string;
+  modelCache?: ModelCacheAccessor | undefined;
+  detectedContextLength?: number | undefined;
 }): Promise<BriefReadinessGateReport> {
   const metadata = await buildRoutingPreviewMetadata(opts.tasks, {
     config: opts.config,
     projectDir: opts.projectDir,
+    ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
+    ...(opts.detectedContextLength !== undefined && {
+      detectedContextLength: opts.detectedContextLength,
+    }),
   });
   return evaluateBriefReadiness(opts.tasks, metadata);
 }
 
-export function firstBriefReadinessBlockMessage(report: BriefReadinessGateReport): string {
-  const block = report.blocks[0];
-  if (!block) return 'Task Brief readiness failed';
-  const suffix = report.blocks.length > 1 ? ` (${report.blocks.length} blocking tasks)` : '';
-  return `Task Brief approval blocked: ${block.message}${suffix}. Next best action: ${block.nextAction}.`;
+export function writeBriefReadiness(ref: SpecFileRef, report: BriefReadinessGateReport): void {
+  writeSpecFile(ref, BRIEF_READINESS_FILE, JSON.stringify(report, null, 2), null);
+}
+
+export function writeBriefReadinessOverride(
+  ref: SpecFileRef,
+  report: BriefReadinessGateReport,
+  override: BriefReadinessOverride,
+): void {
+  writeBriefReadiness(ref, { ...report, override });
+}
+
+export async function runBriefReadinessGateAndReport(opts: {
+  tasks: Task[];
+  config: Config;
+  projectDir: string;
+  sessionId: string;
+  bus: EventBus;
+  phase: Phase;
+  modelCache?: ModelCacheAccessor | undefined;
+  detectedContextLength?: number | undefined;
+}): Promise<BriefReadinessGateReport> {
+  const { tasks, projectDir, sessionId, bus, phase } = opts;
+  const report = await runBriefReadinessGate(opts);
+  writeBriefReadiness({ projectDir, sessionId }, report);
+  if (report.ok) {
+    bus.publish({
+      type: 'brief_readiness_passed',
+      ts: Date.now(),
+      phase,
+      taskCount: tasks.length,
+    });
+  } else {
+    bus.publish({
+      type: 'brief_readiness_blocked',
+      ts: Date.now(),
+      phase,
+      taskCount: tasks.length,
+      blockedCount: report.blocks.length,
+      blockedTaskIds: report.blocks.map((block) => block.taskId),
+      kinds: [...new Set(report.blocks.map((block) => block.kind))],
+    });
+  }
+  return report;
+}
+
+export function formatBriefReadinessBlocks(report: BriefReadinessGateReport): string {
+  const firstBlock = report.blocks[0];
+  if (!firstBlock) return '';
+  const counts = new Map<BriefReadinessBlockKind, number>();
+  for (const block of report.blocks) counts.set(block.kind, (counts.get(block.kind) ?? 0) + 1);
+  const kinds = [...counts]
+    .toSorted(
+      ([leftKind, leftCount], [rightKind, rightCount]) =>
+        rightCount - leftCount || leftKind.localeCompare(rightKind),
+    )
+    .map(([kind, count]) => `${kind} (${count})`)
+    .join(', ');
+  const taskIds = report.blocks.map((block) => block.taskId);
+  const shown = taskIds.slice(0, 8).join(', ');
+  const remainder = taskIds.length > 8 ? ` (+${taskIds.length - 8} more)` : '';
+  return (
+    `Task Brief approval blocked: ${report.blocks.length} of ${report.metadata.length} tasks ` +
+    `blocked (${kinds}). Blocked tasks: ${shown}${remainder}. Next best action: ${firstBlock.nextAction}.`
+  );
 }

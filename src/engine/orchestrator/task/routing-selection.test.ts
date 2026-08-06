@@ -7,6 +7,7 @@ import {
 } from '#testing/helpers/orchestrator-task-context.js';
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { getRunnerModelName } from '../../../core/config/accessors/runner-config.js';
+import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { selectRoutingProfile } from './routing-selection.js';
 
@@ -113,7 +114,7 @@ describe('selectRoutingProfile context cache', () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.routingDecision.contextLength).toBe(8192);
+    expect(result.routingDecision.contextLength).toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);
   });
 
   it('uses detected context length as the live conservative fallback so a cheaper profile can fit', async () => {
@@ -134,12 +135,8 @@ describe('selectRoutingProfile context cache', () => {
 
     expect(withoutDetected.ok).toBe(true);
     if (!withoutDetected.ok) return;
-    expect(withoutDetected.routingDecision.selectedProfile).toBe(profiles[1]!.name);
-    expect(withoutDetected.routingDecision.rejected[0]).toMatchObject({
-      profile: 'cheap-detected-worker',
-      fit: 'overflow',
-      contextLength: 8192,
-    });
+    expect(withoutDetected.routingDecision.selectedProfile).toBe(profiles[0]!.name);
+    expect(withoutDetected.routingDecision.contextLength).toBe(DEFAULT_UNKNOWN_CONTEXT_LENGTH);
 
     const withDetected = await selectRoutingProfile({
       wctx: makeTaskWorkflowContext({ detectedContextLength: 20_000 }),

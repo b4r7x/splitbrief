@@ -1,4 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
+import type { ApiImplementerConfig } from '../../core/schemas/implementer-config.js';
 import type {
   Implementer,
   ImplementerFactoryOptions,
@@ -9,6 +10,7 @@ import type {
 import { createImplementerBase } from './pipeline/run.js';
 import { formatTaskPrompt, formatRetryPrompt } from '../spec/prompt-formatter.js';
 import { getProvider } from '../providers/registry.js';
+import { createProviderAvailability } from '../providers/client/availability.js';
 import { createClientFromProvider } from '../providers/client/connection.js';
 import { estimateTokens } from '../../core/tokens/estimate.js';
 import { resolveAutoModel } from '../../core/providers/model-selection.js';
@@ -18,15 +20,34 @@ import { dispatchStreamCompletion } from '../providers/dispatch-stream.js';
 import { toStreamClient } from '../providers/openai-stream/client.js';
 import type { StreamClient } from '../providers/openai-stream/request.js';
 import { clampToMaxOutput } from '../providers/capability-inference.js';
-import { DEFAULT_API_CONTEXT_LENGTH } from '../spec/token-budget.js';
+import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../core/tokens/context-length.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../core/schemas/runner-fields.js';
 import { composeAbortSignal } from '../../utils/abort.js';
+
+// Constructs the provider and its availability helper inside a try so a
+// construction failure — a missing env-referenced key — yields `undefined`
+// (reported as unavailable) instead of throwing out of the factory. Shared by
+// the unavailability-reason member.
+function providerAvailability(
+  impl: ApiImplementerConfig,
+): ReturnType<typeof createProviderAvailability> | undefined {
+  try {
+    const provider = getProvider(impl.provider, {
+      apiBase: impl.apiBase,
+      apiKey: impl.apiKey,
+    });
+    return createProviderAvailability(provider);
+  } catch {
+    return undefined;
+  }
+}
 
 export function createApiImplementer(
   initialConfig: Config,
   options?: ImplementerFactoryOptions,
 ): Implementer {
-  assertImplementerKind(initialConfig, 'api');
+  const impl = assertImplementerKind(initialConfig, 'api');
+  const availability = providerAvailability(impl);
 
   return createImplementerBase({
     extractsCode: true,
@@ -42,7 +63,7 @@ export function createApiImplementer(
       formatTaskPrompt({
         task: opts.task,
         context: opts.context,
-        contextLength: opts.config.implementer.contextLength ?? DEFAULT_API_CONTEXT_LENGTH,
+        contextLength: opts.config.implementer.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH,
         languageContext: opts.languageContext,
       }),
     buildRetryPrompt: (opts: RetryOptions) =>
@@ -51,7 +72,7 @@ export function createApiImplementer(
         context: opts.context,
         error: opts.error,
         attempt: opts.attempt,
-        contextLength: opts.config.implementer.contextLength ?? DEFAULT_API_CONTEXT_LENGTH,
+        contextLength: opts.config.implementer.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH,
         languageContext: opts.languageContext,
       }),
 
@@ -59,7 +80,7 @@ export function createApiImplementer(
       const { prompt, config, onOutput, signal, systemPreamble } = opts;
       const impl = assertImplementerKind(config, 'api');
       const temperature = opts.temperature ?? impl.temperature ?? DEFAULT_IMPLEMENTER_TEMPERATURE;
-      const contextLength = impl.contextLength ?? DEFAULT_API_CONTEXT_LENGTH;
+      const contextLength = impl.contextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH;
       const effectiveSignal = composeAbortSignal(signal, impl.timeout);
 
       const promptTokens = estimateTokens(systemPreamble) + estimateTokens(prompt);
@@ -102,18 +123,12 @@ export function createApiImplementer(
     },
 
     retryTemperatureStep: 0.1,
+    // The probe fires only at the per-task availability gate (task/loop.ts:176
+    // constructs the implementer per task via createTaskImplementer); each gate
+    // call re-probes the model list, so a verdict is never cached across tasks.
     async isAvailable() {
-      const impl = assertImplementerKind(initialConfig, 'api');
-      try {
-        const provider = getProvider(impl.provider, {
-          apiBase: impl.apiBase,
-          apiKey: impl.apiKey,
-        });
-        if (!provider.isLocal) provider.apiKey();
-        return true;
-      } catch {
-        return false;
-      }
+      return (await availability?.isAvailable()) ?? false;
     },
+    unavailabilityReason: () => availability?.unavailabilityReason(),
   });
 }

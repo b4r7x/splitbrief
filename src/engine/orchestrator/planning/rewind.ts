@@ -80,6 +80,10 @@ async function finishPlanAndBriefsApproval(args: {
   });
   const briefsLoop = await runBriefsApprovalLoop({
     tasks: finalTasks,
+    ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
+    ...(wctx.detectedContextLength !== undefined && {
+      detectedContextLength: wctx.detectedContextLength,
+    }),
     planner,
     projectDir,
     sessionId,

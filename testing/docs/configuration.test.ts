@@ -1,8 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import type { Config } from '../../src/core/schemas/config.js';
+import { ConfigSchema, type Config } from '../../src/core/schemas/config.js';
 import { loadConfig } from '../../src/core/config/load/io.js';
 import {
   ADMITTED_API_PROVIDER_IDS,
@@ -11,16 +11,33 @@ import {
   FORBIDDEN_API_PROVIDER_IDS,
 } from '../../src/core/providers/api-provider-catalog.js';
 import { KNOWN_MODELS } from '../../src/core/providers/known-models.js';
+import { narrowRecord } from '../../src/utils/type-guards.js';
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
 const projectRoot = join(import.meta.dirname, '../..');
-const configurationPath = join(projectRoot, 'docs/CONFIGURATION.md');
-const apiKeysPath = join(projectRoot, 'docs/API-KEYS.md');
-const configurationDoc = readFileSync(configurationPath, 'utf8');
-const apiKeysDoc = readFileSync(apiKeysPath, 'utf8');
-const readmeDoc = readFileSync(join(projectRoot, 'README.md'), 'utf8');
-const usageExamplesDoc = readFileSync(join(projectRoot, 'docs/USAGE-EXAMPLES.md'), 'utf8');
+
+// Enumerating the doc tree rather than a hand-listed set is what makes the
+// example gate exhaustive: a new doc is covered the moment it is added.
+const DOC_PATHS = [
+  'README.md',
+  ...readdirSync(join(projectRoot, 'docs'))
+    .filter((name) => name.endsWith('.md'))
+    .map((name) => `docs/${name}`),
+].toSorted();
+
+const docs = new Map(
+  DOC_PATHS.map((path) => [path, readFileSync(join(projectRoot, path), 'utf8')]),
+);
+
+function doc(path: string): string {
+  const text = docs.get(path);
+  if (text === undefined) throw new Error(`missing doc ${path}`);
+  return text;
+}
+
+const configurationDoc = doc('docs/CONFIGURATION.md');
+const apiKeysDoc = doc('docs/API-KEYS.md');
 
 // The docs are read by people who then run the product, so every example the
 // docs present as a whole config is checked with the loader the product runs,
@@ -150,31 +167,58 @@ function extractTaggedYamlBlocks(doc: string, tagPrefix: string): Map<string, st
   return blocks;
 }
 
-const CONFIG_EXAMPLE_TAG = 'config-example: ';
 const SHAPE_SKETCH_TAG = 'config-shape-sketch';
+const CONFIG_TOP_LEVEL_KEYS = new Set(Object.keys(ConfigSchema.shape));
 
-const CONFIG_EXAMPLE_DOCS = [
-  { path: 'docs/CONFIGURATION.md', doc: configurationDoc },
-  { path: 'README.md', doc: readmeDoc },
-  { path: 'docs/USAGE-EXAMPLES.md', doc: usageExamplesDoc },
-] as const;
+interface DocConfigFence {
+  label: string;
+  body: string;
+  parsed: Record<string, unknown>;
+}
 
-// A fence carrying a top-level `version:` key is a whole config, not a
-// fragment: it is what a reader copies into .splitbrief/config.yaml, so it must
-// either load or say out loud that it is a sketch.
-function wholeConfigFences(doc: string): { tag: string | undefined; body: string; line: number }[] {
-  const fences: { tag: string | undefined; body: string; line: number }[] = [];
-  const pattern = /(?:<!-- ([a-z0-9-]+(?:: [a-z0-9-]+)?) -->\n)?```yaml\n([\s\S]*?)```/g;
-  for (const match of doc.matchAll(pattern)) {
-    const body = match[2] ?? '';
-    if (!/^version:/m.test(body)) continue;
-    fences.push({
-      tag: match[1],
-      body,
-      line: doc.slice(0, match.index).split('\n').length,
-    });
+// A fence that does not parse is a fence no gate can read, so it is collected
+// rather than skipped: silently dropping it is how an example escapes checking.
+const UNPARSEABLE_YAML_FENCES: string[] = [];
+
+// A YAML fence naming any top-level config key is something a reader pastes
+// into .splitbrief/config.yaml, whether it is a whole config or one section of
+// one. Both are checked; only a fence that declares itself pseudo-YAML with
+// `<!-- config-shape-sketch -->` opts out.
+function configFences(path: string): DocConfigFence[] {
+  const text = doc(path);
+  const fences: DocConfigFence[] = [];
+  for (const match of text.matchAll(/(?:<!-- ([^>]*?) -->\n)?```yaml\n([\s\S]*?)```/g)) {
+    const [, tag, body = ''] = match;
+    const line = text.slice(0, match.index).split('\n').length + (tag === undefined ? 0 : 1);
+    let parsed: unknown;
+    try {
+      parsed = YAML.parse(body);
+    } catch {
+      UNPARSEABLE_YAML_FENCES.push(`${path}:${line}`);
+      continue;
+    }
+    const record = narrowRecord(parsed);
+    if (!record || !Object.keys(record).some((key) => CONFIG_TOP_LEVEL_KEYS.has(key))) continue;
+    if (tag === SHAPE_SKETCH_TAG) continue;
+    fences.push({ label: `${path}:${line}`, body, parsed: record });
   }
   return fences;
+}
+
+const DOC_CONFIG_FENCES = DOC_PATHS.flatMap(configFences);
+
+// A section fence is loaded the way a reader uses it: dropped into a config
+// whose other sections come from the defaults the loader merges in.
+function loadDocFence(fence: DocConfigFence): Config {
+  return loadConfigText(/^version:/m.test(fence.body) ? fence.body : `version: 3\n${fence.body}`);
+}
+
+function apiRunnerBlocks(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.flatMap(apiRunnerBlocks);
+  const record = narrowRecord(value);
+  if (!record) return [];
+  const nested = Object.values(record).flatMap(apiRunnerBlocks);
+  return record['kind'] === 'api' ? [record, ...nested] : nested;
 }
 
 function extractMarkdownTable(doc: string, marker: string): string[][] {
@@ -373,7 +417,11 @@ describe('configuration documentation', () => {
     }
   });
 
-  it('documents normalized-origin trust for generic remote API examples', () => {
+  // The generic remote example used to teach `apiKey: env:VAR`, which the
+  // loader refuses for a provider the catalog does not know — the doc taught
+  // the one credential shape a custom provider cannot use. It must carry an
+  // inline placeholder instead, and it must still be free of a real secret.
+  it('teaches the inline credential a custom remote provider actually accepts', () => {
     expect(configurationDoc).toContain('<!-- config-api-generic-remote: remote -->');
     expect(configurationDoc).toMatch(/normalized[- ]origin trust/i);
     const genericYaml = extractTaggedYamlBlocks(configurationDoc, 'config-api-generic-remote').get(
@@ -381,8 +429,9 @@ describe('configuration documentation', () => {
     );
     expect(genericYaml).toBeDefined();
     if (genericYaml === undefined) return;
-    expect(genericYaml).toMatch(/apiKey:\s*env:/);
-    expect(genericYaml).not.toMatch(/apiKey:\s*sk-/);
+    expect(genericYaml).not.toMatch(/apiKey:\s*env:/);
+    expect(genericYaml).toMatch(/apiKey:\s*<[^>]+>/);
+    expect(loadConfigText(`version: 3\n${genericYaml}`).implementer.kind).toBe('api');
   });
 
   it('documents credential env names and prefix validation for admitted remote providers', () => {
@@ -432,29 +481,37 @@ describe('configuration documentation', () => {
   });
 });
 
-describe('whole-config documentation examples', () => {
-  const examples = CONFIG_EXAMPLE_DOCS.flatMap(({ path, doc }) =>
-    wholeConfigFences(doc).map((fence) => ({ path, ...fence })),
-  );
-  const loadable = examples.filter(({ tag }) => tag?.startsWith(CONFIG_EXAMPLE_TAG));
-
-  it('tags every documented whole config as a loadable example or a shape sketch', () => {
-    const untagged = examples
-      .filter(({ tag }) => tag !== SHAPE_SKETCH_TAG && !tag?.startsWith(CONFIG_EXAMPLE_TAG))
-      .map(({ path, line }) => `${path}:${line}`);
-    expect(untagged).toEqual([]);
+describe('documentation config examples', () => {
+  it('finds config examples across the whole doc tree', () => {
+    const paths = new Set(DOC_CONFIG_FENCES.map((fence) => fence.label.split(':')[0]));
+    expect(DOC_CONFIG_FENCES.length).toBeGreaterThan(50);
+    expect(paths.size).toBeGreaterThan(5);
+    expect(paths).toContain('docs/CONFIGURATION.md');
+    expect(paths).toContain('docs/GETTING-STARTED.md');
+    expect(paths).toContain('README.md');
   });
 
-  it('keeps the loadable example set non-empty and uniquely named', () => {
-    const ids = loadable.map(({ tag }) => tag?.slice(CONFIG_EXAMPLE_TAG.length));
-    expect(ids.length).toBeGreaterThan(0);
-    expect(ids.toSorted()).toEqual([...new Set(ids)].toSorted());
+  it('parses every yaml fence in the doc tree', () => {
+    expect(UNPARSEABLE_YAML_FENCES).toEqual([]);
   });
 
   it.each(
-    loadable.map((example) => [`${example.path}:${example.line}`, example.body] as const),
-  )('loads %s through the real loader', (_label, body) => {
-    expect(loadConfigText(body).version).toBe(3);
+    DOC_CONFIG_FENCES.map((fence) => [fence.label, fence] as const),
+  )('loads %s through the real loader', (_label, fence) => {
+    expect(loadDocFence(fence).version).toBe(3);
+  });
+
+  // Loading alone does not prove the example is honest: the loader merges the
+  // default implementer, so an `ollama` block that omits service/offering loads
+  // by accident of matching the default. The doc's own rule — every `kind: api`
+  // block declares the identity triple — is checked against the fence text.
+  it('declares the API identity triple in every documented kind: api block', () => {
+    const incomplete = DOC_CONFIG_FENCES.flatMap((fence) =>
+      apiRunnerBlocks(fence.parsed)
+        .filter((block) => block['service'] === undefined || block['offering'] === undefined)
+        .map(() => fence.label),
+    );
+    expect(incomplete).toEqual([]);
   });
 });
 

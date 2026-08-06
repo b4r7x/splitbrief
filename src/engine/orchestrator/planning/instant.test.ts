@@ -387,6 +387,117 @@ describe('runInstantPlanning', () => {
     );
   });
 
+  it('retries the zero-task single call exactly once before failing, persisting the planner text', async () => {
+    const instantPlan = vi
+      .fn()
+      .mockResolvedValue(
+        instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] }),
+      );
+    const { result, projectDir, sessionId, events } = await runInstant({ instantPlan });
+
+    expect(instantPlan).toHaveBeenCalledTimes(2);
+    expect(result.cancelled).toBe(true);
+    expect(existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE))).toBe(true);
+    expect(readFileSync(join(sessionDir(projectDir, sessionId), TASKS_FILE), 'utf-8')).toContain(
+      '# empty',
+    );
+    const warning = events.find(
+      (e) => e.type === 'warning' && 'code' in e && e.code === 'planner_returned_zero_tasks',
+    );
+    expect(warning).toMatchObject({
+      category: 'planner',
+      code: 'planner_returned_zero_tasks',
+      transcriptSafe: true,
+    });
+    if (warning && 'message' in warning) {
+      expect(warning.message).toContain('instant');
+      expect(warning.message).toContain('no parsable Task Brief');
+      expect(warning.message).toContain(TASKS_FILE);
+    }
+  });
+
+  it('continues normally when the retry returns tasks', async () => {
+    const instantPlan = vi
+      .fn()
+      .mockResolvedValueOnce(
+        instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] }),
+      )
+      .mockResolvedValueOnce(instantPlanResult());
+    const { result, events } = await runInstant({ instantPlan });
+
+    expect(instantPlan).toHaveBeenCalledTimes(2);
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.tasks).toHaveLength(1);
+    expect(events.find((e) => e.type === 'warning')).toBeUndefined();
+  });
+
+  it('books the planner tokens of both calls of a zero-task retry', async () => {
+    const instantPlan = vi
+      .fn()
+      .mockResolvedValueOnce(
+        instantPlanResult({
+          tasks: [],
+          usage: { inputTokens: 30, outputTokens: 15 },
+          phases: [{ text: '# empty', filename: TASKS_FILE }],
+        }),
+      )
+      .mockResolvedValueOnce(instantPlanResult({ usage: { inputTokens: 12, outputTokens: 7 } }));
+    const { result } = await runInstant({ instantPlan });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.tokenUsage.plannerInput).toBe(42);
+    expect(result.state.tokenUsage.plannerOutput).toBe(22);
+  });
+
+  it('persists the first call phases when the retry produces none', async () => {
+    const instantPlan = vi
+      .fn()
+      .mockResolvedValueOnce(
+        instantPlanResult({
+          tasks: [],
+          phases: [{ text: '# first attempt text', filename: TASKS_FILE }],
+        }),
+      )
+      .mockResolvedValueOnce(instantPlanResult({ phases: [] }));
+    const { result, projectDir, sessionId } = await runInstant({ instantPlan });
+
+    expect(result.cancelled).toBe(false);
+    expect(readFileSync(join(sessionDir(projectDir, sessionId), TASKS_FILE), 'utf-8')).toContain(
+      '# first attempt text',
+    );
+  });
+
+  it('lets the retry phase win a filename the first call also produced', async () => {
+    const instantPlan = vi
+      .fn()
+      .mockResolvedValueOnce(
+        instantPlanResult({
+          tasks: [],
+          phases: [
+            { text: '# first tasks', filename: TASKS_FILE },
+            { text: '# first spec', filename: SPEC_FILE },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        instantPlanResult({ phases: [{ text: '# retry tasks', filename: TASKS_FILE }] }),
+      );
+    const { projectDir, sessionId } = await runInstant({ instantPlan });
+
+    const dir = sessionDir(projectDir, sessionId);
+    expect(readFileSync(join(dir, TASKS_FILE), 'utf-8')).toContain('# retry tasks');
+    expect(readFileSync(join(dir, TASKS_FILE), 'utf-8')).not.toContain('# first tasks');
+    expect(readFileSync(join(dir, SPEC_FILE), 'utf-8')).toContain('# first spec');
+  });
+
+  it('performs exactly one planner call when the first call returns tasks', async () => {
+    const instantPlan = vi.fn().mockResolvedValue(instantPlanResult());
+    await runInstant({ instantPlan });
+
+    expect(instantPlan).toHaveBeenCalledTimes(1);
+  });
+
   it('surfaces a kind-tagged error when the planner returns zero tasks', () => {
     const err = planningError.zeroTasks('instant');
     expect(err.kind).toBe('planning-zero-tasks');

@@ -20,7 +20,7 @@ import type {
 } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
-import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
+import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 
 export function getOrCreateLedger(opts: {
@@ -55,10 +55,12 @@ export function persistTaskEvidence(opts: {
     durationMs?: number | undefined;
     initialValidation?: ValidationResult[] | undefined;
     initialChangedFiles?: string[] | undefined;
+    initialExemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
     validation?: ValidationResult[] | undefined;
     escalated?: boolean | undefined;
     reason?: string | undefined;
     changedFiles?: string[] | undefined;
+    exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
   };
 }): void {
   const { wctx, state, task, recordKind, details } = opts;
@@ -79,6 +81,7 @@ export function persistTaskEvidence(opts: {
           changedFiles: details.changedFiles,
           briefHash,
           validationRetryState: details.status === 'failed' ? 'failed' : undefined,
+          exemptStages: details.exemptStages,
         });
       }
       if (recordKind === 'retry') {
@@ -96,6 +99,7 @@ export function persistTaskEvidence(opts: {
             changedFiles: details.initialChangedFiles,
             briefHash,
             validationRetryState: 'initial-failure',
+            exemptStages: details.initialExemptStages,
           });
         }
         return recordRetryOrEscalationEvidence({
@@ -114,6 +118,7 @@ export function persistTaskEvidence(opts: {
             : details.status === 'failed'
               ? 'failed'
               : undefined,
+          exemptStages: details.exemptStages,
         });
       }
       return recordSkippedTaskEvidence({

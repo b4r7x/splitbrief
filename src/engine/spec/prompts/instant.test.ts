@@ -28,7 +28,7 @@ describe('buildInstantPrompt', () => {
   it('uses Python task examples when Python context is provided', () => {
     const prompt = buildInstantPrompt('x', 'y', buildLanguageContext('python'));
     expect(prompt).toContain('file: src/path/to/file.py');
-    expect(prompt).toContain('\\`\\`\\`python');
+    expect(prompt).toContain('```python');
     expect(prompt).toContain('PEP 484');
     expect(prompt).not.toMatch(/TypeScript|typescript|file\.ts|\.js extensions/);
   });
@@ -50,7 +50,7 @@ describe('buildQuickPlanPrompt', () => {
   it('uses Python task examples when Python context is provided', () => {
     const prompt = buildQuickPlanPrompt('change feature', 'repo', buildLanguageContext('python'));
     expect(prompt).toContain('file: src/path/to/file.py');
-    expect(prompt).toContain('\\`\\`\\`python');
+    expect(prompt).toContain('```python');
     expect(prompt).not.toMatch(/TypeScript|typescript|file\.ts|\.js extensions/);
   });
 });

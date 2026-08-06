@@ -79,6 +79,8 @@ planner:  { kind: cli, tool: claude-code }
 implementer:
   kind: api
   provider: ollama
+  service: ollama
+  offering: local
   apiBase: http://localhost:11434/v1
   model: qwen2.5-coder:7b
   contextLength: 32768
@@ -99,7 +101,7 @@ splitbrief start "add profile settings"
 splitbrief start --json "fix parser edge case"
 ```
 
-`splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, model calls, validation runs, or network probes. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
+`splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, model calls, or validation runs. Its one network call is the runner availability probe: a model-list request to the `api` endpoint each configured runner already targets, so an unreachable planner or default implementer is a blocker here instead of a `fetch failed` after the planning phase has been paid for. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
 
 **When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
 
@@ -213,6 +215,14 @@ Full schema: [TASK-CONTRACT.md](./TASK-CONTRACT.md).
 
 **When to use.** Out of the box. To inspect after the fact, read `.splitbrief/sessions/<id>/brief-quality.json`.
 
+### Brief readiness gate
+
+**What it does.** Before Task Briefs are approved, a routing preview estimates every brief against the selected worker profiles and blocks briefs whose block kinds are `overflow` (the task overflows the selected worker's context window), `no-capable-worker` (no profile can run the task), or `stale-conflict` (stale or conflicting routing context). Each block names the task, the kind, and the next best action.
+
+**How to use.** Runs at briefs approval and again after brief edits. Result persists at `brief-readiness.json`; events are `brief_readiness_passed` or `brief_readiness_blocked`.
+
+**When to use.** To inspect a blocked approval after the fact, read `.splitbrief/sessions/<id>/brief-readiness.json`.
+
 ### Mode advisor (deterministic risk classifier)
 
 **What it does.** A pure keyword/pattern classifier (no LLM call) emits a `ModeAdviceKind` of `none | downgrade | upgrade | missing-context` for the user prompt. Risk tiers: `trivial → instant`, `small → quick`, `normal → standard`, `high → speckit`. Confidence threshold of 0.65 for upgrades / downgrades; missing-context can fire below.
@@ -292,9 +302,9 @@ Events: `budget_warning` (80%), `budget_paused` (configured threshold), `budget_
 
 ### Hero savings stat (summary screen)
 
-**What it does.** After a completed workflow, the summary screen displays a prominent savings comparison: actual spend vs all-planner alternative, with the percentage saved. Copy-pasteable format for sharing.
+**What it does.** After a completed workflow, the summary screen reports what the run actually cost against an all-planner baseline, with the percentage difference. Copy-pasteable format for sharing. This is a reported outcome of the run, not a claim SPLITBRIEF makes up front — see [VISION.md](./VISION.md) for what the tool promises instead.
 
-**Format.** `$0.12 actual vs $0.95 all-planner — 87% saved`
+**Format.** `$0.12 actual vs $0.95 baseline · 87% saved`
 
 **How to use.** Always shown on the post-run summary screen when pricing data is available. When the implementer is unpriced (local/subscription), `local` replaces the dollar amount.
 

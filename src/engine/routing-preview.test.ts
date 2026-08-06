@@ -49,7 +49,7 @@ describe('buildRoutingPreviewMetadata', () => {
         },
       },
     };
-    const contextCache: ModelCacheAccessor = {
+    const modelCache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: (providerId) =>
         providerId === 'openrouter'
@@ -67,7 +67,7 @@ describe('buildRoutingPreviewMetadata', () => {
     const [metadata] = await buildRoutingPreviewMetadata([task], {
       config,
       projectDir,
-      contextCache,
+      modelCache,
       detectedContextLength,
     });
 
@@ -122,6 +122,67 @@ describe('buildRoutingPreviewMetadata', () => {
       currentCodeContextMode: 'none',
     });
     expect(metadata?.routingReason).toContain('missing current code');
+  });
+
+  it('reports a modify target an earlier task creates as pending, not missing', async () => {
+    const created = makeTask({ id: 'T001', action: 'create', file: 'src/new.ts' });
+    const modified = makeTask({
+      id: 'T002',
+      action: 'modify',
+      file: 'src/new.ts',
+      currentCode: 'export const stale = true;',
+    });
+
+    const [createdMetadata, modifiedMetadata] = await buildRoutingPreviewMetadata(
+      [created, modified],
+      { config: makeConfig(), projectDir },
+    );
+
+    expect(createdMetadata?.estimateStatus).toBeUndefined();
+    expect(modifiedMetadata).toMatchObject({
+      taskId: modified.id,
+      estimateStatus: 'pending-earlier-task',
+      risk: 'medium',
+    });
+    expect(modifiedMetadata?.validationStatus).toBeUndefined();
+    expect(modifiedMetadata?.routingReason).toContain(
+      'an earlier task in this plan creates the target file',
+    );
+  });
+
+  it('reports a modify target created by a later task as missing, because the loop runs in array order', async () => {
+    const modified = makeTask({
+      id: 'T001',
+      action: 'modify',
+      file: 'src/new.ts',
+      currentCode: 'export const stale = true;',
+    });
+    const created = makeTask({ id: 'T002', action: 'create', file: 'src/new.ts' });
+
+    const [metadata] = await buildRoutingPreviewMetadata([modified, created], {
+      config: makeConfig(),
+      projectDir,
+    });
+
+    expect(metadata).toMatchObject({
+      taskId: modified.id,
+      estimateStatus: 'missing-current-code',
+      validationStatus: 'warn',
+      risk: 'high',
+    });
+    expect(metadata?.routingReason).toContain('missing current code');
+  });
+
+  it('normalises ./ prefixes when matching a create task to a modify target', async () => {
+    const created = makeTask({ id: 'T001', action: 'create', file: './src/new.ts' });
+    const modified = makeTask({ id: 'T002', action: 'modify', file: 'src/new.ts' });
+
+    const [, modifiedMetadata] = await buildRoutingPreviewMetadata([created, modified], {
+      config: makeConfig(),
+      projectDir,
+    });
+
+    expect(modifiedMetadata?.estimateStatus).toBe('pending-earlier-task');
   });
 
   it.each([

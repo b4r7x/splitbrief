@@ -12,9 +12,10 @@ import { join } from 'node:path';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import type { CliImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
 import type { RunnerFailureOutcomeState } from '../../../src/engine/runners/errors.js';
-import { SANDBOX_DIR } from '../../../src/core/paths.js';
+import { SANDBOX_DIR, TREES_DIR } from '../../../src/core/paths.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
 import { runImplementation } from '../../../src/engine/orchestrator/task/run-implementation.js';
+import { runSingleTask } from '../../../src/engine/orchestrator/task/step.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { getChangedFilesSnapshot } from '../../../src/engine/orchestrator/approval/file-snapshots/capture.js';
 import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
@@ -29,6 +30,7 @@ import {
   makeCallbacks,
   makePlanner,
   makeWctx,
+  makeWorktreeIsolation,
 } from '#testing/helpers/orchestrator-factories.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import {
@@ -326,8 +328,8 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
 
     const result = await runDirectWriterImplementation(fixture, projectDir);
 
-    expect(result.usesStaging).toBe(true);
-    expect(result.staged?.projectDir).not.toBe(projectDir);
+    expect(result.usesIsolation).toBe(true);
+    expect(result.workspace?.projectDir).not.toBe(projectDir);
     expect(result.implResult.success).toBe(false);
     if (result.implResult.success) throw new Error('expected implementation failure');
     const outcome: RunnerFailureOutcomeState | undefined = result.implResult.outcome;
@@ -338,15 +340,117 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
     if (mode === 'outside-write') {
       expect(existsSync(fixture.outsidePath)).toBe(true);
     }
-    const stagedDir = result.staged?.projectDir;
-    if (mode === 'provider-state-write' && stagedDir !== undefined) {
-      expect(existsSync(join(stagedDir, '.splitbrief/provider-state.json'))).toBe(true);
+    const workspaceDir = result.workspace?.projectDir;
+    if (mode === 'provider-state-write' && workspaceDir !== undefined) {
+      expect(existsSync(join(workspaceDir, '.splitbrief/provider-state.json'))).toBe(true);
     }
-    if (mode === 'irrelevant-write' && stagedDir !== undefined) {
-      expect(existsSync(join(stagedDir, 'dist/bundle.js'))).toBe(true);
+    if (mode === 'irrelevant-write' && workspaceDir !== undefined) {
+      expect(existsSync(join(workspaceDir, 'dist/bundle.js'))).toBe(true);
     }
 
-    result.staged?.cleanup();
+    result.workspace?.cleanup();
+  });
+
+  it('promotes a direct write made in the run worktree into the project', async () => {
+    const projectDir = setupProject();
+    const fixture = createShimFixture(projectDir, 'valid-change');
+    const sessionId = 'sess-direct-writer-worktree';
+    const isolation = makeWorktreeIsolation({ projectDir, sessionId });
+    const task = proofTask();
+    const state = transition(createInitialState('direct writer worktree proof'), {
+      type: 'START_QUICK',
+      tasks: [task],
+    });
+
+    try {
+      const result = await runSingleTask({
+        wctx: makeWctx({
+          projectDir,
+          sessionId,
+          isolation,
+          implementer: createCliImplementer(implementerConfig(), {
+            trustedCli: fixture.trustedGate,
+          }),
+          config: makeConfig({
+            implementer: implementerConfig(),
+            validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+            workflow: { mode: 'quick', maxRetries: 0, persistTranscript: false },
+            approval: { enabled: false, feedRejectionsToPlanner: false },
+          }),
+        }),
+        task,
+        index: 0,
+        totalTasks: 1,
+        state,
+        taskBreakdowns: [],
+        setTrackedState: () => {},
+        setCurrentTask: () => {},
+      });
+
+      const shimCwd = readFileSync(join(fixture.captureDir, 'cwd.txt'), 'utf-8');
+      expect(shimCwd).toBe(join(realpathSync(projectDir), TREES_DIR, sessionId));
+      expect(statSync(join(shimCwd, '.git')).isFile()).toBe(true);
+      expect(result.tasks[0]?.status).toBe('done');
+      expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(
+        `export const marker = "${MARKER}";\n`,
+      );
+      expect(existsSync(join(projectDir, TARGET_TEST))).toBe(true);
+    } finally {
+      await isolation.dispose();
+    }
+  });
+
+  it('promotes a rewrite of a file the run worktree was already dirty in', async () => {
+    const projectDir = setupProject();
+    // The worktree is seeded with the source checkout's uncommitted work, so both
+    // paths the shim rewrites are already in its git status before it runs. A
+    // baseline that compares path membership sees nothing new and calls this a
+    // no-op run; every retry of an already-written task has this shape.
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    mkdirSync(join(projectDir, 'tests'), { recursive: true });
+    writeFileSync(join(projectDir, TARGET_SRC), 'export const marker = "stale";\n', 'utf-8');
+    writeFileSync(join(projectDir, TARGET_TEST), 'process.exit(1);\n', 'utf-8');
+    const fixture = createShimFixture(projectDir, 'valid-change');
+    const sessionId = 'sess-direct-writer-already-dirty';
+    const isolation = makeWorktreeIsolation({ projectDir, sessionId });
+    const task = proofTask();
+    const state = transition(createInitialState('direct writer already dirty proof'), {
+      type: 'START_QUICK',
+      tasks: [task],
+    });
+
+    try {
+      const result = await runSingleTask({
+        wctx: makeWctx({
+          projectDir,
+          sessionId,
+          isolation,
+          implementer: createCliImplementer(implementerConfig(), {
+            trustedCli: fixture.trustedGate,
+          }),
+          config: makeConfig({
+            implementer: implementerConfig(),
+            validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+            workflow: { mode: 'quick', maxRetries: 0, persistTranscript: false },
+            approval: { enabled: false, feedRejectionsToPlanner: false },
+          }),
+        }),
+        task,
+        index: 0,
+        totalTasks: 1,
+        state,
+        taskBreakdowns: [],
+        setTrackedState: () => {},
+        setCurrentTask: () => {},
+      });
+
+      expect(result.tasks[0]?.status).toBe('done');
+      expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(
+        `export const marker = "${MARKER}";\n`,
+      );
+    } finally {
+      await isolation.dispose();
+    }
   });
 
   it('promotes a valid source and test change through approval without unrelated promotion', async () => {

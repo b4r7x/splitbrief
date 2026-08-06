@@ -35,7 +35,6 @@ import type {
   CliProbeCommand,
   CliProbeContract,
   CliProbeOutput,
-  CliSessionPresenceProbe,
   CliVersionProbe,
 } from './contract.js';
 
@@ -237,25 +236,6 @@ function declaredAuthProbe(tool: CliToolId, command: string): CliAuthProbe {
   }
 }
 
-/**
- * Claude Code on macOS stores its subscription credential in the login
- * keychain, which no sandboxed HOME can reach; presence of the entry is the
- * only honest session-state signal there. Every other admitted tool keeps
- * bridgeable file state.
- */
-function declaredSessionPresence(tool: CliToolId): CliSessionPresenceProbe {
-  switch (tool) {
-    case 'claude-code':
-      return { kind: 'darwin-keychain', service: 'Claude Code-credentials' };
-    case 'codex':
-    case 'opencode':
-    case 'aider':
-    case 'copilot':
-    case 'kilo-code':
-      return { kind: 'none' };
-  }
-}
-
 type NativeCatalogParser = (stdout: string) => NativeCliModelCatalog | null;
 
 /**
@@ -312,7 +292,6 @@ function frozenDeclaredProbe(probe: CliDeclaredProbeContract): CliDeclaredProbeC
     version: frozenVersionProbe(probe.version),
     auth: frozenAuthProbe(probe.auth),
     catalog: frozenCatalogProbe(probe.catalog),
-    sessionPresence: Object.freeze({ ...probe.sessionPresence }),
   });
 }
 
@@ -399,7 +378,6 @@ function declaredProbe(
     version,
     auth: declaredAuthProbe(tool, command),
     catalog: declaredCatalogProbe(tool),
-    sessionPresence: declaredSessionPresence(tool),
   };
 }
 

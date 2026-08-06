@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { parseReviewCommand } from './review-commands.js';
+import {
+  BRIEFS_REVIEW_HINT,
+  REVIEW_HINT,
+  parseReviewCommand,
+  reviewHintForPhase,
+  reviewOpeningPromptMessage,
+} from './review-commands.js';
+
+describe('reviewHintForPhase', () => {
+  it('names the edit-file command only in the briefs phase', () => {
+    expect(reviewHintForPhase('reviewing-briefs')).toBe(BRIEFS_REVIEW_HINT);
+    expect(reviewHintForPhase('reviewing-spec')).toBe(REVIEW_HINT);
+    expect(reviewHintForPhase('reviewing-plan')).toBe(REVIEW_HINT);
+  });
+
+  it('never offers the readiness override, which only the review header can honour', () => {
+    expect(reviewHintForPhase('reviewing-briefs')).not.toContain('approve again overrides');
+    expect(reviewOpeningPromptMessage('reviewing-briefs')).not.toContain('approve again overrides');
+  });
+});
 
 describe('parseReviewCommand', () => {
   it('parses approve', () => {

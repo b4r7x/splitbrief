@@ -228,17 +228,20 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     expect(existsSync(fakeOpencode.executablePath)).toBe(true);
     const runLog = JSON.parse(readFileSync(fakeOpencode.runLogPath, 'utf-8')) as FakeOpencodeRun;
     expect(runLog.cwd).not.toBe(projectDir);
+    // The implementer's sandbox is rooted at its own role, not at the worktree's
+    // shared sandbox: the planner running in the same worktree gets a sibling
+    // root, so neither role's bridged credential state is the other's destination.
     expect(normalizeMacTmpPath(runLog.env.HOME)).toBe(
-      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'home')),
+      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'home')),
     );
     expect(normalizeMacTmpPath(runLog.env.TMPDIR)).toBe(
-      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'tmp')),
+      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'tmp')),
     );
     expect(normalizeMacTmpPath(runLog.env.XDG_CACHE_HOME)).toBe(
-      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'cache')),
+      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'cache')),
     );
     expect(normalizeMacTmpPath(runLog.env.npm_config_cache)).toBe(
-      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'npm-cache')),
+      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'npm-cache')),
     );
     expect(runLog.args[0]).toBe('run');
     expect(runLog.args[runLog.args.length - 1]).toContain(requiredPromptText);

@@ -207,6 +207,7 @@ describe('config loading', () => {
         approve: 'all',
         maxRetries: 2,
         git: { commitStrategy: 'per-task', createBranch: true },
+        isolation: 'worktree',
         speckit: { minCoverage: 0.8 },
         mode: 'speckit',
         briefReview: 'rich',
@@ -258,6 +259,14 @@ describe('config loading', () => {
       writeFileSync(join(splitbriefDir, 'config.yaml'), 'implementer:\n  model: llama3\n', 'utf-8');
 
       expect(() => loadConfig(dir)).toThrow(/Unsupported config version: undefined/);
+    });
+
+    it('resolves workflow.isolation to worktree for configs predating the key', () => {
+      const dir = join(TMP, 'pre-isolation-config');
+      writeConfigYaml(dir, { workflow: { max_retries: 3 } });
+
+      const { config } = loadConfig(dir);
+      expect(config.workflow.isolation).toBe('worktree');
     });
 
     it('defaults workflow.mode to standard when raw YAML omits mode', () => {

@@ -288,7 +288,9 @@ describe('start command — detached', () => {
 
     await expect(
       runStart(['--project', tmp, '--detach', '--mode', mode, 'implement X']),
-    ).rejects.toThrow(/Invalid workflow mode/);
+    ).rejects.toThrow(
+      /Invalid mode: (full|spec-kit)\. Must be one of: instant, quick, standard, speckit/,
+    );
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
   });
 

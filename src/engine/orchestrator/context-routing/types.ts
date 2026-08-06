@@ -28,7 +28,7 @@ export interface RouteTaskOptions extends ContextFitOptions {
   context: ProjectContext;
   profiles: ResolvedImplementerProfile[];
   conservativeContextLength?: number | undefined;
-  contextCache?: ModelCacheAccessor | undefined;
+  modelCache?: ModelCacheAccessor | undefined;
   languageContext?: LanguageContext | undefined;
   detectedContextLength?: number | undefined;
 }
@@ -84,6 +84,7 @@ export type ContextLengthSource =
   | 'models-dev'
   | 'runtime'
   | 'known-catalog'
+  | 'automatic-catalog'
   | 'conservative-fallback';
 
 export interface ResolvedProfileContextLength {

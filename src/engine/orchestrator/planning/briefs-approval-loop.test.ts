@@ -4,15 +4,21 @@ import { join } from 'node:path';
 import { createInitialState } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeCallbacks, makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { BRIEF_QUALITY_FILE, sessionDir, TASKS_FILE } from '../../../core/paths.js';
+import {
+  BRIEF_QUALITY_FILE,
+  BRIEF_READINESS_FILE,
+  sessionDir,
+  TASKS_FILE,
+} from '../../../core/paths.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { runPlanningPhase } from './run.js';
 import { createPlannerBase } from '../../planners/base.js';
 import type { OrchestratorCallbacks } from '../types.js';
-import { taskId } from '../../../core/schemas/task.js';
+import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { PlannerCapabilities } from '../../planners/types.js';
 import {
   TEST_METADATA,
@@ -129,7 +135,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     );
   });
 
-  it('standard mode refreshes readiness and blocks approval when a brief overflows workers', async () => {
+  it('standard mode refreshes readiness and warns when a brief overflows workers, and a repeated approval overrides', async () => {
     const overflowingTask = makePassingTask('T001');
     const planner = makePlanner({
       plan: vi.fn().mockResolvedValue({
@@ -162,11 +168,86 @@ describe('runPlanningPhase — briefs approval loop', () => {
     expect(
       events.some(
         (event) =>
-          event.type === 'error' &&
+          event.type === 'warning' &&
           event.message.includes('Task Brief approval blocked') &&
-          event.message.includes('Next best action'),
+          event.message.includes('T001') &&
+          event.message.includes('Approve again without editing tasks.md to proceed anyway'),
       ),
     ).toBe(true);
+  });
+
+  it('hands the readiness gate the routing inputs it received, so a brief only the cache window fits is approved once', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [
+          {
+            ...makePassingTask('T001'),
+            // Overflows DEFAULT_UNKNOWN_CONTEXT_LENGTH; fits only the cached 200k window.
+            description: 'implement the oversized packet. '.repeat(6000),
+          },
+        ],
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
+    });
+    const onApprovalNeeded = sequencedApproval([{ approved: true }, { approved: false }]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({
+      workflow: { mode: 'standard', approve: 'none' },
+      implementerProfiles: {
+        default: 'local-agent',
+        profiles: {
+          'local-agent': {
+            kind: 'agent',
+            command: 'local-worker',
+            model: 'local-model',
+            costTier: 'cheap',
+          },
+          'catalog-api': {
+            kind: 'api',
+            provider: 'openrouter',
+            apiBase: 'https://openrouter.ai/api/v1',
+            apiKey: 'test-key',
+            model: 'runtime-wide',
+            costTier: 'standard',
+          },
+        },
+      },
+    });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        modelCache: makeModelCacheAccessor({
+          providerModels: { openrouter: [{ id: 'runtime-wide', contextLength: 200_000 }] },
+        }),
+        detectedContextLength: 4_096,
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+    const persisted = JSON.parse(
+      readFileSync(join(sessionDir(projectDir, sessionId), BRIEF_READINESS_FILE), 'utf8'),
+    );
+    expect(persisted.ok).toBe(true);
+    expect(persisted.metadata[0].contextLength).toBe(200_000);
+    expect(
+      events.some((event) => event.type === 'warning' && event.code === 'brief_readiness_block'),
+    ).toBe(false);
   });
 
   it('brief edit reloads persisted tasks.md and quality-gates it before approval', async () => {
@@ -205,7 +286,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
     expect(result.tasks[0]?.title).toBe('Add auth');
   });
 
-  it('brief edit refreshes readiness and blocks the save when the edited tasks.md overflows workers', async () => {
+  it('brief edit refreshes readiness and warns when the edited tasks.md overflows workers', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const planner = makePassingPlanner();
     const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
@@ -254,9 +335,9 @@ describe('runPlanningPhase — briefs approval loop', () => {
     expect(
       events.some(
         (event) =>
-          event.type === 'error' &&
+          event.type === 'warning' &&
           event.message.includes('Task Brief approval blocked') &&
-          event.message.includes('Next best action'),
+          event.message.includes('Approve again without editing tasks.md to proceed anyway'),
       ),
     ).toBe(true);
   });
@@ -589,6 +670,10 @@ describe('runPlanningPhase — briefs approval loop', () => {
         ...makePassingTask('T010'),
         title: 'Saved draft task',
         file: 'src/saved-draft.ts',
+        scope: {
+          inBounds: ['Modify only `src/saved-draft.ts`.'],
+          outOfBounds: ['Do not touch anything outside the task file.'],
+        },
       },
     ];
     const planner = makePassingPlanner({
@@ -707,5 +792,296 @@ describe('runPlanningPhase — briefs approval loop', () => {
       expect.stringContaining('make the task brief include the CLI retry case'),
     ]);
     expect(events.some((event) => event.type === 'queue_drained' && event.count === 1)).toBe(true);
+  });
+
+  it('a second consecutive approval over the same blocking report records the override and reaches implementing', async () => {
+    const overflowingTask = makePassingTask('T001');
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [
+          {
+            ...overflowingTask,
+            description: 'Create a large worker packet',
+            implementationSteps: [
+              Array.from({ length: 300 }, (_, index) => `implement detail ${index}`).join(' '),
+            ],
+          },
+        ],
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
+    });
+    const onApprovalNeeded = sequencedApproval([{ approved: true }, { approved: true }]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const config = makeConfig({
+      implementer: { contextLength: 200 },
+      workflow: { mode: 'standard', approve: 'none' },
+    });
+
+    const { result, projectDir, sessionId, events } = await runPhase({
+      planner,
+      callbacks,
+      config,
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_READINESS_FILE);
+    expect(existsSync(reportPath)).toBe(true);
+    const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
+    expect(persisted.override.blockedTaskIds).toEqual(['T001']);
+    expect(persisted.override.kinds).toEqual(['overflow']);
+    expect(persisted.override.at).toEqual(expect.any(String));
+    expect(
+      events.some(
+        (event) => event.type === 'warning' && event.code === 'brief_readiness_overridden',
+      ),
+    ).toBe(true);
+  });
+
+  it('editing tasks.md between the two approvals cancels the pending override', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const overflowingTask = makePassingTask('T001');
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [
+          {
+            ...overflowingTask,
+            description: 'Create a large worker packet',
+            implementationSteps: [
+              Array.from({ length: 300 }, (_, index) => `implement detail ${index}`).join(' '),
+            ],
+          },
+        ],
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
+    });
+    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
+    const editedOverflowing = formatTasks([
+      {
+        ...makePassingTask('T002'),
+        title: 'Edited overflowing brief',
+        description: 'Create an even larger worker packet',
+        implementationSteps: [
+          Array.from({ length: 300 }, (_, index) => `edited detail ${index}`).join(' '),
+        ],
+      },
+    ]);
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockResolvedValueOnce({ approved: true })
+      .mockImplementationOnce(async () => {
+        writeFileSync(tasksPath, editedOverflowing, 'utf8');
+        return { approved: false, action: 'edit' };
+      })
+      .mockResolvedValueOnce({ approved: true })
+      .mockResolvedValueOnce({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({
+      implementer: { contextLength: 200 },
+      workflow: { mode: 'standard', approve: 'none' },
+    });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(4);
+    const reportPath = join(sessionDir(projectDir, sessionId), BRIEF_READINESS_FILE);
+    const persisted = JSON.parse(readFileSync(reportPath, 'utf8'));
+    expect(persisted.override.blockedTaskIds).toEqual(['T002']);
+    expect(
+      events.some(
+        (event) => event.type === 'warning' && event.code === 'brief_readiness_overridden',
+      ),
+    ).toBe(true);
+  });
+
+  it('a revise that changes only brief prose, leaving the task set identical, still terminates without the no-progress error', async () => {
+    const overflowingTask = makePassingTask('T001');
+    const planTasks: Task[] = [
+      {
+        ...overflowingTask,
+        description: 'Create a large worker packet',
+        implementationSteps: [
+          Array.from({ length: 300 }, (_, index) => `implement detail ${index}`).join(' '),
+        ],
+      },
+    ];
+    const planner = makePassingPlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: planTasks,
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
+      review: async () => ({
+        text: formatTasks([
+          {
+            ...planTasks[0]!,
+            description: 'Create a large worker packet (revised prose)',
+            implementationSteps: [
+              Array.from({ length: 300 }, (_, index) => `implement revised detail ${index}`).join(
+                ' ',
+              ),
+            ],
+          },
+        ]),
+        usage: null,
+      }),
+    });
+    const onApprovalNeeded = sequencedApproval([
+      { approved: true },
+      { approved: false, action: 'revise', comment: 'keep the same tasks, improve the prose' },
+      { approved: true },
+      { approved: true },
+    ]);
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const config = makeConfig({
+      implementer: { contextLength: 200 },
+      workflow: { mode: 'standard', approve: 'none' },
+    });
+
+    const { result, events } = await runPhase({ planner, callbacks, config });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(4);
+    expect(
+      events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
+    ).toBe(false);
+  });
+
+  it('a repeating unchanged failure ends the review with the no-progress error instead of re-prompting forever', async () => {
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [makeBriefQualityFailureTask()],
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
+    });
+    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const config = makeConfig({
+      workflow: { mode: 'standard', approve: 'none' },
+    });
+
+    const { result, events } = await runPhase({ planner, callbacks, config });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(20);
+    expect(result.cancelled).toBe(true);
+    expect(result.state.phase).toBe('idle');
+    expect(
+      events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
+    ).toBe(true);
+  });
+
+  it('an always-editing callback over an unfixable plan calls onApprovalNeeded at most the no-progress cap and ends rejected', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const planner = makePassingPlanner();
+    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
+    const overflowingTasks = formatTasks([
+      {
+        ...makePassingTask('T001'),
+        description: 'Create a large worker packet',
+        implementationSteps: [
+          Array.from({ length: 300 }, (_, index) => `implement detail ${index}`).join(' '),
+        ],
+      },
+    ]);
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockImplementation(async () => {
+        writeFileSync(tasksPath, overflowingTasks, 'utf8');
+        return { approved: false, action: 'edit' };
+      });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const config = makeConfig({
+      implementer: { contextLength: 200 },
+      workflow: { mode: 'standard', approve: 'none' },
+    });
+
+    const { result, events } = await runPhase({ planner, callbacks, config });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(20);
+    expect(result.cancelled).toBe(true);
+    expect(result.state.phase).toBe('idle');
+    expect(
+      events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
+    ).toBe(true);
+  });
+
+  it('a readiness block reached through the edit path warns but never grants an override on the next approval', async () => {
+    const { projectDir, sessionId } = setupProject(dirs);
+    const planner = makePassingPlanner();
+    const tasksPath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
+    const overflowingTasks = formatTasks([
+      {
+        ...makePassingTask('T001'),
+        description: 'Create a large worker packet',
+        implementationSteps: [
+          Array.from({ length: 300 }, (_, index) => `implement detail ${index}`).join(' '),
+        ],
+      },
+    ]);
+    const onApprovalNeeded = vi
+      .fn<OrchestratorCallbacks['onApprovalNeeded']>()
+      .mockImplementationOnce(async () => {
+        writeFileSync(tasksPath, overflowingTasks, 'utf8');
+        return { approved: false, action: 'edit' };
+      })
+      .mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const { bus, events } = makeBusRecorder();
+    const config = makeConfig({
+      implementer: { contextLength: 200 },
+      workflow: { mode: 'standard', approve: 'none' },
+    });
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...createInitialState('feature'), phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(3);
+    expect(
+      events.some(
+        (event) =>
+          event.type === 'warning' &&
+          event.code === 'brief_readiness_block' &&
+          event.message.includes('Approve again without editing tasks.md to proceed anyway'),
+      ),
+    ).toBe(true);
   });
 });

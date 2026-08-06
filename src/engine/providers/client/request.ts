@@ -72,6 +72,18 @@ export function sanitizeProviderDiagnostic(
   return sanitizeTerminalDiagnosticText(redactSecrets(text));
 }
 
+/**
+ * A provider endpoint that is not listening — connection refused, DNS failure,
+ * TLS reset, timeout abort — is a fact about the machine, and every caller of
+ * this module already handles it by falling back. Writing it to stderr only
+ * puts an internal probe name and a bare `fetch failed` in front of a user who
+ * has not seen the UI yet; readiness is where an unreachable endpoint is
+ * reported. Anything else that goes wrong is still worth a diagnostic.
+ */
+export function isEndpointUnreachable(err: unknown): boolean {
+  return err instanceof TypeError || (err instanceof Error && 'code' in err);
+}
+
 export interface FetchJsonWithTimeoutOptions {
   readonly url: string;
   readonly timeoutMs: number;
@@ -148,8 +160,7 @@ export async function fetchModelList<T>(options: {
       headers,
     });
     onError?.(diagnostic);
-    const isNetworkError = err instanceof TypeError || (err instanceof Error && 'code' in err);
-    if (!isNetworkError) {
+    if (!isEndpointUnreachable(err)) {
       warnError('fetchModelList', diagnostic);
     }
     return [];

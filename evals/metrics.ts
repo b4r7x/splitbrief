@@ -1,6 +1,40 @@
-import type { CostBreakdown, Summary } from '../src/core/schemas/summary.js';
+import type { z } from 'zod';
+import {
+  costKnownFlags,
+  type CostBreakdown,
+  type ReviewVerdictSchema,
+  type Summary,
+} from '../src/core/schemas/summary.js';
+import { classifyTaskCompletionMethod } from '../src/core/task-completion.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import type { QualityCheckResult } from './scenarios/types.js';
+
+export type OutcomeMetrics = {
+  totalTasks: number;
+  firstPassTasks: number;
+  firstPassRate: number;
+  retriedTasks: number;
+  /** Tasks an escalation carried to completion, as the run summary counted them. */
+  escalatedTasks: number;
+  /** Times the run escalated, counted from the `escalate` events; an attempt that failed still counts. */
+  escalationAttempts: number;
+  failedTasks: number;
+  skippedTasks: number;
+  retryAttempts: number;
+};
+
+export type ReviewMetrics = {
+  verdict: z.infer<typeof ReviewVerdictSchema> | null;
+  criticalFindings: number;
+  warningFindings: number;
+  noteFindings: number;
+  validationGreen: boolean;
+};
+
+export type GreenRunAggregates = {
+  greenRunsWithFindings: number;
+  greenRunsCriticalFindings: number;
+};
 
 export type QualityScore = {
   totalChecks: number;
@@ -20,12 +54,14 @@ export type CostMetrics = {
   totalOutputTokens: number;
   estimatedCostUSD: number;
   costBreakdown: CostBreakdown | null;
+  pricingAvailable: boolean;
 };
 
 export type RunMetrics = {
   scenarioId: string;
   mode: 'baseline' | 'routed';
   durationMs: number;
+  sessionArtifactsDir: string | null;
   taskCount: number;
   completedTasks: number;
   failedTasks: number;
@@ -35,7 +71,8 @@ export type RunMetrics = {
   quality: QualityScore;
   cost: CostMetrics;
   testsPassedAfterRun: boolean;
-  events: EngineEvent[];
+  outcome: OutcomeMetrics;
+  review: ReviewMetrics;
 };
 
 export type ScenarioComparison = {
@@ -48,6 +85,7 @@ export type ScenarioComparison = {
   baselineCostUSD: number;
   routedCostUSD: number;
   savingsUSD: number;
+  firstPassRateDeltaPercent: number;
 };
 
 export type EvalReport = {
@@ -57,18 +95,32 @@ export type EvalReport = {
   routedImplementerModel: string;
   scenarios: ScenarioComparison[];
   aggregate: {
-    avgCostSavingsPercent: number;
+    /** Average over the pairs priced on both sides; `null` when no pair was. */
+    avgCostSavingsPercent: number | null;
     avgQualityRetentionPercent: number;
-    totalBaselineCostUSD: number;
-    totalRoutedCostUSD: number;
-    totalSavingsUSD: number;
+    /** Sum over the priced baseline runs; `null` when none of them was priced. */
+    totalBaselineCostUSD: number | null;
+    /** Sum over the priced routed runs; `null` when none of them was priced. */
+    totalRoutedCostUSD: number | null;
+    /** Sum over the pairs priced on both sides; `null` when no pair was. */
+    totalSavingsUSD: number | null;
     scenariosRun: number;
     scenariosWhereRoutedMatchedBaseline: number;
+    avgBaselineFirstPassRatePercent: number;
+    avgRoutedFirstPassRatePercent: number;
+    totalRetryAttempts: number;
+    /** Escalation attempts across every run, from the `escalate` events. */
+    totalEscalations: number;
+    /** Tasks escalations carried to completion, from the run summaries. */
+    totalEscalationCompletions: number;
+    greenRunsWithFindings: number;
+    greenRunsCriticalFindings: number;
   };
 };
 
 export function collectCostMetrics(summary: Summary): CostMetrics {
   const usage = summary.tokenUsage;
+  const costBreakdown = summary.costBreakdown ?? null;
   return {
     plannerInputTokens: usage.plannerInput,
     plannerOutputTokens: usage.plannerOutput,
@@ -78,8 +130,12 @@ export function collectCostMetrics(summary: Summary): CostMetrics {
     escalationOutputTokens: usage.escalationOutput,
     totalInputTokens: usage.plannerInput + usage.implementerInput + usage.escalationInput,
     totalOutputTokens: usage.plannerOutput + usage.implementerOutput + usage.escalationOutput,
-    estimatedCostUSD: summary.costBreakdown?.totalActualCost ?? 0,
-    costBreakdown: summary.costBreakdown ?? null,
+    estimatedCostUSD: costBreakdown?.totalActualCost ?? 0,
+    costBreakdown,
+    pricingAvailable:
+      costBreakdown !== null &&
+      costBreakdown.hasPricedUsage === true &&
+      costKnownFlags(costBreakdown).totalCostKnown,
   };
 }
 
@@ -94,6 +150,39 @@ export function collectQualityScore(results: QualityCheckResult[]): QualityScore
   };
 }
 
+export function collectReviewMetrics(summary: Summary): ReviewMetrics {
+  const packet = summary.reviewPacket;
+  return {
+    verdict: packet?.finalReviewVerdict ?? null,
+    criticalFindings: packet?.finalReviewFindingCounts.critical ?? 0,
+    warningFindings: packet?.finalReviewFindingCounts.warning ?? 0,
+    noteFindings: packet?.finalReviewFindingCounts.note ?? 0,
+    validationGreen: summary.failed === 0 && summary.skipped === 0,
+  };
+}
+
+function collectOutcomeMetrics(
+  summary: Summary,
+  eventCounts: { retryAttempts: number; escalationAttempts: number },
+): OutcomeMetrics {
+  const breakdown = summary.taskBreakdown ?? [];
+  const firstPassTasks = breakdown.filter(
+    (entry) => classifyTaskCompletionMethod(entry.method) === 'local' && entry.retryCount === 0,
+  ).length;
+  const retriedTasks = breakdown.filter((entry) => entry.retryCount > 0).length;
+  return {
+    totalTasks: summary.totalTasks,
+    firstPassTasks,
+    firstPassRate: summary.totalTasks > 0 ? firstPassTasks / summary.totalTasks : 0,
+    retriedTasks,
+    escalatedTasks: summary.escalatedToPlanner,
+    escalationAttempts: eventCounts.escalationAttempts,
+    failedTasks: summary.failed,
+    skippedTasks: summary.skipped,
+    retryAttempts: eventCounts.retryAttempts,
+  };
+}
+
 export function collectRunMetrics(
   scenarioId: string,
   mode: 'baseline' | 'routed',
@@ -101,12 +190,15 @@ export function collectRunMetrics(
   events: EngineEvent[],
   qualityResults: QualityCheckResult[],
   durationMs: number,
+  sessionArtifactsDir: string | null,
 ): RunMetrics {
   const retryEvents = events.filter((event) => event.type === 'task_retry');
+  const escalateEvents = events.filter((event) => event.type === 'escalate');
   return {
     scenarioId,
     mode,
     durationMs,
+    sessionArtifactsDir,
     taskCount: summary.totalTasks,
     completedTasks: summary.completedByLocal + summary.escalatedToPlanner,
     failedTasks: summary.failed,
@@ -116,8 +208,28 @@ export function collectRunMetrics(
     quality: collectQualityScore(qualityResults),
     cost: collectCostMetrics(summary),
     testsPassedAfterRun: qualityResults.every((result) => result.passed),
-    events,
+    outcome: collectOutcomeMetrics(summary, {
+      retryAttempts: retryEvents.length,
+      escalationAttempts: escalateEvents.length,
+    }),
+    review: collectReviewMetrics(summary),
   };
+}
+
+export function collectGreenRunAggregates(comparisons: ScenarioComparison[]): GreenRunAggregates {
+  let greenRunsWithFindings = 0;
+  let greenRunsCriticalFindings = 0;
+  for (const comparison of comparisons) {
+    for (const run of [comparison.baseline, comparison.routed]) {
+      if (run.taskCount === 0 || !run.review.validationGreen) continue;
+      const findings =
+        run.review.criticalFindings + run.review.warningFindings + run.review.noteFindings;
+      if (findings === 0) continue;
+      greenRunsWithFindings += 1;
+      greenRunsCriticalFindings += run.review.criticalFindings;
+    }
+  }
+  return { greenRunsWithFindings, greenRunsCriticalFindings };
 }
 
 export function compareScenario(
@@ -145,5 +257,7 @@ export function compareScenario(
     baselineCostUSD: baselineCost,
     routedCostUSD: routedCost,
     savingsUSD: savings,
+    firstPassRateDeltaPercent:
+      Math.round((routed.outcome.firstPassRate - baseline.outcome.firstPassRate) * 100 * 10) / 10,
   };
 }

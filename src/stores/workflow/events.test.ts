@@ -126,6 +126,19 @@ function makeRunnerActivity(
   };
 }
 
+function makeValidationBaseline(
+  overrides?: Partial<EngineEventOf<'validation_baseline'>>,
+): EngineEventOf<'validation_baseline'> {
+  return {
+    type: 'validation_baseline',
+    ts: Date.now(),
+    phase: 'implementing',
+    status: 'done',
+    stages: { typecheck: true, lint: true, test: true },
+    ...overrides,
+  };
+}
+
 describe('eventsStore — append via addEvent', () => {
   beforeEach(() => resetWorkflow());
 
@@ -443,6 +456,44 @@ describe('eventsStore — append via addEvent', () => {
           status: 'running',
           passed: false,
           stages: { typecheck: false, lint: false, test: false },
+        }),
+      );
+      expect(eventsStore.get().events).toHaveLength(2);
+    });
+  });
+
+  describe('validation_baseline coalescing', () => {
+    it('collapses two consecutive running events to one entry', () => {
+      addEvent(
+        makeValidationBaseline({
+          status: 'running',
+          stages: { typecheck: false, lint: false, test: false },
+          activeStage: 'typecheck',
+        }),
+      );
+      addEvent(
+        makeValidationBaseline({
+          status: 'running',
+          stages: { typecheck: true, lint: false, test: false },
+          activeStage: 'lint',
+        }),
+      );
+      const events = eventsStore.get().events;
+      expect(events).toHaveLength(1);
+      expect((events[0] as { activeStage: string }).activeStage).toBe('lint');
+    });
+
+    it('does not collapse a running event followed by a done event', () => {
+      addEvent(
+        makeValidationBaseline({
+          status: 'running',
+          stages: { typecheck: false, lint: false, test: false },
+        }),
+      );
+      addEvent(
+        makeValidationBaseline({
+          status: 'done',
+          stages: { typecheck: true, lint: true, test: true },
         }),
       );
       expect(eventsStore.get().events).toHaveLength(2);

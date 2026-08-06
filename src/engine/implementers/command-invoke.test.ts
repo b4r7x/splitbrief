@@ -186,6 +186,7 @@ describe('createConfiguredCustomImplementer', () => {
       publishCallEvent: vi.fn(),
       publishDone: vi.fn(),
       publishFailed: vi.fn(),
+      publishWarning: vi.fn(),
     };
     const implementer = await createConfiguredCustomImplementer({
       runner: configuredRunner({

@@ -67,6 +67,20 @@ describe('createWorktree', () => {
     expect(existsSync(join(repoDir, TREES_DIR, 'feat-dirty'))).toBe(false);
   });
 
+  it('creates the worktree from a dirty source when requireCleanSource is false', async () => {
+    await writeFile(join(repoDir, 'dirty.txt'), 'uncommitted');
+
+    const wtPath = await createWorktree({
+      projectDir: repoDir,
+      slug: 'feat-dirty-optout',
+      git,
+      requireCleanSource: false,
+    });
+
+    expect(existsSync(wtPath)).toBe(true);
+    expect(existsSync(join(wtPath, 'dirty.txt'))).toBe(false);
+  });
+
   it('does not count files inside .trees/ as dirty when creating another worktree', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-pre', git });
     await expect(

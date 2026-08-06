@@ -57,6 +57,16 @@ export function validationRow(event: Extract<EngineEvent, { type: 'validate' }>)
   return `validate ${stageText}${dur}`;
 }
 
+export function baselineValidationRow(
+  event: Extract<EngineEvent, { type: 'validation_baseline' }>,
+): string {
+  const stageText = ValidationStageSchema.options
+    .map((stage) => baselineValidationStageText(event, stage))
+    .join(' ');
+  const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
+  return `baseline ${stageText}${dur}`;
+}
+
 function formatEventContextFit(
   contextFit: TaskContextFit,
   estimatedTokens: number | undefined,
@@ -102,4 +112,24 @@ function validationStageText(
   const label =
     command === undefined ? stage : `${stage} (${truncateTerminalDisplayText(command, 48)})`;
   return `${label} ${validationStageSymbol(event, event.stages, stage, event.skipped)}`;
+}
+
+function baselineValidationStageSymbol(
+  event: Extract<EngineEvent, { type: 'validation_baseline' }>,
+  stage: ValidationStage,
+): string {
+  if (event.status === 'running' && event.activeStage === stage) return 'running';
+  if (event.failing?.[stage]) return 'failed';
+  if (event.stages[stage]) return 'passed';
+  return 'not-run';
+}
+
+function baselineValidationStageText(
+  event: Extract<EngineEvent, { type: 'validation_baseline' }>,
+  stage: ValidationStage,
+): string {
+  const command = event.commands?.[stage];
+  const label =
+    command === undefined ? stage : `${stage} (${truncateTerminalDisplayText(command, 48)})`;
+  return `${label} ${baselineValidationStageSymbol(event, stage)}`;
 }

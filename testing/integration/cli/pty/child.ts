@@ -17,6 +17,7 @@ import { configStore } from '../../../../src/stores/project/config.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
 import { terminalSizeStore } from '../../../../src/stores/ui/terminal-size.js';
 import { resetAllStores } from '../../../helpers/stores.js';
+import { trustDeclaredRunners } from '../../../helpers/runner-trust.js';
 import {
   isDirectExecution,
   PTY_ACTIVE_REVIEW_MARKER,
@@ -146,12 +147,18 @@ async function preparePtyExecution(
   const resumeState = reviewingSpecState();
   const ref = { projectDir, sessionId: 'pty-review-session' };
   ensureSessionDir(ref.projectDir, ref.sessionId);
+  // The fixture planner is a declared shell command, so this child models an
+  // owner who already granted it, into a throwaway trust directory.
+  const stateDir = join(projectDir, 'pty-runner-trust');
+  mkdirSync(stateDir, { recursive: true });
+  await trustDeclaredRunners({ projectDir, config, stateDir });
   const policy: Extract<PreparationPolicy, { purpose: 'resume' }> = {
     purpose: 'resume',
     interaction: 'interactive',
     unverifiedAuth: 'disclosed',
     allowRepoRunners: false,
     allowHooks: false,
+    stateDir,
   };
   const outcome = await prepareExecution({
     existingSession: ref,
