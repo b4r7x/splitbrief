@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import type { DriftReport } from '../../../../core/schemas/drift.js';
-import { resolveChangedFiles } from './sections-io.js';
+import { REVIEW_FILE, sessionDir } from '../../../../core/paths.js';
+import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
+import { ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
+import { buildFinalReview, resolveChangedFiles } from './sections-io.js';
+import { renderReviewPacketMarkdown } from './render.js';
 
 let dirs: string[] = [];
 
@@ -176,5 +180,259 @@ describe('resolveChangedFiles', () => {
 
     expect(files).toContain('src/from-unborn.ts');
     expect(missing).not.toContain('changed files');
+  });
+});
+
+function writeReview(projectDir: string, sessionId: string, body: string): void {
+  const dir = sessionDir(projectDir, sessionId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, REVIEW_FILE),
+    `---
+generated_by: splitbrief v0.0.0
+---
+
+${body}`,
+  );
+}
+
+describe('buildFinalReview', () => {
+  it('lands a fail verdict with one critical finding in the packet', async () => {
+    const { projectDir } = makeProject();
+    const sessionId = 'review-fail-session';
+    writeReview(
+      projectDir,
+      sessionId,
+      `### Verdict
+fail
+
+### Findings
+- **Critical**: Unauthenticated requests return 500 instead of 401
+`,
+    );
+
+    const missing: string[] = [];
+    const section = await buildFinalReview({
+      projectDir,
+      sessionId,
+      requestedStatus: 'written',
+      ledger: null,
+      missing,
+    });
+
+    expect(section.verdict).toBe('fail');
+    expect(section.findingCounts).toEqual({ critical: 1, warning: 0, note: 0 });
+    expect(section.criteriaPassed).toBe(0);
+    expect(section.criteriaFailed).toBe(0);
+    expect(missing).not.toContain(REVIEW_FILE);
+  });
+
+  it('yields the defaults when the review file is absent', async () => {
+    const { projectDir } = makeProject();
+    const missing: string[] = [];
+    const section = await buildFinalReview({
+      projectDir,
+      sessionId: 'review-absent-session',
+      requestedStatus: 'written',
+      ledger: null,
+      missing,
+    });
+
+    expect(section.verdict).toBeNull();
+    expect(section.findingCounts).toEqual({ critical: 0, warning: 0, note: 0 });
+    expect(section.criteriaPassed).toBe(0);
+    expect(section.criteriaFailed).toBe(0);
+    expect(section.excerpt).toBeNull();
+    expect(missing).toContain(REVIEW_FILE);
+  });
+});
+
+function packetWithFinalReview(finalReview: ReviewPacket['finalReview']): ReviewPacket {
+  return ReviewPacketSchema.parse({
+    version: 1,
+    sessionId: 's',
+    generatedAt: '2026-08-05T00:00:00.000Z',
+    run: {
+      sessionId: 's',
+      feature: 'feat',
+      mode: null,
+      phase: 'complete',
+      planner: { tool: null, model: null },
+      implementer: { tool: null, model: null },
+      startedAt: null,
+      completedAt: null,
+      totalTimeMs: null,
+      totalTasks: 1,
+      completedLocally: 1,
+      escalated: 0,
+      skipped: 0,
+      failed: 0,
+    },
+    readiness: {
+      path: 'readiness.json',
+      present: true,
+      status: null,
+      nextAction: null,
+      blockerCount: null,
+      warningCount: null,
+      checks: [],
+    },
+    changes: {
+      changedFiles: [],
+      expectedFiles: [],
+      outOfScopeFiles: [],
+      taskFiles: [],
+      diffReference: 'Review the working tree with `git diff`.',
+    },
+    checkpoints: {
+      items: [],
+      latestRunCheckpoint: null,
+      preFinalReview: null,
+      runLedger: {
+        path: 'checkpoint-run-ledger.json',
+        present: false,
+        accepted: null,
+        rejected: null,
+        runSnapshotIds: [],
+        runSnapshotKinds: {},
+        latestSnapshotId: null,
+      },
+      safety: {
+        hashGuarded: true,
+        conflictsSkippedByDefault: true,
+        forceOverwritesConflicts: true,
+        partialRestoreExpected: true,
+        excludedPaths: [],
+        text: {
+          hashGuarded: '',
+          conflictsSkippedByDefault: '',
+          forceOverwritesConflicts: '',
+          partialRestoreExpected: '',
+          excludedPaths: '',
+        },
+      },
+    },
+    recoveryDecisions: {
+      sourceArtifacts: [],
+      events: [],
+      currentIssue: null,
+      selectedActions: [],
+      outcomes: [],
+      unresolvedRisks: [],
+    },
+    validation: {
+      summary: { passed: 0, failed: 0, skipped: 0, escalated: 0 },
+      tasks: [],
+      finalReviewEvidenceStatus: null,
+      missingEvidenceWarnings: [],
+    },
+    evidence: {
+      path: null,
+      present: false,
+      briefHash: null,
+      finalReview: null,
+      approvals: [],
+      rejections: [],
+    },
+    drift: {
+      path: null,
+      present: false,
+      passed: null,
+      score: null,
+      errorCount: 0,
+      warningCount: 0,
+      changedFiles: [],
+      expectedFiles: [],
+      findings: [],
+      findingsBySeverity: { info: [], warning: [], error: [] },
+      briefHash: null,
+      chainSummary: {
+        path: 'drift-chains.json',
+        present: false,
+        emittedChainCount: 0,
+        topChain: null,
+        briefQuality: {
+          path: 'brief-quality.json',
+          present: false,
+          passed: null,
+          score: null,
+          errorCount: 0,
+          warningCount: 0,
+        },
+      },
+      briefQuality: {
+        path: 'brief-quality.json',
+        present: false,
+        passed: null,
+        score: null,
+        errorCount: 0,
+        warningCount: 0,
+      },
+    },
+    escalations: {
+      retries: [],
+      escalatedTasks: [],
+      skippedTasks: [],
+      failedTasks: [],
+      warnings: [],
+    },
+    cost: {
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      costBreakdown: null,
+      estimatedCostSavings: null,
+      taskRouting: [],
+      routingWarnings: [],
+    },
+    finalReview,
+    reviewerChecklist: [],
+    missingArtifacts: [],
+  });
+}
+
+describe('renderReviewPacketMarkdown final review block', () => {
+  it('renders a verdict line with the finding counts', () => {
+    const rendered = renderReviewPacketMarkdown(
+      packetWithFinalReview({
+        path: 'review.md',
+        status: 'written',
+        evidenceStatus: null,
+        statusText: 'Planner final review written to review.md.',
+        excerpt: null,
+        verdict: 'fail',
+        criteriaPassed: 2,
+        criteriaFailed: 1,
+        findingCounts: { critical: 1, warning: 0, note: 0 },
+      }),
+    );
+
+    expect(rendered).toContain('- Verdict: fail');
+    expect(rendered).toContain('- Criteria: 2 passed, 1 failed');
+    expect(rendered).toContain('- Findings: 1 critical, 0 warning, 0 note');
+  });
+
+  it('renders a null verdict as unknown, never as pass', () => {
+    const rendered = renderReviewPacketMarkdown(
+      packetWithFinalReview({
+        path: 'review.md',
+        status: 'missing',
+        evidenceStatus: null,
+        statusText: 'review.md was not available.',
+        excerpt: null,
+        verdict: null,
+        criteriaPassed: 0,
+        criteriaFailed: 0,
+        findingCounts: { critical: 0, warning: 0, note: 0 },
+      }),
+    );
+
+    expect(rendered).toContain('- Verdict: unknown');
+    expect(rendered).not.toContain('- Verdict: pass');
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { validationRow } from './event-format.js';
+import { baselineValidationRow, validationRow } from './event-format.js';
 
 function validateEvent(
   overrides: Partial<Extract<EngineEvent, { type: 'validate' }>>,
@@ -72,6 +72,51 @@ describe('validationRow', () => {
 
     expect(row).toContain('typecheck (npm run typecheck) running');
     expect(row).toContain('lint not-run');
+    expect(row).toContain('test not-run');
+  });
+});
+
+function baselineEvent(
+  overrides: Partial<Extract<EngineEvent, { type: 'validation_baseline' }>>,
+): Extract<EngineEvent, { type: 'validation_baseline' }> {
+  return {
+    type: 'validation_baseline',
+    ts: 0,
+    phase: 'implementing',
+    status: 'done',
+    stages: { typecheck: true, lint: true, test: true },
+    ...overrides,
+  };
+}
+
+describe('baselineValidationRow', () => {
+  it('renders passed, failed, and not-run baseline stages as distinct states', () => {
+    const row = baselineValidationRow(
+      baselineEvent({
+        stages: { typecheck: true, lint: false, test: false },
+        failing: { lint: true },
+      }),
+    );
+
+    expect(row).toContain('typecheck passed');
+    expect(row).toContain('lint failed');
+    expect(row).toContain('test not-run');
+    expect(row).not.toContain('lint passed');
+    expect(row).not.toContain('lint not-run');
+  });
+
+  it('renders the active stage while the baseline probe is running', () => {
+    const row = baselineValidationRow(
+      baselineEvent({
+        status: 'running',
+        stages: { typecheck: true, lint: false, test: false },
+        activeStage: 'lint',
+        commands: { lint: 'cargo clippy --no-deps' },
+      }),
+    );
+
+    expect(row).toContain('lint (cargo clippy --no-deps) running');
+    expect(row).toContain('typecheck passed');
     expect(row).toContain('test not-run');
   });
 });

@@ -2,6 +2,7 @@ import { isENOENT, processError } from '../../../lib/process/errors.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { truncateByChars, truncateByTailLines } from '../../../utils/truncate.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
+import { extractNamedChangedFiles } from './extract-named-changed-files.js';
 import type { ValidationResult } from './result.js';
 import type { CommandSource } from './commands.js';
 import type { ValidationCommandRunner } from './types.js';
@@ -40,8 +41,10 @@ export async function runValidationStep(opts: {
   runCommand: ValidationCommandRunner;
   command: string;
   signal?: AbortSignal | undefined;
+  changedFiles?: readonly string[] | undefined;
 }): Promise<ValidationResult> {
-  const { stage, cmd, args, source, cwd, timeout, runCommand, command, signal } = opts;
+  const { stage, cmd, args, source, cwd, timeout, runCommand, command, signal, changedFiles } =
+    opts;
   try {
     const { stdout } = await runCommand(cmd, args, {
       cwd,
@@ -91,12 +94,18 @@ export async function runValidationStep(opts: {
       }
       const stdout = String(output ?? '');
       const errText = selectFailureDetail(stage, stdout, String(stderr ?? ''));
+      const rawOutput = [stdout, String(stderr ?? '')]
+        .filter((part) => part.trim().length > 0)
+        .join('\n');
       return {
         passed: false,
         stage,
         output: sanitizeValidationOutput(stdout),
         error: sanitizeValidationOutput(errText),
         command,
+        ...(changedFiles !== undefined && {
+          failureFiles: extractNamedChangedFiles(rawOutput, changedFiles),
+        }),
       };
     }
     throw err;

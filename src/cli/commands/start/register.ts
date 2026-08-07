@@ -32,7 +32,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
   addWorkflowOptions(
     program
       .command('start [feature] [files...]', { isDefault: true })
-      .description('Full workflow: plan with Claude, implement with local model')
+      .description('Full workflow: the planner plans and reviews, the implementer executes')
       .option('--detach', 'spawn workflow as background server and exit', false),
   ).action(async (feature: string | undefined, files: string[], opts: WorkflowOpts) => {
     if (opts.detach) {

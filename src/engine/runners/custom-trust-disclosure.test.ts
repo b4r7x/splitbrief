@@ -5,9 +5,10 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
   buildCustomRunnerDisclosure,
   customRunnerSecurityPosture,
-  escapeCustomRunnerLiteral,
   formatCustomRunnerDisclosure,
+  inlineRunnerSecurityPosture,
 } from './custom-trust.js';
+import { escapeTrustLiteral } from '../../core/trust/literal.js';
 import { resolveCustomExecutable } from './resolve-cli-executable.js';
 
 const LITERAL_DISCLOSURE_EXECUTABLE = {
@@ -24,6 +25,7 @@ const LITERAL_DISCLOSURE_EXECUTABLE = {
 
 const LITERAL_DISCLOSURE_FIXTURES = [
   {
+    source: 'configured',
     role: 'planner',
     contract: 'output',
     expected: `Executable: "/opt/splitbrief/bin/disclosure-runner"
@@ -32,11 +34,13 @@ Contract: output
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "REVIEW_TOKEN"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Parsed output only; stage-local writes are discarded`,
   },
   {
+    source: 'configured',
     role: 'planner',
     contract: 'direct',
     expected: `Executable: "/opt/splitbrief/bin/disclosure-runner"
@@ -45,11 +49,13 @@ Contract: direct
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "REVIEW_TOKEN"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Reviewed declared artifact for normal planner calls; reviewed workspace diff for full escalation only`,
   },
   {
+    source: 'configured',
     role: 'implementer',
     contract: 'output',
     expected: `Executable: "/opt/splitbrief/bin/disclosure-runner"
@@ -58,11 +64,13 @@ Contract: output
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "REVIEW_TOKEN"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Parsed output only; stage-local writes are discarded`,
   },
   {
+    source: 'configured',
     role: 'implementer',
     contract: 'direct',
     expected: `Executable: "/opt/splitbrief/bin/disclosure-runner"
@@ -71,9 +79,40 @@ Contract: direct
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "REVIEW_TOKEN"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Reviewed diff only`,
+  },
+  {
+    source: 'inline',
+    role: 'planner',
+    contract: 'output',
+    expected: `Executable: "/opt/splitbrief/bin/disclosure-runner"
+Arguments: "--input" "task.md"
+Contract: output
+Working directory: Project directory
+Staging: None
+Environment names: "REVIEW_TOKEN"
+Environment access: Inherits the full SPLITBRIEF process environment, including credentials
+Filesystem: Not an OS sandbox; the process can access files available to the current user
+Network: Network access is not restricted
+Result: Parsed stdout only; anything it writes in the project is neither staged nor reviewed`,
+  },
+  {
+    source: 'inline',
+    role: 'implementer',
+    contract: 'direct',
+    expected: `Executable: "/opt/splitbrief/bin/disclosure-runner"
+Arguments: "--input" "task.md"
+Contract: direct
+Working directory: Project directory
+Staging: None
+Environment names: "REVIEW_TOKEN"
+Environment access: Inherits the full SPLITBRIEF process environment, including credentials
+Filesystem: Not an OS sandbox; the process can access files available to the current user
+Network: Network access is not restricted
+Result: Reviewed workspace diff; it writes directly into the project directory`,
   },
 ] as const;
 
@@ -94,8 +133,8 @@ function command(overrides: Partial<CustomCommand> = {}): CustomCommand {
   };
 }
 
-function runner(customCommand = command()) {
-  return { source: 'configured' as const, command: customCommand };
+function runner(customCommand = command(), source: 'configured' | 'inline' = 'configured') {
+  return { source, command: customCommand };
 }
 
 async function executable(projectDir: string) {
@@ -110,7 +149,10 @@ afterEach(() => {
 });
 
 describe('custom runner disclosure', () => {
-  it.each(LITERAL_DISCLOSURE_FIXTURES)('renders the complete $role $contract disclosure literal', ({
+  it.each(
+    LITERAL_DISCLOSURE_FIXTURES,
+  )('renders the complete $source $role $contract disclosure literal', ({
+    source,
     role,
     contract,
     expected,
@@ -118,12 +160,16 @@ describe('custom runner disclosure', () => {
     const disclosure = buildCustomRunnerDisclosure({
       runner: runner(
         command({
-          id: `${role}-${contract}-literal-disclosure`,
+          id: `${source}-${role}-${contract}-literal-disclosure`,
           contract,
           executable: LITERAL_DISCLOSURE_EXECUTABLE.path,
         }),
+        source,
       ),
-      posture: customRunnerSecurityPosture(role, contract),
+      posture:
+        source === 'configured'
+          ? customRunnerSecurityPosture(role, contract)
+          : inlineRunnerSecurityPosture(role, contract),
       executable: LITERAL_DISCLOSURE_EXECUTABLE,
     });
 
@@ -166,6 +212,6 @@ describe('custom runner disclosure', () => {
   });
 
   it('escapes C1 and Unicode line-separator controls as visible literals', () => {
-    expect(escapeCustomRunnerLiteral(`a\u0085b\u2028c\u202ed`)).toBe('"a\\u0085b\\u2028c\\u202ed"');
+    expect(escapeTrustLiteral(`a\u0085b\u2028c\u202ed`)).toBe('"a\\u0085b\\u2028c\\u202ed"');
   });
 });

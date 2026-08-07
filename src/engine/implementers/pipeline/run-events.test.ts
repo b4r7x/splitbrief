@@ -48,6 +48,7 @@ function makePublisher(events: PublisherEvent[]): ImplementerPublisher {
     publishCallEvent: () => {},
     publishDone: (event) => events.push({ type: 'implementer_generate_done', ...event }),
     publishFailed: (event) => events.push({ type: 'implementer_generate_failed', ...event }),
+    publishWarning: () => {},
   };
 }
 

@@ -24,12 +24,14 @@ describe('buildRunnerConfig', () => {
   });
 
   describe('Claude Code onboarding channel', () => {
-    it('persists the session channel for a newly selected Claude Code runner', () => {
+    it('persists the subscription channel for a newly selected Claude Code runner on every platform', () => {
       const result = buildRunnerConfig('planner', {
         kind: 'cli',
         tool: 'claude-code',
       });
 
+      // Selecting Claude Code must never move the user onto metered billing for
+      // the subscription they already pay for.
       expect(expectCli(result).authChannel).toBe('session');
     });
 

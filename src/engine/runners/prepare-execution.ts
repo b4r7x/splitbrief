@@ -6,11 +6,15 @@ import {
 } from '../../core/config/accessors/runner-config.js';
 import { resolveIntermediateRunner } from '../../core/config/accessors/intermediate-runner.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
-import { findConfiguredCustomCommand } from '../../core/config/custom-commands.js';
+import {
+  findConfiguredCustomCommand,
+  inlineRunnerCommand,
+} from '../../core/config/custom-commands.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../core/readiness/collect.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
+import { cliAuthRemediation } from '../../core/schemas/readiness.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { prepareNewSession, type SessionOwnershipReceipt } from '../../core/sessions/prepare.js';
 import { reactivateExistingSession } from '../../core/sessions/lifecycle.js';
@@ -19,11 +23,17 @@ import { runnerDiscoveryContextKey, detectRunnerEvidence } from '../detection/de
 import { getProvider } from '../providers/registry.js';
 import { resolveApiKeyOverride } from '../providers/client/api-key.js';
 import { isAgentSdkAvailable } from './agent-sdk/availability.js';
+import { collectArgVectorPreflightChecks } from './arg-vector-preflight.js';
 import {
   CUSTOM_RUNNER_TRUST_PERSISTED_AFTER_ABORT,
   prepareCustomRunnerAdmission,
 } from './custom-admission.js';
-import { customRunnerSecurityPosture } from './custom-trust.js';
+import {
+  customRunnerSecurityPosture,
+  inlineRunnerSecurityPosture,
+  type ConfiguredCustomRunner,
+} from './custom-trust.js';
+import { probeRunnerAvailability, type RunnerAvailabilityRole } from './probe-availability.js';
 import { resolveCliRunnerAuth } from './sandbox-env.js';
 import { admitFreshCliStart } from './start-gate.js';
 import { checkRunnerTrust } from './trust.js';
@@ -109,6 +119,8 @@ type PreparationContext = Readonly<{
 
 type PrepareExecutionDependencies = Readonly<{
   collectReadiness: typeof collectReadiness;
+  collectArgVectorPreflightChecks: typeof collectArgVectorPreflightChecks;
+  probeRunnerAvailability: typeof probeRunnerAvailability;
   detectRunnerEvidence: typeof detectRunnerEvidence;
   prepareCustomRunnerAdmission: typeof prepareCustomRunnerAdmission;
   isAgentSdkAvailable: typeof isAgentSdkAvailable;
@@ -120,6 +132,8 @@ type PrepareExecutionDependencies = Readonly<{
 
 const DEFAULT_DEPENDENCIES: PrepareExecutionDependencies = {
   collectReadiness,
+  collectArgVectorPreflightChecks,
+  probeRunnerAvailability,
   detectRunnerEvidence,
   prepareCustomRunnerAdmission,
   isAgentSdkAvailable,
@@ -180,13 +194,14 @@ function blockedCheck(
   slot: RunnerConfigSlot,
   kind: RunnerConfig['kind'],
   reason: string,
+  fix = 'Review the configured runner, then retry.',
 ): ReadinessCheck {
   return {
     id: `runners.preparation.${slotId(slot)}`,
     severity: 'blocker',
     summary: `${slotLabel(slot)} could not be admitted.`,
     details: [reason],
-    fix: 'Review the configured runner, then retry.',
+    fix,
     nextAction: 'fix-config',
     metadata: { role: slot.role, kind },
   };
@@ -281,12 +296,18 @@ async function evaluateCli(
     };
   }
   if (admission.kind === 'denied') {
+    // The start gate is the last place a wrong credential is still free. A
+    // generic "review the runner" here sends the user back to a config that
+    // looks correct; readiness already knows which credential is missing.
     return {
       kind: 'blocked',
       check: blockedCheck(
         candidate.slot,
         candidate.runner.kind,
         `Fresh CLI evidence denied admission: ${admission.reason.kind}.`,
+        admission.reason.kind === 'authentication'
+          ? cliAuthRemediation({ tool: candidate.runner.tool, authChannel })
+          : undefined,
       ),
     };
   }
@@ -386,49 +407,92 @@ async function evaluateAgentSdk(
   };
 }
 
+const INLINE_RUNNER_GRANT_FIX =
+  'Run SPLITBRIEF in a terminal and confirm the runner disclosure, or pass --allow-repo-runners to grant it for this run only.';
+
+/**
+ * A refused inline runner is usually untrusted, but it can also be absent or
+ * changed. Naming which one is the difference between an actionable block and
+ * a config the reader keeps re-reading.
+ */
+export function inlineRunnerRefusal(
+  admission: Awaited<ReturnType<typeof prepareCustomRunnerAdmission>>,
+  kind: 'shell' | 'agent',
+): Readonly<{ reason: string; fix: string }> {
+  const status = admission.kind === 'denied' ? admission.status : 'untrusted';
+  switch (status) {
+    case 'missing':
+      return {
+        reason: `Project config declares a ${kind} runner command that does not exist on this machine.`,
+        fix: 'Install the command or correct its path in .splitbrief/config.yaml, then retry.',
+      };
+    case 'non-executable':
+      return {
+        reason: `Project config declares a ${kind} runner command that is not executable.`,
+        fix: 'Make the command executable or correct its path in .splitbrief/config.yaml, then retry.',
+      };
+    case 'drifted':
+      return {
+        reason: `The ${kind} runner executable changed since this machine trusted it.`,
+        fix: INLINE_RUNNER_GRANT_FIX,
+      };
+    default:
+      return {
+        reason: `Project config declares a ${kind} runner command that this machine has not trusted.`,
+        fix: INLINE_RUNNER_GRANT_FIX,
+      };
+  }
+}
+
+/**
+ * Every `shell`/`agent` runner reaches execution through an owner-only trust
+ * receipt, whether it is a `customCommands` entry or an inline declaration.
+ * `.splitbrief/config.yaml` travels with a clone, so a command named there is
+ * the repository author's proposal until this project's owner confirms it.
+ */
 async function evaluateCommand(
   candidate: RunnerCandidate &
     Readonly<{ runner: Extract<RunnerConfig, { kind: 'shell' | 'agent' }> }>,
   context: PreparationContext,
 ): Promise<SlotEvaluation> {
+  const role = candidate.slot.role === 'planner' ? ('planner' as const) : ('implementer' as const);
   const configured = findConfiguredCustomCommand(context.config, candidate.runner);
-  if (configured === undefined) {
-    if (
-      context.nativeTrustViolations.has(candidate.trustLabel) &&
-      !context.policy.allowRepoRunners
-    ) {
-      return {
-        kind: 'blocked',
-        check: blockedCheck(
-          candidate.slot,
-          candidate.runner.kind,
-          'Configured command is outside the current trust policy.',
-        ),
-      };
-    }
+  if (
+    configured === undefined &&
+    context.nativeTrustViolations.has(candidate.trustLabel) &&
+    !context.policy.allowRepoRunners
+  ) {
     return {
-      kind: 'admitted',
-      check: admittedCheck(candidate.slot, candidate.runner.kind),
-      gate: {
-        kind: candidate.runner.kind,
-        slot: candidate.slot,
-        preparationId: context.preparationId,
-        command: { kind: 'validated-config' },
-      },
+      kind: 'blocked',
+      check: blockedCheck(
+        candidate.slot,
+        candidate.runner.kind,
+        'Configured command is outside the current trust policy.',
+      ),
     };
   }
 
+  const runner: ConfiguredCustomRunner =
+    configured === undefined
+      ? { source: 'inline', command: inlineRunnerCommand({ runner: candidate.runner, role }) }
+      : { source: 'configured', command: configured };
   const admission = await context.deps.prepareCustomRunnerAdmission({
     projectDir: context.projectDir,
-    runner: { source: 'configured', command: configured },
-    posture: customRunnerSecurityPosture(
-      candidate.slot.role === 'planner' ? 'planner' : 'implementer',
-      configured.contract,
-    ),
-    phase: candidate.slot.role === 'planner' ? 'planning' : 'implementing',
+    runner,
+    posture:
+      runner.source === 'configured'
+        ? customRunnerSecurityPosture(role, runner.command.contract)
+        : inlineRunnerSecurityPosture(role, runner.command.contract),
+    phase: role === 'planner' ? 'planning' : 'implementing',
     interaction: context.policy.interaction,
     allowRepoRunners: context.policy.allowRepoRunners,
     signal: context.signal,
+    // An inline runner is spawned by name against this process's PATH, so
+    // admission must identify the executable the same lookup would reach.
+    ...(runner.source === 'inline' && {
+      authorizationPathEnv: process.env.PATH ?? '',
+      authorizationPathExt: process.env.PATHEXT ?? '',
+    }),
     ...(context.policy.stateDir !== undefined && { stateDir: context.policy.stateDir }),
     ...(context.policy.onTieredApproval !== undefined && {
       onTieredApproval: context.policy.onTieredApproval,
@@ -439,13 +503,20 @@ async function evaluateCommand(
     admission.kind === 'admitted' && admission.trustPersisted,
   );
   if (admission.kind !== 'admitted') {
+    if (runner.source === 'configured') {
+      return {
+        kind: 'blocked',
+        check: blockedCheck(
+          candidate.slot,
+          candidate.runner.kind,
+          'Configured custom runner admission was denied.',
+        ),
+      };
+    }
+    const refusal = inlineRunnerRefusal(admission, candidate.runner.kind);
     return {
       kind: 'blocked',
-      check: blockedCheck(
-        candidate.slot,
-        candidate.runner.kind,
-        'Configured custom runner admission was denied.',
-      ),
+      check: blockedCheck(candidate.slot, candidate.runner.kind, refusal.reason, refusal.fix),
     };
   }
   return {
@@ -455,7 +526,10 @@ async function evaluateCommand(
       kind: candidate.runner.kind,
       slot: candidate.slot,
       preparationId: context.preparationId,
-      command: { kind: 'configured-custom', invocation: admission.invocation },
+      command:
+        runner.source === 'configured'
+          ? { kind: 'configured-custom', invocation: admission.invocation }
+          : { kind: 'validated-config' },
     },
     trustPersisted: admission.trustPersisted,
   };
@@ -504,6 +578,13 @@ async function revalidateCliGates(
   return blockers;
 }
 
+/** A spec run never calls the implementer, so its reachability cannot gate one. */
+function availabilityRoles(
+  purpose: PreparationPolicy['purpose'],
+): readonly RunnerAvailabilityRole[] {
+  return purpose === 'spec' ? ['planner'] : ['planner', 'implementer'];
+}
+
 export async function prepareExecution(input: PrepareExecutionInput): Promise<PreparationOutcome> {
   let report: ReadinessReport | undefined;
   try {
@@ -517,11 +598,19 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
       projectDir,
       config,
       cliReadiness: [],
+      probeRunnerAvailability: (probe) =>
+        deps.probeRunnerAvailability({
+          ...probe,
+          roles: availabilityRoles(input.policy.purpose),
+          signal: input.signal,
+        }),
       ...(resume && { resumeSession: input.existingSession }),
     });
     throwIfAborted(input.signal);
-    const baseReport = applyRunnerPreparationChecks(collected.report, []);
-    report = baseReport;
+    // collectReadiness is given no probe results, so it emits a placeholder
+    // blocker per configured CLI. This function supersedes those with its own
+    // per-candidate verdicts below, so they are stripped before the status is read.
+    report = applyRunnerPreparationChecks(collected.report, []);
     if (report.status === 'blocked') return { kind: 'blocked', report };
 
     const enumeration = runnerCandidates(config, input.policy.purpose);
@@ -579,7 +668,7 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
     throwIfPreparationAborted(input.signal, trustPersisted);
     if (revalidationBlockers.length > 0) {
       const blockedIds = new Set(revalidationBlockers.map((check) => check.id));
-      report = applyRunnerPreparationChecks(baseReport, [
+      report = applyRunnerPreparationChecks(collected.report, [
         ...evaluations
           .map((evaluation) => evaluation.check)
           .filter((check) => !blockedIds.has(check.id)),
@@ -587,6 +676,17 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
       ]);
       return { kind: 'blocked', report };
     }
+
+    // The preflight runs a real binary, so it waits for the trust ladder above
+    // to name one. It still lands before any planning is paid for.
+    const argVectorChecks = await deps.collectArgVectorPreflightChecks({
+      config,
+      projectDir,
+      includeImplementers: input.policy.purpose !== 'spec',
+    });
+    throwIfPreparationAborted(input.signal, trustPersisted);
+    report = applyRunnerPreparationChecks(report, argVectorChecks);
+    if (report.status === 'blocked') return { kind: 'blocked', report };
 
     let session: PreparedExecutionSession;
     if (resume) {

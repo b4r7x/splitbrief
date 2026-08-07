@@ -181,6 +181,7 @@ describe('shell implementer', () => {
       publishCallEvent: ({ event }) => events.push(event),
       publishDone: () => {},
       publishFailed: () => {},
+      publishWarning: () => {},
     };
 
     const implementer = await createImplementer(config, {

@@ -163,7 +163,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     id: 'workflow.mode',
     label: 'Mode',
     section: 'Workflow',
-    description: 'instant (0 calls) | quick (1, 0) | standard (4, 1) | speckit (6-7, 2)',
+    description: 'instant (1, 0) | quick (1, 0) | standard (4, 1) | speckit (6-7, 2)',
     kind: 'enum',
     options: [...WORKFLOW_MODES],
   },

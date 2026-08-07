@@ -10,13 +10,14 @@ import {
   type ArtifactApprovalReview,
 } from '../../runners/types.js';
 import { beginDeclaredArtifactReview } from './planner-artifact.js';
-import { createStagedProject, type StagedProject } from './staged-project.js';
+import { createStagedProject } from './staged-project.js';
+import type { IsolatedWorkspace } from '../isolation/types.js';
 
 const SESSION_ID = 'immutable-artifact-review';
 
 type Fixture = Readonly<{
   projectDir: string;
-  staged: StagedProject;
+  staged: IsolatedWorkspace;
 }>;
 
 async function createFixture(): Promise<Fixture> {

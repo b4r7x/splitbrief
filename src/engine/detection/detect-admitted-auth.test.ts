@@ -30,9 +30,8 @@ function defaultAuthChannels(): Partial<Record<CliToolId, CliAuthChannelId>> {
 }
 
 describe('all-admitted-tools auth detection', () => {
-  it('keeps an unresolvable tool unavailable without any auth-probe or keychain call', async () => {
+  it('keeps an unresolvable tool unavailable without any auth probe', async () => {
     const probedTools: string[] = [];
-    const keychainServices: string[] = [];
 
     const results = await detectAvailableCliTools({
       authChannels: defaultAuthChannels(),
@@ -41,13 +40,7 @@ describe('all-admitted-tools auth detection', () => {
       },
       probeReadiness: async (options) => {
         probedTools.push(options.tool);
-        return probeCliReadiness({
-          ...options,
-          keychainPresence: async ({ service }) => {
-            keychainServices.push(service);
-            return false;
-          },
-        });
+        return probeCliReadiness(options);
       },
       now: () => 11,
     });
@@ -60,7 +53,6 @@ describe('all-admitted-tools auth detection', () => {
       })),
     ).toEqual(CLI_TOOL_IDS.map((tool) => ({ tool, state: 'unavailable', auth: 'not-checked' })));
     expect(probedTools).toEqual([]);
-    expect(keychainServices).toEqual([]);
   });
 
   it.runIf(process.platform !== 'win32')(
@@ -126,64 +118,57 @@ describe('all-admitted-tools auth detection', () => {
   );
 
   it.runIf(process.platform !== 'win32')(
-    'resolves claude-code session presence from the injected keychain marker when no bridgeable state exists',
+    'reports claude-code session as unauthenticated when the tool itself reports no session',
     async () => {
-      const cases = [
-        { present: true, auth: 'authenticated', state: 'ready' },
-        { present: false, auth: 'unauthenticated', state: 'unauthenticated' },
-      ] as const;
-      for (const testCase of cases) {
-        const shimDir = createTempDir('detect-claude-keychain');
-        const emptyHome = createTempDir('detect-claude-home');
-        const saved = HOST_STATE_ENV.map((name) => [name, process.env[name]] as const);
-        try {
-          const shim = join(shimDir, 'claude');
-          await writeFile(
-            shim,
-            [
-              '#!/bin/sh',
-              'if [ "$1" = "--version" ]; then',
-              `  printf '%s\\n' 'claude ${CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion}'`,
-              '  exit 0',
-              'fi',
-              'exit 1',
-              '',
-            ].join('\n'),
-          );
-          await chmod(shim, 0o755);
-          const executable = await resolveCliExecutable(shim, '/neutral/project');
-          for (const name of HOST_STATE_ENV) delete process.env[name];
-          process.env.HOME = emptyHome;
-          const keychainServices: string[] = [];
+      const shimDir = createTempDir('detect-claude-session');
+      const emptyHome = createTempDir('detect-claude-home');
+      const saved = HOST_STATE_ENV.map((name) => [name, process.env[name]] as const);
+      try {
+        const shim = join(shimDir, 'claude');
+        await writeFile(
+          shim,
+          [
+            '#!/bin/sh',
+            'if [ "$1" = "--version" ]; then',
+            `  printf '%s\\n' 'claude ${CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion}'`,
+            '  exit 0',
+            'fi',
+            // Byte-for-byte what the real binary prints when it holds no
+            // session, whether it looked in a file or in the OS keychain.
+            'if [ "$1" = "auth" ]; then',
+            '  printf \'%s\\n\' \'{"loggedIn": false, "authMethod": "none"}\'',
+            '  exit 1',
+            'fi',
+            'exit 1',
+            '',
+          ].join('\n'),
+        );
+        await chmod(shim, 0o755);
+        const executable = await resolveCliExecutable(shim, '/neutral/project');
+        for (const name of HOST_STATE_ENV) delete process.env[name];
+        process.env.HOME = emptyHome;
 
-          const [result] = await detectAvailableCliTools({
-            tools: ['claude-code'],
-            authChannels: { 'claude-code': 'session' },
-            resolveExecutable: async () => executable,
-            probeReadiness: async (options) =>
-              probeCliReadiness({
-                ...options,
-                keychainPresence: async ({ service }) => {
-                  keychainServices.push(service);
-                  return testCase.present;
-                },
-              }),
-          });
+        const [result] = await detectAvailableCliTools({
+          tools: ['claude-code'],
+          authChannels: { 'claude-code': 'session' },
+          resolveExecutable: async () => executable,
+          probeReadiness: probeCliReadiness,
+        });
 
-          expect(result).toMatchObject({
-            tool: 'claude-code',
-            auth: testCase.auth,
-            diagnostic: { state: testCase.state },
-          });
-          expect(keychainServices).toEqual(['Claude Code-credentials']);
-        } finally {
-          for (const [name, value] of saved) {
-            if (value === undefined) delete process.env[name];
-            else process.env[name] = value;
-          }
-          cleanupTempDir(shimDir);
-          cleanupTempDir(emptyHome);
+        expect(result).toMatchObject({
+          tool: 'claude-code',
+          auth: 'unauthenticated',
+          diagnostic: { state: 'unauthenticated' },
+        });
+        expect(result?.diagnostic.remediation).toContain('Sign in to claude-code');
+        expect(result?.diagnostic.remediation).not.toContain('ANTHROPIC_API_KEY');
+      } finally {
+        for (const [name, value] of saved) {
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
         }
+        cleanupTempDir(shimDir);
+        cleanupTempDir(emptyHome);
       }
     },
     20_000,

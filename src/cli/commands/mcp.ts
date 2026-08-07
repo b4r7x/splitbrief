@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { loadConfigOrExit, resolveProjectDir } from '../setup.js';
+import { loadConfigOrExit, canonicalizeProjectDir } from '../setup.js';
 import { resolveSessionIds } from '../../engine/mcp/discovery.js';
 import { generateToken } from '../../engine/mcp/auth-token.js';
 import { createResolver } from '../../engine/mcp/resolver.js';
@@ -36,7 +36,7 @@ export function registerMcpCommand(program: Command, deps: McpDeps = defaultDeps
         allSessions?: boolean;
         project?: string;
       }) => {
-        const projectDir = resolveProjectDir(opts.project);
+        const projectDir = await canonicalizeProjectDir(opts);
 
         if (opts.session !== undefined && opts.allSessions) {
           throw cliError('--session and --all-sessions are mutually exclusive.', 1);

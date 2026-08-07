@@ -128,24 +128,6 @@ describe('admitted readiness probe contracts', () => {
           expect(Object.isFrozen(declared.catalog.manualCommand)).toBe(true);
         }
       }
-      expect(Object.isFrozen(declared.sessionPresence)).toBe(true);
-    }
-  });
-
-  it('declares the unbridgeable keychain presence signal only for claude-code', () => {
-    const adapters = [
-      ...Object.values(CLI_PLANNER_ADAPTERS),
-      ...Object.values(CLI_IMPLEMENTER_ADAPTERS),
-    ];
-
-    for (const adapter of adapters) {
-      const { probe } = adapter;
-      if (!isDeclaredCliProbeContract(probe)) continue;
-      expect(probe.declared.sessionPresence).toEqual(
-        adapter.descriptor.id === 'claude-code'
-          ? { kind: 'darwin-keychain', service: 'Claude Code-credentials' }
-          : { kind: 'none' },
-      );
     }
   });
 

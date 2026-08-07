@@ -17,7 +17,9 @@ If you're new to SPLITBRIEF, read this in order: recipes 1–5 cover the basic w
 **Run:**
 
 ```bash
-npm install -g splitbrief               # or run it ad hoc with: npx splitbrief
+# SPLITBRIEF is not published to npm yet — install from source
+git clone https://github.com/b4r7x/splitbrief.git
+cd splitbrief && npm install && npm run build && npm link
 
 cd your-project
 splitbrief init                        # interactive wizard
@@ -98,7 +100,7 @@ workflow_complete
 
 `quick` mode produces a `tasks.md` transport in the session folder and runs the brief-quality gate, but skips the supporting `spec.md` / `plan.md` and the `reviewing-briefs` approval gate. Useful when you want the brief on disk for audit but don't need the ceremony of standard mode.
 
-**Variations:** Add `--budget 0.50` to cap spend. Pair with `--implementer ollama` to keep the implementer free.
+**Variations:** Add `--budget 0.50` to cap spend. Pair with `--implementer ollama` to keep the implementer free. If you want only the Task Brief without touching the working tree at all, `splitbrief spec --mode quick "add an isAdult helper that returns true when age >= 18"` produces the same single `tasks.md` planning output without implementing.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md) §1.2.
 
@@ -1413,12 +1415,23 @@ splitbrief start --allow-hooks "add the User model"
 **You'll see (first run only):**
 
 ```
-Trust these hooks for this project? [y/N]
-> y
-hooks trusted (sha256 stored in .splitbrief/hook-trust.json)
+SPLITBRIEF config declares hooks this machine has not trusted:
+
+  pre_task:
+    Executable: "prettier"
+    Resolved: "/usr/local/bin/prettier"
+    Arguments: "--check"
+    On failure: warn
+
+  Execution: runs on this machine as you, in the project directory, on every matching workflow event
+  Environment access: Inherits the full SPLITBRIEF process environment, including credentials
+  Filesystem: Not an OS sandbox; the process can access files available to the current user
+  Network: Network access is not restricted
+
+Trust these hooks for this project? [y/N] y
 ```
 
-`--allow-hooks` skips the prompt in non-TTY (CI). Editing the hooks block or a module hook file invalidates trust and re-prompts on the next run.
+The receipt goes to `~/.splitbrief/trust/hooks.json`, keyed by this checkout — not into the repository, so it does not travel with a clone or a copy. `--allow-hooks` skips the prompt in non-TTY (CI) and prints the same disclosure to stderr. Editing the hooks block or a module hook file invalidates trust and re-prompts on the next run.
 
 **Variations:** `kind: module` for in-process JS / TS hooks. `on_failure: block` aborts; `warn` (default) logs; `ignore` is silent. Mandatory `timeout_ms` ceiling: 300_000 ms.
 

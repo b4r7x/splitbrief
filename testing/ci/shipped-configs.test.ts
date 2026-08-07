@@ -9,6 +9,7 @@ import {
   loadConfig,
   writeConfig,
 } from '../../src/core/config/load/io.js';
+import { defaultCliAuthChannel } from '../../src/core/runners/cli-tool-catalog.js';
 import type { Config } from '../../src/core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';
@@ -129,12 +130,12 @@ describe('the test config factory tracks the product writer', () => {
     expect(makeConfig().planner).toStrictEqual(createDefaultConfig().planner);
   });
 
-  it('uses the selected Claude Code session channel while preserving unset channels in fixtures', () => {
+  it('names an explicit Claude Code channel while preserving unset channels in fixtures', () => {
     const cliImplementer = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer;
     expect(makeConfig().planner).toMatchObject({
       kind: 'cli',
       tool: 'claude-code',
-      authChannel: 'session',
+      authChannel: defaultCliAuthChannel('claude-code').id,
     });
     expect(Object.hasOwn(cliImplementer, 'authChannel')).toBe(false);
   });

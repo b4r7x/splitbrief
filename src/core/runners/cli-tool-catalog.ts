@@ -40,7 +40,35 @@ export type CliAuthChannel = Readonly<{
   env: readonly string[];
   stateBridge: 'host-cli-state' | 'none';
   billing: RunnerBillingPosture;
+  /**
+   * Platforms where this channel's credential is an OS keychain item rather
+   * than a file, so the file-copying state bridge has nothing to carry. macOS
+   * keeps the Claude Code session in the login keychain, whose default search
+   * list resolves through `HOME` and whose item is keyed on the account name in
+   * `USER`; a staged child reaches it only when both keep their host values.
+   */
+  hostKeychainPlatforms: readonly NodeJS.Platform[];
 }>;
+
+/**
+ * How a channel's host credential reaches a staged child.
+ *
+ * - `none` — the channel carries no host state; an API-key channel passes an
+ *   environment variable instead.
+ * - `bridged-files` — a read-only snapshot of this tool's own credential files
+ *   is copied into the sandbox, whose `HOME` the child keeps.
+ * - `host-account` — the credential is an OS keychain item, so nothing is
+ *   copied and the child keeps the host `HOME` and `USER` instead.
+ */
+export type CliHostStateAccess = 'none' | 'bridged-files' | 'host-account';
+
+export function cliAuthChannelHostStateAccess(
+  channel: CliAuthChannel,
+  platform: NodeJS.Platform = process.platform,
+): CliHostStateAccess {
+  if (channel.stateBridge !== 'host-cli-state') return 'none';
+  return channel.hostKeychainPlatforms.includes(platform) ? 'host-account' : 'bridged-files';
+}
 
 export type CliAuthSelection = Readonly<{ channel: CliAuthChannelId }>;
 
@@ -283,8 +311,15 @@ function authChannel(
   env: readonly string[],
   stateBridge: CliAuthChannel['stateBridge'],
   billing: RunnerBillingPosture,
+  hostKeychainPlatforms: readonly NodeJS.Platform[] = [],
 ): CliAuthChannel {
-  return Object.freeze({ id, env: Object.freeze([...env]), stateBridge, billing });
+  return Object.freeze({
+    id,
+    env: Object.freeze([...env]),
+    stateBridge,
+    billing,
+    hostKeychainPlatforms: Object.freeze([...hostKeychainPlatforms]),
+  });
 }
 
 function authPolicy(kind: CliAuthPolicy['kind'], channels: CliAuthChannels): CliAuthPolicy {
@@ -344,7 +379,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     roles: ALL_ROLES,
     modelPolicy: rolePolicy('optional', 'optional'),
     auth: authPolicy('api-key-or-session', [
-      authChannel('session', [], 'host-cli-state', 'subscription-included'),
+      authChannel('session', [], 'host-cli-state', 'subscription-included', ['darwin']),
       authChannel('api-key', ['ANTHROPIC_API_KEY'], 'none', 'api-metered'),
     ]),
     billing: 'subscription-included',
@@ -701,15 +736,17 @@ export function selectCliAuthChannel(
 }
 
 /**
- * The channel a runner takes when its configuration names none: the tool's
- * declared session channel when it has one (a host login is the tool's
- * primary auth), otherwise its first bridge-free channel, otherwise its
- * first declared channel. Session bridging copies only the allowlisted
- * state snapshot, never the host HOME; an explicit `authChannel` always
- * overrides this default.
+ * The channel a runner takes when its configuration names none, and the one a
+ * freshly written config declares: the tool's declared session channel when it
+ * has one (a host login is the tool's primary auth), otherwise its first
+ * bridge-free channel, otherwise its first declared channel. It is
+ * platform-independent — every declared session channel reaches a staged child
+ * on every platform SPLITBRIEF runs on, as files or as the host account, so a
+ * config keeps its meaning wherever it is opened. An explicit `authChannel`
+ * always overrides it.
  */
 export function defaultCliAuthChannel(id: CliToolId): CliAuthChannel {
-  const { channels } = CLI_TOOL_CATALOG[id].auth;
+  const channels = CLI_TOOL_CATALOG[id].auth.channels;
   return (
     channels.find((channel) => channel.id === 'session') ??
     channels.find((channel) => channel.stateBridge === 'none') ??

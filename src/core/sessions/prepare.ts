@@ -8,6 +8,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readdirSync,
   renameSync,
   rmSync,
   unlinkSync,
@@ -24,7 +25,13 @@ import { isNodeError } from '../../lib/process/errors.js';
 import { error, type AppError } from '../../utils/error.js';
 import { isRecord } from '../../utils/type-guards.js';
 import type { DeepReadonly } from '../config/accessors/runner-config.js';
-import { READINESS_FILE, sessionDir, SESSIONS_DIR, SPLITBRIEF_DIR } from '../paths.js';
+import {
+  READINESS_FILE,
+  sessionDir,
+  SESSIONS_DIR,
+  SPLITBRIEF_DIR,
+  validateSessionId,
+} from '../paths.js';
 import { createStartReadinessRecord } from '../readiness/format.js';
 import type { ReadinessReport } from '../readiness/types.js';
 import type { Config } from '../schemas/config.js';
@@ -58,7 +65,8 @@ export type SessionPreparationOperation =
   | 'transfer-detached-session'
   | 'accept-detached-session'
   | 'settle-detached-session'
-  | 'rollback-detached-session';
+  | 'rollback-detached-session'
+  | 'discard-orphan-session';
 
 type SessionPreparationErrorData = Readonly<{
   operation: SessionPreparationOperation;
@@ -460,6 +468,56 @@ function removeAllocatedDirectory(ref: SessionRef, identity: SessionDirectoryIde
     throw ownershipFailure(ref, 'the canonical session path was recreated');
   }
   rmSync(claimPath, { recursive: true });
+}
+
+function activeRecordNamesSession(ref: SessionRef): boolean {
+  const active = readActiveRecord(ref.projectDir);
+  if (active === null) return false;
+  const activeSessionId = active.kind === 'legacy' ? active.sessionId : active.receipt.sessionId;
+  return activeSessionId === ref.sessionId;
+}
+
+function isCollectableOrphanDirectory(ref: SessionRef, relativeDirectory: string): boolean {
+  const entries = readdirSync(join(ref.projectDir, relativeDirectory));
+  if (entries.length === 0) return true;
+  if (entries.length !== 1 || entries[0] !== READINESS_FILE) return false;
+  return lstatSync(join(ref.projectDir, relativeDirectory, READINESS_FILE)).isFile();
+}
+
+function discardOrphanSessionDirectoryLocked(ref: SessionRef): boolean {
+  if (activeRecordNamesSession(ref)) return false;
+  const original = sessionRelativePath(ref.sessionId);
+  const originalPath = join(ref.projectDir, original);
+  if (!pathExists(originalPath)) return false;
+  const identity = directoryIdentity(ref, original);
+  if (!isCollectableOrphanDirectory(ref, original)) return false;
+  const claim = claimRelativePath(ref, 'directory');
+  const claimPath = join(ref.projectDir, claim);
+  assertWritablePathConfined(original, ref.projectDir);
+  assertWritablePathConfined(claim, ref.projectDir);
+  renameSync(originalPath, claimPath);
+  directoryIdentity(ref, claim, identity);
+  if (!isCollectableOrphanDirectory(ref, claim)) {
+    if (pathExists(originalPath)) {
+      throw ownershipFailure(ref, 'the canonical session path was recreated');
+    }
+    renameSync(claimPath, originalPath);
+    return false;
+  }
+  if (pathExists(originalPath)) {
+    throw ownershipFailure(ref, 'the canonical session path was recreated');
+  }
+  rmSync(claimPath, { recursive: true });
+  return true;
+}
+
+export function discardOrphanSessionDirectory(ref: SessionRef): boolean {
+  try {
+    validateSessionId(ref.sessionId);
+    return withSessionMutationLock(ref.projectDir, () => discardOrphanSessionDirectoryLocked(ref));
+  } catch (cause) {
+    throw sessionPreparationError.io('discard-orphan-session', ref, cause);
+  }
 }
 
 function rollbackPreparedSessionLocked(

@@ -87,6 +87,16 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
     next[next.length - 1] = event;
     return next;
   }
+  if (
+    event.type === 'validation_baseline' &&
+    event.status === 'running' &&
+    last?.type === 'validation_baseline' &&
+    last.status === 'running'
+  ) {
+    const next = events.slice();
+    next[next.length - 1] = event;
+    return next;
+  }
   if (events.length >= MAX_EVENTS) {
     const evictionIndex = firstEvictableEventIndex(events);
     const kept =

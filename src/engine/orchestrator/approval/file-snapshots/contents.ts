@@ -30,7 +30,7 @@ export async function readConfinedProjectFile(
   try {
     assertPathConfined(file, projectDir);
     if (!confinedExists(projectDir, file)) return null;
-    return confinedReadFileAsync(projectDir, file);
+    return await confinedReadFileAsync(projectDir, file);
   } catch (err) {
     if (isPathConfinementError(err)) return null;
     throw err;

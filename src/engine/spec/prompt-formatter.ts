@@ -114,7 +114,7 @@ function buildTaskSections(
   );
   const completionInstruction =
     writesFiles === 'direct'
-      ? `Edit ${task.file} directly in the staged working directory. Run the validation commands listed in this Task Brief before finishing.`
+      ? `Edit ${task.file} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`
       : `Output the complete file contents for ${task.file}. No markdown fences. No explanations.`;
   sections.push('', completionInstruction);
 

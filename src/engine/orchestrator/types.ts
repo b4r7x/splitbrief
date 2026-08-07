@@ -9,6 +9,7 @@ import type { SpecMetadata } from '../../core/paths-io.js';
 import type { CostPrediction, Summary } from '../../core/schemas/summary.js';
 import type { ClarificationQuestion } from '../../core/schemas/question.js';
 import type { Validator } from './validation/types.js';
+import type { RunIsolation } from './isolation/types.js';
 import type { EventBus } from '../events/types.js';
 import type {
   ApprovalReviewResult,
@@ -115,6 +116,7 @@ export interface WorkflowContext {
   metadata: SpecMetadata;
   resumeHolder?: ResumeContextHolder | undefined;
   sinks: WorkflowSinks;
+  isolation: RunIsolation;
   validator: Validator;
   modelCache?: ModelCacheAccessor | undefined;
   drainPendingAttachments?: (() => Attachment[]) | undefined;
@@ -138,4 +140,6 @@ export type PlannerCallbacksContext = Pick<
   | 'resumeHolder'
   | 'sinks'
   | 'drainPendingAttachments'
+  | 'modelCache'
+  | 'detectedContextLength'
 >;

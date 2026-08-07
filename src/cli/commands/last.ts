@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { buildAliasedSessions } from '../sessions/aliases.js';
 import { continueCommand } from './continue/command.js';
@@ -41,7 +41,7 @@ export function registerLastCommand(program: Command): void {
         'Continue the most recent session (attaches if running, resumes if interrupted)',
       ),
   ).action(async (opts: WorkflowOpts) => {
-    const projectDir = resolveProjectDir(opts.project);
+    const projectDir = await canonicalizeProjectDir(opts);
     await lastCommand({ ...opts, projectDir });
   });
 }

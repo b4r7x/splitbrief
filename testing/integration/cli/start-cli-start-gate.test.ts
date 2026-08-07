@@ -17,6 +17,17 @@ import { AUTOMATIC_MODEL } from '../../../src/core/providers/automatic-model.js'
 import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
 import type { StartDeps } from '../../../src/cli/commands/start/types.js';
 
+// Runner availability is a live network claim, and the default config points the
+// implementer at a local Ollama. The shared no-claim mock keeps the verdict off
+// whatever daemon this machine happens to be running.
+vi.mock('../../../src/engine/runners/probe-availability.js', () => ({
+  probeRunnerAvailability: async (
+    ...args: Parameters<
+      typeof import('../../../src/engine/runners/probe-availability.js').probeRunnerAvailability
+    >
+  ) => (await import('#testing/helpers/start-command.js')).probeRunnerAvailabilityMock(...args),
+}));
+
 let tmp: string;
 let binDir: string;
 let stdoutWrites: string[];

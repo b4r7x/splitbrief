@@ -1,10 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import {
-  makeBusRecorder,
-  passingResults,
-  failingResults,
-} from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupCommitTestProjects,
   firstCommitTask,
@@ -13,20 +9,27 @@ import {
   setupCommitProject,
 } from '#testing/helpers/orchestrator-commit.js';
 import { validateCommitAndAdvance } from './commit.js';
+import type { ValidationAcceptance } from '../validation/acceptance.js';
+
+const acceptedAcceptance: ValidationAcceptance = {
+  accepted: true,
+  exemptStages: [],
+  blockingStages: [],
+};
 
 afterEach(() => {
   cleanupCommitTestProjects();
 });
 
 describe('validateCommitAndAdvance', () => {
-  it('returns completed: false and leaves state unchanged when validation fails', async () => {
+  it('returns completed: false and leaves state unchanged when the acceptance rejects', async () => {
     const { projectDir, sessionId } = setupCommitProject();
     const state = makeCommitState();
     const { bus, events } = makeBusRecorder();
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: failingResults,
+      acceptance: { accepted: false, exemptStages: [], blockingStages: [] },
       projectDir,
       sessionId,
       config: makeConfig(),
@@ -41,6 +44,66 @@ describe('validateCommitAndAdvance', () => {
     expect(events.find((e) => e.type === 'task_completed')).toBeUndefined();
     expect(events.find((e) => e.type === 'git_commit')).toBeUndefined();
     expect(events.find((e) => e.type === 'git_checkpoint')).toBeUndefined();
+    expect(
+      events.find((e) => e.type === 'warning' && e.code === 'validation_baseline_exempt'),
+    ).toBeUndefined();
+  });
+
+  it('commits and advances when accepted despite a failed result, publishing exactly one exemption warning', async () => {
+    const { projectDir, sessionId } = setupCommitProject();
+    const state = makeCommitState();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await validateCommitAndAdvance({
+      task: firstCommitTask(state),
+      acceptance: { accepted: true, exemptStages: ['typecheck'], blockingStages: [] },
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'none' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+    });
+
+    expect(result.completed).toBe(true);
+    expect(result.state.phase).not.toBe(state.phase);
+    const exemptWarnings = events.filter(
+      (e) => e.type === 'warning' && e.code === 'validation_baseline_exempt',
+    );
+    expect(exemptWarnings).toHaveLength(1);
+    expect(exemptWarnings[0]).toMatchObject({
+      type: 'warning',
+      taskId: 'T001',
+      code: 'validation_baseline_exempt',
+      transcriptSafe: true,
+    });
+    if (exemptWarnings[0] !== undefined && exemptWarnings[0].type === 'warning') {
+      expect(exemptWarnings[0].message).toContain('T001');
+      expect(exemptWarnings[0].message).toContain('typecheck');
+    }
+  });
+
+  it('publishes no exemption warning when accepted without exempt stages', async () => {
+    const { projectDir, sessionId } = setupCommitProject();
+    const state = makeCommitState();
+    const { bus, events } = makeBusRecorder();
+
+    await validateCommitAndAdvance({
+      task: firstCommitTask(state),
+      acceptance: acceptedAcceptance,
+      projectDir,
+      sessionId,
+      config: makeConfig({ workflow: { git: { commitStrategy: 'none' } } }),
+      state,
+      bus,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+    });
+
+    expect(
+      events.find((e) => e.type === 'warning' && e.code === 'validation_baseline_exempt'),
+    ).toBeUndefined();
   });
 
   it('returns completed: true and advances phase when all validations pass', async () => {
@@ -50,7 +113,7 @@ describe('validateCommitAndAdvance', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'none' } } }),
@@ -71,7 +134,7 @@ describe('validateCommitAndAdvance', () => {
 
     await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
@@ -98,7 +161,7 @@ describe('validateCommitAndAdvance', () => {
 
     await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'none' } } }),
@@ -120,7 +183,7 @@ describe('validateCommitAndAdvance', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'none' } } }),
@@ -142,7 +205,7 @@ describe('validateCommitAndAdvance', () => {
 
     await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'none' } } }),

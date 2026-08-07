@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildSummary } from './build.js';
@@ -12,6 +12,10 @@ import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordLocalTaskEvidence } from '../evidence/task.js';
 import { writeDriftChainState } from '../drift/chain-state.js';
 import type { DriftChainState } from '../../../core/schemas/drift-chain.js';
+import { reviewPacketJsonPath } from '../../../core/paths.js';
+import type { ReviewPacket } from '../../../core/schemas/review-packet.js';
+import { ReviewPacketSchema } from '../../../core/schemas/review-packet.js';
+import { loadSessionArtifactRollups } from './artifact-rollups.js';
 
 function makeState(overrides?: Partial<BuildSummaryState>): BuildSummaryState {
   return {
@@ -205,6 +209,244 @@ describe('buildSummary session artifact rollups', () => {
       expect(summary.chainDriftSummary?.chainLength).toBe(5);
       expect(summary.chainDriftSummary?.representativePath).toBe('src/b.ts');
       expect(summary.chainDriftSummary?.emittedChainCount).toBe(2);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+});
+
+function makePacket(finalReview: ReviewPacket['finalReview']): ReviewPacket {
+  return ReviewPacketSchema.parse({
+    version: 1,
+    sessionId: 's',
+    generatedAt: '2026-08-05T00:00:00.000Z',
+    run: {
+      sessionId: 's',
+      feature: 'feat',
+      mode: null,
+      phase: 'complete',
+      planner: { tool: null, model: null },
+      implementer: { tool: null, model: null },
+      startedAt: null,
+      completedAt: null,
+      totalTimeMs: null,
+      totalTasks: 1,
+      completedLocally: 1,
+      escalated: 0,
+      skipped: 0,
+      failed: 0,
+    },
+    readiness: {
+      path: 'readiness.json',
+      present: true,
+      status: null,
+      nextAction: null,
+      blockerCount: null,
+      warningCount: null,
+      checks: [],
+    },
+    changes: {
+      changedFiles: [],
+      expectedFiles: [],
+      outOfScopeFiles: [],
+      taskFiles: [],
+      diffReference: 'Review the working tree with `git diff`.',
+    },
+    checkpoints: {
+      items: [],
+      latestRunCheckpoint: null,
+      preFinalReview: null,
+      runLedger: {
+        path: 'checkpoint-run-ledger.json',
+        present: false,
+        accepted: null,
+        rejected: null,
+        runSnapshotIds: [],
+        runSnapshotKinds: {},
+        latestSnapshotId: null,
+      },
+      safety: {
+        hashGuarded: true,
+        conflictsSkippedByDefault: true,
+        forceOverwritesConflicts: true,
+        partialRestoreExpected: true,
+        excludedPaths: [],
+        text: {
+          hashGuarded: '',
+          conflictsSkippedByDefault: '',
+          forceOverwritesConflicts: '',
+          partialRestoreExpected: '',
+          excludedPaths: '',
+        },
+      },
+    },
+    recoveryDecisions: {
+      sourceArtifacts: [],
+      events: [],
+      currentIssue: null,
+      selectedActions: [],
+      outcomes: [],
+      unresolvedRisks: [],
+    },
+    validation: {
+      summary: { passed: 0, failed: 0, skipped: 0, escalated: 0 },
+      tasks: [],
+      finalReviewEvidenceStatus: null,
+      missingEvidenceWarnings: [],
+    },
+    evidence: {
+      path: null,
+      present: false,
+      briefHash: null,
+      finalReview: null,
+      approvals: [],
+      rejections: [],
+    },
+    drift: {
+      path: null,
+      present: false,
+      passed: null,
+      score: null,
+      errorCount: 0,
+      warningCount: 0,
+      changedFiles: [],
+      expectedFiles: [],
+      findings: [],
+      findingsBySeverity: { info: [], warning: [], error: [] },
+      briefHash: null,
+      chainSummary: {
+        path: 'drift-chains.json',
+        present: false,
+        emittedChainCount: 0,
+        topChain: null,
+        briefQuality: {
+          path: 'brief-quality.json',
+          present: false,
+          passed: null,
+          score: null,
+          errorCount: 0,
+          warningCount: 0,
+        },
+      },
+      briefQuality: {
+        path: 'brief-quality.json',
+        present: false,
+        passed: null,
+        score: null,
+        errorCount: 0,
+        warningCount: 0,
+      },
+    },
+    escalations: {
+      retries: [],
+      escalatedTasks: [],
+      skippedTasks: [],
+      failedTasks: [],
+      warnings: [],
+    },
+    cost: {
+      tokenUsage: {
+        plannerInput: 0,
+        plannerOutput: 0,
+        implementerInput: 0,
+        implementerOutput: 0,
+        escalationInput: 0,
+        escalationOutput: 0,
+      },
+      costBreakdown: null,
+      estimatedCostSavings: null,
+      taskRouting: [],
+      routingWarnings: [],
+    },
+    finalReview,
+    reviewerChecklist: [],
+    missingArtifacts: [],
+  });
+}
+
+function writePacket(projectDir: string, sessionId: string, packet: ReviewPacket): void {
+  mkdirSync(join(projectDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
+  writeFileSync(
+    reviewPacketJsonPath(projectDir, sessionId),
+    `${JSON.stringify(packet, null, 2)}\n`,
+  );
+}
+
+describe('review packet rollup final-review fields', () => {
+  it('carries the verdict and finding counts from the packet into the summary rollup', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'summary-packet-verdict-'));
+    try {
+      const sessionId = 'packet-verdict-session';
+      writePacket(
+        projectDir,
+        sessionId,
+        makePacket({
+          path: 'review.md',
+          status: 'written',
+          evidenceStatus: null,
+          statusText: 'Planner final review written to review.md.',
+          excerpt: null,
+          verdict: 'fail',
+          criteriaPassed: 2,
+          criteriaFailed: 1,
+          findingCounts: { critical: 1, warning: 0, note: 0 },
+        }),
+      );
+
+      const rollups = loadSessionArtifactRollups(projectDir, sessionId);
+
+      expect(rollups.reviewPacket?.finalReviewStatus).toBe('written');
+      expect(rollups.reviewPacket?.finalReviewVerdict).toBe('fail');
+      expect(rollups.reviewPacket?.finalReviewFindingCounts).toEqual({
+        critical: 1,
+        warning: 0,
+        note: 0,
+      });
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('yields a null verdict and zero counts for a packet written before this change', () => {
+    const projectDir = mkdtempSync(join(tmpdir(), 'summary-packet-legacy-'));
+    try {
+      const sessionId = 'packet-legacy-session';
+      const packet = makePacket({
+        path: 'review.md',
+        status: 'written',
+        evidenceStatus: null,
+        statusText: 'Planner final review written to review.md.',
+        excerpt: null,
+        verdict: 'pass',
+        criteriaPassed: 0,
+        criteriaFailed: 0,
+        findingCounts: { critical: 0, warning: 0, note: 0 },
+      });
+      const legacyPacket = {
+        ...packet,
+        finalReview: {
+          path: packet.finalReview.path,
+          status: packet.finalReview.status,
+          evidenceStatus: packet.finalReview.evidenceStatus,
+          statusText: packet.finalReview.statusText,
+          excerpt: packet.finalReview.excerpt,
+        },
+      };
+      mkdirSync(join(projectDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
+      writeFileSync(
+        reviewPacketJsonPath(projectDir, sessionId),
+        `${JSON.stringify(legacyPacket)}\n`,
+      );
+
+      const rollups = loadSessionArtifactRollups(projectDir, sessionId);
+
+      expect(rollups.reviewPacket).toBeDefined();
+      expect(rollups.reviewPacket?.finalReviewVerdict).toBeNull();
+      expect(rollups.reviewPacket?.finalReviewFindingCounts).toEqual({
+        critical: 0,
+        warning: 0,
+        note: 0,
+      });
     } finally {
       rmSync(projectDir, { recursive: true, force: true });
     }

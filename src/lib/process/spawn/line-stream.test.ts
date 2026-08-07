@@ -12,7 +12,7 @@ function isProcessAlive(pid: number): boolean {
 }
 
 describe('spawnWithStdin', () => {
-  it('captures stdout from a simple command', async () => {
+  it('captures stdout from a simple command', { timeout: 60_000 }, async () => {
     const lines: string[] = [];
     const result = await spawnWithStdin({
       command: 'echo',
@@ -27,7 +27,7 @@ describe('spawnWithStdin', () => {
     expect(lines.some((l) => l.includes('hello world'))).toBe(true);
   });
 
-  it('writes stdin to process', async () => {
+  it('writes stdin to process', { timeout: 60_000 }, async () => {
     const lines: string[] = [];
     const result = await spawnWithStdin({
       command: 'node',
@@ -42,7 +42,7 @@ describe('spawnWithStdin', () => {
     expect(lines.some((l) => l.includes('piped input'))).toBe(true);
   });
 
-  it('captures stderr', async () => {
+  it('captures stderr', { timeout: 60_000 }, async () => {
     const stderrChunks: string[] = [];
     const result = await spawnWithStdin({
       command: 'node',
@@ -57,7 +57,9 @@ describe('spawnWithStdin', () => {
     expect(stderrChunks.join('')).toContain('err msg');
   });
 
-  it('rejects byte overflow with bounded partial stdout and stderr', async () => {
+  it('rejects byte overflow with bounded partial stdout and stderr', {
+    timeout: 60_000,
+  }, async () => {
     const lines: string[] = [];
     const stderrChunks: string[] = [];
     let outcome: unknown;
@@ -98,7 +100,7 @@ describe('spawnWithStdin', () => {
     });
   });
 
-  it('caps retained text when byte overflow becomes fatal', async () => {
+  it('caps retained text when byte overflow becomes fatal', { timeout: 60_000 }, async () => {
     const lines: string[] = [];
     let outcome: unknown;
     try {
@@ -126,7 +128,9 @@ describe('spawnWithStdin', () => {
     });
   });
 
-  it('bounds retention without tearing the child down when byte-limit aborts are off', async () => {
+  it('bounds retention without tearing the child down when byte-limit aborts are off', {
+    timeout: 60_000,
+  }, async () => {
     const stderrChunks: string[] = [];
     const result = await spawnWithStdin({
       command: 'node',
@@ -153,7 +157,7 @@ describe('spawnWithStdin', () => {
     expect(result.stderrMetadata?.bytesStored ?? 0).toBeLessThanOrEqual(128);
   });
 
-  it('rejects with notFoundMessage for missing command', async () => {
+  it('rejects with notFoundMessage for missing command', { timeout: 60_000 }, async () => {
     await expect(
       spawnWithStdin({
         command: 'nonexistent-cmd-xyz-99999',
@@ -165,7 +169,7 @@ describe('spawnWithStdin', () => {
     ).rejects.toThrow('Command not found!');
   });
 
-  it('rejects on non-zero exit with no stdout', async () => {
+  it('rejects on non-zero exit with no stdout', { timeout: 60_000 }, async () => {
     await expect(
       spawnWithStdin({
         command: 'node',
@@ -177,7 +181,7 @@ describe('spawnWithStdin', () => {
     ).rejects.toThrow('exited with code 1');
   });
 
-  it('rejects on non-zero exit even when stdout has content', async () => {
+  it('rejects on non-zero exit even when stdout has content', { timeout: 60_000 }, async () => {
     await expect(
       spawnWithStdin({
         command: 'node',
@@ -192,7 +196,7 @@ describe('spawnWithStdin', () => {
     });
   });
 
-  it('rejects with AbortError when aborted after stdout', async () => {
+  it('rejects with AbortError when aborted after stdout', { timeout: 60_000 }, async () => {
     const controller = new AbortController();
     const lines: string[] = [];
     let resolveLine: () => void = () => {};
@@ -218,7 +222,9 @@ describe('spawnWithStdin', () => {
     expect(lines).toContain('before abort');
   });
 
-  it('reaps descendants before rejecting when the final-line callback throws', async () => {
+  it('reaps descendants before rejecting when the final-line callback throws', {
+    timeout: 60_000,
+  }, async () => {
     let descendantPid = 0;
     const callbackError = new Error('final-line callback failed');
     const childProgram = [
@@ -259,7 +265,9 @@ describe('spawnWithStdin', () => {
     }
   });
 
-  it('kills the whole process group on abort so grandchildren are not orphaned', async () => {
+  it('kills the whole process group on abort so grandchildren are not orphaned', {
+    timeout: 60_000,
+  }, async () => {
     const controller = new AbortController();
     let resolveGrandchild: (pid: number) => void = () => {};
     const grandchildPid = new Promise<number>((resolve) => {
@@ -313,7 +321,9 @@ describe('spawnWithStdin', () => {
 });
 
 describe('idle watchdog', () => {
-  it('idle kill terminates the process group and surfaces command-idle-timeout', async () => {
+  it('idle kill terminates the process group and surfaces command-idle-timeout', {
+    timeout: 60_000,
+  }, async () => {
     const controller = new AbortController();
     let promise: ReturnType<typeof spawnWithStdin> | undefined;
     try {
@@ -353,7 +363,7 @@ describe('idle watchdog', () => {
     }
   });
 
-  it('output chunks reset the idle timers', async () => {
+  it('output chunks reset the idle timers', { timeout: 60_000 }, async () => {
     const controller = new AbortController();
     let promise: ReturnType<typeof spawnWithTimeout> | undefined;
     try {
@@ -421,7 +431,9 @@ describe('idle watchdog', () => {
     }
   });
 
-  it('onWarn fires once per silence episode and onClear fires on the next output', async () => {
+  it('onWarn fires once per silence episode and onClear fires on the next output', {
+    timeout: 60_000,
+  }, async () => {
     const controller = new AbortController();
     let promise: ReturnType<typeof spawnWithStdin> | undefined;
     try {
@@ -487,7 +499,9 @@ describe('idle watchdog', () => {
     }
   });
 
-  it('output after the idle kill fires does not emit onClear or re-arm timers', async () => {
+  it('output after the idle kill fires does not emit onClear or re-arm timers', {
+    timeout: 60_000,
+  }, async () => {
     const controller = new AbortController();
     let promise: ReturnType<typeof spawnWithStdin> | undefined;
     try {

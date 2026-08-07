@@ -9,6 +9,7 @@ import {
   CLI_TOOL_IDS,
   cliModelPolicyViolations,
   getCliModelPolicy,
+  defaultCliAuthChannel,
   type CliAuthChannelId,
 } from '../../runners/cli-tool-catalog.js';
 import { PlannerConfigSchema } from '../../schemas/planner-config.js';
@@ -282,7 +283,7 @@ function buildCliConfig(role: Role, opts: BuildRunnerOpts): PlannerConfig | Impl
   const authChannel =
     opts.authChannel ??
     (state === 'same' && existing?.kind === 'cli' ? existing.authChannel : undefined) ??
-    (state !== 'same' && tool === 'claude-code' ? 'session' : undefined);
+    (state !== 'same' && tool === 'claude-code' ? defaultCliAuthChannel(tool).id : undefined);
   const config: Record<string, unknown> = {
     kind: 'cli',
     tool,

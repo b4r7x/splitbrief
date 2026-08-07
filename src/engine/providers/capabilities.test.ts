@@ -32,6 +32,17 @@ describe('detectCapabilities', () => {
     expect(result.origin).toBe('fallback');
   });
 
+  it('resolves a CLI tool under automatic model selection from its bundled catalog', async () => {
+    const config = {
+      implementer: { kind: 'cli' as const, tool: 'codex' as const, model: 'auto' },
+      planner: { kind: 'cli' as const, tool: 'claude-code' as const },
+    } as Config;
+
+    const result = await detectCapabilities(config);
+    expect(result.contextLength).toBe(1_050_000);
+    expect(result.origin).toBe('catalog');
+  });
+
   describe('api-kind precedence', () => {
     setupFetchMock();
 
@@ -117,6 +128,41 @@ describe('detectCapabilities', () => {
 
       expect(result.contextLength).toBe(1_000_000);
       expect(result.origin).toBe('catalog');
+    });
+
+    // This probe runs during store init, before the TUI paints. A first-run
+    // user with no Ollama used to get `detectContextLength(ollama): fetch
+    // failed` — an internal probe name and a bare fetch error — as the first
+    // thing the product ever said to them.
+    it('writes nothing to stderr when a local endpoint is not listening', async () => {
+      // process.stderr is a sanctioned global spy — see docs/TESTING.md.
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      vi.mocked(globalThis.fetch).mockRejectedValue(new TypeError('fetch failed'));
+
+      try {
+        const result = await detectCapabilities(ollamaConfig());
+
+        expect(result.origin).toBe('fallback');
+        expect(stderr).not.toHaveBeenCalled();
+      } finally {
+        stderr.mockRestore();
+      }
+    });
+
+    it('still reports a detection failure that is not an unreachable endpoint', async () => {
+      // process.stderr is a sanctioned global spy — see docs/TESTING.md.
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      vi.mocked(globalThis.fetch).mockRejectedValue(new Error('malformed provider response'));
+
+      try {
+        await detectCapabilities(ollamaConfig());
+
+        expect(stderr).toHaveBeenCalledWith(
+          expect.stringContaining('detectContextLength(ollama): malformed provider response'),
+        );
+      } finally {
+        stderr.mockRestore();
+      }
     });
   });
 });

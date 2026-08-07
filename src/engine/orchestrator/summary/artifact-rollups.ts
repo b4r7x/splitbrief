@@ -60,6 +60,8 @@ function readReviewPacketRollups(
       markdownPath: REVIEW_PACKET_MARKDOWN_FILE,
       generatedAt: packet.generatedAt,
       finalReviewStatus: packet.finalReview.status,
+      finalReviewVerdict: packet.finalReview.verdict,
+      finalReviewFindingCounts: packet.finalReview.findingCounts,
       driftPassed: packet.drift.passed,
       evidenceValidatedTasks: packet.validation.summary.passed,
       evidenceTotalTasks: packet.run.totalTasks,

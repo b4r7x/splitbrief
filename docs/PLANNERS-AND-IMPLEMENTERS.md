@@ -209,6 +209,13 @@ The implementer sees only its own brief. It has no access to the spec, the plan,
 
 ## The Implementer interface
 
+The implementer is the **weaker model** of the pair. Which transport carries that model is a user choice, and two of them are equally supported:
+
+- a **tool CLI running a cheaper model** -- `codex`, `claude-code`, or any other admitted CLI pointed at a low-cost model. Write mode `direct`.
+- a **model behind an OpenAI-compatible API** -- OpenRouter, a local endpoint, a hosted provider. Write mode `extracted-code`.
+
+Neither is the fallback for the other. Both get the same brief, the same prompt contract, and the same promotion and validation treatment. Isolation is the one thing they do not share: per ADR-4 the run's isolation directory is scoped to a direct writer, and `workflow.isolation` is not consulted for an `extracted-code` implementer (see below). SPLITBRIEF does not favour a transport.
+
 Defined in `src/engine/implementers/types.ts`:
 
 ```typescript
@@ -216,10 +223,13 @@ interface Implementer extends RunnerRuntime {
   implement(opts: ImplementerOptions): Promise<ImplementerResult>
   retry(opts: RetryOptions): Promise<ImplementerResult>
   capabilities?: ImplementerCapabilities
+  unavailabilityReason?(): string | undefined
 }
 ```
 
-`implement()` executes a single task. `retry()` re-executes with error context and escalating temperature.
+`implement()` executes a single task. `retry()` re-executes with error context and escalating temperature. `unavailabilityReason()` -- optional, mirroring the Planner interface -- returns a human-readable cause for the most recent `isAvailable()` returning false (e.g. "the endpoint is unreachable"), which the unavailable-implementer recovery carries when the runner can state one.
+
+### Write modes
 
 `ImplementerCapabilities` has one field:
 
@@ -229,8 +239,51 @@ type ImplementerCapabilities = {
 }
 ```
 
-- `extracted-code` -- the implementer returns code in its response text. SPLITBRIEF extracts it from markdown fences and writes it to disk. Used by `api` and `shell`.
-- `direct` -- the implementer writes files to disk itself. SPLITBRIEF detects changes via `git diff`. Used by `cli`, `agent`, and `agent-sdk`.
+It records **who holds the pen**, not which path is preferred.
+
+A brief **requires** a direct-write implementer only when its `scope.inBounds` / `scope.approvedOutOfBounds` bullets name a concrete path token beyond the task's own `file` — a token carrying a directory separator or a glob, extracted by `scopePathPatterns` in `src/utils/path-patterns.ts` (`requiredWriteModeForTask`, `src/engine/orchestrator/context-routing/decision.ts`). Scope bullets are prose: a bullet that only re-names the task file, or names no path token at all, does not widen the write scope, and the brief routes to an `extracted-code` implementer.
+
+| | `extracted-code` | `direct` |
+|---|---|---|
+| Writes the file | SPLITBRIEF | the implementer |
+| Kinds | `api`, `shell` | `cli`, `agent`, `agent-sdk` |
+| Model answers with | the complete file contents as text | edits already made on disk |
+| Change detection | the extracted text is compared against the file it replaces | `detectChanges()` against a baseline captured before the call |
+| Works in | the project directory, one file per task | the run's isolation directory (see below) |
+| Approval applies | per write, before it lands (`approveWrite`) | at promotion, over the whole changed set |
+| Empty result | extraction error | `no-staged-change` outcome + `implementer_wrote_nothing` warning |
+
+### Isolation and promotion
+
+A `direct` implementer edits files itself, so it is handed its own working directory instead of the user's checkout. The default isolation is a **git worktree created once per run** -- one directory for the whole run, not a copy per task. Project dependencies are reachable inside it, so the implementer can run the project's own typecheck, lint, and tests against its own work.
+
+Isolation is scoped to direct writers (ADR-4). The task loop acquires a workspace only when the implementer's write mode is `direct` (`runImplementation`, `src/engine/orchestrator/task/run-implementation.ts`), so an `extracted-code` implementer writes through SPLITBRIEF into the project directly and `workflow.isolation` never applies to it -- see [CONFIGURATION.md](./CONFIGURATION.md) §5. Escalation is the one exception: a retry always acquires a workspace (`src/engine/orchestrator/escalation/step.ts`), and for an `extracted-code` implementer that acquisition bypasses the configured strategy and stages the retry in a temporary copy of the project.
+
+When a task ends, the changed set is computed against the baseline captured when that task acquired the workspace, not when the isolation directory was created -- git status/diff when the isolation directory is a real checkout, a whole-tree hash diff when it is not (`getChangedFilesSinceSnapshot`, `src/engine/orchestrator/approval/file-snapshots/capture.ts`). The set is gated for approval and then **promoted into the user's real project directory**. Promotion is hash-guarded: a file whose content changed between the approval read and the write is not overwritten, it is reported as a conflict and the whole promotion is refused (`promoteStagedChanges`, `src/engine/orchestrator/approval/staged-project.ts`). Changes always land in the real project -- that is the point of the mechanism.
+
+The run-scoped handle (`createRunIsolation`, `src/engine/orchestrator/isolation/create.ts`) keeps the isolation directory alive across tasks and retries. A worktree workspace is reused between acquisitions through a marker carrying the session id, and each acquisition takes a fresh baseline so a later task reports only its own edits. The worktree is disposed when the run ends: if nothing unpromoted remains it is removed with force and its branch deleted, otherwise it is retained -- it holds work that was never promoted -- and the run reports the retention.
+
+A worktree isolates files, not the machine. It shares refs, git config, and hooks with the real repository, and it shares ports, databases, and environment with everything else running. It is not a security boundary. See [WORKTREES.md](./WORKTREES.md).
+
+An isolation strategy that copies the project instead of checking it out must exclude build output and report artifacts as well as the VCS, dependency, and SPLITBRIEF directories. The staged copy derives its file list from git's own ignore rules, so gitignored `dist/`, `coverage/`, and tool output never enter the copy -- otherwise it would move hundreds of megabytes per run.
+
+Whichever mode ran, validation happens in the real project directory after promotion. The implementer's ability to run checks on its own work is a first-pass-rate improvement, not the source of truth about correctness.
+
+### Prompt contract per mode
+
+`formatImplementerSystemPreamble(languageContext, writesFiles)` (`src/engine/spec/prompts/system.ts`) selects a preamble per write mode. The Task Brief body underneath it is the same in both modes -- description, signature, type definitions, pattern, implementation steps, tests, scope, escalation, evidence, constraints (`buildTaskSections`, `src/engine/spec/prompt-formatter.ts`).
+
+| Preamble carries | `extracted-code` | `direct` |
+|---|---|---|
+| Language and import conventions | yes | yes |
+| Output rules (whole file, no fences, no prose) | yes | n/a -- the model edits files |
+| Worked example in the target language | yes | n/a |
+| File scope -- which files it may touch and which it may not | n/a -- one file is written for it | yes |
+| Stop conditions -- when to finish and when to escalate instead of improvising | via the brief's Escalation section | yes, restated as a hard rule for an agent that can keep going |
+| Validation expectations -- which commands to run before declaring the task finished | n/a | yes |
+| Reporting format -- what to say about what it changed | n/a -- the file *is* the answer | yes |
+
+The last four rows are what makes `direct` reviewable. An agent that writes files on its own can wander, keep working past the task, or finish silently; the preamble is where those are bounded.
 
 ---
 
@@ -240,12 +293,12 @@ type ImplementerCapabilities = {
 
 Wraps a backend-specific `invoke()` with:
 
-1. **Build prompt** -- `formatTaskPrompt()` (`src/engine/spec/prompt-formatter.ts`) assembles the task sections. For modify tasks, `currentCode` is resolved through a tiered context strategy.
-2. **Prepend system preamble** -- language context, project conventions. API backends handle this separately as a system message (`prependSystemPreamble: false`).
-3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly.
+1. **Build prompt** -- `formatTaskPrompt()` (`src/engine/spec/prompt-formatter.ts`) assembles the task sections and takes the write mode, so the closing instruction matches how the model is expected to answer. For modify tasks, `currentCode` is resolved through a tiered context strategy.
+2. **Prepend system preamble** -- `formatImplementerSystemPreamble(languageContext, writesFiles)`; the mode-specific preamble described above. API backends send it as a separate system message instead of prepending (`prependSystemPreamble: false`).
+3. **Call backend `invoke()`** -- the actual model call. `InvokeOpts.callContext` identifies the runner call for adapters that can emit typed events directly. `InvokeOpts.sandboxEnv` carries the isolation directory's environment when the run is isolated.
 4. **Process output:**
-   - If `extractsCode`: extract code from response via `extractCode()`, run through tiered approval (`approveWrite`), apply to disk via `applyCode()`, compute diff.
-   - If `!extractsCode`: detect file changes via `detectChanges()` (git diff against pre-invocation snapshot).
+   - `extracted-code` (`extractsCode: true`): extract code from response via `extractCode()`, run through tiered approval (`approveWrite`), apply to disk via `applyCode()`, compute diff. Between approval and apply, a plausibility guard (`src/engine/implementers/pipeline/extracted-code.ts`) refuses a marker-less modify response that would keep less than half of a baseline file of at least five non-empty lines: the file is left untouched and the task fails with the kept-of-had line counts plus a literal SEARCH/REPLACE template, so the retry has an exact-patch escape hatch.
+   - `direct` (`extractsCode: false`): detect file changes via `detectChanges()` against the baseline captured before the call. The isolated workspace declares which baseline that is rather than letting the detector sniff the directory: a linked worktree carries git metadata but is seeded with your uncommitted work, so it is compared by file-content hashes, and a retry that rewrites the file the previous attempt already wrote is seen as a change. No change at all is a `no-staged-change` failure, not a silent success: the detector's negative result carries the distinct `reason: 'no-files-changed'`, and the pipeline publishes one coded warning (`category: implementer`, `code: implementer_wrote_nothing`, `transcriptSafe: true`) naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list, while the retry and escalation behaviour stays exactly as before — the task still fails.
 5. **Publish result** -- `publishDone` with diff metrics (lines added/removed, duration) or `publishFailed`.
 
 For retries, `buildRetryPrompt()` prepends the error message with escalating framing -- attempt 1 says "fix it", attempt 2 says "rephrase", attempt 3 says "try a completely different approach". Temperature increases by `retryTemperatureStep` per attempt.
@@ -269,13 +322,25 @@ type TokenDelta = {
 
 Deltas are normalized in `src/engine/calls/usage.ts`, which handles delta, cumulative, and final samples consistently. Accumulated usage is published through `cost_update` events.
 
+CLI runners report usage through their protocol terminal: codex through its `turn.completed` record, claude-code and opencode through their streamed terminal events. Codex's `input_tokens` counts cached input, so the normalizer excludes `cached_input_tokens` from the reported input total and surfaces it as `cacheReadTokens`; claude-code's terminal `result` line takes precedence over mid-stream deltas. A CLI runner that completes without reporting usage records zero implementer tokens — by design for structurally unpriced runners, and never fabricated.
+
 Per-task usage is recorded as `TaskTokenUsage`, which tracks: implementer tokens, escalation tokens, retry count, cost, model used, context fit classification (`fits` / `tight` / `overflow`), and the `currentCodeContextMode` that was selected.
+
+A runner completing a task without reporting usage is recorded as zero tokens and surfaced, not hidden: `recordTaskUsage` (`src/engine/orchestrator/tokens.ts`) publishes exactly one warning with `category: 'cost'` and `code: 'implementer_usage_not_reported'` (`transcriptSafe: true`), naming the runner and the task, when neither the implementer nor the escalation delta is non-zero. The warning lands in `session.jsonl` and in the review packet's warnings list. An escalated task that spent planner tokens does not warn. SPLITBRIEF never invents a price or synthesises token counts for a runner that reported none — a CLI runner staying structurally unpriced is by design, and this warning is what makes a run that did real work distinguishable from a run whose runner reported nothing.
 
 **Token budget for implementer prompts** (`src/engine/spec/token-budget.ts`):
 
 ```
 budget = contextLength - systemPromptTokens - taskBodyTokens - (contextLength * 0.25)
 ```
+
+An omitted `contextLength` resolves to a single documented default for every runner kind — `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` in `src/core/tokens/context-length.ts` — never to a per-consumer guess.
+
+A boot-probed window applies only to the default implementer profile — the profile the probe ran for. A sibling profile that declares no `contextLength` still routes at the shared default.
+
+A CLI runner under `model: auto` — or with the model omitted — resolves to no model id, so its window is the smallest the bundled catalog guarantees for that tool (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`); automatic selection never adds a `--model` flag.
+
+The window the router decides is the one the prompt budget uses: `configForProfile()` (`src/engine/orchestrator/task/routing.ts`) copies the decided `contextLength` into the config handed to the selected implementer when the profile declares none — a window the profile declared for itself is never overridden — so the wire carries the routed window rather than an unbudgeted whole-file prompt.
 
 Token estimation uses a per-model-family character-to-token ratio (`src/core/tokens/estimate.ts`): Claude models use 3.5, GPT uses 4.0, DeepSeek/Qwen/Llama/etc. use family-specific ratios. When a model ID is available (e.g., during implementer profile routing), the calibrated ratio produces more accurate estimates — reducing unnecessary escalations from overestimates and overflow failures from underestimates. Callers without model context (repomap budget, planner base) default to 4.0 chars/token.
 
@@ -298,7 +363,7 @@ Spawns a CLI tool as a subprocess. Supported tools: `claude-code`, `codex`, `ope
 
 The planner reads artifacts from disk (session directory or project root) via `readCliPhaseOutput()`. It checks the session folder first, then looks for markdown-linked paths in stdout, then falls back to stdout text. Claude Code uses `--session-id` for session resume. Output is parsed line by line via each tool's `parseLine` function.
 
-The implementer writes files directly (`writesFiles: 'direct'`). Change detection via git diff. Claude Code gets a special path through `runClaudeOneShot()`.
+The implementer writes files directly (`writesFiles: 'direct'`) inside the run's isolation directory, and change detection runs there. Claude Code gets a special path through `runClaudeOneShot()`. A CLI configured with a cheaper model than the planner's is one of the two canonical implementer setups -- see [Write modes](#write-modes).
 
 #### Canonical CLI runner matrix
 
@@ -323,7 +388,7 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 
 | `tool` | direct write (planner / implementer) | shell | network | automatic approval (implementer) | sandbox (planner / implementer) | auth channels | credential env |
 |---|---|---|---|---|---|---|---|
-| `claude-code` | no / yes | yes / yes | yes / yes | `--permission-mode acceptEdits` | none / none | session, api-key | `ANTHROPIC_API_KEY` (api-key channel) |
+| `claude-code` | no / yes | yes / yes | yes / yes | `--permission-mode acceptEdits` | none / none | session (host account on macOS, see below), api-key | `ANTHROPIC_API_KEY` (api-key channel) |
 | `codex` | no / yes | yes / yes | yes / yes | `--sandbox workspace-write` | mode-dependent / cli-managed | session, api-key | `OPENAI_API_KEY` (api-key channel) |
 | `opencode` | no / yes | yes / yes | yes / yes | — | none / none | provider-dependent | inherited from provider config |
 | `aider` | no / yes | yes / yes | yes / yes | `--yes-always` | none / none | provider-dependent | inherited from provider config |
@@ -331,6 +396,8 @@ When you adjust a tool's adapter to track an upstream CLI change, bump that tool
 | `kilo-code` | no / yes | yes / yes | yes / yes | `--auto` | none / none | provider-dependent | inherited from provider config |
 
 Session channels use `host-cli-state` bridging where noted in the catalog. SPLITBRIEF never copies credentials into argv. Subscription-included tools bill through the vendor login; provider-dependent tools inherit the upstream model provider's billing posture.
+
+The bridge copies files, so a channel whose credential is an OS keychain item reaches a staged runner another way. A channel declares those platforms in `hostKeychainPlatforms` (`src/core/runners/cli-tool-catalog.ts`), which today names macOS for the Claude Code `session` channel: the subscription session lives in the login keychain, whose search list resolves through `HOME` and whose item is keyed on `USER`. `cliAuthChannelHostStateAccess()` maps that to `host-account`, and `createSandboxEnv()` then leaves `HOME`/`USER` at their host values and bridges no file — every other redirect stays. Readiness never infers such a credential from files: it runs the tool's own status command and reports what the child answers. See [docs/API-KEYS.md](./API-KEYS.md) and [docs/WORKTREES.md](./WORKTREES.md).
 
 ##### Readiness states
 
@@ -349,6 +416,8 @@ Each admitted CLI exposes check ID `runners.cli.<tool>.readiness`. `deriveCliRea
 Run `splitbrief doctor` or workflow start readiness to surface remediation copy for each non-ready state.
 
 Only `ready` produces the trusted start gate execution requires. `splitbrief start` therefore refuses to open a session while a configured CLI runner sits in any other state — including `unverified`, which `doctor` reports as a warning — and exits non-zero with that state's remediation.
+
+**Arg-vector preflight.** The CLI runner contract includes an arg-vector preflight (`src/engine/runners/arg-vector-preflight.ts`): at execution preparation, after the executable-trust ladder has admitted the runner and before any planning is paid for, SPLITBRIEF runs the installed binary's own `--help` (descending into the emitted subcommand when the tool's help lists one) and compares the flags the adapter would emit for the configured role against the flags the help text advertises. The help run is a real spawn, so it obeys the same rules as every other one: the absolute executable identity the trust ladder resolved, never a bare name the OS looks up on the inherited PATH, and a sanitised environment with no host credentials and no real `HOME`. An executable the ladder refuses yields no help text. A flag the binary does not list is reported as a readiness blocker (`runners.cli.<tool>.arg-vector.<role>`); a flag the binary marks deprecated is a warning; a help text that cannot be obtained or that carries no recognisable flags is reported ok rather than blocking. This turns the recorded class of first-attempt failures — `unexpected argument '--reasoning…'`, `unexpected argument '--quiet…'`, `warning: --full-auto is deprecated`, unexpected stdin reads, claude session-id errors — into a readiness blocker before the run spends anything.
 
 ##### Minimal configuration
 
@@ -398,7 +467,9 @@ REST call to an OpenAI-compatible HTTP endpoint. Works with: Ollama, LM Studio, 
 
 The planner uses `dispatchStreamCompletion()` which handles both OpenAI-format and Anthropic-native streaming. Prior messages are passed as a proper messages array (`consumesPriorMessages: true`). Token usage comes from the API response.
 
-The implementer extracts code from the response text (`writesFiles: 'extracted-code'`). System preamble is sent as a separate system message. Token budget calculation determines `maxTokens`. Temperature increases on retry (`retryTemperatureStep: 0.1`).
+The implementer extracts code from the response text (`writesFiles: 'extracted-code'`). System preamble is sent as a separate system message. Token budget calculation determines `maxTokens`. Temperature increases on retry (`retryTemperatureStep: 0.1`). This is the other canonical implementer setup -- a cheap model reached over HTTP, with SPLITBRIEF holding the pen.
+
+Availability is probed, not assumed. An api-kind implementer's `isAvailable()` contacts the provider's model list (`createProviderAvailability`, the same helper the api planner uses) and reports unavailable when the endpoint refuses the connection or returns an empty list. A local endpoint is not assumed reachable just because it is local. The probe fires once per task iteration at the task-loop availability gate, and the verdict is never cached across tasks, so a daemon started between task N and task N+1 is picked up on N+1.
 
 ### shell
 

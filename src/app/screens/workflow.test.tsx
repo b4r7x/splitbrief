@@ -126,7 +126,6 @@ describe('WorkflowScreen chrome calibration', () => {
       rows,
       inputRows,
       sidebarVisible: true,
-      isSmall: false,
     });
     expect(contentRect.top).toBe(getContentTopRow());
     expect(paintedBodyRow + 1).toBe(contentRect.top);

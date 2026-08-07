@@ -23,6 +23,8 @@ import { registerPsCommand } from './cli/commands/ps.js';
 import { registerContinueCommand } from './cli/commands/continue/register.js';
 import { registerLastCommand } from './cli/commands/last.js';
 import { isCliError } from './cli/errors.js';
+import { assertSupportedNodeVersion } from './cli/node-guard.js';
+import { assertNotMistypedCommand } from './cli/unknown-command.js';
 import { HELP_EXAMPLES } from './cli/help-examples.js';
 import { toErrorMessage } from './utils/format-errors.js';
 import { getSplitbriefVersion } from './core/paths-io.js';
@@ -35,7 +37,9 @@ const program = new Command();
 program
   .name(SPLITBRIEF_IDENTITY.executable)
   .version(getSplitbriefVersion())
-  .description(`${SPLITBRIEF_IDENTITY.displayName} — cost-optimized AI coding orchestrator`);
+  .description(
+    `${SPLITBRIEF_IDENTITY.displayName} — an orchestrator of two coding tools: one plans and reviews, the other executes, and it holds the contract, validation, retry, escalation and evidence`,
+  );
 
 program.addHelpText('after', HELP_EXAMPLES);
 
@@ -59,7 +63,16 @@ registerPsCommand(program);
 registerContinueCommand(program);
 registerLastCommand(program);
 
-program.parseAsync().catch(async (err) => {
+async function main(): Promise<void> {
+  assertSupportedNodeVersion();
+  assertNotMistypedCommand(
+    process.argv.slice(2),
+    program.commands.flatMap((command) => [command.name(), ...command.aliases()]),
+  );
+  await program.parseAsync();
+}
+
+main().catch(async (err) => {
   await flushOtel();
   const message = toErrorMessage(err, { preserveLineBreaks: true });
   console.error(`${ansis.red('Error:')} ${message}`);

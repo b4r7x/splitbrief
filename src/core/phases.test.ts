@@ -10,6 +10,7 @@ import {
 import { PHASES, type Phase } from './schemas/enums.js';
 import { createInitialState } from './state/machine.js';
 import { attributePhaseTokenDelta } from './state/token-attribution.js';
+import { shouldPreserveActiveState } from '../engine/orchestrator/session-lifecycle/finalize.js';
 import type { TokenUsage } from './schemas/tokens.js';
 import type { WorkflowState } from './schemas/workflow.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -49,12 +50,27 @@ describe('isResumable', () => {
     expect(isResumable(idle)).toBe(false);
   });
 
-  it('returns true for implementing phase without awaitingContinue', () => {
+  it.each([
+    'reviewing-spec',
+    'planning',
+    'reviewing-plan',
+    'reviewing-briefs',
+    'implementing',
+    'final-review',
+  ] as const)('returns true for resumable %s phase without awaitingContinue', (phase) => {
     const state: WorkflowState = {
       ...createInitialState('feat'),
-      phase: 'implementing',
+      phase,
     };
     expect(isResumable(state)).toBe(true);
+  });
+
+  it('preserves the active session receipt for a session parked at reviewing-spec', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'reviewing-spec',
+    };
+    expect(shouldPreserveActiveState(state)).toBe(true);
   });
 
   it.each([

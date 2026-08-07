@@ -85,7 +85,15 @@ SPLITBRIEF takes several steps to protect your API keys:
 - **Header-only transport** — keys are only used in HTTP `Authorization` headers, never embedded in URLs or query parameters
 - **Boolean detection flags** — provider detection returns `hasKey: true/false`, never the actual key value
 - **Key format validation** — known providers (for example Anthropic keys starting with `sk-ant-`) are validated against expected formats; prefix mismatches fail closed before any network request
-- **Bridged CLI session state** — a CLI runner configured with `authChannel: session` (Claude Code, Codex, Copilot, OpenCode, Kilo Code) cannot read your real `HOME`, so SPLITBRIEF copies only that tool's admitted credential file (for example `~/.claude/.credentials.json`) into `<project>/.splitbrief/sandbox/`, owner-only and read-only. The copy is refreshed when the host credential rotates and deleted when the run finishes; `.splitbrief/` must stay in `.gitignore`. Use `authChannel: api-key` if you would rather pass an environment credential and copy nothing.
+- **Bridged CLI session state** — a CLI runner on a host-state channel whose credential is a file (`session` for Codex and Copilot, `provider-dependent` for OpenCode and Kilo Code, and `session` for Claude Code on Linux and Windows) cannot read your real `HOME`, so SPLITBRIEF copies only that tool's admitted credential file (for example `~/.claude/.credentials.json`) into `<project>/.splitbrief/sandbox/`, owner-only and read-only. The copy is refreshed when the host credential rotates and deleted when the run finishes; `.splitbrief/` must stay in `.gitignore`. Use `authChannel: api-key` if you would rather pass an environment credential and copy nothing.
+
+### Claude Code on macOS
+
+Claude Code stores its subscription session in the macOS login keychain, not in a file, so there is nothing for the file bridge to copy. The keychain's default search list resolves through `HOME`, and the item is keyed on the account name in `USER`. SPLITBRIEF therefore hands a macOS Claude Code `session` runner **your real `HOME` and `USER`** instead of a sandbox home, and copies nothing. That is the only way the subscription you already pay for can plan; `session` stays the default on every platform, and `splitbrief doctor` reports `authenticated` only when `claude auth status`, run inside that staged environment, says so.
+
+The cost is stated plainly: on that one channel the planner child resolves `~` to your real home and writes Claude Code's own state (`~/.claude.json`, history) there, exactly as it does when you run `claude` yourself. Everything else the sandbox redirects — `TMPDIR`, `XDG_*`, `npm_config_cache`, `PIP_CACHE_DIR`, `CARGO_HOME` — still points inside `<project>/.splitbrief/sandbox/`. No other tool and no other channel is affected. See [docs/WORKTREES.md](./WORKTREES.md) for the full accounting of what that child can reach.
+
+If you would rather not hand over the home directory, set `auth_channel: api-key` and export `ANTHROPIC_API_KEY` — that channel is metered, and it copies and exposes nothing.
 
 ## Best practices
 

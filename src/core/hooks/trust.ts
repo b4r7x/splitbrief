@@ -6,22 +6,41 @@ import { assertExistingPathConfined } from '../../lib/path-confinement.js';
 import { canonicalJSON } from '../../utils/canonical-json.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { sha256Hex } from '../../utils/sha256.js';
-import { getSplitbriefPath } from '../paths.js';
 import { HookEventSchema, HooksConfigSchema } from '../schemas/hooks.js';
 import {
   commandTokensAfterInterpreter,
   isPathLike,
   isRepoLocal,
 } from '../trust/path-classification.js';
+import {
+  TRUST_STORE_MAX_RECEIPTS,
+  readTrustStore,
+  resolveTrustStorePath,
+  trustedProjectIdentity,
+} from '../trust/receipt-store.js';
 
-const TRUST_FILE = 'hook-trust.json';
-const TRUST_VERSION = 1;
+const HOOK_TRUST_FILE = 'hooks.json';
+const HOOK_TRUST_VERSION = 1;
 
-const TrustFileSchema = z.object({
-  version: z.number(),
-  trusted_hash: z.string(),
-});
-type TrustFile = z.infer<typeof TrustFileSchema>;
+const DigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+
+const HookTrustReceiptSchema = z
+  .strictObject({
+    version: z.literal(HOOK_TRUST_VERSION),
+    projectIdentity: DigestSchema,
+    configDigest: DigestSchema,
+    trustedAt: z.number().finite().nonnegative(),
+  })
+  .readonly();
+
+const HookTrustFileSchema = z
+  .strictObject({
+    version: z.literal(HOOK_TRUST_VERSION),
+    receipts: z.array(HookTrustReceiptSchema).max(TRUST_STORE_MAX_RECEIPTS),
+  })
+  .readonly();
+
+type HookTrustFile = z.infer<typeof HookTrustFileSchema>;
 
 type HookFileDigest = {
   path: string;
@@ -239,27 +258,48 @@ function hashHookFile(projectDir: string, relativePath: string): HookFileDigest 
   }
 }
 
-function trustFilePath(projectDir: string): string {
-  return getSplitbriefPath(projectDir, TRUST_FILE);
+function parseHookTrustFile(value: unknown): HookTrustFile | null {
+  const parsed = HookTrustFileSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
 }
 
+/**
+ * A grant is a fact about this machine and this checkout, so it is looked up in
+ * the owner's trust store — never in the project. A repository that ships its
+ * own receipt therefore grants itself nothing.
+ */
 export function isHooksConfigTrusted(projectDir: string, hooks: unknown): boolean {
-  const path = trustFilePath(projectDir);
-  if (!existsSync(path)) return false;
-  try {
-    const result = TrustFileSchema.safeParse(JSON.parse(readFileSync(path, 'utf8')));
-    if (!result.success) return false;
-    if (result.data.version !== TRUST_VERSION) return false;
-    return result.data.trusted_hash === hashHooksConfig(projectDir, hooks);
-  } catch {
-    return false;
-  }
+  const identity = trustedProjectIdentity(projectDir);
+  if (identity === null) return false;
+  const read = readTrustStore(resolveTrustStorePath(HOOK_TRUST_FILE), parseHookTrustFile);
+  if (read.kind !== 'value') return false;
+  const receipt = read.value.receipts.find((candidate) => candidate.projectIdentity === identity);
+  if (receipt === undefined) return false;
+  return receipt.configDigest === hashHooksConfig(projectDir, hooks);
 }
 
+/**
+ * Persisting the grant is best-effort in one direction only: an unresolvable
+ * checkout or a store this process could not verify leaves no receipt, so the
+ * next run asks again. Overwriting a store that failed verification would
+ * discard whatever made it fail.
+ */
 export function markHooksConfigTrusted(projectDir: string, hooks: unknown): void {
-  const file: TrustFile = {
-    version: TRUST_VERSION,
-    trusted_hash: hashHooksConfig(projectDir, hooks),
-  };
-  writeSecureFile(trustFilePath(projectDir), JSON.stringify(file, null, 2) + '\n');
+  const identity = trustedProjectIdentity(projectDir);
+  if (identity === null) return;
+  const path = resolveTrustStorePath(HOOK_TRUST_FILE);
+  const read = readTrustStore(path, parseHookTrustFile);
+  if (read.kind === 'invalid') return;
+  const existing = read.kind === 'value' ? read.value.receipts : [];
+  const receipt = HookTrustReceiptSchema.parse({
+    version: HOOK_TRUST_VERSION,
+    projectIdentity: identity,
+    configDigest: hashHooksConfig(projectDir, hooks),
+    trustedAt: Date.now(),
+  });
+  const receipts = [
+    ...existing.filter((candidate) => candidate.projectIdentity !== identity),
+    receipt,
+  ].slice(-TRUST_STORE_MAX_RECEIPTS);
+  writeSecureFile(path, `${JSON.stringify({ version: HOOK_TRUST_VERSION, receipts }, null, 2)}\n`);
 }

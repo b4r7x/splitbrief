@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, existsSync, writeFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -17,6 +17,7 @@ import {
 import { runnerDiscoveryContextKey } from '../detection/detect.js';
 import { resolveCustomRunnerTrustFile } from './custom-trust.js';
 import { prepareCustomRunnerAdmission } from './custom-admission.js';
+import type { probeRunnerAvailability } from './probe-availability.js';
 import {
   prepareExecution,
   type PreparationPolicy,
@@ -40,6 +41,7 @@ const tempDirs: string[] = [];
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const directory of tempDirs.splice(0)) cleanupTempDir(directory);
 });
 
@@ -47,6 +49,19 @@ function projectDir(): string {
   const directory = createTempDir('prepare-execution');
   tempDirs.push(directory);
   return directory;
+}
+
+function shadowCodexOnPath(): void {
+  const stubDir = createTempDir('prepare-execution-stub');
+  tempDirs.push(stubDir);
+  const stub = join(stubDir, 'codex');
+  writeFileSync(
+    stub,
+    '#!/bin/sh\nprintf "Usage: codex [OPTIONS]\\n  --model <MODEL>\\n"\n',
+    'utf8',
+  );
+  chmodSync(stub, 0o755);
+  vi.stubEnv('PATH', `${stubDir}${delimiter}${process.env.PATH ?? ''}`);
 }
 
 function readyReport(
@@ -207,6 +222,7 @@ describe('prepareExecution', () => {
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project), config }),
         detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
         isAgentSdkAvailable: async () => true,
@@ -256,6 +272,107 @@ describe('prepareExecution', () => {
     expect(Object.isFrozen(outcome.execution.config)).toBe(true);
   });
 
+  it('reaches the same outcome whether or not a stub executable shadows the tool on PATH', async () => {
+    const project = projectDir();
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    const run = () =>
+      prepareExecution({
+        projectDir: project,
+        feature: 'machine-independent preparation',
+        effectiveConfig: config,
+        signal: new AbortController().signal,
+        policy: policy('new-workflow'),
+        deps: {
+          collectArgVectorPreflightChecks: async () => [],
+          collectReadiness: async () => ({ report: readyReport(project), config }),
+          detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
+          resolveCliExecutableAliases: async () => ({
+            command: 'codex',
+            executable,
+            usedFallback: false,
+          }),
+          prepareNewSession: () => preparedSession(project, 'machine-independent-session'),
+          newPreparationId: () => 'preparation-machine-independent',
+        },
+      });
+
+    const withoutStub = await run();
+    shadowCodexOnPath();
+    const withStub = await run();
+
+    expect(withoutStub.kind).toBe('prepared');
+    expect(withStub).toEqual(withoutStub);
+  });
+
+  it('leaves the arg-vector preflight unrun when the trust ladder refuses the executable', async () => {
+    const project = projectDir();
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    const preflight = vi.fn(async () => []);
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'no preflight before admission',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: preflight,
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) =>
+          freshCliEvidence(context, { executable: { kind: 'untrusted' } }),
+        prepareNewSession: vi.fn(),
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    expect(preflight).not.toHaveBeenCalled();
+  });
+
+  it('blocks on an arg-vector preflight blocker raised after the runner is admitted', async () => {
+    const project = projectDir();
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    const prepareSession = vi.fn();
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'preflight blocker after admission',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('new-workflow'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [
+          {
+            id: 'runners.cli.codex.arg-vector.planner',
+            severity: 'blocker',
+            summary: 'OpenAI Codex CLI planner invocation uses unsupported flags.',
+          },
+        ],
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
+        resolveCliExecutableAliases: async () => ({
+          command: 'codex',
+          executable,
+          usedFallback: false,
+        }),
+        prepareNewSession: prepareSession,
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    if (outcome.kind !== 'blocked') return;
+    expect(
+      outcome.report.sections
+        .find((section) => section.id === 'runners')
+        ?.checks.map((check) => check.id),
+    ).toEqual(
+      expect.arrayContaining([
+        'runners.preparation.planner',
+        'runners.cli.codex.arg-vector.planner',
+      ]),
+    );
+    expect(prepareSession).not.toHaveBeenCalled();
+  });
+
   it('uses fresh denial instead of remembered ready presentation state', async () => {
     const project = projectDir();
     const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
@@ -282,6 +399,7 @@ describe('prepareExecution', () => {
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project, [rememberedReady]), config }),
         detectRunnerEvidence: async ({ context }) =>
           freshCliEvidence(context, {
@@ -347,6 +465,7 @@ describe('prepareExecution', () => {
       },
       existingSession,
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: collect,
         detectRunnerEvidence: detect,
         resolveCliExecutableAliases: revalidate,
@@ -412,6 +531,7 @@ describe('prepareExecution', () => {
         },
         existingSession,
         deps: {
+          collectArgVectorPreflightChecks: async () => [],
           collectReadiness: async () => ({ report: readyReport(project), config }),
           detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
           resolveCliExecutableAliases: async () => ({
@@ -480,6 +600,7 @@ describe('prepareExecution', () => {
       signal: new AbortController().signal,
       policy: policy('spec'),
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project), config }),
         prepareNewSession: prepareSession,
       },
@@ -507,6 +628,7 @@ describe('prepareExecution', () => {
         signal: controller.signal,
         policy: policy('new-workflow'),
         deps: {
+          collectArgVectorPreflightChecks: async () => [],
           collectReadiness: async () => ({ report: readyReport(project), config }),
           detectRunnerEvidence: async ({ context }) => {
             await Promise.resolve();
@@ -556,6 +678,7 @@ describe('prepareExecution', () => {
         },
       },
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project), config }),
         prepareNewSession: prepareSession,
       },
@@ -595,6 +718,7 @@ describe('prepareExecution', () => {
         }),
       },
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project), config }),
         prepareCustomRunnerAdmission: (options) =>
           prepareCustomRunnerAdmission({
@@ -615,6 +739,47 @@ describe('prepareExecution', () => {
     for (const artifact of noArtifactPaths(project)) expect(existsSync(artifact)).toBe(false);
   });
 
+  it('names the credential the runner is missing when the start gate denies authentication', async () => {
+    const project = projectDir();
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+    });
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'unauthenticated planner',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('spec'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) => ({
+          ...freshCliEvidence(context),
+          credential: 'absent',
+          auth: 'missing',
+        }),
+        resolveCliExecutableAliases: async () => ({
+          command: 'codex',
+          executable,
+          usedFallback: false,
+        }),
+        prepareNewSession: vi.fn(),
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    if (outcome.kind !== 'blocked') return;
+    const check = outcome.report.sections
+      .find((section) => section.id === 'runners')
+      ?.checks.find((candidate) => candidate.id === 'runners.preparation.planner');
+    expect(check).toMatchObject({ severity: 'blocker' });
+    // "Review the configured runner" sends the user back to a config that
+    // looks right; the gate knows exactly which credential is missing.
+    expect(check?.fix).toContain('No codex session credential');
+    expect(check?.fix).toContain('Sign in to codex');
+  });
+
   it('blocks without a session when final CLI identity revalidation fails', async () => {
     const project = projectDir();
     const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
@@ -627,6 +792,7 @@ describe('prepareExecution', () => {
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project), config }),
         detectRunnerEvidence: async ({ context }) => freshCliEvidence(context),
         resolveCliExecutableAliases: async () => {
@@ -695,6 +861,7 @@ describe('prepareExecution', () => {
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project), config }),
         prepareCustomRunnerAdmission: prepareAdmission,
         prepareNewSession: () => preparedSession(project, 'custom-session'),
@@ -730,6 +897,7 @@ describe('prepareExecution', () => {
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => ({ report: readyReport(project), config }),
         detectRunnerEvidence: async ({ context }) =>
           freshCliEvidence(context, { executable: { kind: 'untrusted' } }),
@@ -754,6 +922,7 @@ describe('prepareExecution', () => {
       signal: new AbortController().signal,
       policy: policy('new-workflow'),
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: async () => {
           throw new Error('readiness failed');
         },
@@ -781,6 +950,7 @@ describe('prepareExecution', () => {
       signal: controller.signal,
       policy: policy('new-workflow'),
       deps: {
+        collectArgVectorPreflightChecks: async () => [],
         collectReadiness: collect,
         prepareNewSession: prepareSession,
       },
@@ -790,5 +960,235 @@ describe('prepareExecution', () => {
     expect(collect).not.toHaveBeenCalled();
     expect(prepareSession).not.toHaveBeenCalled();
     expect(noArtifactPaths(project).some(existsSync)).toBe(false);
+  });
+});
+
+describe('inline command runner admission', () => {
+  const CONFIRMED = {
+    decision: 'confirm',
+    phrase: CONFIRM_PHRASE,
+    reason: 'I read the command and I want it to run.',
+  } as const;
+
+  function inlineShellConfig(sentinel: string) {
+    return ConfigSchema.parse(
+      makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'anthropic',
+          service: 'anthropic',
+          offering: 'payg',
+          apiBase: 'https://api.anthropic.com/v1',
+          apiKey: 'sk-ant-test',
+          model: 'claude-opus-4-6',
+        },
+        implementerProfiles: {
+          default: 'review',
+          profiles: {
+            review: {
+              kind: 'shell',
+              command: process.execPath,
+              args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(sentinel)}, 'ran')`],
+              model: 'inline-shell',
+            },
+          },
+        },
+      }),
+    );
+  }
+
+  function inlineRun(
+    input: Readonly<{
+      project: string;
+      stateDir: string;
+      config: ReturnType<typeof inlineShellConfig>;
+      interaction: 'interactive' | 'headless';
+      allowRepoRunners?: boolean | undefined;
+      onTieredApproval?: PreparationPolicy['onTieredApproval'] | undefined;
+    }>,
+  ) {
+    return prepareExecution({
+      projectDir: input.project,
+      feature: 'inline runner admission',
+      effectiveConfig: input.config,
+      signal: new AbortController().signal,
+      policy: {
+        purpose: 'new-workflow',
+        interaction: input.interaction,
+        unverifiedAuth: 'denied',
+        allowRepoRunners: input.allowRepoRunners ?? false,
+        allowHooks: true,
+        stateDir: input.stateDir,
+        ...(input.onTieredApproval !== undefined && { onTieredApproval: input.onTieredApproval }),
+      },
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({
+          report: readyReport(input.project),
+          config: input.config,
+        }),
+        prepareNewSession: () => preparedSession(input.project, 'inline-runner-session'),
+      },
+    });
+  }
+
+  function preparationCheck(report: ReadinessReport, id: string) {
+    return report.sections
+      .find((section) => section.id === 'runners')
+      ?.checks.find((check) => check.id === id);
+  }
+
+  it('refuses a config-declared command that this machine never confirmed', async () => {
+    const project = projectDir();
+    const sentinel = join(project, 'inline-runner-ran');
+
+    const outcome = await inlineRun({
+      project,
+      stateDir: join(project, 'runner-state'),
+      config: inlineShellConfig(sentinel),
+      interaction: 'headless',
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    if (outcome.kind !== 'blocked') return;
+    expect(
+      preparationCheck(outcome.report, 'runners.preparation.implementer.review'),
+    ).toMatchObject({
+      severity: 'blocker',
+      details: [
+        'Project config declares a shell runner command that this machine has not trusted.',
+      ],
+      fix: 'Run SPLITBRIEF in a terminal and confirm the runner disclosure, or pass --allow-repo-runners to grant it for this run only.',
+    });
+    expect(existsSync(sentinel)).toBe(false);
+  });
+
+  it('names an absent command instead of reporting it as untrusted', async () => {
+    const project = projectDir();
+    const config = ConfigSchema.parse(
+      makeConfig({
+        planner: {
+          kind: 'shell',
+          command: join(project, 'no-such-runner'),
+          model: 'inline-shell',
+        },
+      }),
+    );
+
+    const outcome = await inlineRun({
+      project,
+      stateDir: join(project, 'runner-state'),
+      config,
+      interaction: 'headless',
+      allowRepoRunners: true,
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    if (outcome.kind !== 'blocked') return;
+    expect(preparationCheck(outcome.report, 'runners.preparation.planner')).toMatchObject({
+      details: [
+        'Project config declares a shell runner command that does not exist on this machine.',
+      ],
+      fix: 'Install the command or correct its path in .splitbrief/config.yaml, then retry.',
+    });
+  });
+
+  it('discloses the resolved command and reuses the confirmed receipt without re-prompting', async () => {
+    const project = projectDir();
+    const stateDir = join(project, 'runner-state');
+    const config = inlineShellConfig(join(project, 'inline-runner-ran'));
+    const requests: string[] = [];
+
+    const confirmed = await inlineRun({
+      project,
+      stateDir,
+      config,
+      interaction: 'interactive',
+      onTieredApproval: async (request) => {
+        requests.push(request.actionDescription);
+        return CONFIRMED;
+      },
+    });
+
+    expect(confirmed.kind).toBe('prepared');
+    if (confirmed.kind !== 'prepared') return;
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain(`Executable: ${JSON.stringify(process.execPath)}`);
+    expect(requests[0]).toContain('Working directory: Project directory');
+    expect(requests[0]).toContain(
+      'Environment access: Inherits the full SPLITBRIEF process environment, including credentials',
+    );
+    expect(confirmed.execution.gates).toContainEqual(
+      expect.objectContaining({
+        kind: 'shell',
+        slot: { role: 'implementer', profile: 'review' },
+        command: { kind: 'validated-config' },
+      }),
+    );
+    expect(existsSync(resolveCustomRunnerTrustFile(stateDir))).toBe(true);
+
+    const reused = await inlineRun({ project, stateDir, config, interaction: 'headless' });
+    expect(reused.kind).toBe('prepared');
+  });
+
+  it('does not carry a receipt to another checkout of the same config', async () => {
+    const granted = projectDir();
+    const stateDir = join(granted, 'runner-state');
+    const config = inlineShellConfig(join(granted, 'inline-runner-ran'));
+
+    await inlineRun({
+      project: granted,
+      stateDir,
+      config,
+      interaction: 'interactive',
+      onTieredApproval: async () => CONFIRMED,
+    });
+    const copied = projectDir();
+    const outcome = await inlineRun({
+      project: copied,
+      stateDir,
+      config,
+      interaction: 'headless',
+    });
+
+    expect(outcome.kind).toBe('blocked');
+  });
+});
+
+describe('prepareExecution availability probe scope', () => {
+  async function probedRoles(purpose: 'new-workflow' | 'spec'): Promise<unknown> {
+    const project = projectDir();
+    const config = makeConfig({
+      planner: { kind: 'shell', command: 'node', model: 'local-shell' },
+    });
+    const probe = vi.fn<typeof probeRunnerAvailability>(async () => []);
+
+    await prepareExecution({
+      projectDir: project,
+      feature: 'probe scope',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy(purpose),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async (options) => {
+          await options.probeRunnerAvailability?.({ config });
+          return { report: readyReport(project), config };
+        },
+        probeRunnerAvailability: probe,
+        prepareNewSession: () => preparedSession(project, `probe-scope-${purpose}`),
+        newPreparationId: () => `preparation-${purpose}`,
+      },
+    });
+
+    return probe.mock.calls[0]?.[0]?.roles;
+  }
+
+  it('probes planner and implementer for a workflow start', async () => {
+    expect(await probedRoles('new-workflow')).toEqual(['planner', 'implementer']);
+  });
+
+  it('probes only the planner for a spec preparation, which never calls the implementer', async () => {
+    expect(await probedRoles('spec')).toEqual(['planner']);
   });
 });

@@ -94,6 +94,7 @@ export function buildValidation(
         stage: entry.stage,
         passed: entry.passed,
         ...(entry.errorSummary !== undefined && { errorSummary: entry.errorSummary }),
+        ...(entry.baselineExempt !== undefined && { baselineExempt: entry.baselineExempt }),
       })),
       expectedEvidence,
       observedEvidence,

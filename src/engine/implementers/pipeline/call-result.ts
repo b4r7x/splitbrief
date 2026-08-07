@@ -8,6 +8,8 @@ import type { ImplementerOptions } from '../types.js';
 import { processError } from '../../../lib/process/errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
+export const ABORTED_OUTCOME_TEXT = 'Aborted';
+
 let implementerCallSequence = 0;
 
 export function defaultShouldThrow(err: unknown): boolean {
@@ -122,7 +124,7 @@ export function runnerCallFailureMessage(
   signal: AbortSignal | undefined,
 ): string {
   if (result.status === 'completed') return 'Implementer call completed';
-  if (result.status === 'aborted' && signal?.aborted) return 'Aborted';
+  if (result.status === 'aborted' && signal?.aborted) return ABORTED_OUTCOME_TEXT;
   return result.error?.message ?? runnerCallStatusMessage(result.status);
 }
 

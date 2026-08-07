@@ -63,6 +63,7 @@ export async function escalateHint(
   const detect = useFiles ? createChangeDetector('Hint escalation') : null;
   const baseline = useFiles
     ? await captureChangeDetectorBaseline(projectDir, {
+        kind: opts.changeDetection,
         ignoreProjectDir: opts.fileIgnoreProjectDir,
       })
     : null;
@@ -97,6 +98,7 @@ export async function escalateFull(
   if (config.escalateFullMode === 'files') {
     const detect = createChangeDetector('Full escalation');
     const baseline = await captureChangeDetectorBaseline(projectDir, {
+      kind: opts.changeDetection,
       ignoreProjectDir: opts.fileIgnoreProjectDir,
     });
     const callContext = createEscalationCallContext(config);

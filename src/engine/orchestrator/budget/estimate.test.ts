@@ -479,6 +479,41 @@ describe('estimateDeterministicCost', () => {
     expect(estimate.totals.unknownCostReason).toContain('profile-unavailable');
   });
 
+  it('routes a CLI profile under automatic model selection at its bundled window with known-catalog confidence', () => {
+    const config = withProfiles(
+      makeConfig({
+        planner: { kind: 'shell', command: 'missing-planner-command', model: 'planner-model' },
+        implementer: { kind: 'cli', tool: 'codex', model: 'auto' },
+      }),
+      {
+        default: 'codex-auto',
+        profiles: {
+          'codex-auto': {
+            kind: 'cli',
+            tool: 'codex',
+            model: 'auto',
+            costTier: 'cheap',
+          },
+        },
+      },
+    );
+
+    const estimate = estimateDeterministicCost({
+      tasks: [makeTask()],
+      context,
+      config,
+      pricingCache: nullCache,
+    });
+
+    expect(estimate.tasks[0]).toMatchObject({
+      selectedProfileId: 'codex-auto',
+      contextFit: 'fits',
+      contextConfidence: 'context-known-catalog',
+    });
+    expect(estimate.contextConfidenceCounts.contextKnownCatalog).toBe(1);
+    expect(estimate.contextConfidenceCounts.profileUnavailable).toBe(0);
+  });
+
   it('does not crash when configured profiles cannot be resolved', () => {
     const config = withProfiles(makeConfig(), {
       default: 'missing-worker',

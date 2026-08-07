@@ -36,7 +36,7 @@ After setup, the handler calls `initStores()` and then `renderApp()`.
 
 ## Store bootstrap
 
-`initStores()` in `src/cli/init-stores.ts` prepares the shared state layer. It runs three phases in order:
+`initStores()` in `src/cli/init-stores.ts` prepares the shared state layer. It runs four phases in order:
 
 **`initUIChrome()`** subscribes the terminal-size store to resize events so layout reflows when the window changes.
 
@@ -44,7 +44,9 @@ After setup, the handler calls `initStores()` and then `renderApp()`.
 
 **`ensureHooksTrusted()`** (`src/cli/hook-trust-prompt.ts`) checks whether the project's configured hooks have been approved. If not, it prompts the user before continuing. This runs after config is loaded (hooks come from config) but before discovery (discovery shouldn't run under untrusted hooks).
 
-**`loadDiscovery()`** runs last because it's async and independent of config/session state. It does three things in parallel: discovers planner skills via `discoverSkills()` (`src/engine/skill-discovery.ts`), detects provider capabilities via `detectCapabilities()` (`src/engine/providers/capabilities.ts`), and detects available CLI tools and models via `loadDetectionIntoStores()`. Skill sources depend on the planner: `.claude/skills/`, `.splitbrief/skills/`, global tool skill dirs, `AGENTS.md`, or `CONVENTIONS.md`.
+**`loadDiscovery()`** runs last because it's async and independent of config/session state. It detects provider capabilities via `detectCapabilities()` (`src/engine/providers/capabilities.ts`), then hydrates the detection stores from the on-disk cache snapshot via `hydrateDetectionIntoStores()` (`src/stores/discovery/detection-adapter.ts`) so a cold start shows remembered runners immediately, and kicks off the live runner/model refresh in the background via `loadDetectionForCurrentConfig()` (`src/engine/detection/store-publication.ts`).
+
+It finishes by awaiting planner skill discovery via `discoverSkills()` (`src/engine/skill-discovery.ts`). Skill sources depend on the planner: `.claude/skills/`, `.splitbrief/skills/`, global tool skill dirs, `AGENTS.md`, or `CONVENTIONS.md`.
 
 ---
 
@@ -69,7 +71,7 @@ The callbacks are how the engine asks for human decisions without importing Reac
 
 ## Workflow initialization
 
-`runWorkflow()` (`src/engine/orchestrator/run/workflow.ts`) is the top-level engine entry. It generates a session ID, builds a summary base with planner/implementer metadata, wraps the entire run in `withShutdownHandlers()` (SIGINT/SIGTERM handler that saves state on interrupt), and delegates to `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`).
+`runWorkflow()` (`src/engine/orchestrator/run/workflow.ts`) is the top-level engine entry. It takes the already-prepared execution (project dir, session ID, admitted config), builds a summary base with planner/implementer metadata, acquires the session liveness lockfile so a concurrent resume refuses to double-run the session, wraps the entire run in `withShutdownHandlers()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts` — the SIGINT/SIGTERM handler that saves state on interrupt), and delegates to `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`).
 
 `initializeWorkflow()` does the following, in order:
 
@@ -119,26 +121,40 @@ Planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus specki
 
 After planning, `runTasksAndReview()` (`src/engine/orchestrator/run/phases.ts`) runs a cost prediction, optionally gates on cost, and enters the task loop via `runTaskLoop()` (`src/engine/orchestrator/task/loop.ts`).
 
+Before the first task, the loop primes the validation baseline: `primeBaseline()` (`src/engine/orchestrator/validation/run.ts`) probes every enabled stage — typecheck, lint, test — once, on the real project directory, and publishes `validation_baseline` progress events (`running` while a stage is being probed, then `done`). The probe deliberately does not short-circuit: a stage that is red before any task ran is recorded as a pre-existing failure and published in the done event's `failing` set, and the stages themselves are never exempted from being probed. This is the user's proof of life before the first `task_started`, and the record the acceptance gate later consults to tell pre-existing failures apart from failures the task introduced.
+
 The loop iterates tasks in order (tasks are already topologically sorted by `dependsOn` during planning). For each task:
 
 **Dependency check** — if any task in this task's `dependsOn` list has failed or been skipped, the task enters recovery. The user is prompted to decide what to do.
 
 **User edit detection** — `checkUserEditConflicts()` checks whether the user modified files outside SPLITBRIEF while the workflow was running. If there's a conflict with the current task's target file, recovery is triggered.
 
-**Implementer profile routing** — `routeTaskToImplementerProfile()` (`src/engine/orchestrator/context-routing/route.ts`) estimates the task's token requirements and selects the best implementer profile. If no profile can handle the task (context overflow), the task enters recovery.
+**Implementer profile routing** — `routeTaskToImplementerProfile()` (`src/engine/orchestrator/context-routing/route.ts`) estimates the task's token requirements and selects the best implementer profile. Each profile's context window resolves through one ladder — `resolveRunnerContextWindow()` (`src/engine/providers/model/context-window.ts`): cached models.dev metadata, then runtime metadata, then the bundled known-model catalog, then the shared default; a CLI tool under `model: auto` resolves to the smallest window its bundled catalog guarantees. If no profile can handle the task (context overflow), the task enters recovery. The routing preview behind brief approval and the review overlay (`buildRoutingPreviewMetadata()`, `src/engine/routing-preview.ts`) is built from the same model cache and detected context length as dispatch-time routing, so the preview and the dispatched route agree by construction. The routing decision is carried into the implementer call: `configForProfile()` (`src/engine/orchestrator/task/routing.ts`) copies the decided `contextLength` into the config handed to the selected implementer when the profile declares none, so the prompt the implementer receives is budgeted against the routed window, not an unbudgeted whole file.
 
 **Execution** — `runSingleTask()` (`src/engine/orchestrator/task/step.ts`) runs the task:
 
 1. Transitions state to `START_TASK` and refreshes the file's current code from disk
 2. Runs the tiered file-write approval gate, classifying declared changed paths by scope/risk (in-scope, out-of-scope, control-plane, package change) and gating those writes at the configured tier
 3. Runs pre-task hooks if configured
-4. Calls `runImplementation()` — the implementer receives the task brief and produces code
-5. Applies changed files — for `api` and `shell` backends, code is extracted from the response; for `cli`, `agent`, and `agent-sdk` backends, changes are detected via git diff
-6. Runs validation: typecheck, then lint, then test (`src/engine/orchestrator/validation/run.ts`). The pipeline stops on the first failure.
+4. Calls `runImplementation()` (`src/engine/orchestrator/task/run-implementation.ts`) — the implementer receives the task brief and produces code. An implementer whose `capabilities.writesFiles` is `direct` (the `cli`, `agent`, and `agent-sdk` kinds) is pointed at the run's isolated worktree, not the project directory; one whose `writesFiles` is `extracted-code` (the `api` and `shell` kinds) returns the file body and never touches the filesystem itself. For a modify task, the extracted-code branch refuses a marker-less whole-file replacement that would discard most of the existing file: the file stays untouched, and the task fails with a message carrying the kept-of-had line counts and a literal SEARCH/REPLACE template so the retry can apply an exact patch
+5. Applies changed files via `applyChangedFiles()` (`src/engine/orchestrator/task/apply-changed-files.ts`) → `gateAndPromoteChangedFiles()` (`src/engine/orchestrator/approval/gate-and-promote.ts`). It diffs the working directory against the task-start snapshot, so the gate sees everything that actually changed and not only the brief's declared file. Files written in isolation are then promoted into the real project directory; files SPLITBRIEF wrote from an `extracted-code` response are already there, admitted by the pre-write gate inside `runImplementation()`. Only a changed set discovered inside isolation is promoted: if isolation reports no changes and the changed set falls back to the real project, those changes are the user's own edits — they are gated but never promoted, and left alone on denial (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)). Promotion is hash-guarded — if a file changed underneath SPLITBRIEF between snapshot and write, the task stops with a promote conflict instead of overwriting it
+6. Runs validation in the real project directory: typecheck, then lint, then test (`wctx.validator.runValidation()`, built by `createValidator()` in `src/engine/orchestrator/validation/run.ts`). The pipeline stops at the first failure attributable to the task; a stage already red at baseline continues so the stages behind it still get a verdict.
 7. On pass: commits (if per-task commit strategy is configured), transitions to `VALIDATION_PASS`, records evidence, runs drift chain analysis
 8. On fail: retries with the error message (up to the configured retry count), then escalates through tiers if retries are exhausted
 
 Budget enforcement happens at task boundaries — `enforceBudget()` checks accumulated cost after each task and can pause or stop the loop if the budget threshold or maximum is reached.
+
+---
+
+## Isolation and promotion
+
+An implementer with `writesFiles: direct` is a subprocess that edits files wherever it is pointed, so it is not pointed at the project's working tree. When the run's implementer writes files directly, the run creates one git worktree and the implementer works there for every task: `createWorktree()` (`src/engine/worktree/create.ts`) adds a `splitbrief/<slug>` branch checked out under `.trees/<slug>` (`TREES_DIR`, `src/core/paths.ts`), propagates `.splitbrief/config.yaml` and `.splitbrief/hooks/` into it, and initializes submodules. The project's dependencies are linked into the worktree, so `tsc`, the linter, and the test runner resolve there exactly as they do in the project. An implementer that can check its own work before handing it back needs fewer retries — but the verdict is the validation SPLITBRIEF runs after promotion, never the implementer's self-assessment.
+
+The worktree is where the work happens, not where it lands. `gateAndPromoteChangedFiles()` promotes approved files into the real project directory, and `runSingleTask()` runs validation against that directory with the project's real dependencies and real tooling. Isolation changes where the implementer works; it never changes where the work ends up.
+
+A run's isolation worktree is created once when the run starts, carrying a marker with the session id. A resumed run of the same session reuses that worktree — the marker, not the directory's existence, is what makes a `.trees/<slug>` directory the session's own, so a crashed run or a name collision is never adopted. When the run ends, the worktree is removed with force and its branch deleted if nothing unpromoted remains; a run that ends with work that was never promoted keeps the worktree so that work can be recovered.
+
+The worktree is not a sandbox. It shares the repository's hooks, the project's `.splitbrief/config.yaml`, and the host's ports, sockets, and databases. Runner processes get an environment shaped by `createRunnerSandboxEnv()` (`src/engine/runners/sandbox-env.ts`), which is credential and path hygiene — not shell or network confinement. One channel keeps the host `HOME` and `USER` on purpose: Claude Code `session` on macOS, whose credential is a login-keychain item with no file to copy. What that widens, and what it does not, is spelled out in [docs/WORKTREES.md](./WORKTREES.md).
 
 ---
 
@@ -190,6 +206,8 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes, saves the current state to `state.json`, and discards any in-progress file change. The `.splitbrief/active` marker is preserved when there's pending recovery or a rewind in progress, cleared otherwise. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
 
+**Collectable orphan directories.** A session directory that never started — a crash or abort after `readiness.json` landed and before the run wrote its lockfile — holds nothing but `readiness.json`, or nothing at all. A directory with exactly that content (or empty) is **collectable**; `src/core/sessions/orphans.ts` is where the recognition rule lives. A directory holding any other artifact — a lockfile, an ownership marker, or anything else — is never collectable.
+
 ---
 
 ## Final review and shutdown
@@ -198,7 +216,7 @@ When all tasks complete, `runTasksAndReview()` calls `runFinalReviewPhase()` (`s
 
 The function transitions state to `ALL_DONE`, optionally takes a pre-final-review snapshot, then asks the planner to review the full git diff against the spec. It computes brief drift — comparing what each task brief asked for against what actually changed — and includes that analysis in the review prompt. The planner's response is written to `review.md` in the session folder.
 
-Evidence recording happens throughout: the evidence ledger tracks approvals, rejections, validation outcomes, and the final review status. After the review, a review packet is written — a structured summary of all evidence for the session.
+Evidence recording happens throughout: the evidence ledger tracks approvals, rejections, validation outcomes, and the final review status. After the review, a review packet is written — a structured summary of all evidence for the session, carrying the parsed review verdict, criteria counts and finding counts in its final-review section.
 
 The function transitions to `REVIEW_DONE`, publishes `workflow_complete`, builds the final summary, and calls `callbacks.onComplete(summary)`. Back in `runWorkflow()`, `saveFinalSession()` writes `summary.json`, updates cumulative project stats, and clears `.splitbrief/active`.
 
@@ -228,7 +246,7 @@ The orchestrator then publishes `workflow_resumed` and picks up from the saved p
 
 ### Related commands
 
-**`splitbrief spec <feature>`** (`src/cli/commands/spec.ts`) -- runs planning phases only (research, spec, plan, tasks) and exits without implementation. Produces the same planning artifacts (`research.md`, `spec.md`, `plan.md`, `tasks.md`, plus speckit artifacts when produced) as a full run.
+**`splitbrief spec <feature>`** (`src/cli/commands/spec.ts`) -- runs the planner for the selected workflow mode and exits without implementation. The mode decides which planning phases run: `standard` and `speckit` write the research, spec, plan and tasks artifacts; `instant` and `quick` make a single planner call that writes `tasks.md`. Because the command never implements, the approval gates of a full run do not apply to it.
 
 **`splitbrief continue [alias]`** (registered in `src/cli/commands/continue/register.ts`) -- continues a session by numeric alias from `splitbrief ps`, by session ID, or by active/single-running discovery. It attaches when the target is running and resumes saved state otherwise.
 

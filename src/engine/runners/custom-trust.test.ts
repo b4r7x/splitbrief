@@ -16,6 +16,7 @@ import {
   buildCustomRunnerDisclosure,
   customRunnerSecurityPosture,
   formatCustomRunnerDisclosure,
+  inlineRunnerSecurityPosture,
   markCustomRunnerTrusted,
   readCustomRunnerTrust,
   resolveCustomRunnerAdmissionScope,
@@ -44,6 +45,7 @@ Contract: output
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "REVIEW_TOKEN"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Parsed output only; stage-local writes are discarded`;
@@ -54,6 +56,7 @@ Contract: direct
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "REVIEW_TOKEN"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Reviewed declared artifact for normal planner calls; reviewed workspace diff for full escalation only`;
@@ -64,6 +67,7 @@ Contract: output
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "REVIEW_TOKEN"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Parsed output only; stage-local writes are discarded`;
@@ -74,6 +78,7 @@ Contract: direct
 Working directory: Disposable staged project
 Staging: Filtered disposable stage
 Environment names: "REVIEW_TOKEN"
+Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
 Result: Reviewed diff only`;
@@ -357,13 +362,15 @@ describe('custom runner security posture', () => {
         contract: 'output',
         posture: {
           role: 'planner',
+          source: 'configured',
           cwd: 'disposable-stage',
           stage: 'filtered-disposable-stage',
+          environmentAccess: 'declared-references-only',
           filesystem: 'host-user-access',
           network: 'host-network-access',
           result: 'parsed-output-only',
         },
-        definitionDigest: 'sha256:f9f87c0007f0ba0bea557815bd65142d04f41e73e8d8c73bc14f01e79956237b',
+        definitionDigest: 'sha256:af1e547965278cc54ebe6a49a61099cb341bdca051ef91abd4d970d00a3caa93',
         disclosure: PLANNER_OUTPUT_DISCLOSURE,
       },
       {
@@ -371,13 +378,15 @@ describe('custom runner security posture', () => {
         contract: 'direct',
         posture: {
           role: 'planner',
+          source: 'configured',
           cwd: 'disposable-stage',
           stage: 'filtered-disposable-stage',
+          environmentAccess: 'declared-references-only',
           filesystem: 'host-user-access',
           network: 'host-network-access',
           result: 'reviewed-declared-artifact-or-workspace-diff-only',
         },
-        definitionDigest: 'sha256:295c764661fbb4eba048596edb674e380286d51989b77a2e30bdbce1424ffafb',
+        definitionDigest: 'sha256:ffb803325c3a591ada4b1b42bc21ff67eb3a5512da6d7b6f9abb100b782b74c0',
         disclosure: PLANNER_DIRECT_DISCLOSURE,
       },
       {
@@ -385,13 +394,15 @@ describe('custom runner security posture', () => {
         contract: 'output',
         posture: {
           role: 'implementer',
+          source: 'configured',
           cwd: 'disposable-stage',
           stage: 'filtered-disposable-stage',
+          environmentAccess: 'declared-references-only',
           filesystem: 'host-user-access',
           network: 'host-network-access',
           result: 'parsed-output-only',
         },
-        definitionDigest: 'sha256:f7b1ef835e538a2aa77e7206294d239c794d4696853a5ab639713337955cf9a0',
+        definitionDigest: 'sha256:eaae5f48b91af309522e855faa82203ea9601ebb02acd490cc955dca3b4efea0',
         disclosure: IMPLEMENTER_OUTPUT_DISCLOSURE,
       },
       {
@@ -399,13 +410,15 @@ describe('custom runner security posture', () => {
         contract: 'direct',
         posture: {
           role: 'implementer',
+          source: 'configured',
           cwd: 'disposable-stage',
           stage: 'filtered-disposable-stage',
+          environmentAccess: 'declared-references-only',
           filesystem: 'host-user-access',
           network: 'host-network-access',
           result: 'reviewed-diff-only',
         },
-        definitionDigest: 'sha256:93ad8188505ce9dfe2b04c744f701ae0d7d95678cb1cd0c7e40b2fdaa5b5f962',
+        definitionDigest: 'sha256:9035a689b22fbcf8f50ec490cfcb77428fed1aca0c80d14061b5aa290f5ffc1a',
         disclosure: IMPLEMENTER_DIRECT_DISCLOSURE,
       },
     ] as const;
@@ -444,6 +457,68 @@ describe('custom runner security posture', () => {
     }
 
     expect(new Set(definitionDigests)).toHaveLength(4);
+  });
+
+  it('scopes an inline runner receipt away from the identical configured command', async () => {
+    const projectDir = createTempDir('custom-trust-inline-posture-project');
+    directories.push(projectDir);
+    const inlineDigests = [
+      {
+        role: 'planner',
+        contract: 'output',
+        definitionDigest: 'sha256:2425fadd08396cc5a28251d55e4cbb52c38a9b5481b2fb17b5eae8b44c42d686',
+      },
+      {
+        role: 'planner',
+        contract: 'direct',
+        definitionDigest: 'sha256:71adff2db76071a930eef97c66bd665bb5a7c340b9222023a8d6ec2e4574f307',
+      },
+      {
+        role: 'implementer',
+        contract: 'output',
+        definitionDigest: 'sha256:6f2758a47120876d46458312910f24bb02fea0681392fcc51128528a3b035683',
+      },
+      {
+        role: 'implementer',
+        contract: 'direct',
+        definitionDigest: 'sha256:ff806ef6d53d4d0fb628416905debece9236725c95099f17891c18dff05c204a',
+      },
+    ] as const;
+
+    for (const row of inlineDigests) {
+      const declaration = command({
+        id: 'disclosure-fixture',
+        label: 'Disclosure fixture runner',
+        contract: row.contract,
+        executable: DISCLOSURE_EXECUTABLE.path,
+      });
+      const inlineScope = await resolveCustomRunnerAdmissionScope({
+        projectDir,
+        runner: { source: 'inline', command: declaration },
+        posture: inlineRunnerSecurityPosture(row.role, row.contract),
+      });
+      const configuredScope = await resolveCustomRunnerAdmissionScope({
+        projectDir,
+        runner: { source: 'configured', command: declaration },
+        posture: customRunnerSecurityPosture(row.role, row.contract),
+      });
+
+      expect(inlineScope?.definitionDigest).toBe(row.definitionDigest);
+      expect(inlineScope?.definitionDigest).not.toBe(configuredScope?.definitionDigest);
+    }
+  });
+
+  it('refuses an inline runner presented with the staged configured posture', async () => {
+    const projectDir = createTempDir('custom-trust-inline-posture-mismatch');
+    directories.push(projectDir);
+
+    await expect(
+      resolveCustomRunnerAdmissionScope({
+        projectDir,
+        runner: { source: 'inline', command: command() },
+        posture: customRunnerSecurityPosture('planner', 'output'),
+      }),
+    ).resolves.toBeNull();
   });
 
   it('rejects old diff-only planner posture and cannot reuse its direct receipt', async () => {

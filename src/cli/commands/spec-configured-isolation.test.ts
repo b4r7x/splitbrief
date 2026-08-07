@@ -12,15 +12,7 @@ import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import {
-  CONFIG_FILE,
-  PLAN_FILE,
-  RESEARCH_FILE,
-  SANDBOX_DIR,
-  SPLITBRIEF_DIR,
-  SPEC_FILE,
-  TASKS_FILE,
-} from '../../core/paths.js';
+import { CONFIG_FILE, SANDBOX_DIR, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
 import { DECLARED_PLANNER_ARTIFACT_PATH } from '../../engine/runners/types.js';
 import { registerSpecCommand } from './spec.js';
@@ -162,14 +154,8 @@ describe('spec command', () => {
       expect(evidence.cwd).not.toBe(tmp);
       expect(existsSync(evidence.cwd)).toBe(false);
 
-      const [session, ...rest] = readdirSync(sessionsRoot());
-      expect(rest).toHaveLength(0);
-      if (!session) throw new Error('expected standalone session after configured child rejection');
-      const sessionPath = join(sessionsRoot(), session);
-      for (const file of [RESEARCH_FILE, SPEC_FILE, PLAN_FILE, TASKS_FILE]) {
-        expect(existsSync(join(sessionPath, file))).toBe(false);
-      }
-      expect(existsSync(join(sessionPath, '.custom-runner-review'))).toBe(false);
+      const sessions = existsSync(sessionsRoot()) ? readdirSync(sessionsRoot()) : [];
+      expect(sessions).toHaveLength(0);
     } finally {
       if (originalHome === undefined) delete process.env.HOME;
       else process.env.HOME = originalHome;

@@ -318,6 +318,8 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'all_tasks_done':
     case 'brief_quality_passed':
     case 'brief_quality_failed':
+    case 'brief_readiness_passed':
+    case 'brief_readiness_blocked':
     case 'drift_report':
     case 'drift_chain_detected':
     case 'snapshot_created':
@@ -335,6 +337,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'implementer_generate_done':
     case 'implementer_generate_failed':
     case 'validate':
+    case 'validation_baseline':
     case 'escalate':
     case 'git_commit':
     case 'git_checkpoint':

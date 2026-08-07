@@ -8,16 +8,21 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { delimiter, join } from 'node:path';
+import { userInfo } from 'node:os';
+import { delimiter, dirname, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
+import { cliAuthChannelHostStateAccess } from '../../core/runners/cli-tool-catalog.js';
 import {
+  bridgedCliStatePresent,
   clearBridgedCliState,
   createRunnerSandboxEnv,
   createSandboxEnv,
   prependCliExecutableDirectory,
   resolveCliRunnerAuth,
   runnerAuthEnvKeys,
+  runnerSandboxIdentity,
   sandboxCredentialValues,
+  withPrependedPathDirectory,
 } from './sandbox-env.js';
 import { createRunnerCallCredentialRedactor } from '../calls/status.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -66,6 +71,53 @@ describe('prependCliExecutableDirectory', () => {
         safeRuntimePath: '/usr/bin',
       }),
     ).toThrow(/must be absolute/u);
+  });
+});
+
+describe('withPrependedPathDirectory', () => {
+  it('returns a new env with the directory first and only absolute de-duplicated PATH entries', () => {
+    const first = createTempDir('sandbox-prepend-first');
+    const second = createTempDir('sandbox-prepend-second');
+    dirs.push(first, second);
+    const env: NodeJS.ProcessEnv = {
+      PATH: [second, first, second, 'relative-shadow'].join(delimiter),
+    };
+
+    const result = withPrependedPathDirectory(env, first);
+
+    expect(result).not.toBe(env);
+    expect(result.PATH?.split(delimiter)).toEqual([first, second]);
+    expect(env.PATH).toBe([second, first, second, 'relative-shadow'].join(delimiter));
+  });
+
+  it('keeps credential redaction values attached through the prepend', async () => {
+    const hostHome = createTempDir('sandbox-prepend-creds-host');
+    const projectDir = createTempDir('sandbox-prepend-creds-project');
+    const binDir = createTempDir('sandbox-prepend-bin');
+    dirs.push(hostHome, projectDir, binDir);
+    const credential = 'prepend-bridged-canary-4f9d';
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), JSON.stringify({ token: credential }));
+    setEnv('HOME', hostHome);
+
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
+    const result = withPrependedPathDirectory(env, binDir);
+
+    expect(result.PATH?.split(delimiter)[0]).toBe(binDir);
+    expect(sandboxCredentialValues(result)).toContain(credential);
+    expect(Object.keys(result)).not.toContain(credential);
+    expect(Object.values(result)).not.toContain(credential);
+    expect(JSON.stringify(result)).not.toContain(credential);
+  });
+
+  it('rejects a non-absolute directory', () => {
+    expect(() => withPrependedPathDirectory({ PATH: '/usr/bin' }, 'node_modules/.bin')).toThrow(
+      /must be absolute/u,
+    );
   });
 });
 
@@ -132,6 +184,71 @@ describe('createSandboxEnv', () => {
     const sandboxHome = env.HOME as string;
     expect(existsSync(sandboxHome)).toBe(true);
     expect(existsSync(join(sandboxHome, '.claude'))).toBe(false);
+  });
+
+  itUnix('hands a host-account channel the real HOME and USER and nothing else', async () => {
+    const hostHome = createTempDir('sandbox-host-account-home');
+    const projectDir = createTempDir('sandbox-host-account');
+    dirs.push(hostHome, projectDir);
+    setEnv('HOME', hostHome);
+
+    const env = await createSandboxEnv(projectDir, [], 'claude-code', 'host-account');
+
+    const root = join(projectDir, SANDBOX_DIR);
+    expect(env.HOME).toBe(hostHome);
+    expect(env.USERPROFILE).toBe(hostHome);
+    expect(env.USER).toBe(userInfo().username);
+    // Only the account is real. Everything the sandbox redirects for cache and
+    // temp isolation still points inside the project.
+    expect(env.TMPDIR).toBe(join(root, 'tmp'));
+    expect(env.XDG_CONFIG_HOME).toBe(join(root, 'config'));
+    expect(env.XDG_DATA_HOME).toBe(join(root, 'data'));
+    expect(env.XDG_CACHE_HOME).toBe(join(root, 'cache'));
+    expect(env.npm_config_cache).toBe(join(root, 'npm-cache'));
+    expect(env.PIP_CACHE_DIR).toBe(join(root, 'pip-cache'));
+    expect(env.CARGO_HOME).toBe(join(root, 'cargo'));
+  });
+
+  itUnix('copies no credential into the sandbox for a host-account channel', async () => {
+    const hostHome = createTempDir('sandbox-host-account-nocopy-home');
+    const projectDir = createTempDir('sandbox-host-account-nocopy');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.claude'), { recursive: true });
+    writeFileSync(
+      join(hostHome, '.claude', '.credentials.json'),
+      '{"token":"host-account-canary"}',
+    );
+    setEnv('HOME', hostHome);
+
+    const env = await createSandboxEnv(projectDir, [], 'claude-code', 'host-account');
+
+    // The keychain is what such a channel reads, so no snapshot is staged and
+    // no credential value is registered for parent-side redaction.
+    expect(existsSync(join(projectDir, SANDBOX_DIR, 'home', '.claude'))).toBe(false);
+    expect(sandboxCredentialValues(env)).toEqual([]);
+  });
+
+  itUnix('routes a Claude Code session runner by the channel the catalog declares', async () => {
+    const hostHome = createTempDir('sandbox-session-route-home');
+    const projectDir = createTempDir('sandbox-session-route');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.claude'), { recursive: true });
+    writeFileSync(join(hostHome, '.claude', '.credentials.json'), '{"session":"fixture"}');
+    setEnv('HOME', hostHome);
+
+    const runner = { kind: 'cli', tool: 'claude-code', authChannel: 'session' } as const;
+    const env = await createRunnerSandboxEnv(projectDir, runner, 'planner');
+
+    const roleHome = join(projectDir, SANDBOX_DIR, 'planner', 'home');
+    const staged = join(roleHome, '.claude', '.credentials.json');
+    if (cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)) === 'host-account') {
+      expect(env.HOME).toBe(hostHome);
+      expect(existsSync(staged)).toBe(false);
+    } else {
+      expect(env.HOME).toBe(roleHome);
+      expect(existsSync(staged)).toBe(true);
+      expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(true);
+    }
   });
 
   it('secret canaries and unrelated ambient values are absent from the sandbox env', async () => {
@@ -251,6 +368,59 @@ describe('createSandboxEnv', () => {
   });
 });
 
+describe('bridgedCliStatePresent', () => {
+  itUnix(
+    'reports the bridged destination file, not whatever else the sandbox roots hold',
+    async () => {
+      const fakeHome = createTempDir('sandbox-bridged-host');
+      const projectDir = createTempDir('sandbox-bridged-project');
+      dirs.push(fakeHome, projectDir);
+      setEnv('HOME', fakeHome);
+
+      const env = await createSandboxEnv(projectDir, [], 'claude-code');
+      expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(false);
+
+      // What the child itself writes during a probe — Claude Code drops
+      // `.claude.json` and a backup — must never read as a credential.
+      const sandboxHome = env.HOME as string;
+      mkdirSync(join(sandboxHome, '.claude', 'backups'), { recursive: true });
+      writeFileSync(join(sandboxHome, '.claude.json'), '{}');
+      writeFileSync(join(sandboxHome, '.claude', 'backups', '.claude.json.backup.1'), '{}');
+      expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(false);
+    },
+  );
+
+  itUnix('reports a credential that the bridge actually copied in', async () => {
+    const fakeHome = createTempDir('sandbox-bridged-host-real');
+    const projectDir = createTempDir('sandbox-bridged-project-real');
+    dirs.push(fakeHome, projectDir);
+    mkdirSync(join(fakeHome, '.claude'), { recursive: true });
+    writeFileSync(join(fakeHome, '.claude', '.credentials.json'), '{"session":"fixture"}');
+    setEnv('HOME', fakeHome);
+
+    const env = await createSandboxEnv(projectDir, [], 'claude-code');
+
+    expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(true);
+    expect(await bridgedCliStatePresent(env, 'codex')).toBe(false);
+  });
+
+  itUnix('does not count a symlink planted at the bridged destination', async () => {
+    const fakeHome = createTempDir('sandbox-bridged-host-symlink');
+    const projectDir = createTempDir('sandbox-bridged-project-symlink');
+    dirs.push(fakeHome, projectDir);
+    setEnv('HOME', fakeHome);
+    const bait = join(fakeHome, 'host-credential.json');
+    writeFileSync(bait, '{"token":"host"}');
+
+    const env = await createSandboxEnv(projectDir, [], 'claude-code');
+    const destination = join(env.HOME as string, '.claude', '.credentials.json');
+    mkdirSync(dirname(destination), { recursive: true });
+    symlinkSync(bait, destination);
+
+    expect(await bridgedCliStatePresent(env, 'claude-code')).toBe(false);
+  });
+});
+
 describe('runnerAuthEnvKeys', () => {
   it('resolves an unset CLI auth channel from the descriptor, never from ambient credentials', () => {
     const claudeCode = { kind: 'cli', tool: 'claude-code', model: 'auto' } as const;
@@ -306,16 +476,16 @@ describe('runnerAuthEnvKeys', () => {
     setEnv('OPENAI_API_KEY', 'sk-openai');
 
     const implicit = await createSandboxEnv(projectDir);
-    const session = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
-    const apiKey = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'api-key',
-    });
+    const session = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
+    const apiKey = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      'implementer',
+    );
 
     expect(implicit.OPENAI_API_KEY).toBeUndefined();
     expect(session.OPENAI_API_KEY).toBeUndefined();
@@ -332,22 +502,166 @@ describe('runnerAuthEnvKeys', () => {
     setEnv('HOME', hostHome);
     setEnv('OPENAI_API_KEY', 'api-channel-reset-canary');
 
-    const session = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    // One role, one root: the clear under test only has something to clear when
+    // both acquisitions share a destination. Two roles would pass vacuously.
+    const session = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
     expect(existsSync(join(session.HOME as string, '.codex', 'auth.json'))).toBe(true);
 
-    const apiKey = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'api-key',
-    });
+    const apiKey = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      'implementer',
+    );
 
     expect(existsSync(join(apiKey.HOME as string, '.codex', 'auth.json'))).toBe(false);
     expect(apiKey.OPENAI_API_KEY).toBe('api-channel-reset-canary');
     expect(JSON.stringify(apiKey)).not.toContain(sessionToken);
+  });
+
+  itUnix("leaves another runner's bridged snapshot in place while bridging its own", async () => {
+    const hostHome = createTempDir('sandbox-shared-runners-host');
+    const projectDir = createTempDir('sandbox-shared-runners-project');
+    dirs.push(hostHome, projectDir);
+    const codexState = '{"token":"codex-shared-sandbox-canary"}';
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    mkdirSync(join(hostHome, '.claude'), { recursive: true });
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), codexState);
+    writeFileSync(
+      join(hostHome, '.claude', '.credentials.json'),
+      '{"token":"claude-shared-sandbox-canary"}',
+    );
+    setEnv('HOME', hostHome);
+
+    // Two runners of one role on different tools — the shape a role's root is
+    // meant to serve. Naming different roles would separate the destinations and
+    // stop exercising the per-tool clear altogether.
+    const codexEnv = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
+    const codexAuth = join(codexEnv.HOME as string, '.codex', 'auth.json');
+    expect(existsSync(codexAuth)).toBe(true);
+
+    const claudeEnv = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'claude-code', authChannel: 'session' },
+      'implementer',
+    );
+
+    expect(existsSync(join(claudeEnv.HOME as string, '.claude', '.credentials.json'))).toBe(true);
+    expect(readFileSync(codexAuth, 'utf8')).toBe(codexState);
+  });
+
+  itUnix("drops its own stale snapshot for an API-key channel and no other tool's", async () => {
+    const hostHome = createTempDir('sandbox-shared-api-key-host');
+    const projectDir = createTempDir('sandbox-shared-api-key-project');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    mkdirSync(join(hostHome, '.claude'), { recursive: true });
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), '{"token":"codex-api-key-neighbour"}');
+    writeFileSync(
+      join(hostHome, '.claude', '.credentials.json'),
+      '{"token":"claude-api-key-neighbour"}',
+    );
+    setEnv('HOME', hostHome);
+    setEnv('OPENAI_API_KEY', 'sk-openai-neighbour');
+
+    const claudeEnv = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'claude-code', authChannel: 'session' },
+      'implementer',
+    );
+    await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
+    const apiKey = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      'implementer',
+    );
+
+    expect(existsSync(join(apiKey.HOME as string, '.codex', 'auth.json'))).toBe(false);
+    expect(apiKey.OPENAI_API_KEY).toBe('sk-openai-neighbour');
+    expect(existsSync(join(claudeEnv.HOME as string, '.claude', '.credentials.json'))).toBe(true);
+  });
+
+  // The reverse order of the case above, for two runners of one role — two
+  // implementer profiles naming one tool on different auth channels. One
+  // destination still cannot serve two channels of one tool; separating those
+  // needs a profile-level identity in the path, which a role root does not
+  // carry. Documented as the one case a role's root cannot serve in
+  // docs/WORKTREES.md. The cross-role case is the role-scoped one below.
+  itUnix(
+    "leaves a same-tool session snapshot bridged after it in the API-key runner's own HOME",
+    async () => {
+      const hostHome = createTempDir('sandbox-channel-order-host');
+      const projectDir = createTempDir('sandbox-channel-order-project');
+      dirs.push(hostHome, projectDir);
+      const sessionState = '{"token":"codex-channel-order-canary"}';
+      mkdirSync(join(hostHome, '.codex'), { recursive: true });
+      writeFileSync(join(hostHome, '.codex', 'auth.json'), sessionState);
+      setEnv('HOME', hostHome);
+      setEnv('OPENAI_API_KEY', 'sk-openai-channel-order');
+
+      const apiKey = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+        'implementer',
+      );
+      const bridgedAuth = join(apiKey.HOME as string, '.codex', 'auth.json');
+      expect(existsSync(bridgedAuth)).toBe(false);
+
+      const session = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        'implementer',
+      );
+
+      expect(session.HOME).toBe(apiKey.HOME);
+      expect(readFileSync(bridgedAuth, 'utf8')).toBe(sessionState);
+      // The api-key env carries no redaction value for a credential its child can
+      // now read, so that runner's transcript would not redact the session token.
+      expect(sandboxCredentialValues(apiKey)).toEqual([]);
+    },
+  );
+
+  itUnix('gives each role its own sandbox root, in either acquisition order', async () => {
+    const hostHome = createTempDir('sandbox-role-root-host');
+    const sessionFirst = createTempDir('sandbox-role-root-session-first');
+    const apiKeyFirst = createTempDir('sandbox-role-root-api-key-first');
+    dirs.push(hostHome, sessionFirst, apiKeyFirst);
+    const sessionState = '{"token":"codex-role-root-canary"}';
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), sessionState);
+    setEnv('HOME', hostHome);
+    setEnv('OPENAI_API_KEY', 'sk-openai-role-root');
+    const session = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+    const apiKey = { kind: 'cli', tool: 'codex', authChannel: 'api-key' } as const;
+
+    const implementer = await createRunnerSandboxEnv(sessionFirst, session, 'implementer');
+    const planner = await createRunnerSandboxEnv(sessionFirst, apiKey, 'planner');
+
+    expect(readFileSync(join(implementer.HOME as string, '.codex', 'auth.json'), 'utf8')).toBe(
+      sessionState,
+    );
+    expect(planner.HOME).not.toBe(implementer.HOME);
+    expect(existsSync(join(planner.HOME as string, '.codex', 'auth.json'))).toBe(false);
+    expect(planner.OPENAI_API_KEY).toBe('sk-openai-role-root');
+
+    const reversedPlanner = await createRunnerSandboxEnv(apiKeyFirst, apiKey, 'planner');
+    const reversedImplementer = await createRunnerSandboxEnv(apiKeyFirst, session, 'implementer');
+
+    expect(existsSync(join(reversedPlanner.HOME as string, '.codex', 'auth.json'))).toBe(false);
+    expect(
+      readFileSync(join(reversedImplementer.HOME as string, '.codex', 'auth.json'), 'utf8'),
+    ).toBe(sessionState);
   });
 
   it('bridges host CLI state only for an explicit session channel', async () => {
@@ -361,16 +675,16 @@ describe('runnerAuthEnvKeys', () => {
     setEnv('HOME', hostHome);
     setEnv('OPENAI_API_KEY', 'sk-openai');
 
-    const session = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    const session = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
 
-    expect(session.HOME).toBe(join(projectDir, SANDBOX_DIR, 'home'));
-    expect(session.USERPROFILE).toBe(join(projectDir, SANDBOX_DIR, 'home'));
-    expect(session.XDG_CONFIG_HOME).toBe(join(projectDir, SANDBOX_DIR, 'config'));
-    expect(session.APPDATA).toBe(join(projectDir, SANDBOX_DIR, 'config'));
+    expect(session.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'home'));
+    expect(session.USERPROFILE).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'home'));
+    expect(session.XDG_CONFIG_HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'config'));
+    expect(session.APPDATA).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'config'));
     expect(readFileSync(join(session.HOME as string, '.codex', 'auth.json'), 'utf8')).toBe(
       '{"account":"selected"}',
     );
@@ -378,13 +692,13 @@ describe('runnerAuthEnvKeys', () => {
     expect(Object.values(session)).not.toContain(hostHome);
     expect(session.OPENAI_API_KEY).toBeUndefined();
 
-    const apiKey = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'api-key',
-    });
+    const apiKey = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      'implementer',
+    );
 
-    expect(apiKey.HOME).toBe(join(projectDir, SANDBOX_DIR, 'home'));
+    expect(apiKey.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'home'));
     expect(apiKey.OPENAI_API_KEY).toBe('sk-openai');
   });
 
@@ -397,11 +711,11 @@ describe('runnerAuthEnvKeys', () => {
     writeFileSync(join(hostHome, '.codex', 'auth.json'), JSON.stringify({ token: credential }));
     setEnv('HOME', hostHome);
 
-    const env = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
 
     expect(sandboxCredentialValues(env)).toContain(credential);
     expect(Object.keys(env)).not.toContain(credential);
@@ -421,11 +735,11 @@ describe('runnerAuthEnvKeys', () => {
     symlinkSync(escapeTarget, join(hostHome, '.codex', 'escape'));
     setEnv('HOME', hostHome);
 
-    const env = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
     const bridgedAuth = join(env.HOME as string, '.codex', 'auth.json');
 
     expect(readFileSync(bridgedAuth, 'utf8')).toBe('before-change');
@@ -452,12 +766,12 @@ describe('runnerAuthEnvKeys', () => {
     setEnv('HOME', hostHome);
     const runner = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
 
-    const first = await createRunnerSandboxEnv(projectDir, runner);
+    const first = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
     const bridgedAuth = join(first.HOME as string, '.codex', 'auth.json');
     expect(readFileSync(bridgedAuth, 'utf8')).toBe(JSON.stringify({ token: rotatedFrom }));
 
     writeFileSync(hostAuth, JSON.stringify({ token: rotatedTo }));
-    const second = await createRunnerSandboxEnv(projectDir, runner);
+    const second = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
 
     expect(readFileSync(bridgedAuth, 'utf8')).toBe(JSON.stringify({ token: rotatedTo }));
     expect(statSync(bridgedAuth).mode & 0o222).toBe(0);
@@ -479,11 +793,16 @@ describe('runnerAuthEnvKeys', () => {
     );
     setEnv('HOME', hostHome);
 
-    const env = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'claude-code',
-      authChannel: 'session',
-    });
+    // The file bridge is asked for directly: on macOS this channel reads the
+    // login keychain instead, and the value shapes under test are the ones a
+    // bridged `.credentials.json` carries.
+    const env = await createSandboxEnv(
+      projectDir,
+      [],
+      'claude-code',
+      'bridged-files',
+      'implementer',
+    );
     const values = sandboxCredentialValues(env);
     const redact = createRunnerCallCredentialRedactor(values);
 
@@ -509,11 +828,11 @@ describe('runnerAuthEnvKeys', () => {
     );
     setEnv('HOME', hostHome);
 
-    const env = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
     const bridgedAuth = join(env.HOME as string, '.codex', 'auth.json');
     expect(existsSync(bridgedAuth)).toBe(true);
 
@@ -524,6 +843,78 @@ describe('runnerAuthEnvKeys', () => {
     expect(readFileSync(join(hostHome, '.codex', 'auth.json'), 'utf8')).toBe(
       JSON.stringify({ token: 'cleared-token' }),
     );
+  });
+
+  itUnix(
+    'clears one named tool from the sandbox and leaves every other bridge standing',
+    async () => {
+      const hostHome = createTempDir('sandbox-state-clear-one-host');
+      const projectDir = createTempDir('sandbox-state-clear-one-project');
+      dirs.push(hostHome, projectDir);
+      mkdirSync(join(hostHome, '.codex'), { recursive: true });
+      mkdirSync(join(hostHome, '.copilot'), { recursive: true });
+      writeFileSync(join(hostHome, '.codex', 'auth.json'), '{"token":"codex-selective-clear"}');
+      writeFileSync(
+        join(hostHome, '.copilot', 'config.json'),
+        '{"token":"copilot-selective-clear"}',
+      );
+      setEnv('HOME', hostHome);
+
+      const codex = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        'implementer',
+      );
+      const copilot = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'copilot', authChannel: 'session' },
+        'implementer',
+      );
+      const codexAuth = join(codex.HOME as string, '.codex', 'auth.json');
+      const copilotAuth = join(copilot.HOME as string, '.copilot', 'config.json');
+
+      await clearBridgedCliState(projectDir, 'codex');
+
+      expect(existsSync(codexAuth)).toBe(false);
+      expect(existsSync(copilotAuth)).toBe(true);
+
+      await clearBridgedCliState(projectDir);
+
+      expect(existsSync(copilotAuth)).toBe(false);
+    },
+  );
+
+  itUnix('clears bridged snapshots from every role root, not only the unscoped one', async () => {
+    const hostHome = createTempDir('sandbox-role-clear-host');
+    const projectDir = createTempDir('sandbox-role-clear-project');
+    dirs.push(hostHome, projectDir);
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    mkdirSync(join(hostHome, '.copilot'), { recursive: true });
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), '{"token":"codex-role-clear"}');
+    writeFileSync(join(hostHome, '.copilot', 'config.json'), '{"token":"copilot-role-clear"}');
+    setEnv('HOME', hostHome);
+    const codex = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+
+    const planner = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'copilot', authChannel: 'session' },
+      'planner',
+    );
+    const implementer = await createRunnerSandboxEnv(projectDir, codex, 'implementer');
+    // No runner acquisition can reach the unscoped root any more — createRunnerSandboxEnv
+    // requires a role — but a tree carrying one from an earlier build still has to be
+    // swept, so teardown is asserted against a root only createSandboxEnv can write.
+    const unscoped = await createSandboxEnv(projectDir, [], 'codex');
+    const bridged = [
+      join(planner.HOME as string, '.copilot', 'config.json'),
+      join(implementer.HOME as string, '.codex', 'auth.json'),
+      join(unscoped.HOME as string, '.codex', 'auth.json'),
+    ];
+    expect(bridged.map((path) => existsSync(path))).toEqual([true, true, true]);
+
+    await clearBridgedCliState(projectDir);
+
+    expect(bridged.map((path) => existsSync(path))).toEqual([false, false, false]);
   });
 
   it('fails closed to an isolated environment when no selected tool is supplied', async () => {
@@ -570,5 +961,35 @@ describe('runnerAuthEnvKeys', () => {
         model: 'm',
       }),
     ).toContain('CUSTOM_PROVIDER_KEY');
+  });
+});
+
+describe('runnerSandboxIdentity', () => {
+  it('separates runners whose sandbox differs and repeats for one that does not', () => {
+    const codexSession = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+
+    expect(runnerSandboxIdentity(codexSession)).toBe(runnerSandboxIdentity({ ...codexSession }));
+    expect(runnerSandboxIdentity(codexSession)).not.toBe(
+      runnerSandboxIdentity({ kind: 'cli', tool: 'codex', authChannel: 'api-key' }),
+    );
+    expect(runnerSandboxIdentity(codexSession)).not.toBe(
+      runnerSandboxIdentity({ kind: 'cli', tool: 'claude-code', authChannel: 'session' }),
+    );
+  });
+
+  it('never carries a literal apiKey', () => {
+    const literalKey = 'sk-literal-identity-canary-4f9d';
+
+    const identity = runnerSandboxIdentity({
+      kind: 'api',
+      provider: 'custom-provider',
+      service: 'custom-provider',
+      offering: 'payg',
+      apiBase: 'https://example.com/v1',
+      apiKey: literalKey,
+      model: 'm',
+    });
+
+    expect(identity).not.toContain(literalKey);
   });
 });

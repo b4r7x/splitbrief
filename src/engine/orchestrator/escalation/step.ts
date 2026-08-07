@@ -1,7 +1,7 @@
 import { saveState } from '../../../core/state/persistence.js';
+import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
-import { createStagedProject } from '../approval/staged-project.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { publishError } from '../events.js';
 import { createRetryRuntime, stateForRetryProfile } from './retry-runtime.js';
@@ -23,7 +23,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     usageCategory,
     retryFailureFallback,
     profileOverride,
-    stagedProjectRole,
+    isolationRole,
     resultTool,
     resultModel,
     invokeRetry,
@@ -47,35 +47,42 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     saveState(ctx, state);
   }
 
-  const staged = await createStagedProject(ctx.projectDir, retryRuntime.config, stagedProjectRole);
+  const workspace = await ctx.isolation.acquire({
+    role: isolationRole ?? 'implementer',
+    config: retryRuntime.config,
+    writesFiles:
+      retryRuntime.implementer.capabilities?.writesFiles ??
+      defaultImplementerWriteMode(retryRuntime.config.implementer.kind),
+  });
   let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
   try {
     retryResult = await invokeRetry({
       task,
       lastError,
       attempts,
-      projectDir: staged.projectDir,
+      projectDir: workspace.projectDir,
       config: retryRuntime.config,
       implementer: retryRuntime.implementer,
       ...(retryRuntime.implementerProfile !== undefined && {
         implementerProfile: retryRuntime.implementerProfile,
       }),
       signal: ctx.signal,
-      sandboxEnv: staged.sandboxEnv,
+      sandboxEnv: workspace.sandboxEnv,
       fileIgnoreProjectDir: ctx.projectDir,
+      changeDetection: workspace.changeDetection,
     });
   } catch (err) {
-    staged.cleanup();
+    workspace.cleanup();
     throw err;
   }
   state = addUsageAndSave(ctx, state, usageCategory, retryResult.usage);
 
   if (!retryResult.success) {
-    staged.cleanup();
+    workspace.cleanup();
     return { state, task, lastError: retryResult.error ?? retryFailureFallback, attempts };
   }
   if (ctx.signal?.aborted) {
-    staged.cleanup();
+    workspace.cleanup();
     return {
       state,
       task,
@@ -94,13 +101,12 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
     callbacks: ctx.callbacks,
     config: ctx.config,
     getApprovalEnabled: ctx.getApprovalEnabled,
-    staged,
-    usesStaging: true,
+    workspace,
+    usesIsolation: true,
     taskStartSnapshot: ctx.taskStartSnapshot,
     dependsOnFiles: ctx.dependsOnFiles,
-    promoteFromStagingOnly: true,
     signal: ctx.signal,
-    cleanup: staged.cleanup,
+    cleanup: workspace.cleanup,
     handleConflict: (s, files) =>
       handleApprovalTimeUserEditConflict({ ctx, state: s, task, files }),
     onApproved: (decision) => persistRetryApprovalEvidence(ctx, state, task, decision),
@@ -176,6 +182,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
         completed: true,
         method,
         attempts,
+        acceptance: commitResult.acceptance,
         ...(commitResult.validationResults.length > 0 && {
           validationResults: commitResult.validationResults,
         }),
@@ -188,7 +195,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
 
   const validationError = formatValidationError(
     commitResult.validationResults,
-    ctx.validator.getBaselineFailingStages?.(),
+    commitResult.acceptance,
   );
   onValidationAfterRetryFail?.(validationError);
   return { state: commitResult.state, task, lastError: validationError, attempts };

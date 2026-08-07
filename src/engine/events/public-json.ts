@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { TaskIdSchema } from '../../core/schemas/task.js';
-import { RecoveryActionSchema, RecoveryReasonSchema } from '../../core/schemas/enums.js';
+import {
+  RecoveryActionSchema,
+  RecoveryReasonSchema,
+  RecoveryStatusSchema,
+} from '../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import { protectConsumerPayload, type CallConsumerContext } from '../../core/consumer-policy.js';
 import { EngineEventSchema } from './schema.js';
@@ -20,6 +24,7 @@ export const HeadlessJsonRecordSchema = z.discriminatedUnion('type', [
     type: z.literal('recovery_required'),
     sessionId: z.string(),
     reason: RecoveryReasonSchema,
+    status: RecoveryStatusSchema.optional(),
     message: z.string(),
     taskId: TaskIdSchema.optional(),
     files: z.array(z.string()).optional(),

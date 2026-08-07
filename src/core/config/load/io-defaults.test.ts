@@ -120,10 +120,13 @@ describe('config defaults', () => {
       expect(loadConfig(dir).config).toEqual(createDefaultConfig());
     });
 
-    it('persists the Claude subscription session channel in a new default config', async () => {
-      const dir = join(TMP, 'default-claude-session-channel');
+    it('persists the subscription Claude channel in a new default config on every platform', async () => {
+      const dir = join(TMP, 'default-claude-auth-channel');
       mkdirSync(dir, { recursive: true });
       await initConfig(dir);
+      // A fresh config must never bill the user per token for a subscription
+      // they already pay for. macOS reaches the login keychain through the host
+      // account instead of the file bridge, so `session` works there too.
 
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),

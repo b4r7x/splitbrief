@@ -43,6 +43,7 @@ describe('makeImplementerRetryInvoker', () => {
       signal,
       sandboxEnv: { FOO: 'bar' },
       fileIgnoreProjectDir: '/project',
+      changeDetection: 'file-hashes',
     });
 
     expect(result).toEqual({
@@ -65,6 +66,7 @@ describe('makeImplementerRetryInvoker', () => {
       signal,
       sandboxEnv: { FOO: 'bar' },
       fileIgnoreProjectDir: '/project',
+      changeDetection: 'file-hashes',
     });
   });
 

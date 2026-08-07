@@ -7,12 +7,7 @@ import { getCurrentCommitSha, resolveRunStartBase } from '../../lib/git/refs.js'
 import { hasCommits } from '../../lib/git/repository.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
 import { isENOENT } from '../../lib/process/errors.js';
-import {
-  assertExistingPathConfined,
-  assertPathConfined,
-  pathConfinementError,
-} from '../../lib/path-confinement.js';
-import { error, matches } from '../../utils/error.js';
+import { assertExistingPathConfined, assertPathConfined } from '../../lib/path-confinement.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { matchesActionPattern } from './approval/action-classifier.js';
 import type { Task } from '../../core/schemas/task.js';
@@ -23,22 +18,13 @@ import type {
 
 export type ChangedFilesBaseline = {
   head: string | null;
+  /** values: a sha256 hex, 'missing', or 'unreadable' */
   fingerprints: Map<string, string>;
   runStartChangedFiles?: ReadonlySet<string> | undefined;
   activeTaskSnapshot?: ChangedFilesSnapshot | undefined;
 };
 
-export const changedFilesBaselineError = {
-  fingerprintRead: (file: string, cause: unknown) =>
-    error(
-      'changed-file-fingerprint-read',
-      `failed to fingerprint changed file: ${file}`,
-      { file },
-      cause,
-    ),
-} as const;
-
-const isPathConfinementEscape = matches('path-confined-escape');
+export const UNREADABLE_FINGERPRINT = 'unreadable';
 
 export function serializeChangedFilesBaseline(
   baseline: ChangedFilesBaseline,
@@ -79,6 +65,13 @@ export function userVisibleChangedFiles(files: string[]): string[] {
   return files.filter((file) => !isInternalGitStatusPath(file));
 }
 
+export function unreadableChangedFiles(baseline: ChangedFilesBaseline): string[] {
+  return [...baseline.fingerprints]
+    .filter(([, fingerprint]) => fingerprint === UNREADABLE_FINGERPRINT)
+    .map(([file]) => file)
+    .sort();
+}
+
 async function captureHead(projectDir: string): Promise<string | null> {
   return (await hasCommits(projectDir)) ? getCurrentCommitSha(projectDir) : null;
 }
@@ -98,13 +91,12 @@ async function fingerprintChangedFile(projectDir: string, file: string): Promise
   const filePath = resolve(projectDir, file);
   try {
     const stat = lstatSync(filePath);
-    if (stat.isSymbolicLink()) throw pathConfinementError.symlinkRead(filePath);
+    if (stat.isSymbolicLink()) return UNREADABLE_FINGERPRINT;
     assertExistingPathConfined(file, projectDir);
     return sha256Hex(await readFile(filePath, 'utf-8'));
   } catch (cause) {
     if (isENOENT(cause)) return 'missing';
-    if (isPathConfinementEscape(cause) || pathConfinementError.isSymlinkRead(cause)) throw cause;
-    throw changedFilesBaselineError.fingerprintRead(file, cause);
+    return UNREADABLE_FINGERPRINT;
   }
 }
 

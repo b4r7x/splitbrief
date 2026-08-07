@@ -71,7 +71,7 @@ src/cli/
 │   └── terminal-handover.ts
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
 ├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
-├── hook-trust-prompt.ts  # TTY trust prompt for hook config; refuses in non-TTY unless --allow-hooks
+├── hook-trust-prompt.ts  # TTY hook disclosure + trust prompt (executable, resolved path, argv); refuses in non-TTY unless --allow-hooks
 ├── …                  # plus leaf modules (crash-diagnostic, render-table, parse-at-files, …) — `rg --files src/cli` for the full set
 ├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core). Listing is representative; `rg --files src/cli/commands` for the full set
 │   ├── start/
@@ -172,7 +172,7 @@ src/engine/codebase/
 
 ```
 src/core/hooks/
-└── trust.ts           # hook config + module file digest trust hash; compared against .splitbrief/hook-trust.json
+└── trust.ts           # hook config + module file digest trust hash; compared against the owner's receipt in ~/.splitbrief/trust/hooks.json
 ```
 
 ### `src/core/tokens/` — token math

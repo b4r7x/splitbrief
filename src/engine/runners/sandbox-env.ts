@@ -1,12 +1,16 @@
 import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { homedir, userInfo } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import {
+  cliAuthChannelHostStateAccess,
   defaultCliAuthChannel,
   selectCliAuthChannel,
   type CliAuthChannel,
+  type CliHostStateAccess,
   type CliToolId,
+  type RunnerRole,
 } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
@@ -53,9 +57,41 @@ export function prependCliExecutableDirectory({
 }
 
 /**
- * A session channel gets a snapshot of the selected CLI's state, never the
- * host HOME itself.  Keep this list explicit: adding a path here is an
- * admission decision and must be backed by the corresponding catalog entry.
+ * Returns a new environment with `directory` first on PATH. The spread over
+ * the input drops the non-enumerable credential metadata, so it is re-attached
+ * from the source env before the copy is handed to a child.
+ */
+export function withPrependedPathDirectory(
+  env: NodeJS.ProcessEnv,
+  directory: string,
+): NodeJS.ProcessEnv {
+  if (!isAbsolute(directory)) {
+    throw error('prepended-path-invalid', 'Directory to prepend to PATH must be absolute.');
+  }
+  const result = { ...env };
+  const entries = new Set<string>([directory]);
+  for (const entry of (result.PATH ?? '').split(delimiter)) {
+    if (entry.length > 0 && isAbsolute(entry)) entries.add(entry);
+  }
+  result.PATH = [...entries].join(delimiter);
+  const credentialValues = sandboxCredentialValues(env);
+  if (credentialValues.length > 0) {
+    Object.defineProperty(result, SANDBOX_CREDENTIAL_VALUES, {
+      value: credentialValues,
+      enumerable: false,
+      configurable: false,
+      writable: false,
+    });
+  }
+  return result;
+}
+
+/**
+ * A file-bridged session channel gets a snapshot of the selected CLI's state,
+ * never the host HOME itself.  Keep this list explicit: adding a path here is
+ * an admission decision and must be backed by the corresponding catalog entry.
+ * A channel whose credential is an OS keychain item has no entry here at all —
+ * see `hostAccountState`.
  */
 const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
   'claude-code': [
@@ -403,21 +439,77 @@ async function bridgeCliState(
 }
 
 /**
- * Drop every bridged host-credential snapshot from a project's sandbox. The
- * bridge re-creates whatever the next call needs, so an admitted subscription
- * token never outlives the run it was staged for.
+ * Whether a credential actually landed where `tool`'s child will look inside
+ * `env`. Only the exact destinations `bridgeCliState` writes count: the sandbox
+ * roots also hold whatever the child itself writes — Claude Code drops
+ * `.claude.json` and a backup during a readiness probe — so "the sandbox HOME
+ * is non-empty" is a probe reading its own litter, not evidence of a credential.
+ *
+ * Ask this only about a `bridged-files` channel. A `host-account` env points at
+ * the real home, where these paths belong to the host rather than to any
+ * snapshot, and the credential the channel actually uses is a keychain item
+ * that leaves no file at all.
  */
-export async function clearBridgedCliState(projectDir: string): Promise<void> {
+export async function bridgedCliStatePresent(
+  env: NodeJS.ProcessEnv,
+  tool: CliToolId,
+): Promise<boolean> {
+  const roots: Readonly<Record<SandboxStateRoot, string | undefined>> = {
+    home: env.HOME,
+    config: env.XDG_CONFIG_HOME,
+    data: env.XDG_DATA_HOME,
+  };
+  for (const statePath of CLI_STATE_PATHS[tool]) {
+    const root = roots[statePath.destination];
+    if (root === undefined) continue;
+    if ((await existingPath(join(root, statePath.destinationPath))) === 'file') return true;
+  }
+  return false;
+}
+
+const SANDBOX_ROLES: readonly RunnerRole[] = ['planner', 'implementer'];
+
+/**
+ * Each role gets its own sandbox root. A run's roles share one worktree, so a
+ * single root would make one role's bridged-credential destination the other's,
+ * and two runners of the same tool on different auth channels would clear and
+ * re-bridge over each other. The unscoped root is left only for a caller that
+ * has no role to name — a detection probe, a readiness probe, a conformance
+ * harness, each of which works in its own fresh temporary directory — and no
+ * role-scoped acquisition ever writes into it. Every runner acquisition names
+ * its role, which `createRunnerSandboxEnv` requires.
+ */
+function sandboxRoot(projectDir: string, role: RunnerRole | undefined): string {
   const root = join(projectDir, SANDBOX_DIR);
+  return role === undefined ? root : join(root, role);
+}
+
+async function clearBridgedStateUnder(root: string, tool: CliToolId | undefined): Promise<void> {
   const stateRoots: Readonly<Record<SandboxStateRoot, string>> = {
     home: join(root, 'home'),
     config: join(root, 'config'),
     data: join(root, 'data'),
   };
-  for (const paths of Object.values(CLI_STATE_PATHS)) {
+  const cleared = tool === undefined ? Object.values(CLI_STATE_PATHS) : [CLI_STATE_PATHS[tool]];
+  for (const paths of cleared) {
     for (const statePath of paths) {
       await rm(join(stateRoots[statePath.destination], statePath.destinationPath), { force: true });
     }
+  }
+}
+
+/**
+ * Drop bridged host-credential snapshots from every sandbox root a project
+ * carries. The bridge re-creates whatever the next call needs, so an admitted
+ * subscription token never outlives the run it was staged for. A `tool` narrows
+ * the clear to that tool's destinations: one role's sandbox still serves that
+ * role's runners — two implementer profiles on different tools — and dropping a
+ * tool the caller is not re-bridging would strand the runner still reading it.
+ * Without one every snapshot goes, which is what teardown needs.
+ */
+export async function clearBridgedCliState(projectDir: string, tool?: CliToolId): Promise<void> {
+  for (const role of [undefined, ...SANDBOX_ROLES]) {
+    await clearBridgedStateUnder(sandboxRoot(projectDir, role), tool);
   }
 }
 
@@ -458,12 +550,54 @@ export function runnerAuthEnvKeys(runner: RunnerLike): string[] {
   return [...keys];
 }
 
+/**
+ * Two runners with the same identity are handed byte-identical sandbox
+ * environments for a directory, so one env may be built once and reused for
+ * both. Only non-secret discriminators go in: environment variable names,
+ * never their values, and never a literal `apiKey`.
+ */
+export function runnerSandboxIdentity(runner: RunnerLike): string {
+  const parts: string[] = [runner.kind];
+  if (runner.kind === 'cli') parts.push(runner.tool, resolveCliRunnerAuth(runner).id);
+  if (runner.kind === 'api') parts.push(runner.provider);
+  return [...parts, ...runnerAuthEnvKeys(runner).toSorted()].join('\u0000');
+}
+
+/**
+ * The host account state a `host-account` channel's child keeps. macOS resolves
+ * the login keychain through `HOME` and keys the Claude Code session item on the
+ * account name in `USER`; measured against `claude auth status` on 2026-08-06, a
+ * child given the real `HOME` but not `USER` still reports `"loggedIn": false`.
+ * Nothing else the sandbox redirects is handed back, so temp, cache and XDG
+ * state stay isolated — but this child does read and write the real home
+ * directory. See docs/WORKTREES.md.
+ */
+function hostAccountState(): Readonly<Record<string, string>> {
+  const home = homedir();
+  return { HOME: home, USERPROFILE: home, USER: userInfo().username };
+}
+
+/**
+ * Builds the sandbox environment one runner is handed. `selectedCli` names the
+ * CLI the environment belongs to: only that tool's snapshot is cleared, so a
+ * second runner sharing this sandbox keeps the state it is still reading.
+ * `hostState` says how that CLI's host credential reaches the child —
+ * `bridged-files` copies the allowlisted snapshot in, `host-account` copies
+ * nothing and hands back the host `HOME`/`USER` its OS keychain resolves
+ * through, `none` does neither. Without a `selectedCli` — an `api` or
+ * `agent-sdk` runner — nothing is cleared and nothing is bridged: the child
+ * reads no CLI state, so it has none to refresh. `role` selects that runner's
+ * own sandbox root, which is what keeps a role's clear off a sibling role's
+ * live snapshot.
+ */
 export async function createSandboxEnv(
   projectDir: string,
   preserveEnvKeys: string[] = [],
-  bridgeHostCliState?: CliToolId | undefined,
+  selectedCli?: CliToolId | undefined,
+  hostState: CliHostStateAccess = 'bridged-files',
+  role?: RunnerRole | undefined,
 ): Promise<NodeJS.ProcessEnv> {
-  const root = join(projectDir, SANDBOX_DIR);
+  const root = sandboxRoot(projectDir, role);
   const home = join(root, 'home');
   const tmp = join(root, 'tmp');
   const cache = join(root, 'cache');
@@ -478,13 +612,15 @@ export async function createSandboxEnv(
     ),
   );
   // A new child must never inherit a previous run's selected session state,
-  // including when this invocation selects an API-key channel instead.
-  await clearBridgedCliState(projectDir);
+  // including when this invocation selects an API-key channel instead. The clear
+  // is confined to this role's own root, so it can only reach a snapshot this
+  // role bridged. A runner with no CLI identity has no snapshot of its own to
+  // drop and must not touch another runner's. Teardown sweeps what is left.
+  if (selectedCli !== undefined) await clearBridgedStateUnder(root, selectedCli);
   const env = createSanitizedChildEnv(process.env, preserveEnvKeys);
   const sandboxState = {
     PATH: await sanitizedRuntimePath(projectDir),
-    HOME: home,
-    USERPROFILE: home,
+    ...(hostState === 'host-account' ? hostAccountState() : { HOME: home, USERPROFILE: home }),
     TMPDIR: tmp,
     TMP: tmp,
     TEMP: tmp,
@@ -498,8 +634,8 @@ export async function createSandboxEnv(
     CARGO_HOME: cargoHome,
   };
   let credentialValues: readonly string[] = [];
-  if (bridgeHostCliState !== undefined) {
-    credentialValues = await bridgeCliState(bridgeHostCliState, process.env, {
+  if (selectedCli !== undefined && hostState === 'bridged-files') {
+    credentialValues = await bridgeCliState(selectedCli, process.env, {
       home,
       config,
       data,
@@ -515,12 +651,25 @@ export async function createSandboxEnv(
   return result;
 }
 
+/**
+ * `role` is required. A runner always has one, and an omitted role would put the
+ * acquisition back in the shared unscoped root — the exact topology per-role
+ * roots exist to remove. Requiring it makes the next call site a type error
+ * rather than something a reviewer has to notice.
+ */
 export async function createRunnerSandboxEnv(
   projectDir: string,
   runner: RunnerLike,
+  role: RunnerRole,
 ): Promise<NodeJS.ProcessEnv> {
-  const channel = runner.kind === 'cli' ? resolveCliRunnerAuth(runner) : undefined;
-  const bridgeTool =
-    runner.kind === 'cli' && channel?.stateBridge === 'host-cli-state' ? runner.tool : undefined;
-  return createSandboxEnv(projectDir, runnerAuthEnvKeys(runner), bridgeTool);
+  if (runner.kind !== 'cli') {
+    return createSandboxEnv(projectDir, runnerAuthEnvKeys(runner), undefined, 'none', role);
+  }
+  return createSandboxEnv(
+    projectDir,
+    runnerAuthEnvKeys(runner),
+    runner.tool,
+    cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)),
+    role,
+  );
 }

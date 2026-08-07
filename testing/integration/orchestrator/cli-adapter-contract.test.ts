@@ -593,7 +593,6 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         executable: unauthenticatedExecutable,
         probe: CLI_IMPLEMENTER_ADAPTERS[toolId].probe,
         authChannel: AUTH_CHANNELS[toolId],
-        keychainPresence: async () => false,
       }),
     );
     // Readiness projects the adapter-declared fact: no generic version or

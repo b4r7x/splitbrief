@@ -111,7 +111,9 @@ function configuredDirectPlannerConfig(markerEnv: string): Config {
 }
 
 describe('spec command', () => {
-  it('runs a real configured child after one interactive confirmation and reuses its receipt', async () => {
+  it('runs a real configured child after one interactive confirmation and reuses its receipt', {
+    timeout: 60_000,
+  }, async () => {
     const home = createTempDir('spec-command-configured-receipt-home');
     const markerEnv = `R7_STANDALONE_MARKER_${process.pid}`;
     const markerPath = join(home, 'configured-child-calls');
@@ -197,9 +199,11 @@ describe('spec command', () => {
       else process.env[markerEnv] = originalMarker;
       cleanupTempDir(home);
     }
-  }, 30_000);
+  });
 
-  it('denies a real configured child before it writes canonical standalone artifacts', async () => {
+  it('denies a real configured child before it writes canonical standalone artifacts', {
+    timeout: 60_000,
+  }, async () => {
     const home = createTempDir('spec-command-configured-deny-home');
     const markerEnv = `R7_STANDALONE_MARKER_${process.pid}`;
     const markerPath = join(home, 'configured-child-calls');
@@ -249,7 +253,9 @@ describe('spec command', () => {
     }
   });
 
-  it('requires a receipt or explicit grant for a non-TTY configured child', async () => {
+  it('requires a receipt or explicit grant for a non-TTY configured child', {
+    timeout: 60_000,
+  }, async () => {
     const home = createTempDir('spec-command-configured-headless-home');
     const markerEnv = `R7_STANDALONE_MARKER_${process.pid}`;
     const markerPath = join(home, 'configured-child-calls');
@@ -326,5 +332,5 @@ describe('spec command', () => {
       else process.env[markerEnv] = originalMarker;
       cleanupTempDir(home);
     }
-  }, 30_000);
+  });
 });

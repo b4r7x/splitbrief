@@ -219,6 +219,98 @@ describe('runPlannerCallInContinuationLoop — signal propagation', () => {
   });
 });
 
+describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => {
+  it('retries the quick single call exactly once when it returns zero tasks', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const quickPlan = vi
+      .fn()
+      .mockResolvedValueOnce({ spec: '', plan: '', tasks: [], usage: null })
+      .mockResolvedValueOnce({ spec: '', plan: '', tasks: [makeTask()], usage: null });
+    const planner = makePlanner({ quickPlan });
+    const wctx = makeWctx(projectDir, sessionId);
+
+    const { result } = await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    expect(quickPlan).toHaveBeenCalledTimes(2);
+    expect(result.tasks).toHaveLength(1);
+  });
+
+  it('returns the tokens of both calls and the union of their phases', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const quickPlan = vi
+      .fn()
+      .mockResolvedValueOnce({
+        spec: '',
+        plan: '',
+        tasks: [],
+        usage: { inputTokens: 30, outputTokens: 15 },
+        phases: [
+          { text: '# first tasks', filename: 'tasks.md' },
+          { text: '# first spec', filename: 'spec.md' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        spec: '',
+        plan: '',
+        tasks: [makeTask()],
+        usage: { inputTokens: 12, outputTokens: 7 },
+        phases: [{ text: '# retry tasks', filename: 'tasks.md' }],
+      });
+    const planner = makePlanner({ quickPlan });
+    const wctx = makeWctx(projectDir, sessionId);
+
+    const { result } = await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    expect(result.usage).toEqual({ inputTokens: 42, outputTokens: 22 });
+    expect(result.phases).toEqual([
+      { text: '# retry tasks', filename: 'tasks.md' },
+      { text: '# first spec', filename: 'spec.md' },
+    ]);
+  });
+
+  it('leaves the zero-task warning to the caller that persists the planner text', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const quickPlan = vi.fn().mockResolvedValue({
+      spec: '',
+      plan: '',
+      tasks: [],
+      usage: null,
+      phases: [{ text: '# empty', filename: 'tasks.md' }],
+    });
+    const planner = makePlanner({ quickPlan });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWctx(projectDir, sessionId, { bus });
+
+    const { result } = await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    expect(quickPlan).toHaveBeenCalledTimes(2);
+    expect(result.tasks).toHaveLength(0);
+    expect(
+      events.find(
+        (e) => e.type === 'warning' && 'code' in e && e.code === 'planner_returned_zero_tasks',
+      ),
+    ).toBeUndefined();
+  });
+});
+
 describe('runPlannerCallInContinuationLoop — runner auth', () => {
   it('runs a legacy CLI planner config on its descriptor default auth channel', async () => {
     const { projectDir, sessionId } = setupSession();

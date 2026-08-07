@@ -15,7 +15,12 @@ import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { sessionDir } from '../../core/paths.js';
 import type { SpawnServerOptions, SpawnServerResult } from '../../engine/ipc/spawn-server.js';
 import { buildServerArgs } from '../../engine/ipc/spawn-server.js';
-import { writeReadyReadinessFixtures, writeConfigMarker } from '#testing/helpers/start-command.js';
+import {
+  prepareExecutionMock,
+  setupRunnerTrustIsolation,
+  writeReadyReadinessFixtures,
+  writeConfigMarker,
+} from '#testing/helpers/start-command.js';
 import { writeEmptyDetectionCache } from '#testing/helpers/write-empty-detection-cache.js';
 import { formatDetachedAttachHint } from './attach-hint.js';
 
@@ -32,7 +37,10 @@ const fakeDeps: StartDeps = {
   runRpc: runRpcMock as unknown as StartDeps['runRpc'],
   initStores: async () => {},
   renderApp: renderAppFake,
+  prepareExecution: prepareExecutionMock,
 };
+
+setupRunnerTrustIsolation();
 
 let tmp = '';
 

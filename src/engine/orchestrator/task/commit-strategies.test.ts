@@ -5,7 +5,7 @@ import { execSync } from 'node:child_process';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, passingResults } from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupCommitTestProjects,
   firstCommitTask,
@@ -26,6 +26,13 @@ import {
 } from '../../../lib/git/staging.js';
 import { getInProgressGitOp } from '../../../lib/git/repository.js';
 import { validateCommitAndAdvance } from './commit.js';
+import type { ValidationAcceptance } from '../validation/acceptance.js';
+
+const acceptedAcceptance: ValidationAcceptance = {
+  accepted: true,
+  exemptStages: [],
+  blockingStages: [],
+};
 
 afterEach(() => {
   cleanupCommitTestProjects();
@@ -42,7 +49,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
@@ -86,7 +93,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     const result = await validateCommitAndAdvance({
       task,
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({
@@ -126,7 +133,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
@@ -171,7 +178,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
@@ -211,7 +218,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'none' } } }),
@@ -236,7 +243,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'checkpoint' } } }),
@@ -276,7 +283,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'checkpoint' } } }),
@@ -307,7 +314,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),
@@ -335,7 +342,7 @@ describe('validateCommitAndAdvance — commit strategies', () => {
 
     await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),

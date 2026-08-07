@@ -2,14 +2,13 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerResult } from '../../implementers/types.js';
-import type { StagedProject } from '../approval/staged-project.js';
+import type { IsolatedWorkspace } from '../isolation/types.js';
 import type { GateDecision } from '../approval/types.js';
 import { createBusTextHandler } from '../events.js';
 import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
 import { gateChangedFiles } from '../approval/gate-files.js';
-import { createStagedProject } from '../approval/staged-project.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
@@ -17,8 +16,8 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 export type RunImplementationResult = {
   state: WorkflowState;
   implResult: ImplementerResult;
-  staged: StagedProject | undefined;
-  usesStaging: boolean;
+  workspace: IsolatedWorkspace | undefined;
+  usesIsolation: boolean;
   preApplyApprovalDenied: boolean;
   preApplyApprovedFiles: string[];
 };
@@ -42,17 +41,19 @@ export async function runImplementation(opts: {
   );
   const streamingFeed = createStreamingFeed(task.id, opts.streamingSink ?? noopStreamingSink);
 
-  const usesStaging = wctx.implementer.capabilities?.writesFiles === 'direct';
-  let staged: StagedProject | undefined;
+  const usesIsolation = wctx.implementer.capabilities?.writesFiles === 'direct';
+  let workspace: IsolatedWorkspace | undefined;
   let preApplyApprovalDenied = false;
   let preApplyApprovedFiles: string[] = [];
 
   let loop: { state: WorkflowState; value: ImplementerResult };
   try {
-    staged = usesStaging ? await createStagedProject(projectDir, config) : undefined;
+    workspace = usesIsolation
+      ? await wctx.isolation.acquire({ role: 'implementer', writesFiles: 'direct', config })
+      : undefined;
     loop = await withContinuationLoop<ImplementerResult>({
       ctx: {
-        projectDir: staged?.projectDir ?? projectDir,
+        projectDir: workspace?.projectDir ?? projectDir,
         sessionId,
         persistRef: { projectDir, sessionId },
         callbacks,
@@ -65,7 +66,7 @@ export async function runImplementation(opts: {
       body: ({ signal, continuationPrompt, steer, recordOutput }) =>
         wctx.implementer.implement({
           task,
-          projectDir: staged?.projectDir ?? projectDir,
+          projectDir: workspace?.projectDir ?? projectDir,
           config,
           context,
           languageContext: buildProjectLanguageContext(
@@ -79,13 +80,14 @@ export async function runImplementation(opts: {
           },
           sessionId,
           signal,
-          sandboxEnv: staged?.sandboxEnv,
-          fileIgnoreProjectDir: staged ? projectDir : undefined,
+          sandboxEnv: workspace?.sandboxEnv,
+          fileIgnoreProjectDir: workspace ? projectDir : undefined,
+          changeDetection: workspace?.changeDetection,
           continuationPrompt,
           steer,
           phase: state.phase,
           approveWrite: async (file) => {
-            if (staged) return { allow: true };
+            if (workspace) return { allow: true };
             const decision = await gateChangedFiles({
               changedFiles: [file],
               task,
@@ -115,7 +117,7 @@ export async function runImplementation(opts: {
         }),
     });
   } catch (err) {
-    staged?.cleanup();
+    workspace?.cleanup();
     throw err;
   } finally {
     streamingFeed.stop();
@@ -126,8 +128,8 @@ export async function runImplementation(opts: {
   return {
     state,
     implResult: loop.value,
-    staged,
-    usesStaging,
+    workspace,
+    usesIsolation,
     preApplyApprovalDenied,
     preApplyApprovedFiles,
   };

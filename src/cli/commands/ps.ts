@@ -1,9 +1,19 @@
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Command } from 'commander';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { assertNotWindows } from '../windows-guard.js';
 import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
-import { sessionsRoot } from '../../core/paths.js';
+import {
+  sessionsRoot,
+  sessionDir,
+  isolationMarkerPath,
+  TREES_DIR,
+  isValidSessionId,
+} from '../../core/paths.js';
+import { listOrphanSessionIds, pruneOrphanSessions } from '../../core/sessions/orphans.js';
+import { assertTreesDirReadable } from '../../engine/worktree/path.js';
+import { warnError } from '../../lib/warn.js';
 import {
   assignSessionAliases,
   listValidSessionDirs,
@@ -97,23 +107,93 @@ function assignDisplayedAliases(rows: SessionRow[]): SessionRow[] {
   return rows.map((row) => ({ ...row, alias: aliasBySession.get(row.sessionId) ?? null }));
 }
 
+type OrphanedIsolationWorktree = { slug: string; sessionId: string };
+
+function listOrphanedIsolationWorktrees(projectDir: string): OrphanedIsolationWorktree[] {
+  const treesDir = join(projectDir, TREES_DIR);
+  if (!existsSync(treesDir)) return [];
+  const orphaned: OrphanedIsolationWorktree[] = [];
+  try {
+    assertTreesDirReadable(projectDir);
+    for (const entry of readdirSync(treesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const wtDir = join(treesDir, entry.name);
+      if (!existsSync(join(wtDir, '.git')) || !statSync(join(wtDir, '.git')).isFile()) continue;
+      let sessionId: string;
+      try {
+        sessionId = readFileSync(isolationMarkerPath(wtDir), 'utf8').trim();
+      } catch {
+        continue;
+      }
+      if (
+        sessionId.length === 0 ||
+        !isValidSessionId(sessionId) ||
+        !existsSync(sessionDir(projectDir, sessionId))
+      ) {
+        orphaned.push({ slug: entry.name, sessionId });
+      }
+    }
+  } catch (err) {
+    warnError(`isolation worktrees: cannot scan ${TREES_DIR}`, err);
+    return [];
+  }
+  return orphaned;
+}
+
+function printCollectionHints(projectDir: string, pruned: boolean): void {
+  if (!pruned) {
+    const collectable = listOrphanSessionIds({ projectDir }).length;
+    if (collectable === 1) {
+      console.log(
+        '1 collectable session directory exists; run "splitbrief ps --prune" to collect it.',
+      );
+    } else if (collectable > 1) {
+      console.log(
+        `${collectable} collectable session directories exist; run "splitbrief ps --prune" to collect them.`,
+      );
+    }
+  }
+  for (const orphan of listOrphanedIsolationWorktrees(projectDir)) {
+    console.log(
+      `Orphaned isolation worktree ".trees/${stripTerminalControls(orphan.slug)}" (session ${stripTerminalControls(orphan.sessionId)} no longer exists); remove it with "splitbrief worktree remove ${stripTerminalControls(orphan.slug)} --force --delete-branch".`,
+    );
+  }
+}
+
 export async function psCommand(
-  opts: { projectDir: string },
+  opts: { projectDir: string; prune?: boolean },
   deps: PsDeps = defaultDeps,
 ): Promise<void> {
   assertNotWindows();
+
+  if (opts.prune) {
+    const pruned = pruneOrphanSessions({ projectDir: opts.projectDir });
+    for (const sessionId of pruned.removed) {
+      console.log(`Removed collectable session directory ${sessionId}.`);
+    }
+    console.log(
+      `Collected ${pruned.removed.length} orphaned session director${pruned.removed.length === 1 ? 'y' : 'ies'}.`,
+    );
+  }
 
   const root = sessionsRoot(opts.projectDir);
   const names = listValidSessionDirs(opts.projectDir);
 
   if (names.length === 0) {
     console.log('No sessions found in this project.');
+    printCollectionHints(opts.projectDir, opts.prune ?? false);
     return;
   }
 
   const rows = assignDisplayedAliases(
     await Promise.all(names.map((name) => buildRow(join(root, name), name, deps))),
-  );
+  ).filter((row) => row.lockfile !== null || row.sortKeyMs > 0);
+
+  if (rows.length === 0) {
+    console.log('No sessions found in this project.');
+    printCollectionHints(opts.projectDir, opts.prune ?? false);
+    return;
+  }
 
   rows.sort((a, b) => b.sortKeyMs - a.sortKeyMs);
 
@@ -139,6 +219,7 @@ export async function psCommand(
   });
 
   for (const line of lines) console.log(line);
+  printCollectionHints(opts.projectDir, opts.prune ?? false);
 }
 
 export function registerPsCommand(program: Command): void {
@@ -146,8 +227,9 @@ export function registerPsCommand(program: Command): void {
     .command('ps')
     .description('List all sessions in the current project with their status')
     .option('--project <dir>', 'Project directory (default: cwd)')
-    .action(async (opts: { project?: string }) => {
-      const projectDir = resolveProjectDir(opts.project);
-      await psCommand({ projectDir });
+    .option('--prune', 'Remove collectable session directories before listing')
+    .action(async (opts: { project?: string; prune?: boolean }) => {
+      const projectDir = await canonicalizeProjectDir(opts);
+      await psCommand({ projectDir, prune: opts.prune ?? false });
     });
 }

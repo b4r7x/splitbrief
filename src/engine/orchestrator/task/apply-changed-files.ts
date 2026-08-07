@@ -3,7 +3,7 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { WorkflowContext } from '../types.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { publishError, publishWarning, publishWarningFromError } from '../events.js';
-import type { StagedProject } from '../approval/staged-project.js';
+import type { IsolatedWorkspace } from '../isolation/types.js';
 import type { GateDecision } from '../approval/types.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import { persistApprovalEvidence } from '../evidence/persistence.js';
@@ -17,14 +17,14 @@ export async function applyChangedFiles(opts: {
   wctx: WorkflowContext;
   task: Task;
   state: WorkflowState;
-  staged: StagedProject | undefined;
-  usesStaging: boolean;
+  workspace: IsolatedWorkspace | undefined;
+  usesIsolation: boolean;
   preApplyApprovedFiles: string[];
   taskStartSnapshot: ChangedFilesSnapshot;
   recordApprovalDenial: (state: WorkflowState, decision: GateDecision, message: string) => void;
   handleConflict: (state: WorkflowState, files: string[]) => Promise<WorkflowState>;
 }): Promise<ApplyChangedFilesResult> {
-  const { wctx, task, staged, usesStaging, preApplyApprovedFiles, taskStartSnapshot } = opts;
+  const { wctx, task, workspace, usesIsolation, preApplyApprovedFiles, taskStartSnapshot } = opts;
   const { projectDir, sessionId, config, callbacks } = wctx;
   const state = opts.state;
 
@@ -37,13 +37,13 @@ export async function applyChangedFiles(opts: {
     callbacks,
     config,
     getApprovalEnabled: wctx.getApprovalEnabled,
-    staged,
-    usesStaging,
+    workspace,
+    usesIsolation,
     taskStartSnapshot,
     dependsOnFiles: resolveDependsOnFiles(state.tasks, task),
     preApprovedFiles: preApplyApprovedFiles,
     signal: wctx.signal,
-    cleanup: staged ? () => staged.cleanup() : undefined,
+    cleanup: workspace ? () => workspace.cleanup() : undefined,
     catchChangedFilesError: true,
     handleConflict: opts.handleConflict,
     onRestoreConflict: (files) =>

@@ -19,6 +19,7 @@ import {
   CliToolIdSchema,
   ImplementerApiProviderIdSchema,
   ImplementerCliToolIdSchema,
+  IsolationStrategySchema,
   META_PROVIDER_IDS,
   PLANNER_TOOL_IDS,
   PROVIDER_IDS,
@@ -211,5 +212,14 @@ describe('WorkflowModeSchema', () => {
   });
   it.each(['full', 'spec-kit', 'bogus', ''])('rejects "%s"', (input) => {
     expect(WorkflowModeSchema.safeParse(input).success).toBe(false);
+  });
+});
+
+describe('IsolationStrategySchema', () => {
+  it.each(['worktree', 'staged-copy'])('accepts "%s"', (input) => {
+    expect(IsolationStrategySchema.parse(input)).toBe(input);
+  });
+  it.each(['clone', 'none', 'bogus', ''])('rejects "%s"', (input) => {
+    expect(IsolationStrategySchema.safeParse(input).success).toBe(false);
   });
 });

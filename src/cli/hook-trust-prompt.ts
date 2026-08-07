@@ -1,6 +1,9 @@
 import { createInterface } from 'node:readline/promises';
-import type { HooksConfig } from '../core/schemas/hooks.js';
+import { resolve } from 'node:path';
 import { isHooksConfigTrusted, markHooksConfigTrusted } from '../core/hooks/trust.js';
+import { HOOK_EVENTS, type HookEntry, type HooksConfig } from '../core/schemas/hooks.js';
+import { escapeTrustLiteral } from '../core/trust/literal.js';
+import { isPathLike, resolveBareCommandOnPath } from '../core/trust/path-classification.js';
 import { cliError } from './errors.js';
 
 export interface HookTrustOptions {
@@ -13,6 +16,9 @@ export interface PromptStreams {
   input: NodeJS.ReadableStream;
   output: NodeJS.WritableStream;
 }
+
+const TRUST_QUESTION = 'Trust these hooks for this project? [y/N] ';
+const DISCLOSURE_HEADING = 'SPLITBRIEF config declares hooks this machine has not trusted:';
 
 export async function promptHookTrust(
   question: string,
@@ -32,7 +38,11 @@ export async function ensureHooksTrusted(
 ): Promise<void> {
   if (!opts.hooks) return;
   if (isHooksConfigTrusted(opts.projectDir, opts.hooks)) return;
+
+  const disclosure = formatHookTrustDisclosure(opts.projectDir, opts.hooks);
+
   if (opts.allowHooks) {
+    process.stderr.write(`\n${disclosure}\n`);
     markHooksConfigTrusted(opts.projectDir, opts.hooks);
     return;
   }
@@ -43,10 +53,10 @@ export async function ensureHooksTrusted(
     );
   }
 
-  const summary = formatHookSummary(opts.hooks);
-  process.stderr.write(`\n  SPLITBRIEF config defines hooks (untrusted):\n${summary}\n`);
-
-  const raw = await promptForTrust('Trust these hooks for this project? [y/N] ');
+  // The disclosure is the question, not a preamble printed beside it: whatever
+  // surface answers this prompt cannot answer it without having shown what it
+  // authorizes.
+  const raw = await promptForTrust(`\n${disclosure}\n\n${TRUST_QUESTION}`);
 
   const answer = raw.trim().toLowerCase();
   if (answer !== 'y' && answer !== 'yes') {
@@ -58,16 +68,54 @@ export async function ensureHooksTrusted(
   markHooksConfigTrusted(opts.projectDir, opts.hooks);
 }
 
-function formatHookSummary(hooks: HooksConfig): string {
-  const lines: string[] = [];
-  for (const [event, entries] of Object.entries(hooks)) {
-    if (event === 'builtin' || !Array.isArray(entries)) continue;
-    for (const entry of entries) {
-      const label = entry.name ?? (entry.kind === 'module' ? entry.path : entry.command);
-      const args =
-        entry.kind === 'command' && entry.args.length > 0 ? ` ${entry.args.join(' ')}` : '';
-      lines.push(`  ${event}: ${label}${args}`);
+/**
+ * Names the command, not the label. A `name:` the repository chose for itself
+ * is never shown here, because the owner is authorizing an executable and its
+ * argv — the two things that decide what actually runs.
+ */
+export function formatHookTrustDisclosure(projectDir: string, hooks: HooksConfig): string {
+  const declared: string[] = [];
+  for (const event of HOOK_EVENTS) {
+    for (const entry of hooks[event] ?? []) {
+      declared.push('', `  ${event}:`, ...hookEntryLines(projectDir, entry));
     }
   }
-  return lines.length > 0 ? lines.join('\n') : '  (only built-ins enabled)';
+  if (declared.length === 0) return `${DISCLOSURE_HEADING}\n\n  (only built-ins enabled)`;
+  return [
+    DISCLOSURE_HEADING,
+    ...declared,
+    '',
+    '  Execution: runs on this machine as you, in the project directory, on every matching workflow event',
+    '  Environment access: Inherits the full SPLITBRIEF process environment, including credentials',
+    '  Filesystem: Not an OS sandbox; the process can access files available to the current user',
+    '  Network: Network access is not restricted',
+  ].join('\n');
+}
+
+function hookEntryLines(projectDir: string, entry: HookEntry): string[] {
+  if (entry.kind === 'module') {
+    return [
+      `    Module: ${escapeTrustLiteral(entry.path)}`,
+      `    Resolved: ${escapeTrustLiteral(resolve(projectDir, entry.path))}`,
+      `    On failure: ${entry.on_failure}`,
+    ];
+  }
+  return [
+    `    Executable: ${escapeTrustLiteral(entry.command)}`,
+    `    Resolved: ${escapeTrustLiteral(resolveHookExecutable(projectDir, entry.command))}`,
+    `    Arguments: ${
+      entry.args.length === 0 ? '(none)' : entry.args.map(escapeTrustLiteral).join(' ')
+    }`,
+    `    On failure: ${entry.on_failure}`,
+  ];
+}
+
+/**
+ * Hooks are spawned with the project directory as cwd, so a bare name is
+ * whatever `PATH` resolves to there — including a binary the repository itself
+ * dropped into a `PATH` entry.
+ */
+function resolveHookExecutable(projectDir: string, command: string): string {
+  if (isPathLike(command)) return resolve(projectDir, command);
+  return resolveBareCommandOnPath(command, projectDir) ?? '(not found on PATH)';
 }

@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { simpleGit } from 'simple-git';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeBusRecorder, passingResults } from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupCommitTestProjects,
   firstCommitTask,
@@ -16,6 +16,13 @@ import {
   resetIndexPreservingStaged,
 } from '../../../lib/git/staging.js';
 import { validateCommitAndAdvance } from './commit.js';
+import type { ValidationAcceptance } from '../validation/acceptance.js';
+
+const acceptedAcceptance: ValidationAcceptance = {
+  accepted: true,
+  exemptStages: [],
+  blockingStages: [],
+};
 
 afterEach(() => {
   cleanupCommitTestProjects();
@@ -36,7 +43,7 @@ describe('validateCommitAndAdvance — index staging', () => {
 
     const result = await validateCommitAndAdvance({
       task: firstCommitTask(state),
-      results: passingResults,
+      acceptance: acceptedAcceptance,
       projectDir,
       sessionId,
       config: makeConfig({ workflow: { git: { commitStrategy: 'per-task' } } }),

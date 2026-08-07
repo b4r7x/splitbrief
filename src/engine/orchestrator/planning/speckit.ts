@@ -174,6 +174,10 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
 
   const briefsLoop = await runBriefsApprovalLoop({
     tasks,
+    ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
+    ...(wctx.detectedContextLength !== undefined && {
+      detectedContextLength: wctx.detectedContextLength,
+    }),
     planner,
     projectDir,
     sessionId,

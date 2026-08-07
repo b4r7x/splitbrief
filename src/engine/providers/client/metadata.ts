@@ -13,6 +13,7 @@ import { assertCredentialPrefix, validateProviderBaseURL } from './connection.js
 import {
   extractOpenAIModelList,
   fetchModelList,
+  isEndpointUnreachable,
   isOpenAIModelList,
   sanitizeProviderDiagnostic,
 } from './request.js';
@@ -213,12 +214,14 @@ export function createMetadataProvider<TRaw extends { id: string }>(
         const entry = models.find((m) => m.id === model);
         return entry ? getContextLength(entry) : null;
       } catch (error) {
-        warnError(
-          `detectContextLength(${opts.name})`,
-          sanitizeProviderDiagnostic(error, {
-            credentialValues: authentication === 'none' ? undefined : [resolveCredential()],
-          }),
-        );
+        if (!isEndpointUnreachable(error)) {
+          warnError(
+            `detectContextLength(${opts.name})`,
+            sanitizeProviderDiagnostic(error, {
+              credentialValues: authentication === 'none' ? undefined : [resolveCredential()],
+            }),
+          );
+        }
         return null;
       }
     },

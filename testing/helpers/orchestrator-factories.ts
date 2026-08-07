@@ -1,5 +1,4 @@
 import { vi } from 'vitest';
-import type { ValidationResult } from '../../src/engine/orchestrator/validation/result.js';
 import type {
   OrchestratorCallbacks,
   WorkflowContext,
@@ -15,6 +14,8 @@ import { makeTask } from './factories/task.js';
 import { createEventBus } from '../../src/engine/events/bus.js';
 import type { EngineEvent, EventBus } from '../../src/engine/events/types.js';
 import { createValidator } from '../../src/engine/orchestrator/validation/run.js';
+import { createRunIsolation } from '../../src/engine/orchestrator/isolation/create.js';
+import type { RunIsolation } from '../../src/engine/orchestrator/isolation/types.js';
 import { defaultContext, makeNoValidationConfig } from './factories/config.js';
 
 export const TEST_METADATA = {
@@ -28,6 +29,32 @@ export const TEST_SINKS: WorkflowSinks = {
   setQueueHandler: () => {},
 };
 
+export function makeCopyingIsolation(opts: {
+  projectDir: string;
+  sessionId: string;
+}): RunIsolation {
+  return createRunIsolation({
+    projectDir: opts.projectDir,
+    sessionId: opts.sessionId,
+    strategy: 'staged-copy',
+    onFallback: () => {},
+    onRetained: () => {},
+  });
+}
+
+export function makeWorktreeIsolation(opts: {
+  projectDir: string;
+  sessionId: string;
+}): RunIsolation {
+  return createRunIsolation({
+    projectDir: opts.projectDir,
+    sessionId: opts.sessionId,
+    strategy: 'worktree',
+    onFallback: () => {},
+    onRetained: () => {},
+  });
+}
+
 export function makeWctx(
   overrides: Partial<WorkflowContext> & { projectDir: string; sessionId: string },
 ): WorkflowContext {
@@ -36,6 +63,10 @@ export function makeWctx(
     callbacks: makeCallbacks().callbacks,
     bus: createEventBus(),
     context: { ...defaultContext, dir: overrides.projectDir },
+    isolation: makeCopyingIsolation({
+      projectDir: overrides.projectDir,
+      sessionId: overrides.sessionId,
+    }),
     planner: makePlanner(),
     implementer: makeImplementer(),
     metadata: TEST_METADATA,
@@ -119,16 +150,6 @@ export function makePreparedImplementerFactory(
   return (config, options) =>
     createImplementer(config, { ...options, ...authority, preparedConfig: config });
 }
-
-export const passingResults: ValidationResult[] = [
-  { passed: true, stage: 'typecheck' },
-  { passed: true, stage: 'lint' },
-  { passed: true, stage: 'test' },
-];
-
-export const failingResults: ValidationResult[] = [
-  { passed: false, stage: 'typecheck', error: 'TS error' },
-];
 
 export function makeBusRecorder(): { bus: EventBus; events: EngineEvent[] } {
   const events: EngineEvent[] = [];

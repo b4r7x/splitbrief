@@ -19,12 +19,16 @@ function previewProjectContext(projectDir: string) {
   return { name: 'unknown', dir: projectDir };
 }
 
+function normalizeTaskFilePath(file: string): string {
+  return file.trim().replace(/^\.\//, '');
+}
+
 export function buildRoutingPreviewMetadata(
   tasks: Task[],
   opts: {
     config: Config;
     projectDir: string;
-    contextCache?: ModelCacheAccessor | undefined;
+    modelCache?: ModelCacheAccessor | undefined;
     detectedContextLength?: number | undefined;
   },
 ): Promise<PlanTaskReviewMetadata[]> {
@@ -32,18 +36,29 @@ export function buildRoutingPreviewMetadata(
   const profiles = resolveImplementerProfiles(opts.config).profiles;
   const languageContext = buildProjectLanguageContext(opts.projectDir, undefined);
 
+  const plannedCreateIndexes = new Map<string, number>();
+  tasks.forEach((task, index) => {
+    if (task.action !== 'create') return;
+    const normalized = normalizeTaskFilePath(task.file);
+    const existing = plannedCreateIndexes.get(normalized);
+    if (existing === undefined || index < existing) plannedCreateIndexes.set(normalized, index);
+  });
+
   return Promise.all(
-    tasks.map(async (task) => {
+    tasks.map(async (task, index) => {
+      const createdAtIndex = plannedCreateIndexes.get(normalizeTaskFilePath(task.file));
+      const plannedCreateEarlier = createdAtIndex !== undefined && createdAtIndex < index;
       const { task: routingTask, estimateStatus } = await refreshTaskForRoutingPreview(
         task,
         opts.projectDir,
+        plannedCreateEarlier,
       );
       const decision = routeTaskToImplementerProfile(
         buildRouteTaskOptions({
           task: routingTask,
           context,
           profiles,
-          ...(opts.contextCache !== undefined && { contextCache: opts.contextCache }),
+          ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
           languageContext,
           ...(opts.detectedContextLength !== undefined && {
             detectedContextLength: opts.detectedContextLength,
@@ -92,6 +107,7 @@ export function buildRoutingPreviewMetadata(
 async function refreshTaskForRoutingPreview(
   task: Task,
   projectDir: string,
+  plannedCreateEarlier: boolean,
 ): Promise<{ task: Task; estimateStatus?: PlanReviewEstimateStatus | undefined }> {
   if (task.action !== 'modify') return { task };
 
@@ -103,7 +119,11 @@ async function refreshTaskForRoutingPreview(
     const { currentCode: _staleCurrentCode, ...taskWithoutCurrentCode } = task;
     return {
       task: taskWithoutCurrentCode,
-      estimateStatus: isENOENT(err) ? 'missing-current-code' : 'current-code-unavailable',
+      estimateStatus: isENOENT(err)
+        ? plannedCreateEarlier
+          ? 'pending-earlier-task'
+          : 'missing-current-code'
+        : 'current-code-unavailable',
     };
   }
 }
@@ -112,6 +132,9 @@ function routingPreviewReason(
   reason: string,
   estimateStatus?: PlanReviewEstimateStatus | undefined,
 ): string {
+  if (estimateStatus === 'pending-earlier-task') {
+    return `${reason}; review estimate is pending because an earlier task in this plan creates the target file`;
+  }
   if (estimateStatus === 'missing-current-code') {
     return `${reason}; review estimate is missing current code because the target file was not readable at review time`;
   }

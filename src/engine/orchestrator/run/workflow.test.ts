@@ -1,5 +1,6 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
+import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -20,7 +21,8 @@ import type { RunnerCallContext } from '../../../engine/calls/types.js';
 import type { PlanOptions } from '../../../engine/planners/types.js';
 import { createEventBus } from '../../../engine/events/bus.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
+import { READINESS_FILE, SESSION_LOG_FILE, sessionDir, sessionsRoot } from '../../../core/paths.js';
+import { ORPHAN_SESSION_GRACE_MS } from '../../../core/sessions/orphans.js';
 import { transition } from '../../../core/state/machine.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -59,9 +61,16 @@ function readyReport(projectDir: string): ReadinessReport {
   };
 }
 
+let trustHome: ReturnType<typeof useTrustHome>;
+
+beforeEach(() => {
+  trustHome = useTrustHome('run-workflow-trust-home');
+});
+
 afterEach(() => {
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
+  trustHome.restore();
 });
 
 function setupProject(): string {
@@ -1132,6 +1141,184 @@ describe('runWorkflow — smoke', () => {
         reason: 'auto blocked',
       }),
     );
+  });
+
+  it('builds the run isolation handle once per run and disposes it once, including on the abort path', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const isolationModule = await import('../isolation/create.js');
+    const originalCreate = isolationModule.createRunIsolation;
+    let disposeCalls = 0;
+    const createSpy = vi.spyOn(isolationModule, 'createRunIsolation').mockImplementation((opts) => {
+      const handle = originalCreate(opts);
+      return {
+        acquire: handle.acquire,
+        dispose: async () => {
+          disposeCalls += 1;
+          await handle.dispose();
+        },
+      };
+    });
+    try {
+      await runWorkflow({
+        feature: 'isolation lifecycle',
+        projectDir,
+        config: unavailablePlannerConfig(),
+        callbacks,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      });
+
+      const controller = new AbortController();
+      controller.abort();
+      await runWorkflow({
+        feature: 'isolation lifecycle abort',
+        projectDir,
+        config: makeConfig({
+          planner: { kind: 'agent', command: 'echo', args: ['done'] },
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { approve: 'none', mode: 'quick', persistTranscript: false },
+        }),
+        callbacks,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        signal: controller.signal,
+      });
+
+      expect(createSpy).toHaveBeenCalledTimes(2);
+      expect(disposeCalls).toBe(2);
+    } finally {
+      createSpy.mockRestore();
+    }
+  });
+
+  it('catches and warns an isolation dispose failure instead of throwing out of runWorkflow', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const isolationModule = await import('../isolation/create.js');
+    const originalCreate = isolationModule.createRunIsolation;
+    const createSpy = vi.spyOn(isolationModule, 'createRunIsolation').mockImplementation((opts) => {
+      const handle = originalCreate(opts);
+      return {
+        acquire: handle.acquire,
+        dispose: async () => {
+          throw new Error('dispose boom');
+        },
+      };
+    });
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      const summary = await runWorkflow({
+        feature: 'isolation dispose failure',
+        projectDir,
+        config: unavailablePlannerConfig(),
+        callbacks,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      });
+
+      expect(summary).toBeDefined();
+      expect(
+        stderrWrite.mock.calls.some(([chunk]) => String(chunk).includes('run isolation disposal')),
+      ).toBe(true);
+    } finally {
+      createSpy.mockRestore();
+      stderrWrite.mockRestore();
+    }
+  });
+});
+
+describe('runWorkflow — orphan session sweep', () => {
+  function oldMtime(): Date {
+    return new Date(Date.now() - ORPHAN_SESSION_GRACE_MS - 60_000);
+  }
+
+  function readinessOnly(projectDir: string, sessionId: string, mtime: Date): string {
+    const directory = sessionDir(projectDir, sessionId);
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, READINESS_FILE), '{}');
+    utimesSync(directory, mtime, mtime);
+    return directory;
+  }
+
+  it('starts a run even when a session directory cannot be read', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const unreadable = readinessOnly(projectDir, '2026-08-04-sweep-unreadable', oldMtime());
+    chmodSync(unreadable, 0o000);
+
+    try {
+      const summary = await runWorkflow({
+        feature: 'sweep unreadable session',
+        projectDir,
+        config: unavailablePlannerConfig(),
+        callbacks,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      });
+
+      expect(summary).toBeDefined();
+      expect(existsSync(unreadable)).toBe(true);
+    } finally {
+      chmodSync(unreadable, 0o755);
+    }
+  });
+
+  it('removes a collectable session directory at run start and continues', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const collectable = readinessOnly(projectDir, '2026-08-04-sweep-old', oldMtime());
+
+    const summary = await runWorkflow({
+      feature: 'sweep collectable session',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+    });
+
+    expect(summary).toBeDefined();
+    expect(existsSync(collectable)).toBe(false);
+  });
+
+  it('removes exactly the collectable directory and leaves every other kind on disk', async () => {
+    const projectDir = setupProject();
+    const { callbacks } = makeCallbacks();
+    const old = readinessOnly(projectDir, '2026-08-04-sweep-old', oldMtime());
+
+    const withState = sessionDir(projectDir, '2026-08-04-sweep-state');
+    mkdirSync(withState, { recursive: true });
+    writeFileSync(join(withState, 'state.json'), '{}');
+    utimesSync(withState, oldMtime(), oldMtime());
+
+    const fresh = readinessOnly(
+      projectDir,
+      '2026-08-04-sweep-fresh',
+      new Date(Date.now() - 60_000),
+    );
+
+    const claim = join(
+      sessionsRoot(projectDir),
+      '.2026-08-04-sweep-claim.directory.11111111-1111-4111-8111-111111111111.claim',
+    );
+    mkdirSync(claim, { recursive: true });
+
+    // The run's own session is the active readiness-only directory, aged past the grace
+    // period, so the active guard is what keeps it — whatever its age.
+    const activeSessionId = '2026-08-04-sweep-active';
+    const active = readinessOnly(projectDir, activeSessionId, oldMtime());
+
+    const summary = await runWorkflow({
+      feature: 'sweep every kind',
+      projectDir,
+      config: unavailablePlannerConfig(),
+      callbacks,
+      sessionId: activeSessionId,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+    });
+
+    expect(summary).toBeDefined();
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(withState)).toBe(true);
+    expect(existsSync(fresh)).toBe(true);
+    expect(existsSync(active)).toBe(true);
+    expect(existsSync(claim)).toBe(true);
   });
 });
 

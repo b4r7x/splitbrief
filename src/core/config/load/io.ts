@@ -14,6 +14,7 @@ import { CONFIG_VERSION, ConfigSchema, type Config } from '../../schemas/config.
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { getKnownProviderBaseURL } from '../../providers/catalog.js';
 import { API_PROVIDER_CATALOG } from '../../providers/api-provider-catalog.js';
+import { defaultCliAuthChannel } from '../../runners/cli-tool-catalog.js';
 import { validateConfig } from './validation/config.js';
 import { fromYaml, toYaml } from './transform.js';
 import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
@@ -39,7 +40,11 @@ export function createDefaultConfig(): Config {
   const provider = API_PROVIDER_CATALOG.ollama;
   return {
     version: CONFIG_VERSION,
-    planner: { kind: 'cli', tool: 'claude-code', authChannel: 'session' },
+    planner: {
+      kind: 'cli',
+      tool: 'claude-code',
+      authChannel: defaultCliAuthChannel('claude-code').id,
+    },
     implementer: {
       kind: 'api',
       provider: provider.id,
@@ -58,6 +63,7 @@ export function createDefaultConfig(): Config {
       approve: 'default',
       maxRetries: 3,
       git: { commitStrategy: 'none' },
+      isolation: 'worktree',
       persistTranscript: true,
       compactionFormat: 'auto',
       mode: 'standard',

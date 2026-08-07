@@ -12,13 +12,13 @@ SPLITBRIEF is a CLI tool. CLI tools are loved when they respect the developer's 
 
 `splitbrief "fix the typo in README"` must work. No subcommand, no prior `init`, no config file for single-shot tasks. Auto-detect available models. Reserve `start` as explicit subcommand for power users; bare positional arg is the default path.
 
-### 2. Savings as spectacle
+### 2. Savings reported, not promised
 
-The entire switching argument is one number: "You spent $0.12. All-planner alternative: ~$0.95. Saved 87%." This stat must be loud, prominent, and post-run. It should be copy-pasteable (for sharing). Historical tracking across sessions (`splitbrief stats`) makes the case cumulative.
+The post-run line — `$0.12 actual vs $0.95 baseline · 87% saved` — is a reported fact, not the argument for switching; that argument is the pairing and what the review catches (`VISION.md`). Report it honestly: the baseline reprices the implementer's tokens at planner rates, so it answers "what would this run have cost on the planner alone", not a measured A/B. When pricing for either side is unknown the estimate is suppressed rather than guessed (`hasSavingsEstimate: false`, `src/engine/providers/cost/breakdown.ts`). It stays prominent and copy-pasteable, and `splitbrief stats` keeps the cumulative view — it just stops being the headline.
 
 ### 3. Heartbeat over silence
 
-Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them.
+Any wait > 5 seconds must show proof of life: token count incrementing, current phase name, or truncated excerpt. The 60-second spinner is where trust dies. Users alt-tab, forget, and the session completes without them. The run-start validation probe is covered too: before the first task it publishes `validation_baseline` running rows naming the stage being probed, so a slow or red validation stage cannot sit silent behind `Implementing…`.
 
 ### 4. One command for session continuity
 
@@ -30,11 +30,25 @@ Default output is minimal. Details expand on keypress. Config starts at 3 lines 
 
 ### 6. Cost-gated approval
 
-Before implementation starts, show: "12 tasks | Est. $0.14 | All-planner: ~$1.20 | Approve? [Y/n]". This transforms rubber-stamp approval into the moment the user feels smart for using SPLITBRIEF.
+Before implementation starts, show: "12 tasks | Est. $0.14 | All-planner: ~$1.20 | Approve? [Y/n]". This is the last cheap moment to cut scope; the numbers are there to inform that decision, not to congratulate the user.
 
 ### 7. Streaming partial output
 
 For API implementers, stream the last N lines being written in real-time. Transforms "generating foo.ts... 28s" into watching code materialize. Users watch instead of context-switching away.
+
+---
+
+## What we measure
+
+A run is judged by whether the change holds up, not by what it cost. Three numbers, in this order:
+
+| Metric | What it answers |
+|---|---|
+| First-pass rate | Share of tasks that passed validation on the implementer's first attempt — no retry, no escalation. This is what the Task Brief contract, the implementer prompt, and the isolation are tuned against. |
+| Cross-lab review effectiveness | What the planner's review of the run diff caught that the deterministic pipeline did not — logic errors and edge cases, where the cross-lab gap is widest. |
+| Cost | Reported alongside the other two, per run and cumulatively. Alone it proves nothing: a first-pass rate bought with an expensive implementer is not a result. A run that recorded no priced usage reports that instead of a fabricated zero. |
+
+`evals/` is scored on these, not on cost alone.
 
 ---
 
@@ -165,7 +179,7 @@ Implemented for transcript compaction: `workflow.compactionFormat` supports `aut
 
 ## Competitive advantages (preserve these)
 
-These are SPLITBRIEF-only features that no comparable tool offers:
+The niche has direct competitors now (`VISION.md`). Any single row here can be matched; the set is what makes a two-tool split usable, so protect the set:
 
 | Feature | What it does |
 |---|---|
@@ -176,8 +190,8 @@ These are SPLITBRIEF-only features that no comparable tool offers:
 | Budget tracking | Real-time cost prediction, budget gates, `budget_exceeded` events |
 | Mode system | `instant`/`quick`/`standard`/`speckit` — adjusts ceremony to task complexity |
 | Drift detection | Detects when implementation diverges from plan |
-| Worktree integration | Auto-creates git worktrees for isolated work |
-| 89 typed events + `--json` | NDJSON event stream for CI/automation |
+| Worktree isolation | One git worktree per run for a direct-writing implementer, project dependencies linked in, changes promoted back hash-guarded. Isolates files, not the runtime — it is not a security boundary |
+| 92 typed events + `--json` | NDJSON event stream for CI/automation |
 | Tiered approval | Sticky session/always scopes with per-action classification |
 | Task Brief contract | Precise, structured handoff artifact between planner and implementer |
 

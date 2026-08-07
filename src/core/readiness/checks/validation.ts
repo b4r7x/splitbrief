@@ -173,6 +173,7 @@ export async function probeValidationBaseline(
 
   const timeout = config.validation.timeoutMs ?? DEFAULT_VALIDATION_TIMEOUT_MS;
   const failing: string[] = [];
+  const probedCommands: string[] = [];
 
   for (const stage of enabled) {
     const command = resolveProbeCommand(stage, config, projectDir);
@@ -180,6 +181,7 @@ export async function probeValidationBaseline(
     const parts = parseShellCommand(command);
     const cmd = parts[0];
     if (!cmd) continue;
+    probedCommands.push(`${stage}: ${command}`);
     try {
       await runCommand(cmd, parts.slice(1), { cwd: projectDir, timeout, label: `${stage} probe` });
     } catch (err) {
@@ -199,6 +201,8 @@ export async function probeValidationBaseline(
       severity: 'warning',
       summary: `Validation already failing before any task: ${failing.join(', ')}.`,
       details: [
+        `Probed commands: ${probedCommands.join('; ')}.`,
+        'These are the pre-run commands; during a run SPLITBRIEF may resolve different ones from planner discovery.',
         'These stages fail on the working tree as-is, so first-task failures here are not caused by the implementer.',
       ],
       fix: 'Fix the pre-existing validation failures, or disable the affected stages in .splitbrief/config.yaml.',

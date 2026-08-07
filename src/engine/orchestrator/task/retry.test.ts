@@ -21,6 +21,9 @@ import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { transition } from '../../../core/state/machine.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import type { ValidationStage } from '../../../core/schemas/enums.js';
+import { decideValidationAcceptance } from '../validation/acceptance.js';
+import type { Validator } from '../validation/types.js';
 import { retryAndRecord } from './retry.js';
 
 // Escalation tiers run a full recursive createStagedProject copy; under parallel
@@ -120,9 +123,15 @@ describe('retryAndRecord — retry budget', () => {
           };
         }),
     });
-    const validator = {
+    const validator: Validator = {
       primeBaseline: vi.fn().mockResolvedValue(undefined),
       runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
+      decideAcceptance: ({ results, changedFiles }) =>
+        decideValidationAcceptance({
+          results,
+          changedFiles,
+          baselineFailingStages: new Set<ValidationStage>(),
+        }),
     };
 
     const result = await retryAndRecord({
@@ -158,6 +167,76 @@ describe('retryAndRecord — retry budget', () => {
       'src/initial.ts',
       'src/task.ts',
     ]);
+  });
+
+  it('stamps the initial-failure entry with the initial acceptance, not the retry acceptance', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', file: 'src/task.ts' });
+    let state = implementingState([task]);
+    state = transition(state, { type: 'START_TASK', taskId: task.id });
+    state = transition(state, { type: 'TASK_SENT' });
+
+    const implementer = makeImplementer({
+      retry: vi
+        .fn()
+        .mockImplementation(async ({ projectDir: retryDir }: { projectDir: string }) => {
+          mkdirSync(join(retryDir, 'src'), { recursive: true });
+          writeFileSync(join(retryDir, task.file), 'recovered implementation');
+          return {
+            success: true,
+            output: 'fixed',
+            usage: { inputTokens: 20, outputTokens: 10 },
+          };
+        }),
+    });
+    const validator: Validator = {
+      primeBaseline: vi.fn().mockResolvedValue(undefined),
+      runValidation: vi
+        .fn()
+        .mockResolvedValue([
+          { stage: 'test' as const, passed: false, failureFiles: ['src/unrelated.ts'] },
+        ]),
+      decideAcceptance: ({ results, changedFiles }) =>
+        decideValidationAcceptance({
+          results,
+          changedFiles,
+          baselineFailingStages: new Set<ValidationStage>(['test']),
+        }),
+    };
+
+    const result = await retryAndRecord({
+      wctx: makeWorkflowContext({ projectDir, sessionId, implementer, validator }),
+      task,
+      initialError: 'test failed',
+      initialValidation: [{ stage: 'test', passed: false, error: 'initial failed' }],
+      initialChangedFiles: ['src/initial.ts'],
+      initialExemptStages: [],
+      state,
+      taskStartTime: Date.now(),
+      tokensBefore: { ...state.tokenUsage },
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+    });
+
+    expect(result.completed).toBe(true);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
+    expect(ledger?.tasks[0]?.validation).toEqual([
+      {
+        stage: 'test',
+        passed: false,
+        errorSummary: 'initial failed',
+        retryState: 'initial-failure',
+        changedFiles: ['src/initial.ts'],
+      },
+      {
+        stage: 'test',
+        passed: false,
+        baselineExempt: true,
+        retryState: 'retry',
+        changedFiles: ['src/task.ts'],
+      },
+    ]);
+    expect(ledger?.tasks[0]?.observedEvidence).toContain('test failed (pre-existing)');
   });
 
   it('exhausts local retry budget and persists recovery when escalation also fails', async () => {

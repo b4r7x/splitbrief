@@ -186,10 +186,11 @@ function configuredProviderDetection(
 }
 
 /**
- * Every admitted CLI is probed on its declared default channel; an active
- * runner context overrides only its own tool with the channel the config
- * resolved for it. Only defined channels are inserted — an explicitly
- * undefined entry would withhold auth probing for that tool.
+ * Every admitted CLI is probed on the channel a fresh config would name for it,
+ * so the status a not-yet-selected tool shows is the status of the selection the
+ * picker would actually write; an active runner context overrides only its own
+ * tool with the channel the config resolved for it. Only defined channels are
+ * inserted — an explicitly undefined entry would withhold auth probing.
  */
 function admittedCliAuthChannels(
   contexts: ActiveRunnerContexts,

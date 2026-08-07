@@ -64,6 +64,8 @@ describe('buildReviewPacketDetailRows', () => {
             evidenceValidatedTasks: 2,
             evidenceTotalTasks: 3,
             missingArtifactCount: 1,
+            finalReviewVerdict: null,
+            finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
           },
         })}
       />,
@@ -101,6 +103,8 @@ describe('buildReviewPacketDetailRows', () => {
             evidenceValidatedTasks: 1,
             evidenceTotalTasks: 1,
             missingArtifactCount: 0,
+            finalReviewVerdict: null,
+            finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
           },
         })}
       />,
@@ -128,6 +132,8 @@ describe('buildReviewPacketDetailRows', () => {
             evidenceValidatedTasks: 0,
             evidenceTotalTasks: 2,
             missingArtifactCount: 2,
+            finalReviewVerdict: null,
+            finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
           },
         })}
       />,
@@ -160,6 +166,8 @@ describe('buildReviewPacketDetailRows', () => {
             evidenceValidatedTasks: 1,
             evidenceTotalTasks: 1,
             missingArtifactCount: 0,
+            finalReviewVerdict: null,
+            finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
           },
         })}
       />,
@@ -190,6 +198,8 @@ describe('buildReviewPacketDetailRows', () => {
             evidenceValidatedTasks: 1,
             evidenceTotalTasks: 1,
             missingArtifactCount: 0,
+            finalReviewVerdict: null,
+            finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
           },
         })}
       />,

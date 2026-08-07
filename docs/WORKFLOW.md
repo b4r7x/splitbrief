@@ -147,12 +147,12 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 | `idle` | — | no | no | no |
 | `researching` | planner | yes | no | yes |
 | `specifying` | planner | yes | no | yes |
-| `reviewing-spec` | planner | no | no | no |
+| `reviewing-spec` | planner | no | yes | no |
 | `clarifying` | planner | no | no | no |
 | `constitution-check` | planner | no | no | no |
 | `planning` | planner | yes | yes | yes |
-| `reviewing-plan` | planner | no | no | no |
-| `reviewing-briefs` | planner | no | no | no |
+| `reviewing-plan` | planner | no | yes | no |
+| `reviewing-briefs` | planner | no | yes | no |
 | `analyzing` | planner | no | no | no |
 | `implementing` | implementer | yes | yes | yes |
 | `validating-task` | implementer | no | no | no |
@@ -164,7 +164,7 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 
 **Cancellable** — single Ctrl-C aborts the active model call. This matches `isLivePhase()` in `src/core/phases.ts`.
 
-**Resumable** — `splitbrief resume` can pick up here. `RESUMABLE_PHASES` in `src/core/phases.ts` is exactly `planning`, `implementing`, `final-review`. Every other phase is resumable only through the `awaitingContinue` override below; terminal phases (`idle`, `complete`) never are.
+**Resumable** — `splitbrief resume` can pick up here. `RESUMABLE_PHASES` in `src/core/phases.ts` is exactly `reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `final-review`. Every other phase is resumable only through the `awaitingContinue` override below; terminal phases (`idle`, `complete`) never are.
 
 **Live** — streaming output is happening. Phases where the planner or implementer is actively generating: `researching`, `specifying`, `planning`, `implementing`, `escalating`, `final-review`.
 
@@ -176,7 +176,7 @@ From `src/core/phases.ts`. Each phase has four properties derived from the sourc
 
 ## 3. Mode dispatch
 
-Mode selection: `src/engine/orchestrator/planning/run.ts` → `resolveMode()`. Mode determines how many planner calls run and which approval gates activate.
+Mode dispatch: `src/engine/orchestrator/planning/run.ts`. Mode determines how many planner calls run and which approval gates activate. All four modes stay in the product; the question a mode answers is how much ceremony precedes the briefs, not which features are available.
 
 | Mode | Planner calls | Phases visited | Default approval | Artifacts |
 |------|:------------:|----------------|:----------------:|-----------|
@@ -185,6 +185,22 @@ Mode selection: `src/engine/orchestrator/planning/run.ts` → `resolveMode()`. M
 | `standard` | 4 | idle → researching → specifying → reviewing-spec → planning → reviewing-plan → reviewing-briefs → implementing | `spec` | research, spec.md, plan.md, tasks.md |
 | `speckit` | 6-7 | idle → researching → specifying → reviewing-spec → clarifying → constitution-check → planning → reviewing-plan → reviewing-briefs → analyzing → implementing | `all` | research, spec.md, clarifications.md, constitution-check.json, plan.md, tasks.md, analyze.json |
 
+**When the single call produces no briefs** (`instant` and `quick`). If the planner's single call returns no Task Briefs, the same call is retried exactly once. The planner's text output is persisted to the session directory first and a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published pointing at it. If the retry also returns zero tasks, the run fails with the existing `instant`/`quick planner returned zero tasks; cannot proceed` error — with the artifact on disk and the warning in the transcript. The run never falls through to the multi-phase path, which would silently change the selected mode and its cost.
+
+### Selecting a mode
+
+Every entry point that runs the planner reaches all four modes. Resolution happens in `resolveMode()` (`src/core/config/runtime/resolve.ts`), highest precedence first:
+
+| Source | Scope | Notes |
+|--------|-------|-------|
+| `--mode <mode>` | one invocation | Accepted by `start`, `spec`, `resume`, `continue`, and `last`. The value is parsed against the four-mode enum; anything else aborts the command with `Invalid mode: <value>. Must be one of: instant, quick, standard, speckit`. |
+| Saved mode in `state.json` | the resumed run | Written when the run first resolved its mode. `resume` / `continue` / `last` reuse it; passing `--mode` overrides it for that resume and prints a warning. |
+| `workflow.mode` in `.splitbrief/config.yaml` | the project | What `/mode` and the mode selector write. |
+| `standard` | — | Built-in default when nothing else is set. |
+
+`splitbrief spec` takes the same flag with the same validation and the same precedence. The mode decides how much planning happens before the command stops: `instant` and `quick` make one planner call, `standard` and `speckit` run the multi-call pipeline. `spec` never implements, so the approval gates below do not apply to it — it writes the artifacts its mode produces and exits. In particular `spec --mode speckit` produces the **standard** artifact set (`research.md`, `spec.md`, `plan.md`, `tasks.md`): the speckit-only artifacts (`clarifications.md`, `constitution-check.json`, `analyze.json`) are orchestrator-side and the 6-7-call row in the table above describes `start`, not `spec`.
+
+**Where the mode is visible when the choice is made.** On the home screen the identity line above the composer reads `planner › model · implementer › model · mode` (`src/features/home/components/config-summary.tsx`), so the mode in force is on screen while the feature is being typed. `/mode` with no argument opens the mode selector (`src/features/settings/mode-selector.tsx`), which lists all four with their planner-call and approval counts and marks the current one; `/mode <name>` sets it without opening the overlay. Both persist `workflow.mode` to `.splitbrief/config.yaml`. On the command line, `--mode` is listed in `splitbrief start --help` and `splitbrief spec --help`, and `spec` names the resolved mode alongside the planner identity on the line it prints before planning starts. Once planning begins the orchestrator publishes `mode_resolved` carrying the resolved mode and approval level.
 
 ### Approval gates
 
@@ -196,6 +212,8 @@ Controlled by `workflow.approve`: `none` | `spec` | `plan` | `all` | `default`. 
 - `all` — gate on spec and plan. speckit default.
 
 The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all four modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block the transition.
+
+Next to it, the brief readiness gate (`src/engine/orchestrator/planning/brief-readiness-gate.ts`) runs over the Task Briefs at briefs approval and again after brief edits. It writes `brief-readiness.json` and publishes `brief_readiness_passed` or `brief_readiness_blocked`. Readiness never permanently blocks approval: a blocked report is a warning, and a second identical approval overrides it and proceeds (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
 
 Briefs review is separate from `workflow.approve`: `standard` and `speckit` enter `reviewing-briefs` after the quality gate so the user can review `tasks.md` before implementation.
 
@@ -286,15 +304,17 @@ Dispatches `RESET_TASK`. Sets the target task to `pending`, rewinds `currentTask
 
 ### Resumable phases
 
-`planning`, `implementing`, `final-review` (the `RESUMABLE_PHASES` set in `src/core/phases.ts`). Plus any phase with `awaitingContinue: true`.
+`reviewing-spec`, `planning`, `reviewing-plan`, `reviewing-briefs`, `implementing`, `final-review` (the `RESUMABLE_PHASES` set in `src/core/phases.ts`). Plus any phase with `awaitingContinue: true`.
 
 ### Non-resumable phases
 
-Every other phase — `researching`, `specifying`, `reviewing-spec`, `clarifying`, `constitution-check`, `reviewing-plan`, `reviewing-briefs`, `analyzing`, `validating-task`, `escalating` — unless `awaitingContinue: true`. The terminal phases `idle` and `complete` are never resumable. If the process died mid-generation without `awaitingContinue`, the stream is lost and the feature must restart.
+Every other phase — `researching`, `specifying`, `clarifying`, `constitution-check`, `analyzing`, `validating-task`, `escalating` — unless `awaitingContinue: true`. The terminal phases `idle` and `complete` are never resumable. If the process died mid-generation without `awaitingContinue`, the stream is lost and the feature must restart.
 
 ### Recovery on resume
 
 If state has `pendingRecovery`, resume shows that recovery issue before dispatching any work. Selecting `pause-run` keeps `.splitbrief/active` intact so the same decision appears on next resume.
+
+An unresolved recovery also makes the stop audible: when the task loop re-enters a state that still carries `pendingRecovery`, it publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` naming the reason, the recovery status (`awaiting-user`, `paused`, or `applying`) and the available actions, then stops without running any task. The issue is neither cleared nor re-entered. In headless `--json` mode the same state fails the command with exit code 1 for **every** status — a paused or applying recovery no longer exits 0 having done nothing.
 
 ### Planner context rebuild
 
@@ -384,16 +404,24 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Ctrl+E/e/edit/E/edit-file opens tasks.md in the external editor
     resolved as VISUAL, non-terminal EDITOR, detected GUI editor from safe absolute PATH, macOS open, terminal EDITOR, then vi.
 
-13. phase: reviewing-briefs → APPROVE_BRIEFS → implementing
-    Prompt-input cost prediction published. Cost gate checked. Runtime output,
-    retries, validation reruns, escalation, and unknown paid pricing are tracked
-    as the run proceeds.
+ 13. phase: reviewing-briefs → APPROVE_BRIEFS → implementing
+     Prompt-input cost prediction published. Cost gate checked. Runtime output,
+     retries, validation reruns, escalation, and unknown paid pricing are tracked
+     as the run proceeds.
+     Before the first task, the validation baseline is probed: each enabled stage
+     runs once (the test probe is narrowed to the first task's affected file) and
+     publishes `validation_baseline` running/done rows, so the run shows proof of
+     life instead of silent waiting. Stages already red before any task ran are
+     recorded as pre-existing failures.
 
 14. Per task:
       implementing → START_TASK (task in_progress, attempt 0)
       implementer.implement(taskPrompt) → code written to disk
+      A direct-writing implementer edits the run's isolation directory instead of
+      the project — where it works is set by `workflow.isolation`
+      (worktree by default; see CONFIGURATION.md §5)
       implementing → TASK_SENT → validating-task
-      typecheck → lint → tests (stops on first failure)
+      typecheck → lint → tests (stops at the first failure attributable to the task)
         pass → VALIDATION_PASS → implementing (next task)
         fail → VALIDATION_FAIL → implementing (attempt++, retry)
         fail (attempt >= maxRetries) → VALIDATION_FAIL → escalating

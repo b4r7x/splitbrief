@@ -28,12 +28,12 @@ function emitRecoveryAndFailIfPending(
   const state = loadState({ projectDir, sessionId });
   const issue = state?.pendingRecovery;
   if (!issue) return;
-  if (issue.status !== 'awaiting-user') return;
   writeHeadlessJsonRecord(
     {
       type: 'recovery_required',
       sessionId,
       reason: issue.reason,
+      status: issue.status,
       message: issue.message,
       taskId: issue.taskId,
       files: issue.files,
@@ -45,7 +45,11 @@ function emitRecoveryAndFailIfPending(
     { persistTranscript },
   );
   const message = persistTranscript ? issue.message : TRANSCRIPT_OMITTED_MESSAGE;
-  throw cliError(`Recovery required: ${message}`, 1);
+  const resolutionRoute = issue.availableActions.join(', ');
+  throw cliError(
+    `Recovery required (status: ${issue.status}): ${message} Resolve it by choosing one of: ${resolutionRoute}.`,
+    1,
+  );
 }
 
 function failIfFinalReviewIncomplete(projectDir: string, sessionId: string): void {

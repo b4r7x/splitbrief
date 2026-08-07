@@ -1,17 +1,14 @@
 import type { ResolvedImplementerProfile } from '../../../core/config/accessors/implementer-profiles.js';
 import { missingRunnerCredential } from '../../../core/config/accessors/runner-credentials.js';
 import { estimateTokens } from '../../../core/tokens/estimate.js';
+import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-length.js';
 import { formatImplementerSystemPreamble, formatTaskPrompt } from '../../spec/prompt-formatter.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { isProviderId } from '../../../core/schemas/enums.js';
 import { getEffectiveModelId } from '../../providers/model/resolution.js';
 import type { ProfileFit, RouteTaskOptions } from './types.js';
 import type { CurrentCodeContextMode, TaskContextFit } from '../../../core/schemas/enums.js';
-import {
-  DEFAULT_CONSERVATIVE_CONTEXT_LENGTH,
-  resolveProfileContextLength,
-  profileProviderId,
-} from './context-length.js';
+import { resolveProfileContextLength, profileProviderId } from './context-length.js';
 import { estimateFormattedTaskPromptTokens, classifyContextFit } from './estimation.js';
 import { currentCodeContextMode } from './headings.js';
 import { requiredWriteModeForTask } from './decision.js';
@@ -33,11 +30,11 @@ export function assessProfile(
   profile: ResolvedImplementerProfile,
 ): ProfileFit {
   const conservativeContextLength =
-    opts.conservativeContextLength ?? DEFAULT_CONSERVATIVE_CONTEXT_LENGTH;
+    opts.conservativeContextLength ?? DEFAULT_UNKNOWN_CONTEXT_LENGTH;
   const { contextLength, usedConservativeContextLength } = resolveProfileContextLength(
     profile,
     conservativeContextLength,
-    opts.contextCache,
+    opts.modelCache,
     opts.detectedContextLength,
   );
   const providerId = profileProviderId(profile);

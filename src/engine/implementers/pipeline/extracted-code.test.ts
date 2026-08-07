@@ -191,4 +191,177 @@ describe('createImplementerBase — extracted-code pipeline', () => {
       'export const value = "user";\n',
     );
   });
+
+  it('refuses a marker-less modify response that would discard most of the file, leaving disk untouched', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(projectDir, 'src/app.ts'),
+      'import { z } from "zod";\nexport const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport const d = 4;\nexport const e = 5;\n',
+    );
+
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const a = 1;\n```',
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('1 of 6');
+      expect(result.error).toContain('<<<<<<< SEARCH');
+      expect(result.error).toContain('>>>>>>> REPLACE');
+    }
+    expect(readFileSync(join(projectDir, 'src/app.ts'), 'utf-8')).toContain('export const e = 5');
+  });
+
+  it('refuses a malformed marker payload instead of letting it bypass the shrink guard', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const original = `${Array.from({ length: 20 }, (_, i) => `export const v${i} = ${i};`).join('\n')}\n`;
+    writeFileSync(join(projectDir, 'src/app.ts'), original);
+
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\n<<<<<<< SEARCH \nexport const v0 = 0;\n=======\nexport const v0 = 42;\n>>>>>>> REPLACE\n```',
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toContain('keeps 5 of 20');
+    expect(readFileSync(join(projectDir, 'src/app.ts'), 'utf-8')).toBe(original);
+  });
+
+  it('fails a truncated marker payload without writing marker text to disk', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    const original = 'export const a = 1;\nexport const b = 2;\n';
+    writeFileSync(join(projectDir, 'src/app.ts'), original);
+
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\n<<<<<<< SEARCH\nexport const a = 1;\n=======\nexport const a = 42;\n```',
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error).toContain('Malformed SEARCH/REPLACE block');
+    expect(readFileSync(join(projectDir, 'src/app.ts'), 'utf-8')).toBe(original);
+  });
+
+  it('applies a legitimate whole-file rewrite that keeps most of the existing lines', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(projectDir, 'src/app.ts'),
+      'export const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport const d = 4;\nexport const e = 5;\n',
+    );
+
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport const d = 4;\nexport const e = 5;\nexport const f = 6;\n```',
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(projectDir, 'src/app.ts'), 'utf-8')).toContain('export const f = 6');
+  });
+
+  it('applies a search/replace patch even when the resulting patch is small', async () => {
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(
+      join(projectDir, 'src/app.ts'),
+      'export const a = 1;\nexport const b = 2;\nexport const c = 3;\nexport const d = 4;\nexport const e = 5;\n',
+    );
+
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\n<<<<<<< SEARCH\nexport const a = 1;\n=======\nexport const a = 42;\n>>>>>>> REPLACE\n```',
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T001', file: 'src/app.ts', action: 'modify' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    const written = readFileSync(join(projectDir, 'src/app.ts'), 'utf-8');
+    expect(written).toContain('export const a = 42');
+    expect(written).toContain('export const e = 5');
+  });
+
+  it('writes the response for a modify task whose target does not exist', async () => {
+    const invoke = vi.fn().mockResolvedValue(
+      makeRunnerCallResult({
+        status: 'completed',
+        text: '```ts\nexport const fresh = true;\n```',
+        usage: null,
+      }),
+    );
+    const implementer = createImplementerBase(makeBaseConfig({ invoke }));
+    const task = makeTask({ id: 'T001', file: 'src/fresh.ts', action: 'modify' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(true);
+    expect(readFileSync(join(projectDir, 'src/fresh.ts'), 'utf-8')).toContain('export const fresh');
+  });
 });

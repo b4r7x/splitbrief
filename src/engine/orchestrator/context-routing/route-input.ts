@@ -10,22 +10,20 @@ export interface BuildRouteTaskOptionsInput {
   context: ProjectContext;
   profiles: ResolvedImplementerProfile[];
   modelCache?: ModelCacheAccessor | undefined;
-  contextCache?: ModelCacheAccessor | undefined;
   languageContext?: LanguageContext | undefined;
   detectedContextLength?: number | undefined;
   conservativeContextLength?: number | undefined;
 }
 
 export function buildRouteTaskOptions(opts: BuildRouteTaskOptionsInput): RouteTaskOptions {
-  const contextCache = opts.contextCache ?? opts.modelCache;
-  const conservativeContextLength = opts.conservativeContextLength ?? opts.detectedContextLength;
+  const conservativeContextLength = opts.conservativeContextLength;
 
   return {
     task: opts.task,
     context: opts.context,
     profiles: opts.profiles,
     ...(conservativeContextLength !== undefined && { conservativeContextLength }),
-    ...(contextCache !== undefined && { contextCache }),
+    ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
     ...(opts.languageContext !== undefined && { languageContext: opts.languageContext }),
     ...(opts.detectedContextLength !== undefined && {
       detectedContextLength: opts.detectedContextLength,

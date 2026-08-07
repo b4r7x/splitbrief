@@ -158,3 +158,54 @@ describe('recordTaskUsage — explicit cache persistence', () => {
     });
   });
 });
+
+describe('recordTaskUsage — usage-not-reported warning', () => {
+  function warningsFor(overrides: Partial<Parameters<typeof recordTaskUsage>[0]>): unknown[] {
+    const events: unknown[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+    recordTaskUsage({
+      task: makeTask({ id: 'T001' }),
+      method: 'local',
+      tokensBefore: makeUsage(),
+      currentUsage: makeUsage(),
+      bus,
+      state: baseState(),
+      taskBreakdowns: [],
+      ...overrides,
+    });
+    return events.filter((event) => (event as { type: string }).type === 'warning');
+  }
+
+  it('publishes exactly one warning naming the runner and the task when no usage was reported', () => {
+    const warnings = warningsFor({ tool: 'codex' });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      type: 'warning',
+      taskId: 'T001',
+      category: 'cost',
+      code: 'implementer_usage_not_reported',
+      transcriptSafe: true,
+    });
+    expect(String((warnings[0] as { message: unknown }).message)).toContain('codex');
+    expect(String((warnings[0] as { message: unknown }).message)).toContain('T001');
+  });
+
+  it('publishes no warning when the implementer delta is non-zero', () => {
+    const warnings = warningsFor({
+      currentUsage: makeUsage({ implementerInput: 30_000, implementerOutput: 10_000 }),
+    });
+
+    expect(warnings).toHaveLength(0);
+  });
+
+  it('publishes no warning for an escalated task whose escalation delta is non-zero', () => {
+    const warnings = warningsFor({
+      method: 'escalated-full',
+      currentUsage: makeUsage({ escalationInput: 100_000, escalationOutput: 50_000 }),
+    });
+
+    expect(warnings).toHaveLength(0);
+  });
+});

@@ -8,8 +8,15 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import { createChangeDetector } from '../../change-detection.js';
+import { createEventBus } from '../../events/bus.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import { createImplementerPublisher } from '../../orchestrator/events.js';
+import { readPacketEvents } from '../../orchestrator/evidence/review-packet/artifacts.js';
+import { buildEscalations } from '../../orchestrator/evidence/review-packet/sections.js';
+import { createInitialState } from '../../../core/state/machine.js';
 
 let projectDir: string;
 
@@ -50,7 +57,7 @@ describe('createImplementerBase — language-aware system preamble', () => {
 });
 
 describe('createImplementerBase — prompt write contracts', () => {
-  it('gives direct-write implementers the staged editing and validation contract', async () => {
+  it('gives direct-write implementers the isolation editing and validation contract', async () => {
     let seenPrompt = '';
     const invoke = vi.fn().mockImplementation(async (opts) => {
       seenPrompt = opts.prompt;
@@ -68,7 +75,7 @@ describe('createImplementerBase — prompt write contracts', () => {
     });
 
     expect(seenPrompt).toContain(
-      `Edit ${task.file} directly in the staged working directory. Run the validation commands listed in this Task Brief before finishing.`,
+      `Edit ${task.file} directly in the isolation directory. Run the validation commands listed in this Task Brief before finishing. End with a completion report stating which files you wrote and whether the brief's steps were completed.`,
     );
     expect(seenPrompt).not.toContain('Output ONLY the complete file contents');
     expect(seenPrompt).not.toContain('Output the complete file contents');
@@ -205,6 +212,120 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
   });
 });
 
+describe('createImplementerBase — wrote-nothing warning', () => {
+  it('publishes exactly one coded warning naming the runner and the task when the implementer wrote nothing', async () => {
+    const { bus, events } = makeBusRecorder();
+    const publisher = createImplementerPublisher(bus);
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        publisher,
+        detectChanges: vi.fn().mockResolvedValue({
+          changed: false,
+          output: 'Tool implementer (codex) exited without changing any files',
+          reason: 'no-files-changed',
+        }),
+        invoke: vi
+          .fn()
+          .mockResolvedValue(
+            makeRunnerCallResult({ status: 'completed', text: 'done', usage: null }),
+          ),
+      }),
+    );
+    const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
+
+    const result = await implementer.implement({
+      task,
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+    });
+
+    expect(result.success).toBe(false);
+    const warnings = events.filter((event) => event.type === 'warning');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      type: 'warning',
+      phase: 'implementing',
+      taskId: 'T001',
+      category: 'implementer',
+      code: 'implementer_wrote_nothing',
+      transcriptSafe: true,
+    });
+    if (warnings[0]?.type === 'warning') {
+      expect(warnings[0].message).toContain('T001');
+      expect(warnings[0].message).toContain('codex');
+    }
+  });
+
+  it('lands the wrote-nothing warning in session.jsonl and the review packet warnings list', async () => {
+    const sessionId = 't005-wrote-nothing';
+    const bus = createEventBus();
+    bus.subscribe(createJsonlSink({ projectDir, sessionId, persistTranscript: false }));
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        publisher: createImplementerPublisher(bus),
+        detectChanges: vi.fn().mockResolvedValue({
+          changed: false,
+          output: 'Direct implementer exited without changing any files',
+          reason: 'no-files-changed',
+        }),
+        invoke: vi
+          .fn()
+          .mockResolvedValue(
+            makeRunnerCallResult({ status: 'completed', text: 'done', usage: null }),
+          ),
+      }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask({ id: 'T001', file: 'src/hello.ts' }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+      sessionId,
+    });
+    expect(result.success).toBe(false);
+
+    const packetEvents = await readPacketEvents(projectDir, sessionId, []);
+    const warnings = buildEscalations(createInitialState('feat'), null, packetEvents).warnings;
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ type: 'warning', phase: 'implementing', taskId: 'T001' });
+    if (warnings[0]?.type === 'warning') {
+      expect(warnings[0].message).toContain('T001');
+      expect(warnings[0].message).toContain('Direct implementer');
+    }
+  });
+
+  it('does not publish the wrote-nothing warning when the implementer crashed', async () => {
+    const { bus, events } = makeBusRecorder();
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        publisher: createImplementerPublisher(bus),
+        invoke: vi.fn().mockRejectedValue(new Error('connection refused')),
+      }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+      phase: 'implementing',
+    });
+
+    expect(result.success).toBe(false);
+    expect(events.filter((event) => event.type === 'warning')).toHaveLength(0);
+  });
+});
+
 describe('createImplementerBase — retry', () => {
   it.each([
     ['local', 2, 'tsc failed'],
@@ -234,5 +355,21 @@ describe('createImplementerBase — retry', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+});
+
+describe('createImplementerBase — unavailabilityReason', () => {
+  it('exposes the configured reason on the returned implementer', async () => {
+    const implementer = createImplementerBase(
+      makeBaseConfig({ unavailabilityReason: () => 'the endpoint is unreachable' }),
+    );
+
+    expect(implementer.unavailabilityReason?.()).toBe('the endpoint is unreachable');
+  });
+
+  it('leaves the member absent when no reason is supplied', async () => {
+    const implementer = createImplementerBase(makeBaseConfig());
+
+    expect('unavailabilityReason' in implementer).toBe(false);
   });
 });

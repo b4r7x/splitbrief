@@ -360,6 +360,15 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     errorCount: z.number(),
     warningCount: z.number(),
   }),
+  phaseEvent('brief_readiness_passed').extend({
+    taskCount: z.number(),
+  }),
+  phaseEvent('brief_readiness_blocked').extend({
+    taskCount: z.number(),
+    blockedCount: z.number(),
+    blockedTaskIds: stringArray,
+    kinds: stringArray,
+  }),
   phaseEvent('drift_report').extend({
     passed: z.boolean(),
     score: z.number(),
@@ -496,6 +505,14 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     commands: validationStageCommandsSchema.optional(),
     skipped: validationStageSkipsSchema.optional(),
     error: z.string().optional(),
+    duration: z.number().optional(),
+  }),
+  phaseEvent('validation_baseline').extend({
+    status: z.enum(['running', 'done']),
+    stages: validationStagesSchema,
+    activeStage: z.enum(['typecheck', 'lint', 'test']).optional(),
+    commands: validationStageCommandsSchema.optional(),
+    failing: validationStageSkipsSchema.optional(),
     duration: z.number().optional(),
   }),
   phaseEvent('escalate').extend({

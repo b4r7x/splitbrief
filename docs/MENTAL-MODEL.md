@@ -6,13 +6,18 @@ Read this first. It explains what SPLITBRIEF does, how it thinks, and why it's b
 
 ## The core idea
 
-SPLITBRIEF splits AI coding work into two roles:
+SPLITBRIEF orchestrates two coding tools. One plans and reviews, the other executes, and SPLITBRIEF holds everything in between: the contract, the isolation, the validation, the retries, the escalation, and the evidence.
 
-**Planner** — an expensive, capable model (Claude, GPT-4, Codex CLI, etc.) that understands the feature request, explores the codebase, and writes a detailed plan broken into single-file tasks.
+**Planner** — the stronger of the two. It understands the feature request, explores the codebase, writes a detailed plan broken into single-file tasks, answers escalations, and reviews the finished work.
 
-**Implementer** — a cheap, fast model (local Ollama, small API model, Codex, etc.) that executes one task at a time against a self-contained brief.
+**Implementer** — a weaker model, reached over one of two transports that are supported equally:
 
-The planner thinks. The implementer types. You pay for thinking once, then execute cheaply.
+- a **tool CLI** driving a cheaper model, which writes files itself
+- an **API model**, which returns file contents that SPLITBRIEF writes
+
+You choose the transport. SPLITBRIEF does not favour one over the other.
+
+The planner thinks, the implementer types, and the implementer never certifies its own work. The advantage compounds when the two tools come from different labs: a reviewer from a different model family does not inherit the implementer's blind spots. Lower spend follows from the split — it is a result, not the headline.
 
 ---
 
@@ -43,7 +48,7 @@ A typical run, step by step:
 4. User reviews and approves the spec (or comments, or rejects)
 5. Planner writes Task Briefs — one per file, ordered by dependency
 6. User reviews the briefs
-7. For each task: implementer writes code, SPLITBRIEF validates (typecheck → lint → test)
+7. For each task: the implementer writes code in isolation, SPLITBRIEF promotes the approved changes into the project, then validates (typecheck → lint → test)
 8. If validation fails: retry up to 3 times, then escalate to bigger models
 9. If escalation fails: enter recovery — user picks next action (retry same worker, route to a bigger worker, skip, pause, abort)
 10. Planner reviews the final result against the spec
@@ -123,9 +128,21 @@ The orchestrator never branches on backend type. It calls `planner.plan()` and `
 
 ---
 
+## Where the implementer works
+
+The two transports need different amounts of isolation, and both end in the same place.
+
+An implementer that writes files itself works in a git worktree — a second checkout of the same repository, created once per run, with the project's dependencies linked in so the agent can type-check and run tests where it stands. That is the default isolation, and it keeps a half-finished task out of your working tree. An implementer that returns file contents has nothing to isolate: SPLITBRIEF writes the file itself, after the approval gate.
+
+Either way the destination is the same, and it is not negotiable: approved changes land in your real project directory. Promotion is guarded by content hashes — if a file changed underneath SPLITBRIEF between approval and write, the promotion stops rather than clobber your edit.
+
+A worktree isolates files, not runtime and not trust. It shares the ports, the database, the hooks, and the config of the checkout it came from. It is not a security boundary.
+
+---
+
 ## Validation and escalation
 
-After the implementer writes code for a task, SPLITBRIEF runs validation: typecheck → lint → test. The pipeline stops on the first failure.
+Correctness is not the implementer's to judge — it is the weaker of the two models. SPLITBRIEF owns it: a deterministic pipeline of typecheck → lint → test, run in the real project after promotion, stopping at the first failure attributable to the task. A stage already red at baseline does not stop the pipeline: a task that introduces no new failure is accepted even when the tree was already red, and the planner owns the second opinion at final review. An implementer that can also run checks where it works is a bonus — it raises the first-pass rate, it does not decide the outcome.
 
 If validation fails, the implementer retries with the error message (up to 3 attempts by default). If those local retries are exhausted, escalation kicks in:
 

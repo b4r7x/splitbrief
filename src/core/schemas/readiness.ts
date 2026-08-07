@@ -8,6 +8,11 @@ import {
   CliTrustStateSchema,
   NON_READY_CLI_READINESS_STATES,
 } from '../discovery/detection.js';
+import {
+  CLI_AUTH_CHANNEL_IDS,
+  CLI_TOOL_CATALOG,
+  cliAuthChannelHostStateAccess,
+} from '../runners/cli-tool-catalog.js';
 import { CliToolIdSchema } from './enums.js';
 
 export const READINESS_SEVERITIES = ['ok', 'info', 'warning', 'blocker'] as const;
@@ -97,6 +102,12 @@ export const CliReadinessFactsSchema = z
     testedVersion: z.string().min(1),
     compatibility: CliCompatibilityStateSchema,
     auth: CliAuthStateSchema,
+    /**
+     * The channel `auth` is a fact about. Absent when no channel was selected,
+     * which is also the only case where the remedy cannot name the credential
+     * the runner needs.
+     */
+    authChannel: z.enum(CLI_AUTH_CHANNEL_IDS).optional(),
     /** Per-provider oracle facts; present only when a credential oracle ran cleanly. */
     providerAuth: z.array(CliProviderAuthFactSchema).max(64).readonly().optional(),
     probedAt: z.number().int().nonnegative(),
@@ -167,6 +178,44 @@ export function deriveCliReadinessStatus(
   return 'ready';
 }
 
+const PLATFORM_NAMES: Readonly<Record<string, string>> = {
+  darwin: 'macOS',
+  win32: 'Windows',
+  linux: 'Linux',
+};
+
+function platformName(platform: NodeJS.Platform): string {
+  return PLATFORM_NAMES[platform] ?? platform;
+}
+
+/**
+ * Names the credential the staged runner is actually missing and the command
+ * that supplies it. A generic "authenticate this tool" is worse than useless
+ * here: the reader needs to know which store the staged environment looked in,
+ * because that is what decides whether signing in again will change anything.
+ */
+export function cliAuthRemediation(
+  runner: Readonly<{
+    tool: CliReadinessFacts['tool'];
+    authChannel?: CliReadinessFacts['authChannel'];
+  }>,
+): string {
+  const channels = CLI_TOOL_CATALOG[runner.tool].auth.channels;
+  const channel = channels.find((entry) => entry.id === runner.authChannel);
+  if (channel === undefined) {
+    return `Select an authentication channel for ${runner.tool}, then run \`splitbrief doctor\` again.`;
+  }
+  const credentialEnv = channel.env[0];
+  if (credentialEnv !== undefined) {
+    return `Export ${credentialEnv} for the ${runner.tool} ${channel.id} channel, then run \`splitbrief doctor\` again.`;
+  }
+  const cause =
+    cliAuthChannelHostStateAccess(channel) === 'host-account'
+      ? `On ${platformName(process.platform)} the ${runner.tool} ${channel.id} credential lives in the OS keychain, which the isolated runner environment reads with the host account, and ${runner.tool} reported no session there.`
+      : `No ${runner.tool} ${channel.id} credential reached the isolated runner environment, which bridges session state only as files.`;
+  return `${cause} Sign in to ${runner.tool} on this host, then run \`splitbrief doctor\` again.`;
+}
+
 function cliReadinessRemediation(
   facts: CliReadinessFacts,
   status: Exclude<z.infer<typeof CliReadinessStateSchema>, 'ready'>,
@@ -186,7 +235,7 @@ function cliReadinessRemediation(
       }
       return `Verify ${facts.tool} authentication in the staged runner environment, then run runner readiness again.`;
     case 'unauthenticated':
-      return `Authenticate ${facts.tool} in the staged runner environment, then run runner readiness again.`;
+      return cliAuthRemediation(facts);
   }
 }
 

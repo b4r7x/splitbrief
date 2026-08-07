@@ -41,4 +41,37 @@ describe('protectHeadlessJsonRecord', () => {
       message: expect.stringContaining('omitted oversized readiness_report record'),
     });
   });
+
+  it('carries the recovery status through so a machine consumer can distinguish the three states', () => {
+    for (const status of ['awaiting-user', 'paused', 'applying'] as const) {
+      expect(
+        protectHeadlessJsonRecord({
+          type: 'recovery_required',
+          sessionId: 'sess-1',
+          reason: 'context-overflow',
+          status,
+          message: 'overflow',
+          availableActions: ['pause-run', 'abort-workflow'],
+          recommendedAction: 'pause-run',
+        }),
+      ).toMatchObject({ type: 'recovery_required', status });
+    }
+  });
+
+  it('still parses a pre-change recovery_required record without a status', () => {
+    expect(
+      protectHeadlessJsonRecord({
+        type: 'recovery_required',
+        sessionId: 'sess-1',
+        reason: 'context-overflow',
+        message: 'overflow',
+        availableActions: ['pause-run', 'abort-workflow'],
+        recommendedAction: 'pause-run',
+      }),
+    ).toMatchObject({
+      type: 'recovery_required',
+      sessionId: 'sess-1',
+      reason: 'context-overflow',
+    });
+  });
 });

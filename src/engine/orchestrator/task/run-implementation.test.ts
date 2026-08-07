@@ -187,14 +187,15 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   });
 
   expect(implementation.implResult.success).toBe(true);
-  expect(implementation.usesStaging).toBe(true);
+  expect(implementation.usesIsolation).toBe(true);
   expect(nestedStageCalls).toBe(0);
-  expect(implementation.staged).toBeDefined();
-  const staged = implementation.staged;
-  if (staged === undefined) throw new Error('Direct implementation did not receive an outer stage');
-  expect(staged.sandboxEnv.T028_ALLOWED_VALUE).toBeUndefined();
-  const stagedOutput = readFileSync(join(staged.projectDir, 'src', 'direct.ts'), 'utf8');
-  expect(stagedOutput).toContain(`// cwd:${realpathSync(staged.projectDir)}`);
+  expect(implementation.workspace).toBeDefined();
+  const workspace = implementation.workspace;
+  if (workspace === undefined)
+    throw new Error('Direct implementation did not receive an outer stage');
+  expect(workspace.sandboxEnv.T028_ALLOWED_VALUE).toBeUndefined();
+  const stagedOutput = readFileSync(join(workspace.projectDir, 'src', 'direct.ts'), 'utf8');
+  expect(stagedOutput).toContain(`// cwd:${realpathSync(workspace.projectDir)}`);
   expect(stagedOutput).toContain('// allowed:runtime-source-only');
   expect(stagedOutput).toContain('// undeclared:absent');
   expect(stagedOutput).toContain('// session-in-prompt:false');
@@ -205,8 +206,8 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
     wctx,
     task,
     state: implementation.state,
-    staged,
-    usesStaging: implementation.usesStaging,
+    workspace,
+    usesIsolation: implementation.usesIsolation,
     preApplyApprovedFiles: implementation.preApplyApprovedFiles,
     taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
     recordApprovalDenial: vi.fn(),
@@ -214,7 +215,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   });
 
   expect(applied.proceed).toBe(approval === 'approved');
-  expect(existsSync(staged.projectDir)).toBe(false);
+  expect(existsSync(workspace.projectDir)).toBe(false);
   expect(existsSync(join(projectDir, 'src', 'direct.ts'))).toBe(approval === 'approved');
 }
 
@@ -273,8 +274,8 @@ describe('runImplementation configured custom contracts', () => {
     });
 
     expect(result.implResult.success).toBe(true);
-    expect(result.usesStaging).toBe(false);
-    expect(result.staged).toBeUndefined();
+    expect(result.usesIsolation).toBe(false);
+    expect(result.workspace).toBeUndefined();
     expect(childStages).toHaveLength(1);
     const childStage = childStages[0];
     if (childStage === undefined) throw new Error('Output child stage was not created');

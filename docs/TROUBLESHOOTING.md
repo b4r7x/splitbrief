@@ -73,9 +73,9 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 ## Setup and install
 
-### Symptom: `SyntaxError: Unexpected token` or `engine "node" is incompatible` on `npm install` / `npm run dev`
+### Symptom: `splitbrief requires Node.js 22 or newer`, `SyntaxError: Unexpected token`, or `engine "node" is incompatible`
 
-**Likely cause:** Node version below the required 22.x. SPLITBRIEF is ESM-only and uses `node:` built-ins, top-level `await`, and runtime features that older Node releases do not ship.
+**Likely cause:** Node version below the required 22.x. SPLITBRIEF is ESM-only and uses `node:` built-ins, top-level `await`, and runtime features that older Node releases do not ship. The CLI checks `process.versions.node` before it parses any argument and refuses with `splitbrief requires Node.js 22 or newer; this process is Node.js <version>.` rather than running and reporting a wrong diagnosis later — on Node 20 the CLI arg-vector preflight truncates its `--help` capture and reports flags the installed binary does support as unsupported.
 
 **Fix:**
 1. Run `node --version` and confirm output starts with `v22.` or higher.
@@ -133,6 +133,24 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 **Prevention:** Run `splitbrief doctor` after changing runner config or before CI starts a headless run.
 
 **See also:** [Run readiness and doctor diagnostics](#run-readiness-and-doctor-diagnostics), [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor), [CONFIGURATION.md](./CONFIGURATION.md).
+
+---
+
+### Symptom: `Project config declares a shell runner command that this machine has not trusted`
+
+**Likely cause:** The project's `.splitbrief/config.yaml` names a `shell` or `agent` runner command that this machine has never granted. A config file travels with `git clone`, so a command written there is the repository author's proposal, not your consent — SPLITBRIEF refuses to run it until you say so, whichever approval level is set.
+
+**Fix:**
+1. Read the command first. `splitbrief doctor` prints it under `runners.planner.trust-boundary` / `runners.implementer.trust-boundary` as `Command:` and `Arguments:`.
+2. If you want it, run SPLITBRIEF in a terminal. It shows the resolved executable path, the argv, the working directory, and the fact that the child inherits your environment, then asks for the confirmation phrase and a reason. Confirming stores an owner-only receipt in `~/.splitbrief/trust/custom-runners.json`.
+3. In CI or any headless run (`--json`, `--rpc`, `--detach`), pass `--allow-repo-runners`. It grants that run only and persists nothing.
+4. If the command should not run, replace the runner in `.splitbrief/config.yaml`.
+
+Related refusals name their own cause: `does not exist on this machine`, `is not executable`, and `executable changed since this machine trusted it` (the receipt binds the executable's content digest). `Configured command is outside the current trust policy` is the separate, stricter rule for repo-local commands, which need `--allow-repo-runners` even interactively.
+
+**Prevention:** A receipt is scoped to this checkout's canonical path and to a digest of the command, its argv, its declared environment references, and its watchdog thresholds. Editing any of those, or opening a second checkout, asks again by design.
+
+**See also:** [CONFIGURATION.md](./CONFIGURATION.md#runner-command-trust), [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-start).
 
 ---
 
@@ -231,7 +249,37 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 ---
 
+### Symptom: A run records zero implementer tokens
+
+**Likely cause:** The runner completed its call but its protocol carried no usage payload — `claude-code` and `codex` emit usage through their protocol terminal, and a runner that reports none records zero. That is no longer a silent zero: `recordTaskUsage` publishes exactly one warning with `category: 'cost'` and `code: 'implementer_usage_not_reported'` naming the runner and the task, so a run that did real work is distinguishable from one whose runner never reported. SPLITBRIEF never invents a price or synthesises token counts; a CLI runner staying structurally unpriced is by design, and the warning is the signal, not a defect.
+
+**Fix:**
+1. Read the warning in the transcript, `session.jsonl`, or `review-packet.json` (`escalations.warnings`) — it names the runner and the task.
+2. If the runner normally reports usage (check its protocol terminal in `src/engine/runners/cli-tools/`), upgrade or reconfigure the binary — the warning is the early sign of a version whose usage channel changed.
+3. If the runner genuinely has no usage channel, accept the zero and the warning per task; the run's cost posture is unknowable for that runner.
+
+**Prevention:** Check the review packet's warnings list after a run. One `implementer_usage_not_reported` warning per unpriced task is expected; a warning for a runner that used to report usage means the binary drifted.
+
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (token accounting), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (review-packet warnings list), `src/engine/orchestrator/tokens.ts`.
+
+---
+
 ## Planner issues
+
+### Symptom: `runners.cli.claude-code.readiness` is `unauthenticated` on macOS
+
+**Likely cause:** Claude Code keeps its subscription session in the macOS login keychain. A `session` runner on macOS reads that keychain with your real `HOME` and `USER`, so readiness runs `claude auth status` inside the staged environment and reports exactly what the child answered. `unauthenticated` here means the child got `"loggedIn": false` — the host is not signed in, or is signed in as a different account.
+
+**Fix:**
+1. `claude /login` (or `claude setup-token`), then `claude auth status` to confirm `"loggedIn": true`.
+2. Re-run `splitbrief doctor`.
+3. If you would rather not let a planner child see your home directory at all, set `auth_channel: api-key` for that runner in `.splitbrief/config.yaml` and `export ANTHROPIC_API_KEY=...` — that channel is metered and exposes nothing.
+
+**Prevention:** Trust `splitbrief doctor`. Readiness never reads a login off directory contents; it reports `authenticated` only when a credential reached the staged runner environment — proven by the tool's own status command where one exists — so a blocker here means the run really would have failed.
+
+**See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
+
+---
 
 ### Symptom: Planner returns vague briefs — generic acceptance criteria, no file references, hand-wavy steps
 
@@ -282,6 +330,22 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 ---
 
+### Symptom: instant mode failed with zero tasks
+
+**Likely cause:** The single planner call returned no parsable Task Briefs. Before failing, the same call is retried exactly once; if the retry also returns nothing, the run ends with `instant planner returned zero tasks; cannot proceed`. The planner's text output was persisted to the session directory before the failure and a coded warning (`planner_returned_zero_tasks`) was published pointing at it.
+
+**Fix:**
+1. Open the session directory — the planner's output is on disk (typically `tasks.md` or the phase files named in the warning), so you can read what the planner actually said.
+2. If the output is prose with no briefs, the planner model may be too weak to emit Task Briefs: raise the planner model or switch to `--mode standard`.
+3. If the planner produced nothing at all, check the runner diagnostics (`planner.timeout`, stream-idle guard, provider health) and re-run.
+4. Re-run with `splitbrief start --mode instant "<feature>"`.
+
+**Prevention:** Keep `instant`/`quick` for trivial edits and reserve the multi-call modes for anything where brief quality matters — a zero-task outcome is usually a mode/model mismatch.
+
+**See also:** [docs/WORKFLOW.md](./WORKFLOW.md) (mode table), `src/engine/orchestrator/planning/instant.ts`.
+
+---
+
 ### Symptom: Briefs lack file references, tests, or constraints — quality gate complains
 
 **Likely cause:** The brief quality gate is rejecting the planner's draft because required fields are empty. Smaller planners often skip these in initial passes.
@@ -316,6 +380,21 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 ---
 
+### Symptom: The implementer says it finished but nothing changed
+
+**Likely cause:** The runner completed its call without writing any file. Change detection (`detectChanges()`, `src/engine/change-detection.ts`) reports the distinct `no-files-changed` reason, the task fails with the `no-staged-change` outcome, and SPLITBRIEF publishes one coded warning — `category: implementer`, `code: implementer_wrote_nothing`, `transcriptSafe: true` — naming the runner and the task. The warning lands in `session.jsonl` and in the review packet's warnings list (`review-packet.json` → `escalations.warnings`).
+
+**Fix:**
+1. Read the warning in the transcript or `review-packet.json`. A "finished but wrote nothing" response is a model behaviour problem, not a SPLITBRIEF failure — the retry ladder runs exactly as it would for any other failure.
+2. Inspect the implementer's output in `session.jsonl` around the task's `implementer_generate_running` / `implementer_generate_failed` events to see what the runner actually said.
+3. Re-run with a stronger implementer model, or tighten the Task Brief so the runner has a concrete edit to make.
+
+**Prevention:** Prefer a `direct`-write runner verified against the task file, and check the review packet's warnings list after a run — the `implementer_wrote_nothing` warning is the signal that the model reported success without touching the tree.
+
+**See also:** [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/change-detection.ts`, `src/engine/implementers/pipeline/run.ts`.
+
+---
+
 ### Symptom: Implementer keeps failing the same task in a loop
 
 **Likely cause:** The task is genuinely too hard for the implementer model, or the brief contains contradictory constraints. The orchestrator escalates after a configured retry count, but until escalation kicks in you see the same failure repeat.
@@ -329,6 +408,67 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 **Prevention:** Configure `workflow.maxRetries` and `escalation.intermediateProvider` + `escalation.intermediateModel` so escalation lands on a model strictly stronger than the default.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), `src/engine/orchestrator/task/loop.ts`.
+
+---
+
+### Symptom: Implementer fails repeatedly against a local model that is not running
+
+**Likely cause:** An `api`-kind implementer probes its provider's model list instead of assuming a local endpoint is up (`createProviderAvailability`, `src/engine/providers/client/availability.ts`). A dead daemon fails the probe, and the availability gate raises the unavailable-implementer recovery immediately — no local retries and no paid escalation tiers are burned against the dead endpoint. The hint tier is never invoked, so a stopped Ollama/LM Studio cannot cost you a planner call.
+
+**Fix:**
+1. Read the recovery issue's detail — it carries the runner's own reason (e.g. "the endpoint is unreachable") when one exists.
+2. Start the daemon (`ollama serve`, LM Studio, etc.).
+3. Pick `retry-same-worker` — the next availability probe runs once per task iteration and the verdict is never cached, so the running daemon is detected on the next task.
+
+**Prevention:** Readiness probes the endpoint before the run starts, so a stopped daemon is a blocker at `doctor` and at `start` rather than a mid-run surprise after the planning phase has been paid for (`runners.availability.implementer.<profile>`, `src/core/readiness/checks/availability.ts`). To draft a spec while the daemon is down, use `splitbrief spec` — it never calls the implementer, so its readiness does not gate on one.
+
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), `src/engine/implementers/api.ts`.
+
+---
+
+### Symptom: Implementer keeps failing with "refusing to overwrite"
+
+**Likely cause:** For a modify task, the extracted-code branch refuses a marker-less response that would replace the whole file while keeping less than half of its (at least five) non-empty lines — a model that answered with prose plus one fenced function instead of the complete file. The file is left untouched and the task fails, so the damage cannot compound across retries.
+
+**Fix:**
+1. Read the failure message: it states the kept-of-had line counts and carries a literal SEARCH/REPLACE template.
+2. Retry the task with the exact-patch form: a fenced block containing `<<<<<<< SEARCH` / `=======` / `>>>>>>> REPLACE` around only the lines to change. A search/replace patch is applied even when it is small.
+3. If the task genuinely rewrites most of the file, return the complete new file contents instead.
+
+**Prevention:** None needed for correct model output — a whole-file rewrite that keeps most of its lines, or any patch carrying SEARCH/REPLACE markers, passes the guard unchanged.
+
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), `src/engine/implementers/pipeline/extracted-code.ts`.
+
+---
+
+### Symptom: The runner rejected a flag SPLITBRIEF sent
+
+**Likely cause:** The installed binary's version does not accept the arg vector the adapter emits for the configured role — historically `error: unexpected argument '--reasoning…'`, `unexpected argument '--quiet…'`, `warning: --full-auto is deprecated`, an unexpected stdin read, or a claude session-id error. These used to surface as a task failure at attempt one, after planning was already paid for.
+
+**Fix:**
+1. Run `splitbrief doctor` to inspect the verdict without starting a run. Doctor runs the same preflight and reports the same check (`runners.cli.<tool>.arg-vector.<role>`) in its report, with `doctor --json` publishing it for automation.
+2. Run readiness again: execution preparation preflights the emitted arg vector against the installed binary's own `--help` and reports the blocker before any planning starts.
+3. If a flag is reported unsupported, upgrade the installed binary to a version the adapter is verified against, or remove the offending flag from the runner's configured `args`.
+4. A flag the binary merely marks deprecated shows as a warning — plan to remove it from the config, but the run can proceed.
+
+**Prevention:** Keep the installed CLI tools on versions matching the support matrix in [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md). The preflight cannot detect adapter/binary drift for a help text it cannot read; that case reports ok rather than blocking.
+
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), `src/engine/runners/arg-vector-preflight.ts`.
+
+---
+
+### Symptom: The run retried three times in seven seconds after I pressed Ctrl-C
+
+**Likely cause:** A cancelled implementer call was treated as an ordinary failure and fed into the retry ladder. Aborted calls are now recognised at the retry decision site: when the workflow signal is aborted or the implementer reports the runner's abort text (`Aborted`), the retry loop stops immediately instead of consuming `workflow.maxRetries` and escalating against a call the user already cancelled.
+
+**Fix:**
+1. Confirm the run stopped: `splitbrief status` shows the session ending at the task boundary, not continuing through retries.
+2. Check `session.jsonl` for `task_retry` rows — a cancelled run should no longer append them.
+3. If you cancelled by accident, resume with `splitbrief continue <session-id>`.
+
+**Prevention:** None needed — this is fixed behaviour; a cancelled call no longer spends retries or escalation budget.
+
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (retry arithmetic), `src/engine/orchestrator/escalation/local-retries.ts`.
 
 ---
 
@@ -363,6 +503,39 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 ---
 
+### Symptom: Every task fails validation because the tree was already red
+
+**Likely cause:** A validation stage (typecheck, lint, or test) was already failing in the repository before the run started — a pre-existing error in a file no task touches. Acceptance is baseline-relative: a stage that was already red at baseline is exempt when its failure evidence names none of the task's changed files, and the task commits anyway. A stage that was green at baseline always blocks.
+
+**Fix:**
+1. Check the baseline probe row at the start of the run — it names the stages that were already failing before the first task.
+2. If the failing stage was red at baseline and its evidence names none of the task's changed files, the task is accepted; retry and escalation do not fire for pre-existing failures.
+3. A task that introduces a **new** failure in a stage already red at baseline is still rejected — the evidence names one of the task's changed files.
+4. Fix the pre-existing failure itself to turn the whole tree green; until then, tasks that do not touch the failing files keep completing with the exemption noted.
+
+To see which stages are already red **before** starting a run, run `splitbrief doctor --probe-validation`: it runs the configured validation commands and reports each failing stage, naming the exact commands in the check details (it can take minutes — it is a real run, not a posture check).
+
+**Prevention:** Keep the tree green before starting a run (`npm run test-ci`); baseline-relative acceptance spares tasks from pre-existing failures, not from the failures they cause.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
+
+---
+
+### Symptom: The run seems stuck at `Implementing…` before the first task
+
+**Likely cause:** The run-start baseline probe is running. Before the first task, SPLITBRIEF probes every enabled validation stage once (typecheck → lint → test, with the test probe narrowed to the first task's affected file). Each stage can block for `validation.timeoutMs` (default 10 minutes) and the probe deliberately does not stop at the first red stage, so three slow stages can hold the phase for up to half an hour.
+
+**Fix:**
+1. Look at the conversation rows — the probe publishes a `baseline` row naming the stage currently being probed (`baseline typecheck (npx tsc --noEmit) running …`). The run is not hung; it is waiting on that command.
+2. If a stage is genuinely slow, lower `validation.timeoutMs` in `.splitbrief/config.yaml` (minimum 1000 ms) so each probe step gives up sooner.
+3. If a stage can never pass in this repository (a pre-existing type error, a broken linter), leave it red: the probe records it as a pre-existing failure and the run continues past it rather than failing every task on it.
+
+**Prevention:** Keep the validation commands fast enough for a pre-task probe (a full test suite is usually too slow); the probe runs them once before any task. The same stages can be probed on demand, without starting a run, via `splitbrief doctor --probe-validation`.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/WORKFLOW.md](./WORKFLOW.md).
+
+---
+
 ## Workflow issues
 
 ### Symptom: a session is reported active but nothing is running
@@ -378,6 +551,20 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 **Prevention:** Prefer clean TUI cancellation or `splitbrief continue` for interrupted work. For long-running jobs, use `--detach` so the server survives terminal closure and exits cleanly.
 
 **See also:** [docs/WORKFLOW.md](./WORKFLOW.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+
+---
+
+### Symptom: `.splitbrief/sessions/` accumulates directories that never became sessions
+
+**Likely cause:** An abort or crash after `readiness.json` was written — before the run acquired its lockfile — leaves a session directory holding nothing but `readiness.json` (or nothing at all). Historically nothing could act on those directories, so long-lived projects accumulated hundreds of them; `splitbrief ps` printed a row for each, and the stale slug suffixes kept `splitbrief ps` alias numbers and session-id slugs occupied.
+
+**Fix:**
+1. A directory holding only `readiness.json` (or empty) and older than 24 hours is collectable. `splitbrief ps --prune` removes the collectable directories and lists what it collected; the sweep also runs automatically at workflow start.
+2. `splitbrief ps` no longer lists non-session directories, so the table matches what `splitbrief continue <n>` can address.
+
+**Prevention:** None needed beyond the automatic sweep. A directory holding any other artifact — a lockfile, `state.json`, an ownership marker, or anything else — is never collected.
+
+**See also:** [docs/HOW-IT-WORKS.md](./HOW-IT-WORKS.md), [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-ps).
 
 ---
 
@@ -412,7 +599,37 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 ---
 
+### Symptom: every implementer profile is rejected with `context-overflow`
+
+**Likely cause:** Every candidate profile overflowed the task's estimated prompt tokens — the brief is larger than any available context window. A profile that declares no `contextLength` and whose provider exposes no detected window routes at the single documented default, `DEFAULT_UNKNOWN_CONTEXT_LENGTH = 32768` (`src/core/tokens/context-length.ts`); with the 15% safety margin, a task over roughly 28 000 estimated tokens overflows it. A CLI tool under `model: auto` escapes this floor — its window resolves from the smallest bundled window its catalog guarantees (`resolveRunnerContextWindow`, `src/engine/providers/model/context-window.ts`) — so check that the profile's tool actually carries a bundled catalog row before configuring a window by hand.
+
+**Fix:**
+1. Set `implementer.contextLength` (or the `SPLITBRIEF_CONTEXT_LENGTH` environment variable) to the runner's real window — see [docs/CONFIGURATION.md](./CONFIGURATION.md).
+2. Use a profile whose declared or detected window fits the brief, or split the brief into smaller tasks.
+3. When the recovery prompt offers `route-bigger-worker`, take it so the task is retried on a larger-window profile.
+
+**Prevention:** Configure `contextLength` on implementer profiles that run outside a known catalog, and keep briefs under roughly 28 000 estimated tokens when the window is unknown.
+
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md) (`context-overflow` recovery), [docs/CONFIGURATION.md](./CONFIGURATION.md).
+
+---
+
 ## Approval gates
+
+### Symptom: the briefs prompt keeps coming back
+
+**Likely cause:** The brief readiness gate (`runBriefReadinessGateAndReport()`, `src/engine/orchestrator/planning/brief-readiness-gate.ts`) ran over the Task Briefs and reported blocks — tasks that overflow the worker context window, have no capable worker, or carry stale routing context. The block is advisory, not a permanent stop: the review header shows `readiness N blocked` and the override instruction `approve again overrides`.
+
+**Fix:**
+1. Read the block kinds in the warning (`overflow`, `no-capable-worker`, `stale-conflict`) and the task ids — the review header counts them, and the transcript warning names each block with its next best action.
+2. Either revise `tasks.md` to resolve the blocks (split oversized tasks, widen the worker, refresh routing), or approve again without editing `tasks.md` — the second identical approval records the override in `brief-readiness.json` and proceeds.
+3. Editing or revising `tasks.md` between the two approvals cancels the pending override, so a confirmation is never granted against stale briefs.
+
+**Prevention:** None needed — a blocked report never permanently blocks approval; the loop also terminates after `MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS` (20) unchanged failures instead of re-prompting forever.
+
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), [docs/WORKFLOW.md](./WORKFLOW.md).
+
+---
 
 ### Symptom: `APPROVAL_REQUIRED` (headless run paused, or stuck on a sticky/confirm tier)
 
@@ -729,9 +946,23 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 2. If disk space is a concern, use a per-worktree install but enable the npm cache (`npm config set cache ~/.npm`) so artifacts are deduplicated at the cache layer.
 3. For pnpm users, the content-addressable store gives the same benefit automatically.
 
-**Prevention:** Treat each worktree as a fully independent checkout. Never symlink `node_modules/` across worktrees.
+**Prevention:** Treat each worktree you create yourself as a fully independent checkout. Never symlink `node_modules/` across those worktrees. (Run isolation is the deliberate exception: it links the project's `node_modules` into its worktree — see the entry below.)
 
 **See also:** [docs/WORKTREES.md](./WORKTREES.md).
+
+---
+
+### Symptom: The implementer cannot run the project's own checks inside a worktree-isolated run
+
+**Likely cause:** Only Node dependencies are made reachable in a run-isolation worktree (a `node_modules` link, with its `.bin` prepended to the workspace PATH). A project whose toolchain lives elsewhere — a Python virtualenv, a Go module cache, a Rust target directory — has nothing to resolve inside the worktree, and a `staged-copy` isolation has no dependencies at all. Separately, a repository that does not ignore `node_modules` at all cannot take the link — SPLITBRIEF will not change your ignore rules to make it fit — so the run falls back to `staged-copy` on its own. The common `node_modules/` pattern is fine: the link is excluded through the repository's `.git/info/exclude` and the worktree is kept.
+
+**Fix:**
+1. Nothing is broken: validation runs in the real project directory after promotion, so the run's verdict never depends on the implementer's own checks.
+2. To give the implementer its own toolchain anyway, add a `node_modules` entry to `.gitignore` so the link can be excluded from change detection, or set `workflow.isolation: staged-copy` and accept the first-pass-rate loss.
+
+**Prevention:** Treat dependency reachability inside isolation as a first-pass-rate improvement, never the authority on correctness.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
 ---
 
@@ -772,6 +1003,20 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 2. If the changes are disposable: `splitbrief worktree remove <slug> --force`.
 
 **Prevention:** Treat worktrees as ephemeral; merge or discard changes before removal.
+
+**See also:** [docs/WORKTREES.md](./WORKTREES.md).
+
+---
+
+### Symptom: A `.trees/<session-id>` directory is left behind after an interrupted run
+
+**Likely cause:** Run isolation retained the worktree on purpose. When a run ends with work that was never promoted — an interrupted task, an escalation that never landed — SPLITBRIEF keeps the worktree and its `splitbrief/<session-id>` branch so that work can be recovered. It also keeps the worktree when the worktree strategy could not prove the worktree clean, so a retained directory does not always mean a failed run.
+
+**Fix:**
+1. Inspect what the worktree holds: `cd .trees/<session-id>` and run `git status` (and compare against the project directory).
+2. If the work is wanted, promote it manually or resume the session; if it is disposable, remove both the worktree and its branch: `splitbrief worktree remove <session-id> --force --delete-branch`.
+
+**Prevention:** A fully accepted run removes its worktree and branch itself; retained directories are the signal that something did not reach the project. Check `splitbrief worktree list` after a run to see what remains.
 
 **See also:** [docs/WORKTREES.md](./WORKTREES.md).
 
@@ -1019,6 +1264,21 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 ---
 
 ## CI and headless
+
+### Symptom: Headless run exits 0 having done nothing
+
+**Likely cause (fixed):** A resume over a state with a **paused** or **applying** `pendingRecovery` used to exit 0 silently — the headless driver only failed on `awaiting-user`. The task loop now publishes a transcript-safe `warning` with `code: 'recovery_pending_unresolved'` naming the reason, status, and available actions, and headless fails with exit code 1 for every recovery status.
+
+**Fix:**
+1. Inspect the `recovery_required` record in the NDJSON stream — it now carries `status` (`awaiting-user` | `paused` | `applying`).
+2. Resolve the recovery with `splitbrief continue --rpc <session-id>` and the matching `recovery` command, or `splitbrief resume` in the TUI and pick an action.
+3. If the run truly did nothing, check `state.json` for `pendingRecovery` before assuming CI passed.
+
+**Prevention:** Treat any `recovery_required` record as a hard failure in CI.
+
+**See also:** [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md), [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md).
+
+---
 
 ### Symptom: `splitbrief start --json` output is interleaved with logs
 

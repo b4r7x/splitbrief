@@ -75,10 +75,14 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
           (outcome) =>
             `- ${outcome.status}${outcome.action ? ` via ${outcome.action}` : ''}${outcome.issueId ? ` (${outcome.issueId})` : ''}${outcome.message ? `: ${outcome.message}` : ''}`,
         );
-  const taskValidationLines = packet.validation.tasks.map(
-    (task) =>
-      `- ${task.taskId} ${task.status}: ${task.validation.filter((entry) => entry.passed).length}/${task.validation.length} validation stages passed`,
-  );
+  const taskValidationLines = packet.validation.tasks.map((task) => {
+    const passed = task.validation.filter((entry) => entry.passed).length;
+    const exempt = task.validation.filter((entry) => entry.baselineExempt === true);
+    const base = `- ${task.taskId} ${task.status}: ${passed}/${task.validation.length} validation stages passed`;
+    if (exempt.length === 0) return base;
+    const stages = exempt.map((entry) => entry.stage).join(', ');
+    return `${base} (${exempt.length} baseline-exempt: ${stages})`;
+  });
 
   return [
     '# Review Packet',
@@ -144,6 +148,9 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     '',
     '## Planner Final Review',
     `- Status: ${packet.finalReview.status}`,
+    `- Verdict: ${packet.finalReview.verdict ?? 'unknown'}`,
+    `- Criteria: ${packet.finalReview.criteriaPassed} passed, ${packet.finalReview.criteriaFailed} failed`,
+    `- Findings: ${packet.finalReview.findingCounts.critical} critical, ${packet.finalReview.findingCounts.warning} warning, ${packet.finalReview.findingCounts.note} note`,
     `- Path: ${packet.finalReview.path}`,
     `- ${packet.finalReview.statusText}`,
     ...(packet.finalReview.excerpt ? [`- Excerpt: ${packet.finalReview.excerpt}`] : []),

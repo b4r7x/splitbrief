@@ -712,11 +712,11 @@ describe('invokeProcessCli', () => {
         const previousHome = process.env.HOME;
         process.env.HOME = hostHome;
         try {
-          const sandboxEnv = await createRunnerSandboxEnv(projectDir, {
-            kind: 'cli',
-            tool: 'codex',
-            authChannel: 'session',
-          });
+          const sandboxEnv = await createRunnerSandboxEnv(
+            projectDir,
+            { kind: 'cli', tool: 'codex', authChannel: 'session' },
+            'implementer',
+          );
           const events: RunnerCallEvent[] = [];
           const result = await run(
             adapter({ kind: 'stdin' }),

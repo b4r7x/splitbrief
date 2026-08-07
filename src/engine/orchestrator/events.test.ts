@@ -6,6 +6,7 @@ import {
   createBusTextHandler,
   publishPlannerStatus,
   publishValidation,
+  publishValidationBaseline,
   publishError,
   publishWarning,
   publishGitCommit,
@@ -271,6 +272,79 @@ describe('publishValidation — result phase aggregates stage outcomes', () => {
     );
 
     expect('skipped' in (events[0] as Record<string, unknown>)).toBe(false);
+  });
+});
+
+describe('publishValidationBaseline — probe phases', () => {
+  it('emits one event per phase with the phase’s own fields', () => {
+    const { bus, events } = makeBusRecorder();
+    const startTime = Date.now() - 100;
+
+    publishValidationBaseline(
+      { bus: bus, phase: 'implementing' },
+      {
+        phase: 'start',
+        commands: { typecheck: 'npm run typecheck' },
+      },
+    );
+    publishValidationBaseline(
+      { bus: bus, phase: 'implementing' },
+      {
+        phase: 'progress',
+        stages: { typecheck: true, lint: false, test: false },
+        activeStage: 'lint',
+        commands: { lint: 'npm run lint' },
+        startTime,
+      },
+    );
+    publishValidationBaseline(
+      { bus: bus, phase: 'implementing' },
+      {
+        phase: 'result',
+        results: [
+          { stage: 'typecheck', passed: true },
+          { stage: 'lint', passed: false, error: 'lint error' },
+        ],
+        startTime,
+      },
+    );
+
+    expect(events).toHaveLength(3);
+    expect(events[0]).toMatchObject({
+      type: 'validation_baseline',
+      status: 'running',
+      stages: { typecheck: false, lint: false, test: false },
+      commands: { typecheck: 'npm run typecheck' },
+    });
+    expect(events[1]).toMatchObject({
+      type: 'validation_baseline',
+      status: 'running',
+      stages: { typecheck: true, lint: false, test: false },
+      activeStage: 'lint',
+      commands: { lint: 'npm run lint' },
+    });
+    expect(events[2]).toMatchObject({
+      type: 'validation_baseline',
+      status: 'done',
+      stages: { typecheck: true, lint: false, test: false },
+      failing: { lint: true },
+    });
+  });
+
+  it('the result event carries a duration measured from startTime', () => {
+    const { bus, events } = makeBusRecorder();
+    const startTime = Date.now() - 500;
+
+    publishValidationBaseline(
+      { bus: bus, phase: 'implementing' },
+      {
+        phase: 'result',
+        results: [{ stage: 'typecheck', passed: true }],
+        startTime,
+      },
+    );
+
+    expect((events[0] as Record<string, unknown>)['duration']).toBeGreaterThanOrEqual(400);
   });
 });
 

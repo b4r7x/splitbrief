@@ -185,11 +185,23 @@ export const CheckpointSummaryRollupSchema = z.object({
 
 export const ReviewFinalReviewStatusSchema = z.enum(['written', 'failed', 'missing', 'skipped']);
 
+export const ReviewVerdictSchema = z.enum(['pass', 'pass_with_notes', 'fail']);
+
+export const ReviewFindingCountsSchema = z.object({
+  critical: z.number().int().nonnegative(),
+  warning: z.number().int().nonnegative(),
+  note: z.number().int().nonnegative(),
+});
+
+export const ReviewFindingSeveritySchema = ReviewFindingCountsSchema.keyof();
+
 export const ReviewPacketSummarySchema = z.object({
   jsonPath: z.string(),
   markdownPath: z.string(),
   generatedAt: z.string(),
   finalReviewStatus: ReviewFinalReviewStatusSchema,
+  finalReviewVerdict: ReviewVerdictSchema.nullable().default(null),
+  finalReviewFindingCounts: ReviewFindingCountsSchema.default({ critical: 0, warning: 0, note: 0 }),
   driftPassed: z.boolean().nullable(),
   evidenceValidatedTasks: z.number().int().nonnegative(),
   evidenceTotalTasks: z.number().int().nonnegative(),

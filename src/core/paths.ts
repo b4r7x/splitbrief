@@ -81,6 +81,7 @@ export const EVIDENCE_FILE = 'evidence.json';
 export const DRIFT_REPORT_FILE = 'drift-report.json';
 export const DRIFT_CHAINS_FILE = 'drift-chains.json';
 export const BRIEF_QUALITY_FILE = 'brief-quality.json';
+export const BRIEF_READINESS_FILE = 'brief-readiness.json';
 export const READINESS_FILE = 'readiness.json';
 export const REVIEW_PACKET_JSON_FILE = 'review-packet.json';
 export const REVIEW_PACKET_MARKDOWN_FILE = 'review-packet.md';
@@ -115,6 +116,11 @@ export function isInternalGitStatusPath(file: string): boolean {
 
 export const worktreePath = (projectDir: string, slug: string): string =>
   join(projectDir, TREES_DIR, slug);
+
+const ISOLATION_MARKER_FILE = 'isolation-marker';
+
+export const isolationMarkerPath = (worktreeDir: string): string =>
+  join(worktreeDir, SPLITBRIEF_DIR, ISOLATION_MARKER_FILE);
 
 export const SNAPSHOTS_DIR = 'snapshots';
 export const SNAPSHOT_BASELINE_ID = 'baseline';

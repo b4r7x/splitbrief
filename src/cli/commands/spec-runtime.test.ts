@@ -2,10 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Command } from 'commander';
 import { readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { SPLITBRIEF_DIR, SPEC_FILE } from '../../core/paths.js';
+import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Planner } from '../../engine/planners/types.js';
 import {
@@ -18,6 +23,8 @@ import { registerSpecCommand } from './spec.js';
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
 
 let tmp: string;
+let shimDir: string;
+let restoreCompatibleCliShim: (() => void) | undefined;
 let consoleSpy: ReturnType<typeof vi.spyOn>;
 let originalIsTTY: boolean | undefined;
 
@@ -28,6 +35,18 @@ function setStdinIsTTY(value: boolean | undefined): void {
 beforeEach(() => {
   tmp = realpathSync(createTempDir('spec-command-test'));
   createTestGitRepo(tmp);
+  // The configured planner is injected, but the readiness gate still probes
+  // the config's CLI tool. Without a shim these assertions depend on whether
+  // the developer's own machine is signed in to Claude Code.
+  shimDir = createTempDir('spec-runtime-shim');
+  restoreCompatibleCliShim = activateCompatibleCliShim(
+    installCompatibleCliShim({
+      directory: shimDir,
+      tool: 'claude-code',
+      authChannel: defaultCliAuthChannel('claude-code').id,
+    }),
+    'test-only-spec-runtime-shim-key',
+  );
   consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   originalIsTTY = process.stdin.isTTY;
   createPlannerMock.mockReset();
@@ -45,6 +64,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  restoreCompatibleCliShim?.();
+  restoreCompatibleCliShim = undefined;
+  cleanupTempDir(shimDir);
   setStdinIsTTY(originalIsTTY);
   if (tmp) cleanupTempDir(tmp);
   consoleSpy.mockRestore();

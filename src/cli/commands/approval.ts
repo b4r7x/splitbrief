@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import {
   readApprovalsStore,
   mutateApprovalsStore,
@@ -19,8 +19,8 @@ export function registerApprovalCommand(program: Command): void {
     .description('List all sticky approval grants')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action((opts: { project?: string }) =>
-      withCliErrors(() => {
-        const projectDir = resolveProjectDir(opts.project);
+      withCliErrors(async () => {
+        const projectDir = await canonicalizeProjectDir(opts);
         const store = readApprovalsStore(projectDir);
 
         if (store.grants.length === 0) {
@@ -50,8 +50,8 @@ export function registerApprovalCommand(program: Command): void {
     .option('--scope <scope>', 'session | always | all (default: all)', 'all')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action((opts: { scope?: string; project?: string }) =>
-      withCliErrors(() => {
-        const projectDir = resolveProjectDir(opts.project);
+      withCliErrors(async () => {
+        const projectDir = await canonicalizeProjectDir(opts);
         const rawScope = opts.scope ?? 'all';
 
         if (!includes(VALID_SCOPES, rawScope)) {

@@ -1,7 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 import {
   makeCallbacks,
   makeImplementer,
@@ -23,9 +24,21 @@ import { formatValidationError } from '../validation/format-error.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { SummaryBase } from '../summary/build.js';
 import { initializeWorkflow } from './init.js';
+import { createRunIsolation } from '../isolation/create.js';
+import type { RunIsolation } from '../isolation/types.js';
 import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
 import { resolveHooksConfig } from '../../hooks/discover.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+
+function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolation {
+  return createRunIsolation({
+    projectDir,
+    sessionId,
+    strategy: 'staged-copy',
+    onFallback: () => {},
+    onRetained: () => {},
+  });
+}
 
 async function preparedTestExecution(
   input: Readonly<{
@@ -83,6 +96,16 @@ async function preparedTestExecution(
     },
   };
 }
+
+let trustHome: ReturnType<typeof useTrustHome>;
+
+beforeEach(() => {
+  trustHome = useTrustHome('initialize-workflow-trust-home');
+});
+
+afterEach(() => {
+  trustHome.restore();
+});
 
 describe('initializeWorkflow', () => {
   it('registers discovered pre-task modules when config has no hooks', async () => {
@@ -142,6 +165,7 @@ describe('initializeWorkflow', () => {
           trackedState = state;
         },
         resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(true);
@@ -239,6 +263,7 @@ describe('initializeWorkflow', () => {
           trackedState = state;
         },
         resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(true);
@@ -306,6 +331,7 @@ describe('initializeWorkflow', () => {
         metadata,
         setTrackedState: () => {},
         resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(false);
@@ -368,6 +394,7 @@ describe('initializeWorkflow', () => {
         metadata,
         setTrackedState: () => {},
         resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(true);
@@ -432,6 +459,7 @@ describe('initializeWorkflow', () => {
         metadata,
         setTrackedState: () => {},
         resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(false);
@@ -497,6 +525,7 @@ describe('initializeWorkflow', () => {
         metadata,
         setTrackedState: () => {},
         resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(false);
@@ -509,7 +538,7 @@ describe('initializeWorkflow', () => {
     });
   });
 
-  it('builds a validator that captures the run-start baseline so pre-existing failures are relabeled', async () => {
+  it('builds a validator that captures the run-start baseline and consults it at acceptance', async () => {
     await withTempDir('splitbrief-init-baseline', async (projectDir) => {
       const feature = 'red-at-start project';
       const sessionId = 'session-init-baseline';
@@ -561,12 +590,15 @@ describe('initializeWorkflow', () => {
         metadata,
         setTrackedState: () => {},
         resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
       });
 
       expect(init.ok).toBe(true);
       if (!init.ok) return;
 
       await init.wctx.validator.primeBaseline({
+        bus: init.wctx.bus,
+        phase: 'implementing',
         task: makeTask({ file: 'src/app.ts', action: 'modify' }),
         projectDir,
         config,
@@ -579,13 +611,72 @@ describe('initializeWorkflow', () => {
         phase: 'implementing',
       });
 
-      const baseline = init.wctx.validator.getBaselineFailingStages?.();
-      expect(baseline?.has('typecheck')).toBe(true);
+      const acceptance = init.wctx.validator.decideAcceptance({
+        results,
+        changedFiles: ['src/app.ts'],
+      });
+      expect(acceptance.accepted).toBe(false);
+      expect(acceptance.blockingStages).toContain('typecheck');
 
-      const error = formatValidationError(results, baseline);
-      expect(error).toContain('pre-existing failure');
-      expect(error).toContain('not caused by this task');
-      expect(error).not.toContain('Your previous code had an error');
+      const error = formatValidationError(results, acceptance);
+      expect(error).not.toBe('');
+    });
+  });
+
+  it('carries the run-scoped isolation handle on the workflow context', async () => {
+    await withTempDir('splitbrief-init-isolation', async (projectDir) => {
+      const feature = 'carry isolation handle';
+      const sessionId = 'session-init-isolation';
+      const config = makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: false },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
+      });
+      const { callbacks } = makeCallbacks();
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
+      const isolation = makeCopyingIsolation(projectDir, sessionId);
+
+      const init = await initializeWorkflow({
+        opts: {
+          prepared: prepared.execution,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          _planner: makePlanner(),
+          _implementer: makeImplementer(),
+        },
+        config: prepared.config,
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: () => {},
+        resumeHolder: { messages: [] },
+        isolation,
+      });
+
+      expect(init.ok).toBe(true);
+      if (!init.ok) return;
+      expect(init.wctx.isolation).toBe(isolation);
     });
   });
 });

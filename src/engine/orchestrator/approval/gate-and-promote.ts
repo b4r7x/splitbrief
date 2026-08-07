@@ -7,7 +7,8 @@ import { gateChangedFiles, type GateChangedFilesDecision } from './gate-files.js
 import { getChangedFilesSinceSnapshot } from './file-snapshots/capture.js';
 import { captureCurrentFileContents } from './file-snapshots/contents.js';
 import { restoreDirtyFilesFromSnapshot } from './file-snapshots/restore.js';
-import { promoteStagedChanges, type StagedProject } from './staged-project.js';
+import { promoteStagedChanges } from './staged-project.js';
+import type { IsolatedWorkspace } from '../isolation/types.js';
 
 export type GateAndPromoteOutcome =
   | { outcome: 'allow'; state: WorkflowState; changedFiles: string[] }
@@ -25,12 +26,11 @@ export type GateAndPromoteOpts = {
   callbacks: OrchestratorCallbacks;
   config: Config;
   getApprovalEnabled?: (() => boolean) | undefined;
-  staged: StagedProject | undefined;
-  usesStaging: boolean;
+  workspace: IsolatedWorkspace | undefined;
+  usesIsolation: boolean;
   taskStartSnapshot: ChangedFilesSnapshot;
   dependsOnFiles: string[];
   preApprovedFiles?: string[];
-  promoteFromStagingOnly?: boolean;
   catchChangedFilesError?: boolean;
   signal?: AbortSignal | undefined;
   cleanup?: (() => void) | undefined;
@@ -51,8 +51,8 @@ export async function gateAndPromoteChangedFiles(
     callbacks,
     config,
     getApprovalEnabled,
-    staged,
-    usesStaging,
+    workspace,
+    usesIsolation,
     taskStartSnapshot,
     dependsOnFiles,
     signal,
@@ -68,16 +68,16 @@ export async function gateAndPromoteChangedFiles(
 
   try {
     let changedFiles: string[];
-    let fromStaging = Boolean(staged);
+    let fromIsolation = Boolean(workspace);
     try {
-      const changedFilesSnapshot = staged?.snapshot ?? taskStartSnapshot;
+      const changedFilesSnapshot = workspace?.snapshot ?? taskStartSnapshot;
       changedFiles = await getChangedFilesSinceSnapshot(
-        staged?.projectDir ?? projectDir,
+        workspace?.projectDir ?? projectDir,
         changedFilesSnapshot,
       );
-      if (usesStaging && changedFiles.length === 0) {
+      if (usesIsolation && changedFiles.length === 0) {
         changedFiles = await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot);
-        fromStaging = false;
+        fromIsolation = false;
       }
     } catch (err) {
       if (!opts.catchChangedFilesError) throw err;
@@ -114,7 +114,7 @@ export async function gateAndPromoteChangedFiles(
 
     if (!decision.allow) {
       try {
-        if (!fromStaging) {
+        if (workspace === undefined) {
           const restoreResult = await restoreDirtyFilesFromSnapshot(
             projectDir,
             taskStartSnapshot,
@@ -137,14 +137,12 @@ export async function gateAndPromoteChangedFiles(
       onApproved(decision);
     }
 
-    const shouldPromote =
-      staged !== undefined && (opts.promoteFromStagingOnly ? fromStaging : true);
-    if (staged && shouldPromote) {
+    if (workspace !== undefined && fromIsolation) {
       let promoteResult: Awaited<ReturnType<typeof promoteStagedChanges>>;
       try {
         promoteResult = await promoteStagedChanges({
           targetProjectDir: projectDir,
-          stagedProjectDir: staged.projectDir,
+          stagedProjectDir: workspace.projectDir,
           files: changedFiles,
           expectedCurrentContents: preApprovalChangedFileContents,
         });

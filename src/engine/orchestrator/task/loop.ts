@@ -14,11 +14,12 @@ import {
   captureChangedFilesBaseline,
   deserializeChangedFilesBaseline,
   serializeChangedFilesBaseline,
+  unreadableChangedFiles,
   withActiveTaskSnapshot,
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { configForProfile, createTaskImplementer } from './routing.js';
-import { publishError } from '../events.js';
+import { publishError, publishWarning } from '../events.js';
 import { reviewTaskIfNeeded } from './review-flow.js';
 import { maybeAutoSnapshot } from './auto-snapshot.js';
 import { checkDependencyGate } from './dependency-gate.js';
@@ -78,16 +79,34 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
   let budgetWarningEmitted = false;
   let budgetPauseEmitted = false;
   if (state.pendingRecovery) {
+    const recovery = state.pendingRecovery;
+    publishWarning({
+      bus: wctx.bus,
+      phase: state.phase,
+      message: `Recovery is still pending (reason: ${recovery.reason}, status: ${recovery.status}); no task work was started. Available actions: ${recovery.availableActions.join(', ')}.`,
+      safety: { category: 'recovery', code: 'recovery_pending_unresolved', transcriptSafe: true },
+    });
     return { state, taskBreakdowns, status: 'stopped' };
   }
   let changedFilesBaseline: ChangedFilesBaseline =
     state.changedFilesBaseline !== undefined
       ? deserializeChangedFilesBaseline(state.changedFilesBaseline)
       : await captureChangedFilesBaseline(projectDir);
+  const unreadableFiles = unreadableChangedFiles(changedFilesBaseline);
+  if (unreadableFiles.length > 0) {
+    publishWarning({
+      bus: wctx.bus,
+      phase: state.phase,
+      message: `Ignoring changed files that could not be read: ${unreadableFiles.join(', ')}.`,
+      safety: { category: 'user-edit', code: 'unreadable_changed_files', transcriptSafe: true },
+    });
+  }
   const acknowledgedUserEditFiles = new Set<string>();
   const firstTask = state.tasks[state.currentTaskIndex];
   if (firstTask) {
     await wctx.validator.primeBaseline({
+      bus: wctx.bus,
+      phase: state.phase,
       task: firstTask,
       projectDir,
       config,
@@ -149,7 +168,11 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       return { state, taskBreakdowns, status: routing.cancelled ? 'cancelled' : 'stopped' };
     }
     const { selectedProfile, selectedModel, routingDecision } = routing;
-    const selectedTaskConfig = configForProfile(config, selectedProfile);
+    const selectedTaskConfig = configForProfile(
+      config,
+      selectedProfile,
+      routingDecision.contextLength,
+    );
 
     await maybeAutoSnapshot({
       projectDir,
@@ -179,6 +202,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
       const tool = getRunnerDisplayName(selectedProfile.config);
       const reason =
         availabilityError ??
+        taskImplementer.unavailabilityReason?.() ??
         `Selected implementer profile ${selectedProfile.name} (${tool}) is unavailable. Check runner installation, API credentials, or endpoint reachability.`;
       publishError({ bus: wctx.bus, phase: state.phase, message: reason });
       state = raisePendingRecovery(

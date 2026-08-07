@@ -64,7 +64,8 @@ export function createCliImplementer(
         signal && timeoutSignal
           ? AbortSignal.any([signal, timeoutSignal])
           : (timeoutSignal ?? signal);
-      const env = opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config));
+      const env =
+        opts.sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, config, 'implementer'));
       const adapter = resolveImplementerAdapter(toolName, config.outputFormat);
 
       try {

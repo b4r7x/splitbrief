@@ -18,7 +18,7 @@ import type { ActiveRunnerRole } from '../../core/config/accessors/active-runner
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import { getSplitbriefPath, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CliToolIdSchema } from '../../core/schemas/enums.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_AUTH_CHANNEL_IDS, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 
 const CACHE_FILENAME = 'detection-cache.json';
 const DEFAULT_TTL_MS = 5 * 60 * 1_000;
@@ -49,15 +49,25 @@ function hasPrivateContextIdentifier(value: string): boolean {
   );
 }
 
+/**
+ * A generated context key names the selected auth channel, and one channel is
+ * literally called `api-key` — enough to trip the credential heuristic and
+ * silently disable the cache for every runner on that channel. Channel ids come
+ * from a closed catalog, never from user text, so they are removed before the
+ * scan instead of widening the pattern the scan uses. Version strings and model
+ * ids keep the unmodified check.
+ */
+const CACHE_CONTEXT_CHANNEL_TOKENS = new RegExp(CLI_AUTH_CHANNEL_IDS.join('|'), 'gi');
+
 const CacheContextKeySchema = z
   .string()
   .min(1)
   .max(MAX_CACHE_CONTEXT_KEY_LENGTH)
   .regex(/^[A-Za-z0-9._~|%=-]+$/)
-  .refine(
-    (value) => !hasSensitiveCacheValue(value) && !hasPrivateContextIdentifier(value),
-    'Cache context must not include credential material, hashes, or private identifiers',
-  );
+  .refine((value) => {
+    const scanned = value.replace(CACHE_CONTEXT_CHANNEL_TOKENS, '');
+    return !hasSensitiveCacheValue(scanned) && !hasPrivateContextIdentifier(scanned);
+  }, 'Cache context must not include credential material, hashes, or private identifiers');
 
 const CacheVersionStringSchema = z
   .string()

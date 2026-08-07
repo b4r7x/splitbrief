@@ -1,9 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, rmSync, writeFileSync, utimesSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+  utimesSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { createTestGitRepo } from '#testing/helpers/git.js';
 import { psCommand, type PsDeps } from './ps.js';
+import { isolationMarkerPath } from '../../core/paths.js';
+import { ensureIsolationWorktree } from '../../engine/orchestrator/isolation/worktree.js';
 import type { LockfileData, ServerStatus } from '../../engine/ipc/lockfile.js';
+import { createGitClient } from '../../lib/git/client.js';
 
 let testDir: string;
 const originalPlatform = process.platform;
@@ -36,6 +48,21 @@ function putInteractiveSession(sessionId: string, mtimeMs: number): void {
   utimesSync(statePath, seconds, seconds);
 }
 
+function putCollectableSession(sessionId: string): void {
+  putSession(sessionId, null);
+  const sessDir = join(testDir, '.splitbrief', 'sessions', sessionId);
+  writeFileSync(join(sessDir, 'readiness.json'), '{}');
+  const oldSeconds = (Date.now() - 48 * 60 * 60 * 1000) / 1000;
+  utimesSync(sessDir, oldSeconds, oldSeconds);
+}
+
+function putIsolationWorktree(slug: string, sessionId: string): void {
+  const wtDir = join(testDir, '.trees', slug);
+  mkdirSync(join(wtDir, '.splitbrief'), { recursive: true });
+  writeFileSync(join(wtDir, '.git'), `gitdir: ${testDir}/.git/worktrees/${slug}`);
+  writeFileSync(isolationMarkerPath(wtDir), sessionId);
+}
+
 async function collectPsOutput(): Promise<string[]> {
   const lines: string[] = [];
   vi.spyOn(console, 'log').mockImplementation((line: string) => {
@@ -44,6 +71,26 @@ async function collectPsOutput(): Promise<string[]> {
 
   await psCommand({ projectDir: testDir }, fakeDeps);
   return lines;
+}
+
+async function collectPsStreams(): Promise<{ stdout: string[]; stderr: string }> {
+  const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  const stdout = await collectPsOutput();
+  return { stdout, stderr: stderrSpy.mock.calls.map((call) => String(call[0])).join('') };
+}
+
+function putRunningSession(sessionId: string): void {
+  const nowMs = Date.now();
+  const data: LockfileData = {
+    version: 1,
+    pid: 100,
+    startTimeMs: nowMs,
+    lastAliveMs: nowMs,
+    sessionId,
+    mode: 'standard',
+    feature: 'real feature',
+  };
+  putSession(sessionId, data, { alive: true, data });
 }
 
 beforeEach(() => {
@@ -56,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
   if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+  rmSync(`${testDir}-outside`, { recursive: true, force: true });
   Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   vi.restoreAllMocks();
 });
@@ -143,7 +191,7 @@ describe('psCommand', () => {
     expect(body[1]).toContain('a-older-session');
   });
 
-  it('aliases resolvable sessions but leaves empty session directories unaliased', async () => {
+  it('omits directories with no lockfile, no state and no summary, aliasing only real sessions', async () => {
     const nowMs = Date.now();
     const data: LockfileData = {
       version: 1,
@@ -155,12 +203,190 @@ describe('psCommand', () => {
       feature: 'aliased feature',
     };
     putSession('aliased-session', data, { alive: true, data });
-    putSession('unknown-session', null);
+    putSession('empty-session', null);
 
     const lines = await collectPsOutput();
 
     expect(lines.find((line) => line.includes('aliased-session'))?.trimStart()).toMatch(/^1\s/);
-    expect(lines.find((line) => line.includes('unknown-session'))?.trimStart()).toMatch(/^-\s/);
+    expect(lines.some((line) => line.includes('empty-session'))).toBe(false);
+  });
+
+  it('prints the no-sessions message when every directory was omitted', async () => {
+    putSession('only-readiness', null);
+
+    const lines = await collectPsOutput();
+
+    expect(lines).toEqual([expect.stringContaining('No sessions found')]);
+  });
+
+  it('hints at the collectable count when collectable directories exist', async () => {
+    const nowMs = Date.now();
+    const data: LockfileData = {
+      version: 1,
+      pid: 100,
+      startTimeMs: nowMs,
+      lastAliveMs: nowMs,
+      sessionId: 'real-session',
+      mode: 'standard',
+      feature: 'real feature',
+    };
+    putSession('real-session', data, { alive: true, data });
+    putCollectableSession('2026-08-01-collectable');
+
+    const lines = await collectPsOutput();
+
+    expect(lines).toContain(
+      '1 collectable session directory exists; run "splitbrief ps --prune" to collect it.',
+    );
+  });
+
+  it('agrees in number when more than one directory is collectable', async () => {
+    putRunningSession('real-session');
+    putCollectableSession('2026-08-01-collectable');
+    putCollectableSession('2026-08-02-collectable');
+
+    const lines = await collectPsOutput();
+
+    expect(lines).toContain(
+      '2 collectable session directories exist; run "splitbrief ps --prune" to collect them.',
+    );
+  });
+
+  it('prints no hint when no directory is collectable', async () => {
+    const nowMs = Date.now();
+    const data: LockfileData = {
+      version: 1,
+      pid: 100,
+      startTimeMs: nowMs,
+      lastAliveMs: nowMs,
+      sessionId: 'real-session',
+      mode: 'standard',
+      feature: 'real feature',
+    };
+    putSession('real-session', data, { alive: true, data });
+
+    const lines = await collectPsOutput();
+
+    expect(lines.some((line) => line.includes('collectable session directory'))).toBe(false);
+  });
+
+  it('--prune removes collectable directories, reports each, and leaves session state in place', async () => {
+    const nowMs = Date.now();
+    const data: LockfileData = {
+      version: 1,
+      pid: 100,
+      startTimeMs: nowMs,
+      lastAliveMs: nowMs,
+      sessionId: 'real-session',
+      mode: 'standard',
+      feature: 'real feature',
+    };
+    putSession('real-session', data, { alive: true, data });
+    putInteractiveSession('interactive-session', nowMs);
+    putCollectableSession('2026-08-01-collectable');
+    const collectableDir = join(testDir, '.splitbrief', 'sessions', '2026-08-01-collectable');
+
+    const lines: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((line: string) => {
+      lines.push(line);
+    });
+    await psCommand({ projectDir: testDir, prune: true }, fakeDeps);
+
+    expect(existsSync(collectableDir)).toBe(false);
+    expect(existsSync(join(testDir, '.splitbrief', 'sessions', 'real-session'))).toBe(true);
+    expect(existsSync(join(testDir, '.splitbrief', 'sessions', 'interactive-session'))).toBe(true);
+    expect(
+      lines.some((line) =>
+        line.includes('Removed collectable session directory 2026-08-01-collectable.'),
+      ),
+    ).toBe(true);
+    expect(lines.some((line) => line.includes('Collected 1 orphaned session directory.'))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.includes('real-session'))).toBe(true);
+    expect(lines.some((line) => line.includes('interactive-session'))).toBe(true);
+  });
+
+  it('names an isolation worktree whose session directory is gone in the hint', async () => {
+    const nowMs = Date.now();
+    const data: LockfileData = {
+      version: 1,
+      pid: 100,
+      startTimeMs: nowMs,
+      lastAliveMs: nowMs,
+      sessionId: 'real-session',
+      mode: 'standard',
+      feature: 'real feature',
+    };
+    putSession('real-session', data, { alive: true, data });
+    putIsolationWorktree('2026-08-01-orphan', '2026-07-01-gone-session');
+    putIsolationWorktree('2026-08-01-kept', 'real-session');
+
+    const lines = await collectPsOutput();
+
+    expect(
+      lines.some((line) => line.includes('Orphaned isolation worktree ".trees/2026-08-01-orphan"')),
+    ).toBe(true);
+    expect(
+      lines.some((line) =>
+        line.includes('splitbrief worktree remove 2026-08-01-orphan --force --delete-branch'),
+      ),
+    ).toBe(true);
+    expect(lines.some((line) => line.includes('.trees/2026-08-01-kept'))).toBe(false);
+  });
+
+  it('reports a worktree run isolation actually created once its session is gone', async () => {
+    createTestGitRepo(testDir, { 'README.md': '# test\n' });
+    const result = await ensureIsolationWorktree({
+      projectDir: testDir,
+      sessionId: '2026-07-01-gone-session',
+      git: createGitClient(testDir),
+    });
+    expect(result.kind).toBe('ready');
+
+    const lines = await collectPsOutput();
+
+    expect(
+      lines.some(
+        (line) =>
+          line.includes('Orphaned isolation worktree ".trees/2026-07-01-gone-session"') &&
+          line.includes('session 2026-07-01-gone-session no longer exists'),
+      ),
+    ).toBe(true);
+  });
+
+  it('still lists sessions and warns when the .trees directory cannot be read', async () => {
+    putRunningSession('real-session');
+    putIsolationWorktree('2026-08-01-orphan', '2026-07-01-gone-session');
+    const treesDir = join(testDir, '.trees');
+    chmodSync(treesDir, 0o000);
+
+    try {
+      const { stdout, stderr } = await collectPsStreams();
+
+      expect(stdout.some((line) => line.includes('real-session'))).toBe(true);
+      expect(stdout.some((line) => line.includes('Orphaned isolation worktree'))).toBe(false);
+      expect(stderr).toContain('.trees');
+      expect(stderr).toContain('EACCES');
+    } finally {
+      chmodSync(treesDir, 0o755);
+    }
+  });
+
+  it('refuses a .trees that resolves outside the project instead of reading its markers', async () => {
+    putRunningSession('real-session');
+    const outside = `${testDir}-outside`;
+    const wtDir = join(outside, '2026-08-01-orphan');
+    mkdirSync(join(wtDir, '.splitbrief'), { recursive: true });
+    writeFileSync(join(wtDir, '.git'), `gitdir: ${outside}/.git/worktrees/2026-08-01-orphan`);
+    writeFileSync(isolationMarkerPath(wtDir), '2026-07-01-gone-session');
+    symlinkSync(outside, join(testDir, '.trees'));
+
+    const { stdout, stderr } = await collectPsStreams();
+
+    expect(stdout.some((line) => line.includes('real-session'))).toBe(true);
+    expect(stdout.join('\n')).not.toContain('2026-08-01-orphan');
+    expect(stderr).toContain('resolves outside the project root');
   });
 
   it('aliases lockfile-less interactive sessions', async () => {

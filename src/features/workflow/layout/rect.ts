@@ -4,15 +4,37 @@ import { getChromeHeight, getContentTopRow } from './chrome-rows.js';
 export const WORKFLOW_CONTENT_PADDING_X = 0;
 export const WORKFLOW_SIDEBAR_GAP = 2;
 
+const WORKFLOW_SIDEBAR_MIN_COLS = 120;
+const WORKFLOW_SIDEBAR_SHARE = 0.25;
+const WORKFLOW_SIDEBAR_MIN_WIDTH = 34;
+const WORKFLOW_SIDEBAR_MAX_WIDTH = 48;
+// 2 border cells + 2 paddingX cells + the 3-cell bar/marker/space prefix each row paints.
+const SIDEBAR_TASK_ROW_OVERHEAD = 7;
+const SIDEBAR_TASK_TITLE_MIN = 10;
+
 export interface SidebarWidthInput {
   cols: number;
   sidebarVisible: boolean;
-  isSmall: boolean;
 }
 
 export function getWorkflowSidebarWidth(input: SidebarWidthInput): number {
-  const { cols, sidebarVisible, isSmall } = input;
-  return sidebarVisible && !isSmall ? Math.max(0, Math.floor(cols * 0.25)) : 0;
+  const { cols, sidebarVisible } = input;
+  if (!sidebarVisible || cols < WORKFLOW_SIDEBAR_MIN_COLS) return 0;
+  return clamp(
+    Math.floor(cols * WORKFLOW_SIDEBAR_SHARE),
+    WORKFLOW_SIDEBAR_MIN_WIDTH,
+    WORKFLOW_SIDEBAR_MAX_WIDTH,
+  );
+}
+
+export function getSidebarTaskTitleWidth(input: {
+  width: number;
+  reservedTailCells: number;
+}): number {
+  return Math.max(
+    SIDEBAR_TASK_TITLE_MIN,
+    input.width - SIDEBAR_TASK_ROW_OVERHEAD - input.reservedTailCells,
+  );
 }
 
 // The gap exists only while the sidebar actually renders, so a hidden sidebar keeps the full width.
@@ -61,7 +83,6 @@ export interface WorkflowContentRectInput {
   rows: number;
   inputRows: number;
   sidebarVisible: boolean;
-  isSmall: boolean;
   promptRows?: number;
 }
 
@@ -95,19 +116,12 @@ export function getWorkflowViewportHeight(input: {
 }
 
 export function getWorkflowContentRect(input: WorkflowContentRectInput): WorkflowContentRect {
-  const { cols, rows, inputRows, sidebarVisible, isSmall, promptRows = 0 } = input;
-  const sidebarWidth = getWorkflowSidebarWidth({
-    cols,
-    sidebarVisible,
-    isSmall,
-  });
-  const width = getWorkflowContentWidth({ cols, sidebarVisible, isSmall });
+  const { cols, rows, inputRows, sidebarVisible, promptRows = 0 } = input;
+  const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
+  const width = getWorkflowContentWidth({ cols, sidebarVisible });
   const height = getWorkflowViewportHeight({ rows, inputRows, promptRows });
   const left =
-    sidebarWidth +
-    getWorkflowSidebarGap({ cols, sidebarVisible, isSmall }) +
-    WORKFLOW_CONTENT_PADDING_X +
-    1;
+    sidebarWidth + getWorkflowSidebarGap({ cols, sidebarVisible }) + WORKFLOW_CONTENT_PADDING_X + 1;
   const top = getContentTopRow();
   const right = width > 0 ? left + width - 1 : left;
   const bottom = height > 0 ? top + height - 1 : top;

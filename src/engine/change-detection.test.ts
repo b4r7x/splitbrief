@@ -28,6 +28,7 @@ describe('file-hash change detection', () => {
       expect(await detect(stagedDir, baseline)).toEqual({
         changed: false,
         output: 'Direct implementer exited without changing any files',
+        reason: 'no-files-changed',
       });
 
       writeFileSync(join(stagedDir, 'src', 'app.ts'), 'export const app = false;\n');
@@ -50,7 +51,9 @@ describe('file-hash change detection', () => {
       const detect = createChangeDetector('Direct implementer');
 
       writeFileSync(join(stagedDir, 'src', 'added.ts'), 'export const added = true;\n');
-      expect(await detect(stagedDir, baseline)).toEqual({ changed: true, output: '' });
+      const changed = await detect(stagedDir, baseline);
+      expect(changed).toEqual({ changed: true, output: '' });
+      expect('reason' in changed).toBe(false);
     } finally {
       cleanupTempDir(stagedDir);
     }
@@ -71,6 +74,35 @@ describe('file-hash change detection', () => {
       expect(await detect(stagedDir, baseline)).toEqual({ changed: true, output: '' });
     } finally {
       cleanupTempDir(stagedDir);
+    }
+  });
+
+  it('detects a rewrite of a file the workspace was already dirty in when the caller declares the kind', async () => {
+    const repoDir = createTempDir('change-detect-already-dirty');
+    try {
+      createTestGitRepo(repoDir, { 'src/app.ts': 'export const app = true;\n' });
+      writeFileSync(join(repoDir, 'src', 'app.ts'), 'export const app = 1;\n');
+      expect(existsSync(join(repoDir, '.git'))).toBe(true);
+
+      const inferred = await captureChangeDetectorBaseline(repoDir);
+      expect(inferred).toEqual({ kind: 'git-status', files: ['src/app.ts'] });
+      const declared = await captureChangeDetectorBaseline(repoDir, { kind: 'file-hashes' });
+      expect(declared.kind).toBe('file-hashes');
+      const detect = createChangeDetector('Direct implementer');
+
+      writeFileSync(join(repoDir, 'src', 'app.ts'), 'export const app = 2;\n');
+
+      expect(await detect(repoDir, declared)).toEqual({ changed: true, output: '' });
+      // The comparator the directory would have selected on its own compares path
+      // membership, and this path was already in the baseline: this is the blind
+      // spot the declared kind exists to route around.
+      expect(await detect(repoDir, inferred)).toEqual({
+        changed: false,
+        output: 'Direct implementer exited without changing any files',
+        reason: 'no-files-changed',
+      });
+    } finally {
+      cleanupTempDir(repoDir);
     }
   });
 

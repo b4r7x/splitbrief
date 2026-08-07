@@ -232,3 +232,80 @@ describe('Sidebar — completed count', () => {
     ui.unmount();
   });
 });
+
+const LONG_TITLE = 'A task title that is exactly forty chars';
+
+describe('Sidebar — title budget', () => {
+  it('fits a long task title on one line inside its box at widths 30, 34, 48 and 60', async () => {
+    tasksStore.__testReset({ tasks: [task('1', 'in_progress', LONG_TITLE)] });
+
+    for (const width of [30, 34, 48, 60]) {
+      const ui = renderFeature(<Sidebar width={width} />);
+      await tick();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const lines = frame.split('\n');
+
+      expect(
+        lines.filter((line) => line.includes('A task title that')),
+        `title rows at width ${width}`,
+      ).toHaveLength(1);
+      for (const line of lines) {
+        expect(
+          getTerminalCellWidth(line),
+          `line at width ${width} exceeds the box`,
+        ).toBeLessThanOrEqual(width);
+      }
+
+      ui.unmount();
+    }
+  });
+
+  it('never paints the footer rule wider than the box', async () => {
+    tasksStore.__testReset({ tasks: [task('1', 'done', LONG_TITLE)] });
+
+    for (const width of [30, 60]) {
+      const ui = renderFeature(<Sidebar width={width} />);
+      await tick();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const ruleLine =
+        frame.split('\n').find((line) => /^[ \t]*\|?[ \t]*[-─]+[ \t]*\|?[ \t]*$/u.test(line)) ?? '';
+
+      expect(ruleLine, `footer rule at width ${width}`).not.toBe('');
+      expect(
+        getTerminalCellWidth(ruleLine),
+        `footer rule at width ${width} exceeds the box`,
+      ).toBeLessThanOrEqual(width);
+
+      ui.unmount();
+    }
+  });
+
+  it('shortens the title further to make room for a status tail', async () => {
+    tasksStore.__testReset({
+      tasks: [task('1', 'in_progress', LONG_TITLE), task('2', 'escalated', LONG_TITLE)],
+    });
+
+    const ui = renderFeature(<Sidebar width={34} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const lines = frame.split('\n');
+    const plainRow = lines.find(
+      (line) => line.includes('A task title') && !line.includes('Escalated'),
+    );
+    const tailedRow = lines.find(
+      (line) => line.includes('A task title') && line.includes('Escalated'),
+    );
+
+    expect(plainRow, 'plain task row').toBeDefined();
+    expect(tailedRow, 'tailed task row').toBeDefined();
+    expect(sidebarTitleCells(tailedRow ?? '')).toBeLessThan(sidebarTitleCells(plainRow ?? ''));
+
+    ui.unmount();
+  });
+});
+
+function sidebarTitleCells(row: string): number {
+  const body = row.trimEnd().slice(5, -2);
+  const title = body.replace(/ {2,}[A-Za-z]+ *$/u, '');
+  return getTerminalCellWidth(title.trimEnd());
+}

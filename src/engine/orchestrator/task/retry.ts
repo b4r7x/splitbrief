@@ -2,7 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
 import type { ValidationResult } from '../validation/result.js';
-import type { TaskStatus } from '../../../core/schemas/enums.js';
+import type { TaskStatus, ValidationStage } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
 import type { RoutingDecision } from '../context-routing/types.js';
 
@@ -40,6 +40,7 @@ export type RetryAndRecordOptions = {
   taskStartSnapshot?: ChangedFilesSnapshot;
   initialValidation?: ValidationResult[] | undefined;
   initialChangedFiles?: string[] | undefined;
+  initialExemptStages?: readonly ValidationStage[] | undefined;
   tokensBefore: TokenUsage;
   taskBreakdowns: TaskTokenUsage[];
   setTrackedState: (s: WorkflowState) => void;
@@ -158,8 +159,10 @@ export async function retryAndRecord(
       escalated,
       initialValidation: opts.initialValidation,
       initialChangedFiles: opts.initialChangedFiles,
+      initialExemptStages: opts.initialExemptStages,
       validation: result.validationResults,
       changedFiles: result.changedFiles,
+      exemptStages: result.acceptance.exemptStages,
     },
   });
   return { state: nextState, completed: true };

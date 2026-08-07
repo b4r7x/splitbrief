@@ -19,7 +19,8 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { DECLARED_PLANNER_ARTIFACT_PATH, PLANNER_ARTIFACT_MAX_BYTES } from '../../runners/types.js';
 import { beginDeclaredArtifactReview, cleanupStaleArtifactReviews } from './planner-artifact.js';
-import { createStagedProject, type StagedProject } from './staged-project.js';
+import { createStagedProject } from './staged-project.js';
+import type { IsolatedWorkspace } from '../isolation/types.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const SESSION_ID = 'session-1';
@@ -27,7 +28,7 @@ const CALL_ID = 'call-1';
 
 type ArtifactFixture = Readonly<{
   projectDir: string;
-  staged: StagedProject;
+  staged: IsolatedWorkspace;
 }>;
 
 type ApprovalCallback = Parameters<typeof beginDeclaredArtifactReview>[0]['onApprovalNeeded'];

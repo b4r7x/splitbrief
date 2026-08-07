@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -128,6 +128,101 @@ describe('runQuickPlanning', () => {
     expect(events.find((event) => event.type === 'error')).toMatchObject({
       message: expect.stringContaining('quick planner returned zero tasks'),
     });
+  });
+
+  it('books the planner tokens of both calls of a zero-task retry', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const quickPlan = vi
+      .fn()
+      .mockResolvedValueOnce({
+        spec: '',
+        plan: '',
+        tasks: [],
+        usage: { inputTokens: 30, outputTokens: 15 },
+        phases: [{ text: '# empty', filename: TASKS_FILE }],
+      })
+      .mockResolvedValueOnce({
+        spec: '',
+        plan: '',
+        tasks: [makePassingTask()],
+        usage: { inputTokens: 12, outputTokens: 7 },
+        phases: [{ text: '# tasks', filename: TASKS_FILE }],
+      });
+    const planner = makePlanner({ quickPlan });
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({ workflow: { mode: 'quick' } });
+    const { bus } = makeBusRecorder();
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: createInitialState('feature'),
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.tokenUsage.plannerInput).toBe(42);
+    expect(result.state.tokenUsage.plannerOutput).toBe(22);
+  });
+
+  it('publishes the zero-task warning only once the planner text is on disk', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const planner = makePlanner({
+      quickPlan: vi.fn().mockResolvedValue({
+        spec: '',
+        plan: '',
+        tasks: [],
+        usage: { inputTokens: 30, outputTokens: 15 },
+        phases: [{ text: '# empty', filename: TASKS_FILE }],
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const config = makeConfig({ workflow: { mode: 'quick' } });
+    const { bus, events } = makeBusRecorder();
+    let tasksFileOnDiskAtPublish: boolean | undefined;
+    bus.subscribe((event) => {
+      if (event.type === 'warning' && event.code === 'planner_returned_zero_tasks') {
+        tasksFileOnDiskAtPublish = existsSync(join(sessionDir(projectDir, sessionId), TASKS_FILE));
+      }
+    });
+
+    await runPlanningPhase({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: createInitialState('feature'),
+      feature: 'feature',
+    });
+
+    expect(tasksFileOnDiskAtPublish).toBe(true);
+    const warning = events.find(
+      (event) => event.type === 'warning' && event.code === 'planner_returned_zero_tasks',
+    );
+    expect(warning).toMatchObject({
+      category: 'planner',
+      code: 'planner_returned_zero_tasks',
+      transcriptSafe: true,
+    });
+    if (warning?.type === 'warning') {
+      expect(warning.message).toContain('quick');
+      expect(warning.message).toContain('no parsable Task Brief');
+      expect(warning.message).toContain(TASKS_FILE);
+    }
   });
 
   it('emits a warning when approve level overrides quick default', async () => {

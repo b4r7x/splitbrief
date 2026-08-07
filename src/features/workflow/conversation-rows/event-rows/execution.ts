@@ -1,9 +1,10 @@
 import type { EngineEvent } from '../../../../engine/events/types.js';
+import { ValidationStageSchema } from '../../../../core/schemas/enums.js';
 import { formatDuration } from '../../../../utils/format-time.js';
 import { implementerExpandedDiffCardBlock } from '../implementer-diff-card-block.js';
-import type { ConversationRowBlock, RowBuildContext } from '../types.js';
+import type { ConversationRowBlock, ConversationRowTone, RowBuildContext } from '../types.js';
 import { sanitizeRowDisplayText } from '../row-format/text.js';
-import { validationRow } from '../event-format.js';
+import { baselineValidationRow, validationRow } from '../event-format.js';
 import { compositeBlock, wrappedTextBlock } from '../row-block-compose.js';
 
 export function runningImplementerRowBlock(
@@ -96,6 +97,34 @@ export function validateRowBlock(
           text: `error: ${event.error}`,
           width,
           tone: 'error',
+        })
+      : null,
+  ]);
+}
+
+export function baselineValidationRowBlock(
+  keyPrefix: string,
+  event: Extract<EngineEvent, { type: 'validation_baseline' }>,
+  width: number,
+): ConversationRowBlock | null {
+  const failingStages = ValidationStageSchema.options.filter(
+    (stage) => event.failing?.[stage] === true,
+  );
+  const done = event.status === 'done';
+  const tone: ConversationRowTone = done && failingStages.length === 0 ? 'success' : 'textDim';
+  return compositeBlock(keyPrefix, [
+    wrappedTextBlock({
+      keyPrefix,
+      text: baselineValidationRow(event),
+      width,
+      tone,
+    }),
+    done && failingStages.length > 0
+      ? wrappedTextBlock({
+          keyPrefix: `${keyPrefix}-preexisting`,
+          text: `already failing before any task ran: ${failingStages.join(', ')} — pre-existing failures will not fail this run's tasks`,
+          width,
+          tone: 'warning',
         })
       : null,
   ]);

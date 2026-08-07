@@ -89,10 +89,22 @@ const AbsoluteExecutablePathSchema = z
   .min(1)
   .refine(isAbsolute, 'Executable path must be absolute');
 
+/**
+ * Inode numbers are 64-bit and `fs.Stats` delivers them as doubles: every
+ * executable on the macOS Sealed System Volume — all of `/bin` and `/usr/bin` —
+ * reports one above `Number.MAX_SAFE_INTEGER`. Demanding a safe integer refused
+ * to fingerprint those files at all, so identity binds the integral value the
+ * platform actually reports.
+ */
+const InodeNumberSchema = z
+  .number()
+  .nonnegative()
+  .refine(Number.isInteger, 'Inode number must be an integer');
+
 export const CliExecutableFingerprintSchema = z
   .object({
     dev: z.number().int().nonnegative(),
-    ino: z.number().int().nonnegative(),
+    ino: InodeNumberSchema,
     size: z.number().int().nonnegative(),
     mtimeMs: z.number().finite().nonnegative(),
   })
@@ -127,7 +139,7 @@ export function parseDigestBoundExecutableFingerprint(
   }
 
   const parsedDev = nonnegativeInteger(dev);
-  const parsedIno = nonnegativeInteger(ino);
+  const parsedIno = nonnegativeInode(ino);
   const parsedSize = nonnegativeInteger(size);
   const parsedMtimeMs = nonnegativeNumber(mtimeMs);
   if (parsedDev === null || parsedIno === null || parsedSize === null || parsedMtimeMs === null) {
@@ -140,6 +152,13 @@ function nonnegativeInteger(value: string): number | null {
   if (!/^\d+$/.test(value)) return null;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+/** Mirrors `InodeNumberSchema`: 64-bit inode values are not safe integers. */
+function nonnegativeInode(value: string): number | null {
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function nonnegativeNumber(value: string): number | null {

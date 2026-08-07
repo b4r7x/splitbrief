@@ -1,6 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import type { Dirent } from 'node:fs';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import type {
@@ -11,6 +10,7 @@ import type {
 import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evidence.js';
 import {
   CLI_TOOL_CATALOG,
+  cliAuthChannelHostStateAccess,
   selectCliAuthChannel,
   type CliAuthChannel,
   type CliAuthChannelId,
@@ -26,7 +26,11 @@ import {
   type SpawnPipeFatalSignal,
 } from '../../../lib/process/spawn/lifecycle.js';
 import { DISCOVERY_SUBPROCESS_TIMEOUT_MS } from '../../constants.js';
-import { createSandboxEnv, prependCliExecutableDirectory } from '../sandbox-env.js';
+import {
+  bridgedCliStatePresent,
+  createSandboxEnv,
+  prependCliExecutableDirectory,
+} from '../sandbox-env.js';
 import {
   isDeclaredCliProbeContract,
   type CliAuthProbe,
@@ -34,13 +38,8 @@ import {
   type CliProbeCommand,
   type CliProbeContract,
   type CliProbeOutput,
-  type CliSessionPresenceProbe,
   type CliVersionProbe,
 } from './contract.js';
-import {
-  darwinKeychainEntryPresent,
-  type DarwinKeychainEntryPresent,
-} from './keychain-presence.js';
 import { isProviderOracleProbe, parseProviderOracleOutput } from './provider-oracle.js';
 import { revalidateCliExecutableIdentity } from './process-invoke.js';
 
@@ -68,7 +67,6 @@ export interface ProbeCliReadinessOptions {
   enabled?: boolean | undefined;
   now?: (() => number) | undefined;
   signal?: AbortSignal | undefined;
-  keychainPresence?: DarwinKeychainEntryPresent | undefined;
   classifyVersion?:
     | ((input: {
         installedVersion: string;
@@ -99,12 +97,19 @@ export type ProbeDeclaredCliReadinessEvidenceOptions = Readonly<{
   authChannel?: CliAuthChannelId | undefined;
   enabled?: boolean | undefined;
   signal?: AbortSignal | undefined;
-  keychainPresence?: DarwinKeychainEntryPresent | undefined;
 }>;
+
+/**
+ * What the staged environment itself says about the channel's credential.
+ * `unobservable` is the honest answer for an OS keychain item: it leaves no
+ * trace in the environment or in the sandbox roots, so only the tool's own
+ * status command can settle it.
+ */
+type CredentialPresence = 'present' | 'absent' | 'unobservable';
 
 interface ProbeEnvironment {
   env: NodeJS.ProcessEnv;
-  authAvailable: boolean;
+  credential: CredentialPresence;
 }
 
 /**
@@ -120,19 +125,21 @@ function probeRuntimePath(): string {
   return [...new Set(directories)].join(delimiter);
 }
 
-async function containsRegularFile(root: string): Promise<boolean> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return false;
+async function credentialPresence(
+  env: NodeJS.ProcessEnv,
+  tool: CliToolId,
+  channel: CliAuthChannel | undefined,
+): Promise<CredentialPresence> {
+  if (channel === undefined) return 'absent';
+  if (channel.env.some((key) => (env[key] ?? '').trim().length > 0)) return 'present';
+  switch (cliAuthChannelHostStateAccess(channel)) {
+    case 'bridged-files':
+      return (await bridgedCliStatePresent(env, tool)) ? 'present' : 'absent';
+    case 'host-account':
+      return 'unobservable';
+    case 'none':
+      return 'absent';
   }
-  for (const entry of entries) {
-    const path = join(root, entry.name);
-    if (entry.isFile()) return true;
-    if (entry.isDirectory() && (await containsRegularFile(path))) return true;
-  }
-  return false;
 }
 
 async function probeEnvironment({
@@ -146,26 +153,13 @@ async function probeEnvironment({
   tool: CliToolId;
   channel: CliAuthChannel | undefined;
 }>): Promise<ProbeEnvironment> {
+  const hostState = channel === undefined ? 'none' : cliAuthChannelHostStateAccess(channel);
   const env = await createSandboxEnv(
     neutralDir,
     [...(channel?.env ?? [])],
-    channel?.stateBridge === 'host-cli-state' ? tool : undefined,
+    hostState === 'none' ? undefined : tool,
+    hostState,
   );
-  let authAvailable = (channel?.env ?? []).some((key) => {
-    const value = env[key];
-    return value !== undefined && value.trim().length > 0;
-  });
-  if (channel?.stateBridge === 'host-cli-state') {
-    const stateRoots = [env.HOME, env.XDG_CONFIG_HOME, env.XDG_DATA_HOME].filter(
-      (root): root is string => root !== undefined,
-    );
-    for (const root of new Set(stateRoots)) {
-      if (await containsRegularFile(root)) {
-        authAvailable = true;
-        break;
-      }
-    }
-  }
   return {
     env: {
       ...env,
@@ -174,7 +168,7 @@ async function probeEnvironment({
         safeRuntimePath: probeRuntimePath(),
       }),
     },
-    authAvailable,
+    credential: await credentialPresence(env, tool, channel),
   };
 }
 
@@ -448,6 +442,7 @@ function untrustedResult({
     enabled: boolean;
     testedVersion: string;
     probedAt: number;
+    authChannel?: CliAuthChannelId | undefined;
   }>;
   executable: CliExecutableIdentity;
   installedVersion: string | null;
@@ -475,28 +470,6 @@ function readinessExecutable(executable: CliExecutableIdentity): CliExecutableId
   };
 }
 
-/**
- * Presence in an unbridgeable store (the macOS login keychain) is consulted
- * only when no bridgeable session file exists: a sandboxed probe cannot see
- * the keychain and would report a false logout. It never overrides a probe
- * that actually ran.
- */
-async function unbridgeableSessionStatePresent({
-  presence,
-  keychainPresence,
-  signal,
-}: Readonly<{
-  presence: CliSessionPresenceProbe;
-  keychainPresence: DarwinKeychainEntryPresent;
-  signal: AbortSignal | undefined;
-}>): Promise<boolean> {
-  if (presence.kind !== 'darwin-keychain') return false;
-  return keychainPresence({
-    service: presence.service,
-    ...(signal === undefined ? {} : { signal }),
-  });
-}
-
 async function declaredReadinessEvidence({
   executable,
   neutralDir,
@@ -504,7 +477,6 @@ async function declaredReadinessEvidence({
   probe,
   authChannel,
   signal,
-  keychainPresence,
 }: Readonly<{
   executable: CliExecutableIdentity;
   neutralDir: string;
@@ -512,7 +484,6 @@ async function declaredReadinessEvidence({
   probe: CliDeclaredProbeContract;
   authChannel: CliAuthChannel | undefined;
   signal: AbortSignal | undefined;
-  keychainPresence: DarwinKeychainEntryPresent;
 }>): Promise<CliReadinessProbeEvidence> {
   throwIfAborted(signal);
   const versionEnvironment = await probeEnvironment({
@@ -555,17 +526,19 @@ async function declaredReadinessEvidence({
   throwIfAborted(signal);
   // A session channel without a safe status command still carries a real
   // presence fact: bridged state exists or it does not. A stale file can
-  // overstate a login; the tool's own error surfaces at run time.
+  // overstate a login; the tool's own error surfaces at run time. A keychain
+  // credential leaves no such fact, and with nothing to ask, unknown is the
+  // only truthful answer.
   if (authProbe === null) {
-    return { version, auth: authEnvironment.authAvailable ? 'verified' : 'missing' };
+    if (authEnvironment.credential === 'unobservable') return { version, auth: 'unknown' };
+    return { version, auth: authEnvironment.credential === 'present' ? 'verified' : 'missing' };
   }
-  if (!authEnvironment.authAvailable && authChannelRequiresCredential(authChannel)) {
-    const present = await unbridgeableSessionStatePresent({
-      presence: probe.sessionPresence,
-      keychainPresence,
-      signal,
-    });
-    return { version, auth: present ? 'verified' : 'missing' };
+  // A credential the staged child cannot read is a credential it does not have,
+  // whatever the host holds. Running the tool's own status command here would
+  // only re-observe that, at the cost of a subprocess. An unobservable one is
+  // different: the status command below is the only thing that can see it.
+  if (authEnvironment.credential === 'absent' && authChannelRequiresCredential(authChannel)) {
+    return { version, auth: 'missing' };
   }
   const output = await runProbe({
     executable,
@@ -580,7 +553,10 @@ async function declaredReadinessEvidence({
   if (isProviderOracleProbe({ tool, command: authProbe })) {
     return {
       version,
-      ...oracleAuthEvidence({ output, presenceAvailable: authEnvironment.authAvailable }),
+      ...oracleAuthEvidence({
+        output,
+        presenceAvailable: authEnvironment.credential === 'present',
+      }),
     };
   }
   return {
@@ -611,7 +587,6 @@ export async function probeDeclaredCliReadinessEvidence(
       probe: options.probe,
       authChannel,
       signal: options.signal,
-      keychainPresence: options.keychainPresence ?? darwinKeychainEntryPresent,
     });
   } finally {
     await rm(neutralDir, { recursive: true, force: true });
@@ -629,6 +604,7 @@ export async function probeCliReadiness(
     enabled: options.enabled ?? true,
     testedVersion: descriptor.compatibility.testedVersion,
     probedAt,
+    ...(options.authChannel === undefined ? {} : { authChannel: options.authChannel }),
   } as const;
   if (!base.enabled || options.executable === null) {
     return deriveCliReadiness({
@@ -656,9 +632,6 @@ export async function probeCliReadiness(
       ...(options.authChannel !== undefined ? { authChannel: options.authChannel } : {}),
       enabled: base.enabled,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
-      ...(options.keychainPresence !== undefined
-        ? { keychainPresence: options.keychainPresence }
-        : {}),
     });
     installedVersion = evidence.version.kind === 'success' ? evidence.version.value : null;
     auth = legacyAuthState(evidence.auth);

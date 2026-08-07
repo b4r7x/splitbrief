@@ -1,0 +1,153 @@
+import type { RunnerConfigSlot } from '../../config/accessors/runner-config.js';
+import { getApiProviderDescriptor } from '../../providers/api-provider-catalog.js';
+import { assertNever } from '../../../utils/type-guards.js';
+import type { ReadinessCheck } from '../types.js';
+
+export type RunnerAvailabilitySlot = Extract<RunnerConfigSlot, { role: 'planner' | 'implementer' }>;
+
+/**
+ * `not-probed` is the only honest verdict when the probe could not run or could
+ * not finish: readiness must never upgrade an unknown to `available`.
+ */
+export type RunnerAvailabilityVerdict =
+  | Readonly<{ state: 'available' }>
+  | Readonly<{ state: 'unavailable'; diagnostic: string }>
+  | Readonly<{ state: 'no-models' }>
+  | Readonly<{ state: 'missing-credential'; credentialEnv?: string | undefined }>
+  | Readonly<{ state: 'not-probed'; diagnostic: string }>;
+
+export interface RunnerAvailabilityFact {
+  readonly slot: RunnerAvailabilitySlot;
+  readonly provider: string;
+  /** Absent when the verdict was reached without contacting an endpoint. */
+  readonly endpoint?: string | undefined;
+  readonly verdict: RunnerAvailabilityVerdict;
+}
+
+// Derived from the descriptor union rather than the catalog's LocalApiProviderId,
+// which resolves to never: a new local provider must add a startup remedy here.
+type LocalApiProvider = Extract<
+  NonNullable<ReturnType<typeof getApiProviderDescriptor>>,
+  { offering: 'local' }
+>;
+
+const LOCAL_PROVIDER_STARTUP: Readonly<Record<LocalApiProvider['id'], string>> = {
+  ollama: 'Run `ollama serve`',
+  'lm-studio': 'Start the LM Studio local server',
+};
+
+function localProviderStartup(provider: string): string | undefined {
+  const descriptor = getApiProviderDescriptor(provider);
+  if (descriptor === undefined || descriptor.offering !== 'local') return undefined;
+  return LOCAL_PROVIDER_STARTUP[descriptor.id];
+}
+
+function runnerAvailabilityCheckId(slot: RunnerAvailabilitySlot): string {
+  return slot.role === 'planner'
+    ? 'runners.availability.planner'
+    : `runners.availability.implementer.${slot.profile}`;
+}
+
+function pickAnother(slot: RunnerAvailabilitySlot): string {
+  return `configure a different ${slot.role}`;
+}
+
+function unavailableFix(fact: RunnerAvailabilityFact): string {
+  const startup = localProviderStartup(fact.provider);
+  if (startup !== undefined) {
+    return `${startup}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
+  }
+  return `Check the ${fact.provider} endpoint and network, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
+}
+
+function credentialFix(
+  fact: RunnerAvailabilityFact,
+  verdict: Extract<RunnerAvailabilityVerdict, { state: 'missing-credential' }>,
+): string {
+  const supply =
+    verdict.credentialEnv === undefined
+      ? `Set an apiKey for ${fact.provider}`
+      : `Export ${verdict.credentialEnv}`;
+  return `${supply}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`;
+}
+
+function atEndpoint(fact: RunnerAvailabilityFact): string {
+  return fact.endpoint === undefined ? '' : ` at ${fact.endpoint}`;
+}
+
+interface AvailabilityCopy {
+  summary: string;
+  details?: string[] | undefined;
+  fix?: string | undefined;
+}
+
+function availabilityCopy(fact: RunnerAvailabilityFact, label: string): AvailabilityCopy {
+  const verdict = fact.verdict;
+  switch (verdict.state) {
+    case 'available':
+      return { summary: `${label} is available${atEndpoint(fact)}.` };
+    case 'unavailable':
+      return {
+        summary: `${label} is not reachable${atEndpoint(fact)}.`,
+        details: [`Probe: ${verdict.diagnostic}`],
+        fix: unavailableFix(fact),
+      };
+    case 'no-models':
+      return {
+        summary: `${label} answered${atEndpoint(fact)} but offers no models.`,
+        fix: `Install a model for ${fact.provider}, or ${pickAnother(fact.slot)}, then run \`splitbrief doctor\` again.`,
+      };
+    case 'missing-credential':
+      return {
+        summary: `${label} has no credential configured.`,
+        fix: credentialFix(fact, verdict),
+      };
+    case 'not-probed':
+      return {
+        summary: `${label} availability was not probed.`,
+        details: [`Probe: ${verdict.diagnostic}`],
+      };
+    default:
+      return assertNever(verdict);
+  }
+}
+
+function availabilitySeverity(
+  fact: RunnerAvailabilityFact,
+  isDefaultImplementer: boolean,
+): ReadinessCheck['severity'] {
+  switch (fact.verdict.state) {
+    case 'available':
+      return 'ok';
+    case 'not-probed':
+      return 'info';
+    // A runner the workflow is certain to call cannot be advisory: the planning
+    // phase is paid for before the implementer is first used.
+    default:
+      return fact.slot.role === 'planner' || isDefaultImplementer ? 'blocker' : 'warning';
+  }
+}
+
+export function runnerAvailabilityCheck(
+  input: Readonly<{
+    fact: RunnerAvailabilityFact;
+    label: string;
+    isDefaultImplementer: boolean;
+  }>,
+): ReadinessCheck {
+  const copy = availabilityCopy(input.fact, input.label);
+  return {
+    id: runnerAvailabilityCheckId(input.fact.slot),
+    severity: availabilitySeverity(input.fact, input.isDefaultImplementer),
+    summary: copy.summary,
+    ...(copy.details !== undefined && { details: copy.details }),
+    ...(copy.fix !== undefined && { fix: copy.fix }),
+    metadata: {
+      role: input.fact.slot.role,
+      ...(input.fact.slot.role === 'implementer' && { profile: input.fact.slot.profile }),
+      provider: input.fact.provider,
+      endpoint: input.fact.endpoint ?? null,
+      availability: input.fact.verdict.state,
+    },
+  };
+}

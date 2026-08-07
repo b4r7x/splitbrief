@@ -1,34 +1,31 @@
 import { truncateByLines, truncateByTailLines } from '../../../utils/truncate.js';
 import type { ValidationResult } from './result.js';
-import type { ValidationStage } from '../../../core/schemas/enums.js';
+import type { ValidationAcceptance } from './acceptance.js';
 
 const MAX_ERROR_LINES = 20;
 
 export function formatValidationError(
   results: ValidationResult[],
-  baselineFailingStages?: ReadonlySet<ValidationStage>,
+  acceptance: ValidationAcceptance,
 ): string {
-  const failed = results.find((r) => !r.passed);
-  if (!failed) return '';
+  const blocking = results.find((r) => !r.passed && acceptance.blockingStages.includes(r.stage));
+  if (!blocking) return '';
 
-  const errorText = failed.error || failed.output || '';
+  const errorText = blocking.error || blocking.output || '';
   const errorLines =
-    failed.stage === 'test'
+    blocking.stage === 'test'
       ? truncateByTailLines(errorText, MAX_ERROR_LINES)
       : truncateByLines(errorText, MAX_ERROR_LINES);
-  const preExisting =
-    baselineFailingStages !== undefined
-      ? results.filter((r) => !r.passed && baselineFailingStages.has(r.stage)).length
-      : 0;
-
   const header =
-    preExisting > 0 && baselineFailingStages?.has(failed.stage)
-      ? `${preExisting} pre-existing failure${preExisting === 1 ? '' : 's'} (not caused by this task). Fix the current error.`
+    acceptance.exemptStages.length > 0
+      ? `${acceptance.exemptStages.length} pre-existing failure${
+          acceptance.exemptStages.length === 1 ? '' : 's'
+        } (${acceptance.exemptStages.join(', ')}), not to be fixed.`
       : 'Your previous code had an error. Fix it.';
 
   return [
     header,
-    `Error type: ${failed.stage}`,
+    `Error type: ${blocking.stage}`,
     `Error message: ${errorLines}`,
     'Fix the error and output the complete corrected file.',
   ].join('\n');

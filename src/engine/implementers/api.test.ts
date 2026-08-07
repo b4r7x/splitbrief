@@ -30,11 +30,64 @@ afterEach(() => {
 });
 
 describe('api implementer — OpenAI-compatible path', () => {
-  it('checks availability without fetching the provider model list', async () => {
+  it('reports the default local implementer unavailable when the endpoint refuses the connection, after contacting the model list', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+    const implementer = createApiImplementer(makeConfig());
+
+    expect(await implementer.isAvailable()).toBe(false);
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toContain('/api/tags');
+  });
+
+  it('reports the default local implementer available when the endpoint returns a non-empty model list', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ models: [{ name: 'qwen2.5-coder:7b' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
     const implementer = createApiImplementer(makeConfig());
 
     expect(await implementer.isAvailable()).toBe(true);
-    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('re-probes the endpoint on the next availability gate instead of latching the verdict', async () => {
+    // The per-task implementer is constructed at task/loop.ts:176
+    // (createTaskImplementer); the gate calls isAvailable() once per task
+    // iteration, so an implementer unavailable for task N must be probed
+    // afresh for task N+1.
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    const implementer = createApiImplementer(makeConfig());
+
+    expect(await implementer.isAvailable()).toBe(false);
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ models: [{ name: 'qwen2.5-coder:7b' }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    expect(await implementer.isAvailable()).toBe(true);
+  });
+
+  it('states why the last availability check failed for an unreachable local endpoint', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+    const implementer = createApiImplementer(makeConfig());
+
+    await implementer.isAvailable();
+    expect(implementer.unavailabilityReason?.()).toBe('fetch failed');
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ models: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await implementer.isAvailable();
+    expect(implementer.unavailabilityReason?.()).toBe('the endpoint is unreachable');
   });
 
   it('reports unavailable when a referenced remote API key is missing', async () => {
@@ -294,6 +347,31 @@ describe('api implementer — OpenAI-compatible path', () => {
     // budget is clamped to the conservative per-model cap regardless of window size.
     const maxTokens = await capturedMaxTokens(1_000_000);
     expect(maxTokens).toBeLessThanOrEqual(8192);
+  });
+
+  it('budgets the prompt against the shared default when no contextLength is declared', async () => {
+    const code = '```ts\nexport const x = 1;\n```';
+    fetchMock.mockResolvedValue(makeOpenAiSseResponse([{ content: code }]));
+
+    const cfg = makeConfig({
+      implementer: { ...temperatureCapableImplementer, contextLength: undefined },
+    });
+    const implementer = createApiImplementer(cfg);
+    const task = makeTask({ id: 'T018', file: 'src/shared-default.ts', action: 'create' });
+
+    await implementer.implement({
+      task,
+      projectDir,
+      config: cfg,
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    const init = fetchMock.mock.calls.at(-1)?.[1] as { body?: string } | undefined;
+    const body = JSON.parse(String(init?.body)) as { max_tokens?: number };
+    // 32768 minus a small prompt still exceeds the conservative output cap, so the
+    // request lands exactly on it; an 8192 window would clamp below it.
+    expect(body.max_tokens).toBe(8192);
   });
 
   it('uses provider-specific env var for API key fallback (OPENROUTER_API_KEY)', async () => {

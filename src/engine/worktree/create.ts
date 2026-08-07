@@ -18,6 +18,7 @@ export type CreateWorktreeOptions = {
   projectDir: string;
   slug: string;
   git: GitClient;
+  requireCleanSource?: boolean;
 };
 
 async function propagateSplitbriefState(projectDir: string, wtPath: string): Promise<void> {
@@ -43,7 +44,7 @@ async function initWorktreeSubmodules(
 }
 
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
-  const { projectDir, slug, git } = opts;
+  const { projectDir, slug, git, requireCleanSource = true } = opts;
   const wtPath = resolveConfinedWorktreePath(projectDir, slug);
   const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${slug}`;
 
@@ -52,7 +53,7 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<strin
   const dirtyFiles = status.files.filter((file) => {
     return !shouldIgnoreSourceDirtyPath(file.path, gitignoreOnlyBookkeeping);
   });
-  if (dirtyFiles.length > 0) {
+  if (requireCleanSource && dirtyFiles.length > 0) {
     throw worktreeError.sourceDirty(dirtyFiles.map((file) => file.path));
   }
 

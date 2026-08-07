@@ -38,8 +38,10 @@ const customInvocation: AdmittedCustomRunnerInvocation = {
   },
   posture: {
     role: 'implementer',
+    source: 'configured',
     cwd: 'disposable-stage',
     stage: 'filtered-disposable-stage',
+    environmentAccess: 'declared-references-only',
     filesystem: 'host-user-access',
     network: 'host-network-access',
     result: 'parsed-output-only',

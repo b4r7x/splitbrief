@@ -3,6 +3,10 @@ import { writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from 'n
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import { SANDBOX_DIR } from '../../core/paths.js';
+import {
+  cliAuthChannelHostStateAccess,
+  defaultCliAuthChannel,
+} from '../../core/runners/cli-tool-catalog.js';
 import { createClaudeCodePlanner } from './claude-code.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
@@ -126,9 +130,20 @@ describe('createClaudeCodePlanner planning', () => {
       await planner.review('prompt', projectDir, { onOutput: () => {} });
 
       expect(readFileSync(envFile, 'utf8').trim()).toBe('|');
-      expect(
-        existsSync(join(projectDir, SANDBOX_DIR, 'home', '.claude', '.credentials.json')),
-      ).toBe(true);
+      const staged = join(
+        projectDir,
+        SANDBOX_DIR,
+        'planner',
+        'home',
+        '.claude',
+        '.credentials.json',
+      );
+      // The session channel reaches the child the way the platform allows: a
+      // read-only snapshot where the credential is a file, the host account
+      // where it is an OS keychain item and nothing can be copied.
+      expect(existsSync(staged)).toBe(
+        cliAuthChannelHostStateAccess(defaultCliAuthChannel('claude-code')) === 'bridged-files',
+      );
     } finally {
       if (originalHome === undefined) delete process.env['HOME'];
       else process.env['HOME'] = originalHome;

@@ -10,7 +10,12 @@ import {
 } from './enums.js';
 import { DriftSeveritySchema, DriftCodeSchema } from './drift.js';
 import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
-import { CostBreakdownSchema, ReviewFinalReviewStatusSchema } from './summary.js';
+import {
+  CostBreakdownSchema,
+  ReviewFinalReviewStatusSchema,
+  ReviewFindingCountsSchema,
+  ReviewVerdictSchema,
+} from './summary.js';
 import { TaskIdSchema } from './task.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { RunSnapshotKindSchema } from './snapshot.js';
@@ -139,6 +144,7 @@ const ReviewPacketValidationTaskSchema = z.object({
       stage: EvidenceValidationStageSchema,
       passed: z.boolean(),
       errorSummary: z.string().optional(),
+      baselineExempt: z.boolean().optional(),
     }),
   ),
   expectedEvidence: z.array(z.string()),
@@ -357,6 +363,10 @@ const ReviewPacketFinalReviewSchema = z.object({
   evidenceStatus: EvidenceFinalReviewStatusSchema.nullable(),
   statusText: z.string(),
   excerpt: z.string().nullable(),
+  verdict: ReviewVerdictSchema.nullable().default(null),
+  criteriaPassed: z.number().int().nonnegative().default(0),
+  criteriaFailed: z.number().int().nonnegative().default(0),
+  findingCounts: ReviewFindingCountsSchema.default({ critical: 0, warning: 0, note: 0 }),
 });
 
 export const ReviewPacketSchema = z.object({

@@ -58,15 +58,8 @@ export function applyCLIOverrides(config: Config, overrides: CLIOverrides): Conf
     next = applyApproveOverride(next, level);
   }
   if (overrides.mode !== undefined) {
-    const parsed = WorkflowModeSchema.safeParse(overrides.mode);
-    if (!parsed.success) {
-      throw configError.invalidOverride(
-        'workflow mode',
-        overrides.mode,
-        `Must be: ${WORKFLOW_MODES.join(', ')}`,
-      );
-    }
-    next = { ...next, workflow: { ...next.workflow, mode: parsed.data } };
+    const mode = parseOverrideOrThrow(WorkflowModeSchema, overrides.mode, 'mode', WORKFLOW_MODES);
+    next = { ...next, workflow: { ...next.workflow, mode } };
   }
   if (overrides.budget !== undefined) {
     if (!Number.isFinite(overrides.budget) || overrides.budget <= 0) {

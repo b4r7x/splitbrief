@@ -104,6 +104,7 @@ describe('real CLI smoke: planner to implementer', () => {
 
         expect(summary.totalTasks).toBeGreaterThanOrEqual(1);
         expect(summary.failed).toBe(0);
+        expect(summary.tokenUsage.implementerInput).toBeGreaterThan(0);
         const smokePath = join(projectDir, 'src/real-cli-smoke.ts');
         expect(evaluateTsArtifact(smokePath, 'mod.realCliSmoke')).toBe('real-cli-smoke');
         expect(existsSync(join(projectDir, '.splitbrief'))).toBe(true);

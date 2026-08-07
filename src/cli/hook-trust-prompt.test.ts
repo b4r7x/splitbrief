@@ -3,12 +3,18 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { ensureHooksTrusted, promptHookTrust } from './hook-trust-prompt.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
+import {
+  ensureHooksTrusted,
+  formatHookTrustDisclosure,
+  promptHookTrust,
+} from './hook-trust-prompt.js';
 import { isHooksConfigTrusted, markHooksConfigTrusted } from '../core/hooks/trust.js';
 import { isCliError } from './errors.js';
 import type { HooksConfig } from '../core/schemas/hooks.js';
 
 let tmp: string;
+let trustHome: ReturnType<typeof useTrustHome>;
 let originalIsTTY: boolean | undefined;
 
 const hooks: HooksConfig = {
@@ -17,6 +23,19 @@ const hooks: HooksConfig = {
       kind: 'command',
       command: 'prettier',
       args: ['--check'],
+      timeout_ms: 5000,
+      on_failure: 'warn',
+    },
+  ],
+};
+
+const namedHooks: HooksConfig = {
+  pre_task: [
+    {
+      kind: 'command',
+      name: 'format check',
+      command: '/usr/bin/touch',
+      args: ['PWNED'],
       timeout_ms: 5000,
       on_failure: 'warn',
     },
@@ -42,6 +61,7 @@ function answeringPrompt(answer: string): {
 }
 
 beforeEach(() => {
+  trustHome = useTrustHome('hooks-trust-home');
   tmp = createTempDir('hooks-trust-test');
   mkdirSync(join(tmp, '.splitbrief'), { recursive: true });
   originalIsTTY = process.stdin.isTTY;
@@ -50,6 +70,7 @@ beforeEach(() => {
 afterEach(() => {
   setStdinIsTTY(originalIsTTY);
   cleanupTempDir(tmp);
+  trustHome.restore();
 });
 
 describe('ensureHooksTrusted', () => {
@@ -144,6 +165,57 @@ describe('ensureHooksTrusted', () => {
     expect(isCliError(caught)).toBe(true);
     expect((caught as Error).message).toMatch(/untrusted hooks/);
     expect(isHooksConfigTrusted(tmp, hooks)).toBe(false);
+  });
+});
+
+describe('the hook trust prompt authorizes a command, not a label', () => {
+  it('puts the executable, its resolved path, and its argv in the question itself', async () => {
+    setStdinIsTTY(true);
+    const prompt = answeringPrompt('y');
+
+    await ensureHooksTrusted({ projectDir: tmp, hooks: namedHooks, allowHooks: false }, prompt.fn);
+
+    const question = prompt.questions[0] ?? '';
+    expect(question).toContain('Executable: "/usr/bin/touch"');
+    expect(question).toContain('Resolved: "/usr/bin/touch"');
+    expect(question).toContain('Arguments: "PWNED"');
+    expect(question).toContain('Inherits the full SPLITBRIEF process environment');
+    expect(question).toContain('Trust these hooks for this project? [y/N]');
+    expect(question).not.toContain('format check');
+  });
+
+  it('resolves a bare command against the PATH the hook will be spawned with', () => {
+    const disclosure = formatHookTrustDisclosure(tmp, hooks);
+    expect(disclosure).toContain('Executable: "prettier"');
+    expect(disclosure).toMatch(/Resolved: "(\/.*prettier|\(not found on PATH\))"/);
+  });
+
+  it('names the module file a module hook loads', () => {
+    const moduleHooks: HooksConfig = {
+      post_task: [{ kind: 'module', path: 'hooks/pwn.mjs', timeout_ms: 5000, on_failure: 'warn' }],
+    };
+    const disclosure = formatHookTrustDisclosure(tmp, moduleHooks);
+    expect(disclosure).toContain('Module: "hooks/pwn.mjs"');
+    expect(disclosure).toContain(`Resolved: "${join(tmp, 'hooks', 'pwn.mjs')}"`);
+  });
+
+  it('cannot be redressed by control characters in the declared command', () => {
+    const spoofed: HooksConfig = {
+      pre_task: [
+        {
+          kind: 'command',
+          command: 'safe\u202e/hcnual',
+          args: ['--x\u0007'],
+          timeout_ms: 5000,
+          on_failure: 'warn',
+        },
+      ],
+    };
+    const disclosure = formatHookTrustDisclosure(tmp, spoofed);
+
+    expect(disclosure).toContain('Executable: "safe\\u202e/hcnual"');
+    expect(disclosure).toContain('Arguments: "--x\\u0007"');
+    expect(disclosure).not.toContain('\u202e');
   });
 });
 

@@ -1,7 +1,7 @@
 {
   "name": "splitbrief",
   "version": "0.1.0",
-  "description": "SPLITBRIEF — cost-optimized AI coding orchestrator using expensive planning and cheap/local implementation",
+  "description": "SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the other executes, and it holds the contract, validation, retry, escalation and evidence",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/b4r7x/splitbrief.git"
@@ -47,7 +47,7 @@
     "eval:replay": "tsx evals/cli.ts --replay",
     "check:invariants": "tsx scripts/check-invariants.ts",
     "knip": "knip",
-    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run check:invariants"
+    "test-ci": "npm run format:check && npm run typecheck && npm run lint && npm run test:coverage && npm run test:e2e && npm run check:invariants"
   },
   "keywords": [
     "ai",

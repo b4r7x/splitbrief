@@ -234,3 +234,42 @@ describe('short-viewport clamp clips registered sticky zones', () => {
     ui.unmount();
   });
 });
+
+describe('multi-line trust disclosures in the sticky prompt', () => {
+  beforeEach(() => {
+    _resetMouseZones();
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+  });
+
+  afterEach(() => {
+    _resetMouseZones();
+    approvalPromptStore.__testReset();
+    terminalSizeStore.reset();
+  });
+
+  it('keeps one line per disclosed fact instead of running them together', async () => {
+    const ui = render(<ApprovalPrompt />);
+    const decision = openApprovalPrompt(
+      makeStickyRequest(
+        'Executable: "/bin/sh"\nArguments: "-c" "id -un > SB_PROOF.txt"\nNetwork: Network access is not restricted',
+      ),
+    );
+    await tick(PAST_GRACE);
+
+    const lines = stripColor(ui.lastFrame()).split('\n');
+    expect(lines.some((line) => line.includes('Executable: "/bin/sh"'))).toBe(true);
+    expect(lines.some((line) => line.includes('Arguments: "-c" "id -un'))).toBe(true);
+    expect(lines.some((line) => line.includes('Network: Network access is not restricted'))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.includes('Executable:') && line.includes('Arguments:'))).toBe(
+      false,
+    );
+    expect(lines).toHaveLength(getApprovalPromptRows(approvalPromptStore.get(), 120));
+
+    await flushEffects();
+    ui.stdin.write(ESC);
+    await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+});

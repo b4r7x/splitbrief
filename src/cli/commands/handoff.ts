@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import {
   HANDOFF_TARGETS,
   normalizeHandoffTarget,
@@ -47,7 +47,7 @@ export function registerHandoffCommand(program: Command, deps: HandoffDeps = def
         },
       ) =>
         withCliErrors(async () => {
-          const projectDir = resolveProjectDir(opts.project);
+          const projectDir = await canonicalizeProjectDir(opts);
 
           if (opts.list) {
             console.log('Built-in targets:');

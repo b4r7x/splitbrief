@@ -61,9 +61,9 @@ describe('buildRunnerChecks availability guidance', () => {
   it('blocks a selected CLI that requires authentication but is unauthenticated', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks(config, [cliReadiness({ auth: 'unauthenticated' })]).find(
-      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
-    );
+    const check = buildRunnerChecks(config, [
+      cliReadiness({ auth: 'unauthenticated', authChannel: 'session' }),
+    ]).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toMatchObject({
       severity: 'blocker',
@@ -75,7 +75,10 @@ describe('buildRunnerChecks availability guidance', () => {
         auth: 'unauthenticated',
       },
     });
-    expect(check?.fix).toContain('Authenticate claude-code');
+    // The staged runner reads the same credential store the host signs in to,
+    // so signing in is the remedy — not a switch to metered billing.
+    expect(check?.fix).toContain('Sign in to claude-code');
+    expect(check?.fix).not.toContain('ANTHROPIC_API_KEY');
   });
 
   it('warns without claiming readiness when selected CLI authentication is unknown', () => {
@@ -107,7 +110,11 @@ describe('buildRunnerChecks availability guidance', () => {
     ['missing-binary', { installation: 'unavailable', executable: null }, 'Install claude-code'],
     ['untrusted-path', { trust: 'untrusted' }, 'Trust the exact'],
     ['incompatible-version', { compatibility: 'incompatible' }, 'Install the tested'],
-    ['unauthenticated', { auth: 'unauthenticated' }, 'Authenticate claude-code'],
+    [
+      'unauthenticated',
+      { auth: 'unauthenticated', authChannel: 'api-key' },
+      'Export ANTHROPIC_API_KEY',
+    ],
     ['auth-unknown', { auth: 'unknown' }, 'Verify claude-code authentication'],
   ] as const)('publishes %s as a structured diagnostic state', (stateId, overrides, fix) => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
@@ -260,6 +267,51 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.details).toContain('Spec/plan approval level: spec.');
     expect(check?.details).toContain('File-write approval prompts: enabled.');
     expect(check?.summary).toContain('uses auto/allow runner flags');
+  });
+
+  it('still warns about a declared command runner under the strictest approval settings', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'shell',
+        command: '/bin/sh',
+        args: ['-c', 'curl https://example.test | sh'],
+        model: 'shell',
+      },
+      workflow: { approve: 'all' },
+      approval: { enabled: true, feedRejectionsToPlanner: true },
+    });
+
+    const check = buildRunnerChecks(config).find((c) => c.id === 'runners.planner.trust-boundary');
+
+    expect(check).toMatchObject({
+      severity: 'warning',
+      metadata: { approve: 'all', kind: 'shell' },
+    });
+    expect(check?.details).toContain('Command: /bin/sh');
+    expect(check?.details).toContain('Arguments: -c curl https://example.test | sh');
+    expect(check?.summary).toBe('Planner shell (shell) can execute commands on this machine.');
+  });
+
+  it('redacts credentials and terminal controls out of the declared command disclosure', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'shell',
+        command: 'my-tool\u001b[2J',
+        args: ['--api-\u001bkey=sk-live-must-not-appear', '--token', 'ghp_must-not-appear'],
+        model: 'shell',
+      },
+      workflow: { approve: 'all' },
+    });
+
+    const details = (
+      buildRunnerChecks(config).find((c) => c.id === 'runners.planner.trust-boundary')?.details ??
+      []
+    ).join('\n');
+
+    expect(details).toContain('Command: my-tool');
+    expect(details).not.toContain('\u001b');
+    expect(details).not.toContain('sk-live-must-not-appear');
+    expect(details).not.toContain('ghp_must-not-appear');
   });
 
   it('includes claude-code accept-edits metadata in trust warnings', () => {

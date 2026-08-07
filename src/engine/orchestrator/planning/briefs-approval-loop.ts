@@ -9,14 +9,22 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
-import { writeSpecFile } from '../../../core/paths-io.js';
+import { readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import { runBriefQualityGate } from './brief-quality-gate.js';
-import { firstBriefReadinessBlockMessage, runBriefReadinessGate } from './brief-readiness-gate.js';
+import { runBriefReadinessGateAndReport } from './brief-readiness-gate.js';
+import {
+  MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS,
+  briefReviewFingerprint,
+  createBriefReviewTracker,
+  publishReadinessBlockWarning,
+  readinessBlockDetail,
+  recordReadinessOverride,
+} from './brief-review-gate.js';
 import { regenerateTasks } from './regen.js';
 import { buildTargetedRejectionComment } from './regen-targeted.js';
 import { readPersistedTasks, readTasksForApproval } from './io.js';
@@ -85,6 +93,23 @@ export async function runBriefsApprovalLoop(
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
 
+  const tracker = createBriefReviewTracker();
+
+  const briefsBody = (): string => readSpecFile({ projectDir, sessionId }, TASKS_FILE) ?? '';
+
+  const rejectNoProgress = (): BriefsApprovalLoopResult => {
+    publishError({
+      bus: bus,
+      phase: state.phase,
+      message: `Task Brief review made no progress after ${MAX_UNPRODUCTIVE_BRIEF_REVIEW_ATTEMPTS} consecutive attempts; rejecting the Task Briefs.`,
+      safety: { category: 'workflow', code: 'brief_review_no_progress', transcriptSafe: true },
+    });
+    const rejectedState = transitionAndSave({ projectDir, sessionId }, state, {
+      type: 'REJECT_BRIEFS',
+    });
+    return { state: rejectedState, tasks, rejected: true };
+  };
+
   while (true) {
     if (signal?.aborted) return { state, tasks, rejected: false, aborted: true };
     const result = await callbacks.onApprovalNeeded('briefs', tasksFilePath);
@@ -97,6 +122,9 @@ export async function runBriefsApprovalLoop(
       const edited = await readPersistedTasks(tasksFilePath, warnDropped);
       if (!edited.ok) {
         publishError({ bus: bus, phase: state.phase, message: edited.message });
+        if (tracker.registerFailure(briefReviewFingerprint(tasks, briefsBody(), edited.message))) {
+          return rejectNoProgress();
+        }
         continue;
       }
       const { report, ok } = runBriefQualityGate({
@@ -108,19 +136,40 @@ export async function runBriefsApprovalLoop(
       });
       if (!ok) {
         publishBriefQualityFailure(bus, state.phase, report);
+        if (
+          tracker.registerFailure(
+            briefReviewFingerprint(
+              edited.tasks,
+              briefsBody(),
+              `quality:${firstBriefErrorMessage(report)}`,
+            ),
+          )
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
-      const editReadiness = await runBriefReadinessGate({
+      const editReadiness = await runBriefReadinessGateAndReport({
         tasks: edited.tasks,
         config,
         projectDir,
+        sessionId,
+        bus,
+        phase: state.phase,
+        ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
+        ...(opts.detectedContextLength !== undefined && {
+          detectedContextLength: opts.detectedContextLength,
+        }),
       });
       if (!editReadiness.ok) {
-        publishError({
-          bus: bus,
-          phase: state.phase,
-          message: firstBriefReadinessBlockMessage(editReadiness),
-        });
+        publishReadinessBlockWarning({ bus, phase: state.phase, report: editReadiness });
+        if (
+          tracker.registerFailure(
+            briefReviewFingerprint(edited.tasks, briefsBody(), readinessBlockDetail(editReadiness)),
+          )
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
       tasks = edited.tasks;
@@ -130,6 +179,11 @@ export async function runBriefsApprovalLoop(
           phase: state.phase,
           message: 'Task Brief set must retain at least one task.',
         });
+        if (
+          tracker.registerFailure(briefReviewFingerprint(tasks, briefsBody(), 'empty-task-set'))
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
       try {
@@ -140,6 +194,13 @@ export async function runBriefsApprovalLoop(
           phase: state.phase,
           message: labelError('Task Brief dependency graph is invalid', err),
         });
+        if (
+          tracker.registerFailure(
+            briefReviewFingerprint(tasks, briefsBody(), labelError('topo-sort', err)),
+          )
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
       state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
@@ -161,6 +222,11 @@ export async function runBriefsApprovalLoop(
       });
       if (!approved.ok) {
         publishError({ bus: bus, phase: state.phase, message: approved.message });
+        if (
+          tracker.registerFailure(briefReviewFingerprint(tasks, briefsBody(), approved.message))
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
       const { report, ok } = runBriefQualityGate({
@@ -172,20 +238,54 @@ export async function runBriefsApprovalLoop(
       });
       if (!ok) {
         publishBriefQualityFailure(bus, state.phase, report);
+        if (
+          tracker.registerFailure(
+            briefReviewFingerprint(
+              approved.tasks,
+              briefsBody(),
+              `quality:${firstBriefErrorMessage(report)}`,
+            ),
+          )
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
-      const readiness = await runBriefReadinessGate({
+      const readiness = await runBriefReadinessGateAndReport({
         tasks: approved.tasks,
         config,
         projectDir,
+        sessionId,
+        bus,
+        phase: state.phase,
+        ...(opts.modelCache !== undefined && { modelCache: opts.modelCache }),
+        ...(opts.detectedContextLength !== undefined && {
+          detectedContextLength: opts.detectedContextLength,
+        }),
       });
       if (!readiness.ok) {
-        publishError({
-          bus: bus,
-          phase: state.phase,
-          message: firstBriefReadinessBlockMessage(readiness),
-        });
-        continue;
+        const fingerprint = briefReviewFingerprint(
+          approved.tasks,
+          briefsBody(),
+          readinessBlockDetail(readiness),
+        );
+        if (tracker.isOverrideOffered(fingerprint)) {
+          recordReadinessOverride({
+            projectDir,
+            sessionId,
+            bus,
+            phase: state.phase,
+            report: readiness,
+          });
+          tracker.reset();
+        } else {
+          tracker.offerOverride(fingerprint);
+          publishReadinessBlockWarning({ bus, phase: state.phase, report: readiness });
+          if (tracker.registerFailure(fingerprint)) {
+            return rejectNoProgress();
+          }
+          continue;
+        }
       }
       tasks = approved.tasks;
       if (tasks.length < 1) {
@@ -194,6 +294,11 @@ export async function runBriefsApprovalLoop(
           phase: state.phase,
           message: 'Task Brief set must retain at least one task.',
         });
+        if (
+          tracker.registerFailure(briefReviewFingerprint(tasks, briefsBody(), 'empty-task-set'))
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
       try {
@@ -204,6 +309,13 @@ export async function runBriefsApprovalLoop(
           phase: state.phase,
           message: labelError('Task Brief dependency graph is invalid', err),
         });
+        if (
+          tracker.registerFailure(
+            briefReviewFingerprint(tasks, briefsBody(), labelError('topo-sort', err)),
+          )
+        ) {
+          return rejectNoProgress();
+        }
         continue;
       }
       state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
@@ -221,6 +333,9 @@ export async function runBriefsApprovalLoop(
     });
     if (!revised.ok) {
       publishError({ bus: bus, phase: state.phase, message: revised.message });
+      if (tracker.registerFailure(briefReviewFingerprint(tasks, briefsBody(), revised.message))) {
+        return rejectNoProgress();
+      }
       continue;
     }
     tasks = revised.tasks;
@@ -229,6 +344,9 @@ export async function runBriefsApprovalLoop(
     const revision = getBriefRevisionComment(result, tasks);
     if (!revision.ok) {
       publishError({ bus: bus, phase: state.phase, message: revision.message });
+      if (tracker.registerFailure(briefReviewFingerprint(tasks, briefsBody(), revision.message))) {
+        return rejectNoProgress();
+      }
       continue;
     }
     const comment = revision.comment;

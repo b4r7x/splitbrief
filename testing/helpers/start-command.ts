@@ -13,6 +13,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { trustDeclaredRunners } from '#testing/helpers/runner-trust.js';
 import { registerStartCommand } from '../../src/cli/commands/start/register.js';
 import type { StartDeps } from '../../src/cli/commands/start/types.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, LOCKFILE, STATE_FILE } from '../../src/core/paths.js';
@@ -20,6 +21,7 @@ import type { SpawnServerOptions, SpawnServerResult } from '../../src/engine/ipc
 import { buildServerArgs } from '../../src/engine/ipc/spawn-server.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
 import { prepareExecution } from '../../src/engine/runners/prepare-execution.js';
+import type { probeRunnerAvailability } from '../../src/engine/runners/probe-availability.js';
 import { sessionDir } from '../../src/core/paths.js';
 
 export const spawnServerMock = vi.fn<(opts: SpawnServerOptions) => Promise<SpawnServerResult>>();
@@ -33,7 +35,34 @@ const renderAppFake: StartDeps['renderApp'] = async (_app, options) => {
   renderCalls.push(options);
 };
 
-export const prepareExecutionMock = vi.fn<typeof prepareExecution>(prepareExecution);
+/**
+ * Runner availability is a live network claim. Integration runs make none
+ * unless the test says so, otherwise the verdict would depend on whether the
+ * developer happens to have a local daemon running.
+ */
+export const probeRunnerAvailabilityMock = vi.fn<typeof probeRunnerAvailability>(async () => []);
+
+export const prepareExecutionMock = vi.fn<typeof prepareExecution>(async (input) => {
+  const deps = { probeRunnerAvailability: probeRunnerAvailabilityMock, ...input.deps };
+  if (input.existingSession !== undefined) {
+    await trustDeclaredRunners({
+      projectDir: input.existingSession.projectDir,
+      config: input.effectiveConfig,
+      stateDir: trustStateDir,
+    });
+    return prepareExecution({
+      ...input,
+      policy: { ...input.policy, stateDir: trustStateDir },
+      deps,
+    });
+  }
+  await trustDeclaredRunners({
+    projectDir: input.projectDir,
+    config: input.effectiveConfig,
+    stateDir: trustStateDir,
+  });
+  return prepareExecution({ ...input, policy: { ...input.policy, stateDir: trustStateDir }, deps });
+});
 
 export const fakeDeps: StartDeps = {
   spawnServer: spawnServerMock,
@@ -45,12 +74,30 @@ export const fakeDeps: StartDeps = {
 };
 
 let tmp = '';
+let trustStateDir = '';
 
 export function getStartCommandTmp(): string {
   return tmp;
 }
 
+/**
+ * Keeps the runner trust receipts `prepareExecutionMock` writes inside a
+ * throwaway directory, so a fixture grant never lands in the developer's own
+ * `~/.splitbrief/trust`.
+ */
+export function setupRunnerTrustIsolation(): void {
+  beforeEach(() => {
+    trustStateDir = createTempDir('start-command-trust');
+  });
+
+  afterEach(() => {
+    if (trustStateDir) cleanupTempDir(trustStateDir);
+    trustStateDir = '';
+  });
+}
+
 export function setupStartCommandIntegration(): void {
+  setupRunnerTrustIsolation();
   beforeEach(() => {
     tmp = realpathSync(createTempDir('start-command-test'));
     createTestGitRepo(tmp);
@@ -62,6 +109,8 @@ export function setupStartCommandIntegration(): void {
     runHeadlessMock.mockClear();
     runRpcMock.mockClear();
     prepareExecutionMock.mockClear();
+    probeRunnerAvailabilityMock.mockClear();
+    probeRunnerAvailabilityMock.mockResolvedValue([]);
     spawnServerMock.mockImplementation(async (opts: SpawnServerOptions) => {
       const preparedSessionDir = sessionDir(opts.projectDir, opts.candidate.sessionId);
       mkdirSync(preparedSessionDir, { recursive: true });

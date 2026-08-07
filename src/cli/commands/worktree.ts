@@ -1,5 +1,5 @@
 import type { Command } from 'commander';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { cliError, withCliErrors } from '../errors.js';
 import { listWorktrees } from '../../engine/worktree/status.js';
 import { removeWorktree } from '../../engine/worktree/remove.js';
@@ -60,7 +60,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .description('List all SPLITBRIEF worktrees')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (opts: { project?: string }) => {
-      const projectDir = resolveProjectDir(opts.project);
+      const projectDir = await canonicalizeProjectDir(opts);
       const worktrees = await deps.listWorktrees(projectDir);
 
       if (worktrees.length === 0) {
@@ -76,7 +76,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .description('Print instructions to switch to a worktree')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (name: string, opts: { project?: string }) => {
-      const projectDir = resolveProjectDir(opts.project);
+      const projectDir = await canonicalizeProjectDir(opts);
       const worktrees = await deps.listWorktrees(projectDir);
       const found = worktrees.some((w) => w.name === name);
 
@@ -96,7 +96,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .description('Print the resolved filesystem path of a worktree')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (name: string, opts: { project?: string }) => {
-      const projectDir = resolveProjectDir(opts.project);
+      const projectDir = await canonicalizeProjectDir(opts);
       const worktrees = await deps.listWorktrees(projectDir);
       const found = worktrees.some((w) => w.name === name);
 
@@ -115,7 +115,7 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(
       async (name: string, opts: { force?: boolean; deleteBranch?: boolean; project?: string }) => {
-        const projectDir = resolveProjectDir(opts.project);
+        const projectDir = await canonicalizeProjectDir(opts);
         const git = createGitClient(projectDir);
 
         await withCliErrors(() =>

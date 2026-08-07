@@ -4,7 +4,7 @@ import { readActive } from '../../core/sessions/lifecycle.js';
 import { listAllSessions } from '../../core/sessions/io.js';
 import { writeSessionHtmlReport } from '../../engine/export/collect.js';
 import { cliError, withCliErrors } from '../errors.js';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 
 interface ExportCommandOptions {
   project?: string;
@@ -15,8 +15,8 @@ async function exportAction(
   sessionId: string | undefined,
   opts: ExportCommandOptions,
 ): Promise<void> {
-  await withCliErrors(() => {
-    const projectDir = resolveProjectDir(opts.project);
+  await withCliErrors(async () => {
+    const projectDir = await canonicalizeProjectDir(opts);
     const resolvedSessionId = resolveExportSessionId(projectDir, sessionId);
     const result = writeSessionHtmlReport(
       sessionDir(projectDir, resolvedSessionId),

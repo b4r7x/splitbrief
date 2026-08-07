@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { createConnection } from 'node:net';
 import type { Command } from 'commander';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { cliError, withCliErrors } from '../errors.js';
 import { parseJsonLine } from '../json-line.js';
 import { assertNotWindows } from '../windows-guard.js';
@@ -96,7 +96,7 @@ export function registerDetachCommand(program: Command): void {
     .description('Detach a TUI client from a running background session')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .action(async (sessionId: string | undefined, opts: { project?: string }) => {
-      const projectDir = resolveProjectDir(opts.project);
+      const projectDir = await canonicalizeProjectDir(opts);
       await detachCommand(sessionId, { projectDir });
     });
 }

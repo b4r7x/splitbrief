@@ -130,7 +130,6 @@ function resolveWorkflowSidebar(context: LocatorContext): CellRect {
   const width = getWorkflowSidebarWidth({
     cols,
     sidebarVisible: projection.sidebarVisible,
-    isSmall: cols < 120,
   });
   if (width === 0) return resolveWorkflowHeader(context);
   return CellRectSchema.parse({

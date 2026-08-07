@@ -1,6 +1,6 @@
 import type { Task } from '../../../core/schemas/task.js';
 import { truncateByChars } from '../../../utils/truncate.js';
-import { createStagedProject } from '../approval/staged-project.js';
+import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-config.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
 import type { GateAndPromoteOutcome } from '../approval/gate-and-promote.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
@@ -52,23 +52,30 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
     ctx.projectDir,
     state.discoveredValidation?.language,
   );
-  const staged = await createStagedProject(ctx.projectDir, ctx.config, 'planner');
+  const workspace = await ctx.isolation.acquire({
+    role: 'planner',
+    config: ctx.config,
+    writesFiles:
+      ctx.implementer.capabilities?.writesFiles ??
+      defaultImplementerWriteMode(ctx.config.implementer.kind),
+  });
   let tier1Result: Awaited<ReturnType<typeof ctx.planner.escalateHint>>;
   try {
     tier1Result = await ctx.planner.escalateHint({
       task: initialTask,
       error: lastError,
-      projectDir: staged.projectDir,
+      projectDir: workspace.projectDir,
       callbacks: {
         onOutput: reviewerHandler,
         signal: ctx.signal,
       },
       languageContext,
       fileIgnoreProjectDir: ctx.projectDir,
-      sandboxEnv: staged.sandboxEnv,
+      sandboxEnv: workspace.sandboxEnv,
+      changeDetection: workspace.changeDetection,
     });
   } catch (err) {
-    staged.cleanup();
+    workspace.cleanup();
     throw err;
   }
   state = addUsageAndSave(ctx, state, 'escalation', tier1Result.usage);
@@ -82,14 +89,13 @@ export async function runHintTier(input: TierStepInput): Promise<RetryStepOutcom
     callbacks: ctx.callbacks,
     config: ctx.config,
     getApprovalEnabled: ctx.getApprovalEnabled,
-    staged,
-    usesStaging: true,
+    workspace,
+    usesIsolation: true,
     taskStartSnapshot: ctx.taskStartSnapshot,
     dependsOnFiles: ctx.dependsOnFiles,
-    promoteFromStagingOnly: true,
     catchChangedFilesError: true,
     signal: ctx.signal,
-    cleanup: staged.cleanup,
+    cleanup: workspace.cleanup,
     handleConflict: (s, files) =>
       handleApprovalTimeUserEditConflict({ ctx, state: s, task: initialTask, files }),
     onApproved: (decision) => persistRetryApprovalEvidence(ctx, state, initialTask, decision),

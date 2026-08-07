@@ -29,7 +29,7 @@ implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
 validation:     { typecheck, lint, test, testCommand }
-workflow:       { mode, approve, maxRetries, git, maxBudget, ... }
+workflow:       { mode, approve, maxRetries, git, isolation, maxBudget, ... }
 theme:          terminal | mono
 sessions:       { scope: project | global }
 escalation:     { enabled, intermediateProvider, intermediateModel }
@@ -76,7 +76,7 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 |---|---|---|---|
 | `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, `agent`, and `agent-sdk`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both delegate to the tool's own default. |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
-| `contextLength` | int > 0 | provider default | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. |
+| `contextLength` | int > 0 | detected, else `32768` | Override the detected context window. Useful for self-hosted Ollama/LM Studio whose `/api/show` reports the wrong number. When neither configured nor detected, SPLITBRIEF assumes the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768, `src/core/tokens/context-length.ts`) for routing and budget sizing alike. |
 | `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner and implementer); the `cli`, `shell`, `agent`, and `agent-sdk` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
 | `timeout` | ms (≤ 600000) | unset → no total-call cap (output silence is guarded separately: the 60s `api` stream-idle guard or `idleWarnMs`/`idleKillMs` below — see Troubleshooting) | Total wall-clock budget for a single planner or implementer call; aborts the call when exceeded. Raise for long planner thinks; lower for cheap probe calls. |
 | `idleWarnMs` | ms (≤ 3600000) | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. |
@@ -134,8 +134,8 @@ OpenAI-compatible HTTP endpoint.
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `provider` | non-empty string | yes | `anthropic` \| `openrouter` \| `deepseek` \| `openai` \| `groq` \| `together` \| `ollama` \| `ollama-cloud` \| `lm-studio` \| any custom name |
-| `service` | non-empty string | yes | Billing/identity service behind the provider. Back-filled from `API_PROVIDER_CATALOG` for admitted provider IDs; custom names must set it explicitly. |
-| `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. Back-filled for admitted provider IDs; custom names must set it explicitly. |
+| `service` | non-empty string | yes | Billing/identity service behind the provider. Never inferred — write it out. For an admitted provider ID it must equal that ID's `API_PROVIDER_CATALOG` service (see the provider matrix in §20); a mismatch is a validation error. |
+| `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. Never inferred — write it out. For an admitted provider ID it must equal that ID's catalog offering. |
 | `apiBase` | non-empty string | yes | Base URL. For known providers, see "Default API base URLs" below. |
 | `apiKey` | string | no | Inline key. **Strongly prefer the matching env var** for official provider endpoints (see [API-KEYS.md](./API-KEYS.md)). Use an inline key for known providers with a custom/proxy `apiBase`; env-sourced provider keys are rejected for that case. |
 
@@ -145,6 +145,8 @@ YAML — minimal (Anthropic):
 planner:
   kind: api
   provider: anthropic
+  service: anthropic
+  offering: payg
   apiBase: https://api.anthropic.com/v1
   model: claude-opus-4-6
 ```
@@ -155,6 +157,8 @@ YAML — full (OpenRouter with custom catalog):
 planner:
   kind: api
   provider: openrouter
+  service: openrouter
+  offering: payg
   apiBase: https://openrouter.ai/api/v1
   model: anthropic/claude-sonnet-4.6
   customModels:
@@ -170,6 +174,8 @@ planner:
 ### `kind: shell`
 
 Arbitrary `stdin → stdout` command. SPLITBRIEF writes the prompt to stdin and parses what comes out of stdout, using `outputFormat` to pick a parser. No shell or network sandbox is applied; the command runs as a normal child process under the current user.
+
+**A `shell` or `agent` command is not trusted because it is in the config.** `.splitbrief/config.yaml` travels with `git clone`, so the command a project declares is the repository author's proposal until *this machine's* owner accepts it. See [Runner command trust](#runner-command-trust).
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
@@ -210,6 +216,17 @@ A `planner` may also be `kind: agent`; only the planner variant accepts `capabil
 
 **When to use:** integrating a tool whose contract is "I edit files, you check git diff" rather than "I print a unified diff".
 
+### Runner command trust
+
+Every `shell` and `agent` runner named in `.splitbrief/config.yaml` — planner, implementer, or implementer profile — needs an explicit grant on the machine that runs it, before the first planner call.
+
+- **Interactive:** SPLITBRIEF prints the resolved executable path, the argv, the working directory, and the fact that the child inherits this process's environment, then asks you to type the confirmation phrase and a reason. Confirming writes an owner-only receipt to `~/.splitbrief/trust/custom-runners.json` (mode `0600`).
+- **Headless** (`--json`, `--rpc`, `--detach`): there is no prompt. The run is blocked unless a receipt already exists or you pass `--allow-repo-runners`, which grants that run only and persists nothing.
+
+The receipt is keyed to the canonical path of *this* checkout and to a digest of the command tuple, so it never travels inside a clone, never applies to a second checkout of the same repository, and stops applying the moment the command, its argv, its declared environment references, or its watchdog thresholds change. Replacing the executable on disk invalidates it too: the receipt stores the executable's content digest.
+
+`runners.planner.trust-boundary` and `runners.implementer.trust-boundary` in `splitbrief doctor` print the configured `command` and `args` (control-stripped and credential-redacted) so you can read them before starting anything. Only the prompt resolves the command to an absolute executable path, because readiness never touches the filesystem for this. Both checks are emitted whenever the runner can execute a local command, at every approval level.
+
 ### `kind: agent-sdk`
 
 In-process call into the Anthropic Agent SDK (`@anthropic-ai/claude-agent-sdk`). No subprocess.
@@ -246,13 +263,15 @@ Source: `src/core/providers/catalog.ts`.
 
 **See also:** §3 `implementer`, §11 environment variables, [API-KEYS.md](./API-KEYS.md).
 
-Custom OpenAI-compatible API providers are allowed when `service`, `offering`, and `apiBase` are all set — the catalog back-fill that supplies `service`/`offering` only covers admitted provider IDs. Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly unless a future auth configuration declares otherwise.
+Custom OpenAI-compatible API providers are allowed when `service`, `offering`, and `apiBase` are all set — the same three fields every admitted provider ID also has to spell out, because nothing is back-filled at load. Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly and inline: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know, so a config cannot point an unrecognized endpoint at one of your environment credentials.
 
 ---
 
 ## 3. `implementer`
 
-Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, `agent`, and `agent-sdk` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `anthropic` → `claude-sonnet-4-6`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is configured per profile via `capabilities.writesFiles` under `implementerProfiles`.
+The implementer is the weaker of the two models. What makes a runner the implementer is the model behind it, not the transport SPLITBRIEF uses to reach it: a coding-agent CLI pointed at a cheaper model and an OpenAI-compatible API endpoint are equally first-class here, and SPLITBRIEF favors neither. They differ mechanically in one place — a `cli`, `agent`, or `agent-sdk` implementer writes files itself (`writesFiles: direct`), while an `api` or `shell` implementer returns file contents that SPLITBRIEF writes (`writesFiles: extracted-code`). Where a direct writer works before its changes reach your checkout is set by `workflow.isolation` (§5).
+
+Same discriminated union as `planner`, with two schema differences: `model` is required on the `api`, `shell`, `agent`, and `agent-sdk` implementer variants, and the `shell`/`agent` variants do **not** accept the planner-only `capabilities` field. The `cli` variant leaves `model` optional — omit it or write `model: auto` to delegate to the tool's own configured default; the two spellings behave identically and neither is rewritten on save. On an `api` runner, `auto` resolves to that provider's catalog default model (for example `anthropic` → `claude-sonnet-4-6`), and a custom provider with no catalog default rejects `auto` — and model absence — at config load. Implementer write behavior (`extracted-code` vs `direct`) is not a choice: `capabilities.writesFiles` may be declared per profile under `implementerProfiles`, but it must match the runner kind's write mode, and config load rejects a mismatch.
 
 YAML — minimal (local Ollama):
 
@@ -260,9 +279,22 @@ YAML — minimal (local Ollama):
 implementer:
   kind: api
   provider: ollama
+  service: ollama
+  offering: local
   apiBase: http://localhost:11434/v1
-  model: qwen2.5-coder:7b
+  model: qwen3-coder:30b
 ```
+
+YAML — a coding-agent CLI running a cheaper model than the planner:
+
+```yaml
+implementer:
+  kind: cli
+  tool: codex
+  model: gpt-5-codex
+```
+
+That is the `direct` path: the tool edits files itself inside the run's isolation directory and SPLITBRIEF promotes the result. It is not a side door — the same Task Brief, validation pipeline, retry ladder, escalation, and drift accounting apply as for an `api` implementer.
 
 YAML — full (Sonnet via direct Anthropic API):
 
@@ -270,6 +302,8 @@ YAML — full (Sonnet via direct Anthropic API):
 implementer:
   kind: api
   provider: anthropic
+  service: anthropic
+  offering: payg
   apiBase: https://api.anthropic.com/v1
   model: claude-sonnet-4-6
   contextLength: 200000
@@ -277,11 +311,12 @@ implementer:
   timeout: 240000
 ```
 
-`contextLength` is SPLITBRIEF's assumed input context window, used to size the prompt budget. It does **not** change a provider's real model context. For Ollama, configure the model/server `num_ctx` first; use `contextLength` or `SPLITBRIEF_CONTEXT_LENGTH` only to match or override SPLITBRIEF's detection. It is also **not** the per-response output cap — SPLITBRIEF clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
+`contextLength` is SPLITBRIEF's assumed input context window, used to size the prompt budget. When neither configured nor detected, every consumer — routing and the prompt and request budgets alike — resolves to the single documented default `DEFAULT_UNKNOWN_CONTEXT_LENGTH` (32768) in `src/core/tokens/context-length.ts`, so an omitted window never means "unlimited" to one consumer and a different number to another. A boot-probed window applies only to the default implementer profile; a sibling profile that declares no `contextLength` routes at the shared default. When no window is known, the model-resolution ladder in `src/engine/providers/model/context-window.ts` answers: the models.dev cache when hydrated, else the runtime snapshot, else the bundled catalog row for the pinned model, else — for a CLI tool under `model: auto`, which resolves to no model id — the smallest window the bundled catalog guarantees for that tool (automatic selection never adds a `--model` flag). It does **not** change a provider's real model context. For Ollama, configure the model/server `num_ctx` first; use `contextLength` or `SPLITBRIEF_CONTEXT_LENGTH` only to match or override SPLITBRIEF's detection. It is also **not** the per-response output cap — SPLITBRIEF clamps `max_tokens` to the model's max-output limit independently, so a large context window never produces an over-large output request.
 
 **When to use:**
-- *Cheap local* — Ollama or LM Studio for cost-free iteration on small tasks.
-- *Mid-tier API* — DeepSeek / GLM via OpenRouter for ~10x cheaper-than-frontier execution.
+- *Coding-agent CLI on a cheaper model* — you already pay for a Claude Code / Codex / Copilot / Aider subscription and want the implementer step to run there on a smaller model than the planner uses.
+- *Cheap local API* — Ollama or LM Studio for cost-free iteration on small tasks.
+- *Mid-tier API* — DeepSeek / GLM via OpenRouter for cheaper-than-frontier execution.
 - *Frontier* — Sonnet/Opus when you want the same quality as the planner for the implementer step.
 
 **See also:** §2 `planner`, §6 `escalation` (for mid-tier fallback), [REPOMAP.md](./REPOMAP.md) (codebase context the implementer never sees, only the planner).
@@ -290,7 +325,7 @@ implementer:
 
 `implementer` remains required for backwards compatibility and existing configs do not need to change. New configs may also define named implementer profiles so task routing can choose a cheap capable worker per Task Brief.
 
-An implementer pool is still one product role: SPLITBRIEF selects one capable profile per Task Brief. Same-directory parallel writes are out of scope unless a future worktree-isolated design explicitly adds them.
+An implementer pool is still one product role: SPLITBRIEF selects one capable profile per Task Brief. Parallel implementer writes are out of scope. `workflow.isolation` separates one implementer's work from your checkout, not two implementers from each other.
 
 Profile names must be stable event-safe identifiers: lowercase letters, numbers, and hyphens, starting with a letter, up to 64 characters.
 
@@ -298,6 +333,8 @@ Profile names must be stable event-safe identifiers: lowercase letters, numbers,
 implementer:
   kind: api
   provider: ollama
+  service: ollama
+  offering: local
   apiBase: http://localhost:11434/v1
   model: qwen2.5-coder:7b
 
@@ -307,6 +344,8 @@ implementerProfiles:
     local-qwen:
       kind: api
       provider: ollama
+      service: ollama
+      offering: local
       apiBase: http://localhost:11434/v1
       model: qwen2.5-coder:7b
       contextLength: 32768
@@ -317,6 +356,8 @@ implementerProfiles:
     cheap-cloud:
       kind: api
       provider: openrouter
+      service: openrouter
+      offering: payg
       apiBase: https://openrouter.ai/api/v1
       model: qwen/qwen3-coder
       contextLength: 131072
@@ -357,6 +398,7 @@ validation: {
   typecheckCommand?: string; // optional, non-empty
   lintCommand?:      string; // optional, non-empty
   testPattern?:      string; // optional, non-empty
+  timeoutMs?:        number; // optional, int >= 1000, milliseconds
 }
 ```
 
@@ -371,6 +413,7 @@ validation: {
 | `typecheckCommand` | string | — | Optional override for the type-checking command (e.g. `cargo check`, `go vet ./...`, `mypy src/`) |
 | `lintCommand` | string | — | Optional override for the linting command (e.g. `cargo clippy --no-deps`, `ruff check`) |
 | `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Defaults to TypeScript patterns (`*.test.ts`, `*.test.tsx`) |
+| `timeoutMs` | number | `600000` | Per-stage timeout in milliseconds (minimum `1000`) for each validation command, applying to the run-start baseline probe, the `doctor --probe-validation` diagnostic, and per-task validation. One red or slow stage can hold the loop for this long before the probe moves on. |
 
 YAML — TypeScript project (default):
 
@@ -411,6 +454,10 @@ Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `li
 - Disable `lint` if your linter is enforced only at PR time (CI) and you want faster local iteration.
 - Leave `typecheck: true` for typed languages — it's the cheapest signal that the implementer wrote compilable code.
 
+### Baseline-relative acceptance
+
+A task's validation is judged against the run's baseline, not absolute repository health. Before the first task, SPLITBRIEF probes every enabled stage and records which are already red **and the exact command each probe ran**. When a task's validation then fails, a stage is exempt — and the task may still be accepted — only when all three hold: the stage was already red at baseline, the failing run used the same command the baseline probed, **and** its failure evidence names none of the task's changed files. The command binding matters most for `test`: with the built-in `npm test` fallback, each run is narrowed to the affected test file of the task at hand, so a baseline measured against the first task's test file never exempts a later task's failure in a different file. The exemption is per-stage and per-file: a stage that was green at baseline always blocks, and a new failure in a stage that was red at baseline still blocks when its evidence names a file the task touched. A skipped stage is never exempt and never blocks. The pipeline keeps running past a baseline-red stage instead of stopping, so the stages behind it still get a verdict, and an accepted task produces no retry prompt.
+
 **See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/validation/run.ts`.
 
 ---
@@ -434,6 +481,9 @@ workflow: {
     commitStrategy?:      'none' | 'checkpoint' | 'per-task';
     createBranch?:        boolean;
   };
+
+  // Where a direct-writing implementer works before promotion
+  isolation?:             'worktree' | 'staged-copy';
 
   // Mode + brief review
   mode?:                  'instant' | 'quick' | 'standard' | 'speckit';
@@ -465,6 +515,7 @@ workflow: {
 | `maxRetries` | int >= 0 | `3` | Per-task local retries before escalation kicks in |
 | `git.commitStrategy` | enum | `none` | Optional product-level git behavior: `none` (no commits — user reviews everything), `checkpoint` (a session-scoped tagged stash per task — `splitbrief/<sessionId>/<taskId>` — no commits), `per-task` (one commit per task). Checkpoint safety does not require git commits. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
+| `isolation` | enum | `worktree` | Where an implementer that writes files itself does its work before changes are promoted into the project: `worktree` (one linked git worktree per run) or `staged-copy` (a temporary copy of the project per task). Unused when the implementer returns file contents (`writesFiles: extracted-code`) — SPLITBRIEF writes those files into the project itself. |
 | `briefReview` | enum | `simple` | `simple` review. `rich` is deprecated, accepted for compatibility, and treated as `simple`. `Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open the persisted `tasks.md` in the external editor. |
 | `taskReview` | enum | `none` | Per-task review gate after implementation: `none` (never pause), `failed` (pause only when a task fails, hits recovery, or its validation fails), `every` (pause after every advancing task). **Requires an interactive TUI run** — any value other than `none` is rejected at startup in headless mode (`src/cli/headless.ts`), so leave it `none` for CI. |
 | `maxBudget` | number > 0 | unset | USD ceiling. Workflow warns at 80%, pauses at `budgetPauseThreshold` (default `0.85`), stops at the hard cap, and pauses when paid usage has unknown pricing instead of treating it as `$0`. |
@@ -489,13 +540,35 @@ workflow: {
 
 `briefReview` has no per-mode default — it falls back to `simple` in every mode unless set explicitly (`config.workflow.briefReview ?? 'simple'`). `rich` is deprecated and ignored/mapped to `simple`; keep or set `simple` and use the external editor commands for text edits.
 
+### Implementer isolation
+
+An implementer whose runner writes files itself (`writesFiles: direct` — the `cli`, `agent`, and `agent-sdk` kinds) does not edit your checkout while it works. It works in an isolated directory, and SPLITBRIEF promotes the result into the real project directory through the hash-guarded promotion path, which refuses to overwrite a file you changed in the meantime. Isolation moves *where* the writing happens; it never changes *whether* the change reaches you.
+
+| Value | What it does | Cost |
+|---|---|---|
+| `worktree` (default) | One linked git worktree created for the run. The implementer gets the repository's git history, its own branch, and the project's installed Node dependencies linked in (only Node — virtualenvs, Go module caches, and Rust target directories are not linked), so it can run typecheck, lint, and tests where it is working. | One `git worktree add` per run. |
+| `staged-copy` | A temporary copy of the project per task under the system temp directory. Which files are copied comes from git's own list of tracked and untracked files (`.gitignore`, `.git/info/exclude`, and global excludes), so gitignored build and report artifacts never enter the copy; `.git`, `node_modules`, `.splitbrief/`, `.trees/`, and credential files are excluded on top of that. A fixture the repository gitignores is not present in the copy at execution time, so a runner that reads such a fixture while working in the copy will no longer find it. No git history and no installed dependencies, so the implementer cannot run the project's own checks. | A full project copy per task. |
+
+**Worktree isolation is a file boundary, not a security boundary.** The worktree shares your git repository, your hooks, and your configuration, and it runs on the same machine, as the same user, against the same ports, databases, and network. It keeps the implementer from writing into your checkout mid-run; it does not constrain what the implementer's tool can execute. Neither strategy applies a shell or network sandbox. The workspace environment's PATH is widened to the linked `node_modules/.bin`, resolved to its real path inside the project — the widening is visible in the child's environment, not hidden behind the symlink.
+
+A run's worktree is created once per run and reused across tasks and retries (a marker carrying the session id is what makes a `.trees/<slug>` directory the session's own). When the run ends, the worktree is removed with force and its branch deleted if nothing unpromoted remains; a run that ends with unpromoted work keeps the worktree and reports the retention, so interrupted work survives under `.trees/<session-id>` for recovery.
+
+This setting does not move validation. The deterministic typecheck → lint → test pipeline (§4) runs in the real project directory after promotion, and that pipeline plus the planner's review is what decides whether a task is correct. An implementer that can also run checks in its own directory raises the first-pass rate; it is never the authority on correctness. The dependency link is a symlink, which git records as a file, so the common `node_modules/` pattern — which matches directories only — would leave it untracked inside the worktree. When your repository already ignores its own `node_modules`, SPLITBRIEF adds a rooted `/node_modules` line to the repository's `.git/info/exclude` — the exclude file git shares between your checkout and every linked worktree — so the link stays out of change detection. The line is written under a `# splitbrief run isolation <session id>` marker and taken back out when the run's isolation is disposed, so your checkout is left exactly as it was found and a run that dies mid-flight leaves a block naming the session that wrote it. While it stands it changes nothing for your checkout, because your own rules already ignored that directory. A repository that does not ignore `node_modules` at all is left untouched and the run falls back to `staged-copy` rather than let the link pollute change detection.
+
+`splitbrief start --worktree` is a different thing: it relocates the whole run — planner, session state, and implementer — into `.trees/<slug>` before the workflow begins. `workflow.isolation` governs where the implementer writes inside whatever project directory the run resolved to. See [WORKTREES.md](./WORKTREES.md).
+
+```yaml
+workflow:
+  isolation: worktree
+```
+
 ### Transcript persistence policy
 
 `persistTranscript: false` is a consumer-boundary policy, not a sandbox. Protected surfaces omit or replace prompt/answer text in `session.jsonl`, `--json` stdout, IPC live/replay traffic, RPC status/events, MCP session metadata and `state.json` reads, headless recovery output, summary JSON, summary UI data, exported HTML, recent-session/active-session metadata, `ps`, `resume` / `continue` / `status` CLI console output, generated session ids, generated branch names, OpenTelemetry attributes, task tree rows, input history, and `git_commit` event messages. A bare `splitbrief start --worktree` also uses an opaque `session-<hex>` worktree/branch slug instead of the feature slug. Per-task git commit subjects use task ids and control metadata only.
 
 The UI and machine consumers still receive safe control data: phase, task ids/status, queue depth, cost/usage numbers, allowed recovery actions, approval tiers, runner/model identifiers, safe runner activity labels, compact runner status, and bounded operational warnings/errors. Runner-call warning/error text, approval or revision comments, retry errors, task titles/reasons, task-review prose, queued-message text, and cost-prediction task prose are replaced with `[transcript omitted]` or removed. Raw runner expansion is disabled: protected runner activity forces `rawAvailable:false` and omits `expandId`, so `raw` markers disappear instead of pointing at hidden payloads.
 
-The workflow still writes product artifacts such as `research.md`, `spec.md`, `plan.md`, `tasks.md`, `brief-quality.json`, validation outputs, changed source files, and evidence files when those phases produce them. Those files are intentionally review artifacts and can contain the requested work; `persistTranscript:false` does not redact project outputs or make the working tree private.
+The workflow still writes product artifacts such as `research.md`, `spec.md`, `plan.md`, `tasks.md`, `brief-quality.json`, `brief-readiness.json`, validation outputs, changed source files, and evidence files when those phases produce them. Those files are intentionally review artifacts and can contain the requested work; `persistTranscript:false` does not redact project outputs or make the working tree private.
 
 ### YAML examples
 
@@ -540,6 +613,7 @@ workflow:
 **When to use what:**
 - `git.createBranch: true` — when running SPLITBRIEF in CI or against `main` and you don't want the changes landing on the current branch.
 - `git.commitStrategy: none` — the default and recommended setting for manual review; SPLITBRIEF leaves changes unstaged so you can review and commit them yourself.
+- `isolation: worktree` — the default, and the only strategy where the implementer can run the project's own typecheck, lint, and tests before handing work back. Choose `staged-copy` only when a linked git worktree is not workable for your setup.
 - `maxBudget` — always set this for API-billed runs. It's your stop-loss.
 - `budgetPauseThreshold` — set for unattended runs so you can intervene before the hard ceiling. Unknown paid pricing pauses regardless of the threshold because the runtime cannot prove spend against the cap.
 - `briefReview: simple` — the supported brief review mode. Legacy `briefReview: rich` configs are accepted but mapped to `simple`. Use `Ctrl+E`, `e`, `edit`, `E`, or `edit-file` to edit the persisted Task Brief in the external editor.
@@ -960,7 +1034,7 @@ Inline `apiKey` in YAML works. For official provider endpoints, it triggers a st
 
 | Variable | Purpose |
 |---|---|
-| `SPLITBRIEF_CONTEXT_LENGTH` | Override SPLITBRIEF's detected implementer context length (`src/engine/providers/capabilities.ts`). This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
+| `SPLITBRIEF_CONTEXT_LENGTH` | Override SPLITBRIEF's detected implementer context length (`src/engine/providers/capabilities.ts`). Applies only to the default implementer profile; profiles that declare no window otherwise route at the shared default. This sizes prompt budgets only; it does not change Ollama `num_ctx` or any provider-side model limit. |
 
 ### Observability
 
@@ -991,7 +1065,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | Flag | Purpose | Commands |
 |---|---|---|
 | `--approve <level>` | Spec/plan document gates: `none` \| `spec` \| `plan` \| `all` \| `default` | start, resume, continue, last |
-| `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` | start, resume, continue, last; on `start --detach`, omitted `--mode` falls back to `workflow.mode` in config |
+| `--mode <mode>` | `instant` \| `quick` \| `standard` \| `speckit` | start, spec, resume, continue, last; on `start --detach`, omitted `--mode` falls back to `workflow.mode` in config |
 | `--budget <amount>` | Dollar ceiling | start, resume, continue, last |
 | `--model <m>` | Alias for `--implementer-model` | start, resume, continue, last |
 | `--provider <p>` | Alias for `--implementer` | start, resume, continue, last |
@@ -1018,6 +1092,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--hover` | Opt in to hover highlighting (requires mouse + fullscreen) | start, resume, continue, last, attach |
 | `--allow-hooks` | Trust hook config without prompting (CI) | start, resume, continue, last, spec |
 | `--allow-repo-runners` | Trust repo-local shell/agent runner execution from project config, including profiles and project-local PATH/script resolution | start, resume, continue, last, spec |
+| `--allow-unverified-auth` | Let a headless run proceed with unverified CLI authentication (no effect interactively) | start, resume, continue, last |
 | `--allow-custom-renderer` | Trust repo-local handoff renderer for this invocation | handoff |
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue, last |
 | `--rpc` | Bidirectional NDJSON over stdin/stdout | start, resume, continue, last |
@@ -1104,6 +1179,7 @@ workflow:
   git:
     commitStrategy: none
     createBranch: false
+  isolation: worktree
   speckit:
     minCoverage: 0.8
 
@@ -1363,7 +1439,9 @@ implementer:
 
 ### Generic remote OpenAI-compatible endpoint
 
-Use a custom `provider` string only when you control the endpoint. SPLITBRIEF cannot infer a safe env var name for unknown providers. **Normalized-origin trust** is required: the declared `apiBase` origin must be the only origin that receives the configured credential; redirects to another origin are rejected with `provider-endpoint-invalid` rather than followed (endpoint normalization in `src/core/providers/endpoint-policy.ts`, redirect transport in `src/lib/http/policy-fetch.ts`). Do not commit inline secrets — reference an env var or `apiKey: env:VAR_NAME`.
+Use a custom `provider` string only when you control the endpoint. SPLITBRIEF cannot infer a safe env var name for unknown providers. **Normalized-origin trust** is required: the declared `apiBase` origin must be the only origin that receives the configured credential; redirects to another origin are rejected with `provider-endpoint-invalid` rather than followed (endpoint normalization in `src/core/providers/endpoint-policy.ts`, redirect transport in `src/lib/http/policy-fetch.ts`).
+
+A custom provider must carry an **inline** `apiKey`. `apiKey: env:VAR_NAME` is refused for provider names the catalog does not know (`Custom/unknown provider … cannot use env apiKey reference`), so an unrecognized `apiBase` in a checked-in config can never reach one of your environment credentials. Substitute your own key locally and keep the file out of version control — `.splitbrief/` is gitignored by `splitbrief init`.
 
 <!-- config-api-generic-remote: remote -->
 ```yaml
@@ -1373,7 +1451,7 @@ implementer:
   service: custom-openai-compatible
   offering: payg
   apiBase: https://llm.internal.example/v1
-  apiKey: env:CUSTOM_LLM_API_KEY
+  apiKey: <paste-your-endpoint-key>
   model: hosted-model
 ```
 

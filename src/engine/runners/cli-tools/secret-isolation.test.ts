@@ -165,16 +165,16 @@ describe('ambient secret stripping canary matrix', () => {
     setEnv('OPENAI_API_KEY', 'canary-secret-isolation-openai-5e6f');
     setEnv('ANTHROPIC_API_KEY', 'canary-secret-isolation-anthropic-6f7a');
 
-    const session = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
-    const apiKey = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'api-key',
-    });
+    const session = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
+    const apiKey = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      'implementer',
+    );
 
     expect(session.OPENAI_API_KEY).toBeUndefined();
     expect(session.ANTHROPIC_API_KEY).toBeUndefined();
@@ -194,18 +194,21 @@ describe('ambient secret stripping canary matrix', () => {
     setEnv('HOME', hostHome);
     setEnv('OPENAI_API_KEY', 'canary-secret-isolation-api-key-8f9a');
 
-    const session = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    // Both acquisitions name the same role on purpose: a shared root is what
+    // makes the api-key channel responsible for clearing the session snapshot.
+    // Split them across roles and the assertion below passes vacuously.
+    const session = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
     expect(existsSync(join(session.HOME as string, '.codex', 'auth.json'))).toBe(true);
 
-    const apiKey = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'api-key',
-    });
+    const apiKey = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'api-key' },
+      'implementer',
+    );
     const result = await run(
       invocation({
         environment: toCliEnvironment(apiKey),
@@ -278,11 +281,11 @@ describe('readonly provider bridge canary matrix', () => {
     writeFileSync(join(hostHome, '.claude', '.credentials.json'), '{"account":"unrelated"}');
     setEnv('HOME', hostHome);
 
-    const env = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
     const bridgedAuth = join(env.HOME as string, '.codex', 'auth.json');
 
     expect(readFileSync(bridgedAuth, 'utf8')).toBe('{"account":"selected"}');
@@ -301,11 +304,11 @@ describe('readonly provider bridge canary matrix', () => {
     writeFileSync(join(hostHome, '.codex', 'auth.json'), JSON.stringify({ token: credential }));
     setEnv('HOME', hostHome);
 
-    const env = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
 
     expect(sandboxCredentialValues(env)).toContain(credential);
     expect(Object.keys(env)).not.toContain(credential);
@@ -401,11 +404,11 @@ describe('artifact log and snapshot redaction canary matrix', () => {
     );
     setEnv('HOME', hostHome);
 
-    const sandboxEnv = await createRunnerSandboxEnv(projectDir, {
-      kind: 'cli',
-      tool: 'codex',
-      authChannel: 'session',
-    });
+    const sandboxEnv = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
     const events: RunnerCallEvent[] = [];
     const result = await run(
       invocation({

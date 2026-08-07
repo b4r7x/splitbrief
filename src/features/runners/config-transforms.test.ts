@@ -6,6 +6,7 @@ import YAML from 'yaml';
 import { createDefaultConfig, writeConfig } from '../../core/config/load/io.js';
 import { readCustomCommandCatalog } from '../../core/config/custom-commands.js';
 import { fromYaml } from '../../core/config/load/transform.js';
+import { defaultCliAuthChannel } from '../../core/runners/cli-tool-catalog.js';
 import { ConfigSchema } from '../../core/schemas/config.js';
 import type { Config } from '../../core/schemas/config.js';
 import { configStore } from '../../stores/project/config.js';
@@ -302,7 +303,7 @@ describe('runner selection commits', () => {
     expect(updated.planner).toEqual({
       kind: 'cli',
       tool: 'claude-code',
-      authChannel: 'session',
+      authChannel: defaultCliAuthChannel('claude-code').id,
       model: 'sonnet',
     });
   });

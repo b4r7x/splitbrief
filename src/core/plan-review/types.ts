@@ -11,7 +11,8 @@ export type PlanReviewEstimateStatus =
   | 'refreshed-current-code'
   | 'brief-current-code'
   | 'missing-current-code'
-  | 'current-code-unavailable';
+  | 'current-code-unavailable'
+  | 'pending-earlier-task';
 
 export type PlanReviewRoutingBlockKind = 'no-capable-worker';
 

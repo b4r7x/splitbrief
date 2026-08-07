@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
-import type { ValidationResult } from '../validation/result.js';
+import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus, EngineEvent } from '../../events/types.js';
 import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
@@ -37,7 +37,7 @@ type GitOps = {
 
 type ValidateCommitOptions = {
   task: Task;
-  results: ValidationResult[];
+  acceptance: ValidationAcceptance;
   projectDir: string;
   sessionId: string;
   config: Config;
@@ -79,7 +79,7 @@ export async function validateCommitAndAdvance(
 ): Promise<{ state: WorkflowState; completed: boolean }> {
   const {
     task,
-    results,
+    acceptance,
     projectDir,
     sessionId,
     config,
@@ -104,8 +104,21 @@ export async function validateCommitAndAdvance(
   const taskChangedFiles = opts.taskChangedFiles ?? [task.file];
   const usingFallbackFiles = opts.taskChangedFiles === undefined;
   const completionTransitionType = transitionTypeForCompletionMethod(method, transitionType);
-  if (!results.every((r) => r.passed)) {
+  if (!acceptance.accepted) {
     return { state, completed: false };
+  }
+  if (acceptance.exemptStages.length > 0) {
+    publishWarning({
+      bus: bus,
+      phase: state.phase,
+      taskId: task.id,
+      message: `Task ${task.id} accepted over pre-existing failures in ${acceptance.exemptStages.join(', ')} (already failing before this run; not attributed to this task).`,
+      safety: {
+        category: 'workflow',
+        code: 'validation_baseline_exempt',
+        transcriptSafe: true,
+      },
+    });
   }
 
   const emitTaskComplete = (nextState: WorkflowState) => {

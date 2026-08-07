@@ -11,8 +11,11 @@ import {
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { loadState } from '../../../core/state/persistence.js';
+import type { ValidationStage } from '../../../core/schemas/enums.js';
+import { decideValidationAcceptance } from '../validation/acceptance.js';
 import { handleApprovalTimeUserEditConflict } from './approval-conflict.js';
 import type { WorkflowContext } from '../types.js';
+import { makeCopyingIsolation } from '#testing/helpers/orchestrator-factories.js';
 
 const dirs: string[] = [];
 
@@ -50,7 +53,17 @@ describe('handleApprovalTimeUserEditConflict', () => {
       implementer: makeImplementer(),
       metadata: { plannerTool: 'claude-code', implementerTool: 'ollama', mode: 'standard' },
       sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
-      validator: { primeBaseline: async () => {}, runValidation: async () => [] },
+      validator: {
+        primeBaseline: async () => {},
+        runValidation: async () => [],
+        decideAcceptance: ({ results, changedFiles }) =>
+          decideValidationAcceptance({
+            results,
+            changedFiles,
+            baselineFailingStages: new Set<ValidationStage>(),
+          }),
+      },
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
     };
 
     const nextState = await handleApprovalTimeUserEditConflict({

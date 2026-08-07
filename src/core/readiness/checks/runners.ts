@@ -17,7 +17,14 @@ import {
 import { getRunnerTrustMeta, RUNNER_IDLE_KILL_MS } from '../../schemas/runner-fields.js';
 import type { ReadinessCheck } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
+import { stripTerminalControls } from '../../../utils/display-text.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import {
+  DEFAULT_REDACTION_MARKER,
+  isCredentialEnvironmentName,
+  redactSecrets,
+} from '../../../utils/redact.js';
+import { runnerAvailabilityCheck, type RunnerAvailabilityFact } from './availability.js';
 
 const REDACTED_EXECUTABLE_PATH = '[redacted executable path]';
 
@@ -49,6 +56,7 @@ function formatRunner(runner: Config['planner'] | Config['implementer']): string
 export function buildRunnerChecks(
   config: Config,
   cliReadiness: readonly CliReadinessResult[] = [],
+  availability?: readonly RunnerAvailabilityFact[] | undefined,
 ): ReadinessCheck[] {
   const checks: ReadinessCheck[] = [];
   const configuredCliTools = new Set<CliToolId>();
@@ -77,6 +85,9 @@ export function buildRunnerChecks(
     checks.push(...buildImplementerProfileMetadataChecks(config, resolved.profiles));
     checks.push(...buildRunnerTrustBoundaryChecks(config, resolved.profiles));
     checks.push(...buildWatchdogTimeoutChecks(config, resolved.profiles));
+    if (availability !== undefined) {
+      checks.push(...buildAvailabilityChecks(config, resolved.profiles, availability));
+    }
     for (const profile of resolved.profiles) {
       if (profile.config.kind === 'cli') configuredCliTools.add(profile.config.tool);
     }
@@ -90,7 +101,7 @@ export function buildRunnerChecks(
     });
   }
 
-  checks.push(availabilityCheck());
+  if (availability === undefined) checks.push(availabilityCheck());
   checks.push(...configuredCliReadinessChecks(configuredCliTools, cliReadiness));
 
   return checks;
@@ -106,6 +117,33 @@ function availabilityCheck(): ReadinessCheck {
       'Readiness makes no provider or network availability claim.',
     ],
   };
+}
+
+function buildAvailabilityChecks(
+  config: Config,
+  profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
+  facts: readonly RunnerAvailabilityFact[],
+): ReadinessCheck[] {
+  return facts.map((fact) => {
+    if (fact.slot.role === 'planner') {
+      return runnerAvailabilityCheck({
+        fact,
+        label: `Planner ${formatRunner(config.planner)}`,
+        isDefaultImplementer: false,
+      });
+    }
+    const profileName = fact.slot.profile;
+    const profile = profiles.find((candidate) => candidate.name === profileName);
+    const isDefault = profile?.isDefault === true;
+    const runner = profile === undefined ? '' : ` ${formatRunner(profile.config)}`;
+    return runnerAvailabilityCheck({
+      fact,
+      label: isDefault
+        ? `Default implementer${runner}`
+        : `Implementer profile ${profileName}${runner}`,
+      isDefaultImplementer: isDefault,
+    });
+  });
 }
 
 function configuredCliReadinessChecks(
@@ -204,7 +242,7 @@ function buildRunnerTrustBoundaryChecks(
       role: 'planner',
       label: `Planner ${formatRunner(config.planner)}`,
       trust: getRunnerTrustMeta('planner', config.planner),
-      kind: config.planner.kind,
+      runner: config.planner,
       approve,
       specPlanAutoApproved,
       fileWriteApprovalDisabled,
@@ -221,7 +259,7 @@ function buildRunnerTrustBoundaryChecks(
           : `Implementer profile ${profile.name} ${formatRunner(profile.config)}`,
         profile: profile.name,
         trust: getRunnerTrustMeta('implementer', profile.config),
-        kind: profile.config.kind,
+        runner: profile.config,
         approve,
         specPlanAutoApproved,
         fileWriteApprovalDisabled,
@@ -232,13 +270,63 @@ function buildRunnerTrustBoundaryChecks(
   return checks;
 }
 
+/**
+ * The command a project config names is the whole disclosure, so it is printed
+ * verbatim — control-stripped first so it cannot repaint the report or hide a
+ * credential from the redactor, then redacted so a key written into argv is
+ * not republished by `doctor --json`.
+ */
+function declaredCommandDetails(runner: Config['planner'] | Config['implementer']): string[] {
+  if (runner.kind !== 'shell' && runner.kind !== 'agent') return [];
+  const argv = runner.args ?? [];
+  return [
+    `Command: ${safeCommandText(runner.command)}`,
+    `Arguments: ${argv.length === 0 ? '(none)' : redactedArgv(argv)}`,
+  ];
+}
+
+function safeCommandText(value: string): string {
+  return redactSecrets(stripTerminalControls(value));
+}
+
+/**
+ * `redactSecrets` only sees one argv element at a time, so it cannot tell that
+ * the value after `--token` is the token. Anything following a credential-named
+ * flag is withheld regardless of shape.
+ */
+function redactedArgv(argv: readonly string[]): string {
+  return argv
+    .map((value, index) => {
+      const flag = argv[index - 1];
+      return flag !== undefined && isCredentialEnvironmentName(flag.replace(/^-+/, ''))
+        ? DEFAULT_REDACTION_MARKER
+        : safeCommandText(value);
+    })
+    .join(' ');
+}
+
+function trustBoundarySummary(
+  opts: Readonly<{ label: string; approvalAutomationActive: boolean; autoAllowFlags: boolean }>,
+): string {
+  if (opts.approvalAutomationActive) {
+    return `${opts.label} can execute commands while approval automation is active.`;
+  }
+  if (opts.autoAllowFlags) {
+    return `${opts.label} can execute commands and uses auto/allow runner flags.`;
+  }
+  return `${opts.label} can execute commands on this machine.`;
+}
+
+// This warning describes what the configured runner is able to do, which does
+// not change with the approval level. Suppressing it under a stricter approval
+// setting made the most cautious configuration the quietest report.
 function runnerTrustBoundaryCheck(opts: {
   id: string;
   role: 'planner' | 'implementer';
   label: string;
   profile?: string | undefined;
   trust: RunnerTrustMetadata;
-  kind: Config['planner']['kind'];
+  runner: Config['planner'] | Config['implementer'];
   approve: string;
   specPlanAutoApproved: boolean;
   fileWriteApprovalDisabled: boolean;
@@ -246,15 +334,12 @@ function runnerTrustBoundaryCheck(opts: {
   if (!opts.trust.executesLocalCommand && opts.trust.autoAllowFlags.length === 0) return [];
 
   const approvalAutomationActive = opts.specPlanAutoApproved || opts.fileWriteApprovalDisabled;
-  const autoAllowCommandRunner =
-    opts.trust.executesLocalCommand && opts.trust.autoAllowFlags.length > 0;
-  if (!approvalAutomationActive && !autoAllowCommandRunner) return [];
-
   const automation = [
     opts.specPlanAutoApproved ? 'spec/plan approval is auto-approved' : null,
     opts.fileWriteApprovalDisabled ? 'file-write approval prompts are disabled' : null,
   ].filter((entry): entry is string => entry !== null);
   const details = [
+    ...declaredCommandDetails(opts.runner),
     `Spec/plan approval level: ${opts.approve}.`,
     `File-write approval prompts: ${opts.fileWriteApprovalDisabled ? 'disabled' : 'enabled'}.`,
     'SPLITBRIEF approval gates review spec/plan documents and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
@@ -273,14 +358,16 @@ function runnerTrustBoundaryCheck(opts: {
     {
       id: opts.id,
       severity: 'warning',
-      summary: approvalAutomationActive
-        ? `${opts.label} can execute commands while approval automation is active.`
-        : `${opts.label} can execute commands and uses auto/allow runner flags.`,
+      summary: trustBoundarySummary({
+        label: opts.label,
+        approvalAutomationActive,
+        autoAllowFlags: opts.trust.autoAllowFlags.length > 0,
+      }),
       details,
       metadata: {
         role: opts.role,
         ...(opts.profile !== undefined && { profile: opts.profile }),
-        kind: opts.kind,
+        kind: opts.runner.kind,
         approve: opts.approve,
         executesLocalCommand: opts.trust.executesLocalCommand,
         mayUseNetwork: opts.trust.mayUseNetwork,

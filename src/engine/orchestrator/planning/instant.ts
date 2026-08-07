@@ -18,7 +18,7 @@ import { createSessionExpiredHandler } from '../resume-context.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
 import { planningError } from './errors.js';
-import { MAX_CLARIFICATION_QUESTIONS } from './call-loop.js';
+import { MAX_CLARIFICATION_QUESTIONS, mergePlannerAttempts } from './call-loop.js';
 
 export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -91,15 +91,22 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   let planResult: PlanResult;
   try {
     const instantFn = planner.instantPlan ?? planner.quickPlan ?? planner.plan;
-    planResult = await instantFn.call(planner, {
-      feature,
-      projectDir,
-      callbacks: plannerCallbacks,
-      codebaseContext: opts.codebaseContext,
-    });
-    buffer.flush();
-    const rest = stripper.flush();
-    if (rest.length > 0) textHandler(rest);
+    const runSingleCall = async (): Promise<PlanResult> => {
+      const result = await instantFn.call(planner, {
+        feature,
+        projectDir,
+        callbacks: plannerCallbacks,
+        codebaseContext: opts.codebaseContext,
+      });
+      buffer.flush();
+      const rest = stripper.flush();
+      if (rest.length > 0) textHandler(rest);
+      return result;
+    };
+    planResult = await runSingleCall();
+    if (planResult.tasks.length === 0) {
+      planResult = mergePlannerAttempts(planResult, await runSingleCall());
+    }
   } catch (err) {
     buffer.flush();
     const rest = stripper.flush();
@@ -125,6 +132,16 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   }
 
   if (planResult.tasks.length === 0) {
+    const phaseFiles = (planResult.phases ?? []).map((phase) => phase.filename);
+    publishWarning({
+      bus: wctx.bus,
+      phase: state.phase,
+      message:
+        phaseFiles.length > 0
+          ? `instant mode: the planner produced text but no parsable Task Brief; its output is persisted in the session directory (${phaseFiles.join(', ')})`
+          : 'instant mode: the planner produced text but no parsable Task Brief',
+      safety: { category: 'planner', code: 'planner_returned_zero_tasks', transcriptSafe: true },
+    });
     return handlePlanningFailure({
       err: planningError.zeroTasks('instant'),
       projectDir,

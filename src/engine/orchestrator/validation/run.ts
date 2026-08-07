@@ -3,7 +3,8 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { ValidationStage } from '../../../core/schemas/enums.js';
 import type { ValidationStageCommands, ValidationStages } from '../../events/types.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
-import { publishValidation, publishWarning } from '../events.js';
+import { publishValidation, publishValidationBaseline, publishWarning } from '../events.js';
+import { decideValidationAcceptance } from './acceptance.js';
 import { sanitizeDiscoveredValidation } from '../planning/sanitize-discovered-validation.js';
 import { detectValidationHeuristic } from './heuristic.js';
 import {
@@ -17,6 +18,7 @@ import type { ValidationResult } from './result.js';
 import type {
   PrimeBaselineOptions,
   RunValidationOptions,
+  ValidationBaseline,
   Validator,
   ValidatorDeps,
 } from './types.js';
@@ -35,7 +37,7 @@ interface ValidationProgress {
 
 export function createValidator(deps: ValidatorDeps = {}): Validator {
   const commandRunner = deps.runCommand ?? runCommand;
-  let baselineFailingStages: ReadonlySet<ValidationStage> | null = null;
+  let baseline: ValidationBaseline | null = null;
 
   async function probeBaseline(
     task: Task,
@@ -44,8 +46,12 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     discovered: ReturnType<typeof sanitizeDiscoveredValidation>,
     heuristic: ReturnType<typeof detectValidationHeuristic>,
     signal: AbortSignal | undefined,
-  ): Promise<Set<ValidationStage>> {
-    const failing = new Set<ValidationStage>();
+    onProgress?: (progress: ValidationProgress) => void,
+  ): Promise<{ baseline: ValidationBaseline; results: ValidationResult[] }> {
+    const failingStages = new Set<ValidationStage>();
+    const results: ValidationResult[] = [];
+    const stages: ValidationStages = { typecheck: false, lint: false, test: false };
+    const commands: ValidationStageCommands = {};
     const probeStage = async (
       stage: ValidationStage,
       resolved: ReturnType<typeof resolveCommand>,
@@ -54,6 +60,8 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       if (!resolved) return;
       const args = target !== undefined ? [...resolved.args, '--', target] : resolved.args;
       const command = formatValidationCommand(resolved.cmd, args);
+      commands[stage] = command;
+      onProgress?.({ stages: { ...stages }, activeStage: stage, commands: { ...commands } });
       const result = await runValidationStep({
         stage,
         cmd: resolved.cmd,
@@ -65,7 +73,13 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         command,
         signal,
       });
-      if (!result.passed) failing.add(stage);
+      results.push(result);
+      if (!result.passed) {
+        failingStages.add(stage);
+      } else if (result.skipped !== true) {
+        stages[stage] = true;
+      }
+      onProgress?.({ stages: { ...stages }, commands: { ...commands } });
     };
 
     if (config.validation.typecheck) {
@@ -101,7 +115,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         if (testTarget.run) await probeStage('test', resolved, testTarget.target);
       }
     }
-    return failing;
+    return { baseline: { failingStages, commands }, results };
   }
 
   async function validateTask(
@@ -110,6 +124,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
     config: Config,
     discovered: ReturnType<typeof sanitizeDiscoveredValidation>,
     heuristic: ReturnType<typeof detectValidationHeuristic>,
+    changedFiles: readonly string[] | undefined,
     signal?: AbortSignal | undefined,
     onProgress?: (progress: ValidationProgress) => void,
   ): Promise<ValidationResult[]> {
@@ -136,9 +151,16 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
         runCommand: commandRunner,
         command,
         signal,
+        changedFiles,
       });
       results.push(result);
-      if (!result.passed) return 'stop';
+      if (!result.passed) {
+        if (baseline?.failingStages.has(stage)) {
+          onProgress?.({ stages: { ...stages }, commands: { ...commands } });
+          return 'continue';
+        }
+        return 'stop';
+      }
       stages[stage] = true;
       onProgress?.({ stages: { ...stages }, commands: { ...commands } });
       return 'continue';
@@ -197,17 +219,40 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
   }
 
   async function primeBaseline(opts: PrimeBaselineOptions): Promise<void> {
-    if (deps.captureBaseline !== true || baselineFailingStages !== null) return;
-    const { task, projectDir, config, discoveredValidation, signal } = opts;
+    if (deps.captureBaseline !== true || baseline !== null) return;
+    const { task, projectDir, config, bus, phase, discoveredValidation, signal } = opts;
+    const startTime = Date.now();
+    publishValidationBaseline({ bus: bus, phase: phase }, { phase: 'start' });
     const heuristic = detectValidationHeuristic(projectDir);
     const sanitizedDiscovered = sanitizeDiscoveredValidation(discoveredValidation);
-    baselineFailingStages = await probeBaseline(
+    const probe = await probeBaseline(
       task,
       projectDir,
       config,
       sanitizedDiscovered,
       heuristic,
       signal,
+      (progress) => {
+        publishValidationBaseline(
+          { bus: bus, phase: phase },
+          {
+            phase: 'progress',
+            stages: progress.stages,
+            startTime,
+            ...(progress.activeStage !== undefined && { activeStage: progress.activeStage }),
+            commands: progress.commands,
+          },
+        );
+      },
+    );
+    baseline = probe.baseline;
+    publishValidationBaseline(
+      { bus: bus, phase: phase },
+      {
+        phase: 'result',
+        results: probe.results,
+        startTime,
+      },
     );
   }
 
@@ -224,6 +269,7 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
       config,
       sanitizedDiscovered,
       heuristic,
+      opts.changedFiles,
       signal,
       (progress) => {
         publishValidation({ bus: bus, phase: phase }, taskId, {
@@ -251,6 +297,12 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
   return {
     primeBaseline,
     runValidation,
-    getBaselineFailingStages: () => baselineFailingStages ?? new Set<ValidationStage>(),
+    decideAcceptance: ({ results, changedFiles }) =>
+      decideValidationAcceptance({
+        results,
+        baselineFailingStages: baseline?.failingStages ?? new Set<ValidationStage>(),
+        baselineCommands: baseline?.commands,
+        changedFiles,
+      }),
   };
 }

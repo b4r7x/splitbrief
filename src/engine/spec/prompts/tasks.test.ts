@@ -8,7 +8,7 @@ describe('buildTasksPrompt', () => {
     expect(prompt).toContain('typescript');
     expect(prompt).toContain('.js');
     expect(prompt).toContain('file: src/path/to/file.ts');
-    expect(prompt).toContain('\\`\\`\\`typescript');
+    expect(prompt).toContain('```typescript');
   });
 
   it('Python project prompt has no TypeScript references', () => {
@@ -16,7 +16,7 @@ describe('buildTasksPrompt', () => {
     expect(prompt).toContain('Python');
     expect(prompt).toContain('PEP 484');
     expect(prompt).toContain('file: src/path/to/file.py');
-    expect(prompt).toContain('\\`\\`\\`python');
+    expect(prompt).toContain('```python');
     expect(prompt).not.toMatch(/TypeScript|typescript|\.js extensions|file\.ts/);
   });
 

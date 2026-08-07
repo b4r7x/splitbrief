@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -30,17 +31,23 @@ import { handleRetryAndEscalation } from './handle.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 
-// Hint/full escalation tiers each run a full recursive createStagedProject copy;
-// under parallel full-suite load that staged-copy IO can push these cases past
-// the 10s default, so widen the timeout for this file (cases pass in ~8-25s
-// in isolation).
+// The hint and full tiers acquire from the run isolation handle; on the copying
+// strategy under parallel full-suite load that staged-copy IO can push these
+// cases past the 10s default, so widen the timeout for this file (cases pass
+// in ~8-25s in isolation).
 vi.setConfig({ testTimeout: 60_000 });
 
 let dirs: string[] = [];
+let trustHome: ReturnType<typeof useTrustHome>;
+
+beforeEach(() => {
+  trustHome = useTrustHome('escalation-handle-trust-home');
+});
 
 afterEach(() => {
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
+  trustHome.restore();
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
@@ -169,7 +176,10 @@ describe('handleRetryAndEscalation', () => {
     const escalateHint = vi.fn().mockImplementation(async (opts) => {
       expect(opts.projectDir).not.toBe(projectDir);
       expect(opts.fileIgnoreProjectDir).toBe(projectDir);
-      expect(opts.sandboxEnv?.HOME?.startsWith(opts.projectDir)).toBe(true);
+      // The env belongs to the staged directory. TMPDIR is the invariant to
+      // assert: HOME is the host's for a channel whose credential is an OS
+      // keychain item, which is what a macOS Claude Code planner uses.
+      expect(opts.sandboxEnv?.TMPDIR?.startsWith(opts.projectDir)).toBe(true);
       return { success: false, output: 'hint text', code: null, usage: null };
     });
 
@@ -339,7 +349,10 @@ describe('handleRetryAndEscalation', () => {
     const escalateFull = vi.fn().mockImplementation(async (opts) => {
       expect(opts.projectDir).not.toBe(projectDir);
       expect(opts.fileIgnoreProjectDir).toBe(projectDir);
-      expect(opts.sandboxEnv?.HOME?.startsWith(opts.projectDir)).toBe(true);
+      // The env belongs to the staged directory. TMPDIR is the invariant to
+      // assert: HOME is the host's for a channel whose credential is an OS
+      // keychain item, which is what a macOS Claude Code planner uses.
+      expect(opts.sandboxEnv?.TMPDIR?.startsWith(opts.projectDir)).toBe(true);
       return {
         success: true,
         output: 'full code',

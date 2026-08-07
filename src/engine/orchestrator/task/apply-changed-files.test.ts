@@ -39,11 +39,11 @@ describe('applyChangedFiles', () => {
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
 
-    const staged = await createStagedProject(projectDir);
-    const stagedProjectDir = staged.projectDir;
+    const workspace = await createStagedProject(projectDir);
+    const stagedProjectDir = workspace.projectDir;
 
-    mkdirSync(join(staged.projectDir, 'src'), { recursive: true });
-    writeFileSync(join(staged.projectDir, 'src/hello.ts'), 'implementation');
+    mkdirSync(join(workspace.projectDir, 'src'), { recursive: true });
+    writeFileSync(join(workspace.projectDir, 'src/hello.ts'), 'implementation');
 
     const wctx = makeWctx({ projectDir, sessionId });
 
@@ -51,10 +51,10 @@ describe('applyChangedFiles', () => {
       wctx,
       task,
       state,
-      staged,
-      usesStaging: true,
+      workspace,
+      usesIsolation: true,
       preApplyApprovedFiles: ['src/hello.ts'],
-      taskStartSnapshot: staged.snapshot,
+      taskStartSnapshot: workspace.snapshot,
       recordApprovalDenial: vi.fn(),
       handleConflict: async (s) => s,
     });
@@ -68,8 +68,8 @@ describe('applyChangedFiles', () => {
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
 
-    const staged = await createStagedProject(projectDir);
-    const stagedProjectDir = staged.projectDir;
+    const workspace = await createStagedProject(projectDir);
+    const stagedProjectDir = workspace.projectDir;
 
     rmSync(join(projectDir, '.git'), { recursive: true, force: true });
 
@@ -81,8 +81,8 @@ describe('applyChangedFiles', () => {
       wctx,
       task,
       state,
-      staged,
-      usesStaging: true,
+      workspace,
+      usesIsolation: true,
       preApplyApprovedFiles: [],
       taskStartSnapshot: emptySnapshot(),
       recordApprovalDenial: vi.fn(),
@@ -104,11 +104,11 @@ describe('applyChangedFiles', () => {
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
 
-    const staged = await createStagedProject(projectDir);
-    const stagedProjectDir = staged.projectDir;
+    const workspace = await createStagedProject(projectDir);
+    const stagedProjectDir = workspace.projectDir;
 
-    mkdirSync(join(staged.projectDir, 'src'), { recursive: true });
-    writeFileSync(join(staged.projectDir, 'src/hello.ts'), 'implementation');
+    mkdirSync(join(workspace.projectDir, 'src'), { recursive: true });
+    writeFileSync(join(workspace.projectDir, 'src/hello.ts'), 'implementation');
 
     const controller = new AbortController();
     controller.abort();
@@ -118,10 +118,10 @@ describe('applyChangedFiles', () => {
       wctx,
       task,
       state,
-      staged,
-      usesStaging: true,
+      workspace,
+      usesIsolation: true,
       preApplyApprovedFiles: ['src/hello.ts'],
-      taskStartSnapshot: staged.snapshot,
+      taskStartSnapshot: workspace.snapshot,
       recordApprovalDenial: vi.fn(),
       handleConflict: async (s) => s,
     });
@@ -134,19 +134,19 @@ describe('applyChangedFiles', () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
-    const staged = await createStagedProject(projectDir);
-    const stagedProjectDir = staged.projectDir;
+    const workspace = await createStagedProject(projectDir);
+    const stagedProjectDir = workspace.projectDir;
     mkdirSync(join(stagedProjectDir, 'src'), { recursive: true });
     writeFileSync(join(stagedProjectDir, 'src/other.ts'), 'out of scope');
 
     const gateError = new Error('approval gate failed');
     const cleanupError = new Error('staged cleanup failed');
-    const cleanupStagedProject = staged.cleanup;
+    const cleanupStagedProject = workspace.cleanup;
     const cleanup = vi.fn(() => {
       cleanupStagedProject();
       throw cleanupError;
     });
-    staged.cleanup = cleanup;
+    workspace.cleanup = cleanup;
     const wctx = makeWctx({
       projectDir,
       sessionId,
@@ -163,10 +163,10 @@ describe('applyChangedFiles', () => {
         wctx,
         task,
         state,
-        staged,
-        usesStaging: true,
+        workspace,
+        usesIsolation: true,
         preApplyApprovedFiles: [],
-        taskStartSnapshot: staged.snapshot,
+        taskStartSnapshot: workspace.snapshot,
         recordApprovalDenial: vi.fn(),
         handleConflict: async (currentState) => currentState,
       }),
@@ -180,28 +180,28 @@ describe('applyChangedFiles', () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', file: 'src/hello.ts' });
     const state = makeImplState([task]);
-    const staged = await createStagedProject(projectDir);
-    const stagedProjectDir = staged.projectDir;
+    const workspace = await createStagedProject(projectDir);
+    const stagedProjectDir = workspace.projectDir;
     mkdirSync(join(stagedProjectDir, 'src'), { recursive: true });
     writeFileSync(join(stagedProjectDir, 'src/hello.ts'), 'implementation');
 
     const cleanupError = new Error('staged cleanup failed');
-    const cleanupStagedProject = staged.cleanup;
+    const cleanupStagedProject = workspace.cleanup;
     const cleanup = vi.fn(() => {
       cleanupStagedProject();
       throw cleanupError;
     });
-    staged.cleanup = cleanup;
+    workspace.cleanup = cleanup;
 
     await expect(
       applyChangedFiles({
         wctx: makeWctx({ projectDir, sessionId }),
         task,
         state,
-        staged,
-        usesStaging: true,
+        workspace,
+        usesIsolation: true,
         preApplyApprovedFiles: ['src/hello.ts'],
-        taskStartSnapshot: staged.snapshot,
+        taskStartSnapshot: workspace.snapshot,
         recordApprovalDenial: vi.fn(),
         handleConflict: async (currentState) => currentState,
       }),

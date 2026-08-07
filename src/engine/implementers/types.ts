@@ -1,3 +1,4 @@
+import type { ChangeDetectionKind } from '../change-detection.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -33,6 +34,12 @@ export interface ImplementerPublisher {
     duration: number;
   }): void;
   publishFailed(opts: { phase: Phase; taskId: TaskId; model?: string | undefined }): void;
+  publishWarning(opts: {
+    phase: Phase;
+    taskId: TaskId;
+    message: string;
+    safety: { category: string; code: string; transcriptSafe: true };
+  }): void;
 }
 
 export interface ImplementerFactoryOptions {
@@ -54,6 +61,8 @@ export interface ImplementerOptions {
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
   fileIgnoreProjectDir?: string | undefined;
+  /** Baseline the caller's workspace declares; sniffed from the directory when absent. */
+  changeDetection?: ChangeDetectionKind | undefined;
   continuationPrompt?: string | undefined;
   steer?: string | undefined;
   languageContext?: LanguageContext | undefined;
@@ -92,4 +101,11 @@ export interface Implementer extends RunnerRuntime {
   implement(opts: ImplementerOptions): Promise<ImplementerResult>;
   retry(opts: RetryOptions): Promise<ImplementerResult>;
   capabilities?: ImplementerConfig.ImplementerCapabilities | undefined;
+
+  /**
+   * Human-readable cause for the most recent `isAvailable()` returning false
+   * (e.g. missing API key, unreachable endpoint, auth rejection, empty model list).
+   * Backends that can only fail to install do not implement it.
+   */
+  unavailabilityReason?: () => string | undefined;
 }

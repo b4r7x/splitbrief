@@ -1,6 +1,6 @@
 # SPLITBRIEF
 
-Open-source cost-aware task compiler for AI coding agents. An expensive planner compiles Task Briefs; a cheaper implementer executes them.
+Open-source orchestrator for two AI coding tools. The stronger one plans, compiles Task Briefs, and reviews; the weaker one executes them. SPLITBRIEF holds the contract between them — the brief, validation, retry, escalation, and the evidence trail. Lower cost is a consequence of the split, not the headline.
 
 ## CRITICAL — NEVER COMMIT, NEVER STAGE
 
@@ -65,6 +65,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Enforce a cross-cutting rule | [docs/INVARIANTS.md](./docs/INVARIANTS.md) — pre-merge grep gates |
 | Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
 | Judge code against the SOTA review bar | [docs/CODE-STANDARD.md](./docs/CODE-STANDARD.md) — consolidated quality standard + reviewer checklist |
+| Check what has already been decided | `.specify/memory/constitution.md` — the ADRs of the 2026-08-04 realignment are folded into it, `docs/VISION.md` and the docs. `.nuke/2026-08-04-decisions.md` is the local decision record for that pass: untracked, present only in the working copy |
 | Check strategic direction | [docs/VISION.md](./docs/VISION.md), [docs/FUTURE.md](./docs/FUTURE.md) |
 | Contribute to this project | [CONTRIBUTING.md](./CONTRIBUTING.md) |
 | Work with API keys | [docs/API-KEYS.md](./docs/API-KEYS.md) |
@@ -74,7 +75,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
 | Look up release history | [CHANGELOG.md](./CHANGELOG.md) |
 
-Reference also: `.specify/memory/constitution.md` — 6 constitutional principles (v1.3.1, linked from VISION).
+Reference also: `.specify/memory/constitution.md` — 6 constitutional principles (linked from VISION).
 
 ## Core conventions
 
@@ -101,7 +102,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Command palette** lives in `src/features/palette/`; source assembly is `sources.ts`, ranking is `results.ts`, and the overlay entry is the page `src/app/overlays/palette.tsx`.
 - **Settings** overlay entry is the page `src/app/overlays/settings.tsx`; `ModeSelector` stays at `src/features/settings/mode-selector.tsx` and is imported directly by `src/app/router.tsx` (a router-imported feature component, not a page).
 - **Runner selection** is the `src/features/runners/` feature; its picker entry is the page `src/app/overlays/runners.tsx`. `ToolModelPicker` / `renderToolPicker` are component/callback names, not a `tool-picker` folder boundary.
-- **Workflow live status** renders in the composer byline (`InputFooter` + `deriveLiveStatus`), not as a transcript row — do not recreate `live-status-row`; status derives from `lifecycle.phaseFirstSeenTs`, not a scan of the events array. The transcript has no max-width cap; the sidebar (25% + 2-col gap) is the only width constraint. Transcript and review overlay share the pure markdown core (`src/utils/markdown/`), which covers links, leading-pipe GFM tables, headings h1–h6, strikethrough, and lowlight-highlighted fenced code; markdown HTML comments — including planner `<!-- Q:… -->` clarification markers — never render. File-path links display project-relative and emit OSC 8 hyperlinks when the terminal supports them (in-house env sniff in `src/lib/terminal/hyperlinks.ts`, overridable via `FORCE_HYPERLINK`). Clarification questions fire in every workflow mode through the same bordered `QuestionPrompt` panel.
+- **Workflow live status** renders in the composer byline (`InputFooter` + `deriveLiveStatus`), not as a transcript row — do not recreate `live-status-row`; status derives from `lifecycle.phaseFirstSeenTs`, not a scan of the events array. The transcript has no max-width cap; the sidebar (a clamped 25% share — floor 34, cap 48, only above the 120-column workflow breakpoint — plus a 2-col gap) is the only width constraint. Transcript and review overlay share the pure markdown core (`src/utils/markdown/`), which covers links, leading-pipe GFM tables, headings h1–h6, strikethrough, and lowlight-highlighted fenced code; markdown HTML comments — including planner `<!-- Q:… -->` clarification markers — never render. File-path links display project-relative and emit OSC 8 hyperlinks when the terminal supports them (in-house env sniff in `src/lib/terminal/hyperlinks.ts`, overridable via `FORCE_HYPERLINK`). Clarification questions fire in every workflow mode through the same bordered `QuestionPrompt` panel.
 
 ## Runner kinds
 

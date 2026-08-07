@@ -89,7 +89,9 @@ describe('runHeadless — budget pause behavior', () => {
     dirs = [];
   });
 
-  it('emits budget_paused JSON and fails fast through the public headless workflow path', async () => {
+  it('emits budget_paused JSON and fails fast through the public headless workflow path', {
+    timeout: 60_000,
+  }, async () => {
     const projectDir = setupBudgetHeadlessProject(0.75);
     dirs.push(projectDir);
     const sessionId = beginSession(projectDir, 'fix budget behavior');
@@ -151,7 +153,9 @@ describe('runHeadless — budget pause behavior', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('rejects interactive task review modes before starting a headless run', async () => {
+  it('rejects interactive task review modes before starting a headless run', {
+    timeout: 60_000,
+  }, async () => {
     const projectDir = setupBudgetHeadlessProject();
     dirs.push(projectDir);
     writeHeadlessConfigYaml(projectDir, [

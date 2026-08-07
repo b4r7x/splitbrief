@@ -52,8 +52,14 @@ export function getApprovalSeverityWord(actionClass: ActionClass): string {
   return 'Confirm';
 }
 
+/**
+ * Trust disclosures arrive as one line per fact. Collapsing them would run the
+ * executable, its argv, and the environment note together into a single line
+ * the reader has to re-parse, so the breaks survive sanitization and the row
+ * math below counts them.
+ */
 export function formatApprovalActionDescription(actionDescription: string): string {
-  return sanitizeTerminalDisplayText(actionDescription);
+  return sanitizeTerminalDisplayText(actionDescription, { preserveLineBreaks: true });
 }
 
 function stickyRequestLine(actionClass: ActionClass, actionDescription: string): string {

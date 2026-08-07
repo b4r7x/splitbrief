@@ -89,7 +89,7 @@ describe('applyCLIOverrides — contextLength, mode, budget', () => {
 
   it.each(['full', 'spec-kit'])('rejects the removed %s mode alias', (mode) => {
     expect(() => applyCLIOverrides(baseConfig, { mode: mode as 'speckit' })).toThrow(
-      /Invalid workflow mode/,
+      /Invalid mode: (full|spec-kit)\. Must be one of: instant, quick, standard, speckit/,
     );
   });
 

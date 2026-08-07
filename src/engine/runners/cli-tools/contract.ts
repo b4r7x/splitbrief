@@ -111,21 +111,11 @@ export type CliCatalogProbe =
         parse: CliProbeParser<readonly DetectedModel[]>;
       }>);
 
-/**
- * Where a tool keeps session state that cannot be bridged into a sandbox as a
- * file. Presence is checked by metadata only — the credential value is never
- * read, captured, or logged.
- */
-export type CliSessionPresenceProbe =
-  | Readonly<{ kind: 'none' }>
-  | Readonly<{ kind: 'darwin-keychain'; service: string }>;
-
 export type CliDeclaredProbeContract = Readonly<{
   kind: 'declared';
   version: CliVersionProbe;
   auth: CliAuthProbe;
   catalog: CliCatalogProbe;
-  sessionPresence: CliSessionPresenceProbe;
 }>;
 
 /**

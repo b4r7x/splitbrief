@@ -1,6 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import type { Dirent } from 'node:fs';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-config.js';
@@ -27,6 +26,7 @@ import {
   CLI_TOOL_CATALOG,
   CLI_TOOL_IDS,
   classifyCliAdmittedVersion,
+  cliAuthChannelHostStateAccess,
   selectCliAuthChannel,
   type CliAuthChannel,
   type CliAuthChannelId,
@@ -54,7 +54,11 @@ import {
   resolveCliExecutableAliases,
   type CliExecutableResolver,
 } from '../runners/resolve-cli-executable.js';
-import { createSandboxEnv, prependCliExecutableDirectory } from '../runners/sandbox-env.js';
+import {
+  bridgedCliStatePresent,
+  createSandboxEnv,
+  prependCliExecutableDirectory,
+} from '../runners/sandbox-env.js';
 import {
   isCanonicalCliDeclaredProbe,
   lookupCliReadinessProbe,
@@ -108,7 +112,12 @@ type AdmittedCatalogOperation = Readonly<{
 
 type CatalogProbeEnvironment = Readonly<{
   env: NodeJS.ProcessEnv;
-  authAvailable: boolean;
+  /**
+   * False only when the staged environment can see that the credential is not
+   * there. An OS keychain item is invisible from the environment either way, so
+   * it stays true and the probe itself decides.
+   */
+  credentialMayBePresent: boolean;
 }>;
 
 function snapshotCredentialDomain(
@@ -319,46 +328,22 @@ function catalogRuntimePath(): string {
   return [...new Set(directories)].join(delimiter);
 }
 
-async function containsRegularFile(root: string): Promise<boolean> {
-  let entries: Dirent[];
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return false;
-  }
-  for (const entry of entries) {
-    const path = join(root, entry.name);
-    if (entry.isFile()) return true;
-    if (entry.isDirectory() && (await containsRegularFile(path))) return true;
-  }
-  return false;
-}
-
 async function catalogProbeEnvironment(
   operation: AdmittedCatalogOperation,
   neutralDir: string,
 ): Promise<CatalogProbeEnvironment> {
   const channel = operation.authChannel;
+  const hostState = channel === undefined ? 'none' : cliAuthChannelHostStateAccess(channel);
   const env = await createSandboxEnv(
     neutralDir,
     [...(channel?.env ?? [])],
-    channel?.stateBridge === 'host-cli-state' ? operation.context.id : undefined,
+    hostState === 'none' ? undefined : operation.context.id,
+    hostState,
   );
-  let authAvailable = (channel?.env ?? []).some((key) => {
-    const value = env[key];
-    return value !== undefined && value.trim().length > 0;
-  });
-  if (channel?.stateBridge === 'host-cli-state') {
-    const stateRoots = [env.HOME, env.XDG_CONFIG_HOME, env.XDG_DATA_HOME].filter(
-      (root): root is string => root !== undefined,
-    );
-    for (const root of new Set(stateRoots)) {
-      if (await containsRegularFile(root)) {
-        authAvailable = true;
-        break;
-      }
-    }
-  }
+  const credentialMayBePresent =
+    hostState === 'host-account' ||
+    (channel?.env ?? []).some((key) => (env[key] ?? '').trim().length > 0) ||
+    (hostState === 'bridged-files' && (await bridgedCliStatePresent(env, operation.context.id)));
   return {
     env: {
       ...env,
@@ -367,7 +352,7 @@ async function catalogProbeEnvironment(
         safeRuntimePath: catalogRuntimePath(),
       }),
     },
-    authAvailable,
+    credentialMayBePresent,
   };
 }
 
@@ -514,7 +499,7 @@ async function probeContextCatalog(
     const environment = await catalogProbeEnvironment(operation, neutralDir);
     throwIfAborted(input.signal);
     if (
-      !environment.authAvailable &&
+      !environment.credentialMayBePresent &&
       operation.authChannel !== undefined &&
       authChannelRequiresCredential(operation.authChannel)
     ) {
@@ -737,6 +722,7 @@ async function detectCliToolReadiness(
         testedVersion: result.testedVersion,
         compatibility: result.compatibility,
         auth: selectedChannel === undefined ? 'unknown' : result.auth,
+        ...(selectedChannel === undefined ? {} : { authChannel: selectedChannel.id }),
         ...(selectedChannel === undefined || result.providerAuth === undefined
           ? {}
           : { providerAuth: result.providerAuth }),

@@ -4,6 +4,7 @@ import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
   getReviewColumnWidth,
+  getSidebarTaskTitleWidth,
   getWorkflowContentRect,
   getWorkflowContentWidth,
   getWorkflowReviewColumn,
@@ -13,29 +14,60 @@ import {
 } from './rect.js';
 
 describe('workflow viewport layout', () => {
-  it('splits width between sidebar, gap, and content exactly, only when sidebar is visible on large screens', () => {
+  it('splits width between sidebar, gap, and content exactly, only when the sidebar is visible above the breakpoint', () => {
     const cols = 120;
 
-    expect(getWorkflowSidebarWidth({ cols, sidebarVisible: false, isSmall: false })).toBe(0);
-    expect(getWorkflowContentWidth({ cols, sidebarVisible: false, isSmall: false })).toBe(cols);
+    expect(getWorkflowSidebarWidth({ cols, sidebarVisible: false })).toBe(0);
+    expect(getWorkflowContentWidth({ cols, sidebarVisible: false })).toBe(cols);
 
-    expect(getWorkflowSidebarWidth({ cols, sidebarVisible: true, isSmall: true })).toBe(0);
-    expect(getWorkflowContentWidth({ cols, sidebarVisible: true, isSmall: true })).toBe(cols);
+    expect(getWorkflowSidebarWidth({ cols: 100, sidebarVisible: true })).toBe(0);
+    expect(getWorkflowContentWidth({ cols: 100, sidebarVisible: true })).toBe(100);
 
-    const sidebar = getWorkflowSidebarWidth({
-      cols,
-      sidebarVisible: true,
-      isSmall: false,
-    });
-    const content = getWorkflowContentWidth({
-      cols,
-      sidebarVisible: true,
-      isSmall: false,
-    });
+    const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
+    const content = getWorkflowContentWidth({ cols, sidebarVisible: true });
     expect(sidebar).toBeGreaterThan(0);
     expect(content).toBeGreaterThan(0);
     expect(WORKFLOW_SIDEBAR_GAP).toBe(2);
     expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols);
+  });
+
+  it('hides the sidebar below the workflow breakpoint and clamps its share between a floor and a ceiling above it', () => {
+    expect(getWorkflowSidebarWidth({ cols: 119, sidebarVisible: true })).toBe(0);
+    expect(getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true })).toBeGreaterThan(0);
+
+    const atBreakpoint = getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true });
+    const atMid = getWorkflowSidebarWidth({ cols: 160, sidebarVisible: true });
+    const atCap = getWorkflowSidebarWidth({ cols: 200, sidebarVisible: true });
+    const atWide = getWorkflowSidebarWidth({ cols: 400, sidebarVisible: true });
+
+    expect(atBreakpoint).toBeGreaterThan(0);
+    expect(atMid).toBeGreaterThan(atBreakpoint);
+    expect(atCap).toBe(atWide);
+    expect(atWide).toBeLessThan(Math.floor(400 * 0.25));
+    expect(getWorkflowSidebarWidth({ cols: 400, sidebarVisible: false })).toBe(0);
+  });
+
+  it('keeps sidebar plus gap plus content equal to the terminal width at every viewport', () => {
+    for (const cols of [120, 160, 400]) {
+      const sidebar = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
+      const content = getWorkflowContentWidth({ cols, sidebarVisible: true });
+      expect(sidebar + WORKFLOW_SIDEBAR_GAP + content).toBe(cols);
+    }
+  });
+
+  it('gives the task title the interior of the box the row paints into, and less when a status tail reserves cells', () => {
+    const width = 48;
+    expect(getSidebarTaskTitleWidth({ width, reservedTailCells: 0 })).toBe(width - 7);
+    const withTail = getSidebarTaskTitleWidth({ width, reservedTailCells: 5 });
+    expect(withTail).toBe(width - 7 - 5);
+    expect(withTail).toBeLessThan(getSidebarTaskTitleWidth({ width, reservedTailCells: 0 }));
+  });
+
+  it('never shrinks the task title below a readable minimum', () => {
+    expect(getSidebarTaskTitleWidth({ width: 10, reservedTailCells: 0 })).toBeGreaterThan(0);
+    expect(getSidebarTaskTitleWidth({ width: 10, reservedTailCells: 20 })).toBe(
+      getSidebarTaskTitleWidth({ width: 10, reservedTailCells: 0 }),
+    );
   });
 
   it('subtracts chrome + input rows from viewport height and clamps at zero', () => {
@@ -82,27 +114,22 @@ describe('review column layout', () => {
       getWorkflowReviewColumn({
         cols: 180,
         sidebarVisible: false,
-        isSmall: false,
       }),
     ).toEqual({
       leftOffset: 0,
-      width: getWorkflowContentWidth({ cols: 180, sidebarVisible: false, isSmall: false }),
+      width: getWorkflowContentWidth({ cols: 180, sidebarVisible: false }),
     });
 
     const withSidebar = getWorkflowReviewColumn({
       cols: 180,
       sidebarVisible: true,
-      isSmall: false,
     });
     // The review column starts past the sidebar and its two-column gap so it aligns with the
     // conversation pane.
     expect(withSidebar.leftOffset).toBe(
-      getWorkflowSidebarWidth({ cols: 180, sidebarVisible: true, isSmall: false }) +
-        WORKFLOW_SIDEBAR_GAP,
+      getWorkflowSidebarWidth({ cols: 180, sidebarVisible: true }) + WORKFLOW_SIDEBAR_GAP,
     );
-    expect(withSidebar.width).toBe(
-      getWorkflowContentWidth({ cols: 180, sidebarVisible: true, isSmall: false }),
-    );
+    expect(withSidebar.width).toBe(getWorkflowContentWidth({ cols: 180, sidebarVisible: true }));
   });
 });
 
@@ -112,27 +139,21 @@ describe('getWorkflowContentRect', () => {
     const rows = 30;
     const inputRows = 4;
     const sidebarVisible = true;
-    const isSmall = false;
 
     const rect = getWorkflowContentRect({
       cols,
       rows,
       inputRows,
       sidebarVisible,
-      isSmall,
     });
 
-    expect(rect.width).toBe(getWorkflowContentWidth({ cols, sidebarVisible, isSmall }));
+    expect(rect.width).toBe(getWorkflowContentWidth({ cols, sidebarVisible }));
     expect(rect.height).toBe(getWorkflowViewportHeight({ rows, inputRows, promptRows: 0 }));
 
     expect(rect.right).toBe(rect.left + rect.width - 1);
     expect(rect.bottom).toBe(rect.top + rect.height - 1);
 
-    const sidebarWidth = getWorkflowSidebarWidth({
-      cols,
-      sidebarVisible,
-      isSmall,
-    });
+    const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
     expect(rect.left).toBe(sidebarWidth + WORKFLOW_SIDEBAR_GAP + 1);
   });
 
@@ -142,7 +163,6 @@ describe('getWorkflowContentRect', () => {
       rows: 30,
       inputRows: 2,
       sidebarVisible: false,
-      isSmall: false,
     });
     expect(rect.left).toBe(1);
     expect(rect.width).toBe(100);
@@ -154,7 +174,6 @@ describe('getWorkflowContentRect', () => {
       rows: 0,
       inputRows: 20,
       sidebarVisible: true,
-      isSmall: false,
     });
 
     expect(rect.width).toBe(0);
@@ -169,14 +188,12 @@ describe('getWorkflowContentRect', () => {
       rows: 8,
       inputRows: 2,
       sidebarVisible: false,
-      isSmall: false,
     });
     const twoRows = getWorkflowContentRect({
       cols: 100,
       rows: 9,
       inputRows: 2,
       sidebarVisible: false,
-      isSmall: false,
     });
 
     expect(oneRow.height).toBe(1);

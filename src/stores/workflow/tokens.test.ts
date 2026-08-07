@@ -233,3 +233,29 @@ describe('tokensStore — per-task attempt accumulation', () => {
     expect(s.escalatedCount).toBe(0);
   });
 });
+
+describe('tokensStore — pass-through events', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('passes brief readiness events through without changing state', () => {
+    const before = tokensStore.get();
+
+    addEvent({
+      type: 'brief_readiness_passed',
+      ts: Date.now(),
+      phase: 'planning',
+      taskCount: 5,
+    });
+    addEvent({
+      type: 'brief_readiness_blocked',
+      ts: Date.now(),
+      phase: 'planning',
+      taskCount: 5,
+      blockedCount: 2,
+      blockedTaskIds: ['T001', 'T002'],
+      kinds: ['stale-conflict'],
+    });
+
+    expect(tokensStore.get()).toEqual(before);
+  });
+});

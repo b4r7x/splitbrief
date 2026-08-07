@@ -99,7 +99,10 @@ export function prepareState(
 export function makePassingTask(id = 'T001') {
   return makeTask({
     id,
-    scope: { inBounds: ['auth flow'], outOfBounds: ['unrelated UI'] },
+    scope: {
+      inBounds: ['Modify only `src/hello.ts`.'],
+      outOfBounds: ['Do not touch anything outside the task file.'],
+    },
     evidence: ['brief-quality.json confirms the task brief is complete'],
     typeDefs: 'type AuthTask = { userId: string }',
   });

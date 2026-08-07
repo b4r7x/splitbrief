@@ -684,4 +684,79 @@ describe('event row dispatch', () => {
     expect(rows[1] && rowText(rows[1])).toBe('ship it');
     expect(rows[1]?.segments[0]?.tone).toBe('text');
   });
+
+  it('renders a visible blocked row when the readiness gate blocks', () => {
+    const event: EngineEventOf<'brief_readiness_blocked'> = {
+      type: 'brief_readiness_blocked',
+      ts: 0,
+      phase: 'planning',
+      taskCount: 20,
+      blockedCount: 3,
+      blockedTaskIds: ['T001', 'T002', 'T003'],
+      kinds: ['missing-worker'],
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.map(rowText).join('\n')).toContain('brief readiness');
+    expect(rows.map(rowText).join('\n')).toContain('blocked · 3 tasks of 20');
+    expect(rows.map(rowText).join('\n')).not.toContain('passed');
+  });
+
+  it('renders a passed row when the readiness gate clears', () => {
+    const event: EngineEventOf<'brief_readiness_passed'> = {
+      type: 'brief_readiness_passed',
+      ts: 0,
+      phase: 'planning',
+      taskCount: 5,
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.map(rowText).join('\n')).toContain('passed · 5 tasks');
+  });
+
+  it('renders the pre-existing-failure line when the baseline done event carries failing stages', () => {
+    const event: EngineEventOf<'validation_baseline'> = {
+      type: 'validation_baseline',
+      ts: 0,
+      phase: 'implementing',
+      status: 'done',
+      stages: { typecheck: false, lint: false, test: true },
+      failing: { typecheck: true },
+      commands: { typecheck: 'npx tsc --noEmit' },
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    const text = rows.map(rowText).join('\n').replace(/\s+/g, ' ');
+    expect(text).toContain('baseline');
+    expect(text).toContain('typecheck (npx tsc --noEmit) failed');
+    expect(text).toContain('already failing before any task ran: typecheck');
+    expect(text).toContain('pre-existing failures will not fail this run');
+    expect(
+      rows.some((rowValue) =>
+        rowValue.segments.some(
+          (segment) => segment.tone === 'warning' && segment.text.includes('already failing'),
+        ),
+      ),
+    ).toBe(true);
+  });
 });

@@ -16,10 +16,10 @@ import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { handleRetryAndEscalation } from './handle.js';
 
-// Hint/full escalation tiers each run a full recursive createStagedProject copy;
-// under parallel full-suite load that staged-copy IO can push these cases past
-// the 10s default, so widen the timeout for this file (cases pass in ~8-25s
-// in isolation).
+// The hint and full tiers acquire from the run isolation handle; on the copying
+// strategy under parallel full-suite load that staged-copy IO can push these
+// cases past the 10s default, so widen the timeout for this file (cases pass
+// in ~8-25s in isolation).
 vi.setConfig({ testTimeout: 60_000 });
 
 let dirs: string[] = [];
@@ -440,7 +440,12 @@ describe('handleRetryAndEscalation — Tier 0 intermediate', () => {
       .filter((event) => event.type === 'task_retry')
       .map((event) => (event.type === 'task_retry' ? event.attempt : -1));
     expect(retryAttempts).toEqual([1, 2]);
-    expect(result).toEqual({ completed: true, method: 'local', attempts: 2 });
+    expect(result).toEqual({
+      completed: true,
+      method: 'local',
+      attempts: 2,
+      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
+    });
     expect(busEvents.filter((event) => event.type === 'escalate')).toEqual([]);
   });
 

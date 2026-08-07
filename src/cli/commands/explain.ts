@@ -2,7 +2,7 @@ import type { Command } from 'commander';
 import { buildRunExplain } from '../../engine/orchestrator/explain/build.js';
 import { formatRunExplain } from '../../engine/orchestrator/explain/format.js';
 import { withCliErrors } from '../errors.js';
-import { resolveProjectDir } from '../setup.js';
+import { canonicalizeProjectDir } from '../setup.js';
 import { resolveSessionOrThrow } from '../sessions/resolve.js';
 
 interface ExplainOpts {
@@ -19,7 +19,7 @@ export function registerExplainCommand(program: Command): void {
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--json', 'Emit explanation as JSON', false)
     .action(async (opts: ExplainOpts) => {
-      const projectDir = resolveProjectDir(opts.project);
+      const projectDir = await canonicalizeProjectDir(opts);
       const sessionId = await resolveSessionOrThrow(projectDir, opts.session);
 
       await withCliErrors(async () => {

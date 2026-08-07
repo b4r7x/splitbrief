@@ -2,12 +2,15 @@
 
 ## What SPLITBRIEF IS
 
-Cost-aware task compiler for AI coding work. Splits work between:
+An orchestrator for two coding tools. One plans and reviews, the other executes, and SPLITBRIEF owns everything in between:
 
-- **Planner** (expensive/smart AI) — research, compile Task Briefs, decide when a spec is worth the cost, escalate, review
-- **Implementer** (cheap/local AI) — execute precise Task Briefs task by task
+- **Planner** — the stronger of the two. Researches the repo, compiles Task Briefs, decides when a spec is worth the cost, answers escalations, reviews the finished diff against the spec and the briefs.
+- **Implementer** — the weaker model, reached either as a tool CLI driving a cheaper model or as an API endpoint. Executes one Task Brief at a time in a fresh context. The transport is the user's choice; SPLITBRIEF does not privilege one.
+- **SPLITBRIEF** — owns the contract (the Task Brief), the isolation the implementer works in, the validation pipeline, retry, escalation, and the evidence trail.
 
-Core value: **same planning quality, lower execution cost** by offloading mechanical coding to cheap models while keeping validation and escalation explicit.
+The argument for the split is quality, not price. A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff — so an implementer and a reviewer from **different labs** catch issues a same-lab pair misses, and the gap is widest on logic errors and edge cases ([MindStudio](https://www.mindstudio.ai/blog/cross-vendor-ai-agent-review-claude-codex), [Augment Code](https://www.augmentcode.com/guides/adversarial-code-review) report the effect; SPLITBRIEF has not measured it — see [DIRECTION.md](./DIRECTION.md#what-we-measure)). SPLITBRIEF is built around that pairing: the planner reviews what the implementer wrote, and a deterministic pipeline (typecheck → lint → test) — not the implementer's own opinion — decides whether the change is correct.
+
+Lower cost follows from putting the mechanical half of the work on the cheaper tool. It is reported after the run; it is not the reason to switch.
 
 ## What SPLITBRIEF is NOT
 
@@ -26,34 +29,37 @@ An implementer pool, when enabled, is profile selection inside the single implem
 
 | Tool | What it does | Why SPLITBRIEF is different |
 |------|-------------|--------------------------|
-| Claude Squad | Manages multiple Claude Code/Codex/Aider instances in parallel | Doesn't split planning from implementation. Same expensive model for everything. |
-| Agent Orchestrator (Composio) | Parallel coding agents with git worktrees | Multi-agent coordination, not cost optimization. |
-| Overstory | Multi-agent with 11 runtimes, SQLite mail | Coordination complexity. No cost-aware Task Brief handoff. |
-| Claude Code native teams | Multiple Claude Code sessions coordinating | Not centered on planner/implementer cost splitting. |
+| Two-tool orchestrators (Merlin, claw-orchestrator, Codex-Orchestration, OmniAgent Polly) | Drive two coding CLIs from one control loop | Same niche, occupied. What differs is what sits between the two tools: a Task Brief contract, an owned validation pipeline, retry, escalation, and evidence — not message passing. |
+| Claude Squad | Manages multiple Claude Code/Codex/Aider instances in parallel | Parallel sessions of one role. No planning/implementation split, so nothing reviews anything else. |
+| Agent Orchestrator (Composio) | Parallel coding agents with git worktrees | Multi-agent coordination. Work is not compiled into briefs and not reviewed by a second tool. |
+| Overstory | Multi-agent with 11 runtimes, SQLite mail | Coordination complexity. No Task Brief handoff, no owned validation. |
+| Claude Code native teams | Multiple Claude Code sessions coordinating | One lab on both sides — the reviewer inherits the implementer's blind spots. |
 
-**Differentiator**: Intelligent Task Brief compilation with cheap execution, validation, retry, escalation, and evidence.
+**Differentiator**: two tools from different labs, with SPLITBRIEF holding the contract between them — brief compilation, isolation, validation, retry, escalation, evidence. The spec → plan → tasks pipeline is not the differentiator; by 2026 it is table stakes.
 
 ## Strategic Decisions
 
-### 1. Keep the cost-optimization focus
+### 1. Stay a two-tool orchestrator
 
-Don't pivot to "universal connector". Stay focused on cost-optimized split orchestration and avoid universal-connector scope.
+Don't pivot to "universal connector", and don't pivot to N agents. Exactly two roles, one contract between them, SPLITBRIEF owning the enforcement. Cost is an outcome of that shape, not the thing being optimized for.
 
 ### 2. Interactive TUI picker — YES
 
 Interactive model/provider selection in `start` command. Auto-detect available planners and running implementer endpoints. No more editing YAML to get started.
 
-### 3. Subprocess implementer — YES (as option)
+### 3. Subprocess implementer — YES, on equal footing
 
-`implementer.type: agent` runs a subprocess command instead of OpenAI chat API. Lets users plug in custom bash wrappers, alternative CLIs, etc. Default stays OpenAI-compatible API.
+`implementer.kind: cli` / `agent` / `shell` runs a subprocess instead of an OpenAI-compatible chat call, which is how a tool CLI running a cheaper model becomes the implementer. `kind: api` covers the endpoint path. Neither is the privileged default: the implementer is defined by being the weaker model, not by the transport that reaches it, and both paths get the same prompt, isolation, and validation treatment.
 
-### 4. Tool calls in implementer — NO
+### 4. Tool calls in implementer — the anti-goal is retired, nothing replaces it yet
 
-Small models (7B-27B) are less reliable at producing strict tool-call payloads. Current pipeline works: prompt → text → extract code → write file. Adding tool calls would require a second control protocol and approval surface for limited benefit in the current extraction-based pipeline.
+The old rationale was that 7B–27B models cannot produce strict tool-call payloads. That premise expired: 2026 local coder models (Qwen3-Coder 30B, Devstral Small 2 24B) are credible tool-callers ([RunLocalModel](https://runlocalmodel.com/best-local-coding-llm-2026.html)). Half the pipeline already runs on tools anyway — a `direct` implementer (`kind: cli`, `agent`, `agent-sdk`) edits files with its own tooling and SPLITBRIEF never sees the call protocol, only the resulting diff.
 
-### 5. Don't wrap agents in agents
+What replaces the anti-goal is open. A SPLITBRIEF-owned tool-call protocol on the `extracted-code` path (`kind: api`, `shell`) would add a second control and approval surface, and nothing yet shows it earns that. The blanket "never" is gone; the case for "yes" has not been made.
 
-If the implementer IS a file-writing coding agent, there's a conflict of control. SPLITBRIEF owns the task boundary, validation, retry, escalation, evidence, and checkpoint policy. The implementer executes only the current Task Brief.
+### 5. The implementer runs one brief, never the workflow
+
+An implementer may be a full coding agent that writes files itself — a first-class path, not a workaround. What it never gets is the workflow: SPLITBRIEF owns the task boundary, isolation, validation, retry, escalation, evidence, and checkpoint policy. The implementer is by construction the weaker model, so it must not be the thing deciding whether its own work is correct.
 
 ### 6. OpenCode-inspired TUI (v0.5 — 2026-03-31)
 
@@ -95,29 +101,35 @@ Evaluated alternatives:
 
 Ink works, we know React, incremental rendering is good enough. Migrate to OpenTUI later if needed.
 
-## Competitive Landscape (March 2026)
+## Competitive Landscape (August 2026)
 
-Multi-agent coding space is exploding:
+The niche has direct competitors now. "Orchestrate two coding CLIs" is occupied by **Merlin**, **claw-orchestrator**, **Codex-Orchestration** and **OmniAgent Polly**, among others. Spec-driven development became table stakes over the same period — spec-kit, Kiro, OpenSpec, BMAD, Antigravity and Claude Code all ship a version of it. The spec → plan → tasks pipeline is therefore no longer a differentiator on its own. What still differentiates is the pairing — planner and implementer from different labs, one reviewing the other — and what SPLITBRIEF enforces between them.
 
-- **Claude Code native teams** — first-party multi-agent, but all sessions use expensive Opus
+Demand moved the same way: third-party market research from August 2026 reports that the large majority of professional developers do not fully trust the correctness of AI-written code, and the tools that win produce reviewable, testable changes rather than more code.
+
+Adjacent, multi-agent rather than two-role:
+
+- **Claude Code native teams** — first-party multi-agent, but every session is the same expensive model from one lab
 - **Claude Squad** (github.com/smtg-ai/claude-squad) — TUI manager for multiple agents in separate workspaces
 - **Agent Orchestrator** (github.com/ComposioHQ/agent-orchestrator) — parallel agents, git worktrees, swappable backends
 - **Overstory** (github.com/jayminwest/overstory) — 11 runtime adapters, tmux, SQLite mail
 - **Ruflo** — multi-agent swarms for Claude Code
-- **OpenCode** (opencode.ai) — polished TUI, OpenTUI framework, but not centered on cost optimization
+- **OpenCode** (opencode.ai) — polished TUI, OpenTUI framework, single-tool rather than a planner/implementer split
 
-These tools primarily optimize parallel coordination or interface quality rather than planner/implementer cost splitting.
+These tools primarily optimize parallel coordination or interface quality rather than the two-role split and the review that comes with it.
+
+Sources: [Augment Code — open-source agent orchestrators](https://www.augmentcode.com/tools/open-source-agent-orchestrators) · [amux — AI agent orchestration 2026](https://amux.io/guides/ai-agent-orchestration-2026/) · [Microsoft — spec-driven development](https://developer.microsoft.com/blog/spec-driven-development-ai-native-engineering/) · [Faros — best AI coding agents 2026](https://www.faros.ai/blog/best-ai-coding-agents-2026) · [Augment Code — why multi-agent systems fail](https://www.augmentcode.com/guides/why-multi-agent-llm-systems-fail-and-how-to-fix-them)
 
 ## Architecture Principles
 
-See `.specify/memory/constitution.md` for the 6 constitutional principles (v1.3.1):
+See `.specify/memory/constitution.md` for the 6 constitutional principles:
 
-1. **Cost-Optimal Orchestration** — Opus only for tasks where quality matters; implementation on cheap models
+1. **Two-Tool Orchestration** — the stronger tool researches, plans, reviews and absorbs escalations; the weaker one executes briefs. Cost follows from the split
 2. **Spec-Driven Development** — Task Briefs first; specs only for larger or riskier work
-3. **Local-First Implementation** — Default to Ollama/LM Studio ($0); cloud is opt-in
+3. **Weaker-Model Implementation** — the implementer is a weaker model, not a weaker transport; a tool CLI and an API endpoint are equally supported and the user picks
 4. **Functional Purity** — zero runtime classes, pure functions, ESM, no unnecessary comments
-5. **Validate Before Checkpoint** — resolved validation pipeline per task; optional product commits only when configured; final Opus review
-6. **Identity & Anti-Goals** — Not a multi-agent coordinator; beautiful orchestration UX is product identity, not scope creep
+5. **Validate Before Checkpoint** — SPLITBRIEF owns the per-task validation pipeline; optional product commits only when configured; final planner review of the run diff
+6. **Identity & Anti-Goals** — two roles, not N agents; visible orchestration is product identity, not scope creep
 
 ## Version History
 

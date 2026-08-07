@@ -8,6 +8,7 @@ import type { WorkflowMode } from '../../../core/schemas/enums.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { featureForTranscriptPolicy } from '../../../core/sessions/lifecycle.js';
+import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
 import { runPricingIdentity } from '../../../core/providers/pricing-identity.js';
 import {
@@ -40,13 +41,20 @@ import {
   type WorkflowContext,
 } from '../types.js';
 import { buildSummary, type SummaryBase } from '../summary/build.js';
-import { publishError, publishRunnerCallEvent, publishWarningFromError } from '../events.js';
+import {
+  publishError,
+  publishRunnerCallEvent,
+  publishWarning,
+  publishWarningFromError,
+} from '../events.js';
 import { saveFinalSession, shouldPreserveActiveState } from '../session-lifecycle/finalize.js';
 import { withShutdownHandlers } from '../session-lifecycle/shutdown.js';
 import { installQueueHandler } from '../session-lifecycle/install-queue.js';
+import { createRunIsolation } from '../isolation/create.js';
 
 import { initializeWorkflow, type RunWorkflowOptions } from './init.js';
 import { clearBridgedCliState } from '../../runners/sandbox-env.js';
+import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 import { runPlanningPhases, runTasksAndReview } from './phases.js';
 
@@ -342,6 +350,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   };
 
   await reapOrphanRunners(projectDir);
+  try {
+    pruneOrphanSessions({ projectDir });
+  } catch (err) {
+    warnError('orphan sessions: cannot prune session directories', err);
+  }
 
   const releaseLiveness = await acquireLiveness({
     projectDir,
@@ -360,6 +373,32 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     release: (pid: number) => releaseRunnerPid(ref, pid),
   };
   setProcessLedger(runProcessLedger);
+
+  // Run-scoped isolation, built before init and disposed in the outer finally. The notice
+  // callbacks resolve the bus and phase late, exactly like publishWorkflowCancellation.
+  const isolation = createRunIsolation({
+    projectDir,
+    sessionId,
+    strategy: getIsolationStrategy(config),
+    onFallback: (reason: string): void => {
+      const bus = wctx?.bus ?? workflowBus;
+      if (!bus) return;
+      publishWarning({
+        bus,
+        phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
+        message: `Isolation worktree unavailable; falling back to a staged copy: ${reason}`,
+      });
+    },
+    onRetained: (dir: string): void => {
+      const bus = wctx?.bus ?? workflowBus;
+      if (!bus) return;
+      publishWarning({
+        bus,
+        phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
+        message: `Isolation worktree retained at ${dir}; unpromoted work remains`,
+      });
+    },
+  });
 
   try {
     const { cancelled } = await withShutdownHandlers(
@@ -382,6 +421,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
               trackedState = s;
             },
             resumeHolder,
+            isolation,
           });
           if (!init.ok) {
             workflowBus = init.bus;
@@ -562,6 +602,11 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     // run that admitted it; the next run re-bridges whatever it needs.
     await clearBridgedCliState(projectDir).catch((err: unknown) => {
       warnError('sandbox bridged state cleanup', err);
+    });
+    // A dispose failure (e.g. git refuses to remove the worktree) is reported,
+    // never allowed to escape runWorkflow.
+    await isolation.dispose().catch((err: unknown) => {
+      warnError('run isolation disposal', err);
     });
     await releaseLiveness();
   }

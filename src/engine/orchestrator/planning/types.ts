@@ -8,6 +8,7 @@ import type { SkillMeta } from '../../../core/skills/types.js';
 import type { ApproveLevel } from '../../../core/schemas/enums.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 
 export type PlanningPhaseOptions = {
   wctx: PlannerCallbacksContext;
@@ -72,6 +73,8 @@ export type BriefsApprovalLoopOptions = {
   metadata: import('../../../core/paths-io.js').SpecMetadata;
   signal?: AbortSignal | undefined;
   sinks?: import('../types.js').WorkflowSinks | undefined;
+  modelCache?: ModelCacheAccessor | undefined;
+  detectedContextLength?: number | undefined;
 };
 
 export type BriefsApprovalLoopResult = {

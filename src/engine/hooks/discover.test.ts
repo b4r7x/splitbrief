@@ -8,8 +8,10 @@ import type { EngineEvent } from '../events/types.js';
 import { taskId } from '../../core/schemas/task.js';
 import { markHooksConfigTrusted } from '../../core/hooks/trust.js';
 import { makeCommandHookEntry } from '#testing/helpers/factories/hook-entry.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
 
 let projectDir: string;
+let trustHome: ReturnType<typeof useTrustHome>;
 
 const preTaskEvent: EngineEvent = {
   type: 'task_started',
@@ -24,12 +26,14 @@ const preTaskEvent: EngineEvent = {
 };
 
 beforeEach(async () => {
+  trustHome = useTrustHome('splitbrief-hooks-discovery-home');
   projectDir = await mkdtemp(join(tmpdir(), 'splitbrief-hooks-discovery-'));
   await mkdir(hooksDir(), { recursive: true });
 });
 
 afterEach(async () => {
   await rm(projectDir, { recursive: true, force: true });
+  trustHome.restore();
 });
 
 function hooksDir(): string {

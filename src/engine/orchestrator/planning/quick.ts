@@ -1,6 +1,6 @@
 import type { PlanResult } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
-import { publishPlannerStatus } from '../events.js';
+import { publishPlannerStatus, publishWarning } from '../events.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { collectAndPersistClarifications } from '../clarifications.js';
 import { drainAndFormat } from './queue-drain.js';
@@ -66,6 +66,16 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
   }
 
   if (planResult.tasks.length === 0) {
+    const phaseFiles = (planResult.phases ?? []).map((phase) => phase.filename);
+    publishWarning({
+      bus: wctx.bus,
+      phase: state.phase,
+      message:
+        phaseFiles.length > 0
+          ? `quick mode: the planner produced text but no parsable Task Brief; its output is persisted in the session directory (${phaseFiles.join(', ')})`
+          : 'quick mode: the planner produced text but no parsable Task Brief',
+      safety: { category: 'planner', code: 'planner_returned_zero_tasks', transcriptSafe: true },
+    });
     return handlePlanningFailure({
       err: planningError.zeroTasks('quick'),
       projectDir,

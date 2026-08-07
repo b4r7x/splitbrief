@@ -11,6 +11,7 @@ import { defaultContext, makeNoValidationConfig } from '#testing/helpers/factori
 import {
   makeBusRecorder,
   makeCallbacks,
+  makeCopyingIsolation,
   makeImplementer,
   makePlanner,
   TEST_METADATA,
@@ -60,7 +61,11 @@ async function makeCtx(
   projectDir: string,
   sessionId: string,
   opts: CtxOptions,
-): Promise<{ ctx: EscalationContext; events: EngineEvent[] }> {
+): Promise<{
+  ctx: EscalationContext;
+  events: EngineEvent[];
+  escalateHint: ReturnType<typeof vi.fn>;
+}> {
   const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
   const { bus, events } = makeBusRecorder();
   const escalateHint = vi.fn().mockImplementation(async ({ projectDir: stagedDir }) => {
@@ -95,11 +100,12 @@ async function makeCtx(
     metadata: TEST_METADATA,
     sinks: TEST_SINKS,
     validator: createValidator(),
+    isolation: makeCopyingIsolation({ projectDir, sessionId }),
     taskStartSnapshot,
     dependsOnFiles: [],
     ...(opts.signal && { signal: opts.signal }),
   };
-  return { ctx, events };
+  return { ctx, events, escalateHint };
 }
 
 describe('runEscalationTier hint tier gate handling', () => {
@@ -192,5 +198,25 @@ describe('runEscalationTier hint tier gate handling', () => {
 
     expect(outcome.result).toMatchObject({ completed: true, method: 'escalated-hint' });
     expect(existsSync(join(projectDir, RETRY_MARKER))).toBe(true);
+  });
+
+  it('hands the planner the change-detection baseline the acquired workspace declares', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const { callbacks } = makeCallbacks();
+    const { ctx, escalateHint } = await makeCtx(projectDir, sessionId, { callbacks });
+    const task = makeTask();
+    const state = makeImplState([task]);
+
+    await runEscalationTier(HINT_TIER, {
+      ctx,
+      task,
+      state,
+      lastError: 'validation failed',
+      priorAttempts: 0,
+    });
+
+    expect(escalateHint).toHaveBeenCalledWith(
+      expect.objectContaining({ changeDetection: 'file-hashes' }),
+    );
   });
 });
