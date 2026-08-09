@@ -101,6 +101,7 @@ interface ComposerProps {
   boxLeftOffset?: number | undefined;
   questionEpoch?: number | undefined;
   inputPaddingX?: number | undefined;
+  draftRestore?: Readonly<{ epoch: number; value: string }> | undefined;
 }
 
 function boxHintCostColor(
@@ -131,6 +132,7 @@ export function Composer({
   boxLeftOffset,
   questionEpoch,
   inputPaddingX = 1,
+  draftRestore,
 }: ComposerProps) {
   const theme = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
@@ -307,6 +309,14 @@ export function Composer({
     if (mode !== 'question' && !leavingQuestion) return;
     resetComposerDraft({ setValue, clearPastes, resetHistory, bumpEpoch });
   }, [mode, questionEpoch]);
+
+  useEffect(() => {
+    if (!draftRestore) return;
+    setValue(draftRestore.value);
+    clearPastes();
+    resetHistory();
+    bumpEpoch();
+  }, [draftRestore?.epoch]);
 
   const completionOpen = showCommandSuggestions || showReferenceSuggestions;
   useEffect(() => {

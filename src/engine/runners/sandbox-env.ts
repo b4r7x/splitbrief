@@ -1,10 +1,21 @@
-import { chmod, lstat, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir, userInfo } from 'node:os';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { SANDBOX_DIR } from '../../core/paths.js';
 import { getApiProviderDescriptor } from '../../core/providers/api-provider-catalog.js';
 import {
   cliAuthChannelHostStateAccess,
+  CLI_TOOL_IDS,
   defaultCliAuthChannel,
   selectCliAuthChannel,
   type CliAuthChannel,
@@ -15,6 +26,7 @@ import {
 import type { PlannerConfig } from '../../core/schemas/planner-config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
 import { apiKeyEnvReference } from '../providers/client/api-key.js';
+import { SECURE_DIR_MODE } from '../../lib/fs.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/lifecycle.js';
 import { error } from '../../utils/error.js';
 import { sanitizedRuntimePath } from './resolve-cli-executable.js';
@@ -87,11 +99,13 @@ export function withPrependedPathDirectory(
 }
 
 /**
- * A file-bridged session channel gets a snapshot of the selected CLI's state,
- * never the host HOME itself.  Keep this list explicit: adding a path here is
- * an admission decision and must be backed by the corresponding catalog entry.
+ * The allowlisted host state a file-bridged session channel may reach — never
+ * the host HOME itself. Keep this list explicit: adding a path here is an
+ * admission decision and must be backed by the corresponding catalog entry.
  * A channel whose credential is an OS keychain item has no entry here at all —
- * see `hostAccountState`.
+ * see `hostAccountState`. How an entry reaches the child is decided per tool
+ * by `CLI_CREDENTIAL_MODELS`: a static secret is copied as a sealed read-only
+ * snapshot, a rotating credential is passed through live.
  */
 const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
   'claude-code': [
@@ -257,10 +271,51 @@ const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]>> = {
   ],
 };
 
+/**
+ * Whether a tool's file credential is an immutable secret to snapshot or
+ * mutable OAuth state the tool must be able to rewrite mid-run.
+ *
+ * `static-secret` — the credential does not change when used; a sealed
+ * read-only copy is safe and keeps the host file out of the child's reach.
+ *
+ * `rotating-oauth` — the provider invalidates the previous refresh token
+ * server-side the moment the tool refreshes, before the tool persists the
+ * replacement. A snapshot of such a credential is a time bomb: the child's
+ * refresh rotates the token at the provider, the rotated value lands in a copy
+ * (or nowhere, against a read-only copy), teardown discards it, and the host
+ * is left holding a refresh token the server has already burned. Measured
+ * first-hand against codex on 2026-08-06: a 0o400 snapshot turned one expired
+ * access token into an unrecoverable signed-out host. These tools read their
+ * state directory through a live passthrough instead — see
+ * `passthroughStateEntry`.
+ *
+ * Classification is per tool and evidence-driven: codex rotates its ChatGPT
+ * refresh token on every refresh (measured); opencode stores the same rotating
+ * OAuth family in its auth.json (`"type": "oauth"` entries with refresh
+ * tokens, observed on a live install); kilo-code stores kilo.ai session state
+ * the same way. Copilot's `oauth_token` is a long-lived GitHub token that does
+ * not rotate on use, and Claude Code's file store has shown no rotation —
+ * both stay on the sealed snapshot. Misclassification is asymmetric: passing
+ * a static credential through costs only that directory's default privacy,
+ * while snapshotting a rotating one destroys the login.
+ */
+type CliCredentialModel = 'static-secret' | 'rotating-oauth';
+
+const CLI_CREDENTIAL_MODELS: Readonly<Record<CliToolId, CliCredentialModel>> = {
+  'claude-code': 'static-secret',
+  codex: 'rotating-oauth',
+  opencode: 'rotating-oauth',
+  aider: 'static-secret',
+  copilot: 'static-secret',
+  'kilo-code': 'rotating-oauth',
+};
+
 const READONLY_STATE_FILE_MODE = 0o400;
 // Keep snapshot directories owner-only and removable by the staged-project
 // teardown.  Individual state files are sealed read-only; a runner may remove
-// or replace its private copy without ever reaching the host source.
+// or replace its private copy without ever reaching the host source. Both
+// modes apply to `static-secret` snapshots only: a rotating credential has no
+// sandbox copy to seal.
 const READONLY_STATE_DIRECTORY_MODE = 0o700;
 const MAX_STATE_FILE_BYTES = 8 * 1024 * 1024;
 
@@ -381,6 +436,14 @@ async function copyReadOnlyStateEntry(
     throw stateBridgeFailure(tool);
   }
 
+  // The destination's parent must be examined before the destination itself:
+  // a child-planted symlink there would make every check below — and the
+  // replace-on-change `rm` — operate on the host's real file.
+  const destinationDirKind = await existingPath(dirname(destination));
+  if (destinationDirKind !== null && destinationDirKind !== 'directory') {
+    throw stateBridgeFailure(tool);
+  }
+
   const destinationKind = await existingPath(destination);
   if (
     destinationKind === 'symlink' ||
@@ -413,24 +476,97 @@ async function copyReadOnlyStateEntry(
   return credentialValues;
 }
 
+async function passthroughCredentialValues(
+  source: string,
+  tool: CliToolId,
+): Promise<readonly string[]> {
+  if ((await existingPath(source)) !== 'file') return [];
+  const stat = await lstat(source);
+  if (stat.size > MAX_STATE_FILE_BYTES) throw stateBridgeFailure(tool);
+  return collectStateCredentialValues(await readFile(source), tool);
+}
+
+/**
+ * Live passthrough for a `rotating-oauth` tool: the sandbox path to the tool's
+ * state directory is a symlink to the real host directory, so the tool itself
+ * persists a refreshed token to the host file with its own write path. That is
+ * the only shape that survives every way a rotation can land — in-place write,
+ * tempfile-and-rename inside the directory, a run killed before any teardown —
+ * because there is no copy to go stale and no copy-back step to miss. The
+ * directory, not the credential file, is linked: a file symlink is silently
+ * replaced by a rename-persisting tool and the rotation is lost again.
+ *
+ * The host directory must be a real directory; anything else fails the bridge
+ * closed rather than guessing at what the link would expose. An absent host
+ * directory bridges nothing — the child truthfully sees no credential.
+ */
+async function passthroughStateEntry(
+  source: string,
+  destination: string,
+  root: string,
+  tool: CliToolId,
+): Promise<readonly string[]> {
+  const sourceDir = dirname(source);
+  const linkDir = dirname(destination);
+  // Linking the sandbox root itself would hand the child its whole HOME back.
+  if (linkDir === root) throw stateBridgeFailure(tool);
+  let resolvedSourceDir: string;
+  try {
+    resolvedSourceDir = await realpath(sourceDir);
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return [];
+    throw err;
+  }
+  if ((await existingPath(resolvedSourceDir)) !== 'directory') throw stateBridgeFailure(tool);
+
+  const linkKind = await existingPath(linkDir);
+  if (linkKind === 'symlink' && (await readlink(linkDir)) === resolvedSourceDir) {
+    return passthroughCredentialValues(source, tool);
+  }
+  if (linkKind === 'symlink') {
+    await rm(linkDir, { force: true });
+  } else if (linkKind !== null) {
+    // A sealed snapshot left by an earlier build, or child litter. It is a
+    // verified real directory inside the sandbox, and `rm` never follows the
+    // symlinks it may contain.
+    await rm(linkDir, { recursive: true, force: true });
+  }
+  await mkdir(dirname(linkDir), { recursive: true });
+  await symlink(resolvedSourceDir, linkDir, 'dir');
+  return passthroughCredentialValues(source, tool);
+}
+
 async function bridgeCliState(
   tool: CliToolId,
   hostEnv: NodeJS.ProcessEnv,
   sandboxState: Readonly<Record<SandboxStateRoot, string>>,
 ): Promise<readonly string[]> {
   const paths = CLI_STATE_PATHS[tool];
+  const model = CLI_CREDENTIAL_MODELS[tool];
   const credentialValues = new Set<string>();
+  const verifiedRoots = new Set<string>();
   for (const statePath of paths) {
     const sourceRoot = hostEnv[statePath.source];
     if (sourceRoot === undefined || !isAbsolute(sourceRoot)) continue;
+    const root = sandboxState[statePath.destination];
     const source = join(sourceRoot, statePath.relativePath);
-    const destination = join(sandboxState[statePath.destination], statePath.destinationPath);
+    const destination = join(root, statePath.destinationPath);
     try {
-      for (const value of await copyReadOnlyStateEntry(source, destination, tool)) {
+      // A sandbox root that is not a real directory — a child-planted symlink,
+      // say — would route every path below into the host. Fail closed instead.
+      if (!verifiedRoots.has(root)) {
+        if ((await existingPath(root)) !== 'directory') throw stateBridgeFailure(tool);
+        verifiedRoots.add(root);
+      }
+      const values =
+        model === 'rotating-oauth'
+          ? await passthroughStateEntry(source, destination, root, tool)
+          : await copyReadOnlyStateEntry(source, destination, tool);
+      for (const value of values) {
         credentialValues.add(value);
       }
     } catch {
-      // Never fall back to the host path if an admitted snapshot cannot be
+      // Never fall back to the host path if an admitted bridge cannot be
       // produced.  The caller receives a stable, path-free diagnostic.
       throw stateBridgeFailure(tool);
     }
@@ -444,6 +580,10 @@ async function bridgeCliState(
  * roots also hold whatever the child itself writes — Claude Code drops
  * `.claude.json` and a backup during a readiness probe — so "the sandbox HOME
  * is non-empty" is a probe reading its own litter, not evidence of a credential.
+ *
+ * For a rotating-credential tool the destination resolves through the
+ * passthrough link, so presence reports the host file the child will actually
+ * read — including a login or logout that happened after the env was built.
  *
  * Ask this only about a `bridged-files` channel. A `host-account` env points at
  * the real home, where these paths belong to the host rather than to any
@@ -469,21 +609,52 @@ export async function bridgedCliStatePresent(
 
 const SANDBOX_ROLES: readonly RunnerRole[] = ['planner', 'implementer'];
 
-/**
- * Each role gets its own sandbox root. A run's roles share one worktree, so a
- * single root would make one role's bridged-credential destination the other's,
- * and two runners of the same tool on different auth channels would clear and
- * re-bridge over each other. The unscoped root is left only for a caller that
- * has no role to name — a detection probe, a readiness probe, a conformance
- * harness, each of which works in its own fresh temporary directory — and no
- * role-scoped acquisition ever writes into it. Every runner acquisition names
- * its role, which `createRunnerSandboxEnv` requires.
- */
-function sandboxRoot(projectDir: string, role: RunnerRole | undefined): string {
-  const root = join(projectDir, SANDBOX_DIR);
-  return role === undefined ? root : join(root, role);
+function sandboxRootCandidates(
+  tool?: CliToolId,
+): readonly { role: RunnerRole | undefined; tool: CliToolId | undefined }[] {
+  if (tool !== undefined) {
+    return SANDBOX_ROLES.map((role) => ({ role, tool }));
+  }
+  return [
+    { role: undefined, tool: undefined },
+    ...SANDBOX_ROLES.flatMap((role) => [
+      { role, tool: undefined },
+      ...CLI_TOOL_IDS.map((cliTool) => ({ role, tool: cliTool })),
+    ]),
+  ];
 }
 
+/**
+ * Each role gets its own sandbox root; each CLI tool on that role gets a root
+ * beneath it so one tool's live credential link never lands in another tool's
+ * HOME. A run's roles share one worktree, so a single root would make one
+ * role's bridged-credential destination the other's, and two runners of the
+ * same tool on different auth channels would clear and re-bridge over each
+ * other. The unscoped root is left only for a caller that has no role to name —
+ * a detection probe, a readiness probe, a conformance harness, each of which
+ * works in its own fresh temporary directory — and no role-scoped acquisition
+ * ever writes into it. Every runner acquisition names its role, which
+ * `createRunnerSandboxEnv` requires.
+ */
+function sandboxRoot(
+  projectDir: string,
+  role: RunnerRole | undefined,
+  tool?: CliToolId | undefined,
+): string {
+  const root = join(projectDir, SANDBOX_DIR);
+  if (role === undefined) return root;
+  return tool === undefined ? join(root, role) : join(root, role, tool);
+}
+
+/**
+ * Removes what the bridge itself put at a destination — a snapshot file or a
+ * passthrough link — without ever resolving a symlink on the way. Resolving
+ * one is how a teardown deletes the user's real credential: with a passthrough
+ * (or child-planted) link at the state directory, the naive
+ * `rm(<home>/.codex/auth.json)` lands on the host's own auth.json. Every
+ * `destinationPath` nests exactly one directory under its root, so one parent
+ * check covers the whole traversal.
+ */
 async function clearBridgedStateUnder(root: string, tool: CliToolId | undefined): Promise<void> {
   const stateRoots: Readonly<Record<SandboxStateRoot, string>> = {
     home: join(root, 'home'),
@@ -491,26 +662,62 @@ async function clearBridgedStateUnder(root: string, tool: CliToolId | undefined)
     data: join(root, 'data'),
   };
   const cleared = tool === undefined ? Object.values(CLI_STATE_PATHS) : [CLI_STATE_PATHS[tool]];
+  const traversableRoots = new Map<string, boolean>();
   for (const paths of cleared) {
     for (const statePath of paths) {
-      await rm(join(stateRoots[statePath.destination], statePath.destinationPath), { force: true });
+      const stateRoot = stateRoots[statePath.destination];
+      let traversable = traversableRoots.get(stateRoot);
+      if (traversable === undefined) {
+        const kind = await existingPath(stateRoot);
+        // A root that is not a real directory is disarmed, never traversed.
+        if (kind !== null && kind !== 'directory') await rm(stateRoot, { force: true });
+        traversable = kind === 'directory';
+        traversableRoots.set(stateRoot, traversable);
+      }
+      if (!traversable) continue;
+      const parent = dirname(statePath.destinationPath);
+      if (parent !== '.') {
+        const parentPath = join(stateRoot, parent);
+        if ((await existingPath(parentPath)) === 'symlink') {
+          // A passthrough's whole footprint is this link; `rm` unlinks it
+          // without following, and the host directory stays untouched.
+          await rm(parentPath, { force: true });
+          continue;
+        }
+      }
+      await rm(join(stateRoot, statePath.destinationPath), { force: true });
     }
   }
 }
 
 /**
- * Drop bridged host-credential snapshots from every sandbox root a project
- * carries. The bridge re-creates whatever the next call needs, so an admitted
- * subscription token never outlives the run it was staged for. A `tool` narrows
+ * Drop bridged host-credential state — sealed snapshots and passthrough links
+ * alike — from every sandbox root a project carries. The bridge re-creates
+ * whatever the next call needs, so an admitted snapshot never outlives the run
+ * it was staged for, and a passthrough link never outlives it either (the host
+ * state behind the link is the user's own and is never touched). A `tool` narrows
  * the clear to that tool's destinations: one role's sandbox still serves that
  * role's runners — two implementer profiles on different tools — and dropping a
  * tool the caller is not re-bridging would strand the runner still reading it.
  * Without one every snapshot goes, which is what teardown needs.
  */
 export async function clearBridgedCliState(projectDir: string, tool?: CliToolId): Promise<void> {
-  for (const role of [undefined, ...SANDBOX_ROLES]) {
-    await clearBridgedStateUnder(sandboxRoot(projectDir, role), tool);
+  for (const { role, tool: scopedTool } of sandboxRootCandidates(tool)) {
+    await clearBridgedStateUnder(sandboxRoot(projectDir, role, scopedTool), scopedTool ?? tool);
   }
+}
+
+/**
+ * Drops per-project npm cache directories staged under every sandbox root a run
+ * may have written. Each role and CLI tool carries its own cache so one
+ * project's install artifacts never leak into another's.
+ */
+export async function pruneSandboxNpmCache(projectDir: string): Promise<void> {
+  await Promise.all(
+    sandboxRootCandidates().map(({ role, tool }) =>
+      rm(join(sandboxRoot(projectDir, role, tool), 'npm-cache'), { recursive: true, force: true }),
+    ),
+  );
 }
 
 export function resolveCliRunnerAuth(runner: Extract<RunnerLike, { kind: 'cli' }>): CliAuthChannel {
@@ -582,9 +789,10 @@ function hostAccountState(): Readonly<Record<string, string>> {
  * CLI the environment belongs to: only that tool's snapshot is cleared, so a
  * second runner sharing this sandbox keeps the state it is still reading.
  * `hostState` says how that CLI's host credential reaches the child —
- * `bridged-files` copies the allowlisted snapshot in, `host-account` copies
- * nothing and hands back the host `HOME`/`USER` its OS keychain resolves
- * through, `none` does neither. Without a `selectedCli` — an `api` or
+ * `bridged-files` bridges the allowlisted state in (a sealed snapshot for a
+ * static secret, a live passthrough for a rotating one — see
+ * `CLI_CREDENTIAL_MODELS`), `host-account` copies nothing and hands back the
+ * host `HOME`/`USER` its OS keychain resolves through, `none` does neither. Without a `selectedCli` — an `api` or
  * `agent-sdk` runner — nothing is cleared and nothing is bridged: the child
  * reads no CLI state, so it has none to refresh. `role` selects that runner's
  * own sandbox root, which is what keeps a role's clear off a sibling role's
@@ -597,7 +805,7 @@ export async function createSandboxEnv(
   hostState: CliHostStateAccess = 'bridged-files',
   role?: RunnerRole | undefined,
 ): Promise<NodeJS.ProcessEnv> {
-  const root = sandboxRoot(projectDir, role);
+  const root = sandboxRoot(projectDir, role, selectedCli);
   const home = join(root, 'home');
   const tmp = join(root, 'tmp');
   const cache = join(root, 'cache');
@@ -608,7 +816,7 @@ export async function createSandboxEnv(
   const cargoHome = join(root, 'cargo');
   await Promise.all(
     [home, tmp, cache, config, data, npmCache, pipCache, cargoHome].map((dir) =>
-      mkdir(dir, { recursive: true }),
+      mkdir(dir, { recursive: true, mode: SECURE_DIR_MODE }),
     ),
   );
   // A new child must never inherit a previous run's selected session state,

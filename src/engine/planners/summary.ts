@@ -19,6 +19,7 @@ type PlannerSummaryConfig = {
     prompt: string;
     projectDir: string;
     callContext: RunnerCallContext;
+    accessMode: 'read-only';
     callbacks: { onOutput: (text: string) => void } & PlannerCallEventCallbacks;
     signal?: AbortSignal | undefined;
   }) => Promise<RunnerCallResult>;
@@ -96,6 +97,7 @@ export async function summarize(
       prompt: buildSummaryPrompt(messages),
       projectDir: opts.projectDir ?? process.cwd(),
       callContext,
+      accessMode: 'read-only',
       callbacks: {
         onOutput: () => {},
         ...(opts.callbacks?.onCallEvent !== undefined && {
@@ -121,6 +123,7 @@ export async function summarizeStructured(
       prompt: buildStructuredSummaryPrompt(messages, opts.previousSummary),
       projectDir: opts.projectDir ?? process.cwd(),
       callContext,
+      accessMode: 'read-only',
       callbacks: {
         onOutput: () => {},
         ...(opts.callbacks?.onCallEvent !== undefined && {

@@ -27,4 +27,28 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain('## Deterministic Drift Report');
     expect(result).toContain(driftSection);
   });
+
+  it('includes the recorded validation output verbatim and binds validation claims to it', () => {
+    const evidence = '- test (`npm test`): passed\n\n```\nTests  4 passed (4)\n```';
+    const result = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      validationEvidence: evidence,
+    });
+    expect(result).toContain('## Recorded Validation Output');
+    expect(result).toContain('Tests  4 passed (4)');
+    expect(result).toContain(
+      'quote the relevant line verbatim from the Recorded Validation Output section',
+    );
+    expect(result).toContain('never report counts or totals that do not appear there');
+  });
+
+  it('still instructs how to handle missing validation evidence when none is provided', () => {
+    const result = buildFinalReviewPrompt({ spec: SPEC, taskBriefs: TASK_BRIEFS, diff: DIFF });
+    expect(result).not.toContain('## Recorded Validation Output');
+    expect(result).toContain(
+      'state that validation output was not recorded instead of asserting results',
+    );
+  });
 });

@@ -4,7 +4,11 @@ import type { AuthFact, ProbeOutcome } from '../../../core/discovery/runner-evid
 import type { RunnerCallTextChannel } from '../../../core/runner-call-contract.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
-import type { RunnerCallFailureStatus, RunnerCallUsageSemantics } from '../../calls/types.js';
+import type {
+  RunnerCallFailureStatus,
+  RunnerCallTextSemantics,
+  RunnerCallUsageSemantics,
+} from '../../calls/types.js';
 
 export type CliPromptTransport =
   | Readonly<{ kind: 'stdin' }>
@@ -38,7 +42,13 @@ type CliProtocolTerminalEvent =
     }>;
 
 export type CliProtocolEvent =
-  | Readonly<{ type: 'text'; channel: RunnerCallTextChannel | 'stderr'; text: string }>
+  | Readonly<{
+      type: 'text';
+      channel: RunnerCallTextChannel | 'stderr';
+      text: string;
+      /** `final` restates a block already emitted as deltas; absent means append. */
+      semantics?: RunnerCallTextSemantics | undefined;
+    }>
   | Readonly<{ type: 'usage'; usage: TokenDelta; semantics: RunnerCallUsageSemantics }>
   | Readonly<{ type: 'session'; nativeSessionId: string }>
   | Readonly<{

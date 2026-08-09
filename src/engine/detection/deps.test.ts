@@ -391,7 +391,11 @@ describe('all-admitted-tools auth channels', () => {
           expect(Object.fromEntries(result.cliTools.map(({ tool, auth }) => [tool, auth]))).toEqual(
             {
               'claude-code': 'authenticated',
-              codex: 'authenticated',
+              // `codex login status` reads auth.json without a server
+              // round-trip — the exact "Logged in using ChatGPT" this shim
+              // prints is what a host with an already-burned refresh token
+              // prints too, so a positive status caps at unknown.
+              codex: 'unknown',
               opencode: 'authenticated',
               aider: 'not-checked',
               copilot: 'authenticated',

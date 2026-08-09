@@ -24,4 +24,22 @@ describe('buildTasksPrompt', () => {
     const prompt = buildTasksPrompt('spec', 'plan');
     expect(prompt).not.toMatch(/TypeScript|typescript|\.js extensions|file\.ts|PEP 484/);
   });
+
+  it('returns task content for session persistence without requesting project writes', () => {
+    const prompt = buildTasksPrompt('spec', 'plan');
+    expect(prompt).toContain('SPLITBRIEF captures your reply');
+    expect(prompt).toContain('persists the tasks.md artifact inside the active session');
+    expect(prompt).toContain('Do not write tasks.md or any other project file yourself');
+    expect(prompt).not.toContain('write it to tasks.md at the project root');
+  });
+
+  it('reserves bare separators for Task Brief frontmatter', () => {
+    const prompt = buildTasksPrompt('spec', 'plan');
+    expect(prompt).toContain(
+      'Outside fenced code blocks, lines containing only `---` are reserved',
+    );
+    expect(prompt).toContain(
+      'Never use a bare `---` as a horizontal rule or phase-heading separator',
+    );
+  });
 });

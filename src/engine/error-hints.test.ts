@@ -8,7 +8,23 @@ describe('getErrorHint', () => {
     ['connect ECONNREFUSED 127.0.0.1:1234', 'LM Studio is not running', 'application'],
     ['connect ECONNREFUSED 127.0.0.1:9999', 'Cannot connect to provider', undefined],
     ['API error 401 from deepseek: Unauthorized', 'Invalid API key', 'API_KEY'],
-    ['API error 429 from openrouter: Too Many Requests', 'Rate limited by provider', 'retry'],
+    [
+      // Captured verbatim from `codex exec --json` (codex-cli 0.146.0, 2026-08-06).
+      'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.',
+      'Runner session signed out or expired',
+      'credential for this runner',
+    ],
+    [
+      'Invalid API key · Please run /login',
+      'Runner session signed out or expired',
+      'credential for this runner',
+    ],
+    [
+      'OAuth token has expired · Please run /login',
+      'Runner session signed out or expired',
+      'credential for this runner',
+    ],
+    ['API error 429 from openrouter: Too Many Requests', 'Rate limited by provider', 'Wait'],
     ['rate_limit_exceeded', 'Rate limited by provider', undefined],
     ['getaddrinfo ENOTFOUND api.example.com', 'Cannot reach host', 'network'],
     ['model "llama3" not found', 'Model not available', 'ollama pull'],

@@ -2,6 +2,7 @@ import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
 import {
   applySelectedRecoveryAction,
   createRecoveryBus,
@@ -85,6 +86,7 @@ export function createRecoveryDriver(): (
         }
 
         if (result.status === 'paused') {
+          markWorkflowPaused();
           feedbackStore.setMessage(
             `Recovery paused. Resume with ${SPLITBRIEF_IDENTITY.executable} resume.`,
           );

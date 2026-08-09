@@ -19,7 +19,7 @@ export const READINESS_DIAGNOSTIC_REMEDIATION: Readonly<
   unauthenticated:
     'Authenticate the CLI in the staged runner environment, then run `splitbrief doctor` again.',
   'auth-unknown':
-    'Verify CLI authentication in the staged runner environment, then run `splitbrief doctor` again.',
+    'CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real call settles it; if it fails to authenticate, sign in to the CLI again.',
   'endpoint-invalid':
     'Fix the provider endpoint to match its declared policy, then run `splitbrief doctor` again.',
   'credential-family-mismatch':
@@ -65,6 +65,7 @@ const DIAGNOSTIC_TEXT_STATES: readonly (readonly [RegExp, ReadinessDiagnosticSta
   [/\bprovider-credential-prefix-mismatch\b/, 'credential-family-mismatch'],
   [/\bprotocol-failure\b/, 'protocol-failure'],
   [/\b429\b/, 'quota-rate-limit'],
+  [/\busage-limit\b/, 'quota-rate-limit'],
   [/\bconflicting-args\b/, 'conflicting-args'],
   [/\bspawn-not-found\b/, 'missing-binary'],
   [/\bincompatible-version\b/, 'incompatible-version'],
@@ -153,14 +154,14 @@ function formatRequiredAction(nextAction: ReadinessReport['nextAction']): string
 }
 
 /**
- * A CLI runner without a trusted readiness identity gets no start gate, so the
- * one thing the reader must not be told is that start can continue.
+ * Ungated CLI readiness is a warning, not a blocker: interactive start may
+ * proceed after disclosure, but headless admission stays fail-closed.
  */
-function ungatedCliStartPointer(checks: readonly ReadinessCheck[]): string {
+function ungatedCliAdvisory(checks: readonly ReadinessCheck[]): string {
   const tools = checks
     .map((check) => sanitizeTerminalDisplayText(String(check.metadata?.tool ?? check.id)))
     .join(', ');
-  return `Start blocked: no trusted readiness identity for ${tools}.`;
+  return `No trusted readiness identity for ${tools}: headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds.`;
 }
 
 export function formatReadinessReport(report: ReadinessReport): string {
@@ -172,7 +173,7 @@ export function formatReadinessReport(report: ReadinessReport): string {
   if (report.status === 'blocked') {
     lines.push(formatRequiredAction(report.nextAction));
   } else if (ungatedCli.length > 0) {
-    lines.push(`${ungatedCliStartPointer(ungatedCli)} Fix it below, then start again.`);
+    lines.push(ungatedCliAdvisory(ungatedCli));
   } else if (report.counts.warning > 0) {
     lines.push(`Advisory: ${countNoun(report.counts.warning, 'warning')}; start can continue.`);
   } else {

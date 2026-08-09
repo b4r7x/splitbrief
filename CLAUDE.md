@@ -27,7 +27,7 @@ npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
 npm test                         # vitest run
-npm run test-ci                  # format && typecheck && lint && coverage && invariants
+npm run test-ci                  # format && typecheck && lint && test:coverage && test:e2e && invariants
 ```
 
 ## Documentation map
@@ -133,4 +133,5 @@ Set via `--mode`, config `workflow.mode`, or `/mode` at runtime. Detailed semant
 
 ## Known limitations
 
+- macOS and Linux only — IPC attach/detach/ps and several path/sandbox semantics need POSIX; Windows support is planned but not available yet.
 - Primary development stack is TypeScript / JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.

@@ -242,7 +242,7 @@ describe('createCliImplementer (claude-code)', () => {
 
       expect(result.success).toBe(true);
       expect(readFileSync(envFile, 'utf8')).toBe(
-        `sk-anthropic||${join(projectDir, '.splitbrief', 'sandbox', 'implementer', 'home')}`,
+        `sk-anthropic||${join(projectDir, '.splitbrief', 'sandbox', 'implementer', 'claude-code', 'home')}`,
       );
     } finally {
       if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;

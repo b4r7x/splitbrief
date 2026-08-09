@@ -3,6 +3,10 @@ import { defineConfig } from 'vitest/config';
 const coverageReportsDirectory = process.env.SPLITBRIEF_COVERAGE_DIR ?? 'coverage/manual';
 const underCoverage = process.env.SPLITBRIEF_COVERAGE_DIR !== undefined;
 
+// Run isolation writes its worktrees under the user state directory; every
+// suite gets a throwaway one so a test run never touches the operator's.
+const stateHomeSetup = './testing/helpers/state-home.ts';
+
 const workflowScreenIntegration = [
   'testing/integration/ui/workflow-key-ownership.test.tsx',
   'testing/integration/ui/workflow-attached.test.tsx',
@@ -49,6 +53,7 @@ export default defineConfig({
             'evals/eval.test.ts',
           ],
           exclude: ['node_modules', 'dist', ...workflowScreenIntegration],
+          setupFiles: [stateHomeSetup],
           environment: 'node',
           globals: false,
           // Coverage instrumentation + fork contention regularly blows past the
@@ -64,6 +69,7 @@ export default defineConfig({
           name: 'workflow-screen',
           include: [...workflowScreenIntegration],
           exclude: ['node_modules', 'dist'],
+          setupFiles: [stateHomeSetup],
           environment: 'node',
           globals: false,
           testTimeout: underCoverage ? 60_000 : 20_000,

@@ -115,7 +115,7 @@ describe('buildRunnerChecks availability guidance', () => {
       { auth: 'unauthenticated', authChannel: 'api-key' },
       'Export ANTHROPIC_API_KEY',
     ],
-    ['auth-unknown', { auth: 'unknown' }, 'Verify claude-code authentication'],
+    ['auth-unknown', { auth: 'unknown' }, 'cannot be verified without spending a call'],
   ] as const)('publishes %s as a structured diagnostic state', (stateId, overrides, fix) => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
@@ -267,6 +267,33 @@ describe('buildRunnerChecks availability guidance', () => {
     expect(check?.details).toContain('Spec/plan approval level: spec.');
     expect(check?.details).toContain('File-write approval prompts: enabled.');
     expect(check?.summary).toContain('uses auto/allow runner flags');
+  });
+
+  it('discloses planner tier-2 write authority without changing ordinary planning posture', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'copilot' } });
+
+    const check = buildRunnerChecks(config).find((c) => c.id === 'runners.planner.trust-boundary');
+
+    expect(check).toMatchObject({
+      severity: 'warning',
+      metadata: {
+        role: 'planner',
+        kind: 'cli',
+        mayWriteFilesDirectly: false,
+        autoAllowFlags: [],
+        plannerTier2FullEscalation: {
+          mayWriteFilesDirectly: true,
+          automaticApproval: true,
+          autoAllowFlags: ['--allow-all', '--no-ask-user'],
+        },
+      },
+    });
+    expect(check?.summary).toContain('may write files during tier-2 full escalation');
+    expect(check?.details).toContain('Ordinary planning does not write project files directly.');
+    expect(check?.details).toContain(
+      'Tier-2 full escalation may write project files directly after implementer failure.',
+    );
+    expect(check?.details).toContain('Tier-2 runner auto/allow flags: --allow-all, --no-ask-user');
   });
 
   it('still warns about a declared command runner under the strictest approval settings', () => {

@@ -55,9 +55,9 @@ const JAVASCRIPT: LanguageConfig = {
 const PYTHON: LanguageConfig = {
   id: 'python',
   extensions: new Set(['.py']),
-  grammarPackage: 'tree-sitter-wasms',
+  grammarPackage: 'tree-sitter-python',
   resolveGrammarWasm() {
-    return 'out/tree-sitter-python.wasm';
+    return 'tree-sitter-python.wasm';
   },
   declarationNodeTypes: new Set(['function_definition', 'class_definition']),
   importRegex: /(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))/g,
@@ -72,9 +72,9 @@ const PYTHON: LanguageConfig = {
 const GO: LanguageConfig = {
   id: 'go',
   extensions: new Set(['.go']),
-  grammarPackage: 'tree-sitter-wasms',
+  grammarPackage: 'tree-sitter-go',
   resolveGrammarWasm() {
-    return 'out/tree-sitter-go.wasm';
+    return 'tree-sitter-go.wasm';
   },
   declarationNodeTypes: new Set(['function_declaration', 'method_declaration', 'type_declaration']),
   importRegex: null,
@@ -90,9 +90,9 @@ const GO: LanguageConfig = {
 const RUST: LanguageConfig = {
   id: 'rust',
   extensions: new Set(['.rs']),
-  grammarPackage: 'tree-sitter-wasms',
+  grammarPackage: 'tree-sitter-rust',
   resolveGrammarWasm() {
-    return 'out/tree-sitter-rust.wasm';
+    return 'tree-sitter-rust.wasm';
   },
   declarationNodeTypes: new Set([
     'function_item',

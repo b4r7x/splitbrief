@@ -13,7 +13,11 @@ import { focusStore } from '../../../stores/ui/focus.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { focusHasResolvableCopy } from '../copy/resolve.js';
 import { getActiveRailStage } from '../layout/chrome-rows.js';
-import { deriveLiveStatus, formatStageElapsed } from '../display/live-activity.js';
+import {
+  deriveLiveStatus,
+  formatStageElapsed,
+  PAUSED_LIVE_STATUS_VERB,
+} from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
 import { useSpinnerFrame } from '../hooks/use-spinner-frame.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
@@ -81,11 +85,13 @@ export function InputFooter({
       : '';
 
   const interrupted = lifecycle.status === 'interrupted';
+  const paused = lifecycle.status === 'paused';
   // Until the continuation prompt parks at a call boundary, Enter/steer would go
   // nowhere — advertise the retry affordance only once the prompt owns the composer.
   const interruptedLead = lifecycle.interruptParked
     ? `${glyph('statusPending')} Interrupted — ⏎ retry${SOFT_SEP}type to steer`
     : `${glyph('statusPending')} Interrupted — finishing current step…`;
+  const pausedLead = `${glyph('statusPending')} ${PAUSED_LIVE_STATUS_VERB}`;
   const stall = lifecycle.status === 'running' ? lifecycle.stall : null;
   // stall.since is the warning time; silentMs is the silence already elapsed when
   // the warning fired, so the byline shows the full span since the last output.
@@ -98,13 +104,15 @@ export function InputFooter({
   // order so the lead text and its color can never drift apart.
   const { lead, leadColor } = interrupted
     ? { lead: interruptedLead, leadColor: t.warning }
-    : waiting
-      ? { lead: waitingLead, leadColor: null }
-      : stall !== null
-        ? { lead: stalledLead, leadColor: t.warning }
-        : liveStatus !== null
-          ? { lead: liveLead, leadColor: colorForTone(liveStatus.tone, t) }
-          : { lead: stageLead, leadColor: null };
+    : paused
+      ? { lead: pausedLead, leadColor: null }
+      : waiting
+        ? { lead: waitingLead, leadColor: null }
+        : stall !== null
+          ? { lead: stalledLead, leadColor: t.warning }
+          : liveStatus !== null
+            ? { lead: liveLead, leadColor: colorForTone(liveStatus.tone, t) }
+            : { lead: stageLead, leadColor: null };
 
   const queuedText = lifecycle.queueDepth > 0 ? `${lifecycle.queueDepth} queued` : null;
 

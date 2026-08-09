@@ -96,7 +96,7 @@ describe('visual gallery capture orchestration', () => {
         }
       }
     }
-  });
+  }, 20_000);
 
   it('continues after fixture and parser failures and records locator identity after cleanup', async () => {
     const scenario = requireScenario('home-empty');

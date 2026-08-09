@@ -124,6 +124,22 @@ describe('trust', () => {
 
       expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
     });
+
+    it('changing the referenced package.json script body invalidates the hooks trust receipt (digest differs)', () => {
+      writeFileSync(
+        join(projectDir, 'package.json'),
+        JSON.stringify({ scripts: { validate: 'echo ok' } }),
+      );
+      const cfg = { pre_task: [{ command: 'npm', args: ['run', 'validate'] }] };
+      const before = hashHooksConfig(projectDir, cfg);
+
+      writeFileSync(
+        join(projectDir, 'package.json'),
+        JSON.stringify({ scripts: { validate: 'echo changed' } }),
+      );
+
+      expect(hashHooksConfig(projectDir, cfg)).not.toBe(before);
+    });
   });
 
   describe('isHooksConfigTrusted', () => {

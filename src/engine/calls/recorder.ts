@@ -114,6 +114,7 @@ export function createRunnerCallRecorder(opts: {
   let unknownUpstreamCount = 0;
   let stderrPreview = '';
   let stderrWarningEmitted = false;
+  let lastNativeSessionId: string | null = null;
   const emittedLimitWarnings = new Set<string>();
   let textLimiter = createTextLimiter();
   const stderrLimiter = createRunnerCallDeltaLimiter({
@@ -418,13 +419,19 @@ export function createRunnerCallRecorder(opts: {
         usage: eventOpts.usage,
         semantics: eventOpts.semantics,
       }),
-    sessionId: (eventOpts) =>
+    sessionId: (eventOpts) => {
+      // A native session id has cardinality one per call, but stream protocols
+      // stamp it on every frame: without this guard one call restates the same
+      // id hundreds of times and every consumer treats each as news.
+      if (eventOpts.nativeSessionId === lastNativeSessionId) return;
+      lastNativeSessionId = eventOpts.nativeSessionId;
       emit({
         type: 'call_session_id',
         ts: eventOpts.ts ?? Date.now(),
         ...opts.context,
         nativeSessionId: eventOpts.nativeSessionId,
-      }),
+      });
+    },
     artifact: (eventOpts) => {
       if (artifactCount >= RUNNER_CALL_ARTIFACT_MAX_ITEMS) {
         noteLimit(

@@ -1,11 +1,16 @@
+import { assertNever } from '../../utils/type-guards.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { TokenUsage, TokenDelta, TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { EventBus } from '../events/types.js';
 import type { RoutingDecision } from './context-routing/types.js';
+import type { RunnerCallContext } from '../calls/types.js';
+import type { RunnerCallUsage } from '../calls/types.js';
 import { publishWarning } from './events.js';
 
 export type UsageCategory = 'planner' | 'implementer' | 'escalation';
+
+type RunnerCallRole = RunnerCallContext['role'];
 
 type CoreTokenKey =
   | 'plannerInput'
@@ -50,6 +55,38 @@ const categoryFields: Record<
     cacheCreate: 'plannerCacheCreate',
   },
 };
+
+export function usageCategoryForRunnerCallRole(role: RunnerCallRole): UsageCategory {
+  switch (role) {
+    case 'implementer':
+      return 'implementer';
+    case 'escalation':
+      return 'escalation';
+    case 'planner':
+    case 'review':
+    case 'summary':
+    case 'compaction':
+      return 'planner';
+    default:
+      return assertNever(role);
+  }
+}
+
+export function addRunnerCallUsageToTokenUsage(
+  totals: TokenUsage,
+  role: RunnerCallRole,
+  usage: RunnerCallUsage,
+): void {
+  const fields = categoryFields[usageCategoryForRunnerCallRole(role)];
+  totals[fields.input] += usage.inputTokens;
+  totals[fields.output] += usage.outputTokens;
+  if (fields.cacheRead !== undefined && usage.cacheReadTokens !== undefined) {
+    totals[fields.cacheRead] = (totals[fields.cacheRead] ?? 0) + usage.cacheReadTokens;
+  }
+  if (fields.cacheCreate !== undefined && usage.cacheCreateTokens !== undefined) {
+    totals[fields.cacheCreate] = (totals[fields.cacheCreate] ?? 0) + usage.cacheCreateTokens;
+  }
+}
 
 export function addUsage(
   state: WorkflowState,

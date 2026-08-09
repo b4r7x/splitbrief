@@ -40,6 +40,7 @@ import {
   assertSessionOwnershipReceipt,
   clearActiveReceiptLocked,
   generateSessionId,
+  isSessionLive,
   readActiveRecord,
   withSessionMutationLock,
   writeActiveReceiptLocked,
@@ -739,6 +740,17 @@ function cleanupAfterReadinessFailure(session: NewSessionOwnership, keepDirector
   });
 }
 
+// Starting a run is the one flow allowed to clear the active pointer (guards.ts): until
+// then it is what `resume` resumes from. The caller's mutation lock makes the liveness
+// test and the replacing write atomic; a live pointer stays and still conflicts below.
+function clearStaleActiveReceiptLocked(ref: SessionRef): void {
+  const active = readActiveRecord(ref.projectDir);
+  if (active?.kind !== 'v1') return;
+  const recorded: SessionRef = { projectDir: ref.projectDir, sessionId: active.receipt.sessionId };
+  if (isSessionLive(recorded)) return;
+  clearActiveReceiptLocked(recorded, active.receipt);
+}
+
 export function prepareNewSession(input: PrepareNewSessionInput): PrepareNewSessionResult {
   const ownership =
     input.candidate ??
@@ -841,6 +853,7 @@ export function prepareNewSession(input: PrepareNewSessionInput): PrepareNewSess
           rollbackPreparedSessionLocked(owned);
           return { kind: 'aborted' };
         }
+        clearStaleActiveReceiptLocked(ref);
         const active: ActiveSessionReceipt = ownership;
         writeActiveReceiptLocked(ref, active);
         return { kind: 'prepared', session: { ...owned, active } };

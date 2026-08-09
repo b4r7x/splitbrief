@@ -29,9 +29,15 @@ import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/fro
 
 let historyPersistenceTeardown: (() => void) | null = null;
 
-export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
+export function bootstrapStoresSync(projectDir: string, opts: WorkflowOpts = {}): void {
   initUIChrome();
   loadProjectState(projectDir, opts);
+}
+
+export async function bootstrapStoresHooks(
+  projectDir: string,
+  opts: WorkflowOpts = {},
+): Promise<void> {
   const storeConfig = configStore.get().config;
   const mergedHooks = await resolveHooksConfig(projectDir, storeConfig?.hooks);
   await ensureHooksTrusted({
@@ -39,6 +45,20 @@ export async function initStores(projectDir: string, opts: WorkflowOpts = {}): P
     hooks: mergedHooks,
     allowHooks: opts.allowHooks ?? false,
   });
+}
+
+export async function initStoresForTuiMount(
+  projectDir: string,
+  opts: WorkflowOpts = {},
+): Promise<{ awaitDiscovery: Promise<void> }> {
+  bootstrapStoresSync(projectDir, opts);
+  await bootstrapStoresHooks(projectDir, opts);
+  return { awaitDiscovery: loadDiscovery(projectDir) };
+}
+
+export async function initStores(projectDir: string, opts: WorkflowOpts = {}): Promise<void> {
+  bootstrapStoresSync(projectDir, opts);
+  await bootstrapStoresHooks(projectDir, opts);
   await loadDiscovery(projectDir);
 }
 

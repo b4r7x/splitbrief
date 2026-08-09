@@ -161,7 +161,7 @@ describe('worktree missing target', () => {
   });
 
   it('exits 1 when remove targets a genuinely missing worktree', async () => {
-    mockRemoveWorktree.mockRejectedValue(new Error('Worktree ".trees/missing-wt" does not exist.'));
+    mockListWorktrees.mockResolvedValue([]);
 
     let captured: unknown;
     try {
@@ -176,6 +176,23 @@ describe('worktree missing target', () => {
 });
 
 describe('worktree remove', () => {
+  it('`worktree remove` with an unmanaged name exits 1 with `Worktree "<name>" not found.` and deletes no branch', async () => {
+    mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
+
+    let captured: unknown;
+    try {
+      await runWorktree(['remove', 'dip-abc123', '--delete-branch']);
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    expect((captured as { exitCode?: number }).exitCode).toBe(1);
+    expect((captured as Error).message).toBe('Worktree "dip-abc123" not found.');
+    expect(mockRemoveWorktree).not.toHaveBeenCalled();
+    expect(captureOutput()).not.toContain('Removed worktree');
+  });
+
   it('propagates cliError when removeWorktree rejects', async () => {
     mockListWorktrees.mockResolvedValue([makeWorktree({ name: 'my-feature' })]);
     mockRemoveWorktree.mockRejectedValue(

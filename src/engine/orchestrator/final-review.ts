@@ -12,6 +12,7 @@ import { warnError } from '../../lib/warn.js';
 import { isAbortError } from '../../utils/abort.js';
 import { buildFinalReviewPrompt } from '../spec/prompts/review.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
+import { formatValidationEvidenceForPrompt } from './evidence/format-validation.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { analyzeBriefDrift } from './drift/analyze.js';
 import { writeDriftReport } from './drift/io.js';
@@ -132,8 +133,12 @@ export async function runFinalReviewPhase(
       readSpecFileOrEmpty({ projectDir, sessionId }, TASKS_FILE) || formatTasks(state.tasks);
 
     let driftPromptSection: string | undefined;
+    let validationPromptSection: string | undefined;
     try {
       const ledger = readEvidenceLedger({ projectDir, sessionId });
+      // The review's validation claims must quote this recorded output; a
+      // review left to re-derive test results invents counts.
+      validationPromptSection = formatValidationEvidenceForPrompt(ledger);
       const driftReport = analyzeBriefDrift({
         tasks: state.tasks,
         changedFiles: universe.changedFiles,
@@ -158,6 +163,7 @@ export async function runFinalReviewPhase(
       taskBriefs,
       diff: promptDiff,
       driftReport: driftPromptSection,
+      validationEvidence: validationPromptSection,
     });
     const fullPrompt = queueText ? queueText + basePrompt : basePrompt;
 

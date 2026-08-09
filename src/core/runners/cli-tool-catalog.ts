@@ -1,5 +1,5 @@
-import { typedEntries } from '../../utils/type-guards.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
+import { typedEntries } from '../../utils/type-guards.js';
 import { assertCandidateFilesAbsent } from './candidate-admission.js';
 import { cliAdmissionError } from './cli-admission-error.js';
 import type { RunnerBillingPosture } from './runner-billing.js';
@@ -14,6 +14,16 @@ export type RunnerTrustMetadata = Readonly<{
 }>;
 
 export type RunnerRoleTrustMetadata = Readonly<Record<RunnerRole, RunnerTrustMetadata>>;
+
+export type CliPlannerTier2FullEscalationTrust = Readonly<{
+  mayWriteFilesDirectly: true;
+  autoAllowFlags: readonly string[];
+}>;
+
+export type CliToolTrustMetadata = RunnerRoleTrustMetadata &
+  Readonly<{
+    plannerTier2FullEscalation: CliPlannerTier2FullEscalationTrust;
+  }>;
 
 export type CliModelPolicy = 'required' | 'optional' | 'backend-default' | 'auto-only';
 
@@ -152,10 +162,6 @@ export type CliCompatibility = Readonly<{
   evidence: Readonly<{ asOf: string }>;
 }>;
 
-export const CLI_COMPATIBILITY_TIERS = Object.freeze(['first-class', 'compatibility'] as const);
-
-export type CliCompatibilityTier = (typeof CLI_COMPATIBILITY_TIERS)[number];
-
 export const CLI_AUTH_DISCOVERY_MODES = Object.freeze([
   'selected-channel',
   'provider-dependent-unverified',
@@ -206,7 +212,6 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   isSubscription: boolean;
   sandbox: RolePolicy<CliSandboxPosture>;
   compatibility: CliCompatibility;
-  compatibilityTier: CliCompatibilityTier;
   authDiscoveryMode: CliAuthDiscoveryMode;
   modelDiscoveryMode: CliModelDiscoveryMode;
   mandatoryPreflightFacts: readonly CliPreflightFact[];
@@ -233,6 +238,7 @@ export type CliToolDescriptor<Id extends string = CliToolId> = Readonly<
     network: RolePolicy<boolean>;
     shell: RolePolicy<boolean>;
     automaticApproval: RolePolicy<boolean>;
+    plannerTier2FullEscalation: CliPlannerTier2FullEscalationTrust;
   }
 >;
 
@@ -296,12 +302,21 @@ function rolePolicy<T>(planner: T, implementer: T): RolePolicy<T> {
   return Object.freeze({ planner, implementer });
 }
 
-function cliToolTrust(implementerAutoAllowFlags: readonly string[]): RunnerRoleTrustMetadata {
+function cliToolTrust(
+  input: Readonly<{
+    implementerAutoAllowFlags: readonly string[];
+    tier2AutoAllowFlags: readonly string[];
+  }>,
+): CliToolTrustMetadata {
   return Object.freeze({
     planner: CLI_PLANNER_TRUST,
     implementer: Object.freeze({
       ...CLI_IMPLEMENTER_TRUST,
-      autoAllowFlags: Object.freeze([...implementerAutoAllowFlags]),
+      autoAllowFlags: Object.freeze([...input.implementerAutoAllowFlags]),
+    }),
+    plannerTier2FullEscalation: Object.freeze({
+      mayWriteFilesDirectly: true,
+      autoAllowFlags: Object.freeze([...input.tier2AutoAllowFlags]),
     }),
   });
 }
@@ -391,7 +406,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       minimumAdmittedVersion: '2.0.0',
       asOf: '2026-07-31',
     }),
-    compatibilityTier: 'first-class',
     authDiscoveryMode: 'selected-channel',
     modelDiscoveryMode: 'native-aliases-and-custom',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
@@ -417,7 +431,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       minimumAdmittedVersion: '0.40.0',
       asOf: '2026-07-31',
     }),
-    compatibilityTier: 'first-class',
     authDiscoveryMode: 'selected-channel',
     modelDiscoveryMode: 'capability-gated-native',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
@@ -442,7 +455,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       minimumAdmittedVersion: '0.5.0',
       asOf: '2026-07-31',
     }),
-    compatibilityTier: 'first-class',
     authDiscoveryMode: 'provider-dependent-unverified',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
@@ -467,7 +479,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       minimumAdmittedVersion: '0.86.0',
       asOf: '2026-07-31',
     }),
-    compatibilityTier: 'compatibility',
     authDiscoveryMode: 'static-unverified',
     modelDiscoveryMode: 'static-catalog-unverified',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
@@ -497,7 +508,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       minimumAdmittedVersion: '0.3.0',
       asOf: '2026-07-31',
     }),
-    compatibilityTier: 'compatibility',
     authDiscoveryMode: 'static-unverified',
     modelDiscoveryMode: 'static-catalog-unverified',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
@@ -522,7 +532,6 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
       minimumAdmittedVersion: '0.1.0',
       asOf: '2026-07-31',
     }),
-    compatibilityTier: 'first-class',
     authDiscoveryMode: 'provider-dependent-unverified',
     modelDiscoveryMode: 'native-cli',
     mandatoryPreflightFacts: CLI_REQUIRED_PREFLIGHT_FACTS,
@@ -606,13 +615,28 @@ export const CURSOR_CLI_RUNTIME_ADAPTER_PATHS = Object.freeze([
 ] as const);
 
 const BASE_CLI_TOOL_TRUST = Object.freeze({
-  'claude-code': cliToolTrust(['--permission-mode acceptEdits']),
-  codex: cliToolTrust(['--sandbox workspace-write']),
-  opencode: cliToolTrust([]),
-  aider: cliToolTrust(['--yes-always']),
-  copilot: cliToolTrust(['--allow-all']),
-  'kilo-code': cliToolTrust(['--auto']),
-} satisfies Record<CliToolId, RunnerRoleTrustMetadata>);
+  'claude-code': cliToolTrust({
+    implementerAutoAllowFlags: ['--permission-mode acceptEdits'],
+    tier2AutoAllowFlags: [],
+  }),
+  codex: cliToolTrust({
+    implementerAutoAllowFlags: ['--sandbox workspace-write'],
+    tier2AutoAllowFlags: ['--sandbox workspace-write'],
+  }),
+  opencode: cliToolTrust({ implementerAutoAllowFlags: [], tier2AutoAllowFlags: [] }),
+  aider: cliToolTrust({
+    implementerAutoAllowFlags: ['--yes-always'],
+    tier2AutoAllowFlags: ['--yes-always'],
+  }),
+  copilot: cliToolTrust({
+    implementerAutoAllowFlags: ['--allow-all'],
+    tier2AutoAllowFlags: ['--allow-all', '--no-ask-user'],
+  }),
+  'kilo-code': cliToolTrust({
+    implementerAutoAllowFlags: ['--auto'],
+    tier2AutoAllowFlags: ['--auto'],
+  }),
+} satisfies Record<CliToolId, CliToolTrustMetadata>);
 
 function trustPolicy(
   trust: RunnerRoleTrustMetadata,
@@ -622,7 +646,7 @@ function trustPolicy(
 }
 
 function descriptor<Id extends CliToolId>(
-  trust: RunnerRoleTrustMetadata,
+  trust: CliToolTrustMetadata,
   input: ActiveCliToolDeclaration<Id>,
 ): CliToolDescriptor<Id> {
   return Object.freeze({
@@ -634,6 +658,7 @@ function descriptor<Id extends CliToolId>(
       trust.planner.autoAllowFlags.length > 0,
       trust.implementer.autoAllowFlags.length > 0,
     ),
+    plannerTier2FullEscalation: trust.plannerTier2FullEscalation,
   });
 }
 
@@ -644,13 +669,13 @@ function assertOmittedCandidatesAbsent(): void {
   );
 }
 
-function assembleCliToolTrust(): Readonly<Record<CliToolId, RunnerRoleTrustMetadata>> {
+function assembleCliToolTrust(): Readonly<Record<CliToolId, CliToolTrustMetadata>> {
   assertOmittedCandidatesAbsent();
   return Object.freeze({ ...BASE_CLI_TOOL_TRUST });
 }
 
 function assembleCliToolCatalog(
-  trust: Readonly<Record<CliToolId, RunnerRoleTrustMetadata>>,
+  trust: Readonly<Record<CliToolId, CliToolTrustMetadata>>,
 ): Readonly<Record<CliToolId, CliToolDescriptor>> {
   const catalog = {
     'claude-code': descriptor(trust['claude-code'], CLI_TOOL_DECLARATIONS['claude-code']),

@@ -12,7 +12,9 @@ Stable `stateId` and runner `state` values with copyable remediations are indexe
 
 `splitbrief doctor` and the readiness gate on `start` emit the same remediation strings in human output and JSON. During workflow commands, runner subprocess failures normalize to `RunnerOutcome` `state` values in `session.jsonl` with the same copyable remediation pattern.
 
-The two commands share the strings but not the verdict: `doctor` diagnoses and exits `0` on warnings, while `start` fails closed on a configured `kind: cli` runner whose readiness is not `ready` — an unverified CLI has no trusted executable identity, so start refuses (exit `1`, remediation quoted) before creating a session instead of aborting mid-run.
+The two commands share the strings but not the verdict: `doctor` diagnoses and exits `0` on warnings, while `start` fails closed on a configured `kind: cli` runner that is denied admission — no trusted executable identity, a version not proven compatible, or a definitively negative authentication fact (no credential, or the tool answering signed-out). Those refusals land in both transports: start exits `1` with the remediation quoted, before creating a session, instead of aborting mid-run.
+
+Unverified authentication is the one state where the verdict also splits by transport. A credential that exists but no call has proven reports readiness status `unverified` (stateId `auth-unknown`, severity warning), and a headless start (`--json`, `--rpc`, `--detach`) refuses it unless `--allow-unverified-auth` is passed, while an interactive start discloses the unverified state and proceeds. `doctor` on a TTY reports it as a warning and exits `0`; its human output says so in one line — `No trusted readiness identity for <tool>: headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds.` — and `doctor --json` or a non-TTY stdin replays the headless blocker instead. See [CLI-REFERENCE.md](./CLI-REFERENCE.md#splitbrief-doctor).
 
 ### `splitbrief doctor --json`
 
@@ -40,7 +42,7 @@ Prefer these stable identifiers in automation and log correlation. Remediation s
 | Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | `untrusted-path` | Trust the exact CLI executable identity, then run `splitbrief doctor` again. |
 | Installed CLI version is outside the tested or qualified range. | `incompatible-version` | Install the tested CLI version, then run `splitbrief doctor` again. |
 | Required auth channel is not satisfied in the staged runner environment. | `unauthenticated` | Authenticate the CLI in the staged runner environment, then run `splitbrief doctor` again. |
-| Auth probe could not determine login state. | `auth-unknown` | Verify CLI authentication in the staged runner environment, then run `splitbrief doctor` again. |
+| Auth probe could not determine login state. | `auth-unknown` | CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real call settles it; if it fails to authenticate, sign in to the CLI again. |
 | Provider `apiBase` violates the declared endpoint policy (wrong scheme, origin, or redirect target). | `endpoint-invalid` | Fix the provider endpoint to match its declared policy, then run `splitbrief doctor` again. |
 | Environment credential prefix or family does not match the declared provider. | `credential-family-mismatch` | Use a credential that matches the declared provider family, then run `splitbrief doctor` again. |
 | CLI or API output protocol error, including a missing terminal result line. | `protocol-failure` | Check the CLI or provider version and output protocol, then run `splitbrief doctor` again. |
@@ -275,7 +277,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 2. Re-run `splitbrief doctor`.
 3. If you would rather not let a planner child see your home directory at all, set `auth_channel: api-key` for that runner in `.splitbrief/config.yaml` and `export ANTHROPIC_API_KEY=...` — that channel is metered and exposes nothing.
 
-**Prevention:** Trust `splitbrief doctor`. Readiness never reads a login off directory contents; it reports `authenticated` only when a credential reached the staged runner environment — proven by the tool's own status command where one exists — so a blocker here means the run really would have failed.
+**Prevention:** Trust `splitbrief doctor` — including its refusals to overclaim. Readiness never reads a login off directory contents, and it also refuses to promote a tool's own local status read into proof: `codex login status` prints `Logged in using ChatGPT` from a pure file read even after the refresh token has been invalidated server-side, so a positive local status reports as *unverified* ("stored credentials prove presence, not a working session") and the first real call settles it. A definitive negative — no credential, or the tool answering signed-out — still blocks, because that run really would have failed.
 
 **See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
@@ -1008,15 +1010,16 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 ---
 
-### Symptom: A `.trees/<session-id>` directory is left behind after an interrupted run
+### Symptom: A run-isolation worktree is left behind after an interrupted run
 
-**Likely cause:** Run isolation retained the worktree on purpose. When a run ends with work that was never promoted — an interrupted task, an escalation that never landed — SPLITBRIEF keeps the worktree and its `splitbrief/<session-id>` branch so that work can be recovered. It also keeps the worktree when the worktree strategy could not prove the worktree clean, so a retained directory does not always mean a failed run.
+**Likely cause:** Run isolation retained the worktree on purpose. When a run ends with work that was never promoted — an interrupted task, an escalation that never landed — SPLITBRIEF keeps the worktree and its `splitbrief/<session-id>` branch so that work can be recovered. It also keeps the worktree when the worktree strategy could not prove the worktree clean, so a retained directory does not always mean a failed run. The checkout lives under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<session-id>/` (default `~/.local/state/splitbrief/trees/...`), outside both `.git/` and the project root.
 
 **Fix:**
-1. Inspect what the worktree holds: `cd .trees/<session-id>` and run `git status` (and compare against the project directory).
-2. If the work is wanted, promote it manually or resume the session; if it is disposable, remove both the worktree and its branch: `splitbrief worktree remove <session-id> --force --delete-branch`.
+1. Find the path: `git worktree list` (look for `splitbrief/<session-id>`) or read the trailing line from `splitbrief ps` when the session directory is gone.
+2. Inspect what it holds: `cd` to that path and run `git status` (and compare against the project directory).
+3. If the work is wanted, promote it manually or resume the session; if it is disposable, remove both the worktree and its branch with the commands `splitbrief ps` prints — `git worktree remove <path> --force` then `git branch -D splitbrief/<session-id>`. Do not use `splitbrief worktree remove` for these paths; it manages `.trees/` lanes only.
 
-**Prevention:** A fully accepted run removes its worktree and branch itself; retained directories are the signal that something did not reach the project. Check `splitbrief worktree list` after a run to see what remains.
+**Prevention:** A fully accepted run removes its worktree and branch itself; retained directories are the signal that something did not reach the project. `git worktree list` shows them. `splitbrief ps` names isolation worktrees whose session directory is gone and prints the `git worktree remove` cleanup — it does not treat a live session running inside a `--worktree` lane as orphaned just because you invoked `ps` from the repository root.
 
 **See also:** [docs/WORKTREES.md](./WORKTREES.md).
 

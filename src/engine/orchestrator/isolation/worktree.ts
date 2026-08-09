@@ -1,14 +1,19 @@
-import { existsSync } from 'node:fs';
-import { appendFile, lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstat, mkdir, readFile, symlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { ensureConfigGitignore } from '../../../core/config/load/io.js';
 import { isolationMarkerPath, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import type { GitClient } from '../../../lib/git/client.js';
 import { checkIgnoredPaths, getCurrentChangedFiles } from '../../../lib/git/files.js';
+import { getGitCommonDir } from '../../../lib/git/repository.js';
+import { lockSibling, withFileLock } from '../../../lib/file-lock.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { error } from '../../../utils/error.js';
 import { createWorktree } from '../../worktree/create.js';
-import { assertTreesDirReadable, resolveConfinedWorktreePath } from '../../worktree/path.js';
+import {
+  assertIsolationDirReadable,
+  resolveConfinedIsolationWorktreePath,
+} from '../../worktree/path.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { writeCurrentFileContent } from '../approval/file-snapshots/contents.js';
 
@@ -23,19 +28,69 @@ const isolationError = {
     error('isolation-seed-symlink', `Cannot seed isolation worktree: "${file}" is a symlink.`, {
       file,
     }),
+  excludeLockTimeout: (lockPath: string) =>
+    error(
+      'isolation-exclude-lock-timeout',
+      `Timed out waiting for exclude file lock: ${lockPath}`,
+      {
+        lockPath,
+      },
+    ),
 } as const;
 
-async function readIsolationMarker(wtPath: string): Promise<string | null> {
+function withExcludeFileLock<T>(file: string, fn: () => T): T {
+  const lockPath = lockSibling(file);
+  return withFileLock(lockPath, () => isolationError.excludeLockTimeout(lockPath), fn);
+}
+
+// The owning project is recorded beside the session id because sessions are
+// per-checkout while one isolation root is shared by every linked worktree of a
+// repository: only the project that started the run can answer whether its
+// session still exists. Markers written before this field hold the bare session
+// id and name no owner.
+export type IsolationMarker = { sessionId: string; projectDir: string | null };
+
+function markerObject(text: string): object | null {
   try {
-    return await readFile(isolationMarkerPath(wtPath), 'utf-8');
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === 'object' && parsed !== null ? parsed : null;
   } catch {
     return null;
   }
 }
 
-async function writeIsolationMarker(wtPath: string, sessionId: string): Promise<void> {
-  await mkdir(join(wtPath, SPLITBRIEF_DIR), { recursive: true });
-  await writeFile(isolationMarkerPath(wtPath), sessionId, 'utf-8');
+export function parseIsolationMarker(raw: string): IsolationMarker {
+  const text = raw.trim();
+  const record = markerObject(text);
+  if (record === null) return { sessionId: text, projectDir: null };
+  const sessionId =
+    'sessionId' in record && typeof record.sessionId === 'string' ? record.sessionId : '';
+  const projectDir =
+    'projectDir' in record && typeof record.projectDir === 'string' && isAbsolute(record.projectDir)
+      ? record.projectDir
+      : null;
+  return { sessionId, projectDir };
+}
+
+async function readIsolationMarker(wtPath: string): Promise<IsolationMarker | null> {
+  try {
+    return parseIsolationMarker(await readFile(isolationMarkerPath(wtPath), 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+async function writeIsolationMarker(opts: {
+  worktreePath: string;
+  sessionId: string;
+  projectDir: string;
+}): Promise<void> {
+  await mkdir(join(opts.worktreePath, SPLITBRIEF_DIR), { recursive: true });
+  await writeFile(
+    isolationMarkerPath(opts.worktreePath),
+    JSON.stringify({ sessionId: opts.sessionId, projectDir: opts.projectDir }),
+    'utf-8',
+  );
 }
 
 function roundTripsUtf8(raw: Buffer): boolean {
@@ -72,11 +127,6 @@ async function untrackedNodeModulesIn(wtPath: string): Promise<boolean> {
   return changed.some((file) => file === NODE_MODULES || file.startsWith(`${NODE_MODULES}/`));
 }
 
-async function repositoryExcludeFile(wtPath: string, git: GitClient): Promise<string> {
-  const commonDir = (await git.raw(['-C', wtPath, 'rev-parse', '--git-common-dir'])).trim();
-  return join(isAbsolute(commonDir) ? commonDir : join(wtPath, commonDir), 'info', 'exclude');
-}
-
 function excludeMarker(sessionId: string): string {
   return `${EXCLUDE_MARKER_PREFIX}${sessionId}`;
 }
@@ -104,21 +154,22 @@ function hasUnownedNodeModulesExclude(text: string): boolean {
 // keeps doing so and the run falls back instead.
 async function excludeNodeModulesLink(
   projectDir: string,
-  wtPath: string,
+  gitCommonDir: string,
   sessionId: string,
-  git: GitClient,
 ): Promise<string | null> {
   if ((await checkIgnoredPaths(projectDir, [NODE_MODULES])).length === 0) return null;
   try {
-    const file = await repositoryExcludeFile(wtPath, git);
+    const file = join(gitCommonDir, 'info', 'exclude');
     const marker = excludeMarker(sessionId);
-    const current = existsSync(file) ? await readFile(file, 'utf-8') : '';
-    if (current.split('\n').includes(marker)) return file;
-    if (hasUnownedNodeModulesExclude(current)) return null;
-    await mkdir(dirname(file), { recursive: true });
-    const separator = current === '' || current.endsWith('\n') ? '' : '\n';
-    await appendFile(file, `${separator}${marker}\n${ROOT_NODE_MODULES}\n`, 'utf-8');
-    return file;
+    return withExcludeFileLock(file, () => {
+      const current = existsSync(file) ? readFileSync(file, 'utf-8') : '';
+      if (current.split('\n').includes(marker)) return file;
+      if (hasUnownedNodeModulesExclude(current)) return null;
+      mkdirSync(dirname(file), { recursive: true });
+      const separator = current === '' || current.endsWith('\n') ? '' : '\n';
+      appendFileSync(file, `${separator}${marker}\n${ROOT_NODE_MODULES}\n`, 'utf-8');
+      return file;
+    });
   } catch {
     return null;
   }
@@ -128,12 +179,14 @@ async function excludeNodeModulesLink(
 export async function removeNodeModulesExclude(file: string, sessionId: string): Promise<void> {
   const marker = excludeMarker(sessionId);
   try {
-    const lines = (await readFile(file, 'utf-8')).split('\n');
-    const kept = lines.filter(
-      (line, index) =>
-        line !== marker && !(lines[index - 1] === marker && line.trim() === ROOT_NODE_MODULES),
-    );
-    if (kept.length !== lines.length) await writeFile(file, kept.join('\n'), 'utf-8');
+    withExcludeFileLock(file, () => {
+      const lines = readFileSync(file, 'utf-8').split('\n');
+      const kept = lines.filter(
+        (line, index) =>
+          line !== marker && !(lines[index - 1] === marker && line.trim() === ROOT_NODE_MODULES),
+      );
+      if (kept.length !== lines.length) writeFileSync(file, kept.join('\n'), 'utf-8');
+    });
   } catch {
     return;
   }
@@ -170,23 +223,24 @@ export async function ensureIsolationWorktree(opts: {
   onNodeModulesExcluded?: (excludeFile: string) => void;
 }): Promise<EnsureIsolationWorktreeResult> {
   const { projectDir, sessionId, git, onWorktreeCreated, onNodeModulesExcluded } = opts;
-  assertTreesDirReadable(projectDir);
+  const gitCommonDir = await getGitCommonDir(projectDir);
+  assertIsolationDirReadable({ projectDir, gitCommonDir });
   const slug = sessionId.slice(0, MAX_SLUG_LENGTH);
-  const wtPath = resolveConfinedWorktreePath(projectDir, slug);
+  const wtPath = resolveConfinedIsolationWorktreePath({ projectDir, gitCommonDir, slug });
 
   let reused: boolean;
   if (existsSync(wtPath)) {
-    if ((await readIsolationMarker(wtPath)) !== sessionId) {
+    if ((await readIsolationMarker(wtPath))?.sessionId !== sessionId) {
       return {
         kind: 'fallback',
-        reason: `directory .trees/${slug} already exists and is not owned by session ${sessionId}`,
+        reason: `directory ${wtPath} already exists and is not owned by session ${sessionId}`,
       };
     }
     reused = true;
   } else {
-    await createWorktree({ projectDir, slug, git, requireCleanSource: false });
+    await createWorktree({ projectDir, slug, git, requireCleanSource: false, worktreeDir: wtPath });
     onWorktreeCreated?.(wtPath);
-    await writeIsolationMarker(wtPath, sessionId);
+    await writeIsolationMarker({ worktreePath: wtPath, sessionId, projectDir });
     const seeded = await seedIsolationWorktree(projectDir, wtPath);
     if (seeded.kind === 'fallback') return seeded;
     await ensureConfigGitignore(wtPath);
@@ -195,7 +249,7 @@ export async function ensureIsolationWorktree(opts: {
 
   await linkProjectNodeModules(projectDir, wtPath);
   if (await untrackedNodeModulesIn(wtPath)) {
-    const excludeFile = await excludeNodeModulesLink(projectDir, wtPath, sessionId, git);
+    const excludeFile = await excludeNodeModulesLink(projectDir, gitCommonDir, sessionId);
     if (excludeFile !== null) onNodeModulesExcluded?.(excludeFile);
     if (await untrackedNodeModulesIn(wtPath)) {
       return {

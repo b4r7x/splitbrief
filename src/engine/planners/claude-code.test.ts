@@ -56,6 +56,25 @@ async function createTrustedClaudeCodePlanner(
   });
 }
 
+function isolateHome(): () => void {
+  const homeDir = createTempDir('claude-code-planner-home');
+  const original = {
+    HOME: process.env['HOME'],
+    XDG_CONFIG_HOME: process.env['XDG_CONFIG_HOME'],
+    XDG_DATA_HOME: process.env['XDG_DATA_HOME'],
+  };
+  process.env['HOME'] = homeDir;
+  process.env['XDG_CONFIG_HOME'] = join(homeDir, '.config');
+  process.env['XDG_DATA_HOME'] = join(homeDir, '.local', 'share');
+  return () => {
+    for (const [name, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    cleanupTempDir(homeDir);
+  };
+}
+
 function installAuthRecordingShim(): string {
   const envFile = join(shimDir, 'auth-env.txt');
   const shimPath = join(shimDir, 'claude');
@@ -195,7 +214,7 @@ Create the Claude fallback file.
       shimPath,
       [
         '#!/bin/bash',
-        'if printf \'%s\\n\' "$@" | grep -q "^--session-id$"; then',
+        'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
         `  printf '%s\\n' '${JSON.stringify({ type: 'result', is_error: true, session_id: 'sess-old', result: 'session not found: sess-old', usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
         '  exit 0',
         'fi',
@@ -256,7 +275,7 @@ Create the Claude mismatch fallback file.
       shimPath,
       [
         '#!/bin/bash',
-        'if printf \'%s\\n\' "$@" | grep -q "^--session-id$"; then',
+        'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
         `  printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale resumed output', usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
         '  exit 0',
         'fi',
@@ -300,6 +319,149 @@ Create the Claude mismatch fallback file.
     expect(sessionEvents).toHaveLength(1);
     expect(sessionEvents[0]).toMatchObject({ nativeSessionId: 'sess-fresh' });
     expect(JSON.stringify(events)).not.toContain('sess-new-unexpected');
+  });
+
+  it('recovers a root tasks.md that Claude Code wrote and only described in prose', async () => {
+    // Real planner prose from the 2026-08-06 first run: Claude Code wrote the
+    // briefs to <projectDir>/tasks.md and summarised on stdout with the file
+    // name in backticks — no inline briefs, no markdown link.
+    const realProse = [
+      'Wrote `tasks.md` with two dependency-ordered briefs:',
+      '',
+      '- **T001** — create `src/text.ts` with `export function titleCase(input: string): string`, modeled on the single-pure-function style of `src/slug.ts` (regex replace uppercasing the first letter of each word).',
+      "- **T002** (depends on T001) — create `src/text.test.ts` with vitest tests mirroring `src/slug.test.ts` (ESM `./text.js` import, `describe`/`it`/`expect`), covering `'hello world'` → `'Hello World'`, single word, and empty string.",
+      '',
+      "Each brief is self-contained with the existing code patterns inlined, In/Out-of-bounds scope, escalation triggers (e.g. stop if edge-case behavior becomes load-bearing or if T001's export is missing), and evidence requirements (`npm test` and `npm run typecheck` passing).",
+    ].join('\n');
+    const tasksMarkdown = `# Task Briefs: titleCase function
+
+---
+id: T001
+title: Create titleCase function in src/text.ts
+action: create
+file: src/text.ts
+depends_on: []
+---
+
+### Description
+Create a new file \`src/text.ts\` exporting a \`titleCase\` function.
+
+### Tests
+- \`titleCase('hello world')\` → \`'Hello World'\`
+
+---
+id: T002
+title: Add vitest tests for titleCase in src/text.test.ts
+action: create
+file: src/text.test.ts
+depends_on: [T001]
+---
+
+### Description
+Create \`src/text.test.ts\` with vitest tests for \`titleCase\`.
+
+### Tests
+- \`expect(titleCase('hello world')).toBe('Hello World')\`
+`;
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `cat > "$PWD/tasks.md" <<'TASKS_EOF'`,
+        tasksMarkdown,
+        'TASKS_EOF',
+        `cat <<'JSON_EOF'`,
+        JSON.stringify({
+          type: 'result',
+          session_id: '0a3443ac-432e-40c8-bdf9-29859130257f',
+          result: realProse,
+          usage: { input_tokens: 6, output_tokens: 3006 },
+        }),
+        'JSON_EOF',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const warnings: string[] = [];
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+
+    const result = await planner.quickPlan({
+      feature: 'add a titleCase function to src/text.ts',
+      projectDir,
+      callbacks: {
+        onOutput: () => {},
+        onWarning: (message) => warnings.push(message),
+        sessionId: '2026-08-06-add-a-titlecase-function-to-src-text-ts-that-capit',
+      },
+    });
+
+    expect(warnings).toEqual([]);
+    expect(result.tasks.map((task) => task.id)).toEqual(['T001', 'T002']);
+    expect(result.phases?.[0]?.text).toContain('id: T001');
+    expect(result.phases?.[0]?.rawOutput).toContain('Wrote `tasks.md`');
+  });
+
+  it('never re-sends a consumed session id: the second consecutive planner call resumes it', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Claude retry task
+action: create
+file: src/claude-retry.ts
+depends_on: []
+---
+
+### Description
+Create the Claude retry file.
+
+### Tests
+- retry call executes
+`;
+    const argvLog = join(shimDir, 'argv-log.txt');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-1', result: tasksMarkdown, usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+
+    const planner = await createTrustedClaudeCodePlanner({ authChannel: 'session' });
+    const first = await planner.quickPlan({
+      feature: 'first call',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+    const second = await planner.quickPlan({
+      feature: 'retry call',
+      projectDir,
+      callbacks: { onOutput: () => {} },
+    });
+
+    expect(first.tasks).toHaveLength(1);
+    expect(second.tasks).toHaveLength(1);
+
+    const calls = readFileSync(argvLog, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => line.trim().split(' '));
+    expect(calls).toHaveLength(2);
+    const firstArgs = calls[0] ?? [];
+    const secondArgs = calls[1] ?? [];
+    expect(firstArgs).not.toContain('--session-id');
+    expect(firstArgs).not.toContain('--resume');
+    expect(secondArgs).not.toContain('--session-id');
+    expect(secondArgs.slice(secondArgs.indexOf('--resume'))).toEqual(['--resume', 'sess-1']);
   });
 
   it('suppresses native injection events when Claude returns a different session id', async () => {
@@ -361,5 +523,91 @@ Create the Claude mismatch fallback file.
     expect(result.text).toContain('slow response');
     const stalled = events.find((event) => event.type === 'call_stalled');
     expect(stalled).toMatchObject({ type: 'call_stalled', silentMs: expect.any(Number) });
+  });
+
+  it('configured planner.args appear in the claude-code planner argv', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Claude configured-args task
+action: create
+file: src/claude-configured-args.ts
+depends_on: []
+---
+
+### Description
+Create the Claude configured-args file.
+
+### Tests
+- the configured argument reaches the CLI
+`;
+    const argvLog = join(shimDir, 'configured-args-argv.txt');
+    const shimPath = join(shimDir, 'claude');
+    writeFileSync(
+      shimPath,
+      [
+        '#!/bin/bash',
+        `printf '%s ' "$@" >> '${argvLog}'`,
+        `printf '\\n' >> '${argvLog}'`,
+        `printf '%s\\n' '${JSON.stringify({ type: 'result', result: tasksMarkdown, usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    chmodSync(shimPath, 0o755);
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+    const restoreHome = isolateHome();
+
+    try {
+      const planner = await createTrustedClaudeCodePlanner({
+        authChannel: 'session',
+        args: ['--add-dir', '/srv/shared-context'],
+      });
+      const planned = await planner.quickPlan({
+        feature: 'configured args',
+        projectDir,
+        callbacks: { onOutput: () => {} },
+      });
+      await planner.review('prompt', projectDir, { onOutput: () => {} });
+
+      expect(planned.tasks).toHaveLength(1);
+      const calls = readFileSync(argvLog, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => line.trim().split(' '));
+      // The planning stream and the one-shot review are the two ways the
+      // planner reaches the CLI; both must carry the configured tail.
+      expect(calls).toHaveLength(2);
+      for (const argv of calls) {
+        expect(argv.slice(-2)).toEqual(['--add-dir', '/srv/shared-context']);
+      }
+    } finally {
+      restoreHome();
+    }
+  });
+
+  it('refuses a configured planner arg that overrides the invocation SPLITBRIEF owns', async () => {
+    writeCommandShim({
+      dir: shimDir,
+      command: 'claude',
+      lines: [JSON.stringify({ type: 'result', result: 'never reached' })],
+    });
+    process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
+    const restoreHome = isolateHome();
+
+    try {
+      const planner = await createTrustedClaudeCodePlanner({
+        authChannel: 'session',
+        args: ['--permission-mode', 'bypassPermissions'],
+      });
+
+      await expect(
+        planner.review('prompt', projectDir, { onOutput: () => {} }),
+      ).rejects.toMatchObject({
+        kind: 'cli-argument-conflict',
+        data: { conflicts: ['--permission-mode'] },
+      });
+    } finally {
+      restoreHome();
+    }
   });
 });

@@ -36,6 +36,9 @@ import {
   typedRunnerCallErrorMessage,
 } from './call-result.js';
 import { processImplementerOutput, readTaskFileContent } from './extracted-code.js';
+import { usageLimitDetailFromError } from '../../runners/usage-limit.js';
+import { isAuthFailureDiagnostic } from '../../runners/auth-failure.js';
+import { isRecord } from '../../../utils/type-guards.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 
 const MAX_RETRY_TEMPERATURE = 2;
@@ -183,10 +186,28 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       if (shouldThrow(err)) throw err;
       const output = errorOutput(err);
       failTask();
+      // API backends throw their provider errors instead of returning a
+      // failed call result, so limits and dead credentials are classified
+      // here too. The raw provider detail is kept over the rewritten hint:
+      // the recovery needs the reset time the provider's own words carry.
+      const limitDetail = usageLimitDetailFromError(err);
+      if (limitDetail !== null) {
+        return { success: false, output, error: limitDetail, outcome: 'usage-limit' };
+      }
+      const classification = typedRunnerCallErrorMessage(err) ?? toErrorMessage(err);
+      const status = isRecord(err) && isRecord(err.data) ? err.data.status : undefined;
+      if (status === 401 || isAuthFailureDiagnostic(classification)) {
+        const rawDetail =
+          typedRunnerCallErrorMessage(err) ??
+          (isRecord(err) && isRecord(err.data) && typeof err.data.detail === 'string'
+            ? err.data.detail
+            : classification);
+        return { success: false, output, error: rawDetail, outcome: 'unauthenticated' };
+      }
       return {
         success: false,
         output,
-        error: formatErrorWithHint(typedRunnerCallErrorMessage(err) ?? toErrorMessage(err)),
+        error: formatErrorWithHint(classification),
       };
     }
 

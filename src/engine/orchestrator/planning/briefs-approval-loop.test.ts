@@ -970,7 +970,8 @@ describe('runPlanningPhase — briefs approval loop', () => {
     ).toBe(false);
   });
 
-  it('a repeating unchanged failure ends the review with the no-progress error instead of re-prompting forever', async () => {
+  it('an approved brief set that fails quality is regenerated once by the planner and then proceeds', async () => {
+    const review = vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null });
     const planner = makePlanner({
       plan: vi.fn().mockResolvedValue({
         spec: '# Spec',
@@ -978,6 +979,7 @@ describe('runPlanningPhase — briefs approval loop', () => {
         tasks: [makeBriefQualityFailureTask()],
         usage: { inputTokens: 100, outputTokens: 50 },
       }),
+      review,
     });
     const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
@@ -987,12 +989,53 @@ describe('runPlanningPhase — briefs approval loop', () => {
 
     const { result, events } = await runPhase({ planner, callbacks, config });
 
-    expect(onApprovalNeeded).toHaveBeenCalledTimes(20);
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(review.mock.calls[0]?.[0]).toContain('Task T001 has no scope definition');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.tasks.map((task) => task.id)).toEqual(['T001']);
+    expect(events.some((event) => event.type === 'brief_quality_passed')).toBe(true);
+  });
+
+  it('an auto-approving transport whose regenerated briefs still fail quality is rejected at once, not after the no-progress cap', async () => {
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [makeBriefQualityFailureTask()],
+        usage: { inputTokens: 100, outputTokens: 50 },
+      }),
+      review: vi
+        .fn()
+        .mockResolvedValue({ text: formatTasks([makeBriefQualityFailureTask()]), usage: null }),
+    });
+    const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
+    const { callbacks } = makeCallbacks({ onApprovalNeeded });
+    const config = makeConfig({
+      workflow: { mode: 'standard', approve: 'none' },
+    });
+
+    const { result, events } = await runPhase({ planner, callbacks, config });
+
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(2);
     expect(result.cancelled).toBe(true);
     expect(result.state.phase).toBe('idle');
+    const rejection = events.find(
+      (event) => event.type === 'error' && event.code === 'brief_quality_rejected',
+    );
+    expect(rejection).toBeDefined();
+    expect(rejection?.type === 'error' && rejection.message).toContain(
+      'Task T001 has no Evidence field entries',
+    );
     expect(
       events.some((event) => event.type === 'error' && event.code === 'brief_review_no_progress'),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      events.filter(
+        (event) => event.type === 'error' && event.message.startsWith('Task Brief quality gate'),
+      ).length,
+    ).toBeLessThan(5);
   });
 
   it('an always-editing callback over an unfixable plan calls onApprovalNeeded at most the no-progress cap and ends rejected', async () => {

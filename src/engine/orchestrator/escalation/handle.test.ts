@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import { normalizeCustomCommand } from '../../../core/config/custom-commands.js';
@@ -353,6 +353,9 @@ describe('handleRetryAndEscalation', () => {
       // assert: HOME is the host's for a channel whose credential is an OS
       // keychain item, which is what a macOS Claude Code planner uses.
       expect(opts.sandboxEnv?.TMPDIR?.startsWith(opts.projectDir)).toBe(true);
+      const taskPath = join(opts.projectDir, task.file);
+      mkdirSync(dirname(taskPath), { recursive: true });
+      writeFileSync(taskPath, 'export const hello = "world";\n');
       return {
         success: true,
         output: 'full code',

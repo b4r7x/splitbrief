@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect } from 'vitest';
-import { evaluateBriefQuality, isBriefQualityReport } from './brief-quality.js';
+import { briefErrorMessages, evaluateBriefQuality, isBriefQualityReport } from './brief-quality.js';
+import { parseTasks } from './tasks/parse.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
 function makeFullTask() {
@@ -173,6 +176,107 @@ describe('evaluateBriefQuality — pure unit tests', () => {
     const task = makeTask(overrides);
     const report = evaluateBriefQuality([task]);
     expect(report.issues.find((i) => i.code === absentCode)).toBeUndefined();
+  });
+});
+
+describe('multi_file_task write-target semantics', () => {
+  it('accepts the real quick-mode planner output for the titleCase feature', () => {
+    const markdown = readFileSync(
+      join(import.meta.dirname, '../../../testing/fixtures/briefs/quick-titlecase-tasks.md'),
+      'utf8',
+    );
+    const tasks = parseTasks(markdown);
+    expect(tasks).toHaveLength(2);
+    const report = evaluateBriefQuality(tasks);
+    expect(report.issues.filter((i) => i.code === 'multi_file_task')).toHaveLength(0);
+    expect(report.passed).toBe(true);
+    expect(report.score).toBe(1);
+  });
+
+  it.each([
+    [
+      'a pattern exemplar referenced in the description',
+      {
+        file: 'src/text.ts',
+        description:
+          'Create `src/text.ts` exporting a `titleCase` function. This is a small pure string utility matching the style of `src/slug.ts`.',
+        implementationSteps: ['Create the file with a single named export `titleCase`.'],
+      },
+    ],
+    [
+      'an import source referenced in the steps',
+      {
+        file: 'src/text.test.ts',
+        description: 'Create `src/text.test.ts` with a Vitest suite covering `titleCase`.',
+        implementationSteps: [
+          "Create the file importing `describe`, `it`, `expect` from `'vitest'` and `titleCase` from `src/text.ts`.",
+        ],
+      },
+    ],
+    [
+      'a type source referenced in the description',
+      {
+        file: 'src/engine/spec/formatter.ts',
+        description:
+          'Update the formatter to accept the `Task` type defined in `src/core/schemas/task.ts`.',
+        implementationSteps: ['Update the function signature to take a `Task`.'],
+      },
+    ],
+    [
+      'a negated write verb',
+      {
+        file: 'src/text.ts',
+        description: 'Create `src/text.ts` with the helper.',
+        implementationSteps: ['Do not modify `src/slug.ts`; keep it as the style reference.'],
+      },
+    ],
+  ] as [
+    string,
+    Record<string, unknown>,
+  ][])('does not flag %s as multi_file_task', (_label, overrides) => {
+    const report = evaluateBriefQuality([makeTask(overrides)]);
+    expect(report.issues.find((i) => i.code === 'multi_file_task')).toBeUndefined();
+  });
+
+  it.each([
+    [
+      'a second write target in the steps',
+      {
+        file: 'src/utils/helpers.ts',
+        description: 'Create `src/utils/helpers.ts` with a `formatDate` helper.',
+        implementationSteps: [
+          'Create `src/utils/helpers.ts` exporting `formatDate`.',
+          'Update the call site in `src/api.ts` to use the new helper.',
+        ],
+      },
+    ],
+    [
+      'two write targets joined by a conjunction',
+      {
+        file: 'src/api.ts',
+        description: 'Update `src/api.ts` and `src/utils.ts` to share the new helper.',
+        implementationSteps: ['Move the duplicated logic out of both call sites.'],
+      },
+    ],
+  ] as [string, Record<string, unknown>][])('flags %s as multi_file_task', (_label, overrides) => {
+    const report = evaluateBriefQuality([makeTask(overrides)]);
+    const issue = report.issues.find((i) => i.code === 'multi_file_task');
+    expect(issue?.severity).toBe('error');
+    expect(issue?.message).toContain('src/api.ts');
+  });
+});
+
+describe('briefErrorMessages', () => {
+  it('returns every blocking message and drops warnings', () => {
+    const report = evaluateBriefQuality([
+      makeTask({ id: 'T001', tests: [], scope: { inBounds: ['x'] }, evidence: ['proof'] }),
+      makeTask({ id: 'T002', tests: [], scope: { inBounds: ['x'] }, evidence: ['proof'] }),
+    ]);
+
+    expect(briefErrorMessages(report)).toEqual([
+      'Task T001 has no tests',
+      'Task T002 has no tests',
+    ]);
   });
 });
 

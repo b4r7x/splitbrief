@@ -38,7 +38,7 @@ describe('readiness formatting', () => {
     const record = createStartReadinessRecord(report);
 
     expect(human).toContain('Run readiness:');
-    expect(human).toContain('Required action: Exit');
+    expect(human).toContain('Required action: Set up the configured runner');
     expect(human).not.toContain('Advisory:');
     expect(human).not.toContain('Next action:');
     expect(human).toContain('runners.cli.claude-code.readiness');
@@ -47,7 +47,7 @@ describe('readiness formatting', () => {
     expect(record).toMatchObject({
       type: 'start-readiness',
       status: 'blocked',
-      nextAction: 'exit',
+      nextAction: 'prepare-runner',
       blockerCount: 1,
       warningCount: expect.any(Number),
     });
@@ -129,8 +129,39 @@ describe('readiness formatting', () => {
 
     const ungated = formatReadinessReport(reportWith('unverified'));
     expect(ungated).not.toContain('start can continue');
-    expect(ungated).toContain('Start blocked: no trusted readiness identity for claude-code.');
+    expect(ungated).toContain(
+      'headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds',
+    );
     expect(ungated).toContain('Fix: Verify claude-code against tested version');
+  });
+
+  it("a non-blocked report's output contains no `Start blocked:` line", () => {
+    const report = buildReadinessReport({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      configLoad: {
+        state: 'loaded',
+        path: '/tmp/project/.splitbrief/config.yaml',
+        warnings: [],
+      },
+      packageScripts: { packageJsonExists: true, scripts: { test: 'vitest run' } },
+      repo: {
+        isGitRepo: true,
+        hasCommits: true,
+        dirtyFiles: ['src/edited.ts'],
+        untrackedFiles: [],
+      },
+      cliReadiness: [deriveCliReadiness(cliReadinessFactsFor('unverified', 'claude-code'))],
+    });
+
+    expect(report.status).not.toBe('blocked');
+    expect(report.counts.blocker).toBe(0);
+
+    const human = formatReadinessReport(report);
+    expect(human).not.toContain('Start blocked:');
+    expect(human).toContain(
+      'headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds',
+    );
   });
 
   it('summarizes blocker messages for CLI errors', () => {

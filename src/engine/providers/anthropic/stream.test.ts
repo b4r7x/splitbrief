@@ -241,6 +241,35 @@ describe('streamAnthropicCompletion', () => {
     expect(persisted).not.toContain(credential);
   });
 
+  it('keeps the 429 rate-limit body and Retry-After so the usage-limit recovery can name the reset', async () => {
+    // Body captured from a real Claude Code 2.1.206 session that hit the
+    // account rate limit (2026-07-11); Anthropic sends Retry-After in seconds.
+    const body =
+      '{"type":"error","error":{"type":"rate_limit_error","message":"This request would exceed your account\'s rate limit. Please try again later."},"request_id":"req_011CcuTLfeewCy8ujAVGd6Ws"}';
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(body, { status: 429, headers: { 'retry-after': '60' } }),
+    );
+
+    let caught: unknown;
+    try {
+      await streamAnthropicCompletion({
+        apiKey: 'sk-test',
+        apiBase: 'https://api.anthropic.com/v1',
+        model: 'claude-sonnet-4-6',
+        messages: [{ role: 'user', content: 'hello' }],
+        temperature: 0.3,
+        onProgress: () => {},
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toMatchObject({ kind: 'stream-http-status' });
+    const detail = (caught as { data?: { detail?: string } }).data?.detail ?? '';
+    expect(detail).toContain('rate_limit_error');
+    expect(detail).toContain('(retry-after: 60s)');
+  });
+
   it('parses CRLF-framed Anthropic SSE events', async () => {
     vi.mocked(globalThis.fetch).mockResolvedValue(
       makeSseResponse([

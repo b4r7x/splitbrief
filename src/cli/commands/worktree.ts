@@ -116,6 +116,13 @@ export function registerWorktreeCommand(program: Command, deps: WorktreeDeps = d
     .action(
       async (name: string, opts: { force?: boolean; deleteBranch?: boolean; project?: string }) => {
         const projectDir = await canonicalizeProjectDir(opts);
+        const worktrees = await deps.listWorktrees(projectDir);
+        const found = worktrees.some((w) => w.name === name);
+
+        if (!found) {
+          throw cliError(`Worktree "${name}" not found.`, 1);
+        }
+
         const git = createGitClient(projectDir);
 
         await withCliErrors(() =>

@@ -12,7 +12,7 @@ Everything between the two belongs to SPLITBRIEF: the [Task Brief contract](./do
 
 ## Why two tools instead of one
 
-A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is never the tool that signs it off.
+A model reviewing its own output repeats its own blind spots — the assumptions that produced the bug are the same ones reading the diff. Put the planner and the implementer on models from different labs and the reviewer no longer shares the author's failure modes. That is the reason to run two tools, and SPLITBRIEF is arranged so the tool that wrote the code is not the tool that signs it off. One path breaks that: when a task exhausts retries and the last escalation tier fires, the planner writes the code itself and then reviews its own work. Escalated tasks are the exception the blind-spot argument does not cover.
 
 Same-lab still works — two instances of one tool are a valid configuration. You give up the blind-spot argument, not the pipeline.
 
@@ -60,7 +60,8 @@ You: "add user authentication with JWT"
                 ▼
 ┌──────────────────────┐
 │  PLANNER (review)     │  Reads the result against the brief and the
-│                       │  evidence — it did not write this code
+│                       │  evidence — code it did not write, except on
+│                       │  tasks it took over at the last tier
 └──────────────────────┘
 ```
 
@@ -70,7 +71,7 @@ The TUI shows planner and implementer working together as a conversation flow �
 
 ## Quick start
 
-Needs **Node.js 22+** and a **git** repository to work in.
+Needs **Node.js 22+** and a **git** repository with at least one commit to work in.
 
 SPLITBRIEF is not published to npm yet. Install from source:
 
@@ -85,7 +86,7 @@ npm link               # exposes the `splitbrief` binary on your PATH
 Then bring a planner — the stronger of the two:
 
 ```bash
-# Claude Code (config default) — uses your existing subscription, $0 extra
+# Claude Code (default planner): install from https://claude.ai/code — uses your existing subscription, $0 extra
 npm install -g @openai/codex      # Codex
 npm install -g @github/copilot    # Copilot
 npm install -g @kilocode/cli      # Kilo Code
@@ -146,8 +147,11 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 | `splitbrief start "feature"` | Complete pipeline: compile Task Briefs, implement, validate, and review |
 | `splitbrief spec "feature"` | Generate Task Brief transport and supporting planning artifacts only, no implementation |
 | `splitbrief init` | Create config, auto-detect available models |
+| `splitbrief doctor` | Check run readiness — config, runners, credentials, repo — without starting a workflow |
 | `splitbrief resume` | Resume an interrupted workflow |
 | `splitbrief status` | Show current workflow state |
+
+Those are the ones you need first. The full set — `ps`, `stats`, `export`, `explain`, `handoff`, `snapshot`, `approval`, `worktree`, `attach`, `detach`, `continue`, `last`, `mcp` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).
 
 `start` and `spec` both take `--mode instant|quick|standard|speckit`, which sets how much planning ceremony runs before the Task Briefs exist. The default is `standard`.
 
@@ -318,9 +322,9 @@ SPLITBRIEF loads model metadata from [models.dev](https://models.dev) first. Run
 | 8 GB | Qwen 2.5 Coder 3B Q4 | 8K | `contextLength: 8192` |
 | 12 GB | Qwen 2.5 Coder 7B Q4 | 8-16K | `contextLength: 8192` |
 | 16 GB | Qwen 2.5 Coder 14B Q4 | 16-32K | `contextLength: 16384` |
-| 32 GB+ | Qwen 3.5 27B Q4 | 32K+ | `contextLength: 32768` |
+| 32 GB+ | Qwen3 Coder 30B Q4 | 32K+ | `contextLength: 32768` |
 
-For large files (300+ LOC), SPLITBRIEF switches from whole-file to function-level context — sends only the target function, imports, and surrounding lines. 8K models can still modify large files this way.
+When a file does not fit the implementer's token budget and the Task Brief names a target function, SPLITBRIEF switches from whole-file to function-level context — imports plus that function. If the brief names no function, the file is truncated in the middle instead. Small-context models can still modify large files this way, as long as the brief is specific about where the change goes.
 
 ### Local (free)
 
@@ -328,7 +332,9 @@ For large files (300+ LOC), SPLITBRIEF switches from whole-file to function-leve
 |-------|-----------|-------|
 | Qwen 2.5 Coder 7B | ~5 GB | ~35-50 tok/s |
 | Qwen 2.5 Coder 14B | ~9 GB | ~30-40 tok/s |
-| Qwen 3.5 27B | ~16 GB | ~18-25 tok/s |
+| Qwen3 Coder 30B | ~18 GB | ~18-25 tok/s |
+
+Sizes and speeds are indicative for a recent consumer GPU, not measurements taken by this project.
 
 ### API
 
@@ -339,6 +345,8 @@ Per-token prices are not hardcoded here. They come from models.dev at startup an
 Keeping the expensive tool on research, brief compilation, review, and escalation, and the cheap one on typing, is what makes a run cost less than doing the whole thing on the expensive tool. That is arithmetic, not a benchmark: what you actually save depends on provider pricing, subscription limits, task size, how good the implementer is, how much validation you have, and how often escalation fires.
 
 SPLITBRIEF reports the token and dollar split per run. It does not promise a ratio.
+
+There is no spend cap unless you set one. `workflow.maxBudget` in config, or `--budget` on the command line, makes a run pause when it reaches the cap; without either, a run keeps spending until it finishes or you stop it. `splitbrief doctor` reports which of the two applies before you start.
 
 ## Measurement
 
@@ -370,7 +378,9 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 ## Current state
 
-Primary development stack is TypeScript/JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines. Not tested on Windows.
+Primary development stack is TypeScript/JavaScript. Command-based validation also supports configured or detected Python, Go, and Rust pipelines.
+
+macOS and Linux only. Windows is not supported: the IPC server behind `splitbrief attach` / `splitbrief ps` and the snapshot path encoding both need POSIX semantics. Support is planned, not present.
 
 ## Contributing
 

@@ -697,7 +697,12 @@ describe('HomeScreen', () => {
     expect(routerStore.get()).toEqual({ screen: 'home' });
     expect(existsSync(join(projectDir, '.splitbrief', 'sessions'))).toBe(false);
 
+    // Let the failed-panel useInput handler attach before the shortcut press
+    // (under suite load a same-tick `s` can miss and leave overlay idle).
+    await flushEffects();
+    await tick();
     ui.stdin.write('s');
+    await flushEffects();
     await vi.waitFor(
       () => expect(overlayStore.get().active).toBe('settings'),
       SESSION_FILTER_WAIT_MS,
@@ -709,6 +714,95 @@ describe('HomeScreen', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain(DEFAULT_HOME_HINT);
       expect(frame).not.toContain('Tool preparation');
+    }, SESSION_FILTER_WAIT_MS);
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    ui.unmount();
+  });
+
+  it('during preparation the home composer remains mounted and a preparation byline renders', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockReturnValue(pending.promise);
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('background preparation');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+
+    await vi.waitFor(
+      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+      SESSION_FILTER_WAIT_MS,
+    );
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('|____/| .__/');
+      expect(frame).toContain('Initializing your tools…');
+      expect(frame).toContain('›');
+      expect(frame).not.toContain('Preparing your tools');
+    }, SESSION_FILTER_WAIT_MS);
+    ui.unmount();
+  });
+
+  it('esc during preparation restores the submitted draft into the composer input', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockReturnValue(pending.promise);
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('restore this draft');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+
+    await vi.waitFor(
+      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+      SESSION_FILTER_WAIT_MS,
+    );
+    await vi.waitFor(() => {
+      expect(ui.lastFrame() ?? '').toContain('Initializing your tools…');
+    }, SESSION_FILTER_WAIT_MS);
+
+    ui.stdin.write(ESC);
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('restore this draft');
+      expect(frame).toContain(DEFAULT_HOME_HINT);
+      expect(frame).not.toContain('Initializing your tools…');
+    }, SESSION_FILTER_WAIT_MS);
+    expect(routerStore.get()).toEqual({ screen: 'home' });
+    ui.unmount();
+  });
+
+  it('a repeat Enter during preparation keeps the submitted draft in the composer', async () => {
+    const pending = Promise.withResolvers<PreparationOutcome>();
+    prepareExecutionMock.mockReturnValue(pending.promise);
+
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('keep this draft');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Initializing your tools…');
+      expect(frame).toContain('keep this draft');
+    }, SESSION_FILTER_WAIT_MS);
+
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await flushEffects();
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('keep this draft');
+      expect(frame).not.toContain('Describe your feature…');
+    }, SESSION_FILTER_WAIT_MS);
+    expect(prepareExecutionMock).toHaveBeenCalledOnce();
+
+    await flushEffects();
+    ui.stdin.write(ESC);
+    await vi.waitFor(() => {
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('keep this draft');
+      expect(frame).toContain(DEFAULT_HOME_HINT);
     }, SESSION_FILTER_WAIT_MS);
     expect(routerStore.get()).toEqual({ screen: 'home' });
     ui.unmount();
@@ -731,7 +825,7 @@ describe('HomeScreen', () => {
       () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
       SESSION_FILTER_WAIT_MS,
     );
-    expect(ui.lastFrame() ?? '').toContain('Preparing your tools');
+    expect(ui.lastFrame() ?? '').toContain('Initializing your tools…');
 
     ui.stdin.write(ESC);
     await vi.waitFor(() => expect(signal?.aborted).toBe(true), SESSION_FILTER_WAIT_MS);

@@ -1,5 +1,8 @@
-import { join } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import { fsError } from '../lib/fs.js';
+import { sha256Hex } from '../utils/sha256.js';
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { SPLITBRIEF_IDENTITY } from './identity.js';
 
@@ -102,6 +105,12 @@ export function ipcSockPath(sessionDirPath: string): string {
 
 export const TREES_DIR = '.trees';
 
+// Run isolation lives outside `.git/` because direct-writing CLIs refuse paths
+// there as sensitive. It also lives outside the project root so project-rooted
+// test discovery never walks into the second checkout. `.trees/` keeps its
+// documented meaning: the worktrees an operator asks for with --worktree.
+export const ISOLATION_TREES_DIR = 'trees';
+
 export const INTERNAL_SKIP_DIRS = ['.git', SPLITBRIEF_DIR, 'node_modules', TREES_DIR];
 
 const GIT_STATUS_INTERNAL_DIRS = [SPLITBRIEF_DIR, TREES_DIR];
@@ -116,6 +125,22 @@ export function isInternalGitStatusPath(file: string): boolean {
 
 export const worktreePath = (projectDir: string, slug: string): string =>
   join(projectDir, TREES_DIR, slug);
+
+function userStateDir(): string {
+  const xdgStateHome = process.env.XDG_STATE_HOME;
+  return xdgStateHome && isAbsolute(xdgStateHome)
+    ? xdgStateHome
+    : join(homedir(), '.local', 'state');
+}
+
+export const isolationTreesRoot = (): string =>
+  join(userStateDir(), SPLITBRIEF_IDENTITY.slug, ISOLATION_TREES_DIR);
+
+export const isolationWorktreeRoot = (gitCommonDir: string): string =>
+  join(isolationTreesRoot(), sha256Hex(realpathSync(gitCommonDir)).slice(0, 12));
+
+export const isolationWorktreePath = (gitCommonDir: string, slug: string): string =>
+  join(isolationWorktreeRoot(gitCommonDir), slug);
 
 const ISOLATION_MARKER_FILE = 'isolation-marker';
 

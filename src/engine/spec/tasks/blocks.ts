@@ -28,6 +28,98 @@ export function fenceMarkerLength(trimmed: string): number | null {
   return match?.[1] ? match[1].length : null;
 }
 
+/**
+ * A fence is content when it sits inside a Task Brief; it is wrapping when the
+ * whole document lives inside it. Planners sometimes reply with prose narration
+ * around a ```-fenced tasks.md, which hides every `---` separator from
+ * {@link splitTaskBlocks}. This collects the contents of top-level fenced
+ * regions that contain task-brief structure — a `---` line and an `id:` line —
+ * and returns them joined, dropping the fence markers and the narration outside
+ * them. Returns null when no fenced region carries task structure. Callers only
+ * invoke this after a parse produced zero task blocks, so a document with
+ * legitimate fences inside parsed briefs is never rewritten.
+ *
+ * A wrapper is closed by a marker at least as long as the opener, or by end of
+ * input. Two further conditions keep the brief's own fences from closing it,
+ * which matters when the planner picks a wrapper exactly as long as the fences
+ * inside the briefs — a ```markdown around briefs carrying ```javascript,
+ * measured against Claude Code on 2026-08-07:
+ *
+ * - a line carrying an info string never closes anything. CommonMark forbids an
+ *   info string on a closing fence, so ```javascript can only open.
+ * - the fences already passed must pair up. A brief's code blocks contribute two
+ *   lines each, so a candidate reached across an odd number of them is the
+ *   closer of one of those blocks, not of the wrapper.
+ *
+ * Without them the region ended at the brief's first code sample and every
+ * section after it was dropped: the task parsed with an id and nothing else, and
+ * the brief quality gate failed the run.
+ */
+export function unwrapFencedTaskDocument(content: string): string | null {
+  const lines = content.split('\n');
+  const regions: string[] = [];
+  let openIndex = -1;
+  let openLength = 0;
+  let innerFences = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? '').trim();
+    const marker = fenceMarkerLength(trimmed);
+    if (marker === null) continue;
+    if (openIndex === -1) {
+      openIndex = i;
+      openLength = marker;
+      innerFences = 0;
+    } else if (closesFencedRegion(trimmed, marker, openLength, innerFences)) {
+      regions.push(lines.slice(openIndex + 1, i).join('\n'));
+      openIndex = -1;
+    } else {
+      innerFences += 1;
+    }
+  }
+  if (openIndex !== -1) regions.push(lines.slice(openIndex + 1).join('\n'));
+
+  const taskShaped = regions.filter(containsTaskStructure);
+  if (taskShaped.length === 0) return null;
+  return taskShaped.join('\n');
+}
+
+function closesFencedRegion(
+  trimmed: string,
+  marker: number,
+  openLength: number,
+  innerFences: number,
+): boolean {
+  if (marker < openLength) return false;
+  if (trimmed.slice(marker).trim() !== '') return false;
+  return innerFences % 2 === 0;
+}
+
+function containsTaskStructure(text: string): boolean {
+  let sawSeparator = false;
+  let sawId = false;
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed === '---') sawSeparator = true;
+    else if (/^id:\s*\S/.test(trimmed)) sawId = true;
+    if (sawSeparator && sawId) return true;
+  }
+  return false;
+}
+
+/**
+ * A non-fenced `---` delimits a Task Brief only when a frontmatter field follows it. Planners
+ * write `---` as a horizontal rule before phase headings and after the last brief, and taking
+ * those for delimiters rejected whole plans (`task block with no readable id`, `unterminated
+ * task block after separator`). The names are the closed set from {@link TaskFrontmatterSchema}
+ * rather than a generic `word:` pattern, which sign-off prose such as `Note: …` also matches —
+ * that reopens a block nothing ever closes. The value may be empty so `id:` still opens a block
+ * and still earns its schema diagnostic.
+ */
+const FRONTMATTER_FIELD_LINE_RE = new RegExp(
+  `^(?:${Object.keys(TaskFrontmatterSchema.shape).join('|')})\\s*:`,
+);
+
 export function splitTaskBlocks(markdown: string): string[] {
   const blocks: string[] = [];
   const lines = markdown.split('\n');
@@ -54,14 +146,15 @@ export function splitTaskBlocks(markdown: string): string[] {
     }
 
     const isSeparator = (fenceLength === 0 && trimmed === '---') || recoversFromUnclosedFence;
+    const opensTaskBlock = isSeparator && nextNonBlankLineIsFrontmatterField(lines, i + 1);
 
-    if (state === 'idle' && isSeparator) {
+    if (state === 'idle' && opensTaskBlock) {
       current = [line];
       state = 'in-frontmatter';
     } else if (state === 'in-frontmatter' && isSeparator) {
       current.push(line);
       state = 'in-body';
-    } else if (state === 'in-body' && isSeparator) {
+    } else if (state === 'in-body' && opensTaskBlock) {
       blocks.push(current.join('\n'));
       current = [line];
       state = 'in-frontmatter';
@@ -213,6 +306,15 @@ function nextNonBlankLineIsTaskId(lines: string[], from: number): boolean {
     const trimmed = (lines[i] ?? '').trim();
     if (trimmed === '') continue;
     return /^id:\s*\S/.test(trimmed);
+  }
+  return false;
+}
+
+function nextNonBlankLineIsFrontmatterField(lines: string[], from: number): boolean {
+  for (let i = from; i < lines.length; i++) {
+    const trimmed = (lines[i] ?? '').trim();
+    if (trimmed === '') continue;
+    return FRONTMATTER_FIELD_LINE_RE.test(trimmed);
   }
   return false;
 }

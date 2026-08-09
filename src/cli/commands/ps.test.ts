@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
   mkdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -12,13 +14,21 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { psCommand, type PsDeps } from './ps.js';
-import { isolationMarkerPath } from '../../core/paths.js';
+import {
+  ISOLATION_TREES_DIR,
+  isolationMarkerPath,
+  isolationTreesRoot,
+  isolationWorktreeRoot,
+} from '../../core/paths.js';
 import { ensureIsolationWorktree } from '../../engine/orchestrator/isolation/worktree.js';
 import type { LockfileData, ServerStatus } from '../../engine/ipc/lockfile.js';
 import { createGitClient } from '../../lib/git/client.js';
+import { formatShellArgv } from '../../utils/shell-quote.js';
 
 let testDir: string;
+let xdgStateHome: string;
 const originalPlatform = process.platform;
+const ORIGINAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;
 const lockfiles = new Map<string, LockfileData | null>();
 const statuses = new Map<string, ServerStatus>();
 
@@ -56,12 +66,18 @@ function putCollectableSession(sessionId: string): void {
   utimesSync(sessDir, oldSeconds, oldSeconds);
 }
 
-function putIsolationWorktree(slug: string, sessionId: string): void {
-  const wtDir = join(testDir, '.trees', slug);
+const isolationRoot = (): string => isolationWorktreeRoot(realpathSync(join(testDir, '.git')));
+
+function putIsolationWorktreeMarker(slug: string, marker: string): string {
+  const wtDir = join(isolationRoot(), slug);
   mkdirSync(join(wtDir, '.splitbrief'), { recursive: true });
   writeFileSync(join(wtDir, '.git'), `gitdir: ${testDir}/.git/worktrees/${slug}`);
-  writeFileSync(isolationMarkerPath(wtDir), sessionId);
+  writeFileSync(isolationMarkerPath(wtDir), marker);
+  return wtDir;
 }
+
+const putIsolationWorktree = (slug: string, sessionId: string): string =>
+  putIsolationWorktreeMarker(slug, JSON.stringify({ sessionId, projectDir: testDir }));
 
 async function collectPsOutput(): Promise<string[]> {
   const lines: string[] = [];
@@ -95,16 +111,25 @@ function putRunningSession(sessionId: string): void {
 
 beforeEach(() => {
   testDir = join(tmpdir(), `ps-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  xdgStateHome = `${testDir}-state`;
   mkdirSync(testDir, { recursive: true });
+  mkdirSync(xdgStateHome, { recursive: true });
+  process.env.XDG_STATE_HOME = xdgStateHome;
   lockfiles.clear();
   statuses.clear();
   Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
 });
 
 afterEach(() => {
+  if (existsSync(join(testDir, '.git'))) {
+    rmSync(isolationRoot(), { recursive: true, force: true });
+  }
   if (existsSync(testDir)) rmSync(testDir, { recursive: true, force: true });
+  rmSync(xdgStateHome, { recursive: true, force: true });
   rmSync(`${testDir}-outside`, { recursive: true, force: true });
   Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  if (ORIGINAL_XDG_STATE_HOME === undefined) delete process.env.XDG_STATE_HOME;
+  else process.env.XDG_STATE_HOME = ORIGINAL_XDG_STATE_HOME;
   vi.restoreAllMocks();
 });
 
@@ -319,20 +344,38 @@ describe('psCommand', () => {
       feature: 'real feature',
     };
     putSession('real-session', data, { alive: true, data });
-    putIsolationWorktree('2026-08-01-orphan', '2026-07-01-gone-session');
+    createTestGitRepo(testDir, { 'README.md': '# test\n' });
+    const orphanDir = putIsolationWorktree('2026-08-01-orphan', '2026-07-01-gone-session');
     putIsolationWorktree('2026-08-01-kept', 'real-session');
 
     const lines = await collectPsOutput();
 
-    expect(
-      lines.some((line) => line.includes('Orphaned isolation worktree ".trees/2026-08-01-orphan"')),
-    ).toBe(true);
-    expect(
-      lines.some((line) =>
-        line.includes('splitbrief worktree remove 2026-08-01-orphan --force --delete-branch'),
-      ),
-    ).toBe(true);
-    expect(lines.some((line) => line.includes('.trees/2026-08-01-kept'))).toBe(false);
+    expect(lines.some((line) => line.includes(`Orphaned isolation worktree "${orphanDir}"`))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.includes(`git worktree remove ${orphanDir} --force`))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.includes('git branch -D splitbrief/2026-08-01-orphan'))).toBe(
+      true,
+    );
+    expect(lines.some((line) => line.includes('2026-08-01-kept'))).toBe(false);
+  });
+
+  it('shell-quotes orphan cleanup commands with metacharacters in the state path and branch', async () => {
+    createTestGitRepo(testDir, { 'README.md': '# test\n' });
+    const stateHome = join(xdgStateHome, "state home;$(echo nope)'");
+    process.env.XDG_STATE_HOME = stateHome;
+    const slug = 'orphan branch;$(echo nope)';
+    const orphanDir = putIsolationWorktree(slug, '2026-07-01-gone-session');
+
+    const lines = await collectPsOutput();
+
+    const removeCommand = formatShellArgv(['git', 'worktree', 'remove', orphanDir, '--force']);
+    const deleteBranchCommand = formatShellArgv(['git', 'branch', '-D', `splitbrief/${slug}`]);
+    expect(lines).toContain(
+      `Orphaned isolation worktree "${orphanDir}" (session 2026-07-01-gone-session no longer exists); remove it with "${removeCommand}" then "${deleteBranchCommand}".`,
+    );
   });
 
   it('reports a worktree run isolation actually created once its session is gone', async () => {
@@ -343,50 +386,105 @@ describe('psCommand', () => {
       git: createGitClient(testDir),
     });
     expect(result.kind).toBe('ready');
+    if (result.kind !== 'ready') return;
 
     const lines = await collectPsOutput();
 
     expect(
       lines.some(
         (line) =>
-          line.includes('Orphaned isolation worktree ".trees/2026-07-01-gone-session"') &&
+          line.includes(`Orphaned isolation worktree "${result.worktreePath}"`) &&
           line.includes('session 2026-07-01-gone-session no longer exists'),
       ),
     ).toBe(true);
   });
 
-  it('still lists sessions and warns when the .trees directory cannot be read', async () => {
+  it('an isolation worktree whose session lives in a linked worktree of the same repo is not reported orphaned', async () => {
+    createTestGitRepo(testDir, { 'README.md': '# test\n' });
+    const laneDir = join(testDir, '.trees', 'lane-a');
+    execFileSync('git', ['worktree', 'add', laneDir, '-b', 'lane-a'], {
+      cwd: testDir,
+      stdio: 'pipe',
+    });
+    const sessionId = '2026-08-01-lane-feature';
+    const result = await ensureIsolationWorktree({
+      projectDir: laneDir,
+      sessionId,
+      git: createGitClient(laneDir),
+    });
+    expect(result.kind).toBe('ready');
+    mkdirSync(join(laneDir, '.splitbrief', 'sessions', sessionId), { recursive: true });
+
+    const lines = await collectPsOutput();
+
+    expect(lines.some((line) => line.includes('Orphaned isolation worktree'))).toBe(false);
+    expect(lines.some((line) => line.includes('records no owning project'))).toBe(false);
+  });
+
+  it('lists a worktree whose marker names no owning project without removal commands', async () => {
+    createTestGitRepo(testDir, { 'README.md': '# test\n' });
+    const wtDir = putIsolationWorktreeMarker('2026-08-01-legacy', '2026-07-01-gone-session');
+
+    const lines = await collectPsOutput();
+
+    expect(
+      lines.some((line) =>
+        line.includes(`Isolation worktree "${wtDir}" records no owning project`),
+      ),
+    ).toBe(true);
+    expect(lines.some((line) => line.includes('git worktree remove'))).toBe(false);
+    expect(lines.some((line) => line.includes('Orphaned isolation worktree'))).toBe(false);
+  });
+
+  it('still lists sessions and warns when the isolation directory cannot be read', async () => {
     putRunningSession('real-session');
+    createTestGitRepo(testDir, { 'README.md': '# test\n' });
     putIsolationWorktree('2026-08-01-orphan', '2026-07-01-gone-session');
-    const treesDir = join(testDir, '.trees');
-    chmodSync(treesDir, 0o000);
+    chmodSync(isolationRoot(), 0o000);
 
     try {
       const { stdout, stderr } = await collectPsStreams();
 
       expect(stdout.some((line) => line.includes('real-session'))).toBe(true);
       expect(stdout.some((line) => line.includes('Orphaned isolation worktree'))).toBe(false);
-      expect(stderr).toContain('.trees');
+      expect(stderr).toContain(ISOLATION_TREES_DIR);
       expect(stderr).toContain('EACCES');
     } finally {
-      chmodSync(treesDir, 0o755);
+      chmodSync(isolationRoot(), 0o755);
     }
   });
 
-  it('refuses a .trees that resolves outside the project instead of reading its markers', async () => {
+  it('refuses an isolation directory that resolves outside the isolation trees root', async () => {
     putRunningSession('real-session');
+    createTestGitRepo(testDir, { 'README.md': '# test\n' });
     const outside = `${testDir}-outside`;
     const wtDir = join(outside, '2026-08-01-orphan');
     mkdirSync(join(wtDir, '.splitbrief'), { recursive: true });
     writeFileSync(join(wtDir, '.git'), `gitdir: ${outside}/.git/worktrees/2026-08-01-orphan`);
     writeFileSync(isolationMarkerPath(wtDir), '2026-07-01-gone-session');
-    symlinkSync(outside, join(testDir, '.trees'));
+    mkdirSync(isolationTreesRoot(), { recursive: true });
+    symlinkSync(outside, isolationRoot());
 
     const { stdout, stderr } = await collectPsStreams();
 
     expect(stdout.some((line) => line.includes('real-session'))).toBe(true);
     expect(stdout.join('\n')).not.toContain('2026-08-01-orphan');
-    expect(stderr).toContain('resolves outside the project root');
+    expect(stderr).toContain('resolves outside the external isolation trees root');
+  });
+
+  it('rejects XDG_STATE_HOME=<project>/.git before probing isolation worktrees', async () => {
+    putRunningSession('real-session');
+    createTestGitRepo(testDir, { 'README.md': '# test\n' });
+    process.env.XDG_STATE_HOME = join(testDir, '.git');
+
+    const { stdout, stderr } = await collectPsStreams();
+
+    expect(stdout.some((line) => line.includes('real-session'))).toBe(true);
+    expect(stdout.some((line) => line.includes('Orphaned isolation worktree'))).toBe(false);
+    expect(stderr).toContain(
+      'Isolation worktree directory overlaps the project root or repository git root.',
+    );
+    expect(existsSync(isolationTreesRoot())).toBe(false);
   });
 
   it('aliases lockfile-less interactive sessions', async () => {

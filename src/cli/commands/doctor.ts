@@ -17,12 +17,13 @@ import {
   type ArgVectorPreflightCheckInput,
 } from '../../engine/runners/arg-vector-preflight.js';
 import { collectCustomRunnerConsentChecks } from '../../engine/runners/consent-preflight.js';
+import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution.js';
 import { probeRunnerAvailability } from '../../engine/runners/probe-availability.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { cliError } from '../errors.js';
 import { writeHeadlessJsonRecord } from '../../engine/events/public-json.js';
 import { detectConfiguredCliReadiness } from './start/readiness.js';
-import type { DetectCliReadiness } from './start/types.js';
+import type { DetectCliReadiness } from './start/readiness.js';
 
 interface DoctorOpts {
   project?: string | undefined;
@@ -34,6 +35,7 @@ export interface DoctorDeps {
   detectCliReadiness?: DetectCliReadiness | undefined;
   runArgVectorHelp?: ArgVectorPreflightCheckInput['runHelp'] | undefined;
   probeRunnerAvailability?: typeof probeRunnerAvailability | undefined;
+  collectRunnerAdmissionChecks?: typeof collectRunnerAdmissionChecks | undefined;
 }
 
 const CLI_READINESS_CHECK_IDS: ReadonlySet<string> = new Set(
@@ -59,6 +61,7 @@ async function withPreparationPreflights(
   projectDir: string,
   interaction: 'interactive' | 'headless',
   runHelp: ArgVectorPreflightCheckInput['runHelp'],
+  collectAdmissionChecks: typeof collectRunnerAdmissionChecks = collectRunnerAdmissionChecks,
 ): Promise<ReadinessReport> {
   const config = collected.config;
   if (config === undefined) return collected.report;
@@ -73,12 +76,21 @@ async function withPreparationPreflights(
     projectDir,
     interaction,
   });
+  const admissionChecks =
+    interaction === 'headless'
+      ? await collectAdmissionChecks({
+          projectDir,
+          config,
+          interaction,
+        })
+      : [];
   const cliReadinessChecks = collected.report.sections
     .filter((section) => section.id === 'runners')
     .flatMap((section) => section.checks)
     .filter((check) => CLI_READINESS_CHECK_IDS.has(check.id));
   return applyRunnerPreparationChecks(collected.report, [
     ...cliReadinessChecks,
+    ...admissionChecks,
     ...argVectorChecks,
     ...consentChecks,
   ]);
@@ -87,7 +99,9 @@ async function withPreparationPreflights(
 export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): void {
   program
     .command('doctor')
-    .description('Check run readiness without creating a workflow session')
+    .description(
+      'Check run readiness without creating a workflow session (validation commands run only with --probe-validation)',
+    )
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--json', 'Emit readiness as JSON', false)
     .option(
@@ -113,6 +127,7 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
         projectDir,
         interaction,
         deps.runArgVectorHelp,
+        deps.collectRunnerAdmissionChecks,
       );
 
       if (opts.json) {

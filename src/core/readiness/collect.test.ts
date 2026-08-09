@@ -5,7 +5,14 @@ import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, detachHead, startConflictingMerge } from '#testing/helpers/git.js';
-import { LOCKFILE, sessionDir, STATE_FILE, SPLITBRIEF_DIR, CONFIG_FILE } from '../paths.js';
+import {
+  LOCKFILE,
+  sessionDir,
+  STATE_FILE,
+  SPLITBRIEF_DIR,
+  CONFIG_FILE,
+  TREES_DIR,
+} from '../paths.js';
 import { createInitialState } from '../state/machine.js';
 import { writeActive } from '../sessions/lifecycle.js';
 import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
@@ -125,6 +132,31 @@ describe('collectReadiness runner availability wiring', () => {
       summary: 'Provider availability was not probed.',
     });
   });
+
+  it('merges headless admission checks when interaction and probeRunnerAdmission are provided', async () => {
+    const { report } = await collectReadiness({
+      projectDir: tempDir,
+      config: makeConfig(),
+      interaction: 'headless',
+      probeRunnerAdmission: async () => [
+        {
+          id: 'runners.preparation.planner',
+          severity: 'blocker',
+          summary: 'Planner could not be admitted.',
+          fix: 'Pass --allow-unverified-auth to start anyway.',
+        },
+      ],
+    });
+
+    const checks = flattenReadinessChecks(report.sections);
+    expect(checks).toContainEqual(
+      expect.objectContaining({
+        id: 'runners.preparation.planner',
+        severity: 'blocker',
+        fix: 'Pass --allow-unverified-auth to start anyway.',
+      }),
+    );
+  });
 });
 
 describe('preparation readiness projection', () => {
@@ -195,6 +227,23 @@ describe('collectReadiness git posture', () => {
     );
     expect(inProgress?.severity).toBe('blocker');
     expect(report.status).toBe('blocked');
+  });
+
+  it('counts only the operator edits in the dirty worktree, not the isolation worktree or state dir', async () => {
+    createTestGitRepo(tempDir, { 'src/edited.ts': 'export const a = 1;\n' });
+    writeFileSync(join(tempDir, 'src', 'edited.ts'), 'export const a = 2;\n');
+    mkdirSync(join(tempDir, TREES_DIR, 'sess-1', 'src'), { recursive: true });
+    writeFileSync(join(tempDir, TREES_DIR, 'sess-1', 'src', 'edited.ts'), 'export const a = 3;\n');
+    mkdirSync(join(tempDir, SPLITBRIEF_DIR), { recursive: true });
+    writeFileSync(join(tempDir, SPLITBRIEF_DIR, CONFIG_FILE), 'version: 3\n');
+
+    const { report } = await collectReadiness({ projectDir: tempDir });
+
+    const dirty = flattenReadinessChecks(report.sections).find(
+      (check) => check.id === 'repo.dirty-worktree',
+    );
+    expect(dirty?.metadata).toEqual({ dirtyCount: 1, untrackedCount: 0 });
+    expect(dirty?.details).toEqual(['Examples: src/edited.ts']);
   });
 
   it('does not warn about git identity when it is configured and commits are enabled', async () => {

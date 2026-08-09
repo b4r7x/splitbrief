@@ -4,6 +4,7 @@ import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer } from '../../implementers/types.js';
+import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
 import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { WorkflowContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
@@ -36,12 +37,19 @@ export type EscalationContext = WorkflowContext & {
   dependsOnFiles: string[];
 };
 
+/** Machine outcome of the attempt that produced `lastError`, with the runner that made it. */
+export type RetryAttemptFailure = {
+  outcome: RunnerFailureOutcomeState;
+  runner: Config['implementer'];
+};
+
 export type RetryStepOutcome = {
   state: WorkflowState;
   task: Task;
   lastError: string;
   attempts: number;
   result?: RetryResult;
+  lastFailure?: RetryAttemptFailure | undefined;
 };
 
 export type SuccessMethod = Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
@@ -59,6 +67,15 @@ export type RetryInvokeArgs = {
   fileIgnoreProjectDir?: string | undefined;
   /** Baseline the acquired workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
+};
+
+export type RetryInvokeResult = {
+  success: boolean;
+  error?: string | undefined;
+  outcome?: RunnerFailureOutcomeState | undefined;
+  usage?: TokenDelta | null | undefined;
+  /** The runner config the invocation actually used; absent when it matches the step's config. */
+  runner?: Config['implementer'] | undefined;
 };
 
 export type TierStepInput = {
@@ -84,10 +101,6 @@ export type RetryStepOpts = {
   isolationRole?: IsolationRole | undefined;
   resultTool?: string | undefined;
   resultModel?: string | undefined;
-  invokeRetry: (args: RetryInvokeArgs) => Promise<{
-    success: boolean;
-    error?: string | undefined;
-    usage?: TokenDelta | null | undefined;
-  }>;
+  invokeRetry: (args: RetryInvokeArgs) => Promise<RetryInvokeResult>;
   onValidationAfterRetryFail?: ((validationError: string) => void) | undefined;
 };

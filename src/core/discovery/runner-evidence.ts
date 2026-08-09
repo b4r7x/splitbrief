@@ -200,7 +200,6 @@ export type StartAdmissionOptions = Readonly<{
   expectedSelectionId: string;
   requiredFacts: readonly StartFact[];
   interaction: 'interactive' | 'headless';
-  runnerTier: 'first-class' | 'compatibility';
   unverifiedAuth: 'denied' | 'disclosed' | 'allowed';
 }>;
 
@@ -303,17 +302,29 @@ export function admitStart(options: StartAdmissionOptions): StartAdmission {
   return { kind: 'admitted' };
 }
 
+/**
+ * `unknown` is the honest steady state for a session credential no cheap check
+ * can verify: a local status read or bridged-state presence proves a
+ * credential exists, never that the server still honours it — only a real call
+ * can. An interactive run therefore follows the `unverifiedAuth` policy for
+ * every runner ('disclosed' admits with the unverified fact carried in the
+ * readiness report; anything else surfaces it for review), while a headless
+ * run stays fail-closed unless unverified auth was explicitly allowed.
+ * Denying interactively — the old first-class-tier behaviour — punished the
+ * honesty: it turned "cannot verify without spending a call" into a runner
+ * that could never start.
+ */
 function admitAuthentication(options: StartAdmissionOptions): StartAdmission | null {
   const { auth } = options.evidence;
   if (auth === 'verified' || auth === 'not-required') return null;
   if (auth !== 'unknown') {
     return { kind: 'denied', reason: { kind: 'authentication', fact: auth } };
   }
-  if (options.interaction === 'headless' && options.unverifiedAuth === 'allowed') return null;
-  if (options.interaction === 'interactive' && options.runnerTier === 'compatibility') {
+  if (options.interaction === 'interactive') {
     if (options.unverifiedAuth === 'disclosed') return null;
     return { kind: 'disclosure-required', auth };
   }
+  if (options.unverifiedAuth === 'allowed') return null;
   return { kind: 'denied', reason: { kind: 'authentication-unverified' } };
 }
 

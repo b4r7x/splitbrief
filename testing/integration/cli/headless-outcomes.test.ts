@@ -12,6 +12,7 @@ import { createInitialState, transition } from '../../../src/core/state/machine.
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import { beginSession, writeActive } from '../../../src/core/sessions/lifecycle.js';
+import { listSessions } from '../../../src/core/sessions/io.js';
 import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrator/recovery/builders/task.js';
 import { processError } from '../../../src/lib/process/errors.js';
 import type { Implementer } from '../../../src/engine/implementers/types.js';
@@ -221,5 +222,92 @@ describe('runHeadless — failed session exits non-zero', () => {
         message: expect.stringContaining('status failed'),
       }),
     );
+  }, 20_000);
+});
+
+describe('runHeadless — a tiered approval refusal stops the run', () => {
+  let stdoutChunks: string[];
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stdoutChunks = [];
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+  });
+
+  afterEach(() => {
+    stderrSpy.mockRestore();
+    stdoutSpy.mockRestore();
+    vi.clearAllMocks();
+    for (const d of dirs) cleanupTempDir(d);
+    dirs = [];
+  });
+
+  it('headless session ending interrupted without user abort exits non-zero and emits a machine-readable record', async () => {
+    const projectDir = createHeadlessGitProject('headless-approval-stop');
+    dirs.push(projectDir);
+    writeMinimalHeadlessConfigYaml(projectDir);
+    const sessionId = 'sess-headless-approval-stop';
+    ensureSessionDir(projectDir, sessionId);
+    writeActive({ projectDir, sessionId });
+
+    // A manifest edit classifies as package_change, whose confirm tier a headless
+    // run has no way to answer: the task loop stops with the task untouched, no
+    // pendingRecovery is raised and the session status stays 'interrupted'.
+    const task = makeTask({ id: 'T001', action: 'modify', file: 'package.json' });
+    const state = {
+      ...createInitialState('bump the dependency'),
+      phase: 'implementing' as const,
+      tasks: [task],
+      plannerTool: 'claude-code',
+      implementerTool: 'ollama',
+    };
+    saveState({ projectDir, sessionId }, state);
+
+    await expect(
+      runHeadless({
+        prepared: preparedHeadlessExecution({
+          projectDir,
+          sessionId,
+          feature: 'bump the dependency',
+          resumeState: state,
+        }),
+        _planner: makePlanner(),
+        _implementer: makeImplementer(),
+      }),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringContaining('Workflow did not complete'),
+    });
+
+    const jsonLines = stdoutChunks
+      .join('')
+      .trim()
+      .split('\n')
+      .filter((line) => line.trim().startsWith('{'))
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            type?: string;
+            message?: string;
+            data?: { type?: string; tier?: string; reason?: string };
+          },
+      );
+    expect(jsonLines).toContainEqual(
+      expect.objectContaining({
+        type: 'event',
+        data: expect.objectContaining({ type: 'approval_rejected', reason: 'APPROVAL_REQUIRED' }),
+      }),
+    );
+    expect(jsonLines).toContainEqual(
+      expect.objectContaining({
+        type: 'error',
+        message: expect.stringContaining('status interrupted'),
+      }),
+    );
+    expect(listSessions(projectDir).find((s) => s.id === sessionId)?.status).toBe('interrupted');
   }, 20_000);
 });

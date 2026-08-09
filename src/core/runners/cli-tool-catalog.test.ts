@@ -115,6 +115,34 @@ describe('CLI tool catalog', () => {
     expect(NATIVE_CLI_CATALOG_TOOL_IDS).toEqual(['codex', 'opencode', 'aider', 'kilo-code']);
   });
 
+  it('describes planner tier-2 write authority without changing ordinary planning posture', () => {
+    const tier2AutoAllowFlags = {
+      'claude-code': [],
+      codex: ['--sandbox workspace-write'],
+      opencode: [],
+      aider: ['--yes-always'],
+      copilot: ['--allow-all', '--no-ask-user'],
+      'kilo-code': ['--auto'],
+    } as const;
+
+    for (const id of EXISTING_CLI_TOOL_IDS) {
+      const trust = CLI_TOOL_TRUST[id];
+      const descriptor = CLI_TOOL_CATALOG[id];
+
+      expect(trust.planner).toMatchObject({
+        mayWriteFilesDirectly: false,
+        autoAllowFlags: [],
+      });
+      expect(descriptor.directWrite.planner).toBe(false);
+      expect(descriptor.automaticApproval.planner).toBe(false);
+      expect(trust.plannerTier2FullEscalation).toEqual({
+        mayWriteFilesDirectly: true,
+        autoAllowFlags: tier2AutoAllowFlags[id],
+      });
+      expect(descriptor.plannerTier2FullEscalation).toBe(trust.plannerTier2FullEscalation);
+    }
+  });
+
   it.each([
     ['0.40.0', 'compatible'],
     ['0.40.7', 'compatible'],
@@ -200,6 +228,9 @@ describe('CLI tool catalog', () => {
     expect(Reflect.set(CLI_TOOL_TRUST.codex.implementer.autoAllowFlags, 0, '--changed')).toBe(
       false,
     );
+    expect(
+      Reflect.set(CLI_TOOL_TRUST.codex.plannerTier2FullEscalation.autoAllowFlags, 0, '--changed'),
+    ).toBe(false);
 
     expect(CLI_TOOL_CATALOG.codex.displayName).toBe('OpenAI Codex CLI');
     expect(CLI_TOOL_CATALOG.codex.roles).toEqual(['planner', 'implementer']);
@@ -209,6 +240,9 @@ describe('CLI tool catalog', () => {
     expect(CLI_TOOL_CATALOG.codex.compatibility.minimumAdmittedVersion).toBe('0.40.0');
     expect(CLI_TOOL_CATALOG.codex.compatibility.evidence.asOf).not.toBe('1900-01-01');
     expect(CLI_TOOL_TRUST.codex.implementer.autoAllowFlags).toEqual(['--sandbox workspace-write']);
+    expect(CLI_TOOL_TRUST.codex.plannerTier2FullEscalation.autoAllowFlags).toEqual([
+      '--sandbox workspace-write',
+    ]);
   });
 
   it('enforces required, optional, backend-default, and auto-only model policies', () => {

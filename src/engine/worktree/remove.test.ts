@@ -142,6 +142,30 @@ describe('removeWorktree', () => {
     expect(existsSync(wtPath)).toBe(false);
   });
 
+  it('removeWorktree with a publisher routes warnings through it and writes nothing to stderr', async () => {
+    await createWorktree({ projectDir: repoDir, slug: 'feat-pub', git });
+    const wtPath = join(repoDir, TREES_DIR, 'feat-pub');
+    await writeFile(join(wtPath, 'dirty.txt'), 'uncommitted change');
+
+    const stderrSpy = vi.spyOn(process.stderr, 'write');
+    const warningPublisher = vi.fn();
+
+    await removeWorktree({
+      projectDir: repoDir,
+      slug: 'feat-pub',
+      git,
+      force: true,
+      warningPublisher,
+    });
+
+    expect(stderrSpy.mock.calls).toHaveLength(0);
+    expect(warningPublisher).toHaveBeenCalledOnce();
+    expect(String(warningPublisher.mock.calls[0]?.[0])).toContain('1 uncommitted file(s)');
+    expect(existsSync(wtPath)).toBe(false);
+
+    stderrSpy.mockRestore();
+  });
+
   it('proceeds with force=true and logs both bypassed guards to stderr', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-k', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-k');

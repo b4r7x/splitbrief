@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildTargetedRejectionComment } from './regen-targeted.js';
+import { buildBriefQualityRepairComment, buildTargetedRejectionComment } from './regen-targeted.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 
 describe('buildTargetedRejectionComment', () => {
@@ -33,5 +33,19 @@ describe('buildTargetedRejectionComment', () => {
     expect(comment).toContain('- T003: "Split broad task" (src/broad.ts)');
     expect(comment).toContain('User reason: too broad for one worker');
     expect(comment).toContain('Keep every other task unchanged');
+  });
+});
+
+describe('buildBriefQualityRepairComment', () => {
+  it('lists every blocking issue and demands per-brief tests even when another brief owns the test file', () => {
+    const comment = buildBriefQualityRepairComment([
+      'Task T001 has no tests',
+      'Task T003 has no tests',
+    ]);
+
+    expect(comment).toContain('- Task T001 has no tests');
+    expect(comment).toContain('- Task T003 has no tests');
+    expect(comment).toContain('even when a different brief owns the test file');
+    expect(comment).toContain('Keep the feature scope, the brief ids, and the dependency links');
   });
 });

@@ -4,6 +4,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { checkRunnerArgVector, collectArgVectorPreflightChecks } from './arg-vector-preflight.js';
+import { buildClaudeArgs } from './claude/invoke.js';
 
 const CLI_HELP_FIXTURES = join(import.meta.dirname, '../../../testing/fixtures/cli-help');
 
@@ -282,7 +283,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.claude-code.arg-vector.planner',
       severity: 'blocker',
-      metadata: { unsupported: ['--effort', '--session-id'] },
+      metadata: { unsupported: ['--effort', '--resume'] },
     });
   });
 
@@ -290,7 +291,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     const checks = await plannerChecksWithEffort(
       claudeHelp(
         '  --effort <level>               Effort level for the session',
-        '  --session-id <uuid>            Use a specific session ID',
+        '  -r, --resume [sessionId]       Resume a conversation by session ID',
       ),
     );
 
@@ -303,6 +304,46 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     expect(checks[0]?.details).toContain(
       'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high',
     );
+  });
+
+  it('preflight claude-code planner argv matches the run builder output', async () => {
+    const configuredArgs = ['--add-dir', '/srv/shared-context'];
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'sonnet',
+          effort: 'high',
+          args: configuredArgs,
+        },
+      }),
+      projectDir: '/project',
+      includeImplementers: false,
+      runHelp: async () =>
+        claudeHelp(
+          '  --effort <level>               Effort level for the session',
+          '  -r, --resume [sessionId]       Resume a conversation by session ID',
+          '  --add-dir <dir>                Additional directory to expose',
+        ),
+    });
+
+    const runArgv = buildClaudeArgs({
+      projectDir: '/project',
+      mode: 'plan',
+      model: 'sonnet',
+      effort: 'high',
+      configuredArgs,
+    });
+
+    expect(checks[0]).toMatchObject({
+      id: 'runners.cli.claude-code.arg-vector.planner',
+      severity: 'ok',
+    });
+    expect(checks[0]?.details).toContain(`Emitted argv: ${runArgv.join(' ')}`);
+    for (const detail of checks[0]?.details ?? []) {
+      expect(detail.endsWith(' --add-dir /srv/shared-context')).toBe(true);
+    }
   });
 });
 

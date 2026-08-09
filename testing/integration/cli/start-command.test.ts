@@ -40,7 +40,7 @@ describe('start command — concurrency guard', () => {
     expect(readFileSync(activePath, 'utf-8').trim()).toBe('2026-04-18-live');
   });
 
-  it('clears an exited active marker before starting interactive setup', async () => {
+  it('starts interactive setup past an exited session and preserves its active marker', async () => {
     const tmp = getStartCommandTmp();
     const sessionId = '2026-04-18-exited';
     writeLiveSession(tmp, sessionId);
@@ -49,7 +49,9 @@ describe('start command — concurrency guard', () => {
     await runStart(['--project', tmp, 'another feature']);
 
     expect(routerStore.get()).toMatchObject({ screen: 'setup', feature: 'another feature' });
-    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
+    const activePath = join(tmp, SPLITBRIEF_DIR, 'active');
+    expect(existsSync(activePath)).toBe(true);
+    expect(readFileSync(activePath, 'utf-8').trim()).toBe(sessionId);
   });
 });
 

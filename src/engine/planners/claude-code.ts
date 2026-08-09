@@ -5,6 +5,7 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
+import { readCliPhaseOutput } from './cli.js';
 import { createCommandAvailability } from '../availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude/invoke.js';
@@ -34,11 +35,13 @@ export function createClaudeCodePlanner(opts: {
   model?: string | undefined;
   initialSessionId?: string | null | undefined;
   effort?: EffortLevel | undefined;
+  args?: readonly string[] | undefined;
   timeout?: number | undefined;
   idleWarnMs?: number | undefined;
   idleKillMs?: number | undefined;
 }): Planner {
-  const { trustedCli, model, initialSessionId, effort, timeout, idleWarnMs, idleKillMs } = opts;
+  const { trustedCli, model, initialSessionId, effort, args, timeout, idleWarnMs, idleKillMs } =
+    opts;
   // The resolved channel — not the configured one — decides which credential the
   // child receives, so the stream invocations must see the same identity the
   // sandbox environment was built from.
@@ -90,6 +93,7 @@ export function createClaudeCodePlanner(opts: {
             env,
             ...(trustedCli !== undefined && { executable: trustedCli.executable }),
             ...(effort !== undefined && { effort }),
+            configuredArgs: args,
             ...(images && images.length > 0 ? { images } : {}),
             ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
             ...(idleWarnMs !== undefined && { idleWarnMs }),
@@ -146,6 +150,7 @@ export function createClaudeCodePlanner(opts: {
         model: resolvedModel,
         ...(trustedCli !== undefined && { executable: trustedCli.executable }),
         ...(effort !== undefined && { effort }),
+        configuredArgs: args,
         ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
         env,
         ...(idleWarnMs !== undefined && { idleWarnMs }),
@@ -156,6 +161,9 @@ export function createClaudeCodePlanner(opts: {
     ...createCommandAvailability('claude'),
     runnerName: 'claude',
     ...(resolvedModel !== undefined && { model: resolvedModel }),
+    // Claude Code is an agentic CLI: it often writes the phase artifact to disk
+    // and only describes it on stdout, so phase reads share the CLI recovery chain.
+    readPhaseOutput: readCliPhaseOutput,
 
     async injectUserTurn(injection): Promise<TokenDelta | null> {
       const sessionId = session.getResumeId();
@@ -180,6 +188,7 @@ export function createClaudeCodePlanner(opts: {
           model: resolvedModel,
           ...(trustedCli !== undefined && { executable: trustedCli.executable }),
           ...(effort !== undefined && { effort }),
+          configuredArgs: args,
           ...(effectiveSignal !== undefined && { signal: effectiveSignal }),
           ...(idleWarnMs !== undefined && { idleWarnMs }),
           ...(idleKillMs !== undefined && { idleKillMs }),

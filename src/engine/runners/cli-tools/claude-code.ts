@@ -60,7 +60,10 @@ function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
 
 function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
   const args = buildBaseArgs(opts);
-  if (opts.sessionId !== null) args.push('--session-id', opts.sessionId);
+  // A non-null sessionId is a handle Claude already minted, so continue that
+  // conversation with --resume; --session-id names a NEW session and exits 1
+  // ("Session ID <uuid> is already in use.") when given a consumed id.
+  if (opts.sessionId !== null) args.push('--resume', opts.sessionId);
   return args;
 }
 
@@ -88,7 +91,12 @@ function toProtocolEvents(line: string): readonly CliProtocolEvent[] {
     events.push({ type: 'session', nativeSessionId: parsed.sessionId });
   }
   if (parsed.text !== undefined && !parsed.isResult && parsed.text.length > 0) {
-    events.push({ type: 'text', channel: parsed.channel ?? 'assistant', text: parsed.text });
+    events.push({
+      type: 'text',
+      channel: parsed.channel ?? 'assistant',
+      text: parsed.text,
+      ...(parsed.textSemantics !== undefined && { semantics: parsed.textSemantics }),
+    });
   }
   if (parsed.usage !== undefined) {
     events.push({

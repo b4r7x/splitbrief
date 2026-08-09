@@ -52,7 +52,8 @@ export function taskStartedRowBlock(input: {
       segments.push(segment);
       pos = regionEnd;
     }
-    rows.push(segmentedRow(`${input.keyPrefix}-${lineIndex}`, segments, 'task-header'));
+    const row = segmentedRow(`${input.keyPrefix}-${lineIndex}`, segments, 'task-header');
+    rows.push(lineIndex === 0 ? row : { ...row, headerContinuation: true });
     offset = lineEnd;
   }
 

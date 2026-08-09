@@ -12,7 +12,7 @@ import { TASKS_FILE, sessionDir } from '../../../core/paths.js';
 import { readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
 import { topoSort } from '../../../core/state/topo-sort.js';
 import { labelError } from '../../../utils/format-errors.js';
-import { firstBriefErrorMessage } from '../../spec/brief-quality.js';
+import { briefErrorMessages, firstBriefErrorMessage } from '../../spec/brief-quality.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { BriefQualityReport } from '../../spec/brief-quality.js';
 import { runBriefQualityGate } from './brief-quality-gate.js';
@@ -26,7 +26,7 @@ import {
   recordReadinessOverride,
 } from './brief-review-gate.js';
 import { regenerateTasks } from './regen.js';
-import { buildTargetedRejectionComment } from './regen-targeted.js';
+import { buildBriefQualityRepairComment, buildTargetedRejectionComment } from './regen-targeted.js';
 import { readPersistedTasks, readTasksForApproval } from './io.js';
 import type { BriefsApprovalLoopOptions, BriefsApprovalLoopResult } from './types.js';
 import { commitQueueMessagesDrained, readQueueForPrompt } from '../queue/drain.js';
@@ -38,6 +38,62 @@ function publishBriefQualityFailure(bus: EventBus, phase: Phase, report: BriefQu
     phase: phase,
     message: `Task Brief quality gate failed: ${firstBriefErrorMessage(report)}`,
   });
+}
+
+type BriefQualityRepairContext = Pick<
+  BriefsApprovalLoopOptions,
+  'planner' | 'projectDir' | 'sessionId' | 'callbacks' | 'bus' | 'metadata' | 'signal' | 'sinks'
+>;
+
+// A quality error is the planner's defect, not the reviewer's, so the planner
+// gets one round to repair it. The gate is deterministic over unchanged briefs,
+// so without a new planner reply no further approval can change the verdict —
+// an auto-approving transport would otherwise re-approve rejected briefs until
+// the no-progress cap, having never had a way to make progress.
+async function regenerateForBriefQuality(input: {
+  ctx: BriefQualityRepairContext;
+  state: WorkflowState;
+  report: BriefQualityReport;
+}): Promise<{ state: WorkflowState; tasks: Task[] }> {
+  const { ctx, report } = input;
+  const { projectDir, sessionId, bus } = ctx;
+  const summary = 'regenerating Task Briefs to clear the brief quality gate';
+
+  createBusTextHandler({ bus, phase: input.state.phase })(`\n[${summary}]\n`);
+
+  const regen = await regenerateTasks({
+    projectDir,
+    sessionId,
+    planner: ctx.planner,
+    callbacks: ctx.callbacks,
+    bus,
+    state: input.state,
+    metadata: ctx.metadata,
+    signal: ctx.signal,
+    feedback: buildBriefQualityRepairComment(briefErrorMessages(report)),
+    statusPhase: 'planning',
+    statusSummary: summary,
+    sinks: ctx.sinks,
+  });
+
+  const regenerated = runBriefQualityGate({
+    tasks: regen.tasks,
+    projectDir,
+    sessionId,
+    bus,
+    phase: regen.state.phase,
+  });
+  if (!regenerated.ok) {
+    createBusTextHandler({ bus, phase: regen.state.phase })(
+      `\n[Brief quality gate still failing after regeneration: ${firstBriefErrorMessage(regenerated.report)}]\n`,
+    );
+  }
+
+  const state = transitionAndSave({ projectDir, sessionId }, regen.state, {
+    type: 'BRIEFS_READY',
+    tasks: regen.tasks,
+  });
+  return { state, tasks: regen.tasks };
 }
 
 export async function runBriefsApprovalLoop(
@@ -94,8 +150,22 @@ export async function runBriefsApprovalLoop(
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'BRIEFS_READY', tasks });
 
   const tracker = createBriefReviewTracker();
+  let qualityRepairSpent = false;
 
   const briefsBody = (): string => readSpecFile({ projectDir, sessionId }, TASKS_FILE) ?? '';
+
+  const rejectBriefQuality = (report: BriefQualityReport): BriefsApprovalLoopResult => {
+    publishError({
+      bus: bus,
+      phase: state.phase,
+      message: `Task Brief quality gate still fails after a planner regeneration: ${briefErrorMessages(report).join('; ')}; rejecting the Task Briefs.`,
+      safety: { category: 'workflow', code: 'brief_quality_rejected', transcriptSafe: true },
+    });
+    const rejectedState = transitionAndSave({ projectDir, sessionId }, state, {
+      type: 'REJECT_BRIEFS',
+    });
+    return { state: rejectedState, tasks, rejected: true };
+  };
 
   const rejectNoProgress = (): BriefsApprovalLoopResult => {
     publishError({
@@ -238,17 +308,11 @@ export async function runBriefsApprovalLoop(
       });
       if (!ok) {
         publishBriefQualityFailure(bus, state.phase, report);
-        if (
-          tracker.registerFailure(
-            briefReviewFingerprint(
-              approved.tasks,
-              briefsBody(),
-              `quality:${firstBriefErrorMessage(report)}`,
-            ),
-          )
-        ) {
-          return rejectNoProgress();
-        }
+        if (qualityRepairSpent) return rejectBriefQuality(report);
+        qualityRepairSpent = true;
+        const repaired = await regenerateForBriefQuality({ ctx: opts, state, report });
+        state = repaired.state;
+        tasks = repaired.tasks;
         continue;
       }
       const readiness = await runBriefReadinessGateAndReport({

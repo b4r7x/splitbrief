@@ -15,20 +15,40 @@ function placeholderConflict(value: string): boolean {
   );
 }
 
-function protectedFlag(value: string, protectedFlags: ReadonlySet<string>): string | null {
+function protectedFlag(input: {
+  value: string;
+  protectedFlags: ReadonlySet<string>;
+  protectedShortValueFlags: ReadonlySet<string>;
+}): string | null {
+  const { value, protectedFlags, protectedShortValueFlags } = input;
   if (protectedFlags.has(value)) return value;
   if (!value.startsWith('-')) return null;
   const flag = value.split('=', 1)[0] ?? value;
-  return protectedFlags.has(flag) ? flag : null;
+  if (protectedFlags.has(flag)) return flag;
+  if (value.startsWith('--')) return null;
+  for (const shortFlag of protectedShortValueFlags) {
+    if (
+      shortFlag.length === 2 &&
+      shortFlag.startsWith('-') &&
+      protectedFlags.has(shortFlag) &&
+      value.length > shortFlag.length &&
+      value.startsWith(shortFlag)
+    ) {
+      return shortFlag;
+    }
+  }
+  return null;
 }
 
 export function validateCliArgs(input: {
   readonly invocationArgs: readonly string[];
   readonly baseArgs: readonly string[];
   readonly protectedFlags: ReadonlySet<string>;
+  readonly protectedShortValueFlags?: ReadonlySet<string> | undefined;
   readonly promptTransport: 'argv' | 'stdin';
 }): CliArgumentValidation {
   const { invocationArgs, baseArgs, protectedFlags, promptTransport } = input;
+  const protectedShortValueFlags = input.protectedShortValueFlags ?? new Set<string>();
   const conflicts: string[] = [];
 
   const orderConflict =
@@ -49,7 +69,7 @@ export function validateCliArgs(input: {
   // The configured tail is only identifiable when the adapter-owned prefix is intact.
   if (!orderConflict) {
     for (const arg of invocationArgs.slice(baseArgs.length)) {
-      const flag = protectedFlag(arg, protectedFlags);
+      const flag = protectedFlag({ value: arg, protectedFlags, protectedShortValueFlags });
       if (flag !== null) conflicts.push(flag);
     }
   }

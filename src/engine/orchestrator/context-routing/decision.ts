@@ -5,6 +5,7 @@ import type {
 import type { Task } from '../../../core/schemas/task.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import { scopePathPatterns } from '../../../utils/path-patterns.js';
+import { taskScopePatterns } from '../task-scope.js';
 import type { ProfileFit } from './types.js';
 
 function normalizeScopePattern(pattern: string): string {
@@ -12,10 +13,7 @@ function normalizeScopePattern(pattern: string): string {
 }
 
 export function requiredWriteModeForTask(task: Task): ImplementerWriteMode {
-  const scopedWritePatterns = [
-    ...(task.scope?.inBounds ?? []),
-    ...(task.scope?.approvedOutOfBounds ?? []),
-  ];
+  const scopedWritePatterns = taskScopePatterns(task);
 
   const namedScopePaths = scopedWritePatterns.flatMap(scopePathPatterns);
   const hasAdditionalPathScope = namedScopePaths.some(

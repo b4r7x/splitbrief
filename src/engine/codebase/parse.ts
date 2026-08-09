@@ -74,16 +74,23 @@ export function kindForNodeType(type: string): SymbolKind {
   }
 }
 
-function extractName(declNode: Node): string | null {
+function extractNames(declNode: Node): string[] {
   if (declNode.type === 'lexical_declaration') {
     const declarator = declNode.namedChildren.find((c: Node) => c.type === 'variable_declarator');
-    if (!declarator) return null;
+    if (!declarator) return [];
     const nameNode = declarator.childForFieldName('name');
-    return nameNode?.text ?? null;
+    return nameNode?.text ? [nameNode.text] : [];
+  }
+
+  if (declNode.type === 'type_declaration') {
+    return declNode.namedChildren
+      .filter((child: Node) => child.type === 'type_spec' || child.type === 'type_alias')
+      .map((spec) => spec.childForFieldName('name')?.text)
+      .filter((name): name is string => name !== undefined && name.length > 0);
   }
 
   const nameNode = declNode.childForFieldName('name');
-  return nameNode?.text ?? null;
+  return nameNode?.text ? [nameNode.text] : [];
 }
 
 function extractSignature(declNode: Node, opts: { exported: boolean }): string {
@@ -122,24 +129,25 @@ function extractSymbols(tree: Tree, lang: LanguageConfig): SymbolRef[] {
       const declNode = child.namedChildren.find((c: Node) => lang.declarationNodeTypes.has(c.type));
       if (!declNode) continue;
 
-      const name = extractName(declNode);
-      if (!name) continue;
-
       const kind = kindForNodeType(declNode.type);
       const signature = extractSignature(declNode, { exported: true });
       const line = declNode.startPosition.row + 1;
-
-      symbols.push({ name, kind, signature, exported: true, line });
+      for (const name of extractNames(declNode)) {
+        symbols.push({ name, kind, signature, exported: true, line });
+      }
     } else if (lang.declarationNodeTypes.has(child.type)) {
-      const name = extractName(child);
-      if (!name) continue;
-
-      const exported = lang.isExported ? lang.isExported(name, child.text) : false;
       const kind = kindForNodeType(child.type);
-      const signature = extractSignature(child, { exported });
       const line = child.startPosition.row + 1;
-
-      symbols.push({ name, kind, signature, exported, line });
+      for (const name of extractNames(child)) {
+        const exported = lang.isExported ? lang.isExported(name, child.text) : false;
+        symbols.push({
+          name,
+          kind,
+          signature: extractSignature(child, { exported }),
+          exported,
+          line,
+        });
+      }
     }
   }
 

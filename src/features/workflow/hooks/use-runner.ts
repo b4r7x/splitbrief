@@ -32,6 +32,7 @@ import {
   setCancelHandler,
   setClearQueueHandler,
   setQueueHandler,
+  setResumeHandler,
   setRewindHandler,
   clearAllHandlers,
   consumeBoundaryInterrupt,
@@ -342,6 +343,14 @@ export function useWorkflowRunner({
     setInlineResume({ prepared, state: next });
     setRunId((id) => id + 1);
   };
+
+  const resumeWorkflow = useEffectEvent(() => handleResume());
+
+  useEffect(() => {
+    if (prepared === undefined) return undefined;
+    setResumeHandler(() => resumeWorkflow());
+    return () => setResumeHandler(null);
+  }, [prepared, runId]);
 
   return { startedAt, sessionId: prepared?.session.ref.sessionId, handleResume };
 }

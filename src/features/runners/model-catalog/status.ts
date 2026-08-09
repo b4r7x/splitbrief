@@ -1,18 +1,12 @@
 import type { CliToolDetection, ProviderDetection } from '../../../core/discovery/detection.js';
+import type { CliReadinessState } from '../../../core/discovery/detection.js';
 import type { ApiProviderDescriptor } from '../../../core/providers/api-provider-catalog.js';
 import { hasApiKey } from '../../../core/providers/catalog.js';
 import type { CliToolDescriptor } from '../../../core/runners/cli-tool-catalog.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 
-export type PickerStatusState =
-  | 'ready'
-  | 'unavailable'
-  | 'untrusted'
-  | 'unauthenticated'
-  | 'incompatible'
-  | 'unverified'
-  | 'disabled';
+export type PickerStatusState = CliReadinessState;
 
 export type PickerOptionStatus =
   | {

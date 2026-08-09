@@ -26,10 +26,8 @@ import {
   lookupCliPlannerAdapter,
 } from '../../../src/engine/runners/cli-tools/registry.js';
 import { probeCliReadiness } from '../../../src/engine/runners/cli-tools/readiness-probe.js';
-import {
-  invokeCliAdapter,
-  CLI_PROMPT_PLACEHOLDER,
-} from '../../../src/engine/runners/invoke-cli-adapter.js';
+import { invokeCliAdapter } from '../../../src/engine/runners/invoke-cli-adapter.js';
+import { CLI_PROMPT_SENTINEL } from '../../../src/engine/runners/cli-tools/candidate-contract.js';
 import { resolveCliExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
 import type { CliStartGate } from '../../../src/engine/runners/start-gate.js';
 import { processError } from '../../../src/lib/process/errors.js';
@@ -374,7 +372,11 @@ function readCapturedPrompt(fixture: Fixture): string {
   return parts.join('\n');
 }
 
-function callResult(status: RunnerCallStatus, code = 'provider-error'): RunnerCallResult {
+function callResult(
+  status: RunnerCallStatus,
+  code = 'provider-error',
+  message = 'provider failed',
+): RunnerCallResult {
   const common = {
     callId: 'call-1',
     role: 'implementer' as const,
@@ -393,7 +395,7 @@ function callResult(status: RunnerCallStatus, code = 'provider-error'): RunnerCa
   if (status === 'completed') {
     return { ...common, status, error: null, partial: false };
   }
-  return { ...common, status, error: { code, message: 'provider failed' }, partial: true };
+  return { ...common, status, error: { code, message }, partial: true };
 }
 
 function outcomeFromResult(result: RunnerCallResult) {
@@ -450,7 +452,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_PLACEHOLDER,
+            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -483,7 +485,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_PLACEHOLDER,
+            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -550,7 +552,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
           fingerprint: { dev: 0, ino: 0, size: 0, mtimeMs: 0 },
         },
         args: CLI_IMPLEMENTER_ADAPTERS[toolId].buildArgs({
-          prompt: CLI_PROMPT_PLACEHOLDER,
+          prompt: CLI_PROMPT_SENTINEL,
           model: undefined,
           projectDir: fixture.projectDir,
           configuredArgs: [],
@@ -663,7 +665,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_PLACEHOLDER,
+            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -692,7 +694,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_PLACEHOLDER,
+            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -722,7 +724,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_PLACEHOLDER,
+            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -770,7 +772,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
         invocation: {
           executable: fixture.trustedGate.executable,
           args: adapter.buildArgs({
-            prompt: CLI_PROMPT_PLACEHOLDER,
+            prompt: CLI_PROMPT_SENTINEL,
             model: undefined,
             projectDir: fixture.projectDir,
             configuredArgs: [],
@@ -818,6 +820,7 @@ describe('T-017 stable CLI outcome taxonomy', () => {
       'spawn-not-found',
       'incompatible-version',
       'unauthenticated',
+      'usage-limit',
       'timeout',
       'user-abort',
       'signal-exit',
@@ -834,5 +837,17 @@ describe('T-017 stable CLI outcome taxonomy', () => {
   it('maps unsupported_tool to platform-limitation', () => {
     const result = callResult('unsupported_tool', 'unsupported-tool');
     expect(runnerCallOutcome(result).state).toBe('platform-limitation');
+  });
+
+  it('maps usage-limit codes and limit turn diagnostics to usage-limit', () => {
+    expect(runnerCallOutcome(callResult('failed', 'usage-limit')).state).toBe('usage-limit');
+    // The live codex limit failure arrives as an ordinary turn failure whose
+    // message is the only signal; it must classify as usage-limit, not auth.
+    const limitTurn = callResult(
+      'failed',
+      'codex-turn-failed',
+      "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.",
+    );
+    expect(runnerCallOutcome(limitTurn).state).toBe('usage-limit');
   });
 });

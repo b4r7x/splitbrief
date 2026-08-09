@@ -19,6 +19,7 @@ import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
 import { planningError } from './errors.js';
 import { MAX_CLARIFICATION_QUESTIONS, mergePlannerAttempts } from './call-loop.js';
+import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 
 export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -91,11 +92,14 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   let planResult: PlanResult;
   try {
     const instantFn = planner.instantPlan ?? planner.quickPlan ?? planner.plan;
-    const runSingleCall = async (): Promise<PlanResult> => {
+    const runSingleCall = async (
+      callFeature: string,
+      callCallbacks: PlannerCallbacks,
+    ): Promise<PlanResult> => {
       const result = await instantFn.call(planner, {
-        feature,
+        feature: callFeature,
         projectDir,
-        callbacks: plannerCallbacks,
+        callbacks: callCallbacks,
         codebaseContext: opts.codebaseContext,
       });
       buffer.flush();
@@ -103,9 +107,19 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
       if (rest.length > 0) textHandler(rest);
       return result;
     };
-    planResult = await runSingleCall();
+    const parseDiagnostics: string[] = [];
+    planResult = await runSingleCall(feature, {
+      ...plannerCallbacks,
+      onWarning: (message) => {
+        parseDiagnostics.push(message);
+        plannerCallbacks.onWarning?.(message);
+      },
+    });
     if (planResult.tasks.length === 0) {
-      planResult = mergePlannerAttempts(planResult, await runSingleCall());
+      planResult = mergePlannerAttempts(
+        planResult,
+        await runSingleCall(zeroTaskRetryPrompt(feature, parseDiagnostics), plannerCallbacks),
+      );
     }
   } catch (err) {
     buffer.flush();

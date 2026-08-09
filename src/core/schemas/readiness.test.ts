@@ -103,11 +103,13 @@ describe('CLI runner readiness', () => {
   });
 
   it('remediates unknown authentication without pointing at the tested version', () => {
+    // The copy must not promise that re-running a cheap check can verify a
+    // session: a local status read proves presence, never validity.
     expect(deriveCliReadiness(readyFacts({ auth: 'unknown' })).remediation).toBe(
-      'Verify codex authentication in the staged runner environment, then run runner readiness again.',
+      'codex authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real codex call settles it; if that call fails to authenticate, sign in to codex again.',
     );
     expect(deriveCliReadiness(readyFacts({ auth: 'not-checked' })).remediation).toBe(
-      'Verify codex authentication in the staged runner environment, then run runner readiness again.',
+      'codex authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real codex call settles it; if that call fails to authenticate, sign in to codex again.',
     );
     expect(deriveCliReadiness(readyFacts({ compatibility: 'unverified' })).remediation).toBe(
       'Verify codex against tested version 0.40.0, then run runner readiness again.',

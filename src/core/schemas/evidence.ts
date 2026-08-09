@@ -33,6 +33,10 @@ export const EvidenceValidationStageSchema = ValidationStageSchema;
 const EvidenceValidationEntrySchema = z.object({
   stage: EvidenceValidationStageSchema,
   passed: z.boolean(),
+  /** The exact command the orchestrator ran for this stage. */
+  command: z.string().optional(),
+  /** Recorded command output (already redacted and truncated at capture). */
+  output: z.string().optional(),
   errorSummary: z.string().optional(),
   retryState: z.enum(['initial-failure', 'retry', 'escalated', 'failed']).optional(),
   changedFiles: z.array(z.string()).optional(),

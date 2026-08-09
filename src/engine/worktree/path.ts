@@ -1,9 +1,17 @@
-import { existsSync } from 'node:fs';
-import { join, sep } from 'node:path';
-import { TREES_DIR, worktreePath } from '../../core/paths.js';
+import { existsSync, realpathSync } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
+import {
+  isolationTreesRoot,
+  isolationWorktreePath,
+  isolationWorktreeRoot,
+  TREES_DIR,
+  worktreePath,
+} from '../../core/paths.js';
 import {
   assertExistingPathConfined,
   assertWritablePathConfined,
+  isInsideRoot,
+  nearestExistingAncestor,
   pathConfinementError,
 } from '../../lib/path-confinement.js';
 import { worktreeError } from './errors.js';
@@ -58,6 +66,73 @@ export function assertTreesDirReadable(projectDir: string): void {
     assertExistingPathConfined(TREES_DIR, projectDir);
   } catch (err) {
     if (isTreesPathEscape(err)) throw worktreeError.treesPathEscape();
+    throw err;
+  }
+}
+
+function assertIsolationPathsExternal(opts: {
+  projectDir: string;
+  gitCommonDir: string;
+  candidates: readonly string[];
+}): void {
+  const forbiddenRoots = [opts.projectDir, opts.gitCommonDir];
+  for (const candidate of opts.candidates) {
+    const lexicalCandidate = resolve(candidate);
+    if (forbiddenRoots.some((root) => isInsideRoot(resolve(root), lexicalCandidate))) {
+      throw worktreeError.isolationPathOverlap();
+    }
+  }
+  const canonicalForbiddenRoots = forbiddenRoots.map((root) => realpathSync(root));
+  for (const candidate of opts.candidates) {
+    const canonicalCandidate = nearestExistingAncestor(candidate);
+    if (canonicalForbiddenRoots.some((root) => isInsideRoot(root, canonicalCandidate))) {
+      throw worktreeError.isolationPathOverlap();
+    }
+  }
+}
+
+export function resolveConfinedIsolationWorktreePath(opts: {
+  projectDir: string;
+  gitCommonDir: string;
+  slug: string;
+}): string {
+  const { projectDir, gitCommonDir, slug } = opts;
+  validateWorktreeName(slug);
+  const treesRoot = isolationTreesRoot();
+  const repositoryRoot = isolationWorktreeRoot(gitCommonDir);
+  const worktree = isolationWorktreePath(gitCommonDir, slug);
+  assertIsolationPathsExternal({
+    projectDir,
+    gitCommonDir,
+    candidates: [treesRoot, repositoryRoot, worktree],
+  });
+  try {
+    assertWritablePathConfined(relative(treesRoot, repositoryRoot), treesRoot);
+    assertWritablePathConfined(relative(treesRoot, worktree), treesRoot);
+  } catch (err) {
+    if (isTreesPathEscape(err)) throw worktreeError.isolationPathEscape();
+    throw err;
+  }
+  return worktree;
+}
+
+export function assertIsolationDirReadable(opts: {
+  projectDir: string;
+  gitCommonDir: string;
+}): void {
+  const { projectDir, gitCommonDir } = opts;
+  const treesRoot = isolationTreesRoot();
+  const repositoryRoot = isolationWorktreeRoot(gitCommonDir);
+  assertIsolationPathsExternal({
+    projectDir,
+    gitCommonDir,
+    candidates: [treesRoot, repositoryRoot],
+  });
+  if (!existsSync(repositoryRoot)) return;
+  try {
+    assertExistingPathConfined(relative(treesRoot, repositoryRoot), treesRoot);
+  } catch (err) {
+    if (isTreesPathEscape(err)) throw worktreeError.isolationPathEscape();
     throw err;
   }
 }

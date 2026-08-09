@@ -75,7 +75,7 @@ import {
   type CliProbeCommand,
   type CliProbeOutput,
 } from '../runners/cli-tools/contract.js';
-import { revalidateCliExecutableIdentity } from '../runners/cli-tools/process-invoke.js';
+import { revalidateCliExecutableIdentity } from '../runners/resolve-cli-executable.js';
 
 type ResolveCliExecutable = CliExecutableResolver;
 type ProbeCliReadiness = typeof probeCliReadiness;

@@ -313,6 +313,18 @@ export function createRuntimeCommands(ctx: RuntimeCommandContext): RuntimeComman
       },
     },
     {
+      kind: 'noarg',
+      name: '/resume',
+      label: 'resume',
+      description: 'Resume a paused workflow',
+      validScreens: ['workflow'],
+      handler: () => {
+        if (!ctx.requestWorkflowResume()) {
+          ctx.setFeedbackError('Cannot resume: workflow is not paused.');
+        }
+      },
+    },
+    {
       kind: 'arg',
       name: '/queue',
       label: 'queue',

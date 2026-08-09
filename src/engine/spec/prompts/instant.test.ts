@@ -32,6 +32,24 @@ describe('buildInstantPrompt', () => {
     expect(prompt).toContain('PEP 484');
     expect(prompt).not.toMatch(/TypeScript|typescript|file\.ts|\.js extensions/);
   });
+
+  it('returns task content for session persistence without requesting project writes', () => {
+    const prompt = buildInstantPrompt('x', 'y');
+    expect(prompt).toContain('SPLITBRIEF captures your reply');
+    expect(prompt).toContain('persists the tasks.md artifact inside the active session');
+    expect(prompt).toContain('Do not write tasks.md or any other project file yourself');
+    expect(prompt).not.toContain('write it to tasks.md at the project root');
+  });
+
+  it('reserves bare separators for Task Brief frontmatter', () => {
+    const prompt = buildInstantPrompt('x', 'y');
+    expect(prompt).toContain(
+      'Outside fenced code blocks, lines containing only `---` are reserved',
+    );
+    expect(prompt).toContain(
+      'Never use a bare `---` as a horizontal rule or phase-heading separator',
+    );
+  });
 });
 
 describe('buildQuickPlanPrompt', () => {
@@ -52,5 +70,23 @@ describe('buildQuickPlanPrompt', () => {
     expect(prompt).toContain('file: src/path/to/file.py');
     expect(prompt).toContain('```python');
     expect(prompt).not.toMatch(/TypeScript|typescript|file\.ts|\.js extensions/);
+  });
+
+  it('returns task content for session persistence without requesting project writes', () => {
+    const prompt = buildQuickPlanPrompt('change feature', 'repo');
+    expect(prompt).toContain('SPLITBRIEF captures your reply');
+    expect(prompt).toContain('persists the tasks.md artifact inside the active session');
+    expect(prompt).toContain('Do not write tasks.md or any other project file yourself');
+    expect(prompt).not.toContain('write it to tasks.md at the project root');
+  });
+
+  it('reserves bare separators for Task Brief frontmatter', () => {
+    const prompt = buildQuickPlanPrompt('change feature', 'repo');
+    expect(prompt).toContain(
+      'Outside fenced code blocks, lines containing only `---` are reserved',
+    );
+    expect(prompt).toContain(
+      'Never use a bare `---` as a horizontal rule or phase-heading separator',
+    );
   });
 });

@@ -90,6 +90,87 @@ describe('parseOpencodeLine', () => {
     });
   });
 
+  it('parses the real tool_use envelope with the nested state object', () => {
+    const event = {
+      type: 'tool_use',
+      timestamp: 1786048283976,
+      sessionID: 'ses_0273a1958ffelu0A0xTdGIQA1R',
+      part: {
+        type: 'tool',
+        tool: 'read',
+        callID: 'read_0',
+        state: {
+          status: 'completed',
+          input: { filePath: '/repo/src/slug.ts' },
+          output: '<path>/repo/src/slug.ts</path>\n<content>\n1: export function slugify',
+          metadata: { preview: 'export function slugify', truncated: false },
+          title: 'src/slug.ts',
+          time: { start: 1786048283951, end: 1786048283974 },
+        },
+        id: 'prt_fd8c5fdad001DtBWs3PAZgfevh',
+        sessionID: 'ses_0273a1958ffelu0A0xTdGIQA1R',
+        messageID: 'msg_fd8c5e75b001X3Y1OQvzXwUSDI',
+      },
+    };
+    expect(parseOpencodeLine(JSON.stringify(event))).toEqual({
+      sessionId: 'ses_0273a1958ffelu0A0xTdGIQA1R',
+      toolUseDone: [
+        {
+          id: 'read_0',
+          name: 'read',
+          input: { filePath: '/repo/src/slug.ts' },
+          output: '<path>/repo/src/slug.ts</path>\n<content>\n1: export function slugify',
+        },
+      ],
+    });
+  });
+
+  it('treats a nested state that is not completed as a tool start', () => {
+    const event = {
+      type: 'tool_use',
+      sessionID: 'ses_running',
+      part: {
+        type: 'tool',
+        tool: 'bash',
+        callID: 'bash_0',
+        state: { status: 'running', input: { command: 'npm test' } },
+      },
+    };
+    expect(parseOpencodeLine(JSON.stringify(event))).toEqual({
+      sessionId: 'ses_running',
+      toolUseStart: [{ id: 'bash_0', name: 'bash', input: { command: 'npm test' } }],
+    });
+  });
+
+  it('summarizes unknown records structurally without carrying the payload', () => {
+    const secret = 'export const API_KEY = "sk-live-payload-1234";';
+    const event = {
+      type: 'mystery_record',
+      sessionID: 'ses_unknown',
+      part: {
+        type: 'tool',
+        state: { status: 'completed', output: secret },
+      },
+    };
+    const result = parseOpencodeLine(JSON.stringify(event));
+    const warning = result.warning?.[0];
+    expect(warning?.code).toBe('unknown_opencode_record');
+    expect(warning?.upstreamType).toBe('mystery_record');
+    expect(warning?.message).toContain('mystery_record');
+    expect(warning?.message).toContain('status');
+    expect(warning?.message).not.toContain(secret);
+    expect(warning?.message).not.toContain('sk-live-payload-1234');
+  });
+
+  it('does not carry the raw line in malformed JSON warnings', () => {
+    const secret = 'BEGIN PRIVATE FILE CONTENT sk-live-payload-5678';
+    const result = parseOpencodeLine(`{"broken": "${secret}`);
+    const warning = result.warning?.[0];
+    expect(warning?.code).toBe('malformed_opencode');
+    expect(warning?.message).not.toContain(secret);
+    expect(warning?.message).toContain('unparseable opencode line');
+  });
+
   it('captures tool-use envelopes', () => {
     expect(
       parseOpencodeLine(

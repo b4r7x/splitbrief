@@ -77,6 +77,38 @@ describe('OpenCode role adapters', () => {
     ).toEqual({ valid: false, conflicts: ['--format'] });
   });
 
+  it('overrides read-only agent defaults with the verified build agent for full escalation', () => {
+    const input = {
+      prompt: PROMPT,
+      model: undefined,
+      projectDir: '',
+      configuredArgs: [],
+      sessionId: null,
+      effort: undefined,
+    };
+
+    expect(opencodePlannerAdapter.buildArgs({ ...input, mode: 'plan' })).toEqual([
+      'run',
+      '--format',
+      'json',
+      '--agent',
+      'plan',
+      PROMPT,
+    ]);
+    const escalationArgs = opencodePlannerAdapter.buildArgs({ ...input, mode: 'escalate' });
+    expect(escalationArgs).toEqual(['run', '--format', 'json', '--agent', 'build', PROMPT]);
+    expect(
+      opencodePlannerAdapter.validateArgs(
+        opencodePlannerAdapter.buildArgs({
+          ...input,
+          mode: 'escalate',
+          configuredArgs: ['--agent', 'plan'],
+        }),
+        escalationArgs,
+      ),
+    ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
+  });
+
   it('rejects prompt placeholders, duplicate sentinels, and reordered protected args', () => {
     const base = opencodePromptArgs({ role: 'implementer' });
     expect(opencodeImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
@@ -90,6 +122,14 @@ describe('OpenCode role adapters', () => {
     expect(opencodeImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
       valid: false,
       conflicts: ['argument-order', 'prompt-transport'],
+    });
+    expect(opencodeImplementerAdapter.validateArgs([...base, '-m', 'other'], base)).toEqual({
+      valid: false,
+      conflicts: ['-m'],
+    });
+    expect(opencodeImplementerAdapter.validateArgs([...base, '-mPROMPT'], base)).toEqual({
+      valid: false,
+      conflicts: ['-m'],
     });
   });
 });

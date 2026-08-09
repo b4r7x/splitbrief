@@ -9,6 +9,9 @@ import {
   type RailRole,
 } from '../layout/chrome-rows.js';
 import type { ConversationRowTone } from '../conversation-rows/types.js';
+import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
+
+export const PAUSED_LIVE_STATUS_VERB = `Paused — resume with /resume or \`${SPLITBRIEF_IDENTITY.executable} resume\``;
 
 // Review gates use the waiting byline while their document replaces the transcript.
 const RAIL_GATE_PHASES: ReadonlySet<Phase> = new Set([

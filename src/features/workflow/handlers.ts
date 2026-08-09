@@ -14,6 +14,7 @@ type AbortHandler = () => void;
 interface Handlers {
   cancel: () => void;
   rewind: (request: RewindTarget) => void;
+  resume: () => void;
   queue: (text: string, phase: Phase) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
   clearQueue: () => QueueClearResult | Promise<QueueClearResult>;
 }
@@ -48,6 +49,7 @@ export function createAbortHandlerScope(): (h: AbortHandler | null) => void {
 }
 export const setCancelHandler = (h: Handlers['cancel'] | null) => setHandler('cancel', h);
 export const setRewindHandler = (h: Handlers['rewind'] | null) => setHandler('rewind', h);
+export const setResumeHandler = (h: Handlers['resume'] | null) => setHandler('resume', h);
 export const setQueueHandler = (h: Handlers['queue'] | null) => setHandler('queue', h);
 export const setClearQueueHandler = (h: Handlers['clearQueue'] | null) =>
   setHandler('clearQueue', h);
@@ -97,6 +99,13 @@ export function interruptTurn(): InterruptResult {
 export function requestRewind(request: RewindTarget): boolean {
   if (!handlers.rewind) return false;
   handlers.rewind(request);
+  return true;
+}
+
+export function requestWorkflowResume(): boolean {
+  if (lifecycleStore.get().status !== 'paused') return false;
+  if (!handlers.resume) return false;
+  handlers.resume();
   return true;
 }
 

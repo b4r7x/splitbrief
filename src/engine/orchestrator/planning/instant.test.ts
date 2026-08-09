@@ -34,6 +34,7 @@ import type { PlannerCapabilities } from '../../planners/types.js';
 import type { Planner, PlannerCallbacks, PlanResult } from '../../planners/types.js';
 import type { RunnerCallContext } from '../../calls/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
+import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 
 const TEST_METADATA = {
   plannerTool: 'claude-code',
@@ -430,6 +431,21 @@ describe('runInstantPlanning', () => {
     expect(result.state.phase).toBe('implementing');
     expect(result.tasks).toHaveLength(1);
     expect(events.find((e) => e.type === 'warning')).toBeUndefined();
+  });
+
+  it('sends a corrective prompt instead of repeating the first one on the zero-task retry', async () => {
+    const prompts: string[] = [];
+    const instantPlan = vi.fn().mockImplementation(async ({ feature }: { feature: string }) => {
+      prompts.push(feature);
+      return prompts.length === 1
+        ? instantPlanResult({ tasks: [], phases: [{ text: '# empty', filename: TASKS_FILE }] })
+        : instantPlanResult();
+    });
+    const { result } = await runInstant({ instantPlan });
+
+    expect(result.cancelled).toBe(false);
+    expect(prompts[0]).toContain('rename foo to bar');
+    expect(prompts[1]).toBe(zeroTaskRetryPrompt('rename foo to bar', []));
   });
 
   it('books the planner tokens of both calls of a zero-task retry', async () => {

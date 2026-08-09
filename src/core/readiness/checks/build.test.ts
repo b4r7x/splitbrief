@@ -111,7 +111,7 @@ describe('readiness checks', () => {
     );
 
     expect(report.status).toBe('blocked');
-    expect(report.nextAction.kind).toBe('exit');
+    expect(report.nextAction.kind).toBe('prepare-runner');
     expect(
       report.sections
         .flatMap((section) => section.checks)

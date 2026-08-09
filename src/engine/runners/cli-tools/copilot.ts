@@ -18,7 +18,21 @@ const COPILOT_PROMPT_TRANSPORT = Object.freeze({
 } as const);
 const COPILOT_VERSION_ARGS = Object.freeze(['--version'] as const);
 
-const COPILOT_PROTECTED_FLAGS = new Set(['--allow-all', '--model', '--output-format', '-p']);
+const COPILOT_PROTECTED_FLAGS = new Set([
+  '--agent',
+  '--allow-all',
+  '--allow-all-tools',
+  '--autopilot',
+  '--model',
+  '--mode',
+  '--no-ask-user',
+  '--output-format',
+  '--plan',
+  '--prompt',
+  '--yolo',
+  '-p',
+]);
+const COPILOT_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-p']);
 
 type CopilotPlannerBuildInput = Parameters<CliPlannerAdapter<'copilot'>['buildArgs']>[0];
 type CopilotImplementerBuildInput = Parameters<CliImplementerAdapter<'copilot'>['buildArgs']>[0];
@@ -29,6 +43,7 @@ function validateArgs(invocationArgs: readonly string[], baseArgs: readonly stri
     invocationArgs,
     baseArgs,
     protectedFlags: COPILOT_PROTECTED_FLAGS,
+    protectedShortValueFlags: COPILOT_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
   });
 }
@@ -99,6 +114,9 @@ function plannerBaseArgs(input: CopilotPlannerBuildInput): string[] {
     ...(input.model === undefined ? [] : ['--model', input.model]),
     '-p',
     input.prompt,
+    ...(input.mode === 'plan'
+      ? ['--plan', '--allow-all-tools', '--no-ask-user']
+      : ['--allow-all', '--no-ask-user']),
     '--output-format',
     'json',
   ];
@@ -196,7 +214,15 @@ function rawContract(role: 'planner' | 'implementer'): RawCopilotCliContract {
     auth: { kind: 'env-or-native', env: ['GH_TOKEN', 'GITHUB_TOKEN'] },
     rawInvocation:
       role === 'planner'
-        ? ['-p', CLI_PROMPT_SENTINEL, '--output-format', 'json']
+        ? [
+            '-p',
+            CLI_PROMPT_SENTINEL,
+            '--plan',
+            '--allow-all-tools',
+            '--no-ask-user',
+            '--output-format',
+            'json',
+          ]
         : ['-p', CLI_PROMPT_SENTINEL, '--allow-all'],
     promptTransport: 'argv',
     expectedRawTerminal: 'process-exit',
@@ -227,6 +253,7 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly CopilotCliConformanceCandidate
 export function copilotPromptArgs(opts: {
   role: 'planner' | 'implementer';
   model?: string | undefined;
+  mode?: 'plan' | 'escalate' | undefined;
   configuredArgs?: readonly string[] | undefined;
 }): readonly string[] {
   const configuredArgs = opts.configuredArgs ?? [];
@@ -236,7 +263,7 @@ export function copilotPromptArgs(opts: {
       model: opts.model,
       projectDir: '',
       configuredArgs,
-      mode: 'plan',
+      mode: opts.mode ?? 'plan',
       sessionId: null,
       effort: undefined,
     });

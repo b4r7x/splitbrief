@@ -156,6 +156,62 @@ describe('runFinalReviewPhase', () => {
     );
   });
 
+  it('feeds the recorded validation output into the review prompt for verbatim quoting', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd titleCase.\n', null);
+
+    const task = makeTask({ id: 'T001', status: 'done' });
+    const ledger = withUpdatedTask(
+      createEvidenceLedger({ sessionId, feature: 'feat', tasks: [task] }),
+      task.id,
+      (entry) => ({
+        ...entry,
+        status: 'done',
+        validation: [
+          {
+            stage: 'test',
+            passed: true,
+            command: 'npm test',
+            output: 'Test Files  1 passed (1)\n     Tests  4 passed (4)',
+          },
+        ],
+      }),
+    );
+    writeEvidenceLedger({ projectDir, sessionId }, ledger);
+
+    const reviewPrompts: string[] = [];
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const planner = makePlanner({
+      review: async (prompt: string) => {
+        reviewPrompts.push(prompt);
+        return { text: 'ok', usage: null };
+      },
+    });
+
+    await runFinalReviewPhase(
+      {
+        projectDir,
+        sessionId,
+        config: makeNoValidationConfig(),
+        callbacks,
+        bus,
+        state: allTasksDoneState([task], runStartHead),
+        planner,
+        metadata: TEST_METADATA,
+      },
+      SUMMARY_BASE,
+      [],
+    );
+
+    expect(reviewPrompts[0]).toContain('## Recorded Validation Output');
+    expect(reviewPrompts[0]).toContain('- test (`npm test`): passed');
+    expect(reviewPrompts[0]).toContain('Tests  4 passed (4)');
+    expect(reviewPrompts[0]).toContain(
+      'quote the relevant line verbatim from the Recorded Validation Output section',
+    );
+  });
+
   it('persists the review usage through the continuation loop on the sinks path', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);

@@ -21,10 +21,15 @@ import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
+let originalXdgStateHome: string | undefined;
 
 beforeEach(() => {
   resetAllStores();
   originalPath = process.env.PATH;
+  originalXdgStateHome = process.env.XDG_STATE_HOME;
+  const stateHome = createTempDir('orch-int-full-loop-opencode-state');
+  dirs.push(stateHome);
+  process.env.XDG_STATE_HOME = stateHome;
 });
 
 afterEach(() => {
@@ -33,6 +38,11 @@ afterEach(() => {
     delete process.env.PATH;
   } else {
     process.env.PATH = originalPath;
+  }
+  if (originalXdgStateHome === undefined) {
+    delete process.env.XDG_STATE_HOME;
+  } else {
+    process.env.XDG_STATE_HOME = originalXdgStateHome;
   }
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
 });
@@ -232,16 +242,16 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
     // shared sandbox: the planner running in the same worktree gets a sibling
     // root, so neither role's bridged credential state is the other's destination.
     expect(normalizeMacTmpPath(runLog.env.HOME)).toBe(
-      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'home')),
+      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'opencode', 'home')),
     );
     expect(normalizeMacTmpPath(runLog.env.TMPDIR)).toBe(
-      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'tmp')),
+      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'opencode', 'tmp')),
     );
     expect(normalizeMacTmpPath(runLog.env.XDG_CACHE_HOME)).toBe(
-      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'cache')),
+      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'opencode', 'cache')),
     );
     expect(normalizeMacTmpPath(runLog.env.npm_config_cache)).toBe(
-      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'npm-cache')),
+      normalizeMacTmpPath(join(runLog.cwd, SANDBOX_DIR, 'implementer', 'opencode', 'npm-cache')),
     );
     expect(runLog.args[0]).toBe('run');
     expect(runLog.args[runLog.args.length - 1]).toContain(requiredPromptText);

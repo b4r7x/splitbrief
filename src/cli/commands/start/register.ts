@@ -45,7 +45,21 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
     if (opts.rpc && !feature) throw cliError('--rpc requires a feature argument');
     if (opts.json && !feature) throw cliError('--json requires a feature argument');
 
-    const createdWorktree = await applyWorktreeOption(feature, opts);
+    let createdWorktree = await applyWorktreeOption(feature, opts);
+    const handOffCreatedWorktree = (): void => {
+      createdWorktree = null;
+    };
+    const runDeps: StartDeps = {
+      ...deps,
+      runHeadless: (options) => {
+        handOffCreatedWorktree();
+        return deps.runHeadless(options);
+      },
+      runRpc: (options) => {
+        handOffCreatedWorktree();
+        return deps.runRpc(options);
+      },
+    };
 
     try {
       const projectDir = await canonicalizeProjectDir(opts);
@@ -68,7 +82,7 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
 
       if ((opts.detach || opts.json || opts.rpc) && feature) {
         const dispatch = {
-          deps,
+          deps: runDeps,
           projectDir,
           feature,
           enrichedFeature,
@@ -89,12 +103,13 @@ export function registerStartCommand(program: Command, deps: StartDeps = default
       }
 
       await runInteractiveStart({
-        deps,
+        deps: runDeps,
         projectDir,
         feature,
         enrichedFeature,
         plannerContext,
         opts,
+        handOffWorktree: handOffCreatedWorktree,
       });
     } catch (err) {
       if (createdWorktree) await rollbackCreatedWorktree(createdWorktree);

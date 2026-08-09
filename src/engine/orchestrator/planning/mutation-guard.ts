@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import {
   captureChangedFilesBaseline,
   changedFilesSinceBaseline,
@@ -26,11 +27,18 @@ export async function capturePlanningMutationBaseline(
   return captureChangedFilesBaseline(projectDir);
 }
 
+// artifactFile is the phase's declared artifact (e.g. tasks.md). A CLI planner that writes it
+// anywhere inside the project is on the supported ingestion path readCliPhaseOutput reads back,
+// so matching that basename is a produced artifact, not an unexpected project mutation.
 export async function findUnexpectedPlanningMutations(opts: {
   projectDir: string;
   sessionId: string;
   baseline: ChangedFilesBaseline;
+  artifactFile?: string | undefined;
 }): Promise<string[]> {
   const changed = await changedFilesSinceBaseline(opts.projectDir, opts.baseline);
-  return changed.filter((file) => !isAllowedPlanningMutation(file, opts.sessionId));
+  return changed.filter(
+    (file) =>
+      !isAllowedPlanningMutation(file, opts.sessionId) && basename(file) !== opts.artifactFile,
+  );
 }

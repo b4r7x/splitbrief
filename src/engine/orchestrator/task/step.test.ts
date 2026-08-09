@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import {
   makeCallbacks,
@@ -16,7 +16,7 @@ import {
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import { TREES_DIR } from '../../../core/paths.js';
+import { isolationWorktreeRoot } from '../../../core/paths.js';
 import { createRunIsolation } from '../isolation/create.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { createValidator } from '../validation/run.js';
@@ -596,7 +596,9 @@ describe('runSingleTask — completion and abort', () => {
     expect(acceptedFiles).toEqual([['src/a.ts'], ['src/b.ts']]);
     expect(second.currentTaskIndex).toBe(2);
     expect(second.tasks[1]?.status).toBe('done');
-    expect(readdirSync(join(projectDir, TREES_DIR))).toHaveLength(1);
+    expect(readdirSync(isolationWorktreeRoot(realpathSync(join(projectDir, '.git'))))).toHaveLength(
+      1,
+    );
 
     await isolation.dispose();
   });

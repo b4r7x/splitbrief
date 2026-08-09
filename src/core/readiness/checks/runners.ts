@@ -4,6 +4,7 @@ import { resolveApproveLevel, resolveMode } from '../../config/runtime/resolve.j
 import { isAutomaticModel } from '../../providers/automatic-model.js';
 import {
   CLI_TOOL_CATALOG,
+  type CliPlannerTier2FullEscalationTrust,
   type CliToolId,
   type RunnerTrustMetadata,
 } from '../../runners/cli-tool-catalog.js';
@@ -163,6 +164,7 @@ function missingCliReadinessCheck(tool: CliToolId): ReadinessCheck {
     id: cliReadinessCheckId(tool),
     severity: 'blocker',
     summary: `${descriptor.displayName} has no current readiness probe result.`,
+    nextAction: 'prepare-runner',
     fix: `Run runner readiness for ${tool}, then start again.`,
     metadata: {
       tool,
@@ -211,6 +213,7 @@ function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
         : `${descriptor.displayName} readiness is ${result.status}.`,
     ...(result.remediation !== null && { fix: result.remediation }),
     ...(diagnosticState !== undefined && { diagnosticState }),
+    ...(severity === 'blocker' && { nextAction: 'prepare-runner' as const }),
     metadata: {
       tool: result.tool,
       status: result.status,
@@ -242,6 +245,10 @@ function buildRunnerTrustBoundaryChecks(
       role: 'planner',
       label: `Planner ${formatRunner(config.planner)}`,
       trust: getRunnerTrustMeta('planner', config.planner),
+      ...(config.planner.kind === 'cli' && {
+        plannerTier2FullEscalation:
+          CLI_TOOL_CATALOG[config.planner.tool].plannerTier2FullEscalation,
+      }),
       runner: config.planner,
       approve,
       specPlanAutoApproved,
@@ -306,8 +313,17 @@ function redactedArgv(argv: readonly string[]): string {
 }
 
 function trustBoundarySummary(
-  opts: Readonly<{ label: string; approvalAutomationActive: boolean; autoAllowFlags: boolean }>,
+  opts: Readonly<{
+    label: string;
+    approvalAutomationActive: boolean;
+    autoAllowFlags: boolean;
+    tier2FullEscalationWritesFiles: boolean;
+  }>,
 ): string {
+  if (opts.tier2FullEscalationWritesFiles) {
+    const automationActive = opts.approvalAutomationActive || opts.autoAllowFlags;
+    return `${opts.label} can execute commands and may write files during tier-2 full escalation${automationActive ? ' with approval automation active' : ''}.`;
+  }
   if (opts.approvalAutomationActive) {
     return `${opts.label} can execute commands while approval automation is active.`;
   }
@@ -326,6 +342,7 @@ function runnerTrustBoundaryCheck(opts: {
   label: string;
   profile?: string | undefined;
   trust: RunnerTrustMetadata;
+  plannerTier2FullEscalation?: CliPlannerTier2FullEscalationTrust | undefined;
   runner: Config['planner'] | Config['implementer'];
   approve: string;
   specPlanAutoApproved: boolean;
@@ -353,6 +370,17 @@ function runnerTrustBoundaryCheck(opts: {
   if (opts.trust.mayWriteFilesDirectly) {
     details.push('Runner may write project files directly.');
   }
+  if (opts.plannerTier2FullEscalation !== undefined) {
+    details.push(
+      'Ordinary planning does not write project files directly.',
+      'Tier-2 full escalation may write project files directly after implementer failure.',
+    );
+    if (opts.plannerTier2FullEscalation.autoAllowFlags.length > 0) {
+      details.push(
+        `Tier-2 runner auto/allow flags: ${opts.plannerTier2FullEscalation.autoAllowFlags.join(', ')}`,
+      );
+    }
+  }
 
   return [
     {
@@ -361,7 +389,11 @@ function runnerTrustBoundaryCheck(opts: {
       summary: trustBoundarySummary({
         label: opts.label,
         approvalAutomationActive,
-        autoAllowFlags: opts.trust.autoAllowFlags.length > 0,
+        autoAllowFlags:
+          opts.trust.autoAllowFlags.length > 0 ||
+          (opts.plannerTier2FullEscalation?.autoAllowFlags.length ?? 0) > 0,
+        tier2FullEscalationWritesFiles:
+          opts.plannerTier2FullEscalation?.mayWriteFilesDirectly === true,
       }),
       details,
       metadata: {
@@ -373,6 +405,13 @@ function runnerTrustBoundaryCheck(opts: {
         mayUseNetwork: opts.trust.mayUseNetwork,
         mayWriteFilesDirectly: opts.trust.mayWriteFilesDirectly,
         autoAllowFlags: [...opts.trust.autoAllowFlags],
+        ...(opts.plannerTier2FullEscalation !== undefined && {
+          plannerTier2FullEscalation: {
+            mayWriteFilesDirectly: opts.plannerTier2FullEscalation.mayWriteFilesDirectly,
+            automaticApproval: opts.plannerTier2FullEscalation.autoAllowFlags.length > 0,
+            autoAllowFlags: [...opts.plannerTier2FullEscalation.autoAllowFlags],
+          },
+        }),
         fileWriteApprovalEnabled: !opts.fileWriteApprovalDisabled,
       },
     },

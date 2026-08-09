@@ -9,7 +9,7 @@ import type { ValidationCommandRunner } from './types.js';
 
 const MISSING_SUBCOMMAND_EXIT_CODE = 101;
 const MAX_VALIDATION_OUTPUT_CHARS = 4096;
-const MAX_TEST_FAILURE_TAIL_LINES = 40;
+const MAX_TEST_TAIL_LINES = 40;
 
 function isMissingSubcommand(code: number | null, stderr: string): boolean {
   return code === MISSING_SUBCOMMAND_EXIT_CODE && /no such command/i.test(stderr);
@@ -19,10 +19,24 @@ function sanitizeValidationOutput(text: string): string {
   return redactSecrets(truncateByChars(text, MAX_VALIDATION_OUTPUT_CHARS));
 }
 
+// Test runners print their pass/fail summary last; keeping the head of a long
+// stream would truncate away the only quotable line, so test output keeps the
+// tail.
+function sanitizeTestOutput(text: string): string {
+  const tail = truncateByTailLines(text, MAX_TEST_TAIL_LINES);
+  return redactSecrets(
+    tail.length <= MAX_VALIDATION_OUTPUT_CHARS ? tail : tail.slice(-MAX_VALIDATION_OUTPUT_CHARS),
+  );
+}
+
+function sanitizeStageOutput(stage: ValidationStage, text: string): string {
+  return stage === 'test' ? sanitizeTestOutput(text) : sanitizeValidationOutput(text);
+}
+
 function selectFailureDetail(stage: ValidationStage, stdout: string, stderr: string): string {
   if (stage === 'test') {
     const combined = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
-    return truncateByTailLines(combined, MAX_TEST_FAILURE_TAIL_LINES).trim();
+    return truncateByTailLines(combined, MAX_TEST_TAIL_LINES).trim();
   }
   return (stderr || stdout).trim();
 }
@@ -52,7 +66,7 @@ export async function runValidationStep(opts: {
       label: `${stage} validation`,
       signal,
     });
-    return { passed: true, stage, output: sanitizeValidationOutput(stdout), command };
+    return { passed: true, stage, output: sanitizeStageOutput(stage, stdout), command };
   } catch (err: unknown) {
     if (isENOENT(err) || processError.isNotFound(err)) {
       if (source === 'config') {
@@ -100,7 +114,7 @@ export async function runValidationStep(opts: {
       return {
         passed: false,
         stage,
-        output: sanitizeValidationOutput(stdout),
+        output: sanitizeStageOutput(stage, stdout),
         error: sanitizeValidationOutput(errText),
         command,
         ...(changedFiles !== undefined && {

@@ -2,7 +2,11 @@ import { join } from 'node:path';
 import { useRef } from 'react';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
 import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
-import { requestRewind, requestClearQueue } from '../features/workflow/handlers.js';
+import {
+  requestRewind,
+  requestClearQueue,
+  requestWorkflowResume,
+} from '../features/workflow/handlers.js';
 import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
@@ -215,6 +219,7 @@ export function buildCommandContext({
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: workflow.requestRewind,
     requestTaskRedo: (taskId) => workflow.requestRewind({ target: 'task', taskId }),
+    requestWorkflowResume,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: workflow.requestClearQueue,
     rebuildRepomap: async (projectDir, cacheDir) =>

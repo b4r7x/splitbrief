@@ -34,6 +34,7 @@ interface CommandContextFactoryOptions {
   getCurrentPhase: () => Phase;
   requestRewind: (request: CommandRewindRequest) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
+  requestWorkflowResume: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   rebuildRepomap: (
@@ -110,6 +111,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
       return opts.requestRewind(request);
     },
     requestTaskRedo: opts.requestTaskRedo,
+    requestWorkflowResume: opts.requestWorkflowResume,
     getQueueDepth: opts.getQueueDepth,
     clearQueue: opts.clearQueue,
     rebuildRepomap: async () => {

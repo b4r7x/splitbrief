@@ -1,7 +1,11 @@
 import { Box, Text } from 'ink';
 import { useTheme } from './theme.js';
 import { glyph } from '../lib/glyphs.js';
-import { getTerminalCellWidth, stripTerminalControls } from '../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  stripTerminalControls,
+  truncateTerminalDisplayText,
+} from '../utils/display-text.js';
 
 export type ListRowState = 'default' | 'active';
 export type ListRowDefaultLead = 'blank' | 'dot';
@@ -60,6 +64,12 @@ export function ListRow({
             Math.max(0, width - leadW - checkW - trailW - 8),
           )
         : 0;
+  const displayMeta =
+    cleanMeta === undefined
+      ? undefined
+      : metaW === undefined
+        ? cleanMeta
+        : truncateTerminalDisplayText(cleanMeta, Math.max(0, metaW - 1));
   const labelW =
     width === undefined
       ? labelWidth
@@ -89,7 +99,7 @@ export function ListRow({
         >
           <Text color={t.textDim} wrap="truncate-end">
             {' '}
-            {cleanMeta}
+            {displayMeta}
           </Text>
         </Box>
       ) : null}

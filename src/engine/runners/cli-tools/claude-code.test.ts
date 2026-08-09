@@ -62,7 +62,7 @@ describe('Claude Code role adapters', () => {
       'claude-sonnet-4-6',
       '--effort',
       'high',
-      '--session-id',
+      '--resume',
       'session-1',
       '--label',
       'fixture',
@@ -103,6 +103,26 @@ describe('Claude Code role adapters', () => {
       ),
     ).toEqual({ valid: false, conflicts: ['--permission-mode'] });
   });
+
+  it('never re-sends a consumed session id: fresh calls carry no session flag, continuations resume', () => {
+    const common = {
+      prompt: '<brief>',
+      model: undefined,
+      projectDir: '/project',
+      configuredArgs: [],
+      mode: 'plan',
+      effort: undefined,
+    } as const;
+    const firstCall = claudeCodePlannerAdapter.buildArgs({ ...common, sessionId: null });
+    const capturedId = '0a3443ac-432e-40c8-bdf9-29859130257f';
+    const retryCall = claudeCodePlannerAdapter.buildArgs({ ...common, sessionId: capturedId });
+
+    expect(firstCall).not.toContain('--session-id');
+    expect(firstCall).not.toContain('--resume');
+    expect(retryCall).not.toContain('--session-id');
+    expect(retryCall.slice(retryCall.indexOf('--resume'))).toEqual(['--resume', capturedId]);
+    expect(retryCall).not.toEqual(firstCall);
+  });
 });
 
 describe('Claude Code stream protocol adapter', () => {
@@ -116,7 +136,7 @@ describe('Claude Code stream protocol adapter', () => {
     );
     expect(events).toEqual([
       { type: 'session', nativeSessionId: 'session-2' },
-      { type: 'text', channel: 'assistant', text: 'hello' },
+      { type: 'text', channel: 'assistant', text: 'hello', semantics: 'final' },
     ]);
 
     const terminal = claudeProtocolEvents(
@@ -138,6 +158,40 @@ describe('Claude Code stream protocol adapter', () => {
     expect(terminal).toContainEqual({
       type: 'usage',
       usage: { inputTokens: 2, outputTokens: 1 },
+      semantics: 'final',
+    });
+  });
+
+  it('streams a partial message once: the assistant record restates it, never appends again', () => {
+    const deltas = ['returning `a', ' - b`'];
+    const message = deltas.join('');
+    const lines = [
+      ...deltas.map((text) =>
+        JSON.stringify({
+          type: 'stream_event',
+          session_id: 'session-3',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text } },
+        }),
+      ),
+      JSON.stringify({
+        type: 'assistant',
+        session_id: 'session-3',
+        message: { content: [{ type: 'text', text: message }] },
+      }),
+    ];
+    const textEvents = lines
+      .flatMap((line) => claudeProtocolEvents(line))
+      .filter((event) => event.type === 'text');
+
+    const appended = textEvents
+      .filter((event) => event.semantics !== 'final')
+      .map((event) => event.text)
+      .join('');
+    expect(appended).toBe(message);
+    expect(textEvents.at(-1)).toEqual({
+      type: 'text',
+      channel: 'assistant',
+      text: message,
       semantics: 'final',
     });
   });

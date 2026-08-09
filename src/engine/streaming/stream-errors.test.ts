@@ -148,6 +148,53 @@ describe('throwMappedError', () => {
     }
   });
 
+  test('appends a 429 Retry-After header to the detail so the reset survives mapping', () => {
+    const underlying = Object.assign(new Error('Too Many Requests'), {
+      status: 429,
+      headers: new Headers({ 'retry-after': '60' }),
+    });
+    try {
+      throwMappedError(underlying, { provider: 'groq' });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect(matches('stream-http-status')(err)).toBe(true);
+      if (matches('stream-http-status')(err)) {
+        expect(err.data).toMatchObject({ detail: expect.stringContaining('(retry-after: 60s)') });
+      }
+    }
+  });
+
+  test('ignores Retry-After on non-429 statuses and non-numeric values', () => {
+    const serverError = Object.assign(new Error('Internal'), {
+      status: 500,
+      headers: new Headers({ 'retry-after': '60' }),
+    });
+    try {
+      throwMappedError(serverError, { provider: 'groq' });
+      throw new Error('expected throw');
+    } catch (err) {
+      if (matches('stream-http-status')(err)) {
+        expect(err.data).not.toMatchObject({
+          detail: expect.stringContaining('retry-after'),
+        });
+      }
+    }
+    const dateHeader = Object.assign(new Error('Too Many Requests'), {
+      status: 429,
+      headers: new Headers({ 'retry-after': 'Fri, 07 Aug 2026 17:00:00 GMT' }),
+    });
+    try {
+      throwMappedError(dateHeader, { provider: 'groq' });
+      throw new Error('expected throw');
+    } catch (err) {
+      if (matches('stream-http-status')(err)) {
+        expect(err.data).not.toMatchObject({
+          detail: expect.stringContaining('retry-after'),
+        });
+      }
+    }
+  });
+
   test('terminates on a self-referential cause chain instead of hanging', () => {
     const cyclic = Object.assign(new Error('cyclic'), {}) as Error & { cause?: unknown };
     cyclic.cause = cyclic;

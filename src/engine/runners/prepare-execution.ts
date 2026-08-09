@@ -12,7 +12,11 @@ import {
 } from '../../core/config/custom-commands.js';
 import { applyRunnerPreparationChecks, collectReadiness } from '../../core/readiness/collect.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
-import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  type CliAuthChannelId,
+  type CliToolId,
+} from '../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../core/schemas/config.js';
 import { cliAuthRemediation } from '../../core/schemas/readiness.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -35,7 +39,7 @@ import {
 } from './custom-trust.js';
 import { probeRunnerAvailability, type RunnerAvailabilityRole } from './probe-availability.js';
 import { resolveCliRunnerAuth } from './sandbox-env.js';
-import { admitFreshCliStart } from './start-gate.js';
+import { admitFreshCliStart, type FreshCliStartGateResult } from './start-gate.js';
 import { checkRunnerTrust } from './trust.js';
 import { resolveCliExecutableAliases } from './resolve-cli-executable.js';
 import type { CustomRunnerAdmissionPolicy } from './types.js';
@@ -260,6 +264,23 @@ function runnerCandidates(
   return { candidates, checks: [] };
 }
 
+const UNVERIFIED_AUTH_FIX =
+  'Stored credentials prove presence, not a working session, so a headless start stays fail-closed. Pass --allow-unverified-auth to start anyway, or run interactively where unverified auth is disclosed.';
+
+function cliAdmissionFix(
+  reason: Extract<FreshCliStartGateResult, { kind: 'denied' }>['reason'],
+  tool: CliToolId,
+  authChannel: CliAuthChannelId,
+): string | undefined {
+  if (reason.kind === 'authentication') return cliAuthRemediation({ tool, authChannel });
+  if (reason.kind === 'authentication-unverified') return UNVERIFIED_AUTH_FIX;
+  if (reason.kind === 'installation') {
+    const descriptor = CLI_TOOL_CATALOG[tool];
+    return `Install ${descriptor.displayName} (${descriptor.compatibility.installUrl}), then retry.`;
+  }
+  return undefined;
+}
+
 async function evaluateCli(
   candidate: RunnerCandidate & Readonly<{ runner: Extract<RunnerConfig, { kind: 'cli' }> }>,
   context: PreparationContext,
@@ -298,16 +319,16 @@ async function evaluateCli(
   if (admission.kind === 'denied') {
     // The start gate is the last place a wrong credential is still free. A
     // generic "review the runner" here sends the user back to a config that
-    // looks correct; readiness already knows which credential is missing.
+    // looks correct; readiness already knows which credential is missing. An
+    // unverified denial is policy, not a broken credential, so its fix must
+    // name the escape hatch the policy itself provides.
     return {
       kind: 'blocked',
       check: blockedCheck(
         candidate.slot,
         candidate.runner.kind,
         `Fresh CLI evidence denied admission: ${admission.reason.kind}.`,
-        admission.reason.kind === 'authentication'
-          ? cliAuthRemediation({ tool: candidate.runner.tool, authChannel })
-          : undefined,
+        cliAdmissionFix(admission.reason, candidate.runner.tool, authChannel),
       ),
     };
   }
@@ -747,4 +768,60 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
           : error('runner-preparation-failed', 'Runner preparation failed.'),
     };
   }
+}
+
+export type RunnerAdmissionPreflightInput = Readonly<{
+  projectDir: string;
+  config: Config;
+  /** The interaction a run started the same way would have. */
+  interaction: 'interactive' | 'headless';
+  purpose?: PreparationPolicy['purpose'] | undefined;
+  signal?: AbortSignal | undefined;
+  deps?: Partial<PrepareExecutionDependencies> | undefined;
+}>;
+
+/**
+ * `doctor` prepares nothing, so it used to pass CLI readiness and consent while
+ * a headless `start` was still refused at admission. This replays
+ * `prepareExecution`'s per-slot admission verdicts read-only — no session, no
+ * trust receipt, no arg-vector preflight — so the two commands answer the same
+ * question about the same machine.
+ */
+export async function collectRunnerAdmissionChecks(
+  input: RunnerAdmissionPreflightInput,
+): Promise<readonly ReadinessCheck[]> {
+  const signal = input.signal ?? new AbortController().signal;
+  throwIfAborted(signal);
+  const config = parsePreparedConfig(input.config);
+  const deps = { ...DEFAULT_DEPENDENCIES, ...input.deps };
+  const preparationId = deps.newPreparationId();
+  const policy: PreparationPolicy = {
+    purpose: input.purpose ?? 'new-workflow',
+    interaction: input.interaction,
+    unverifiedAuth: input.interaction === 'headless' ? 'denied' : 'disclosed',
+    allowRepoRunners: false,
+    allowHooks: true,
+  };
+  const enumeration = runnerCandidates(config, policy.purpose);
+  if (enumeration.checks.length > 0) return enumeration.checks;
+
+  const nativeTrustViolations = new Set(
+    checkRunnerTrust(config, input.projectDir).violations.map((violation) => violation.label),
+  );
+  const context: PreparationContext = {
+    projectDir: input.projectDir,
+    config,
+    policy,
+    preparationId,
+    signal,
+    nativeTrustViolations,
+    deps,
+  };
+  const checks: ReadinessCheck[] = [];
+  for (const candidate of enumeration.candidates) {
+    const evaluation = await evaluateCandidate(candidate, context);
+    checks.push(evaluation.check);
+    throwIfAborted(signal);
+  }
+  return checks;
 }

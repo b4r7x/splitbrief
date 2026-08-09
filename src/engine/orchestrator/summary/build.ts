@@ -8,6 +8,7 @@ import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selecto
 import { projectCostPredictionForTranscriptPolicy } from '../../events/protection/protect.js';
 import { featureForTranscriptPolicy } from '../../../core/sessions/lifecycle.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
+import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
 import {
   applyTaskBreakdownCosts,
   countLocalAndEscalatedTasks,
@@ -64,10 +65,14 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
   const failed = getFailedTaskIds(state).length;
   const totalTime = Date.now() - startTime;
   const escalationRate = totalTasks > 0 ? escalatedToPlanner / totalTasks : 0;
+  const tokenUsage =
+    projectDir && sessionId
+      ? reconcileTokenUsageWithSessionLog({ projectDir, sessionId }, state.tokenUsage)
+      : state.tokenUsage;
 
   const costBreakdown = calculateCostBreakdown(
     {
-      tokenUsage: state.tokenUsage,
+      tokenUsage,
       totalTasks,
       escalatedCount: escalatedToPlanner,
       completedLocalTasks: completedByLocal,
@@ -121,7 +126,7 @@ export function buildSummary(opts: BuildSummaryOptions): Summary {
     skipped,
     failed,
     totalTime,
-    tokenUsage: state.tokenUsage,
+    tokenUsage,
     estimatedCostSavings,
     escalationRate,
     taskBreakdown,

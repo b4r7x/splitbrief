@@ -19,7 +19,12 @@ describe('parseStreamLine', () => {
           ],
         },
       }),
-      { text: 'Hello world more text', channel: 'assistant', sessionId: 'sess-1' },
+      {
+        text: 'Hello world more text',
+        channel: 'assistant',
+        textSemantics: 'final',
+        sessionId: 'sess-1',
+      },
     ],
     [
       'result text, usage, and session',
@@ -97,6 +102,7 @@ describe('parseStreamLine', () => {
       {
         text: 'Let me read that file.',
         channel: 'assistant',
+        textSemantics: 'final',
         sessionId: 'sess-mixed',
         toolUse: [{ name: 'write_file', input: { path: '/tmp/out.ts', content: 'code' } }],
       },
@@ -113,7 +119,12 @@ describe('parseStreamLine', () => {
           ],
         },
       }),
-      { text: 'visible text', channel: 'assistant', toolUse: [{ name: 'read_file', input: {} }] },
+      {
+        text: 'visible text',
+        channel: 'assistant',
+        textSemantics: 'final',
+        toolUse: [{ name: 'read_file', input: {} }],
+      },
     ],
     [
       'malformed JSON',
@@ -175,6 +186,41 @@ describe('parseStreamLine', () => {
     ],
   ] as const)('parses %s', (_name, line, expected) => {
     expect(parseStreamLine(line)).toEqual(expected);
+  });
+
+  it.each([
+    ['leading space at a slice boundary', ' - b`'],
+    ['a whitespace-only paragraph break', '\n\n'],
+    ['a trailing space at a slice boundary', 'returning '],
+  ])('keeps text deltas verbatim: %s', (_name, text) => {
+    const line = jsonLine({
+      type: 'stream_event',
+      session_id: 'sess-verbatim',
+      event: { type: 'content_block_delta', delta: { type: 'text_delta', text } },
+    });
+
+    expect(parseStreamLine(line)).toEqual({
+      text,
+      channel: 'assistant',
+      sessionId: 'sess-verbatim',
+    });
+  });
+
+  it('joins text deltas into the message the assistant record restates', () => {
+    const deltas = ['returning `a', ' - b`', '\n\n', 'second para.'];
+    const streamed = deltas
+      .map((text) =>
+        parseStreamLine(
+          jsonLine({
+            type: 'stream_event',
+            event: { type: 'content_block_delta', delta: { type: 'text_delta', text } },
+          }),
+        ),
+      )
+      .map((parsed) => parsed.text ?? '')
+      .join('');
+
+    expect(streamed).toBe('returning `a - b`\n\nsecond para.');
   });
 
   it('preserves result text and isResult when usage is malformed', () => {

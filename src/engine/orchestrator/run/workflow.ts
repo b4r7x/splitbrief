@@ -398,6 +398,15 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         message: `Isolation worktree retained at ${dir}; unpromoted work remains`,
       });
     },
+    warningPublisher: (message: string): void => {
+      const bus = wctx?.bus ?? workflowBus;
+      if (!bus) return;
+      publishWarning({
+        bus,
+        phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
+        message,
+      });
+    },
   });
 
   try {

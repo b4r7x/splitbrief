@@ -238,6 +238,12 @@ export async function streamAnthropicCompletion(
       }
       finishAnthropicFailure(recorder, err, endpoint, null, credentialValues, redactCredential);
     }
+    // A 429's Retry-After (whole seconds) rides along in the diagnostic so
+    // the usage-limit recovery can name the reset moment.
+    const retryAfter = response.status === 429 ? response.headers.get('retry-after') : null;
+    if (retryAfter !== null && /^\d+$/.test(retryAfter.trim())) {
+      message = `${message} (retry-after: ${retryAfter.trim()}s)`;
+    }
     const err = streamError.httpStatus('anthropic', response.status, message);
     recorder.finishFailed({
       status: 'failed',

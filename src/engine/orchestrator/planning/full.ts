@@ -8,6 +8,7 @@ import { SPEC_FILE, PLAN_FILE, sessionDir } from '../../../core/paths.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { getPlannerToolId } from '../../../core/config/accessors/runner-config.js';
 import { parseDiscoveredValidation } from './parse-validation.js';
+import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
 import { buildSkillsSection, discoverSkills } from '../../skill-discovery.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { publishPlannerStatus } from '../events.js';
@@ -90,7 +91,7 @@ async function runNewPlanning(
 
   const researchPhase = planResult.phases?.[0];
   if (researchPhase) {
-    const discovered = parseDiscoveredValidation(researchPhase.text);
+    const discovered = sanitizeDiscoveredValidation(parseDiscoveredValidation(researchPhase.text));
     if (discovered) {
       state = { ...state, discoveredValidation: discovered };
       saveState({ projectDir, sessionId }, state);

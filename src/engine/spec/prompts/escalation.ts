@@ -73,7 +73,19 @@ function conventionsText(ctx: LanguageContext): string {
   return `${ctx.importConvention}, ${ctx.typeAnnotationStyle}, ${ctx.moduleSystem}`;
 }
 
-function escalationInstructions(task: Task, ctx: LanguageContext): string {
+function escalationInstructions(
+  task: Task,
+  ctx: LanguageContext,
+  outputMode: 'files' | 'text',
+): string {
+  if (outputMode === 'files') {
+    return `1. Analyze the failed attempt and the error to understand what went wrong.
+2. Edit \`${task.file}\` directly in the current working directory with the correct, complete implementation.
+3. Ensure all tests and constraints are satisfied.
+4. Follow existing project conventions (${conventionsText(ctx)}).
+
+Make the changes on disk. Do not return file contents as a substitute for editing the files. When finished, briefly report the files changed and validation performed.`;
+  }
   return `1. Analyze the failed attempt and the error to understand what went wrong.
 2. Write the correct, complete implementation for \`${task.file}\`.
 3. Ensure all tests and constraints are satisfied.
@@ -82,13 +94,15 @@ function escalationInstructions(task: Task, ctx: LanguageContext): string {
 Respond with the complete file content for \`${task.file}\`. Do not include explanations outside the code.`;
 }
 
-export function buildEscalationPrompt(
-  task: Task,
-  lastAttempt: string,
-  error: string,
-  languageContext?: LanguageContext,
-): string {
-  const ctx = languageContext ?? buildLanguageContext(undefined);
+export function buildEscalationPrompt(opts: {
+  task: Task;
+  lastAttempt: string;
+  error: string;
+  languageContext?: LanguageContext | undefined;
+  outputMode: 'files' | 'text';
+}): string {
+  const { task, lastAttempt, error, outputMode } = opts;
+  const ctx = opts.languageContext ?? buildLanguageContext(undefined);
   const examples = selectRelevantExamples(error, ctx);
   const sections: PromptSection[] = [taskMetaSection(task, ctx)];
 
@@ -107,12 +121,14 @@ export function buildEscalationPrompt(
   if (examples.length > 0) {
     sections.push({ heading: 'Similar Issues', body: formatExamplesSection(examples) });
   }
-  sections.push(instructionsSection(escalationInstructions(task, ctx)));
+  sections.push(instructionsSection(escalationInstructions(task, ctx, outputMode)));
 
   return buildPrompt({
     title: 'Escalation: Implement Fix',
     intro:
-      'The implementer model failed to implement the task below after multiple attempts. You must provide the correct, complete implementation.',
+      outputMode === 'files'
+        ? 'The implementer model failed to implement the task below after multiple attempts. You must make the correct, complete implementation directly in the working directory.'
+        : 'The implementer model failed to implement the task below after multiple attempts. You must provide the correct, complete implementation.',
     sections,
   });
 }

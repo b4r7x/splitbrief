@@ -100,6 +100,28 @@ describe('classifyAction — write_out_of_scope', () => {
   });
 });
 
+describe('classifyAction — prose scope entries', () => {
+  it('prose scope entry ("In bounds: `src/x.ts`") classifies the brief-authorized file as in-scope', () => {
+    const result = classifyAction(
+      make('edit src/x.ts', {
+        taskFile: 'src/main.ts',
+        taskInBounds: ['In bounds: `src/x.ts`'],
+        dependsOnFiles: [],
+      }),
+    );
+    expect(result).toEqual({ actionClass: 'write_in_scope', tier: 'auto' });
+  });
+
+  it('prose scope entry without a path authorizes nothing', () => {
+    const result = classifyAction(
+      make('edit src/unrelated/other.ts', {
+        taskInBounds: ['Concrete change this brief is allowed to make'],
+      }),
+    );
+    expect(result).toEqual({ actionClass: 'write_out_of_scope', tier: 'sticky' });
+  });
+});
+
 describe('classifyAction — control plane', () => {
   it.each([
     { taskFile: '.git/config', desc: 'create .git/config' },

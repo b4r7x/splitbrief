@@ -27,14 +27,16 @@ export function startPlannerHeartbeat(
     phaseHint: undefined,
     callId: undefined,
   };
+  let windowStart = startTime;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let thresholdPassed = false;
   const publish = () => {
     const now = Date.now();
     bus.publish({
       type: 'planner_heartbeat',
       ts: now,
       phase,
-      elapsedMs: now - startTime,
+      elapsedMs: now - windowStart,
       accumulatedTokens: state.accumulatedTokens,
       ...(state.callId !== undefined ? { callId: state.callId } : {}),
       ...(state.phaseHint !== undefined ? { phaseHint: state.phaseHint } : {}),
@@ -42,6 +44,7 @@ export function startPlannerHeartbeat(
   };
 
   const threshold = setTimeout(() => {
+    thresholdPassed = true;
     publish();
     timer = setInterval(publish, HEARTBEAT_INTERVAL_MS);
   }, HEARTBEAT_THRESHOLD_MS);
@@ -49,12 +52,15 @@ export function startPlannerHeartbeat(
   return {
     updateTokens(tokens: number): void {
       state.accumulatedTokens = tokens;
+      if (thresholdPassed) publish();
     },
     updatePhaseHint(hint: string): void {
       state.phaseHint = hint;
     },
     updateCallId(callId: string): void {
       state.callId = callId;
+      windowStart = Date.now();
+      state.accumulatedTokens = 0;
     },
     stop(): void {
       clearTimeout(threshold);

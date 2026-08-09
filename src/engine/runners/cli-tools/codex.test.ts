@@ -201,6 +201,64 @@ describe('Codex JSONL protocol adapter', () => {
     });
   });
 
+  it('carries the real Codex message through the error + turn.failed pair in either order and alone', () => {
+    // Captured verbatim from `codex exec --json` (codex-cli 0.146.0) failing a turn.
+    const threadLine =
+      '{"type":"thread.started","thread_id":"019fd8af-fdab-7f11-a014-29c1de9fe822"}';
+    const turnLine = '{"type":"turn.started"}';
+    const errorLine =
+      '{"type":"error","message":"Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again."}';
+    const failedLine =
+      '{"type":"turn.failed","error":{"message":"Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again."}}';
+    const realMessage =
+      'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
+
+    const captured = [threadLine, turnLine, errorLine, failedLine].flatMap((line) => [
+      ...codexProtocolEvents(line),
+    ]);
+    expect(captured.filter((event) => event.type === 'result')).toHaveLength(2);
+    expect(terminalInput(codexPlannerAdapter, captured)).toMatchObject({
+      status: 'failed',
+      nativeSessionId: '019fd8af-fdab-7f11-a014-29c1de9fe822',
+      error: { code: 'codex-turn-failed', message: realMessage },
+    });
+
+    const reversed = [threadLine, turnLine, failedLine, errorLine].flatMap((line) => [
+      ...codexProtocolEvents(line),
+    ]);
+    expect(terminalInput(codexPlannerAdapter, reversed)).toMatchObject({
+      status: 'failed',
+      error: { code: 'codex-error', message: realMessage },
+    });
+
+    expect(terminalInput(codexPlannerAdapter, codexProtocolEvents(errorLine))).toMatchObject({
+      status: 'failed',
+      error: { code: 'codex-error', message: realMessage },
+    });
+    expect(terminalInput(codexPlannerAdapter, codexProtocolEvents(failedLine))).toMatchObject({
+      status: 'failed',
+      error: { code: 'codex-turn-failed', message: realMessage },
+    });
+  });
+
+  it('a double-encoded turn.failed body yields the inner human message as the failure message', () => {
+    const humanMessage =
+      "The 'gpt-5-totally-bogus-model' model is not supported when using Codex with a ChatGPT account.";
+    const envelope = JSON.stringify({
+      type: 'error',
+      status: 400,
+      error: { type: 'invalid_request_error', message: humanMessage },
+    });
+    const line = JSON.stringify({ type: 'turn.failed', error: { message: envelope } });
+    const terminal = terminalInput(codexPlannerAdapter, codexProtocolEvents(line));
+
+    expect(terminal.status).toBe('failed');
+    expect(terminal.error).toEqual({
+      code: 'codex-turn-failed',
+      message: `${humanMessage}\n${envelope}`,
+    });
+  });
+
   it('fails explicit turn.failed and malformed required records', () => {
     const failed = codexProtocolEvents(JSON.stringify({ type: 'turn.failed' }));
     expect(terminalInput(codexPlannerAdapter, failed)).toMatchObject({

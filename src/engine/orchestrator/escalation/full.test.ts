@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -15,6 +15,7 @@ import {
   makeBusRecorder,
   makeCallbacks,
   makeImplementer,
+  makePlanner,
   TEST_METADATA,
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
@@ -23,10 +24,23 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { runFullTier } from './full.js';
 
 let dirs: string[] = [];
+let stateHome = '';
+const ORIGINAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;
+
+beforeEach(() => {
+  stateHome = createTempDir('full-tier-state-home');
+  process.env.XDG_STATE_HOME = stateHome;
+});
 
 afterEach(() => {
-  for (const dir of dirs) cleanupTempDir(dir);
-  dirs = [];
+  try {
+    for (const dir of dirs) cleanupTempDir(dir);
+    dirs = [];
+    cleanupTempDir(stateHome);
+  } finally {
+    if (ORIGINAL_XDG_STATE_HOME === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = ORIGINAL_XDG_STATE_HOME;
+  }
 });
 
 const TARGET = 'src/dirty.ts';
@@ -34,6 +48,79 @@ const FIRST_ATTEMPT = 'export const dirty = "written by the attempt that failed"
 const REWRITTEN = 'export const dirty = "rewritten by the tier-2 escalation";\n';
 
 describe('runFullTier', () => {
+  it('publishes task_full_fail exactly once when tier-2 completes without changing files', {
+    timeout: 60_000,
+  }, async () => {
+    const projectDir = createTempDir('full-tier-zero-write-test');
+    dirs.push(projectDir);
+    createTestGitRepo(projectDir);
+    const sessionId = 'sess-full-tier-zero-write';
+    ensureSessionDir(projectDir, sessionId);
+
+    const task = makeTask({ id: 'T003', file: 'src/no-change.ts' });
+    const state = makeImplState([task], { phase: 'escalating' });
+    const config = makeNoValidationConfig({
+      planner: {
+        kind: 'api',
+        provider: 'anthropic',
+        apiBase: 'https://api.anthropic.com/v1',
+        apiKey: 'test-key',
+        model: 'claude-sonnet-4-6',
+      },
+      approval: { enabled: false, feedRejectionsToPlanner: false },
+      workflow: {},
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const isolation = createRunIsolation({
+      projectDir,
+      sessionId,
+      strategy: 'worktree',
+      onFallback: () => {},
+      onRetained: () => {},
+    });
+
+    try {
+      const outcome = await runFullTier({
+        ctx: {
+          projectDir,
+          sessionId,
+          config,
+          callbacks,
+          bus,
+          planner: makePlanner({
+            escalateFull: async () => ({
+              success: true,
+              output: 'reported success without writing files',
+              code: null,
+              usage: null,
+            }),
+          }),
+          context: defaultContext,
+          implementer: makeImplementer({ capabilities: { writesFiles: 'direct' } }),
+          metadata: TEST_METADATA,
+          sinks: TEST_SINKS,
+          validator: createValidator(),
+          isolation,
+          taskStartSnapshot,
+          dependsOnFiles: [],
+        },
+        task,
+        state,
+        lastError: 'validation failed',
+        priorAttempts: 0,
+      });
+
+      const fullFailEvents = events.filter((event) => event.type === 'task_full_fail');
+      expect(fullFailEvents).toHaveLength(1);
+      expect(fullFailEvents[0]).toMatchObject({ taskId: task.id });
+      expect(outcome.result.completed).toBe(false);
+    } finally {
+      await isolation.dispose();
+    }
+  });
+
   it('completes when the escalation rewrites the file the run worktree was already dirty in', {
     timeout: 60_000,
   }, async () => {

@@ -1,7 +1,7 @@
 import type { ActionClass } from '../../../core/schemas/enums.js';
 import type { ApprovalTier } from '../../../core/schemas/config.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { matchesGlob } from '../../../utils/path-patterns.js';
+import { matchesGlob, scopePathPatterns } from '../../../utils/path-patterns.js';
 
 export type TierMap = Partial<Record<ActionClass, ApprovalTier>>;
 
@@ -125,6 +125,15 @@ function extractPath(desc: string, input: ClassifyInput): string | null {
   return null;
 }
 
+function scopeEntryPatterns(entry: string): string[] {
+  const patterns = scopePathPatterns(entry);
+  if (patterns.length > 0) return patterns;
+  // scopePathPatterns drops bare filenames (no separator or wildcard); a
+  // whitespace-free entry is a literal pattern like `tsconfig.json`, not prose.
+  const trimmed = entry.trim();
+  return trimmed.length > 0 && !/\s/.test(trimmed) ? [trimmed] : [];
+}
+
 function isInScope(filePath: string, input: ClassifyInput): boolean {
   const normalized = normalizeProjectPath(filePath, input.projectDir);
   if (normalized === normalizeProjectPath(input.taskFile, input.projectDir)) return true;
@@ -135,9 +144,9 @@ function isInScope(filePath: string, input: ClassifyInput): boolean {
   )
     return true;
   if (
-    input.taskInBounds.some((glob) =>
-      matchesGlob(normalized, normalizeProjectPath(glob, input.projectDir)),
-    )
+    input.taskInBounds
+      .flatMap(scopeEntryPatterns)
+      .some((pattern) => matchesGlob(normalized, normalizeProjectPath(pattern, input.projectDir)))
   )
     return true;
   if (input.allowedPaths?.some((glob) => matchesGlob(normalized, glob))) return true;

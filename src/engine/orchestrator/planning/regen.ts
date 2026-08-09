@@ -34,6 +34,7 @@ type RegenerateFromFeedbackCtx = {
   signal?: AbortSignal | undefined;
   skillsContext?: string | undefined;
   planOverride?: string | undefined;
+  feedback?: string | undefined;
   queuedMessages?: readonly QueuedMessage[] | undefined;
   commitQueue?: boolean | undefined;
   statusPhase?: Phase | undefined;
@@ -74,7 +75,8 @@ async function regenerateFromFeedback(
       ? readQueueForPrompt({ projectDir, sessionId, state })
       : { state, messages: [...ctx.queuedMessages] };
   state = queued.state;
-  const prefix = queued.messages.length > 0 ? formatDrainedMessages(queued.messages) : '';
+  const queuedPrefix = queued.messages.length > 0 ? formatDrainedMessages(queued.messages) : '';
+  const prefix = ctx.feedback ? `${ctx.feedback}\n\n${queuedPrefix}` : queuedPrefix;
 
   const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
   const languageContext = buildProjectLanguageContext(
@@ -220,6 +222,7 @@ type RegenerateBaseOptions = {
 
 type RegenerateTasksOptions = RegenerateBaseOptions & {
   planOverride?: string | undefined;
+  feedback?: string | undefined;
 };
 
 type RegeneratePlanAndTasksOptions = RegenerateBaseOptions & {
@@ -245,6 +248,7 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     state,
     metadata,
     planOverride,
+    feedback,
     signal,
     queuedMessages,
     commitQueue,
@@ -261,6 +265,7 @@ export async function regenerateTasks(opts: RegenerateTasksOptions): Promise<{
     state,
     metadata,
     planOverride,
+    feedback,
     signal,
     queuedMessages,
     commitQueue,

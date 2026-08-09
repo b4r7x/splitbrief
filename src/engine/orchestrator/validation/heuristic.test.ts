@@ -36,10 +36,56 @@ describe('detectValidationHeuristic', () => {
     expect(result?.typecheckCommand).toBeUndefined();
   });
 
-  it('returns null for TS project (use existing defaults)', () => {
+  it('returns null for TS project without a linter config (use existing defaults)', () => {
     writeFileSync(join(tmpDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
     const result = detectValidationHeuristic(tmpDir);
     expect(result).toBeNull();
+  });
+
+  it('resolves npm run lint for a TS project with only a lint package script', () => {
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      '{"devDependencies":{"typescript":"^5"},"scripts":{"lint":"eslint ."}}',
+    );
+    const result = detectValidationHeuristic(tmpDir);
+    expect(result).toEqual({ lintCommand: 'npm run lint', language: 'typescript' });
+  });
+
+  it('resolves npm run lint for a JS project with only a lint package script', () => {
+    writeFileSync(join(tmpDir, 'package.json'), '{"scripts":{"lint":"eslint ."}}');
+    const result = detectValidationHeuristic(tmpDir);
+    expect(result).toEqual({
+      testCommand: 'npm test',
+      lintCommand: 'npm run lint',
+      language: 'javascript',
+    });
+  });
+
+  it('resolves a lint command for a TS project with a Biome config', () => {
+    writeFileSync(join(tmpDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
+    writeFileSync(join(tmpDir, 'biome.json'), '{}');
+    const result = detectValidationHeuristic(tmpDir);
+    expect(result).toEqual({ lintCommand: 'npx biome check .', language: 'typescript' });
+  });
+
+  it('resolves a lint command for a TS project with an ESLint config', () => {
+    writeFileSync(join(tmpDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
+    writeFileSync(join(tmpDir, 'eslint.config.js'), 'export default [];');
+    const result = detectValidationHeuristic(tmpDir);
+    expect(result?.lintCommand).toBe('npx eslint .');
+    expect(result?.typecheckCommand).toBeUndefined();
+    expect(result?.testCommand).toBeUndefined();
+  });
+
+  it('resolves a lint command for a JS project with an ESLint config', () => {
+    writeFileSync(join(tmpDir, 'package.json'), '{}');
+    writeFileSync(join(tmpDir, '.eslintrc.json'), '{}');
+    const result = detectValidationHeuristic(tmpDir);
+    expect(result).toEqual({
+      testCommand: 'npm test',
+      lintCommand: 'npx eslint .',
+      language: 'javascript',
+    });
   });
 
   it('returns null when no marker files exist', () => {

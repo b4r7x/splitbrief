@@ -224,7 +224,7 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 | `empty_task_list` | The planner returned zero parseable Task Briefs |
 | `vague_validation` | every test matches a known vague pattern ("works", "validate", …) |
 | `missing_implementation_steps` | `task.implementationSteps` is empty |
-| `multi_file_task` | description/steps mention ≥ 2 distinct file paths |
+| `multi_file_task` | description/steps direct writes to ≥ 2 distinct file paths |
 | `missing_code_context` | `action === 'modify'` with no `currentCode`, `signature`, or `pattern` |
 | `missing_escalation` | description/steps contain risk keywords (auth, token, secret, …) and `escalation` is absent |
 | `missing_scope` | `task.scope` absent or empty |
@@ -236,7 +236,7 @@ After each planning phase produces its Task Brief, the orchestrator runs a quali
 |---|---|
 | `missing_type_definitions` | `task.typeDefs` is empty |
 
-`multi_file_task` only fires when the brief names 2+ distinct project-relative file paths. Count literal path mentions in prose, bullets, code fences, and examples; repeating the same path does not count.
+`multi_file_task` only fires when the brief's description/steps name 2+ distinct project-relative file paths as **write targets** — a path governed by a write verb ("update `src/api.ts`", "create `src/utils/helpers.ts` … and update the call site in `src/api.ts`"). Referenced paths do not count: a pattern exemplar to follow, an import or type source ("importing `titleCase` from `src/text.ts`"), a negated verb ("do not modify `src/slug.ts`"), or a bare mention. Repeating the same path does not count, and the task's own `file` never makes a brief multi-file by itself.
 
 ### Artifact
 

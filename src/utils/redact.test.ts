@@ -120,12 +120,70 @@ describe('redactSecrets', () => {
     `NRAK-${'A'.repeat(28)}`,
     `PMAK-${'a'.repeat(25)}-${'B'.repeat(34)}`,
     '{"secretariat":"public","tokenizer":"words","credentialsHelper":"safe"}',
+    'Failed to refresh token: Permission denied',
+    'Failed to refresh token: 401 Unauthorized',
+    'Invalid API key: 403 Forbidden',
+    "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.",
+    'Invalid API key: unauthorized.',
+    'auth token: expired, please log in again',
     '-----BEGIN PGP PUBLIC KEY BLOCK-----',
     '-----BEGIN PUBLIC KEY-----',
     '-----BEGIN RSA PUBLIC KEY-----',
     '-----BEGIN CERTIFICATE-----',
   ])('leaves non-secret text unchanged', (message) => {
     expect(redactSecrets(message)).toBe(message);
+  });
+
+  it('keeps prose after a credential noun while still redacting credential-shaped values', () => {
+    expect(redactSecrets('Failed to refresh token: Permission denied')).toBe(
+      'Failed to refresh token: Permission denied',
+    );
+    expect(redactSecrets('token: c3VwZXJzZWNyZXQtdmFsdWU1')).toBe('token: ***REDACTED***');
+    expect(redactSecrets('password=hunter2')).toBe('password=***REDACTED***');
+    expect(redactSecrets('API_KEY=abc123def456ghi789')).toBe('API_KEY=***REDACTED***');
+    expect(redactSecrets('token: "wordonly"')).toBe('token: "***REDACTED***"');
+  });
+
+  it('redacts short alphabetic secrets for credential assignments', () => {
+    expect(redactSecrets('DB_PASSWORD=supersecret')).toBe('DB_PASSWORD=***REDACTED***');
+    expect(redactSecrets('password: letmein')).toBe('password: ***REDACTED***');
+    expect(redactSecrets('AUTH_TOKEN=opensesame')).toBe('AUTH_TOKEN=***REDACTED***');
+    expect(redactSecrets('STATUS=ready and waiting for input')).toBe(
+      'STATUS=ready and waiting for input',
+    );
+  });
+
+  it('redacts short alphabetic token values assigned in key position', () => {
+    expect(redactSecrets('token: letmein')).toBe('token: ***REDACTED***');
+    expect(redactSecrets('AUTH_TOKEN: opensesame')).toBe('AUTH_TOKEN: ***REDACTED***');
+    expect(redactSecrets('  refresh_token: staleword')).toBe('  refresh_token: ***REDACTED***');
+    expect(redactSecrets('runner: codex\n  access_token: opensesame')).toBe(
+      'runner: codex\n  access_token: ***REDACTED***',
+    );
+    expect(redactSecrets('phase=review, token: opensesame')).toBe(
+      'phase=review, token: ***REDACTED***',
+    );
+  });
+
+  it('keeps a mid-sentence token noun in prose unredacted', () => {
+    expect(redactSecrets('Failed to refresh token: denied')).toBe(
+      'Failed to refresh token: denied',
+    );
+    expect(redactSecrets('Could not read token: missing')).toBe('Could not read token: missing');
+    expect(redactSecrets('Runner reported access_token: expired')).toBe(
+      'Runner reported access_token: expired',
+    );
+    expect(redactSecrets('Failed to refresh\nthe token: denied')).toBe(
+      'Failed to refresh\nthe token: denied',
+    );
+  });
+
+  it('keeps short numeric status codes after a credential noun', () => {
+    expect(redactSecrets('Failed to refresh token: 401 Unauthorized')).toBe(
+      'Failed to refresh token: 401 Unauthorized',
+    );
+    expect(redactSecrets('access_token: 429')).toBe('access_token: 429');
+    expect(redactSecrets(`token: ${'9'.repeat(24)}`)).toBe('token: ***REDACTED***');
   });
 
   it('returns redaction metadata and supports a custom marker', () => {

@@ -6,6 +6,8 @@ import {
 } from '../../runners/errors.js';
 import type { ImplementerOptions } from '../types.js';
 import { processError } from '../../../lib/process/errors.js';
+import { isAuthFailureDiagnostic } from '../../runners/auth-failure.js';
+import { isUsageLimitDiagnostic } from '../../runners/usage-limit.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 export const ABORTED_OUTCOME_TEXT = 'Aborted';
@@ -78,6 +80,7 @@ function failureStateFromCode(code: string): RunnerFailureOutcomeState | null {
     case 'spawn-not-found':
     case 'incompatible-version':
     case 'unauthenticated':
+    case 'usage-limit':
     case 'timeout':
     case 'user-abort':
     case 'signal-exit':
@@ -98,6 +101,18 @@ export function runnerCallOutcome(result: RunnerCallResult): RunnerOutcome {
 
   const stableState = failureStateFromCode(result.error.code);
   if (stableState !== null) return runnerOutcome.failure(stableState);
+
+  // Subscription CLIs report an exhausted quota and a dead login alike as
+  // ordinary turn failures (codex: `codex-turn-failed`, claude:
+  // `runner_result_error`); the message is the only signal that retrying
+  // cannot succeed. Limits are checked first: a limit message must never
+  // earn login advice, because logging in does not restore quota.
+  if (isUsageLimitDiagnostic(result.error.message)) {
+    return runnerOutcome.failure('usage-limit');
+  }
+  if (isAuthFailureDiagnostic(result.error.message)) {
+    return runnerOutcome.failure('unauthenticated');
+  }
 
   switch (result.status) {
     case 'failed':

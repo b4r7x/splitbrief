@@ -98,6 +98,15 @@ export async function runLocalRetries(
     if (outcome.result) {
       return outcome;
     }
+    // A signed-out or quota-exhausted runner fails every further attempt the
+    // same way; stop burning retries and let the caller halt instead of
+    // escalating.
+    if (
+      outcome.lastFailure?.outcome === 'unauthenticated' ||
+      outcome.lastFailure?.outcome === 'usage-limit'
+    ) {
+      return outcome;
+    }
   }
 
   return { state, task, lastError, attempts };

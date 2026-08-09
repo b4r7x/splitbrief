@@ -76,6 +76,8 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     contentBlockTools: new Map(),
   };
   const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
+  /** Assistant text streamed since the last completed content block. */
+  let blockText = '';
   const textLimiter = createRunnerCallDeltaLimiter({
     code: 'runner_output_text_limit',
     label: 'runner output text',
@@ -113,10 +115,28 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       state.recorder.text({ channel, text: accepted.text });
       if (channel === 'assistant' || channel === 'stdout') {
         state.text += accepted.text;
+        blockText += accepted.text;
         emitAssistantOutput(accepted.text);
       }
     }
     return finishLimitIfNeeded(accepted);
+  }
+
+  /**
+   * A non-partial `assistant` record restates the block whose `text_delta`
+   * slices already streamed, so only the part the deltas did not carry is new.
+   * A `replace` means the restatement diverges from those deltas rather than
+   * extending them; emitting it here would re-print text the deltas already
+   * streamed, so it is dropped deliberately and `applyResultText` reconciles the
+   * divergence once against the terminal `result` record.
+   */
+  function applyAssistantMessage(text: string): boolean {
+    const reconciliation = reconcileFinalText(blockText, redactCredential(text));
+    const missing =
+      reconciliation.kind === 'full' || reconciliation.kind === 'suffix' ? reconciliation.text : '';
+    const limited = missing.length > 0 ? applyStreamText('assistant', missing) : false;
+    blockText = '';
+    return limited;
   }
 
   function applyResultText(text: string): boolean {
@@ -159,9 +179,13 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
 
     if (parsed.sessionId) {
       const sessionId = redactCredential(parsed.sessionId);
-      state.sessionId = sessionId;
-      callbacks.onSessionId?.(sessionId);
-      state.recorder.sessionId({ nativeSessionId: sessionId });
+      // Every stream-json frame restates the id, and the callback persists
+      // workflow state on each call, so only a change is news.
+      if (sessionId !== state.sessionId) {
+        state.sessionId = sessionId;
+        callbacks.onSessionId?.(sessionId);
+        state.recorder.sessionId({ nativeSessionId: sessionId });
+      }
     }
 
     if (parsed.toolUse) {
@@ -203,8 +227,14 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
     }
 
     if (parsed.text && !parsed.isResult) {
-      const channel = parsed.channel ?? 'assistant';
-      if (applyStreamText(channel, parsed.text)) return;
+      // `final` text restates a block the partial-message deltas already
+      // streamed, so it replaces the accumulated text instead of extending it.
+      if (parsed.textSemantics === 'final') {
+        if (applyAssistantMessage(parsed.text)) return;
+      } else {
+        const channel = parsed.channel ?? 'assistant';
+        if (applyStreamText(channel, parsed.text)) return;
+      }
     }
 
     if (parsed.warning) {

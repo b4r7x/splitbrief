@@ -20,10 +20,11 @@ type SinglePhaseConfig = {
     callContext: RunnerCallContext;
     callbacks: Pick<
       PlannerCallbacks,
-      'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
+      'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'sessionId' | 'onCallEvent'
     >;
     priorMessages?: PriorMessage[] | undefined;
     images?: Attachment[] | undefined;
+    artifactFile?: string | undefined;
     signal?: AbortSignal | undefined;
   }) => Promise<RunnerCallResult>;
   backendKind?: RunnerCallContext['backendKind'];
@@ -128,9 +129,11 @@ export async function runSinglePhasePlanning(
           onQuestion: callbacks.onQuestion,
           onSessionId: callbacks.onSessionId,
           onSessionExpired: callbacks.onSessionExpired,
+          sessionId: callbacks.sessionId,
           onCallEvent: callbacks.onCallEvent,
         },
         ...extras,
+        artifactFile: TASKS_FILE,
         signal: callbacks.signal,
       }),
     );

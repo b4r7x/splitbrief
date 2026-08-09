@@ -39,6 +39,31 @@ describe('planning mutation guard', () => {
     }
   });
 
+  it('permits the phase artifact while still flagging other mutations', async () => {
+    const projectDir = createTempDir('planning-mutation-guard-artifact');
+    const sessionId = 'sess-guard';
+    createTestGitRepo(projectDir);
+    ensureSessionDir(projectDir, sessionId);
+    try {
+      const baseline = await capturePlanningMutationBaseline(projectDir);
+      writeFileSync(join(projectDir, 'tasks.md'), '# tasks\n');
+      mkdirSync(join(projectDir, 'docs'), { recursive: true });
+      writeFileSync(join(projectDir, 'docs', 'tasks.md'), '# tasks\n');
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src', 'leak.ts'), 'export const leak = true;\n');
+
+      const unexpected = await findUnexpectedPlanningMutations({
+        projectDir,
+        sessionId,
+        baseline,
+        artifactFile: 'tasks.md',
+      });
+      expect(unexpected).toEqual(['src/leak.ts']);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
   it('permits session artifact writes under the active session', async () => {
     const projectDir = createTempDir('planning-mutation-guard-session');
     const sessionId = 'sess-guard';

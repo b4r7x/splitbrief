@@ -69,6 +69,7 @@ function createTestCommands(opts: { isAttached?: boolean } = {}): RuntimeCommand
     getCurrentPhase: () => lifecycleStore.get().phase,
     requestRewind: () => true,
     requestTaskRedo: () => true,
+    requestWorkflowResume: () => true,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: () => ({ status: 'cleared', count: 0 }),
     rebuildRepomap: async () => ({ deleted: false, files: [] }),

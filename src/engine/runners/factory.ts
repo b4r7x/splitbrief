@@ -204,6 +204,7 @@ async function loadPlanner(
           model: config.planner.model,
           initialSessionId,
           effort: config.planner.effort,
+          args: config.planner.args,
           timeout: config.planner.timeout,
           idleWarnMs: config.planner.idleWarnMs,
           idleKillMs: config.planner.idleKillMs,

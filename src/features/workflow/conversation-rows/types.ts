@@ -66,6 +66,7 @@ export interface ConversationRow {
   kind: ConversationRowKind;
   segments: ConversationRowSegment[];
   markerTone?: ConversationRowTone;
+  headerContinuation?: boolean;
 }
 
 export interface ConversationRowsResult {

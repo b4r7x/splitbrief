@@ -6,6 +6,7 @@ import { configPath, loadConfig } from '../config/load/io.js';
 import { workflowOptsToCLIOverrides } from '../config/runtime/overrides/from-options.js';
 import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import { readActive, isSessionLive } from '../sessions/lifecycle.js';
+import { isInternalGitStatusPath } from '../paths.js';
 import {
   isGitRepo,
   hasCommits,
@@ -65,6 +66,19 @@ export interface CollectReadinessOptions {
    */
   probeRunnerAvailability?:
     | ((input: { config: Config }) => Promise<readonly RunnerAvailabilityFact[]>)
+    | undefined;
+  /**
+   * Optional headless-equivalent runner admission probe for doctor-style
+   * diagnostics. Execution admission performs its own fresh generic runner
+   * preparation.
+   */
+  interaction?: 'interactive' | 'headless' | undefined;
+  probeRunnerAdmission?:
+    | ((input: {
+        projectDir: string;
+        config: Config;
+        interaction: 'interactive' | 'headless';
+      }) => Promise<readonly ReadinessCheck[]>)
     | undefined;
   defaultApprove?: ApproveLevel | undefined;
   probeValidation?: boolean | undefined;
@@ -146,11 +160,25 @@ export async function collectReadiness(
     ...(availability !== undefined && { availability }),
   };
 
-  const report = buildReadinessReport(input);
+  let report = buildReadinessReport(input);
   if (options.probeValidation === true && loaded.config) {
     const probeChecks = await probeValidationBaseline(loaded.config, options.projectDir);
     if (probeChecks.length > 0) {
       mergeProbeChecks(report, probeChecks);
+    }
+  }
+  if (loaded.config && options.interaction && options.probeRunnerAdmission) {
+    try {
+      const admissionChecks = await options.probeRunnerAdmission({
+        projectDir: options.projectDir,
+        config: loaded.config,
+        interaction: options.interaction,
+      });
+      if (admissionChecks.length > 0) {
+        report = applyRunnerPreparationChecks(report, admissionChecks);
+      }
+    } catch {
+      // A probe that could not run makes no admission claim.
     }
   }
 
@@ -284,7 +312,15 @@ async function readRepoPosture(
 
   const status = await getGitStatus(projectDir);
   const untracked = new Set(status.not_added);
-  const dirtyFiles = status.files.map((file) => file.path).filter((path) => !untracked.has(path));
+  // The dirty-worktree check is about the operator's own edits. SPLITBRIEF's
+  // state directory and the worktrees it creates under `.trees/` live inside the
+  // project and show up in git status whenever they are not ignored, so counting
+  // them would report the tool's own bookkeeping as local work the run might
+  // overwrite.
+  const dirtyFiles = status.files
+    .map((file) => file.path)
+    .filter((path) => !untracked.has(path) && !isInternalGitStatusPath(path));
+  const untrackedFiles = status.not_added.filter((path) => !isInternalGitStatusPath(path));
   const inProgressGitOp = await getInProgressGitOp(projectDir).catch(() => null);
   const onDetachedHead = (await getCurrentBranch(projectDir).catch(() => '')) === 'HEAD';
   const activeSession = readActive(projectDir);
@@ -301,7 +337,7 @@ async function readRepoPosture(
     isGitRepo: true,
     hasCommits: true,
     dirtyFiles,
-    untrackedFiles: status.not_added,
+    untrackedFiles,
     onDetachedHead,
     inProgressGitOp,
     ...(commitStrategy !== undefined && { commitStrategy }),

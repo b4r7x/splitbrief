@@ -12,7 +12,7 @@ const STALL_CLEARING_EVENT_TYPES = new Set<EngineEvent['type']>([
 ]);
 
 type RunningPhase = Exclude<Phase, 'complete'>;
-type LifecycleStatus = 'idle' | 'running' | 'interrupted' | 'complete' | 'cancelled';
+type LifecycleStatus = 'idle' | 'running' | 'interrupted' | 'paused' | 'complete' | 'cancelled';
 type PhaseFirstSeenTs = Readonly<Partial<Record<Phase, number>>>;
 
 type LifecycleStall = { since: number; silentMs: number } | null;
@@ -59,6 +59,17 @@ interface InterruptedLifecycleState extends LifecycleBase {
   reason: null;
 }
 
+interface PausedLifecycleState extends LifecycleBase {
+  phase: RunningPhase;
+  status: 'paused';
+  interruptParked: false;
+  cancelled: false;
+  startedAt: number | null;
+  endedAt: null;
+  durationMs: null;
+  reason: null;
+}
+
 interface CompleteLifecycleState extends LifecycleBase {
   phase: Phase;
   status: 'complete';
@@ -85,6 +96,7 @@ export type LifecycleState =
   | IdleLifecycleState
   | RunningLifecycleState
   | InterruptedLifecycleState
+  | PausedLifecycleState
   | CompleteLifecycleState
   | CancelledLifecycleState;
 
@@ -262,6 +274,11 @@ export function markLifecycleInterrupted(state: LifecycleState): LifecycleState 
   return { ...state, status: 'interrupted' };
 }
 
+export function markLifecyclePaused(state: LifecycleState): LifecycleState {
+  if (state.status !== 'running' && state.status !== 'interrupted') return state;
+  return { ...state, status: 'paused', interruptParked: false, stall: null };
+}
+
 export function markLifecycleInterruptParked(state: LifecycleState): LifecycleState {
   if (state.status !== 'interrupted' || state.interruptParked) return state;
   return { ...state, interruptParked: true };
@@ -353,6 +370,12 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
     );
   }
 
+  if (next.status === 'paused') {
+    return markLifecyclePaused(
+      runningLifecycleState({ phase, queueDepth, phaseFirstSeenTs, startedAt }),
+    );
+  }
+
   if (next.status === 'running' || phase !== 'idle') {
     return runningLifecycleState({ phase, queueDepth, phaseFirstSeenTs, startedAt });
   }
@@ -379,7 +402,7 @@ function applyRunningPhase(
       startedAt: ts,
     });
   }
-  if (state.status === 'running' || state.status === 'interrupted') {
+  if (state.status === 'running' || state.status === 'interrupted' || state.status === 'paused') {
     return { ...state, phase: runningPhase(phase), phaseFirstSeenTs, stall: null };
   }
   return { ...state, phase, phaseFirstSeenTs };

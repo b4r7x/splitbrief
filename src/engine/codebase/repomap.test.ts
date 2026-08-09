@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, it, expect } from 'vitest';
 import { buildRepoMap, MAX_FILE_SIZE_BYTES } from './repomap.js';
 import { initParser } from './parse.js';
@@ -11,7 +11,10 @@ describe('buildRepoMap', () => {
   beforeAll(async () => {
     await initParser();
     projectDir = createTempDir('repomap-test');
-    const fixtureSrc = resolve('testing/fixtures/codebase/sample-project');
+    const fixtureSrc = join(
+      import.meta.dirname,
+      '../../../testing/fixtures/codebase/sample-project',
+    );
     for (const file of readdirSync(fixtureSrc)) {
       if (file.endsWith('.ts')) {
         copyFileSync(join(fixtureSrc, file), join(projectDir, file));

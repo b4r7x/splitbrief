@@ -32,8 +32,14 @@ type ActiveAttempt = Readonly<{
   promise: Promise<void>;
 }>;
 
+export type HomeComposerDraftRestore = Readonly<{
+  epoch: number;
+  value: string;
+}>;
+
 export type StartPreparationController<Input> = Readonly<{
   state: StartPreparationState;
+  draftRestore: HomeComposerDraftRestore | undefined;
   submit: (input: Input) => Promise<void>;
   retry: () => Promise<void>;
   cancel: (afterCancel?: (() => void) | undefined) => void;
@@ -47,11 +53,18 @@ export function useStartPreparation<Input>(
   options: StartPreparationOptions<Input>,
 ): StartPreparationController<Input> {
   const [state, setState] = useState<StartPreparationState>({ kind: 'idle' });
+  const [draftRestore, setDraftRestore] = useState<HomeComposerDraftRestore | undefined>(undefined);
   const activeRef = useRef<ActiveAttempt | undefined>(undefined);
   const lastInputRef = useRef<Readonly<{ value: Input }> | undefined>(undefined);
   const attemptRef = useRef(0);
+  const draftRestoreEpochRef = useRef(0);
   const mountedRef = useRef(true);
   const completedRef = useRef(false);
+
+  const publishDraftRestore = (value: string): void => {
+    draftRestoreEpochRef.current += 1;
+    setDraftRestore({ epoch: draftRestoreEpochRef.current, value });
+  };
 
   useEffect(() => {
     mountedRef.current = true;
@@ -81,6 +94,7 @@ export function useStartPreparation<Input>(
     const id = attemptRef.current + 1;
     attemptRef.current = id;
     lastInputRef.current = { value: input };
+    publishDraftRestore(String(input));
     setState({ kind: 'preparing' });
 
     const promise = Promise.resolve()
@@ -135,7 +149,14 @@ export function useStartPreparation<Input>(
   };
 
   const submit = (input: Input): Promise<void> => {
-    if (activeRef.current) return activeRef.current.promise;
+    const active = activeRef.current;
+    // The composer clears its draft on every submit, so a repeat submit the
+    // running attempt swallows still has to republish it — otherwise the text
+    // the user can still see vanishes without ever reaching a new attempt.
+    if (active) {
+      publishDraftRestore(String(input));
+      return active.promise;
+    }
     if (completedRef.current) return Promise.resolve();
     return begin(input);
   };
@@ -151,9 +172,13 @@ export function useStartPreparation<Input>(
     attemptRef.current += 1;
     activeRef.current?.controller.abort();
     activeRef.current = undefined;
-    if (mountedRef.current) setState({ kind: 'idle' });
+    const lastInput = lastInputRef.current;
+    if (mountedRef.current) {
+      if (lastInput !== undefined) publishDraftRestore(String(lastInput.value));
+      setState({ kind: 'idle' });
+    }
     afterCancel?.();
   };
 
-  return { state, submit, retry, cancel };
+  return { state, draftRestore, submit, retry, cancel };
 }

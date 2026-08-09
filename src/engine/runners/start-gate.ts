@@ -1,4 +1,4 @@
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import {
   CliExecutableReceiptSchema,
   parseDigestBoundExecutableFingerprint,
@@ -139,7 +139,6 @@ export function admitFreshCliStart(options: AdmitFreshCliStartOptions): FreshCli
     expectedSelectionId: options.expectedSelectionId,
     requiredFacts: CLI_START_REQUIRED_FACTS,
     interaction: options.interaction,
-    runnerTier: CLI_TOOL_CATALOG[options.tool].compatibilityTier,
     unverifiedAuth: options.unverifiedAuth,
   });
   if (admission.kind === 'disclosure-required') return admission;

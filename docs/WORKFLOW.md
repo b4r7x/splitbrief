@@ -340,7 +340,7 @@ When a task fails validation `maxRetries` times:
 2. **Full escalation** — planner writes the code directly. Success → task `escalated`.
 3. **Recovery** — if all tiers fail, `pendingRecovery` is set. The phase stays where the stop occurred.
 
-Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `budget-paused`, `budget-exceeded`, `dependency-blocked`.
+Recovery reasons: `implementation-error`, `validation-failed`, `retry-exhausted`, `runner-unauthenticated`, `runner-usage-limit`, `context-overflow`, `user-edit-conflict`, `approval-promotion-conflict`, `budget-paused`, `budget-exceeded`, `dependency-blocked`.
 
 Budget-paused recovery can come from crossing `workflow.budgetPauseThreshold` or from paid/API usage whose model pricing is unknown. Unknown local-only usage does not dollar-pause by itself; it remains visible as local/unpriced.
 

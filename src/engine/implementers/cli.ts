@@ -7,10 +7,10 @@ import { createImplementerBase } from './pipeline/run.js';
 import { processError } from '../../lib/process/errors.js';
 import {
   CLI_NO_DEADLINE_MS,
-  CLI_PROMPT_PLACEHOLDER,
   invokeCliAdapter,
   toCliEnvironment,
 } from '../runners/invoke-cli-adapter.js';
+import { CLI_PROMPT_SENTINEL } from '../runners/cli-tools/candidate-contract.js';
 import { createCommandExistsAvailability } from '../availability.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.js';
@@ -87,7 +87,7 @@ export function createCliImplementer(
 
         const configuredArgs = config.args ?? [];
         const baseArgs = adapter.baseArgs({
-          prompt: CLI_PROMPT_PLACEHOLDER,
+          prompt: CLI_PROMPT_SENTINEL,
           model: effectiveModel,
           projectDir,
           configuredArgs,

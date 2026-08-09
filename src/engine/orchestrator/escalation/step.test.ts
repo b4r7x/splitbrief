@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../../core/schemas/config.js';
-import { TREES_DIR } from '../../../core/paths.js';
+import { isolationWorktreePath, isolationWorktreeRoot } from '../../../core/paths.js';
 import type { RetryOptions } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createChangeDetector } from '../../change-detection.js';
@@ -25,16 +25,39 @@ import {
   TEST_METADATA,
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
-import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { cleanupTempDir as removeTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep } from './step.js';
 
 let dirs: string[] = [];
+let stateHome = '';
+const ORIGINAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;
+
+function cleanupTempDir(dir: string): void {
+  if (existsSync(join(dir, '.git'))) {
+    rmSync(isolationWorktreeRoot(realpathSync(join(dir, '.git'))), {
+      recursive: true,
+      force: true,
+    });
+  }
+  removeTempDir(dir);
+}
+
+beforeEach(() => {
+  stateHome = createTempDir('retry-step-state-home');
+  process.env.XDG_STATE_HOME = stateHome;
+});
 
 afterEach(() => {
-  for (const dir of dirs) cleanupTempDir(dir);
-  dirs = [];
+  try {
+    for (const dir of dirs) cleanupTempDir(dir);
+    dirs = [];
+    removeTempDir(stateHome);
+  } finally {
+    if (ORIGINAL_XDG_STATE_HOME === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = ORIGINAL_XDG_STATE_HOME;
+  }
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
@@ -125,6 +148,83 @@ describe('runRetryStep', () => {
     expect(invokeRetry).toHaveBeenCalledWith(
       expect.objectContaining({ signal: controller.signal }),
     );
+  });
+
+  it('intermediate-tier usage-limit failure records the intermediate runner in lastFailure.runner', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T006', file: 'src/intermediate-fail.ts' });
+    const state = makeImplState([task]);
+    const defaultImplementer = {
+      kind: 'api' as const,
+      provider: 'ollama' as const,
+      service: 'ollama' as const,
+      offering: 'local' as const,
+      apiBase: 'http://localhost:11434/v1',
+      model: 'qwen-small',
+    };
+    const intermediateRunner = {
+      kind: 'api' as const,
+      provider: 'openrouter' as const,
+      service: 'openrouter' as const,
+      offering: 'payg' as const,
+      apiBase: 'https://openrouter.ai/api/v1',
+      model: 'x-ai/grok-4-fast',
+    };
+    const config = makeNoValidationConfig({ implementer: defaultImplementer });
+    const intermediateConfig = { ...config, implementer: intermediateRunner };
+    const { callbacks } = makeCallbacks();
+    const { bus } = makeBusRecorder();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    const intermediateImplementer = makeImplementer({
+      retry: async () => ({
+        success: false,
+        output: '',
+        error: 'rate limit exceeded',
+        outcome: 'usage-limit',
+      }),
+    });
+
+    const outcome = await runRetryStep({
+      ctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner: makePlanner(),
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        taskStartSnapshot,
+        dependsOnFiles: [],
+      },
+      task,
+      state,
+      lastError: 'validation failed',
+      attempts: 1,
+      method: 'escalated-intermediate',
+      transitionType: 'VALIDATION_PASS',
+      usageCategory: 'implementer',
+      retryFailureFallback: 'Intermediate escalation failed',
+      invokeRetry: makeImplementerRetryInvoker({
+        context: defaultContext,
+        kind: 'local',
+        languageContext: buildLanguageContext('typescript'),
+        phase: state.phase,
+        onOutput: () => {},
+        implementer: intermediateImplementer,
+        config: intermediateConfig,
+      }),
+    });
+
+    expect(outcome.lastFailure).toEqual({
+      outcome: 'usage-limit',
+      runner: intermediateRunner,
+    });
+    expect(outcome.lastFailure?.runner).not.toEqual(defaultImplementer);
   });
 
   it('uses an overridden implementer profile for retry execution and completion metadata', async () => {
@@ -358,6 +458,55 @@ describe('runRetryStep', () => {
     });
   });
 
+  it('tier-2 completion with zero changed files yields a failed outcome, not completion', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T003', file: 'src/no-change.ts' });
+    const state = makeImplState([task], { phase: 'escalating' });
+    const config = configWithProfiles();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, task.file), 'export const earlierAttempt = true;\n');
+    let tier2ProjectDir = '';
+
+    const outcome = await runRetryStep({
+      ctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks,
+        bus,
+        planner: makePlanner(),
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        taskStartSnapshot,
+        dependsOnFiles: [],
+      },
+      task,
+      state,
+      lastError: 'validation failed',
+      attempts: 1,
+      method: 'escalated-full',
+      transitionType: 'FULL_SUCCESS',
+      usageCategory: 'escalation',
+      retryFailureFallback: 'tier-2 escalation failed',
+      invokeRetry: async ({ projectDir: retryProjectDir }) => {
+        tier2ProjectDir = retryProjectDir;
+        return { success: true };
+      },
+    });
+
+    expect(outcome.result).toBeUndefined();
+    expect(outcome.lastError).toContain('without changing any files');
+    expect(events.some((event) => event.type === 'task_completed')).toBe(false);
+    expect(existsSync(tier2ProjectDir)).toBe(false);
+  });
+
   it('retries in the run worktree the failed attempt used, keeping only its promoted work', {
     timeout: 60_000,
   }, async () => {
@@ -383,7 +532,9 @@ describe('runRetryStep', () => {
         config,
         writesFiles: 'direct',
       });
-      expect(failed.projectDir).toBe(join(projectDir, TREES_DIR, sessionId));
+      expect(failed.projectDir).toBe(
+        isolationWorktreePath(realpathSync(join(projectDir, '.git')), sessionId),
+      );
 
       // What the failed attempt promoted before validation rejected it, and the
       // half-written file the same attempt left behind unpromoted.

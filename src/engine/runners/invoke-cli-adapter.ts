@@ -5,12 +5,10 @@ import type {
   CliInvocation,
   CliPlannerAdapter,
 } from './cli-tools/contract.js';
-import { CLI_PROMPT_SENTINEL } from './cli-tools/candidate-contract.js';
+import { reconcileFinalText } from '../streaming/final-text.js';
 import { invokeProcessCli } from './cli-tools/process-invoke.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-env.js';
 
-/** The only prompt sentinel understood by the lossless CLI transport. */
-export const CLI_PROMPT_PLACEHOLDER = CLI_PROMPT_SENTINEL;
 /** The process executor owns explicit runner timeouts; this is its no-deadline sentinel. */
 export const CLI_NO_DEADLINE_MS = 2_147_000_000;
 
@@ -43,54 +41,67 @@ export function toCliEnvironment(environment: NodeJS.ProcessEnv): Readonly<Recor
 }
 
 export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCallResult> {
-  const idleWarnMs = opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS;
-  const idleKillMs = opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS;
-  const idleController = new AbortController();
-  const signal = opts.invocation.signal
-    ? AbortSignal.any([opts.invocation.signal, idleController.signal])
-    : idleController.signal;
-  let lastActivity = Date.now();
-  let warned = false;
-  let idleTimer: ReturnType<typeof setInterval> | undefined;
-  const tickMs = Math.max(10, Math.min(100, idleWarnMs, idleKillMs));
-  if (Number.isFinite(idleWarnMs) && Number.isFinite(idleKillMs)) {
-    idleTimer = setInterval(() => {
-      const silentMs = Date.now() - lastActivity;
-      if (!warned && silentMs >= idleWarnMs) {
-        warned = true;
-        opts.onCallEvent?.({
-          type: 'call_stalled',
-          ts: Date.now(),
-          ...opts.callContext,
-          silentMs,
-        });
-      }
-      if (silentMs >= idleKillMs && !idleController.signal.aborted) {
-        idleController.abort(new DOMException('CLI runner idle timeout', 'TimeoutError'));
-      }
-    }, tickMs);
-    idleTimer.unref?.();
-  }
-
-  try {
-    return await invokeProcessCli(opts.adapter, {
-      invocation: { ...opts.invocation, signal },
-      prompt: opts.prompt,
-      callContext: opts.callContext,
-      onEvent: (event) => {
-        if (
-          event.type !== 'call_started' &&
-          event.type !== 'call_completed' &&
-          event.type !== 'call_error'
-        ) {
-          lastActivity = Date.now();
+  let streamedText = '';
+  let blockText = '';
+  const stream = (text: string): void => {
+    if (text.length === 0) return;
+    streamedText += text;
+    blockText += text;
+    opts.onOutput?.(text);
+  };
+  const forwardText = (event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>): void => {
+    if (!contributesToStreamedText(event.channel)) {
+      opts.onOutput?.(event.text);
+      return;
+    }
+    if (event.semantics !== 'final') {
+      stream(event.text);
+      return;
+    }
+    // `final` text restates rather than extends: an assistant record restates
+    // the block its partial deltas already streamed, and the terminal result
+    // restates the whole message. Only the part never streamed is new.
+    const alreadyStreamed = event.channel === 'result' ? streamedText : blockText;
+    const reconciliation = reconcileFinalText(alreadyStreamed, event.text);
+    if (reconciliation.kind === 'full' || reconciliation.kind === 'suffix') {
+      stream(reconciliation.text);
+    } else if (reconciliation.kind === 'replace') {
+      if (event.channel === 'result') {
+        if (streamedText.endsWith(reconciliation.text)) return;
+        if (reconciliation.text.startsWith(streamedText)) {
+          const tail = reconciliation.text.slice(streamedText.length);
+          streamedText = reconciliation.text;
+          if (tail.length > 0) opts.onOutput?.(tail);
+        } else {
+          streamedText = reconciliation.text;
+          opts.onOutput?.(reconciliation.text);
         }
-        opts.onCallEvent?.(event);
-        if (event.type === 'call_text_delta') opts.onOutput?.(event.text);
-        if (event.type === 'call_session_id') opts.onSessionId?.(event.nativeSessionId);
-      },
-    });
-  } finally {
-    if (idleTimer !== undefined) clearInterval(idleTimer);
-  }
+      } else {
+        blockText = '';
+        stream(reconciliation.text);
+      }
+    }
+    if (event.channel !== 'result') blockText = '';
+  };
+
+  return invokeProcessCli(opts.adapter, {
+    invocation: opts.invocation,
+    prompt: opts.prompt,
+    callContext: opts.callContext,
+    idle: {
+      warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
+      killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
+    },
+    onEvent: (event) => {
+      opts.onCallEvent?.(event);
+      if (event.type === 'call_text_delta') forwardText(event);
+      if (event.type === 'call_session_id') opts.onSessionId?.(event.nativeSessionId);
+    },
+  });
+}
+
+function contributesToStreamedText(
+  channel: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'],
+): boolean {
+  return channel === 'assistant' || channel === 'result' || channel === 'stdout';
 }

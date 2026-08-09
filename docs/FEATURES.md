@@ -101,11 +101,11 @@ splitbrief start "add profile settings"
 splitbrief start --json "fix parser edge case"
 ```
 
-`splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, model calls, or validation runs. Its one network call is the runner availability probe: a model-list request to the `api` endpoint each configured runner already targets, so an unreachable planner or default implementer is a blocker here instead of a `fetch failed` after the planning phase has been paid for. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
+`splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, or model calls. It runs no validation subprocesses unless `--probe-validation` is given. Its one network call is the runner availability probe: a model-list request to the `api` endpoint each configured runner already targets, so an unreachable planner or default implementer is a blocker here instead of a `fetch failed` after the planning phase has been paid for. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
 
 **When to use.** Run `doctor` while setting up a repo, before CI automation, or when a start run is blocked by config/repo posture. Use the pre-start report to decide whether to continue through warnings such as dirty files, missing context length, disabled validation, or unset budget.
 
-**Events/output.** Human output groups checks into config, runners, context, validation, repository, and cost. JSON output uses `{ type: "readiness_report", report: ... }`. Readiness never runs the validation commands themselves; it only inspects the configured posture.
+**Events/output.** Human output groups checks into config, runners, context, validation, repository, and cost. JSON output uses `{ type: "readiness_report", report: ... }`. Validation readiness is posture only by default — disabled checks, missing npm scripts, and configured commands are reported without running them; `--probe-validation` runs the real commands and can take minutes.
 
 ### Validation pipeline + checkpoints
 
@@ -256,13 +256,16 @@ After the editor exits successfully, SPLITBRIEF re-reads `.splitbrief/sessions/<
 
 ## Cost telemetry
 
-### Always-visible cost status line
+### Where spend appears
 
-**What it does.** A persistent top status line on every workflow screen, updated live from the cost store on every `cost_update` event.
+**What it does.** There is no persistent cost header. Spend surfaces in four places, each fed from the cost store on `cost_update`:
 
-**Format.** `mode · spent $X.YY · proj $Y.YY · budget $Z · NN% plan · cache NN%`.
+- **Sidebar footer** — `/sidebar` toggles it; hidden by default and unavailable below 120 columns. Last line reads `Local NN%` — the share of tasks finished without escalating — followed by the run's spend when something priced ran: `Local 80% · $0.42`.
+- **Ctrl+G — `Cost · breakdown`** — the full accounting surface: per phase cost, the input/output token split, `cache NN%` where the runner reports cache reads, and per-task totals with per-attempt detail.
+- **Summary screen** — leads with `$0.42 actual vs $1.80 baseline · 77% saved` when the run produced a savings estimate.
+- **Budget gate** — only with `workflow.maxBudget` set: warns at 80%, pauses at `workflow.budgetPauseThreshold` (default `0.85`), stops at the ceiling.
 
-**How to use.** No setup. The `budget` column appears only when `workflow.maxBudget` is set. Cache % renders `cache n/a` when the runner does not expose cache hit data.
+**How to use.** No setup. `/copy cost` puts the sidebar string on your clipboard. Runners that expose no pricing are reported as unpriced, never as `$0.00`.
 
 ### Cost drilldown overlay (`Ctrl+G`)
 
@@ -392,7 +395,7 @@ Manual snapshots require the CLI command above; there is no `/snapshot` slash co
 
 **When to use.** Bookmark known-good states before risky refactors; recover from a planner that wandered. Layered on top of git — never replaces it.
 
-**Excluded paths.** `.git/`, `.splitbrief/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/store.ts`). Including them would cause exponential snapshot growth. `.trees/` exclusion also prevents worktree directories from leaking into cross-worktree snapshots.
+**Excluded paths.** `.git/`, `.splitbrief/`, `node_modules/`, `.trees/` are non-negotiably excluded (`ALWAYS_EXCLUDED` invariant in `engine/snapshots/files.ts`). Including them would cause exponential snapshot growth. `.trees/` exclusion also prevents `--worktree` checkouts from leaking into cross-worktree snapshots. The run's own isolation worktree lives outside the project tree entirely (`$XDG_STATE_HOME/splitbrief/trees/...`, default `~/.local/state/...`), so the snapshot walker never sees it.
 
 ### Auto-snapshots
 
@@ -647,21 +650,6 @@ splitbrief snapshot list --session 1
 **How to use.** No user action is needed for branch history. `branch-summary` is a schema-supported entry type for code paths that explicitly write branch summaries.
 
 **When to use.** Inspect branch history when diagnosing recovery decisions or comparing attempts.
-
-### Tree navigation TUI
-
-**What it does.** A plan-tree viewer showing execution history as a visual tree with ASCII connectors. Navigate with keyboard, fold/unfold sub-trees, filter by status.
-
-**How to use.**
-
-| Key | Action |
-|---|---|
-| `j` / `k` | Move cursor up/down |
-| `Space` | Fold/unfold sub-tree |
-| `Enter` | Select entry for detail view |
-| Filter modes | All steps, failed-only, active-path-only |
-
-**When to use.** When inspecting branching history, understanding recovery paths, or navigating complex multi-attempt sessions.
 
 ---
 

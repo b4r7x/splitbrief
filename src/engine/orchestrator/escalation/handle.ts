@@ -4,12 +4,17 @@ import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import { runLocalRetries } from './local-retries.js';
 import { FULL_TIER, HINT_TIER, INTERMEDIATE_TIER, runEscalationTier } from './tier.js';
-import type { EscalationContext, RetryResult } from './types.js';
+import type { EscalationContext, RetryResult, RetryStepOutcome } from './types.js';
 import { failedRetry } from './types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
-import { publishWarning, publishWarningFromError } from '../events.js';
+import { publishError, publishWarning, publishWarningFromError } from '../events.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
+import {
+  buildRetryExhaustedRecoveryIssue,
+  buildRunnerUnauthenticatedRecoveryIssue,
+  buildRunnerUsageLimitRecoveryIssue,
+  routeBiggerProfileFromDecision,
+} from '../recovery/builders/task.js';
 import { raisePendingRecovery } from '../state-ops.js';
 import { nowIso } from '../../../utils/format-time.js';
 
@@ -24,6 +29,81 @@ type HandleRetryOptions = {
   profileOverride?: string | undefined;
   profileOverrideTaskId?: TaskId | undefined;
 };
+
+/**
+ * A signed-out runner halts the ladder: the next tier would silently hand
+ * the task to the planner at planner prices, which is exactly the failure
+ * an expired login must not cause. Raise the login recovery and stop.
+ */
+function unauthenticatedHalt(
+  ctx: EscalationContext,
+  task: Task,
+  stepOutcome: RetryStepOutcome,
+): { state: WorkflowState; result: RetryResult } | null {
+  const failure = stepOutcome.lastFailure;
+  if (failure?.outcome !== 'unauthenticated') return null;
+  const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
+  const issue = buildRunnerUnauthenticatedRecoveryIssue({
+    task,
+    phase: stepOutcome.state.phase,
+    runner: failure.runner,
+    toolMessage: stepOutcome.lastError,
+    attempts: stepOutcome.attempts,
+    maxAttempts: ctx.config.workflow.maxRetries,
+    ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
+    createdAt: nowIso(),
+  });
+  publishError({
+    bus: ctx.bus,
+    phase: stepOutcome.state.phase,
+    message: `${issue.message} (runner reported: ${stepOutcome.lastError})`,
+  });
+  const nextState = raisePendingRecovery(ctx, stepOutcome.state, issue);
+  return { state: nextState, result: failedRetry(stepOutcome.attempts) };
+}
+
+/**
+ * A quota-exhausted runner halts the ladder for the same reason a signed-out
+ * one does — the next tier would silently do implementer work at planner
+ * prices. The recovery names the reset time when the tool reported one and
+ * offers the profile switch instead of a pointless re-login.
+ */
+function usageLimitHalt(
+  ctx: EscalationContext,
+  task: Task,
+  stepOutcome: RetryStepOutcome,
+): { state: WorkflowState; result: RetryResult } | null {
+  const failure = stepOutcome.lastFailure;
+  if (failure?.outcome !== 'usage-limit') return null;
+  const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
+  const routeBiggerProfile = routeBiggerProfileFromDecision(ctx.routingDecision);
+  const issue = buildRunnerUsageLimitRecoveryIssue({
+    task,
+    phase: stepOutcome.state.phase,
+    runner: failure.runner,
+    toolMessage: stepOutcome.lastError,
+    attempts: stepOutcome.attempts,
+    maxAttempts: ctx.config.workflow.maxRetries,
+    ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
+    ...(routeBiggerProfile !== undefined && { routeBiggerProfile }),
+    createdAt: nowIso(),
+  });
+  publishError({
+    bus: ctx.bus,
+    phase: stepOutcome.state.phase,
+    message: `${issue.message} (runner reported: ${stepOutcome.lastError})`,
+  });
+  const nextState = raisePendingRecovery(ctx, stepOutcome.state, issue);
+  return { state: nextState, result: failedRetry(stepOutcome.attempts) };
+}
+
+function runnerHalt(
+  ctx: EscalationContext,
+  task: Task,
+  stepOutcome: RetryStepOutcome,
+): { state: WorkflowState; result: RetryResult } | null {
+  return unauthenticatedHalt(ctx, task, stepOutcome) ?? usageLimitHalt(ctx, task, stepOutcome);
+}
 
 export async function handleRetryAndEscalation(
   opts: HandleRetryOptions,
@@ -61,6 +141,9 @@ export async function handleRetryAndEscalation(
       state: retries.state,
       result: failedRetry(retries.attempts),
     };
+
+  const retriesHalt = runnerHalt(ctx, retries.task, retries);
+  if (retriesHalt) return retriesHalt;
 
   if (ctx.config.hooks) {
     const preEscalationPayload: EngineEvent = {
@@ -115,6 +198,9 @@ export async function handleRetryAndEscalation(
       result: failedRetry(tier0.attempts),
     };
 
+  const tier0Halt = runnerHalt(ctx, tier0.task, tier0);
+  if (tier0Halt) return tier0Halt;
+
   const tier1 = await runEscalationTier(HINT_TIER, {
     ctx,
     task: tier0.task,
@@ -129,6 +215,9 @@ export async function handleRetryAndEscalation(
       state: tier1.state,
       result: failedRetry(tier1.attempts),
     };
+
+  const tier1Halt = runnerHalt(ctx, tier1.task, tier1);
+  if (tier1Halt) return tier1Halt;
 
   const tier2 = await runEscalationTier(FULL_TIER, {
     ctx,

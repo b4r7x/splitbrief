@@ -191,7 +191,7 @@ The implemented behavior is:
 
 An implementer with `writesFiles: direct` needs somewhere to write that is not the user's working tree. That somewhere is a **git worktree, created once per run** — not a copy of the project per task.
 
-- One worktree per run, at `.trees/<slug>` on a `splitbrief/<slug>` branch (`src/engine/worktree/create.ts`). Tasks share it.
+- One worktree per run, at `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/...`) on a `splitbrief/<slug>` branch (`src/engine/worktree/create.ts`). Tasks share it. Outside `.git/` (direct-writing CLIs refuse paths there) and outside the project tree: it is a second copy of the source that survives every per-task validation, and a project-rooted test glob that reaches it counts every test twice.
 - Project dependencies are reachable inside the worktree. A checkout without `node_modules` is a checkout where nothing runs: no typecheck, no tests, no useful self-check by the implementer.
 - The worktree carries `.splitbrief/config.yaml` and `.splitbrief/hooks/` over from the real project, so hook and config behaviour matches.
 - Worktree is the default, not the only option. A user may configure a different isolation strategy.

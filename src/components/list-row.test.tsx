@@ -122,6 +122,22 @@ describe('ListRow', () => {
     expect(line).not.toContain('overflows');
   });
 
+  it('long metadata renders with a trailing `…`', () => {
+    const line = stripAnsiStyles(
+      frameOf(
+        <ListRow
+          label="/palette"
+          metadata="a very long description that cannot possibly fit on one short row"
+          width={40}
+        />,
+        40,
+      ).split('\n')[0] ?? '',
+    );
+
+    expect(line).toContain('…');
+    expect(line).not.toContain('short row');
+  });
+
   it('right-aligns dim trailing metadata at the row edge', () => {
     const frame = frameOf(
       <ListRow label="/settings" metadata="planner & model" trailing="ctrl+," labelWidth={12} />,

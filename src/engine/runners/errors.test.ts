@@ -48,6 +48,7 @@ describe('runner outcome taxonomy', () => {
       'spawn-not-found',
       'incompatible-version',
       'unauthenticated',
+      'usage-limit',
       'timeout',
       'user-abort',
       'signal-exit',
@@ -78,9 +79,9 @@ describe('runner outcome taxonomy', () => {
 
     const bounded = runnerOutcome.failure(
       'protocol-failure',
-      `API_KEY=very-secret-value ${'x'.repeat(5_000)}`,
+      `API_KEY=sk-very-secret-value-1234567890 ${'x'.repeat(5_000)}`,
     );
-    expect(bounded.remediation).not.toContain('very-secret-value');
+    expect(bounded.remediation).not.toContain('sk-very-secret-value-1234567890');
     expect(bounded.remediation.length).toBeLessThanOrEqual(4_000);
     expect(runnerOutcome.success()).toEqual({ state: 'success', remediation: null });
   });

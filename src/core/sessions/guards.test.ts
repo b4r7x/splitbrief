@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { clearStaleSession } from './guards.js';
+import { assertNoLiveSession, clearStaleSession } from './guards.js';
 import {
   readActiveRecord,
   withSessionMutationLock,
@@ -85,6 +85,36 @@ describe('clearStaleSession', () => {
     writeActive({ projectDir: dir, sessionId });
 
     expect(() => clearStaleSession(dir)).toThrow();
+    expect(existsSync(activeFile(dir))).toBe(true);
+  });
+});
+
+describe('assertNoLiveSession', () => {
+  it('is a no-op when there is no active session recorded', () => {
+    const dir = makeTmp();
+    expect(() => assertNoLiveSession(dir)).not.toThrow();
+  });
+
+  it('leaves a stale active pointer intact so `resume` can still find it', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-18-interrupted-feature';
+    writeState(dir, sessionId, 'implementing');
+    writeActive({ projectDir: dir, sessionId });
+
+    expect(() => assertNoLiveSession(dir)).not.toThrow();
+
+    expect(existsSync(activeFile(dir))).toBe(true);
+    expect(readActiveRecord(dir)).not.toBeNull();
+  });
+
+  it('throws for a live session and leaves the pointer intact', () => {
+    const dir = makeTmp();
+    const sessionId = '2026-04-18-live-pid';
+    writeState(dir, sessionId, 'implementing');
+    writeLockfile(dir, sessionId);
+    writeActive({ projectDir: dir, sessionId });
+
+    expect(() => assertNoLiveSession(dir)).toThrow(/still active/);
     expect(existsSync(activeFile(dir))).toBe(true);
   });
 });
