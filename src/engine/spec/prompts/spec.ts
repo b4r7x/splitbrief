@@ -27,7 +27,7 @@ Concrete usage scenarios showing how users will interact with this feature. Incl
 - Common variations
 - Edge cases and error scenarios
 
-For each scenario, describe the user action and expected outcome.
+For each scenario, write the user action as one bullet with its expected outcome nested under it.
 
 ### Acceptance Criteria
 Numbered list of specific, testable criteria that define "done." Each criterion must be verifiable -- no subjective language like "should be fast" or "should be clean."

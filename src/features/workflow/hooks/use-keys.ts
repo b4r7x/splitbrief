@@ -91,10 +91,15 @@ function getReviewScrollAction(
   });
 }
 
+interface ConversationScrollContext {
+  inputMode: InputMode;
+  composerFocus: boolean;
+}
+
 function getConversationScrollAction(
   input: string,
   key: Key,
-  composerFocus: boolean,
+  context: ConversationScrollContext,
 ): WorkflowKeyAction {
   if (resolveScrollKey({ input, key, lineKeys: 'shifted' }) === null) {
     return { type: 'none' };
@@ -109,7 +114,8 @@ function getConversationScrollAction(
     maxOffset,
     viewportHeight,
     totalHeight,
-    composerFocus,
+    inputMode: context.inputMode,
+    composerFocus: context.composerFocus,
   });
 }
 
@@ -123,7 +129,7 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
     (input, key) => {
       const sections = getSections();
       const inputMode = controlsStore.get().inputMode;
-      const composerFocus = inputMode === 'normal';
+      const composerFocus = inputMode === 'normal' || inputMode === 'question';
       const attachState = isAttachedClient ? 'attached' : 'local';
 
       if (inputMode === 'normal') {
@@ -155,9 +161,9 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
         return;
       }
 
-      if (inputMode !== 'normal') return;
+      if (inputMode !== 'normal' && inputMode !== 'question') return;
 
-      const scroll = getConversationScrollAction(input, key, composerFocus);
+      const scroll = getConversationScrollAction(input, key, { inputMode, composerFocus });
       if (scroll.type !== 'none') {
         applyAction(scroll);
         return;

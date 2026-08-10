@@ -110,6 +110,7 @@ export type MarkdownLayoutSegmentKind =
   | 'rule'
   | 'listMarker'
   | 'blockquoteMarker'
+  | 'codeGutter'
   | 'tableBorder'
   | 'tableHeader';
 

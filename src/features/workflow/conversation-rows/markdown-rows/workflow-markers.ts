@@ -80,6 +80,7 @@ function isWorkflowScannableSegment(segment: MarkdownLayoutSegment): boolean {
     case 'rule':
     case 'listMarker':
     case 'blockquoteMarker':
+    case 'codeGutter':
     case 'link':
     case 'tableBorder':
       return false;

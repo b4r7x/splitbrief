@@ -247,16 +247,17 @@ export function eventRowBlock(options: {
         width: ctx.width,
         labelTone: 'success',
       });
-    case 'message_queued':
+    case 'message_queued': {
+      const header = queuedMessageHeader(event.origin);
       return compositeBlock(keyPrefix, [
         cardRowsBlock({
           keyPrefix: `${keyPrefix}-header-0`,
-          label: 'Queued',
-          value: 'applies at the next planner prompt',
+          label: header.label,
+          value: header.value,
           width: ctx.width,
-          labelTone: 'info',
+          labelTone: header.tone,
           valueTone: 'textDim',
-          markerTone: 'info',
+          markerTone: header.tone,
         }),
         event.preview
           ? wrappedTextBlock({
@@ -267,6 +268,7 @@ export function eventRowBlock(options: {
             })
           : null,
       ]);
+    }
     case 'message_injected_native':
       return cardRowsBlock({
         keyPrefix,
@@ -374,6 +376,16 @@ export function eventRowBlock(options: {
 
 function queueMessageValue(base: string, preview: string | undefined): string {
   return preview ? `${base}: ${preview}` : base;
+}
+
+function queuedMessageHeader(origin: EngineEventOf<'message_queued'>['origin']): {
+  label: string;
+  value: string;
+  tone: ConversationRowTone;
+} {
+  return origin === 'clarification'
+    ? { label: 'answered', value: 'recorded — applied at the next planner call', tone: 'success' }
+    : { label: 'Queued', value: 'applies at the next planner prompt', tone: 'info' };
 }
 
 function recoveryResolvedTone(

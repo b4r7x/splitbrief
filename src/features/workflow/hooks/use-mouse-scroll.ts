@@ -11,10 +11,14 @@ import { clamp } from '../../../utils/math.js';
 const WHEEL_STEP = 1;
 
 export function promptOwnsInput(): boolean {
+  return modalPromptOwnsInput() || controlsStore.get().inputMode === 'question';
+}
+
+// Question prompts keep the transcript scrollable, so the wheel only yields to
+// the modal approval/cost selectors; presses still route via promptOwnsInput.
+export function modalPromptOwnsInput(): boolean {
   return (
-    approvalPromptStore.get().status === 'pending' ||
-    costApprovalStore.get().status === 'pending' ||
-    controlsStore.get().inputMode === 'question'
+    approvalPromptStore.get().status === 'pending' || costApprovalStore.get().status === 'pending'
   );
 }
 

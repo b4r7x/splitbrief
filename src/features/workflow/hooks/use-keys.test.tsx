@@ -513,7 +513,7 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('question ownership preserves scroll through resize and resumes from the visible offset', async () => {
+  it('question ownership scrolls through resize and resumes from the visible offset', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
     inputHeightStore.__testReset({ rows: 3 });
     seedLongConversation();
@@ -528,21 +528,68 @@ describe('useWorkflowKeys', () => {
     await tick(1);
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
     await flushEffects();
+    const asked = readConversationScrollSnapshot();
+    expect(asked.scrollOffset).toBeLessThan(narrow.maxOffset);
     ui.stdin.write(SHIFT_DOWN);
     await tick(1);
+    await tick(1);
 
-    expect(conversationScrollStore.get().scrollOffset).toBe(narrow.maxOffset);
+    expect(readConversationScrollSnapshot().scrollOffset).toBe(asked.scrollOffset - 1);
 
     controlsStore.setInputMode('normal');
     questionPromptStore.clearHint();
     const wide = readConversationScrollSnapshot();
-    expect(wide.maxOffset).toBeLessThan(narrow.maxOffset);
+    expect(wide.maxOffset).toBeLessThan(asked.maxOffset);
     await flushEffects();
     ui.stdin.write(SHIFT_DOWN);
     await tick(1);
     await tick(1);
 
-    expect(readConversationScrollSnapshot().scrollOffset).toBe(wide.maxOffset - 1);
+    expect(readConversationScrollSnapshot().scrollOffset).toBe(wide.scrollOffset - 1);
+    ui.unmount();
+  });
+
+  it('question ownership pages the transcript and leaves Ctrl+B to the answer composer', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    inputHeightStore.__testReset({ rows: 3 });
+    seedLongConversation();
+    questionPromptStore.setHint('Question 1/1: Which boundary should own this behavior?');
+    controlsStore.setInputMode('question');
+
+    const ui = render(<Harness />);
+    await tick(1);
+    await flushEffects();
+    ui.stdin.write(PAGE_UP);
+    await tick(1);
+    await tick(1);
+
+    const paged = readConversationScrollSnapshot().scrollOffset;
+    expect(paged).toBeGreaterThan(0);
+
+    await flushEffects();
+    ui.stdin.write(CTRL_B);
+    await tick(1);
+    await tick(1);
+    expect(readConversationScrollSnapshot().scrollOffset).toBe(paged);
+
+    await flushEffects();
+    ui.stdin.write(PAGE_DOWN);
+    await tick(1);
+    await tick(1);
+    expect(readConversationScrollSnapshot().scrollOffset).toBeLessThan(paged);
+
+    const maxOffset = readConversationScrollSnapshot().maxOffset;
+    await flushEffects();
+    ui.stdin.write(HOME);
+    await tick(1);
+    await tick(1);
+    expect(readConversationScrollSnapshot().scrollOffset).toBe(maxOffset);
+
+    await flushEffects();
+    ui.stdin.write(END);
+    await tick(1);
+    await tick(1);
+    expect(readConversationScrollSnapshot().scrollOffset).toBe(0);
     ui.unmount();
   });
 

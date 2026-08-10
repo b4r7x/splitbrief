@@ -56,7 +56,7 @@ export function resolveKeyOwner(context: KeyResolverContext): KeyOwner | null {
       : { owner: 'review', action: 'scroll' };
   }
 
-  if (context.inputMode !== 'normal') return null;
+  if (context.inputMode !== 'normal' && context.inputMode !== 'question') return null;
 
   if (context.focus === 'workflow') {
     const conversationScroll = resolveScrollKey({
@@ -66,6 +66,8 @@ export function resolveKeyOwner(context: KeyResolverContext): KeyOwner | null {
     });
     if (conversationScroll !== null) return { owner: 'conversation-scroll', action: 'scroll' };
   }
+
+  if (context.inputMode !== 'normal') return null;
 
   if (isCtrlKey(context.key, 'd')) return { owner: 'workflow', action: 'toggle-diff' };
   if (isCtrlKey(context.key, 'g')) return { owner: 'workflow', action: 'cost' };

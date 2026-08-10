@@ -719,7 +719,7 @@ describe('HomeScreen', () => {
     ui.unmount();
   });
 
-  it('during preparation the home composer remains mounted and a preparation byline renders', async () => {
+  it('during preparation the submitted text stays in the composer with no byline', async () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     prepareExecutionMock.mockReturnValue(pending.promise);
 
@@ -733,17 +733,21 @@ describe('HomeScreen', () => {
       () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
       SESSION_FILTER_WAIT_MS,
     );
-    await vi.waitFor(() => {
-      const frame = ui.lastFrame() ?? '';
-      expect(frame).toContain('|____/| .__/');
-      expect(frame).toContain('Initializing your tools…');
-      expect(frame).toContain('›');
-      expect(frame).not.toContain('Preparing your tools');
-    }, SESSION_FILTER_WAIT_MS);
+    await flushEffects();
+    const submittedFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(submittedFrame).toContain('background preparation');
+    expect(submittedFrame).not.toContain('Initializing your tools…');
+
+    await tick(500);
+    const settledFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(settledFrame).toContain('|____/| .__/');
+    expect(settledFrame).toContain('background preparation');
+    expect(settledFrame).toContain(DEFAULT_HOME_HINT);
+    expect(settledFrame).not.toContain('Initializing your tools…');
     ui.unmount();
   });
 
-  it('esc during preparation restores the submitted draft into the composer input', async () => {
+  it('esc during preparation leaves the submitted draft in the composer input', async () => {
     const pending = Promise.withResolvers<PreparationOutcome>();
     prepareExecutionMock.mockReturnValue(pending.promise);
 
@@ -758,7 +762,9 @@ describe('HomeScreen', () => {
       SESSION_FILTER_WAIT_MS,
     );
     await vi.waitFor(() => {
-      expect(ui.lastFrame() ?? '').toContain('Initializing your tools…');
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('restore this draft');
+      expect(frame).not.toContain('Initializing your tools…');
     }, SESSION_FILTER_WAIT_MS);
 
     ui.stdin.write(ESC);
@@ -783,8 +789,8 @@ describe('HomeScreen', () => {
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain('Initializing your tools…');
       expect(frame).toContain('keep this draft');
+      expect(frame).not.toContain('Initializing your tools…');
     }, SESSION_FILTER_WAIT_MS);
 
     await flushEffects();
@@ -825,7 +831,11 @@ describe('HomeScreen', () => {
       () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
       SESSION_FILTER_WAIT_MS,
     );
-    expect(ui.lastFrame() ?? '').toContain('Initializing your tools…');
+    await vi.waitFor(() => {
+      const frame = ui.lastFrame() ?? '';
+      expect(frame).toContain('cancel preparation');
+      expect(frame).not.toContain('Initializing your tools…');
+    }, SESSION_FILTER_WAIT_MS);
 
     ui.stdin.write(ESC);
     await vi.waitFor(() => expect(signal?.aborted).toBe(true), SESSION_FILTER_WAIT_MS);

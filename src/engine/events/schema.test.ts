@@ -547,6 +547,24 @@ describe('parseEngineEvent', () => {
     );
   });
 
+  it('accepts queued message events tagged with a clarification origin', () => {
+    expect(
+      parseEngineEvent({
+        type: 'message_queued',
+        ts: 1,
+        phase: 'specifying',
+        id: 'msg-2',
+        origin: 'clarification',
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        type: 'message_queued',
+        id: 'msg-2',
+        origin: 'clarification',
+      }),
+    );
+  });
+
   it('turn_interrupted parses with and without source', () => {
     expect(
       parseEngineEvent({

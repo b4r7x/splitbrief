@@ -64,6 +64,7 @@ function markdownLayoutWindowRows(input: {
         key: `${input.keyPrefix}-${layoutRow.key}-${currentIndex}`,
         kind: 'message',
         segments: markdownLineSegments(line, layoutRow.lines[localIndex - 1], input.projectDir),
+        ...(layoutRow.blockKind === 'code' ? { codeBg: true as const } : {}),
       });
     }
   }

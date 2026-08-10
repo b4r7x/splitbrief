@@ -685,6 +685,33 @@ describe('event row dispatch', () => {
     expect(rows[1]?.segments[0]?.tone).toBe('text');
   });
 
+  it('message_queued from a clarification renders an answered header instead of Queued', () => {
+    const event: EngineEventOf<'message_queued'> = {
+      type: 'message_queued',
+      ts: 0,
+      phase: 'specifying',
+      id: 'queued-2',
+      origin: 'clarification',
+      preview: 'clarification: Use JWT? -> Yes, use JWT',
+    };
+
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+
+    const joined = rows.map(rowText).join('\n');
+    expect(joined).toContain('answered  recorded — applied at the next planner call');
+    expect(joined).not.toMatch(/queued/i);
+    expect(rows[0]?.markerTone).toBe('success');
+    expect(rows[0]?.segments[0]?.tone).toBe('success');
+    expect(rows[0]?.segments[1]?.tone).toBe('textDim');
+    expect(rows[1] && rowText(rows[1])).toBe('clarification: Use JWT? -> Yes, use JWT');
+    expect(rows[1]?.segments[0]?.tone).toBe('text');
+  });
+
   it('renders a visible blocked row when the readiness gate blocks', () => {
     const event: EngineEventOf<'brief_readiness_blocked'> = {
       type: 'brief_readiness_blocked',

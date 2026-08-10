@@ -46,6 +46,7 @@ export function appendMarkdownRowsCacheEntry(input: {
     width: input.width,
     startChunkIndex: reuseCount,
     startOffset: tailStart,
+    hasRenderedPrefix: reusedChunks.some((chunk) => chunk.rows.length > 0),
   });
   return createMarkdownRowsCacheEntryFromChunks({
     sourceText: input.sourceText,
@@ -66,7 +67,7 @@ export function createMarkdownRowsCacheEntry(input: {
   return createMarkdownRowsCacheEntryFromChunks({
     sourceText: input.sourceText,
     keyPrefix: input.keyPrefix,
-    chunks: createMarkdownLayoutChunks(input),
+    chunks: createMarkdownLayoutChunks({ ...input, hasRenderedPrefix: false }),
     projectDir: input.projectDir,
   });
 }
@@ -195,16 +196,24 @@ function createMarkdownLayoutChunks(input: {
   width: number;
   startChunkIndex: number;
   startOffset: number;
+  hasRenderedPrefix: boolean;
 }): MarkdownLayoutChunk[] {
   const sourceChunks = markdownSourceChunks(input.sourceText, input.startOffset);
-  return sourceChunks.map((chunk, index) =>
-    layoutMarkdownSourceChunk({
+  // The heading gap keys off rendered output, not source offset: leading blank
+  // lines or HTML comments (planner <!-- Q:… --> markers) produce no rows, and a
+  // heading after them must not open the document with a spacer.
+  let hasRenderedPrefix = input.hasRenderedPrefix;
+  return sourceChunks.map((chunk, index) => {
+    const laidOut = layoutMarkdownSourceChunk({
       chunk,
       width: input.width,
       chunkIndex: input.startChunkIndex + index,
       isTailChunk: index === sourceChunks.length - 1,
-    }),
-  );
+      leadingHeadingGap: hasRenderedPrefix,
+    });
+    hasRenderedPrefix ||= laidOut.rows.length > 0;
+    return laidOut;
+  });
 }
 
 function layoutMarkdownSourceChunk(input: {
@@ -212,8 +221,14 @@ function layoutMarkdownSourceChunk(input: {
   width: number;
   chunkIndex: number;
   isTailChunk: boolean;
+  leadingHeadingGap: boolean;
 }): MarkdownLayoutChunk {
-  const laidOut = buildMarkdownLayoutChunk(input.chunk, input.width, input.chunkIndex);
+  const laidOut = buildMarkdownLayoutChunk(
+    input.chunk,
+    input.width,
+    input.chunkIndex,
+    input.leadingHeadingGap,
+  );
   if (!input.isTailChunk) return laidOut;
   const firstLine = firstChunkLine(input.chunk.text);
   // Blockquote/table bodies can hold fence backticks or odd inline backticks that tail repair
@@ -229,6 +244,7 @@ function layoutMarkdownSourceChunk(input: {
     { ...input.chunk, text: repairedText },
     input.width,
     input.chunkIndex,
+    input.leadingHeadingGap,
   );
 }
 
@@ -236,12 +252,16 @@ function buildMarkdownLayoutChunk(
   chunk: MarkdownSourceChunk,
   width: number,
   chunkIndex: number,
+  leadingHeadingGap: boolean,
 ): MarkdownLayoutChunk {
   const document =
     chunk.startOffset === 0
       ? parseMarkdownBlocks(chunk.text)
       : parseMarkdownContinuationChunk(chunk.text);
-  const layout = layoutMarkdown(document, { width });
+  const layout = layoutMarkdown(document, {
+    width,
+    leadingHeadingGap,
+  });
   const rows = layout.rows.map((rowValue) => ({
     ...rowValue,
     key: `chunk-${chunkIndex}-${rowValue.key}`,

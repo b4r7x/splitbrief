@@ -14,6 +14,7 @@ import {
 } from '../features/workflow/hooks/use-mouse-pointer.js';
 import {
   handleWorkflowMouseWheel,
+  modalPromptOwnsInput,
   promptOwnsInput,
 } from '../features/workflow/hooks/use-mouse-scroll.js';
 
@@ -70,7 +71,7 @@ function handleWheel(event: MouseEvent): void {
   }
   if (routerStore.get().screen !== 'workflow') return;
   if (overlayStore.get().active !== 'none') return;
-  if (promptOwnsInput()) return;
+  if (modalPromptOwnsInput()) return;
   if (fieldSessionOwnsInput()) return;
   handleWorkflowMouseWheel(event);
 }

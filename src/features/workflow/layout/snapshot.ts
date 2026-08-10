@@ -12,6 +12,7 @@ import {
   getWorkflowContentRect,
   getWorkflowContentWidth,
   getWorkflowViewportHeight,
+  REVIEW_FRAME_ROWS,
 } from './rect.js';
 import {
   getSimpleBriefMaxTaskOffset,
@@ -122,7 +123,10 @@ export function readReviewContentHeight(): number {
       taskCount: reviewStore.get().renderedLineCount,
     });
   }
-  return getReviewContentLayout(viewportHeight, reviewStore.get().renderedLineCount).contentHeight;
+  return getReviewContentLayout(
+    Math.max(0, viewportHeight - REVIEW_FRAME_ROWS),
+    reviewStore.get().renderedLineCount,
+  ).contentHeight;
 }
 
 export interface BriefListSnapshot {

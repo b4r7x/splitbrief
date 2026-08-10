@@ -88,6 +88,53 @@ describe('markdownConversationRows', () => {
     expect(segments).not.toContainEqual({ text: 'T-06', tone: 'text', bold: true });
   });
 
+  it('renders nested list items with a hollow bullet', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'markdown-nested-list',
+      text: '- top\n  - nested',
+      width: 80,
+    });
+
+    expect(rows.map(rowText)).toEqual(['• top', '  ◦ nested']);
+  });
+
+  it('opens a heading with one blank row unless it starts the message', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'markdown',
+      text: '# Title\n\nintro line\n\n## Section\n\nbody line',
+      width: 80,
+    });
+
+    expect(rows.map(rowText)).toEqual(['Title', 'intro line', '', 'Section', 'body line']);
+  });
+
+  it('keeps a heading flush when only non-rendering source precedes it', () => {
+    for (const [name, prefix] of [
+      ['blank lines', '\n\n'],
+      ['html comment', '<!-- Q: what should this build? -->\n\n'],
+    ] as const) {
+      resetMarkdownConversationRowsCache();
+      const rows = markdownConversationRows({
+        keyPrefix: `flush-${name}`,
+        text: `${prefix}# Title\n\nbody line`,
+        width: 80,
+      });
+
+      expect(rows.map(rowText)).toEqual(['Title', 'body line']);
+    }
+  });
+
+  it('keeps the flush heading stable when the prefixed message streams in', () => {
+    resetMarkdownConversationRowsCache();
+    const full = '<!-- Q: pending -->\n\n# Title\n\nbody line\n\n## Section\n\ntail';
+    for (let end = 1; end <= full.length; end += 7) {
+      markdownConversationRows({ keyPrefix: 'flush-stream', text: full.slice(0, end), width: 80 });
+    }
+    const rows = markdownConversationRows({ keyPrefix: 'flush-stream', text: full, width: 80 });
+
+    expect(rows.map(rowText)).toEqual(['Title', 'body line', '', 'Section', 'tail']);
+  });
+
   it('renders task brief metadata without turning its delimiters into rules', () => {
     const rows = markdownConversationRows({
       keyPrefix: 'markdown',
@@ -126,9 +173,9 @@ describe('markdownConversationRows', () => {
     expect(texts).toContain('id: T002');
     expect(texts).toContain('depends_on:');
     expect(texts).toContain('  - T001');
-    expect(texts.filter((text) => text === THEMATIC_BREAK_CHAR.repeat(text.length))).toHaveLength(
-      1,
-    );
+    expect(
+      texts.filter((text) => text.length > 0 && text === THEMATIC_BREAK_CHAR.repeat(text.length)),
+    ).toHaveLength(1);
   });
 
   it('strips terminal controls from conversation markdown rows', () => {
@@ -693,6 +740,122 @@ describe('links and tables in transcript rows', () => {
     for (const rowValue of rows) {
       expect(getTerminalCellWidth(rowText(rowValue))).toBeLessThanOrEqual(width);
     }
+  });
+});
+
+describe('code block framing in transcript rows', () => {
+  it('gives a code row the gutter, the code tone, and the background flag', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'code-frame',
+      text: ['intro prose', '', '```', "const x = 'y';", '```'].join('\n'),
+      width: 60,
+    });
+
+    expect(rows[0]?.codeBg).toBeUndefined();
+    expect(rows[2]?.codeBg).toBe(true);
+    expect(rows[2]?.segments[0]).toEqual({ text: '▏ ', tone: 'markdownRule' });
+    expect(rows[2]?.segments).toContainEqual({ text: "const x = 'y';", tone: 'markdownCode' });
+  });
+
+  it('pads a code block with a bare-rail row above and below, both carrying the background', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'code-frame-pad',
+      text: ['intro prose', '', '```', "const x = 'y';", '```'].join('\n'),
+      width: 60,
+    });
+    const padSegments = [{ text: '▏', tone: 'markdownRule' }];
+
+    expect(rows.map(rowText)).toEqual(['intro prose', '▏', "▏ const x = 'y';", '▏']);
+    expect(rows[1]?.segments).toEqual(padSegments);
+    expect(rows[1]?.codeBg).toBe(true);
+    expect(rows.at(-1)?.segments).toEqual(padSegments);
+    expect(rows.at(-1)?.codeBg).toBe(true);
+  });
+
+  it('separates back-to-back fences with the two padding rows', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'code-frame-adjacent',
+      text: ['```', 'first', '```', '```', 'second', '```'].join('\n'),
+      width: 60,
+    });
+
+    expect(rows.map(rowText)).toEqual(['▏', '▏ first', '▏', '▏', '▏ second', '▏']);
+    expect(rows.every((row) => row.codeBg === true)).toBe(true);
+  });
+
+  it('repeats the gutter and the background flag on wrapped code lines', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'code-frame-wrap',
+      text: ['```', `const value = '${'x'.repeat(60)}';`, '```'].join('\n'),
+      width: 30,
+    });
+
+    expect(rows.length).toBeGreaterThan(3);
+    for (const row of rows) {
+      expect(row.codeBg).toBe(true);
+    }
+    for (const row of rows.slice(1, -1)) {
+      expect(row.segments[0]).toEqual({ text: '▏ ', tone: 'markdownRule' });
+    }
+  });
+
+  const openFenceText = [
+    'intro',
+    '',
+    '```md',
+    '# Title',
+    '',
+    'Some long paragraph line that wraps at the chosen width.',
+    '- item',
+    '```',
+  ].join('\n');
+  const openFenceInteriorStart = openFenceText.indexOf('# Title');
+  const openFenceCuts: ReadonlyArray<readonly [string, number]> = [
+    ['right after the opener line', openFenceInteriorStart],
+    ['inside the first content line', openFenceInteriorStart + 5],
+    ['inside the wrapped paragraph', openFenceText.indexOf('wraps at')],
+    ['inside the unfinished closer', openFenceText.length - 1],
+  ];
+
+  it.each(openFenceCuts)('frames a still-streaming fence as code %s', (_label, offset) => {
+    resetMarkdownConversationRowsCache();
+    const rows = appendedCharacterByCharacterRows({
+      keyPrefix: `open-fence-${offset}`,
+      text: openFenceText.slice(0, offset),
+      width: 40,
+    });
+
+    expect(rows.length).toBeGreaterThan(1);
+    expect(rows[0]?.codeBg).toBeUndefined();
+    for (const row of rows.slice(1)) {
+      expect(row.codeBg).toBe(true);
+      expect(row.segments[0]?.tone).toBe('markdownRule');
+      expect(row.segments[0]?.text.startsWith('▏')).toBe(true);
+    }
+
+    const codeTexts = rows.slice(1).map(rowText);
+    expect(codeTexts.at(0)).toBe('▏');
+    expect(codeTexts.at(-1)).toBe('▏');
+
+    // gutters stripped and wrapping collapsed, the code rows carry the fence
+    // interior verbatim — no tail-repair delimiter leaks into the stream
+    const interior = rows
+      .slice(1)
+      .map((row) => rowText(row).replace('▏', ''))
+      .join('')
+      .replace(/\s+/g, '');
+    expect(interior).toBe(openFenceText.slice(openFenceInteriorStart, offset).replace(/\s+/g, ''));
+  });
+
+  it('leaves task brief metadata rows without a gutter or background', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'code-frame-metadata',
+      text: ['---', 'id: T001', '---', '### Description', 'Parse task metadata.'].join('\n'),
+      width: 60,
+    });
+
+    expect(rows.every((row) => row.codeBg === undefined)).toBe(true);
+    expect(rows.map(rowText).join('\n')).not.toContain('▏');
   });
 });
 

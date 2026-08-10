@@ -45,10 +45,59 @@ describe('layoutMarkdown', () => {
 
     expect(layout.rows.map((row) => row.blockKind)).toEqual(['code']);
     expect(layout.rows.flatMap((row) => row.lines.map(lineText))).toEqual([
-      '  # heading',
-      '  ---',
-      '  - item',
+      '▏',
+      '▏ # heading',
+      '▏ ---',
+      '▏ - item',
+      '▏',
     ]);
+  });
+
+  it('pads a code block with a bare-rail line above and below its content', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks(['```', 'const a = 1;', '```'].join('\n')), {
+      width: 40,
+    });
+    const row = layout.rows[0];
+    const padSegments = [{ kind: 'codeGutter', text: '▏' }];
+
+    expect(row?.lines.map(lineText)).toEqual(['▏', '▏ const a = 1;', '▏']);
+    expect(row?.lines.at(0)?.segments).toEqual(padSegments);
+    expect(row?.lines.at(-1)?.segments).toEqual(padSegments);
+    expect(row?.height).toBe(3);
+    expect(layout.height).toBe(3);
+  });
+
+  it('pads a highlighted code block the same way as the literal path', () => {
+    const source = ['```ts', 'const a = 1;', '```'].join('\n');
+    const row = layoutMarkdown(parseMarkdownBlocks(source), { width: 40 }).rows[0];
+
+    expect(row?.lines.map(lineText)).toEqual(['▏', '▏ const a = 1;', '▏']);
+    expect(row?.lines.at(0)?.segments).toEqual([{ kind: 'codeGutter', text: '▏' }]);
+    expect(row?.lines.at(-1)?.segments).toEqual([{ kind: 'codeGutter', text: '▏' }]);
+  });
+
+  it('repeats the code gutter on wrapped continuation lines', () => {
+    const source = ['```', `const value = '${'x'.repeat(40)}';`, '```'].join('\n');
+    const lines = layoutMarkdown(parseMarkdownBlocks(source), { width: 24 }).rows.flatMap(
+      (row) => row.lines,
+    );
+    const texts = lines.map(lineText);
+
+    expect(texts.slice(1, -1).length).toBeGreaterThan(1);
+    expect(lines.every((line) => line.segments[0]?.kind === 'codeGutter')).toBe(true);
+    expect(texts.slice(1, -1).every((text) => text.startsWith('▏ '))).toBe(true);
+    expect(texts.at(0)).toBe('▏');
+    expect(texts.at(-1)).toBe('▏');
+  });
+
+  it('leaves frontmatter metadata free of the code gutter', () => {
+    const source = ['---', 'title: Doc', '---', '', 'body'].join('\n');
+    const segments = layoutMarkdown(parseMarkdownBlocks(source), { width: 40 }).rows.flatMap(
+      (row) => row.lines.flatMap((line) => line.segments),
+    );
+
+    expect(segments.some((segment) => segment.kind === 'metadata')).toBe(true);
+    expect(segments.some((segment) => segment.kind === 'codeGutter')).toBe(false);
   });
 
   it('wraps wide and combining grapheme clusters by terminal cells', () => {
@@ -141,6 +190,56 @@ describe('layoutMarkdown', () => {
     expect(heading?.depth).toBe(5);
   });
 
+  it('opens a mid-document heading with one blank line', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks('intro text\n\n## Section'), { width: 40 });
+    const heading = layout.rows[1];
+
+    expect(heading?.blockKind).toBe('heading');
+    expect(heading?.lines.map(lineText)).toEqual(['', 'Section']);
+    expect(heading?.height).toBe(2);
+    expect(layout.height).toBe(3);
+  });
+
+  it('keeps a document-leading heading flush with the top', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks('# Title\n\nbody'), { width: 40 });
+
+    expect(layout.rows[0]?.lines.map(lineText)).toEqual(['Title']);
+    expect(layout.rows[0]?.height).toBe(1);
+    expect(layout.height).toBe(2);
+  });
+
+  it('opens a leading heading with a blank line when leadingHeadingGap is set', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks('# Title'), {
+      width: 40,
+      leadingHeadingGap: true,
+    });
+
+    expect(layout.rows[0]?.lines.map(lineText)).toEqual(['', 'Title']);
+    expect(layout.rows[0]?.height).toBe(2);
+    expect(layout.height).toBe(2);
+  });
+
+  it('counts the gap once for a heading that wraps across lines', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks('intro\n\n## Section title that wraps'), {
+      width: 12,
+    });
+    const heading = layout.rows[1];
+
+    expect(heading?.lines.map(lineText)).toEqual(['', 'Section', 'title that', 'wraps']);
+    expect(heading?.height).toBe(4);
+  });
+
+  it('opens a heading that starts a blockquote with one blank line', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks('intro\n\n> # Quoted\n> body'), {
+      width: 40,
+    });
+    const quotedHeading = layout.rows[1];
+
+    expect(quotedHeading?.blockKind).toBe('blockquote');
+    expect(quotedHeading?.lines.map(lineText)).toEqual(['▎ ', '▎ Quoted']);
+    expect(quotedHeading?.height).toBe(2);
+  });
+
   it('maps strikethrough inline tokens onto strikethrough segments', () => {
     const document: MarkdownDocument = {
       blocks: [
@@ -157,6 +256,11 @@ describe('layoutMarkdown', () => {
     );
 
     expect(segments).toEqual([{ kind: 'strikethrough', text: 'gone' }]);
+  });
+
+  it('gives nested unordered items a hollow bullet and leaves ordered markers alone', () => {
+    expect(layoutLines('- top\n  - nested', 40)).toEqual(['• top', '  ◦ nested']);
+    expect(layoutLines('1. top\n  1. nested', 40)).toEqual(['1. top', '  1. nested']);
   });
 
   it('routes table blocks through the table layout', () => {
@@ -209,6 +313,13 @@ describe('layoutMarkdown', () => {
           .filter((segment) => segment.scope !== undefined)
           .every((segment) => segment.kind === 'code'),
       ).toBe(true);
+    });
+
+    it('opens a highlighted fence line with the same code gutter as the literal path', () => {
+      const segments = fenceSegments('ts', ["const greeting = 'hello';"], 60);
+
+      expect(segments[0]).toEqual({ kind: 'codeGutter', text: '▏' });
+      expect(segments[1]).toEqual({ kind: 'codeGutter', text: '▏ ' });
     });
 
     it('keeps an unknown language monochrome with scope-less code segments', () => {

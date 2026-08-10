@@ -97,6 +97,7 @@ export async function collectAndPersistClarifications(
         ts: Date.now(),
         phase: state.phase,
         id: message.id,
+        origin: 'clarification',
         ...(preview.length > 0 && { preview }),
       });
       await dispatchNativeInjection({

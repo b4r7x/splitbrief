@@ -70,12 +70,12 @@ describe('ReviewView', () => {
     ui = renderFeature(<ReviewView height={10} width={40} />);
 
     await vi.waitFor(() => {
-      expect(reviewStore.get().renderedLineCount).toBe(7);
+      expect(reviewStore.get().renderedLineCount).toBe(9);
     });
     reviewStore.setScrollOffset(999);
 
     await vi.waitFor(() => {
-      expect(reviewStore.get().scrollOffset).toBe(3);
+      expect(reviewStore.get().scrollOffset).toBe(5);
       const frame = ui?.lastFrame() ?? '';
       expect(frame).toContain('line-4');
       expect(frame).toContain('line-6');
@@ -90,9 +90,9 @@ describe('ReviewView', () => {
     ui = renderFeature(<ReviewView height={8} width={36} />);
 
     await vi.waitFor(() => {
-      expect(reviewStore.get().renderedLineCount).toBe(5);
+      expect(reviewStore.get().renderedLineCount).toBe(7);
     });
-    reviewStore.setScrollOffset(1);
+    reviewStore.setScrollOffset(2);
 
     await vi.waitFor(() => {
       const frame = ui?.lastFrame() ?? '';

@@ -544,7 +544,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('clarification_answered').extend({
     answer: z.string(),
   }),
-  phaseEvent('message_queued').extend({ id: z.string(), preview: z.string().optional() }),
+  phaseEvent('message_queued').extend({
+    id: z.string(),
+    preview: z.string().optional(),
+    origin: z.enum(['user-input', 'clarification']).optional(),
+  }),
   phaseEvent('message_injected_native').extend({ id: z.string(), preview: z.string().optional() }),
   phaseEvent('queue_drained').extend({
     count: z.number().int().nonnegative(),

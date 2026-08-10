@@ -91,6 +91,8 @@ interface ComposerProps {
   currentScreen: Screen;
   width?: number;
   disabled?: boolean;
+  submitKeepsDraft?: boolean;
+  promptGlyph?: string | undefined;
   homeHint?: string | undefined;
   boxHints?: ComposerBoxHints | undefined;
   onEmptySubmit?: (() => void) | undefined;
@@ -122,6 +124,8 @@ export function Composer({
   currentScreen,
   width,
   disabled,
+  submitKeepsDraft,
+  promptGlyph,
   homeHint,
   boxHints,
   onEmptySubmit,
@@ -211,7 +215,7 @@ export function Composer({
   const handleSubmit = (text: string) => {
     if (mode !== 'normal') {
       onSubmit(expandPastes(text, pastes));
-      clearDraft();
+      if (!submitKeepsDraft) clearDraft();
       return;
     }
 
@@ -226,10 +230,12 @@ export function Composer({
 
     if (trimmed.startsWith('/')) {
       onRuntimeCommand(trimmed);
-    } else {
-      onSubmit(expandPastes(trimmed, pastes));
+      clearDraft();
+      return;
     }
-    clearDraft();
+
+    onSubmit(expandPastes(trimmed, pastes));
+    if (!submitKeepsDraft) clearDraft();
   };
 
   const isEditShortcut = (input: string, key: Key): boolean =>
@@ -350,7 +356,7 @@ export function Composer({
           flexShrink={0}
         >
           <Text color={promptColorForMode(mode, theme)} dimColor={mode === 'review'}>
-            {`${glyph('prompt')} `}
+            {`${promptGlyph ?? glyph('prompt')} `}
           </Text>
           <Box flexGrow={1} overflow="hidden">
             <MultilineInput

@@ -243,9 +243,7 @@ export function HomeScreen({
   );
 
   let homeHint: string | undefined;
-  if (isPreparing && !hasOverlay) {
-    homeHint = `${preparationFrame} ${INITIALIZING_TOOLS_TITLE}`;
-  } else if (!interactionBlocked) {
+  if (!interactionBlocked) {
     homeHint = DEFAULT_HOME_HINT;
     if (canFocus) homeHint = HOME_HINT;
     // The notice borrows the reserved hint line instead of adding a row, so it
@@ -316,7 +314,9 @@ export function HomeScreen({
 
         <Box flexDirection="column" marginBottom={layout.inputBottomMargin} flexShrink={0}>
           <Composer
-            disabled={interactionBlocked || sessionsActive}
+            disabled={interactionBlocked || sessionsActive || isPreparing}
+            submitKeepsDraft
+            promptGlyph={isPreparing ? preparationFrame : undefined}
             onSubmit={onStartWorkflow}
             onRuntimeCommand={onRuntimeCommand}
             commands={commands}

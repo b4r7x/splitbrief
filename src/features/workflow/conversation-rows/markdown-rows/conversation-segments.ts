@@ -85,10 +85,12 @@ function markdownSegment(
       return { text: segment.text, tone: 'text' };
     case 'blockquoteMarker':
       return { text: segment.text, tone: 'textDim' };
+    case 'codeGutter':
+      return { text: segment.text, tone: 'markdownRule' };
     case 'code':
       return segment.scope !== undefined
         ? { text: segment.text, tone: syntaxScopeTone(segment.scope) }
-        : { text: segment.text, tone: 'textDim' };
+        : { text: segment.text, tone: 'markdownCode' };
     case 'bold':
       return { text: segment.text, tone: 'text', bold: true };
     case 'italic':

@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { MouseEvent } from '../../../lib/terminal/filtered-stdin/types.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { handleWorkflowMouseWheel } from './use-mouse-scroll.js';
+import {
+  handleWorkflowMouseWheel,
+  modalPromptOwnsInput,
+  promptOwnsInput,
+} from './use-mouse-scroll.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { closeApprovalPrompt, openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -107,6 +112,35 @@ describe('handleWorkflowMouseWheel', () => {
 
     expect(reviewStore.get().scrollOffset).toBe(reviewMaxOffset - 1);
     expect(conversationScrollStore.get().scrollOffset).toBe(conversationOffset);
+  });
+
+  it('question mode owns presses but leaves the wheel to the transcript', () => {
+    controlsStore.setInputMode('question');
+    expect(promptOwnsInput()).toBe(true);
+    expect(modalPromptOwnsInput()).toBe(false);
+  });
+
+  it('question mode wheel input scrolls the conversation', () => {
+    seedLongConversation();
+    controlsStore.setInputMode('question');
+
+    handleWorkflowMouseWheel(wheelEvent('wheel-up', 2, 7));
+    expect(conversationScrollStore.get().scrollOffset).toBe(1);
+  });
+
+  it('a pending tiered approval owns both presses and the wheel', () => {
+    const pending = openApprovalPrompt({
+      tier: 'sticky',
+      actionClass: 'network',
+      actionDescription: 'push to origin',
+      phase: 'implementing',
+    });
+    expect(promptOwnsInput()).toBe(true);
+    expect(modalPromptOwnsInput()).toBe(true);
+    closeApprovalPrompt();
+    return pending.then(() => {
+      expect(modalPromptOwnsInput()).toBe(false);
+    });
   });
 
   it('completion owns wheel input until its menu closes', () => {
