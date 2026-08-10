@@ -6,6 +6,7 @@ import {
   padTerminalDisplayTextEnd,
   sanitizeTerminalDisplayText,
   sanitizeTerminalDiagnosticText,
+  splitTerminalGraphemes,
   stripTerminalControls,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
@@ -78,6 +79,43 @@ describe('getTerminalCellWidth', () => {
 
   it('keeps text-presentation symbols at one cell', () => {
     expect(getTerminalCellWidth('❤1⚙©™')).toBe(5);
+  });
+
+  it('measures every printable ASCII character as exactly one cell', () => {
+    for (let codePoint = 0x20; codePoint <= 0x7e; codePoint += 1) {
+      const char = String.fromCodePoint(codePoint);
+
+      expect(getTerminalCellWidth(char)).toBe(1);
+    }
+  });
+
+  it.each([
+    ['unit separator', '\u001f'],
+    ['delete', '\u007f'],
+    ['tab', '\u0009'],
+    ['line feed', '\n'],
+    ['C1 control', '\u0085'],
+  ])('still strips %s rather than measuring it as printable', (_, control) => {
+    expect(getTerminalCellWidth(control)).toBe(0);
+    expect(getTerminalCellWidth(`ab${control}cd`)).toBe(4);
+  });
+
+  it('measures an empty string as zero cells', () => {
+    expect(getTerminalCellWidth('')).toBe(0);
+  });
+});
+
+describe('splitTerminalGraphemes', () => {
+  it('splits printable ASCII into one grapheme per character', () => {
+    expect(splitTerminalGraphemes('a b~!')).toEqual(['a', ' ', 'b', '~', '!']);
+  });
+
+  it('keeps grapheme clusters intact and drops controls', () => {
+    expect(splitTerminalGraphemes('a\u001b[31me\u0301\u{1f469}\u200d\u{1f4bb}')).toEqual([
+      'a',
+      'e\u0301',
+      '\u{1f469}\u200d\u{1f4bb}',
+    ]);
   });
 });
 

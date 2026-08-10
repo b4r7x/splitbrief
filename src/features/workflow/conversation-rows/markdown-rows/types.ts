@@ -17,10 +17,14 @@ export interface MarkdownConversationRowsProjection {
   createRows: (windowStart: number, windowEnd: number) => ConversationRow[];
 }
 
-export interface MarkdownRowsCacheEntry {
+export interface MarkdownRowsProjectionEntry {
   sourceText: string;
   chunks: readonly MarkdownLayoutChunk[];
   projection: MarkdownConversationRowsProjection;
+}
+
+export interface MarkdownRowsCacheEntry extends MarkdownRowsProjectionEntry {
+  rawText: string;
 }
 
 export interface ActiveMarkdownRowsProjectionKeys {

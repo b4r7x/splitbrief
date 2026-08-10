@@ -36,11 +36,18 @@ export function markdownConversationRowsProjection(
   input: MarkdownConversationRowsInput,
 ): MarkdownConversationRowsProjection {
   const key = markdownRowsIdentityKey(input);
+  const cached = getMarkdownRowsCacheEntry(key);
+  // Sanitizing is the expensive half of a re-projection, so unchanged raw text short-circuits
+  // ahead of it — scrolling re-renders every markdown block without touching its source.
+  if (cached?.rawText === input.text) {
+    rememberMarkdownRows(key, cached);
+    return cached.projection;
+  }
+
   const sourceText = normalizeMarkdownSource(sanitizeRowDisplayText(input.text));
   const projectDir = configStore.get().projectDir || undefined;
-  const cached = getMarkdownRowsCacheEntry(key);
   if (cached?.sourceText === sourceText) {
-    rememberMarkdownRows(key, cached);
+    rememberMarkdownRows(key, { ...cached, rawText: input.text });
     return cached.projection;
   }
 
@@ -62,7 +69,7 @@ export function markdownConversationRowsProjection(
           projectDir,
         });
 
-  rememberMarkdownRows(key, next);
+  rememberMarkdownRows(key, { ...next, rawText: input.text });
   return next.projection;
 }
 

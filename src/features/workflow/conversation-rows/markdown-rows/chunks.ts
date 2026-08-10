@@ -20,7 +20,7 @@ import { layoutMarkdown } from '../../../../utils/markdown/layout.js';
 import { repairMarkdownTailChunk } from '../../../../utils/markdown/repair.js';
 import type {
   MarkdownLayoutChunk,
-  MarkdownRowsCacheEntry,
+  MarkdownRowsProjectionEntry,
   MarkdownSourceChunk,
   MarkdownSourceLine,
   MetadataCandidate,
@@ -32,12 +32,12 @@ const MAX_LIST_LINES_PER_CHUNK = 64;
 const CONTINUATION_SENTINEL = `# ${SPLITBRIEF_IDENTITY.slug}-continuation-sentinel`;
 
 export function appendMarkdownRowsCacheEntry(input: {
-  cached: MarkdownRowsCacheEntry;
+  cached: MarkdownRowsProjectionEntry;
   sourceText: string;
   keyPrefix: string;
   width: number;
   projectDir: string | undefined;
-}): MarkdownRowsCacheEntry {
+}): MarkdownRowsProjectionEntry {
   const reuseCount = appendMarkdownRowsReuseCount(input.cached, input.sourceText);
   const reusedChunks = input.cached.chunks.slice(0, reuseCount);
   const tailStart = reusedChunks.at(-1)?.endOffset ?? 0;
@@ -63,7 +63,7 @@ export function createMarkdownRowsCacheEntry(input: {
   startChunkIndex: number;
   startOffset: number;
   projectDir: string | undefined;
-}): MarkdownRowsCacheEntry {
+}): MarkdownRowsProjectionEntry {
   return createMarkdownRowsCacheEntryFromChunks({
     sourceText: input.sourceText,
     keyPrefix: input.keyPrefix,
@@ -76,7 +76,10 @@ export function normalizeMarkdownSource(text: string): string {
   return text.replace(/\r\n?/g, '\n');
 }
 
-function appendMarkdownRowsReuseCount(cached: MarkdownRowsCacheEntry, sourceText: string): number {
+function appendMarkdownRowsReuseCount(
+  cached: MarkdownRowsProjectionEntry,
+  sourceText: string,
+): number {
   const defaultReuseCount = Math.max(0, cached.chunks.length - 1);
   const metadataPrefixOffset = appendSensitiveMetadataPrefixOffset({
     sourceText,

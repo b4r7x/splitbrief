@@ -36,6 +36,10 @@ const EMOJI_VARIATION_BASE_PATTERN = /\p{Extended_Pictographic}/u;
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 
+// Printable ASCII carries no control sequences to strip and no combining, wide, or
+// emoji code points, so each character is exactly one grapheme of one cell.
+const PRINTABLE_ASCII_PATTERN = /^[ -~]*$/;
+
 export interface TerminalDiagnosticTextOptions {
   maxChars?: number | undefined;
   preserveLineBreaks?: boolean | undefined;
@@ -79,8 +83,10 @@ export function sanitizeTerminalDiagnosticText(
 }
 
 export function getTerminalCellWidth(text: string): number {
+  if (PRINTABLE_ASCII_PATTERN.test(text)) return text.length;
+
   let width = 0;
-  for (const grapheme of iterateTerminalGraphemes(text)) {
+  for (const grapheme of graphemes(stripTerminalControls(text))) {
     width += getGraphemeWidth(grapheme);
   }
   return width;
@@ -99,6 +105,7 @@ export function splitTerminalGraphemes(
   text: string,
   opts: TerminalDisplayTextOptions = {},
 ): string[] {
+  if (PRINTABLE_ASCII_PATTERN.test(text)) return text.split('');
   return Array.from(iterateTerminalGraphemes(text, opts));
 }
 
