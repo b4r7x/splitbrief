@@ -32,6 +32,7 @@ export interface Theme {
     bold: string;
     italic: string;
     code: string;
+    codeBg: string | undefined;
     blockquote: string;
     list: string;
     rule: string;
@@ -94,6 +95,7 @@ const terminalTheme: Theme = {
     bold: 'white',
     italic: 'gray',
     code: 'yellow',
+    codeBg: undefined,
     blockquote: 'gray',
     list: 'cyan',
     rule: 'gray',
@@ -156,6 +158,7 @@ const monoTheme: Theme = {
     bold: '#c0c0c0',
     italic: '#828bb8',
     code: '#e0af68',
+    codeBg: '#24283b',
     blockquote: '#828bb8',
     list: '#7aa2f7',
     rule: '#3b3b3b',

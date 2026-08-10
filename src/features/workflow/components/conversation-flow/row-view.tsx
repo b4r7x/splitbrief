@@ -130,6 +130,14 @@ export function ConversationRowView({
 }) {
   const t = useTheme();
   const markerColor = markerColorFor(row, lifecycle, t);
+  const codeBg = row.codeBg === true ? t.markdown.codeBg : undefined;
+  const content = (
+    <Text wrap="truncate-end">
+      {row.segments.map((segment, index) => (
+        <RowSegment key={`seg-${index}`} segment={segment} />
+      ))}
+    </Text>
+  );
 
   return (
     <Box height={1} overflow="hidden" flexShrink={0}>
@@ -140,11 +148,13 @@ export function ConversationRowView({
         markerColor={markerColor}
         {...(row.headerContinuation === true ? { headerContinuation: true } : {})}
       />
-      <Text wrap="truncate-end">
-        {row.segments.map((segment, index) => (
-          <RowSegment key={`seg-${index}`} segment={segment} />
-        ))}
-      </Text>
+      {codeBg === undefined ? (
+        content
+      ) : (
+        <Box flexGrow={1} backgroundColor={codeBg}>
+          {content}
+        </Box>
+      )}
     </Box>
   );
 }

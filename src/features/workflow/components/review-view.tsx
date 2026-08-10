@@ -13,7 +13,7 @@ import {
 import { Divider } from './divider.js';
 import { FramePanel } from './frame-panel.js';
 import { useTheme } from '../../../components/theme.js';
-import { getReviewColumnWidth, getReviewContentLayout } from '../layout/rect.js';
+import { getReviewColumnWidth, getReviewContentLayout, REVIEW_FRAME_ROWS } from '../layout/rect.js';
 import { useReviewContent } from '../hooks/use-review-content.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -34,7 +34,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const frameInnerWidth = Math.max(1, documentWidth - 4);
   const scrollableWidth = Math.max(1, documentWidth - 2);
   const bodyWidth = Math.max(1, getScrollViewportContentWidth(scrollableWidth));
-  const innerHeight = Math.max(0, containerHeight - 2);
+  const innerHeight = Math.max(0, containerHeight - REVIEW_FRAME_ROWS);
   const rows = renderMarkdownRows({
     source: content,
     width: bodyWidth,

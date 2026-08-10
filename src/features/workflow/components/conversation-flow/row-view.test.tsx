@@ -1,9 +1,25 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Box, Text } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { ConversationRow } from '../../conversation-rows/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
+import { getTheme, ThemeProvider } from '../../../../components/theme.js';
 import { ConversationRowView } from './row-view.js';
+
+// Ink resolves chalk color level 0 against the capture stdout unless FORCE_COLOR is set before
+// ink (and its chalk dependency) first load, so the background assertion below would silently
+// no-op without this. Restored in afterAll so it never leaks into other test files.
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
 
 const DONE_MARK = glyph('statusDone');
 const ACTIVITY_DONE_MARK = glyph('stageDone');
@@ -161,6 +177,81 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     expect(frame).toContain(FOCUS_MARK);
     expect(frame).toContain(TREE_BRANCH_MARK);
     expect(frame).toContain('reading src/b.ts');
+    ui.unmount();
+  });
+});
+
+describe('ConversationRowView code background', () => {
+  const codeRow: ConversationRow = {
+    key: 'markdown-code-0',
+    kind: 'message',
+    segments: [
+      { text: '▏ ', tone: 'markdownRule' },
+      { text: "const x = 'y';", tone: 'markdownCode' },
+    ],
+    codeBg: true,
+  };
+
+  function backgroundOpen(color: string): string {
+    const ui = renderFeature(
+      <Box backgroundColor={color}>
+        <Text>x</Text>
+      </Box>,
+    );
+    const frame = ui.lastFrame();
+    ui.unmount();
+    const prefix = frame.slice(0, frame.indexOf('x'));
+    if (!prefix) throw new Error(`no background prefix rendered for ${color}`);
+    return prefix;
+  }
+
+  it('paints a code row with the themed background', () => {
+    const theme = getTheme('mono');
+    const codeBg = theme.markdown.codeBg;
+    if (codeBg === undefined) throw new Error('the mono theme must define markdown.codeBg');
+
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        <ConversationRowView row={codeRow} />
+      </ThemeProvider>,
+    );
+    const frame = ui.lastFrame();
+
+    expect(frame).toContain(backgroundOpen(codeBg));
+    expect(stripAnsiStyles(frame)).toContain("▏ const x = 'y';");
+    ui.unmount();
+  });
+
+  it('renders a code row unpainted when the theme leaves the background undefined', () => {
+    const theme = getTheme();
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        <ConversationRowView row={codeRow} />
+      </ThemeProvider>,
+    );
+    const frame = ui.lastFrame();
+
+    expect(theme.markdown.codeBg).toBeUndefined();
+    expect(frame).not.toContain('\x1b[48;');
+    expect(stripAnsiStyles(frame)).toContain("▏ const x = 'y';");
+    ui.unmount();
+  });
+
+  it('leaves a row without the flag unpainted under the same theme', () => {
+    const theme = getTheme('mono');
+    const plainRow: ConversationRow = {
+      key: 'markdown-code-1',
+      kind: 'message',
+      segments: codeRow.segments,
+    };
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        <ConversationRowView row={plainRow} />
+      </ThemeProvider>,
+    );
+    const frame = ui.lastFrame();
+
+    expect(frame).not.toContain('\x1b[48;');
     ui.unmount();
   });
 });

@@ -113,6 +113,16 @@ describe('Markdown', () => {
     ).toBeGreaterThan(rows.length);
   });
 
+  it('opens a mid-document heading with one blank line', async () => {
+    const source = 'intro line\n\n## Section';
+    const rows = renderMarkdownRows({ source, width: 32, theme: getTheme() });
+    const { stripped, unmount } = await renderMarkdown({ source, width: 32, theme: getTheme() });
+
+    expect(rows.map((row) => row.lines ?? 1).reduce((sum, lines) => sum + lines, 0)).toBe(3);
+    expect(stripped.split('\n')).toEqual(['intro line', '', 'Section']);
+    unmount();
+  });
+
   it('does not render terminal controls, OSC payloads, or secret-looking markdown text', async () => {
     const { stripped, unmount } = await renderMarkdown({
       source: [
@@ -293,6 +303,103 @@ describe('fenced code highlighting (REQ-007)', () => {
       expect(raw).not.toContain(colorOpen(scopeColor));
     }
     expect(stripped).toContain("const x = 'y';");
+    unmount();
+  });
+});
+
+describe('code block framing', () => {
+  const codeSource = ['intro prose', '', '```zzz', "const x = 'y';", '```'].join('\n');
+
+  function backgroundOpen(color: string): string {
+    const ui = render(
+      <Box backgroundColor={color}>
+        <Text>x</Text>
+      </Box>,
+    );
+    const frame = ui.lastFrame() ?? '';
+    ui.unmount();
+    const prefix = frame.slice(0, frame.indexOf('x'));
+    if (!prefix) throw new Error(`no background prefix rendered for ${color}`);
+    return prefix;
+  }
+
+  it('draws the gutter on code lines and leaves prose unprefixed', async () => {
+    const { stripped, unmount } = await renderMarkdown({
+      source: codeSource,
+      width: 40,
+      theme: getTheme(),
+    });
+    const lines = stripped.split('\n').map((line) => line.trimEnd());
+
+    expect(lines).toContain('intro prose');
+    expect(lines).toContain("▏ const x = 'y';");
+    unmount();
+  });
+
+  it('repeats the gutter on wrapped code lines', async () => {
+    const source = ['```zzz', `const value = '${'x'.repeat(60)}';`, '```'].join('\n');
+    const { stripped, unmount } = await renderMarkdown({ source, width: 30, theme: getTheme() });
+    const lines = stripped
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter((line) => line.length > 0);
+    const codeLines = lines.slice(1, -1);
+
+    expect(codeLines.length).toBeGreaterThan(1);
+    expect(codeLines.every((line) => line.startsWith('▏ '))).toBe(true);
+    expect(lines.at(0)).toBe('▏');
+    expect(lines.at(-1)).toBe('▏');
+    unmount();
+  });
+
+  it('pads the block with a bare rail above and below while prose stays flush', async () => {
+    const { stripped, unmount } = await renderMarkdown({
+      source: codeSource,
+      width: 40,
+      theme: getTheme(),
+    });
+    const lines = stripped.split('\n').map((line) => line.trimEnd());
+
+    expect(lines).toEqual(['intro prose', '▏', "▏ const x = 'y';", '▏']);
+    unmount();
+  });
+
+  it('paints the code background when the theme defines one', async () => {
+    const theme = getTheme('mono');
+    const codeBg = theme.markdown.codeBg;
+    if (codeBg === undefined) throw new Error('the mono theme must define markdown.codeBg');
+    const { raw, unmount } = await renderMarkdown({ source: codeSource, width: 40, theme });
+
+    expect(raw).toContain(backgroundOpen(codeBg));
+    unmount();
+  });
+
+  it('paints the code background across the full layout width, not just the text', async () => {
+    const theme = getTheme('mono');
+    const width = 40;
+    const { stripped, unmount } = await renderMarkdown({
+      source: ['```zzz', 'x', '```'].join('\n'),
+      width,
+      theme,
+    });
+    const codeLines = stripped.split('\n').filter((line) => line.includes('▏'));
+
+    expect(codeLines.length).toBeGreaterThan(0);
+    expect(codeLines.map(getTerminalCellWidth)).toEqual(codeLines.map(() => width));
+    unmount();
+  });
+
+  it('renders code unpainted when the theme leaves the background undefined', async () => {
+    const theme = getTheme();
+    const { raw, stripped, unmount } = await renderMarkdown({
+      source: codeSource,
+      width: 40,
+      theme,
+    });
+
+    expect(theme.markdown.codeBg).toBeUndefined();
+    expect(stripped).toContain("const x = 'y';");
+    expect(raw).not.toContain('\x1b[48;');
     unmount();
   });
 });

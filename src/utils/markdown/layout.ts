@@ -22,14 +22,16 @@ import { assertNever } from '../type-guards.js';
 
 interface LayoutOptions {
   width: number;
+  leadingHeadingGap?: boolean;
 }
 
 type WrapMode = 'word' | 'hard';
 const THEMATIC_BREAK_CHAR = '\u2500';
+const CODE_GUTTER_RAIL = '\u258f';
 
 export function layoutMarkdown(document: MarkdownDocument, options: LayoutOptions): MarkdownLayout {
   const width = normalizeWidth(options.width);
-  const rows = layoutBlocks(document.blocks, width, 'block');
+  const rows = layoutBlocks(document.blocks, width, 'block', options.leadingHeadingGap ?? false);
   return {
     width,
     rows,
@@ -41,34 +43,37 @@ function layoutBlocks(
   blocks: readonly MarkdownBlock[],
   width: number,
   keyPrefix: string,
+  leadingHeadingGap = false,
 ): MarkdownLayoutRow[] {
   const rows: MarkdownLayoutRow[] = [];
 
   blocks.forEach((block, index) => {
-    rows.push(...layoutBlock(block, width, `${keyPrefix}-${index}`));
+    const headingGap = rows.length > 0 || leadingHeadingGap;
+    rows.push(...layoutBlock(block, width, `${keyPrefix}-${index}`, headingGap));
   });
 
   return rows;
 }
 
-function layoutBlock(block: MarkdownBlock, width: number, key: string): MarkdownLayoutRow[] {
+function layoutBlock(
+  block: MarkdownBlock,
+  width: number,
+  key: string,
+  headingGap: boolean,
+): MarkdownLayoutRow[] {
   switch (block.kind) {
     case 'frontmatter':
-      return [layoutLiteralLines(block.kind, key, block.lines, 'metadata', [], [], width)];
-    case 'heading':
-      return [
-        createRow(
-          key,
-          block.kind,
-          wrapSegments(
-            block.inlines.map((token) => headingTokenToSegment(token, block.depth)),
-            [],
-            [],
-            width,
-            'word',
-          ),
-        ),
-      ];
+      return [createRow(key, block.kind, literalLines(block.lines, 'metadata', [], width))];
+    case 'heading': {
+      const lines = wrapSegments(
+        block.inlines.map((token) => headingTokenToSegment(token, block.depth)),
+        [],
+        [],
+        width,
+        'word',
+      );
+      return [createRow(key, block.kind, headingGap ? [{ segments: [] }, ...lines] : lines)];
+    }
     case 'thematicBreak':
       return [
         createRow(key, block.kind, [
@@ -77,25 +82,16 @@ function layoutBlock(block: MarkdownBlock, width: number, key: string): Markdown
       ];
     case 'code': {
       const highlighted = highlightMarkdownCode({ lines: block.lines, language: block.language });
-      if (highlighted !== null) {
-        return [layoutHighlightedCode(key, highlighted, width)];
-      }
-      return [
-        layoutLiteralLines(
-          block.kind,
-          key,
-          block.lines,
-          'code',
-          literalPrefix(),
-          literalPrefix(),
-          width,
-        ),
-      ];
+      const lines =
+        highlighted === null
+          ? literalLines(block.lines, 'code', literalPrefix(), width)
+          : highlightedCodeLines(highlighted, width);
+      return [createRow(key, block.kind, [codePadLine(), ...lines, codePadLine()])];
     }
     case 'list':
       return block.items.map((item, index) => layoutListItem(item, width, `${key}-${index}`));
     case 'blockquote':
-      return layoutBlockquote(block.blocks, width, key);
+      return layoutBlockquote(block.blocks, width, key, headingGap);
     case 'table':
       return layoutMarkdownTable({ block, width, key });
     case 'htmlComment':
@@ -113,44 +109,27 @@ function layoutBlock(block: MarkdownBlock, width: number, key: string): Markdown
   }
 }
 
-function layoutLiteralLines(
-  kind: MarkdownBlock['kind'],
-  key: string,
+function literalLines(
   sourceLines: readonly string[],
   segmentKind: MarkdownLayoutSegment['kind'],
-  firstPrefix: readonly MarkdownLayoutSegment[],
-  continuationPrefix: readonly MarkdownLayoutSegment[],
+  prefix: readonly MarkdownLayoutSegment[],
   width: number,
-): MarkdownLayoutRow {
+): MarkdownLayoutLine[] {
   const lines = sourceLines.length > 0 ? sourceLines : [''];
-  const layoutLines = lines.flatMap((line) =>
-    wrapSegments(
-      [{ kind: segmentKind, text: line }],
-      firstPrefix,
-      continuationPrefix,
-      width,
-      'hard',
-    ),
+  return lines.flatMap((line) =>
+    wrapSegments([{ kind: segmentKind, text: line }], prefix, prefix, width, 'hard'),
   );
-  return createRow(key, kind, layoutLines);
 }
 
-function layoutHighlightedCode(
-  key: string,
+function highlightedCodeLines(
   spanLines: readonly (readonly MarkdownHighlightSpan[])[],
   width: number,
-): MarkdownLayoutRow {
+): MarkdownLayoutLine[] {
   const lines = spanLines.length > 0 ? spanLines : [[]];
-  const layoutLines = lines.flatMap((spans) =>
-    wrapSegments(
-      spans.map(highlightSpanToSegment),
-      literalPrefix(),
-      literalPrefix(),
-      width,
-      'hard',
-    ),
+  const prefix = literalPrefix();
+  return lines.flatMap((spans) =>
+    wrapSegments(spans.map(highlightSpanToSegment), prefix, prefix, width, 'hard'),
   );
-  return createRow(key, 'code', layoutLines);
 }
 
 function highlightSpanToSegment(span: MarkdownHighlightSpan): MarkdownLayoutSegment {
@@ -161,7 +140,8 @@ function highlightSpanToSegment(span: MarkdownHighlightSpan): MarkdownLayoutSegm
 }
 
 function layoutListItem(item: MarkdownListItem, width: number, key: string): MarkdownLayoutRow {
-  const marker = item.kind === 'ordered' ? `${item.marker} ` : '• ';
+  const bullet = item.indent > 0 ? '◦ ' : '• ';
+  const marker = item.kind === 'ordered' ? `${item.marker} ` : bullet;
   const indent = Math.min(item.indent, Math.max(0, width - getTerminalCellWidth(marker) - 1));
   const prefixText = `${' '.repeat(indent)}${marker}`;
   const prefix: MarkdownLayoutSegment[] = [{ kind: 'listMarker', text: prefixText }];
@@ -180,10 +160,11 @@ function layoutBlockquote(
   blocks: readonly MarkdownBlock[],
   width: number,
   key: string,
+  leadingHeadingGap: boolean,
 ): MarkdownLayoutRow[] {
   const quotePrefix: MarkdownLayoutSegment = { kind: 'blockquoteMarker', text: '▎ ' };
   const innerWidth = Math.max(1, width - getTerminalCellWidth(quotePrefix.text));
-  const innerRows = layoutBlocks(blocks, innerWidth, `${key}-quote`);
+  const innerRows = layoutBlocks(blocks, innerWidth, `${key}-quote`, leadingHeadingGap);
 
   if (innerRows.length === 0) {
     return [createRow(key, 'blockquote', [{ segments: [quotePrefix] }])];
@@ -326,7 +307,11 @@ function headingTokenToSegment(
 }
 
 function literalPrefix(): MarkdownLayoutSegment[] {
-  return [{ kind: 'text', text: '  ' }];
+  return [{ kind: 'codeGutter', text: `${CODE_GUTTER_RAIL} ` }];
+}
+
+function codePadLine(): MarkdownLayoutLine {
+  return { segments: [{ kind: 'codeGutter', text: CODE_GUTTER_RAIL }] };
 }
 
 function isHardWrappedSegment(segment: MarkdownLayoutSegment): boolean {

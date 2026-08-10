@@ -341,6 +341,7 @@ describe('protectEngineEventForConsumer', () => {
       ts: 40,
       phase: 'planning',
       id: 'msg-1',
+      origin: 'clarification',
       preview: 'redacted preview',
     };
 
@@ -351,6 +352,7 @@ describe('protectEngineEventForConsumer', () => {
       ts: 40,
       phase: 'planning',
       id: 'msg-1',
+      origin: 'clarification',
     });
   });
 

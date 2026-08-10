@@ -120,6 +120,49 @@ describe('handleConversationScroll', () => {
     });
   });
 
+  it('keeps the advertised scroll keys working while an answer prompt is open', () => {
+    const question = { ...base, inputMode: 'question' as const, composerFocus: true };
+    expect(handleConversationScroll({ ...question, key: { pageUp: true } as Key }).type).toBe(
+      'conversation-scroll-up',
+    );
+    expect(handleConversationScroll({ ...question, key: { pageDown: true } as Key }).type).toBe(
+      'conversation-scroll-down',
+    );
+    expect(
+      handleConversationScroll({ ...question, key: { shift: true, upArrow: true } as Key }).type,
+    ).toBe('conversation-scroll-up');
+    expect(
+      handleConversationScroll({ ...question, key: { shift: true, downArrow: true } as Key }).type,
+    ).toBe('conversation-scroll-down');
+    expect(handleConversationScroll({ ...question, key: { home: true } as Key })).toEqual({
+      type: 'conversation-scroll-up',
+      renderableCount: 24,
+      step: 9,
+      totalHeight: 42,
+      maxOffset: 9,
+    });
+    expect(handleConversationScroll({ ...question, key: { end: true } as Key })).toEqual({
+      type: 'conversation-scroll-bottom',
+      renderableCount: 24,
+    });
+  });
+
+  it('leaves Ctrl+B and Ctrl+F to the answer composer while an answer prompt is open', () => {
+    const question = { ...base, inputMode: 'question' as const, composerFocus: true };
+    expect(
+      handleConversationScroll({ ...question, input: 'b', key: { ctrl: true } as Key }),
+    ).toEqual({ type: 'none' });
+    expect(
+      handleConversationScroll({ ...question, input: 'f', key: { ctrl: true } as Key }),
+    ).toEqual({ type: 'none' });
+  });
+
+  it('does not scroll the transcript while the review pane owns input', () => {
+    expect(
+      handleConversationScroll({ ...base, key: { pageUp: true } as Key, inputMode: 'review' }),
+    ).toEqual({ type: 'none' });
+  });
+
   it('does not claim Ctrl+B or Ctrl+F while the composer owns text focus', () => {
     expect(
       handleConversationScroll({

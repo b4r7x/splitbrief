@@ -70,7 +70,13 @@ export function renderMarkdownRows(options: RenderMarkdownRowsOptions): Scrollab
   return layout.rows.map((row) => ({
     key: row.key,
     lines: row.height,
-    node: renderMarkdownLayoutRow({ row, theme, decorateSegment, projectDir }),
+    node: renderMarkdownLayoutRow({
+      row,
+      theme,
+      decorateSegment,
+      projectDir,
+      width: layout.width,
+    }),
   }));
 }
 
@@ -79,8 +85,9 @@ function renderMarkdownLayoutRow(input: {
   theme: Theme;
   decorateSegment: MarkdownSegmentDecorator | undefined;
   projectDir: string | undefined;
+  width: number;
 }): ReactNode {
-  const { row, theme, decorateSegment, projectDir } = input;
+  const { row, theme, decorateSegment, projectDir, width } = input;
   return (
     <Box flexDirection="column">
       {row.lines.map((line, index) =>
@@ -91,6 +98,7 @@ function renderMarkdownLayoutRow(input: {
           theme,
           decorateSegment,
           projectDir,
+          codeWidth: row.blockKind === 'code' ? width : undefined,
         }),
       )}
     </Box>
@@ -104,23 +112,36 @@ function renderMarkdownLayoutLine(input: {
   theme: Theme;
   decorateSegment: MarkdownSegmentDecorator | undefined;
   projectDir: string | undefined;
+  codeWidth: number | undefined;
 }): ReactNode {
-  const { line, previousLine, key, theme, decorateSegment, projectDir } = input;
+  const { line, previousLine, key, theme, decorateSegment, projectDir, codeWidth } = input;
   const previousLineText = previousLine?.segments.map((segment) => segment.text).join('');
   const contentIndex = firstContentSegmentIndex(line.segments);
+  const content =
+    line.segments.length === 0
+      ? ' '
+      : line.segments.map((segment, index) =>
+          renderSegment({
+            segment,
+            key: `${key}-${index}`,
+            theme,
+            decorateSegment,
+            projectDir,
+            previousLineText: index === contentIndex ? previousLineText : undefined,
+          }),
+        );
+
+  if (codeWidth === undefined) return <Text key={key}>{content}</Text>;
+
+  const background = theme.markdown.codeBg;
   return (
-    <Text key={key}>
-      {line.segments.map((segment, index) =>
-        renderSegment({
-          segment,
-          key: `${key}-${index}`,
-          theme,
-          decorateSegment,
-          projectDir,
-          previousLineText: index === contentIndex ? previousLineText : undefined,
-        }),
-      )}
-    </Text>
+    <Box
+      key={key}
+      width={codeWidth}
+      {...(background === undefined ? {} : { backgroundColor: background })}
+    >
+      <Text>{content}</Text>
+    </Box>
   );
 }
 
@@ -210,6 +231,8 @@ function segmentStyle(segment: MarkdownLayoutSegment, theme: Theme): SegmentStyl
       return { color: theme.markdown.list };
     case 'blockquoteMarker':
       return { color: theme.markdown.blockquote };
+    case 'codeGutter':
+      return { color: theme.markdown.rule };
     case 'code':
       return segment.scope !== undefined
         ? { color: theme.syntax[segment.scope] }

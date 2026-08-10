@@ -74,6 +74,8 @@ describe('clarifications', () => {
     if (!queuedEvent || queuedEvent.type !== 'message_queued')
       throw new Error('message_queued missing');
     expect(queuedEvent.preview).toBe('clarification: Use JWT? -> Yes, use JWT');
+    expect(queuedEvent.origin).toBe('clarification');
+    expect(events.filter((e) => e.type === 'message_queued')).toHaveLength(1);
 
     await new Promise((r) => setTimeout(r, 0));
     expect(injectedTurns).toHaveLength(1);

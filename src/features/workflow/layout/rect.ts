@@ -88,6 +88,10 @@ export interface WorkflowContentRectInput {
 
 const REVIEW_HEADER_ROWS = 2;
 const REVIEW_FOOTER_ROWS = 2;
+// FramePanel's top and bottom border rows around the review document. Every
+// consumer measuring the visible review height must subtract these, or keyboard
+// and wheel maxOffset drift from the rendered bottom by exactly this amount.
+export const REVIEW_FRAME_ROWS = 2;
 
 function getWorkflowMiddleRows(rows: number, inputRows: number): number {
   return Math.max(0, rows - getChromeHeight(inputRows));

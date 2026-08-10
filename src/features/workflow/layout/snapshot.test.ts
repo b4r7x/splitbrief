@@ -20,7 +20,12 @@ import { costApprovalStore } from '../../../stores/cost-approval/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { getApprovalPromptRows } from '../prompt-rows/approval.js';
 import { getQuestionPromptRows } from '../prompt-rows/question.js';
-import { getWorkflowContentWidth, getWorkflowViewportHeight } from './rect.js';
+import {
+  getReviewContentLayout,
+  getWorkflowContentWidth,
+  getWorkflowViewportHeight,
+  REVIEW_FRAME_ROWS,
+} from './rect.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -163,6 +168,25 @@ describe('readConversationScrollSnapshot', () => {
 
     expect(withPrompt.viewportHeight).toBe(withoutPrompt.viewportHeight - questionRows);
     expect(reviewWithPrompt).toBe(reviewWithoutPrompt - questionRows);
+  });
+
+  it('review bottom offset from the snapshot height leaves no hidden lines in the view', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: true });
+    inputHeightStore.__testReset({ rows: 3 });
+    const renderedLineCount = 120;
+    reviewStore.setRenderedLineCount(renderedLineCount);
+
+    const visibleHeight = readReviewContentHeight();
+    const keyboardBottomOffset = Math.max(0, renderedLineCount - visibleHeight);
+
+    const containerHeight = getWorkflowViewportHeight({ rows: 40, inputRows: 3 });
+    const viewContentHeight = getReviewContentLayout(
+      Math.max(0, containerHeight - REVIEW_FRAME_ROWS),
+      renderedLineCount,
+    ).contentHeight;
+
+    expect(visibleHeight).toBe(viewContentHeight);
+    expect(renderedLineCount - keyboardBottomOffset - viewContentHeight).toBe(0);
   });
 
   it('recomputes prompt row budget when terminal width changes', () => {
