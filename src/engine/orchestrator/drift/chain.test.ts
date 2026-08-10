@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { computePerTaskOutOfBounds, analyzeDriftChain } from './chain.js';
+import type { PerTaskOutOfBoundsInput } from './chain.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import type { Task } from '../../../core/schemas/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { DriftChainState } from '../../../core/schemas/drift-chain.js';
 import { DriftChainStateSchema } from '../../../core/schemas/drift-chain.js';
@@ -15,34 +17,44 @@ function makeState(overrides?: Partial<DriftChainState>): DriftChainState {
   };
 }
 
+function outOfBounds(
+  tasks: Task[],
+  taskChangedFiles: string[],
+  overrides?: Partial<PerTaskOutOfBoundsInput>,
+): Set<string> {
+  return computePerTaskOutOfBounds({
+    tasks,
+    taskChangedFiles,
+    preRunChangedFiles: [],
+    runAttributedFiles: new Set(),
+    ...overrides,
+  });
+}
+
 describe('computePerTaskOutOfBounds', () => {
   it.each([
     {
       label: 'exact primary',
       task: makeTask({ file: 'src/primary.ts' }),
       changedFile: 'src/primary.ts',
-      dependsOnFiles: [],
       accepted: true,
     },
     {
       label: 'glob primary',
       task: makeTask({ file: 'src/primary/*.ts' }),
       changedFile: 'src/primary/matched.ts',
-      dependsOnFiles: [],
       accepted: true,
     },
     {
       label: 'exact in-bounds',
       task: makeTask({ file: 'src/primary.ts', scope: { inBounds: ['src/in-bounds.ts'] } }),
       changedFile: 'src/in-bounds.ts',
-      dependsOnFiles: [],
       accepted: true,
     },
     {
       label: 'glob in-bounds',
       task: makeTask({ file: 'src/primary.ts', scope: { inBounds: ['src/in-bounds/**'] } }),
       changedFile: 'src/in-bounds/matched.ts',
-      dependsOnFiles: [],
       accepted: true,
     },
     {
@@ -52,7 +64,6 @@ describe('computePerTaskOutOfBounds', () => {
         scope: { approvedOutOfBounds: ['generated/exact.ts'] },
       }),
       changedFile: 'generated/exact.ts',
-      dependsOnFiles: [],
       accepted: true,
     },
     {
@@ -62,42 +73,26 @@ describe('computePerTaskOutOfBounds', () => {
         scope: { approvedOutOfBounds: ['generated/**'] },
       }),
       changedFile: 'generated/matched.ts',
-      dependsOnFiles: [],
-      accepted: true,
-    },
-    {
-      label: 'dependency allowance',
-      task: makeTask({ file: 'src/primary.ts', dependsOn: ['T000'] }),
-      changedFile: 'src/dependency.ts',
-      dependsOnFiles: ['src/dependency.ts'],
       accepted: true,
     },
     {
       label: 'truly untargeted',
       task: makeTask({ file: 'src/primary.ts' }),
       changedFile: 'unrelated/extra.ts',
-      dependsOnFiles: [],
       accepted: false,
     },
-  ])('classifies $label paths with attribution parity', ({
-    task,
-    changedFile,
-    dependsOnFiles,
-    accepted,
-  }) => {
-    const result = computePerTaskOutOfBounds(task, [changedFile], dependsOnFiles);
+  ])('classifies $label paths with attribution parity', ({ task, changedFile, accepted }) => {
+    const result = outOfBounds([task], [changedFile]);
     expect(result.has(changedFile)).toBe(!accepted);
   });
 
   it('own file only → empty set', () => {
-    const task = makeTask({ file: 'src/a.ts' });
-    const result = computePerTaskOutOfBounds(task, ['src/a.ts']);
+    const result = outOfBounds([makeTask({ file: 'src/a.ts' })], ['src/a.ts']);
     expect(result.size).toBe(0);
   });
 
   it('own file + extra file → extra file in set', () => {
-    const task = makeTask({ file: 'src/a.ts' });
-    const result = computePerTaskOutOfBounds(task, ['src/a.ts', 'src/b.ts']);
+    const result = outOfBounds([makeTask({ file: 'src/a.ts' })], ['src/a.ts', 'src/b.ts']);
     expect(result).toEqual(new Set(['src/b.ts']));
   });
 
@@ -106,52 +101,93 @@ describe('computePerTaskOutOfBounds', () => {
       file: 'src/a.ts',
       scope: { outOfBounds: ['src/secrets'], approvedOutOfBounds: ['src/secrets/safe.ts'] },
     });
-    const result = computePerTaskOutOfBounds(task, [
-      'src/a.ts',
-      'src/secrets/safe.ts',
-      'src/secrets/leak.ts',
-    ]);
+    const result = outOfBounds([task], ['src/a.ts', 'src/secrets/safe.ts', 'src/secrets/leak.ts']);
     expect(result.has('src/secrets/safe.ts')).toBe(false);
     expect(result.has('src/secrets/leak.ts')).toBe(true);
   });
 
   it('file matching an inBounds glob → excluded from result', () => {
     const task = makeTask({ file: 'src/a.ts', scope: { inBounds: ['src/feature/**'] } });
-    const result = computePerTaskOutOfBounds(task, [
-      'src/a.ts',
-      'src/feature/widget.ts',
-      'src/other/leak.ts',
-    ]);
+    const result = outOfBounds([task], ['src/a.ts', 'src/feature/widget.ts', 'src/other/leak.ts']);
     expect(result.has('src/feature/widget.ts')).toBe(false);
     expect(result.has('src/other/leak.ts')).toBe(true);
   });
 
-  it('file listed in dependsOnFiles → excluded from result', () => {
-    const task = makeTask({ file: 'src/a.ts' });
-    const result = computePerTaskOutOfBounds(
-      task,
-      ['src/a.ts', 'src/dep.ts', 'src/leak.ts'],
-      ['src/dep.ts'],
-    );
+  it("another brief's target file → excluded even without a dependsOn edge", () => {
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/a.ts' }),
+      makeTask({ id: 'T002', file: 'src/dep.ts' }),
+    ];
+    const result = outOfBounds(tasks, ['src/a.ts', 'src/dep.ts', 'src/leak.ts']);
     expect(result.has('src/dep.ts')).toBe(false);
     expect(result.has('src/leak.ts')).toBe(true);
   });
 
+  it('session artifacts are orchestration, never out-of-bounds', () => {
+    const result = outOfBounds(
+      [makeTask({ file: 'src/a.ts' })],
+      ['tasks.md', 'spec.md', 'src/a.ts'],
+    );
+    expect(result.size).toBe(0);
+  });
+
+  it('pre-run-dirty file the ledger never attributed → excluded; attributed → flagged', () => {
+    const tasks = [makeTask({ file: 'src/a.ts' })];
+    const changed = ['src/a.ts', 'notes/scratch.md'];
+
+    const unattributed = outOfBounds(tasks, changed, {
+      preRunChangedFiles: ['notes/scratch.md'],
+    });
+    expect(unattributed.size).toBe(0);
+
+    const attributed = outOfBounds(tasks, changed, {
+      preRunChangedFiles: ['notes/scratch.md'],
+      runAttributedFiles: new Set(['notes/scratch.md']),
+    });
+    expect(attributed).toEqual(new Set(['notes/scratch.md']));
+  });
+
   it('empty taskChangedFiles → empty set', () => {
-    const task = makeTask({ file: 'src/a.ts' });
-    const result = computePerTaskOutOfBounds(task, []);
+    const result = outOfBounds([makeTask({ file: 'src/a.ts' })], []);
     expect(result.size).toBe(0);
   });
 
   it('returns deduplicated out-of-bounds files in deterministic order', () => {
-    const task = makeTask({ file: 'src/primary.ts' });
-    const result = computePerTaskOutOfBounds(task, [
-      'src/z.ts',
-      'src/a.ts',
-      'src/z.ts',
-      'src/m.ts',
-    ]);
+    const result = outOfBounds(
+      [makeTask({ file: 'src/primary.ts' })],
+      ['src/z.ts', 'src/a.ts', 'src/z.ts', 'src/m.ts'],
+    );
     expect([...result]).toEqual(['src/a.ts', 'src/m.ts', 'src/z.ts']);
+  });
+
+  it('never flags the run-owned event sink dirty since run start (runA regression)', () => {
+    // Real run: `runA.ndjson` was the orchestrator's own NDJSON sink inside the
+    // project dir — dirty at run start, appended during every task, never
+    // ledger-attributed. The final drift report scored it info/pre-existing
+    // (passed:true score:1) while the chain emitted score 0.64 at T002.
+    const tasks = [
+      makeTask({ id: 'T001', file: 'src/text.ts' }),
+      makeTask({ id: 'T002', file: 'src/text.test.ts' }),
+    ];
+    const preRunChangedFiles = ['runA.err', 'runA.ndjson', 'tasks.md'];
+    const runAttributedFiles = new Set(['src/text.ts', 'src/text.test.ts']);
+
+    const oob1 = outOfBounds(tasks, ['runA.ndjson', 'src/text.ts'], {
+      preRunChangedFiles,
+      runAttributedFiles,
+    });
+    const oob2 = outOfBounds(tasks, ['runA.ndjson', 'src/text.test.ts'], {
+      preRunChangedFiles,
+      runAttributedFiles,
+    });
+    expect(oob1.size).toBe(0);
+    expect(oob2.size).toBe(0);
+
+    const r1 = analyzeDriftChain(makeState(), taskId('T001'), oob1, 0.6);
+    const r2 = analyzeDriftChain(r1.state, taskId('T002'), oob2, 0.6);
+    expect(r1.emitted).toBeUndefined();
+    expect(r2.emitted).toBeUndefined();
+    expect(r2.state.activeChain.score).toBe(0);
   });
 });
 
@@ -183,13 +219,16 @@ describe('analyzeDriftChain — reset semantics', () => {
 });
 
 describe('analyzeDriftChain — shared declared dependency does not chain', () => {
-  it('consecutive tasks touching only a shared dependsOn file → no out-of-bounds, no emit', () => {
+  it('consecutive tasks touching only a shared dependency brief target → no out-of-bounds, no emit', () => {
     const shared = 'src/shared-dep.ts';
-    const t1 = makeTask({ file: 'src/a.ts', dependsOn: ['T000'] });
-    const t2 = makeTask({ file: 'src/b.ts', dependsOn: ['T000'] });
+    const tasks = [
+      makeTask({ id: 'T000', file: shared }),
+      makeTask({ id: 'T001', file: 'src/a.ts', dependsOn: ['T000'] }),
+      makeTask({ id: 'T002', file: 'src/b.ts', dependsOn: ['T000'] }),
+    ];
 
-    const oob1 = computePerTaskOutOfBounds(t1, ['src/a.ts', shared], [shared]);
-    const oob2 = computePerTaskOutOfBounds(t2, ['src/b.ts', shared], [shared]);
+    const oob1 = outOfBounds(tasks, ['src/a.ts', shared]);
+    const oob2 = outOfBounds(tasks, ['src/b.ts', shared]);
     expect(oob1.size).toBe(0);
     expect(oob2.size).toBe(0);
 

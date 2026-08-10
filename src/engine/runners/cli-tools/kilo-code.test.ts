@@ -57,10 +57,10 @@ describe('Kilo Code role adapters', () => {
     }
   });
 
-  it('preserves planner architect JSON flags, implementer auto mode, model placement, and order', () => {
+  it('preserves planner read-only JSON flags, implementer auto mode, model placement, and order', () => {
     expect(
       kiloPromptArgs({ role: 'planner', model: undefined, configuredArgs: ['--verbose'] }),
-    ).toEqual(['run', '--format', 'json', '--agent', 'architect', PROMPT, '--verbose']);
+    ).toEqual(['run', '--format', 'json', '--agent', 'plan', PROMPT, '--verbose']);
     expect(
       kiloPromptArgs({ role: 'planner', model: 'claude-sonnet-4-6', configuredArgs: [] }),
     ).toEqual([
@@ -70,7 +70,7 @@ describe('Kilo Code role adapters', () => {
       '--format',
       'json',
       '--agent',
-      'architect',
+      'plan',
       PROMPT,
     ]);
     expect(
@@ -86,6 +86,23 @@ describe('Kilo Code role adapters', () => {
     expect(kiloImplementerAdapter.validateArgs(implementerBase, implementerBase)).toEqual({
       valid: true,
     });
+  });
+
+  it('overrides read-only agent defaults with the verified code agent for full escalation', () => {
+    const args = kiloPromptArgs({ role: 'planner', mode: 'escalate' });
+
+    expect(args).toEqual(['run', '--format', 'json', '--agent', 'code', '--auto', PROMPT]);
+    expect(args).not.toContain('plan');
+    expect(
+      kiloPlannerAdapter.validateArgs(
+        kiloPromptArgs({
+          role: 'planner',
+          mode: 'escalate',
+          configuredArgs: ['--agent', 'plan'],
+        }),
+        args,
+      ),
+    ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
   });
 
   it('rejects protected flags, reordered args, and alternate prompt placeholders', () => {
@@ -109,6 +126,14 @@ describe('Kilo Code role adapters', () => {
     expect(kiloImplementerAdapter.validateArgs([...base, PROMPT], base)).toEqual({
       valid: false,
       conflicts: ['prompt-transport'],
+    });
+    expect(kiloImplementerAdapter.validateArgs([...base, '-m', 'other'], base)).toEqual({
+      valid: false,
+      conflicts: ['-m'],
+    });
+    expect(kiloImplementerAdapter.validateArgs([...base, '-mPROMPT'], base)).toEqual({
+      valid: false,
+      conflicts: ['-m'],
     });
   });
 });

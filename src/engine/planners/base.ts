@@ -32,24 +32,33 @@ import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from './require-completed-call.js';
 
-type InternalInvokeFn = (opts: {
+type InternalInvokeOptions = {
   prompt: string;
   projectDir: string;
   callContext: RunnerCallContext;
   callbacks: Pick<
     PlannerCallbacks,
-    'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
+    'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'sessionId' | 'onCallEvent'
   >;
   priorMessages?: PriorMessage[] | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
   sandboxEnv?: NodeJS.ProcessEnv | undefined;
-}) => Promise<RunnerCallResult>;
+};
+
+// artifactFile names the artifact the phase reads back (e.g. tasks.md), so a backend that writes
+// it directly is not mistaken for a planner mutating the project.
+type InternalPlanInvokeFn = (
+  opts: InternalInvokeOptions & { artifactFile?: string | undefined },
+) => Promise<RunnerCallResult>;
+type InternalEscalateInvokeFn = (
+  opts: InternalInvokeOptions & { accessMode: 'read-only' | 'write-files' },
+) => Promise<RunnerCallResult>;
 
 // invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
 export interface PlannerBaseConfig {
-  invokePlan: InternalInvokeFn;
-  invokeEscalate: InternalInvokeFn;
+  invokePlan: InternalPlanInvokeFn;
+  invokeEscalate: InternalEscalateInvokeFn;
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
@@ -130,6 +139,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           prompt,
           projectDir,
           callContext,
+          accessMode: 'read-only',
           callbacks,
           signal: callbacks.signal,
         }),
@@ -156,6 +166,7 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
           prompt,
           projectDir,
           callContext,
+          accessMode: 'read-only',
           callbacks,
           signal: callbacks.signal,
         }),

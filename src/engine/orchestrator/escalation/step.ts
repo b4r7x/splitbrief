@@ -3,6 +3,7 @@ import { defaultImplementerWriteMode } from '../../../core/schemas/implementer-c
 import { formatValidationError } from '../validation/format-error.js';
 import { refreshAndPersistCode, addUsageAndSave } from '../state-ops.js';
 import { gateAndPromoteChangedFiles } from '../approval/gate-and-promote.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { publishError } from '../events.js';
 import { createRetryRuntime, stateForRetryProfile } from './retry-runtime.js';
 import { persistRetryApprovalEvidence, persistRetryRejectionEvidence } from './retry-evidence.js';
@@ -79,7 +80,18 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
 
   if (!retryResult.success) {
     workspace.cleanup();
-    return { state, task, lastError: retryResult.error ?? retryFailureFallback, attempts };
+    return {
+      state,
+      task,
+      lastError: retryResult.error ?? retryFailureFallback,
+      attempts,
+      ...(retryResult.outcome !== undefined && {
+        lastFailure: {
+          outcome: retryResult.outcome,
+          runner: retryResult.runner ?? retryRuntime.config.implementer,
+        },
+      }),
+    };
   }
   if (ctx.signal?.aborted) {
     workspace.cleanup();
@@ -90,6 +102,27 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepOutcom
       attempts,
       result: failedRetry(attempts),
     };
+  }
+  if (method === 'escalated-full') {
+    let attemptChangedFiles: string[];
+    try {
+      attemptChangedFiles = await getChangedFilesSinceSnapshot(
+        workspace.projectDir,
+        workspace.snapshot,
+      );
+    } catch (err) {
+      workspace.cleanup();
+      throw err;
+    }
+    if (attemptChangedFiles.length === 0) {
+      workspace.cleanup();
+      return {
+        state,
+        task,
+        lastError: 'Tier-2 escalation completed without changing any files',
+        attempts,
+      };
+    }
   }
 
   const gateResult = await gateAndPromoteChangedFiles({

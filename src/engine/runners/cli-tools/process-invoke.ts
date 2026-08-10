@@ -17,14 +17,19 @@ import {
   spawnPipeError,
 } from '../../../lib/process/spawn/lifecycle.js';
 import { createLineBuffer } from '../../../lib/process/line-buffer.js';
-import { isENOENT } from '../../../lib/process/errors.js';
-import { isRecord } from '../../../utils/type-guards.js';
+import { isENOENT, processError } from '../../../lib/process/errors.js';
+import { assertNever, isRecord } from '../../../utils/type-guards.js';
 import { error } from '../../../utils/error.js';
 import { isCredentialEnvironmentName } from '../../../utils/redact.js';
 import { sandboxCredentialValues } from '../sandbox-env.js';
 import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
-import type { CliInvocation, CliProcessAdapter, CliProtocolEvent } from './contract.js';
+import type {
+  CliInvocation,
+  CliOutputContract,
+  CliProcessAdapter,
+  CliProtocolEvent,
+} from './contract.js';
 
 const PROMPT_FILE_NAME = 'prompt.txt';
 
@@ -40,12 +45,15 @@ export const CLI_RAW_PROTOCOL_MAX_EVENTS = 262_144;
 
 type CliAdapter = CliProcessAdapter;
 
-export { revalidateCliExecutableIdentity };
-
 export type InvokeProcessCliContext = Readonly<{
   invocation: CliInvocation;
   prompt: string;
   callContext: RunnerCallContext;
+  /**
+   * Liveness is measured from process output, not from recorded events: a
+   * runner can think for minutes while emitting frames that record nothing.
+   */
+  idle?: Readonly<{ warnMs: number; killMs: number }> | undefined;
   onEvent?: ((event: RunnerCallEvent) => void) | undefined;
   /**
    * Optional lifecycle hook used by callers that need to observe the exact spawned child.
@@ -192,7 +200,11 @@ export async function invokeProcessCli(
     : timeoutController.signal;
 
   const applyProtocolEvent = (event: CliProtocolEvent): void => {
-    if (terminalSeen) {
+    // A structured stream may restate its terminal result — Codex describes one
+    // failure as an `error` record followed by `turn.failed` — and the adapter's
+    // `terminal` reducer picks the authoritative one. Any non-result traffic
+    // after a terminal result is still a protocol failure.
+    if (terminalSeen && event.type !== 'result') {
       throw fatal('protocol-failure', 'CLI emitted output after its terminal result');
     }
     eventCount += 1;
@@ -203,7 +215,13 @@ export async function invokeProcessCli(
     switch (event.type) {
       case 'text':
         if (event.channel === 'stderr') recorder.stderr({ text: event.text });
-        else recorder.text({ channel: event.channel, text: event.text });
+        else {
+          recorder.text({
+            channel: event.channel,
+            text: event.text,
+            ...(event.semantics !== undefined && { semantics: event.semantics }),
+          });
+        }
         return;
       case 'usage':
         recorder.usage({ usage: event.usage, semantics: event.semantics });
@@ -280,6 +298,17 @@ export async function invokeProcessCli(
       // multi-megabyte protocol stream would be pure cost.
       partialStdoutMaxBytes: 0,
       partialStderrMaxBytes: RUNNER_CALL_STDERR_MAX_BYTES,
+      ...(context.idle !== undefined && {
+        idle: {
+          ...context.idle,
+          // The idle diagnostic is reported to the user verbatim, and every
+          // other diagnostic in this file names the tool, not the resolved
+          // binary path (which carries the OS user's home directory).
+          label: adapter.descriptor.id,
+          onWarn: (silentMs) => recorder.stalled({ silentMs }),
+          onClear: () => recorder.stallCleared(),
+        },
+      }),
       ...(context.onSpawned !== undefined && { onSpawned: context.onSpawned }),
       onStdout(chunk) {
         stdout += chunk;
@@ -303,8 +332,9 @@ export async function invokeProcessCli(
     if (closed.signal !== null) {
       return fail(recorder, 'failed', 'signal-exit', `CLI exited from signal ${closed.signal}`);
     }
-    if (adapter.outputContract.kind === 'text-exit') {
-      if (!adapter.outputContract.successfulExitCodes.includes(closed.exitCode ?? -1)) {
+    if (adapter.outputContract.kind === 'structured-terminal' && !terminalSeen) {
+      // Without a parsed terminal the exit code is the only diagnosis available.
+      if (closed.exitCode !== 0) {
         return fail(
           recorder,
           'failed',
@@ -312,16 +342,6 @@ export async function invokeProcessCli(
           `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
         );
       }
-    } else if (closed.exitCode !== 0) {
-      return fail(
-        recorder,
-        'failed',
-        'non-zero-exit',
-        `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
-      );
-    }
-
-    if (adapter.outputContract.kind === 'structured-terminal' && !terminalSeen) {
       return fail(
         recorder,
         'incomplete',
@@ -342,6 +362,21 @@ export async function invokeProcessCli(
       });
     } catch {
       return fail(recorder, 'failed', 'protocol-failure', 'CLI terminal result was invalid');
+    }
+
+    // A tool that fails its turn also exits non-zero; its parsed failure
+    // terminal carries the tool's own diagnosis and outranks the bare exit
+    // code — that diagnosis is what lets a quota or auth failure be classified
+    // instead of hiding behind "CLI exited with code 1". A terminal claiming
+    // success against a failure exit is contradictory, so that combination
+    // stays on the exit code, fail-closed.
+    if (isFailureExit(adapter.outputContract, closed.exitCode) && terminal.status === 'completed') {
+      return fail(
+        recorder,
+        'failed',
+        'non-zero-exit',
+        `CLI exited with code ${closed.exitCode ?? 'unknown'}`,
+      );
     }
 
     if (terminal.text.length > 0) {
@@ -373,6 +408,18 @@ export async function invokeProcessCli(
         status,
         status === 'timeout' ? 'timeout' : 'user-abort',
         status === 'timeout' ? 'CLI invocation timed out' : 'CLI invocation was aborted',
+      );
+    }
+    if (processError.isIdleTimeout(cause)) {
+      // A silent runner is a timeout, not a protocol failure: the `timeout`
+      // code is what the implementer pipeline classifies as retryable.
+      return finishFailureSafely(
+        recorder,
+        context.callContext,
+        credentialValues,
+        'timeout',
+        'timeout',
+        runnerCallErrorFromUnknown(cause, 'timeout', credentialValues).message,
       );
     }
     if (spawnPipeError.isStdinIncomplete(cause)) {
@@ -571,6 +618,17 @@ function fail(
     status,
     error: { code, message },
   });
+}
+
+function isFailureExit(contract: CliOutputContract, exitCode: number | null): boolean {
+  switch (contract.kind) {
+    case 'text-exit':
+      return !contract.successfulExitCodes.includes(exitCode ?? -1);
+    case 'structured-terminal':
+      return exitCode !== 0;
+    default:
+      return assertNever(contract);
+  }
 }
 
 function fatal(state: 'output-budget-breach' | 'protocol-failure', message: string): Error {

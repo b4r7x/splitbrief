@@ -92,8 +92,7 @@ export function pruneCoverageRuns(opts: PruneCoverageRunsOptions = {}): Coverage
   const removed: string[] = [];
 
   for (const run of runs) {
-    const shouldKeep =
-      retained.has(run.path) || run.isActive || run.path === protectedRunDir || keep < 0;
+    const shouldKeep = retained.has(run.path) || run.isActive || run.path === protectedRunDir;
     if (shouldKeep) {
       kept.push(run.path);
       continue;

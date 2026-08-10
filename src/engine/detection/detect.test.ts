@@ -761,7 +761,9 @@ describe('context-bound runner evidence', () => {
               kind: 'compatible',
               installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
             },
-            auth: 'verified',
+            // A positive `codex login status` is a local file read and caps at
+            // unknown; the parsed fact still comes from the admitted contract.
+            auth: 'unknown',
           });
           expect(JSON.stringify(evidence)).not.toContain(rawProbeText);
         } finally {

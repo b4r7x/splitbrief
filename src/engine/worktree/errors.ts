@@ -38,23 +38,33 @@ export const worktreeError = {
       `Branch ${branch} already exists. Use --worktree <other-name>, or run "git worktree prune" then "git branch -D ${branch}" to clear a stale registration.`,
       { branch },
     ),
-  notFound: (slug: string) =>
-    error('worktree-not-found', `Worktree ".trees/${slug}" does not exist.`, { slug }),
-  liveSession: (slug: string, sessionId: string) =>
+  notFound: (label: string) =>
+    error('worktree-not-found', `Worktree "${label}" does not exist.`, { label }),
+  liveSession: (label: string, sessionId: string) =>
     error(
       'worktree-live-session',
-      `Worktree ".trees/${slug}" has a live session ${sessionId}. Stop the session first, or use --force.`,
-      { slug, sessionId },
+      `Worktree "${label}" has a live session ${sessionId}. Stop the session first, or use --force.`,
+      { label, sessionId },
     ),
-  uncommittedChanges: (slug: string) =>
+  uncommittedChanges: (label: string) =>
     error(
       'worktree-uncommitted-changes',
-      `Worktree ".trees/${slug}" has uncommitted changes. Commit or stash them, or use --force.`,
-      { slug },
+      `Worktree "${label}" has uncommitted changes. Commit or stash them, or use --force.`,
+      { label },
     ),
   treesPathEscape: () =>
     error(
       'worktree-trees-path-escape',
       'Worktree directory ".trees" resolves outside the project root.',
+    ),
+  isolationPathEscape: () =>
+    error(
+      'worktree-isolation-path-escape',
+      'Isolation worktree directory resolves outside the external isolation trees root.',
+    ),
+  isolationPathOverlap: () =>
+    error(
+      'worktree-isolation-path-overlap',
+      'Isolation worktree directory overlaps the project root or repository git root.',
     ),
 } as const;

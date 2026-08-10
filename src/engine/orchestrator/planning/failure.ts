@@ -4,6 +4,19 @@ import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { typedRunnerCallErrorMessage } from '../../implementers/pipeline/call-result.js';
+import {
+  isAuthFailureDiagnostic,
+  runnerAuthDisplayName,
+  runnerLoginInstruction,
+} from '../../runners/auth-failure.js';
+import {
+  isUsageLimitDiagnostic,
+  parseUsageLimitReset,
+  usageLimitDetailFromError,
+  usageLimitWaitClause,
+} from '../../runners/usage-limit.js';
+import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 
@@ -15,7 +28,28 @@ export function handlePlanningFailure(opts: {
   wctx: PlannerCallbacksContext;
 }): PlanningPhaseResult {
   const { err, projectDir, sessionId, state, wctx } = opts;
-  publishError({ bus: wctx.bus, phase: state.phase, message: labelError('Planning failed', err) });
+  // A failed planner call keeps the tool's own diagnosis in typed error data;
+  // "Planner planner call failed" alone hides an expired login entirely.
+  const typed = typedRunnerCallErrorMessage(err);
+  let message = labelError('Planning failed', err);
+  if (typed !== null && !message.includes(typed)) {
+    message = `${message} — ${sanitizeTerminalDiagnosticText(typed)}`;
+  }
+  // A limit outranks the auth check: its message must never earn login
+  // advice, because logging in does not restore quota. API planners throw
+  // their provider errors, so the raw 429 detail is read from typed data.
+  const limitDetail =
+    usageLimitDetailFromError(err) ??
+    (isUsageLimitDiagnostic(typed ?? message) ? (typed ?? message) : null);
+  if (limitDetail !== null) {
+    const resetsAt = parseUsageLimitReset(limitDetail);
+    message = `${message}. ${runnerAuthDisplayName(wctx.config.planner)} hit its usage limit — logging in again will not fix this. ${usageLimitWaitClause(resetsAt)} or switch the planner, then resume.`;
+  } else if (isAuthFailureDiagnostic(typed ?? message)) {
+    message = `${message}. ${runnerLoginInstruction(wctx.config.planner)}`;
+  }
+  if (!isAbortError(err)) {
+    publishError({ bus: wctx.bus, phase: state.phase, message });
+  }
   if (isAbortError(err)) {
     const persisted = loadState({ projectDir, sessionId });
     if (persisted?.rewindPending !== undefined) {

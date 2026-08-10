@@ -12,7 +12,7 @@ import { join } from 'node:path';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import type { CliImplementerConfig } from '../../../src/core/schemas/implementer-config.js';
 import type { RunnerFailureOutcomeState } from '../../../src/engine/runners/errors.js';
-import { SANDBOX_DIR, TREES_DIR } from '../../../src/core/paths.js';
+import { isolationWorktreePath, SANDBOX_DIR } from '../../../src/core/paths.js';
 import { createCliImplementer } from '../../../src/engine/implementers/cli.js';
 import { runImplementation } from '../../../src/engine/orchestrator/task/run-implementation.js';
 import { runSingleTask } from '../../../src/engine/orchestrator/task/step.js';
@@ -70,7 +70,9 @@ type ShimFixture = {
 
 const dirs: string[] = [];
 const fixtures: ShimFixture[] = [];
+const ORIGINAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;
 let originalPath: string | undefined;
+let testStateHome: string;
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
@@ -302,6 +304,8 @@ async function runDirectWriterImplementation(
 beforeEach(() => {
   resetAllStores();
   originalPath = process.env.PATH;
+  testStateHome = createTempDir('direct-writer-state-home');
+  process.env.XDG_STATE_HOME = testStateHome;
 });
 
 afterEach(() => {
@@ -314,6 +318,9 @@ afterEach(() => {
   if (originalPath === undefined) delete process.env.PATH;
   else process.env.PATH = originalPath;
   while (dirs.length > 0) cleanupTempDir(dirs.pop() as string);
+  cleanupTempDir(testStateHome);
+  if (ORIGINAL_XDG_STATE_HOME === undefined) delete process.env.XDG_STATE_HOME;
+  else process.env.XDG_STATE_HOME = ORIGINAL_XDG_STATE_HOME;
 });
 
 describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
@@ -388,7 +395,9 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       });
 
       const shimCwd = readFileSync(join(fixture.captureDir, 'cwd.txt'), 'utf-8');
-      expect(shimCwd).toBe(join(realpathSync(projectDir), TREES_DIR, sessionId));
+      expect(realpathSync(shimCwd)).toBe(
+        realpathSync(isolationWorktreePath(join(realpathSync(projectDir), '.git'), sessionId)),
+      );
       expect(statSync(join(shimCwd, '.git')).isFile()).toBe(true);
       expect(result.tasks[0]?.status).toBe('done');
       expect(readFileSync(join(projectDir, TARGET_SRC), 'utf-8')).toBe(

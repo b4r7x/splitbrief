@@ -157,6 +157,43 @@ function protocolFailure(code: string, message: string): CodexTerminalEvent {
   };
 }
 
+const CODEX_EMBEDDED_ERROR_MESSAGE_DEPTH = 4;
+
+function codexEmbeddedErrorMessage(text: string): string {
+  let current = text.trim();
+  if (current.length === 0) return text;
+
+  for (let depth = 0; depth < CODEX_EMBEDDED_ERROR_MESSAGE_DEPTH; depth++) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(current);
+    } catch {
+      break;
+    }
+    if (!isRecord(parsed)) break;
+
+    const nested = isRecord(parsed.error) ? parsed.error : undefined;
+    const next =
+      optionalString(nested?.message, { trim: true, nonEmpty: true }) ??
+      (optionalString(parsed.type, { trim: true, nonEmpty: true }) === 'error'
+        ? optionalString(parsed.message, { trim: true, nonEmpty: true })
+        : undefined);
+    if (next === undefined || next === current) break;
+    current = next;
+  }
+
+  return current.length > 0 ? current : text;
+}
+
+function codexTurnFailedDetail(rawMessage: string | undefined): string {
+  if (rawMessage === undefined) return 'Codex turn failed';
+  const envelope = rawMessage.trim();
+  if (envelope.length === 0) return 'Codex turn failed';
+  const detail = codexEmbeddedErrorMessage(envelope);
+  if (detail === envelope) return detail;
+  return `${detail}\n${envelope}`;
+}
+
 function extractAgentText(item: Record<string, unknown>): string | null {
   if (typeof item.text === 'string') return item.text;
   if (!Array.isArray(item.content)) return item.content === undefined ? '' : null;
@@ -254,10 +291,16 @@ function parseCodexRecord(record: Record<string, unknown>): readonly CliProtocol
       });
       return events;
     }
-    case 'turn.failed':
-      return [protocolFailure('codex-turn-failed', 'Codex turn failed')];
-    case 'error':
-      return [protocolFailure('codex-error', 'Codex reported an error')];
+    case 'turn.failed': {
+      const rawMessage = isRecord(record.error)
+        ? optionalString(record.error.message, { trim: true, nonEmpty: true })
+        : undefined;
+      return [protocolFailure('codex-turn-failed', codexTurnFailedDetail(rawMessage))];
+    }
+    case 'error': {
+      const message = optionalString(record.message, { trim: true, nonEmpty: true });
+      return [protocolFailure('codex-error', message ?? 'Codex reported an error')];
+    }
     default:
       return [{ type: 'warning', code: 'unknown-codex-record', message: 'Unknown Codex record' }];
   }

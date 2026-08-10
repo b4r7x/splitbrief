@@ -41,7 +41,7 @@ import {
   type CliVersionProbe,
 } from './contract.js';
 import { isProviderOracleProbe, parseProviderOracleOutput } from './provider-oracle.js';
-import { revalidateCliExecutableIdentity } from './process-invoke.js';
+import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
 
 const PROBE_TIMEOUT_CEILING_MS = DISCOVERY_SUBPROCESS_TIMEOUT_MS;
 const PROBE_OUTPUT_CEILING_BYTES = 64 * 1024;

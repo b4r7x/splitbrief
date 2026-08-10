@@ -7,9 +7,11 @@ import { getCurrentCommitSha, resolveRunStartBase } from '../../lib/git/refs.js'
 import { hasCommits } from '../../lib/git/repository.js';
 import { isInternalGitStatusPath } from '../../core/paths.js';
 import { isENOENT } from '../../lib/process/errors.js';
+import { isProcessOutputSink } from '../../lib/process/stdio-sinks.js';
 import { assertExistingPathConfined, assertPathConfined } from '../../lib/path-confinement.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { matchesActionPattern } from './approval/action-classifier.js';
+import { taskAcceptedPatterns } from './task-scope.js';
 import type { Task } from '../../core/schemas/task.js';
 import type {
   ChangedFilesSnapshot,
@@ -123,6 +125,9 @@ export async function captureChangedFilesBaseline(
   };
 }
 
+// The run's own stdout/stderr redirect targets keep growing between
+// fingerprints; without the sink filter they would surface as user edits or
+// planning-phase mutations.
 export async function changedFilesSinceBaseline(
   projectDir: string,
   baseline: ChangedFilesBaseline,
@@ -130,7 +135,11 @@ export async function changedFilesSinceBaseline(
   const candidates = await candidateChangedFiles(projectDir, baseline.head);
   const files = [...new Set([...candidates, ...baseline.fingerprints.keys()])].sort();
   const current = await fingerprintFiles(projectDir, files);
-  return files.filter((file) => baseline.fingerprints.get(file) !== current.get(file));
+  return files.filter(
+    (file) =>
+      baseline.fingerprints.get(file) !== current.get(file) &&
+      !isProcessOutputSink(resolve(projectDir, file)),
+  );
 }
 
 export async function refreshChangedFilesBaseline(opts: {
@@ -169,11 +178,7 @@ export async function inferTaskAcceptedChangedFiles(
   task: Task,
   head: string | null,
 ): Promise<string[]> {
-  const patterns = [
-    task.file,
-    ...(task.scope?.inBounds ?? []),
-    ...(task.scope?.approvedOutOfBounds ?? []),
-  ];
+  const patterns = taskAcceptedPatterns(task);
   const changedFiles = await candidateChangedFiles(projectDir, head);
   return changedFiles.filter((file) =>
     patterns.some((pattern) => matchesActionPattern(file, pattern)),

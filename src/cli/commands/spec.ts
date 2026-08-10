@@ -74,7 +74,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       const projectDir = await canonicalizeProjectDir(opts);
       await ensureGitAndConfig(projectDir);
 
-      clearStaleSessionForCli(projectDir, 'defer-to-preparation');
+      clearStaleSessionForCli(projectDir);
 
       const loaded = loadConfigOrExit(projectDir);
       const mergedHooks = await resolveHooksConfig(projectDir, loaded.config.hooks);

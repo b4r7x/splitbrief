@@ -56,6 +56,10 @@ export function firstBriefErrorMessage(report: BriefQualityReport): string {
   return firstBriefError(report)?.message ?? 'unknown error';
 }
 
+export function briefErrorMessages(report: BriefQualityReport): string[] {
+  return report.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.message);
+}
+
 export function isBriefQualityReport(value: unknown): value is BriefQualityReport {
   if (!isRecord(value)) return false;
   return (
@@ -107,12 +111,78 @@ function isRisky(task: Task): boolean {
   return RISK_PATTERNS.some((r) => r.test(text));
 }
 
-function mentionsMultipleFiles(task: Task): boolean {
-  const text = [task.description, ...task.implementationSteps].join(' ');
-  const matches = text.match(CONCRETE_FILE_PATH_PATTERN);
-  if (!matches) return false;
-  const unique = new Set(matches.map((m) => m.toLowerCase()));
-  return unique.size >= 2;
+/**
+ * `multi_file_task` counts write targets, not mentions. A path in the
+ * description/steps counts only when a write verb governs it ("update
+ * `src/api.ts`"); paths that are referenced — a pattern exemplar to follow, an
+ * import source, a negated "do not modify" — do not. A path with no verdict
+ * defaults to reference: a missed multi-file brief is caught downstream by
+ * scope enforcement, while a false positive kills quick/instant runs outright.
+ */
+const WRITE_VERB_PATTERN =
+  /^(?:add(?:s|ing)?|append(?:s|ing)?|chang(?:e|es|ing)|creat(?:e|es|ing)|delet(?:e|es|ing)|edit(?:s|ing)?|extend(?:s|ing)?|implement(?:s|ing)?|insert(?:s|ing)?|introduc(?:e|es|ing)|modif(?:y|ies|ying)|mov(?:e|es|ing)|refactor(?:s|ing)?|remov(?:e|es|ing)|renam(?:e|es|ing)|rewrit(?:e|es|ing)|updat(?:e|es|ing)|writ(?:e|es|ing))$/i;
+
+const REFERENCE_MARKER_PATTERN =
+  /^(?:based|covered|covering|declared|defined|delivered|example|exemplar|existing|exported|exports|follow|following|follows|from|imported|importing|like|match|matches|matching|mirror|mirroring|mirrors|pattern|per|reference|references|see|sibling|style|unchanged|untouched)$/i;
+
+const NEGATION_PATTERN =
+  /^(?:avoid|avoids|avoiding|can'?t|cannot|doesn'?t|don'?t|mustn'?t|never|no|not|shouldn'?t|without|won'?t)$/i;
+
+const CONJUNCTION_GLUE_PATTERN = /^(?:&|also|and|as|plus|then|well)$/i;
+
+const BACKSCAN_TOKEN_LIMIT = 12;
+
+function stripWrapping(token: string): string {
+  return token.replace(/[`"'()[\]{}]/g, '');
+}
+
+function toWord(token: string): string {
+  return token.replace(/[^a-zA-Z']/g, '');
+}
+
+function gapDirectsWrite(gap: string): boolean {
+  const tokens = gap.split(/\s+/).filter((t) => t.length > 0);
+  const windowStart = Math.max(0, tokens.length - BACKSCAN_TOKEN_LIMIT);
+  for (let i = tokens.length - 1; i >= windowStart; i--) {
+    const raw = stripWrapping(tokens[i] ?? '');
+    if (/[.;]$/.test(raw)) return false;
+    const word = toWord(raw);
+    if (word === '') continue;
+    if (REFERENCE_MARKER_PATTERN.test(word)) return false;
+    if (WRITE_VERB_PATTERN.test(word)) {
+      return !NEGATION_PATTERN.test(toWord(tokens[i - 1] ?? ''));
+    }
+  }
+  return false;
+}
+
+function isConjunctionGlue(gap: string): boolean {
+  return gap
+    .split(/\s+/)
+    .map((token) => token.replace(/[^a-zA-Z&]/g, ''))
+    .every((word) => word === '' || CONJUNCTION_GLUE_PATTERN.test(word));
+}
+
+function collectWriteTargets(unit: string, targets: Map<string, string>): void {
+  let previousEnd = -1;
+  let previousWasTarget: boolean = false;
+  for (const match of unit.matchAll(CONCRETE_FILE_PATH_PATTERN)) {
+    const path = match[0];
+    const gap = unit.slice(Math.max(previousEnd, 0), match.index);
+    const isTarget: boolean =
+      previousEnd >= 0 && isConjunctionGlue(gap) ? previousWasTarget : gapDirectsWrite(gap);
+    if (isTarget && !targets.has(path.toLowerCase())) targets.set(path.toLowerCase(), path);
+    previousWasTarget = isTarget;
+    previousEnd = match.index + path.length;
+  }
+}
+
+function writeTargetFiles(task: Task): string[] {
+  const targets = new Map<string, string>();
+  for (const unit of [task.description, ...task.implementationSteps]) {
+    collectWriteTargets(unit, targets);
+  }
+  return [...targets.values()];
 }
 
 export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
@@ -153,12 +223,13 @@ export function evaluateBriefQuality(tasks: Task[]): BriefQualityReport {
       });
     }
 
-    if (mentionsMultipleFiles(task)) {
+    const writeTargets = writeTargetFiles(task);
+    if (writeTargets.length >= 2) {
       issues.push({
         taskId: task.id,
         severity: 'error',
         code: 'multi_file_task',
-        message: `Task ${task.id} description/steps mention multiple files`,
+        message: `Task ${task.id} description/steps direct writes to multiple files: ${writeTargets.join(', ')}`,
       });
     }
 

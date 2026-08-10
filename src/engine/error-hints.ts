@@ -27,8 +27,25 @@ const ERROR_PATTERNS: Array<[RegExp | ((msg: string) => boolean), ErrorHint]> = 
     { message: 'Invalid API key', hint: 'Check your PROVIDER_API_KEY environment variable.' },
   ],
   [
+    /access token could not be refreshed|log out and sign in again/i,
+    {
+      message: 'Runner session signed out or expired',
+      hint: 'The provider reports this session/key as signed out or expired — check the credential for this runner',
+    },
+  ],
+  [
+    /please run \/login|oauth token has expired|oauth token revoked/i,
+    {
+      message: 'Runner session signed out or expired',
+      hint: 'The provider reports this session/key as signed out or expired — check the credential for this runner',
+    },
+  ],
+  [
     /\b429\b|[Tt]oo [Mm]any [Rr]equests|rate[._\s-]limit/i,
-    { message: 'Rate limited by provider', hint: 'Will retry automatically.' },
+    {
+      message: 'Rate limited by provider',
+      hint: 'Wait for the limit to reset or switch runner profiles, then retry.',
+    },
   ],
   [/ENOTFOUND/, { message: 'Cannot reach host', hint: 'Check your network connection.' }],
   [/ECONNREFUSED/, { message: 'Cannot connect to provider', hint: 'Is the service running?' }],

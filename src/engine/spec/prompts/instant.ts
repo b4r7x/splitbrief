@@ -21,6 +21,7 @@ export function buildInstantPrompt(
 3. Each brief MUST be self-contained so a small local model can execute it without additional context.
 4. Required per brief: ${requiredBriefSectionsProse()}.
 5. Keep Scope, Escalation, and Evidence concise for trivial work, but do not omit them; every Task Brief v1 must preserve those contract sections.
+6. Outside fenced code blocks, lines containing only \`---\` are reserved for Task Brief frontmatter delimiters. Never use a bare \`---\` as a horizontal rule or phase-heading separator.
 
 Each brief must be rendered in this exact markdown shape:
 
@@ -32,6 +33,7 @@ ${buildTaskFormatExample(ctx)}`),
     intro:
       'You are compiling a minimal set of **Product Task Brief v1** records for a tiny change in an existing codebase. The brief is the durable contract; `tasks.md` is the markdown transport. Stay narrow — no spec, no plan.',
     sections,
-    output: 'Write the complete tasks.md content.',
+    output:
+      'Return the complete tasks.md content in your reply. Do not write tasks.md or any other project file yourself; SPLITBRIEF captures your reply and persists the tasks.md artifact inside the active session.',
   });
 }

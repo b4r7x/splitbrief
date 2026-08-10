@@ -69,6 +69,21 @@ function failIfSessionFailed(projectDir: string, sessionId: string): void {
   throw cliError('Workflow failed — see the error output above.', 1);
 }
 
+// A run stopped short of completion — a tiered approval refused headlessly, a
+// gate that ended the task loop — saves the session as 'interrupted' without a
+// pendingRecovery and without a 'failed' status, so the guards above miss it.
+// A user-requested abort never reaches here: the signal check in runHeadless
+// returns first, keeping SIGINT/SIGTERM at exit 0.
+function failIfSessionInterrupted(projectDir: string, sessionId: string): void {
+  const session = readSession({ projectDir, sessionId });
+  if (session?.status !== 'interrupted') return;
+  writeHeadlessJsonRecord({
+    type: 'error',
+    message: `Session ${sessionId} ended with status interrupted.`,
+  });
+  throw cliError('Workflow did not complete — the run stopped early.', 1);
+}
+
 export interface RunHeadlessOptions {
   prepared: PreparedExecution;
   _planner?: Planner | undefined;
@@ -124,4 +139,5 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   emitRecoveryAndFailIfPending(projectDir, sessionId, runConfig.workflow.persistTranscript);
   failIfFinalReviewIncomplete(projectDir, sessionId);
   failIfSessionFailed(projectDir, sessionId);
+  failIfSessionInterrupted(projectDir, sessionId);
 }

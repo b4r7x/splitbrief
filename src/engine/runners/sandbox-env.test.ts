@@ -1,9 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
   realpathSync,
+  renameSync,
+  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -239,7 +243,7 @@ describe('createSandboxEnv', () => {
     const runner = { kind: 'cli', tool: 'claude-code', authChannel: 'session' } as const;
     const env = await createRunnerSandboxEnv(projectDir, runner, 'planner');
 
-    const roleHome = join(projectDir, SANDBOX_DIR, 'planner', 'home');
+    const roleHome = join(projectDir, SANDBOX_DIR, 'planner', 'claude-code', 'home');
     const staged = join(roleHome, '.claude', '.credentials.json');
     if (cliAuthChannelHostStateAccess(resolveCliRunnerAuth(runner)) === 'host-account') {
       expect(env.HOME).toBe(hostHome);
@@ -681,10 +685,12 @@ describe('runnerAuthEnvKeys', () => {
       'implementer',
     );
 
-    expect(session.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'home'));
-    expect(session.USERPROFILE).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'home'));
-    expect(session.XDG_CONFIG_HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'config'));
-    expect(session.APPDATA).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'config'));
+    expect(session.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'codex', 'home'));
+    expect(session.USERPROFILE).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'codex', 'home'));
+    expect(session.XDG_CONFIG_HOME).toBe(
+      join(projectDir, SANDBOX_DIR, 'implementer', 'codex', 'config'),
+    );
+    expect(session.APPDATA).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'codex', 'config'));
     expect(readFileSync(join(session.HOME as string, '.codex', 'auth.json'), 'utf8')).toBe(
       '{"account":"selected"}',
     );
@@ -698,7 +704,7 @@ describe('runnerAuthEnvKeys', () => {
       'implementer',
     );
 
-    expect(apiKey.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'home'));
+    expect(apiKey.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'codex', 'home'));
     expect(apiKey.OPENAI_API_KEY).toBe('sk-openai');
   });
 
@@ -723,16 +729,48 @@ describe('runnerAuthEnvKeys', () => {
     expect(JSON.stringify(env)).not.toContain(credential);
   });
 
-  itUnix('copies only selected provider state once and seals the snapshot files', async () => {
-    const hostHome = createTempDir('sandbox-state-host');
-    const projectDir = createTempDir('sandbox-state-copy');
-    const escapeTarget = createTempDir('sandbox-state-escape');
-    dirs.push(hostHome, projectDir, escapeTarget);
+  itUnix(
+    'copies only selected static provider state once and seals the snapshot files',
+    async () => {
+      const hostHome = createTempDir('sandbox-state-host');
+      const projectDir = createTempDir('sandbox-state-copy');
+      const escapeTarget = createTempDir('sandbox-state-escape');
+      dirs.push(hostHome, projectDir, escapeTarget);
+      mkdirSync(join(hostHome, '.copilot'), { recursive: true });
+      writeFileSync(join(hostHome, '.copilot', 'config.json'), 'before-change');
+      writeFileSync(join(hostHome, '.copilot', 'unrelated.json'), 'not-admitted');
+      writeFileSync(join(escapeTarget, 'secret.json'), 'outside-state');
+      symlinkSync(escapeTarget, join(hostHome, '.copilot', 'escape'));
+      setEnv('HOME', hostHome);
+
+      const env = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'copilot', authChannel: 'session' },
+        'implementer',
+      );
+      const bridgedConfig = join(env.HOME as string, '.copilot', 'config.json');
+
+      expect(readFileSync(bridgedConfig, 'utf8')).toBe('before-change');
+      expect(existsSync(join(env.HOME as string, '.copilot', 'unrelated.json'))).toBe(false);
+      expect(existsSync(join(env.HOME as string, '.copilot', 'escape'))).toBe(false);
+      expect(statSync(bridgedConfig).mode & 0o777).toBe(0o400);
+      expect(statSync(join(env.HOME as string, '.copilot')).mode & 0o777).toBe(0o700);
+      expect(() => writeFileSync(bridgedConfig, 'runner-mutation')).toThrow();
+
+      writeFileSync(join(hostHome, '.copilot', 'config.json'), 'after-change');
+      expect(readFileSync(bridgedConfig, 'utf8')).toBe('before-change');
+      expect(readFileSync(join(hostHome, '.copilot', 'config.json'), 'utf8')).toBe('after-change');
+    },
+  );
+
+  itUnix('passes a rotating credential through as a live state-directory link', async () => {
+    const hostHome = createTempDir('sandbox-state-passthrough-host');
+    const projectDir = createTempDir('sandbox-state-passthrough-project');
+    dirs.push(hostHome, projectDir);
+    const hostAuth = join(hostHome, '.codex', 'auth.json');
     mkdirSync(join(hostHome, '.codex'), { recursive: true });
-    writeFileSync(join(hostHome, '.codex', 'auth.json'), 'before-change');
-    writeFileSync(join(hostHome, '.codex', 'unrelated.json'), 'not-admitted');
-    writeFileSync(join(escapeTarget, 'secret.json'), 'outside-state');
-    symlinkSync(escapeTarget, join(hostHome, '.codex', 'escape'));
+    writeFileSync(hostAuth, '{"tokens":{"refresh_token":"rotating-passthrough-canary-2c7e"}}');
+    writeFileSync(join(hostHome, '.codex', 'config.toml'), 'model = "gpt-5"');
     setEnv('HOME', hostHome);
 
     const env = await createRunnerSandboxEnv(
@@ -740,44 +778,222 @@ describe('runnerAuthEnvKeys', () => {
       { kind: 'cli', tool: 'codex', authChannel: 'session' },
       'implementer',
     );
-    const bridgedAuth = join(env.HOME as string, '.codex', 'auth.json');
+    const linkDir = join(env.HOME as string, '.codex');
 
-    expect(readFileSync(bridgedAuth, 'utf8')).toBe('before-change');
-    expect(existsSync(join(env.HOME as string, '.codex', 'unrelated.json'))).toBe(false);
-    expect(existsSync(join(env.HOME as string, '.codex', 'escape'))).toBe(false);
-    expect(statSync(bridgedAuth).mode & 0o777).toBe(0o400);
-    expect(statSync(join(env.HOME as string, '.codex')).mode & 0o777).toBe(0o700);
-    expect(() => writeFileSync(bridgedAuth, 'runner-mutation')).toThrow();
-
-    writeFileSync(join(hostHome, '.codex', 'auth.json'), 'after-change');
-    expect(readFileSync(bridgedAuth, 'utf8')).toBe('before-change');
-    expect(readFileSync(join(hostHome, '.codex', 'auth.json'), 'utf8')).toBe('after-change');
+    expect(lstatSync(linkDir).isSymbolicLink()).toBe(true);
+    expect(readlinkSync(linkDir)).toBe(realpathSync(join(hostHome, '.codex')));
+    expect(readFileSync(join(linkDir, 'auth.json'), 'utf8')).toBe(
+      '{"tokens":{"refresh_token":"rotating-passthrough-canary-2c7e"}}',
+    );
+    // The whole state directory is shared — that is the documented trade for a
+    // credential the tool must be able to rewrite (docs/WORKTREES.md).
+    expect(readFileSync(join(linkDir, 'config.toml'), 'utf8')).toBe('model = "gpt-5"');
+    expect(sandboxCredentialValues(env)).toContain('rotating-passthrough-canary-2c7e');
   });
 
-  itUnix('re-bridges the snapshot after the host provider state is rotated', async () => {
-    const hostHome = createTempDir('sandbox-state-rotation-host');
-    const projectDir = createTempDir('sandbox-state-rotation-project');
+  itUnix(
+    'a symlinked host state directory bridges successfully; a non-directory target still fails closed',
+    async () => {
+      const hostHome = createTempDir('sandbox-state-symlinked-host');
+      const realState = createTempDir('sandbox-state-symlinked-real');
+      const projectDir = createTempDir('sandbox-state-symlinked-project');
+      const fileTarget = createTempDir('sandbox-state-symlinked-file');
+      dirs.push(hostHome, realState, projectDir, fileTarget);
+      const hostAuth = join(realState, 'auth.json');
+      mkdirSync(realState, { recursive: true });
+      writeFileSync(hostAuth, '{"token":"symlinked-passthrough-canary-8b1a"}');
+      symlinkSync(realState, join(hostHome, '.codex'), 'dir');
+      setEnv('HOME', hostHome);
+
+      const env = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        'implementer',
+      );
+      const linkDir = join(env.HOME as string, '.codex');
+
+      expect(lstatSync(linkDir).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(linkDir)).toBe(realpathSync(realState));
+      expect(readFileSync(join(linkDir, 'auth.json'), 'utf8')).toBe(
+        '{"token":"symlinked-passthrough-canary-8b1a"}',
+      );
+
+      const badHome = createTempDir('sandbox-state-symlinked-bad-host');
+      const badProject = createTempDir('sandbox-state-symlinked-bad-project');
+      dirs.push(badHome, badProject);
+      writeFileSync(join(fileTarget, 'not-a-directory'), 'not-a-dir');
+      symlinkSync(join(fileTarget, 'not-a-directory'), join(badHome, '.codex'));
+      setEnv('HOME', badHome);
+
+      await expect(
+        createRunnerSandboxEnv(
+          badProject,
+          { kind: 'cli', tool: 'codex', authChannel: 'session' },
+          'implementer',
+        ),
+      ).rejects.toThrow(/Unable to create an isolated session state bridge/u);
+    },
+  );
+
+  itUnix(
+    "two implementer profiles on different tools receive distinct sandbox roots; neither HOME contains the other tool's state entry",
+    async () => {
+      const hostHome = createTempDir('sandbox-tool-root-host');
+      const projectDir = createTempDir('sandbox-tool-root-project');
+      dirs.push(hostHome, projectDir);
+      mkdirSync(join(hostHome, '.codex'), { recursive: true });
+      mkdirSync(join(hostHome, '.copilot'), { recursive: true });
+      writeFileSync(join(hostHome, '.codex', 'auth.json'), '{"token":"codex-tool-root-canary"}');
+      writeFileSync(
+        join(hostHome, '.copilot', 'config.json'),
+        '{"token":"copilot-tool-root-canary"}',
+      );
+      setEnv('HOME', hostHome);
+
+      const codexEnv = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        'implementer',
+      );
+      const copilotEnv = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'copilot', authChannel: 'session' },
+        'implementer',
+      );
+
+      expect(codexEnv.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'codex', 'home'));
+      expect(copilotEnv.HOME).toBe(join(projectDir, SANDBOX_DIR, 'implementer', 'copilot', 'home'));
+      expect(codexEnv.HOME).not.toBe(copilotEnv.HOME);
+      expect(existsSync(join(codexEnv.HOME as string, '.codex', 'auth.json'))).toBe(true);
+      expect(existsSync(join(codexEnv.HOME as string, '.copilot'))).toBe(false);
+      expect(existsSync(join(copilotEnv.HOME as string, '.copilot', 'config.json'))).toBe(true);
+      expect(existsSync(join(copilotEnv.HOME as string, '.codex'))).toBe(false);
+    },
+  );
+
+  itUnix(
+    'a rotation persisted through the sandbox survives teardown in the host file',
+    async () => {
+      const hostHome = createTempDir('sandbox-state-rotation-host');
+      const projectDir = createTempDir('sandbox-state-rotation-project');
+      dirs.push(hostHome, projectDir);
+      const hostAuth = join(hostHome, '.codex', 'auth.json');
+      mkdirSync(join(hostHome, '.codex'), { recursive: true });
+      writeFileSync(hostAuth, '{"token":"pre-rotation"}');
+      setEnv('HOME', hostHome);
+
+      const env = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        'implementer',
+      );
+      const sandboxAuth = join(env.HOME as string, '.codex', 'auth.json');
+
+      // In-place rewrite — codex's current persistence strategy (its EACCES
+      // against the old 0o400 snapshot proved an open-for-write, os error 13).
+      writeFileSync(sandboxAuth, '{"token":"rotated-in-place"}');
+      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-in-place"}');
+
+      // Tempfile-and-rename inside the state dir — the other strategy a vendor
+      // can switch to without notice. A directory link survives both.
+      const temp = join(env.HOME as string, '.codex', 'auth.json.tmp');
+      writeFileSync(temp, '{"token":"rotated-by-rename"}');
+      renameSync(temp, sandboxAuth);
+      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-by-rename"}');
+
+      await clearBridgedCliState(projectDir);
+      expect(existsSync(join(env.HOME as string, '.codex'))).toBe(false);
+      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-by-rename"}');
+
+      rmSync(join(projectDir, SANDBOX_DIR), { recursive: true, force: true });
+      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-by-rename"}');
+    },
+  );
+
+  itUnix(
+    'a fresh acquisition reads rotated host state live and re-collects redaction',
+    async () => {
+      const hostHome = createTempDir('sandbox-state-live-host');
+      const projectDir = createTempDir('sandbox-state-live-project');
+      dirs.push(hostHome, projectDir);
+      const hostAuth = join(hostHome, '.codex', 'auth.json');
+      mkdirSync(join(hostHome, '.codex'), { recursive: true });
+      const rotatedFrom = 'session-token-rotated-from';
+      const rotatedTo = 'session-token-rotated-to';
+      writeFileSync(hostAuth, JSON.stringify({ token: rotatedFrom }));
+      setEnv('HOME', hostHome);
+      const runner = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+
+      const first = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+      const bridgedAuth = join(first.HOME as string, '.codex', 'auth.json');
+      expect(readFileSync(bridgedAuth, 'utf8')).toBe(JSON.stringify({ token: rotatedFrom }));
+
+      // A host-side re-login is visible immediately — there is no snapshot to
+      // go stale between acquisitions.
+      writeFileSync(hostAuth, JSON.stringify({ token: rotatedTo }));
+      expect(readFileSync(bridgedAuth, 'utf8')).toBe(JSON.stringify({ token: rotatedTo }));
+
+      const second = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+      expect(sandboxCredentialValues(second)).toContain(rotatedTo);
+      expect(sandboxCredentialValues(second)).not.toContain(rotatedFrom);
+    },
+  );
+
+  itUnix('replaces a stale sealed snapshot directory with the passthrough link', async () => {
+    const hostHome = createTempDir('sandbox-state-stale-copy-host');
+    const projectDir = createTempDir('sandbox-state-stale-copy-project');
     dirs.push(hostHome, projectDir);
-    const hostAuth = join(hostHome, '.codex', 'auth.json');
     mkdirSync(join(hostHome, '.codex'), { recursive: true });
-    const rotatedFrom = 'session-token-rotated-from';
-    const rotatedTo = 'session-token-rotated-to';
-    writeFileSync(hostAuth, JSON.stringify({ token: rotatedFrom }));
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), '{"token":"live-host-token"}');
     setEnv('HOME', hostHome);
-    const runner = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+    // A sealed copy left behind by the previous bridge implementation.
+    const sandboxHome = join(projectDir, SANDBOX_DIR, 'implementer', 'codex', 'home');
+    mkdirSync(join(sandboxHome, '.codex'), { recursive: true, mode: 0o700 });
+    writeFileSync(join(sandboxHome, '.codex', 'auth.json'), '{"token":"stale-snapshot"}', {
+      mode: 0o400,
+    });
 
-    const first = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
-    const bridgedAuth = join(first.HOME as string, '.codex', 'auth.json');
-    expect(readFileSync(bridgedAuth, 'utf8')).toBe(JSON.stringify({ token: rotatedFrom }));
+    const env = await createRunnerSandboxEnv(
+      projectDir,
+      { kind: 'cli', tool: 'codex', authChannel: 'session' },
+      'implementer',
+    );
 
-    writeFileSync(hostAuth, JSON.stringify({ token: rotatedTo }));
-    const second = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
-
-    expect(readFileSync(bridgedAuth, 'utf8')).toBe(JSON.stringify({ token: rotatedTo }));
-    expect(statSync(bridgedAuth).mode & 0o222).toBe(0);
-    expect(sandboxCredentialValues(second)).toContain(rotatedTo);
-    expect(sandboxCredentialValues(second)).not.toContain(rotatedFrom);
+    expect(lstatSync(join(env.HOME as string, '.codex')).isSymbolicLink()).toBe(true);
+    expect(readFileSync(join(env.HOME as string, '.codex', 'auth.json'), 'utf8')).toBe(
+      '{"token":"live-host-token"}',
+    );
   });
+
+  itUnix(
+    'never deletes host state through a child-planted symlink at a static state dir',
+    async () => {
+      const hostHome = createTempDir('sandbox-state-planted-host');
+      const projectDir = createTempDir('sandbox-state-planted-project');
+      dirs.push(hostHome, projectDir);
+      const hostCredential = join(hostHome, '.claude', '.credentials.json');
+      mkdirSync(join(hostHome, '.claude'), { recursive: true });
+      writeFileSync(hostCredential, '{"session":"host-login"}');
+      setEnv('HOME', hostHome);
+
+      const env = await createSandboxEnv(projectDir, [], 'claude-code', 'bridged-files');
+      // A child replaces its sandbox copy dir with a symlink into the real HOME.
+      rmSync(join(env.HOME as string, '.claude'), { recursive: true, force: true });
+      symlinkSync(join(hostHome, '.claude'), join(env.HOME as string, '.claude'));
+
+      await clearBridgedCliState(projectDir);
+
+      expect(readFileSync(hostCredential, 'utf8')).toBe('{"session":"host-login"}');
+      expect(existsSync(join(env.HOME as string, '.claude'))).toBe(false);
+
+      // Re-bridging afterwards must also refuse to write through a planted link.
+      const again = await createSandboxEnv(projectDir, [], 'claude-code', 'bridged-files');
+      expect(readFileSync(join(again.HOME as string, '.claude', '.credentials.json'), 'utf8')).toBe(
+        '{"session":"host-login"}',
+      );
+      expect(readFileSync(hostCredential, 'utf8')).toBe('{"session":"host-login"}');
+    },
+  );
 
   itUnix('collects only credential-shaped state values for parent-side redaction', async () => {
     const hostHome = createTempDir('sandbox-state-token-shape-host');

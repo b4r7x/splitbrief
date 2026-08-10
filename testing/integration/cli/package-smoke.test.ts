@@ -20,7 +20,11 @@ const SKIP_TOP_LEVEL = new Set([
   '.git',
   '.trees',
   '.splitbrief',
-  '.splitbrief',
+  'coverage',
+  '.test-artifacts',
+  '.nuke',
+  'notes',
+  '.opencode',
 ]);
 
 function copyProjectForSmoke(src: string, dest: string): void {
@@ -46,6 +50,7 @@ function listFilesRecursive(dir: string): string[] {
 }
 
 let workDir: string;
+let packParent: string;
 let installDir: string;
 let installedPkgDir: string;
 let binPath: string;
@@ -64,7 +69,7 @@ beforeAll(() => {
   });
   execFileSync('npm', ['run', 'build'], { cwd: workDir, stdio: 'pipe' });
 
-  const packParent = mkdtempSync(join(tmpdir(), 'splitbrief smoke pack '));
+  packParent = mkdtempSync(join(tmpdir(), 'splitbrief smoke pack '));
   const packDir = join(packParent, 'pack');
   mkdirSync(packDir, { recursive: true });
 
@@ -92,6 +97,7 @@ beforeAll(() => {
 
 afterAll(() => {
   if (workDir) rmSync(workDir, { recursive: true, force: true });
+  if (packParent) rmSync(packParent, { recursive: true, force: true });
   if (installDir) {
     const parent = join(installDir, '..');
     rmSync(parent, { recursive: true, force: true });

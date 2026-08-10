@@ -106,7 +106,7 @@ describe('probeValidationBaseline', () => {
   });
 });
 
-describe('buildValidationChecks lint-unknown info', () => {
+describe('buildValidationChecks lint posture', () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -118,6 +118,43 @@ describe('buildValidationChecks lint-unknown info', () => {
   });
 
   const packageScripts = { packageJsonExists: false, scripts: {} };
+
+  it('reports lint as skipped instead of on when no lint command resolves', () => {
+    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
+    const config = makeConfig({ validation: { typecheck: true, lint: true, test: true } });
+
+    const checks = buildValidationChecks(config, packageScripts, tempDir);
+
+    const configured = checks.find((c) => c.id === 'validation.configured');
+    expect(configured?.summary).toContain('lint skipped (no lint command)');
+    expect(configured?.summary).not.toContain('lint on');
+    expect(configured?.metadata?.['lintCommand']).toBeNull();
+  });
+
+  it('reports lint on with the discovered command when a lint package script exists', () => {
+    writeFileSync(
+      join(tempDir, 'package.json'),
+      '{"devDependencies":{"typescript":"^5"},"scripts":{"lint":"eslint ."}}',
+    );
+    const config = makeConfig({ validation: { typecheck: true, lint: true, test: true } });
+
+    const checks = buildValidationChecks(config, packageScripts, tempDir);
+
+    const configured = checks.find((c) => c.id === 'validation.configured');
+    expect(configured?.summary).toContain('lint on');
+    expect(configured?.metadata?.['lintCommand']).toBe('npm run lint');
+    expect(checks.some((c) => c.id === 'validation.lint-unknown')).toBe(false);
+  });
+
+  it('reports lint off when the stage is disabled', () => {
+    const config = makeConfig({ validation: { typecheck: true, lint: false, test: true } });
+
+    const checks = buildValidationChecks(config, packageScripts, tempDir);
+
+    const configured = checks.find((c) => c.id === 'validation.configured');
+    expect(configured?.summary).toContain('lint off');
+    expect(configured?.metadata?.['lintCommand']).toBeNull();
+  });
 
   it('points JS/TS projects at ESLint/Biome config discovery', () => {
     writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');

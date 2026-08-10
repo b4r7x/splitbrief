@@ -56,7 +56,16 @@ describe('start command — readiness', () => {
     expect(output.match(/repo\.active-session-live/gu)).toHaveLength(1);
     expect(output).not.toContain('repo.dirty-worktree');
     expect(output).not.toContain('scratch.txt');
-    expect(renderCalls).toEqual([]);
+    // Interactive feature starts mount Ink in parallel with preparation (T-037).
+    // Blockers still abort before workflow navigation, and the TUI is unmounted
+    // first so the report above lands on a restored terminal.
+    expect(renderCalls).toEqual([
+      expect.objectContaining({
+        fullscreen: false,
+        projectDir: tmp,
+      }),
+    ]);
+    expect(renderCalls[0]?.unmountSignal?.aborted).toBe(true);
 
     const message = (captured as Error).message;
     expect(message).toContain('Run readiness blocked');

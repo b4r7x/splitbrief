@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   makeCallbacks,
   makeImplementer,
+  makePlanner,
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -253,5 +254,314 @@ describe('runSingleTask — recovery', () => {
     for (const observed of validatedDuringTaskTwo) {
       expect(observed).toBe('export const one = 0;\n');
     }
+  });
+});
+
+// Captured verbatim from `codex exec --json` (codex-cli 0.146.0, 2026-08-06).
+const CODEX_BURNED_REFRESH =
+  'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
+
+describe('runSingleTask — signed-out runner', () => {
+  it('halts on an unauthenticated first attempt with the login command instead of retrying or escalating', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', action: 'create', file: 'src/main.ts' });
+    const state = implementingState([task]);
+
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: CODEX_BURNED_REFRESH,
+        outcome: 'unauthenticated',
+        usage: { inputTokens: 3, outputTokens: 0 },
+      }),
+      retry: vi.fn(),
+    });
+    const planner = makePlanner();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        planner,
+        bus,
+        config: makeConfig({
+          implementer: { kind: 'cli', tool: 'codex' },
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { maxRetries: 2 },
+        }),
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery).toMatchObject({
+      reason: 'runner-unauthenticated',
+      taskId: 'T001',
+    });
+    expect(result.pendingRecovery?.message).toContain('OpenAI Codex CLI is signed out');
+    expect(result.pendingRecovery?.message).toContain('codex logout');
+    expect(result.pendingRecovery?.message).toContain('codex login');
+    expect(result.pendingRecovery?.details.join('\n')).toContain(CODEX_BURNED_REFRESH);
+    expect(result.pendingRecovery?.availableActions).toContain('retry-same-worker');
+
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(planner.escalateHint).not.toHaveBeenCalled();
+    expect(planner.escalateFull).not.toHaveBeenCalled();
+
+    const errorEvent = events.find(
+      (event) => event.type === 'error' && event.message.includes('codex login'),
+    );
+    expect(errorEvent).toBeDefined();
+    expect(events.find((event) => event.type === 'recovery_prompted')).toMatchObject({
+      reason: 'runner-unauthenticated',
+    });
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
+      reason: 'runner-unauthenticated',
+    });
+
+    // After the user logs in externally, the retry action resumes the same task.
+    const retryResult = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: result,
+      action: 'retry-same-worker',
+      bus,
+    });
+    expect(retryResult.ok).toBe(true);
+    expect(retryResult.state.pendingRecovery).toBeUndefined();
+  });
+
+  it('halts mid-ladder when a retry attempt reports unauthenticated instead of escalating to the planner', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      file: 'src/main.ts',
+      scope: { inBounds: ['src/main.ts'] },
+    });
+    const state = implementingState([task]);
+
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 999; // broken\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+      // The login expires between the first attempt and the retry ladder.
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        error: CODEX_BURNED_REFRESH,
+        outcome: 'unauthenticated',
+        usage: { inputTokens: 2, outputTokens: 0 },
+      }),
+    });
+    const planner = makePlanner();
+    const runValidation = vi
+      .fn()
+      .mockResolvedValue([{ stage: 'test' as const, passed: false, error: 'test failed' }]);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        planner,
+        bus,
+        config: makeConfig({
+          implementer: { kind: 'cli', tool: 'codex' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          workflow: { maxRetries: 2 },
+        }),
+        validator: { ...createValidator(), runValidation },
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery).toMatchObject({
+      reason: 'runner-unauthenticated',
+      taskId: 'T001',
+    });
+    // One attempt proved the login is dead; further retries and planner tiers never ran.
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
+    expect(planner.escalateHint).not.toHaveBeenCalled();
+    expect(planner.escalateFull).not.toHaveBeenCalled();
+    expect(
+      events.find((event) => event.type === 'error' && event.message.includes('codex login')),
+    ).toBeDefined();
+    // The failing attempt's changes were rolled back like any exhausted task.
+    expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');
+  });
+});
+
+// Captured live from `codex exec --json` on 2026-08-06 against an account at
+// its usage limit; codex fails the turn with this message until the reset.
+const CODEX_USAGE_LIMIT =
+  "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.";
+
+describe('runSingleTask — usage-limited runner', () => {
+  it('halts on a first-attempt usage limit with the reset time instead of retrying, escalating, or advising a re-login', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', action: 'create', file: 'src/main.ts' });
+    const state = implementingState([task]);
+
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({
+        success: false,
+        output: '',
+        error: CODEX_USAGE_LIMIT,
+        outcome: 'usage-limit',
+        usage: { inputTokens: 3, outputTokens: 0 },
+      }),
+      retry: vi.fn(),
+    });
+    const planner = makePlanner();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        planner,
+        bus,
+        config: makeConfig({
+          implementer: { kind: 'cli', tool: 'codex' },
+          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          workflow: { maxRetries: 2 },
+        }),
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery).toMatchObject({
+      reason: 'runner-usage-limit',
+      taskId: 'T001',
+    });
+    expect(result.pendingRecovery?.message).toContain('hit its usage limit');
+    expect(result.pendingRecovery?.message).toContain('Aug 8, 2026, 3:27 PM');
+    expect(result.pendingRecovery?.message).not.toMatch(/log ?in|log ?out/i);
+    expect(result.pendingRecovery?.details.join('\n')).toContain(CODEX_USAGE_LIMIT);
+    expect(result.pendingRecovery?.facts?.resetsAt).toMatch(/^2026-08-08T/);
+    expect(result.pendingRecovery?.availableActions).toContain('retry-same-worker');
+    expect(result.pendingRecovery?.availableActions).toContain('pause-run');
+
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(planner.escalateHint).not.toHaveBeenCalled();
+    expect(planner.escalateFull).not.toHaveBeenCalled();
+
+    expect(events.find((event) => event.type === 'recovery_prompted')).toMatchObject({
+      reason: 'runner-usage-limit',
+    });
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
+      reason: 'runner-usage-limit',
+    });
+
+    // Once the limit has reset, the retry action resumes the same task.
+    const retryResult = applyRecoveryAction({
+      projectDir,
+      sessionId,
+      state: result,
+      action: 'retry-same-worker',
+      bus,
+    });
+    expect(retryResult.ok).toBe(true);
+    expect(retryResult.state.pendingRecovery).toBeUndefined();
+  });
+
+  it('halts mid-ladder when a retry hits the limit instead of silently escalating to the planner', async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      file: 'src/main.ts',
+      scope: { inBounds: ['src/main.ts'] },
+    });
+    const state = implementingState([task]);
+
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async () => {
+        writeFileSync(join(projectDir, 'src/main.ts'), 'export const main = 999; // broken\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+      // The quota runs out between the first attempt and the retry ladder.
+      retry: vi.fn().mockResolvedValue({
+        success: false,
+        error: CODEX_USAGE_LIMIT,
+        outcome: 'usage-limit',
+        usage: { inputTokens: 2, outputTokens: 0 },
+      }),
+    });
+    const planner = makePlanner();
+    const runValidation = vi
+      .fn()
+      .mockResolvedValue([{ stage: 'test' as const, passed: false, error: 'test failed' }]);
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runSingleTask({
+      wctx: makeWorkflowContext({
+        projectDir,
+        sessionId,
+        callbacks,
+        implementer,
+        planner,
+        bus,
+        config: makeConfig({
+          implementer: { kind: 'cli', tool: 'codex' },
+          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          workflow: { maxRetries: 2 },
+        }),
+        validator: { ...createValidator(), runValidation },
+      }),
+      task,
+      index: 0,
+      totalTasks: 1,
+      state,
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery).toMatchObject({
+      reason: 'runner-usage-limit',
+      taskId: 'T001',
+    });
+    // One attempt proved the quota is gone; further retries and planner tiers never ran.
+    expect(implementer.retry).toHaveBeenCalledTimes(1);
+    expect(planner.escalateHint).not.toHaveBeenCalled();
+    expect(planner.escalateFull).not.toHaveBeenCalled();
+    expect(
+      events.find(
+        (event) => event.type === 'error' && event.message.includes('hit its usage limit'),
+      ),
+    ).toBeDefined();
+    // The failing attempt's changes were rolled back like any exhausted task.
+    expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');
   });
 });

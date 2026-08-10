@@ -6,6 +6,8 @@ import { createSanitizedChildEnv } from '../../../lib/process/spawn/lifecycle.js
 import { processError } from '../../../lib/process/errors.js';
 import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js';
 import { resolveCliExecutable, sanitizedRuntimePath } from '../resolve-cli-executable.js';
+import { CLI_PROMPT_SENTINEL } from '../cli-tools/candidate-contract.js';
+import { claudeCodePlannerAdapter } from '../cli-tools/claude-code.js';
 import { sandboxCredentialValues } from '../sandbox-env.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
@@ -39,10 +41,12 @@ function createClaudeCallContext(opts: {
 }
 
 interface BuildArgsOpts {
+  projectDir: string;
+  mode: 'plan' | 'escalate';
   sessionId?: string | null;
   model?: string | undefined;
   effort?: EffortLevel | undefined;
-  permissionMode?: 'acceptEdits' | undefined;
+  configuredArgs?: readonly string[] | undefined;
 }
 
 async function defaultClaudeEnv(
@@ -122,20 +126,34 @@ function applyImageRefs(prompt: string, images: Attachment[] | undefined): strin
   return `${refs}\n\n${prompt}`;
 }
 
-function buildClaudeArgs(opts: BuildArgsOpts): string[] {
-  const { sessionId, model, effort, permissionMode } = opts;
-  const args: string[] = [
-    '-p',
-    '--output-format',
-    'stream-json',
-    '--verbose',
-    '--include-partial-messages',
+/**
+ * The claude-code adapter owns this argv, so the run, the readiness arg-vector
+ * preflight and the protected-flag guard all read one vector: configured
+ * `planner.args` ride behind the adapter's base args, and the adapter's own
+ * validation rejects a configured flag that fights that base.
+ */
+export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
+  const configuredArgs = opts.configuredArgs ?? [];
+  const baseArgs = [
+    ...claudeCodePlannerAdapter.baseArgs({
+      prompt: CLI_PROMPT_SENTINEL,
+      model: opts.model,
+      projectDir: opts.projectDir,
+      configuredArgs,
+      mode: opts.mode,
+      sessionId: opts.sessionId ?? null,
+      effort: opts.effort,
+    }),
   ];
-
-  if (model) args.push('--model', model);
-  if (effort) args.push('--effort', effort);
-  if (permissionMode) args.push('--permission-mode', permissionMode);
-  if (sessionId) args.push('--session-id', sessionId);
+  const args = [...baseArgs, ...configuredArgs];
+  const validation = claudeCodePlannerAdapter.validateArgs(args, baseArgs);
+  if (!validation.valid) {
+    throw error(
+      'cli-argument-conflict',
+      `Configured Claude Code arguments conflict with the invocation SPLITBRIEF owns: ${validation.conflicts.join(', ')}`,
+      { tool: 'claude-code', conflicts: validation.conflicts },
+    );
+  }
   return args;
 }
 
@@ -154,6 +172,7 @@ export interface ClaudePlannerStreamOpts {
   env?: NodeJS.ProcessEnv | undefined;
   executable?: CliExecutableIdentity | null | undefined;
   effort?: EffortLevel | undefined;
+  configuredArgs?: readonly string[] | undefined;
   images?: Attachment[] | undefined;
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
@@ -177,11 +196,19 @@ export async function runClaudePlannerStream(
     env,
     executable,
     effort,
+    configuredArgs,
     images,
     signal,
     callContext,
   } = opts;
-  const args = buildClaudeArgs({ sessionId, model, effort });
+  const args = buildClaudeArgs({
+    projectDir,
+    mode: 'plan',
+    sessionId,
+    model,
+    effort,
+    configuredArgs,
+  });
   const spawnEnv = env ?? (await defaultClaudeEnv(projectDir, authChannel));
 
   const context = callContext ?? createClaudeCallContext({ role: 'planner', model });
@@ -247,7 +274,7 @@ export interface ClaudeOneShotOpts {
   authChannel?: CliAuthChannelId | undefined;
   executable?: CliExecutableIdentity | null | undefined;
   effort?: EffortLevel | undefined;
-  permissionMode?: 'acceptEdits' | undefined;
+  configuredArgs?: readonly string[] | undefined;
   signal?: AbortSignal | undefined;
   callContext?: RunnerCallContext | undefined;
   env?: NodeJS.ProcessEnv | undefined;
@@ -266,18 +293,13 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
     authChannel,
     executable,
     effort,
-    permissionMode,
+    configuredArgs,
     signal,
     callContext,
     env,
   } = opts;
   const spawnEnv = env ?? (await defaultClaudeEnv(projectDir, authChannel));
-  const context =
-    callContext ??
-    createClaudeCallContext({
-      role: permissionMode === 'acceptEdits' ? 'implementer' : 'planner',
-      model,
-    });
+  const context = callContext ?? createClaudeCallContext({ role: 'planner', model });
   const { state, handleLine } = createStreamHandler({
     onOutput,
     onSessionId,
@@ -285,7 +307,13 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
     credentialValues: claudeCredentialValues(authChannel, spawnEnv),
     context,
   });
-  const args = buildClaudeArgs({ model, effort, permissionMode });
+  const args = buildClaudeArgs({
+    projectDir,
+    mode: 'escalate',
+    model,
+    effort,
+    configuredArgs,
+  });
 
   let trustedExecutablePath: string | undefined;
   try {

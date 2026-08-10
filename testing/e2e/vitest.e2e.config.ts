@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ['testing/e2e/scenarios/**/*.test.ts'],
     exclude: ['node_modules', 'dist'],
+    setupFiles: ['./testing/helpers/state-home.ts'],
     environment: 'node',
     globals: false,
     testTimeout: 120_000,

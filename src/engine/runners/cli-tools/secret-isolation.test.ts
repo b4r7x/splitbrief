@@ -271,28 +271,66 @@ describe('real-HOME invisibility canary matrix', () => {
 describe('readonly provider bridge canary matrix', () => {
   const itUnix = process.platform === 'win32' ? it.skip : it;
 
-  itUnix('bridges only the selected CLI state snapshot and seals it read-only', async () => {
+  itUnix('bridges only the selected static CLI state snapshot and seals it read-only', async () => {
     const hostHome = createTempDir('secret-isolation-bridge-host');
     const projectDir = createTempDir('secret-isolation-bridge-project');
     dirs.push(hostHome, projectDir);
-    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    mkdirSync(join(hostHome, '.copilot'), { recursive: true });
     mkdirSync(join(hostHome, '.claude'), { recursive: true });
-    writeFileSync(join(hostHome, '.codex', 'auth.json'), '{"account":"selected"}');
+    writeFileSync(join(hostHome, '.copilot', 'config.json'), '{"account":"selected"}');
     writeFileSync(join(hostHome, '.claude', '.credentials.json'), '{"account":"unrelated"}');
     setEnv('HOME', hostHome);
 
     const env = await createRunnerSandboxEnv(
       projectDir,
+      { kind: 'cli', tool: 'copilot', authChannel: 'session' },
+      'implementer',
+    );
+    const bridgedConfig = join(env.HOME as string, '.copilot', 'config.json');
+
+    expect(readFileSync(bridgedConfig, 'utf8')).toBe('{"account":"selected"}');
+    expect(existsSync(join(env.HOME as string, '.claude'))).toBe(false);
+    expect(statSync(bridgedConfig).mode & 0o222).toBe(0);
+    expect(() => writeFileSync(bridgedConfig, 'runner-mutation')).toThrow();
+    expect(Object.values(env)).not.toContain(hostHome);
+  });
+
+  itUnix('lets a rotating-credential child persist its refresh to the host file', async () => {
+    const hostHome = createTempDir('secret-isolation-rotation-host');
+    const projectDir = createTempDir('secret-isolation-rotation-project');
+    dirs.push(hostHome, projectDir);
+    const original = 'canary-secret-isolation-pre-rotation-3a4b';
+    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    writeFileSync(join(hostHome, '.codex', 'auth.json'), JSON.stringify({ token: original }));
+    setEnv('HOME', hostHome);
+
+    const sandboxEnv = await createRunnerSandboxEnv(
+      projectDir,
       { kind: 'cli', tool: 'codex', authChannel: 'session' },
       'implementer',
     );
-    const bridgedAuth = join(env.HOME as string, '.codex', 'auth.json');
+    const events: RunnerCallEvent[] = [];
+    // The child does what codex does on an expired access token: refresh, then
+    // persist the rotated credential over its own auth.json. Against the old
+    // sealed snapshot this failed with EACCES and the rotation was lost —
+    // the burn this suite now exists to prevent.
+    const result = await run(
+      invocation({
+        environment: toCliEnvironment(sandboxEnv),
+        script:
+          "const fs=require('node:fs');const path=require('node:path');const file=path.join(process.env.HOME,'.codex','auth.json');const old=JSON.parse(fs.readFileSync(file,'utf8')).token;fs.writeFileSync(file,JSON.stringify({token:'rotated-by-child-5c6d'}));process.stdout.write('TEXT:'+Buffer.from(old).toString('base64')+'\\nRESULT\\n')",
+      }),
+      (event) => events.push(event),
+    );
 
-    expect(readFileSync(bridgedAuth, 'utf8')).toBe('{"account":"selected"}');
-    expect(existsSync(join(env.HOME as string, '.claude'))).toBe(false);
-    expect(statSync(bridgedAuth).mode & 0o222).toBe(0);
-    expect(() => writeFileSync(bridgedAuth, 'runner-mutation')).toThrow();
-    expect(Object.values(env)).not.toContain(hostHome);
+    expect(result.status).toBe('completed');
+    expect(readFileSync(join(hostHome, '.codex', 'auth.json'), 'utf8')).toBe(
+      JSON.stringify({ token: 'rotated-by-child-5c6d' }),
+    );
+    // The pre-run credential the parent learned is still redacted everywhere.
+    const persisted = JSON.stringify({ result, events });
+    expect(persisted).not.toContain(original);
+    expect(persisted).toContain('***REDACTED***');
   });
 
   it('keeps bridged snapshot credential values only in non-enumerable redaction metadata', async () => {

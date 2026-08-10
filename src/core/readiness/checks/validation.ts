@@ -4,6 +4,7 @@ import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { isENOENT, processError } from '../../../lib/process/errors.js';
 import { detectProjectLanguage } from '../../project-meta.js';
+import { detectLintCommand } from '../../validation/lint-detection.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
 
@@ -36,6 +37,19 @@ function onOff(value: boolean): string {
   return value ? 'on' : 'off';
 }
 
+function resolvedLintCommand(config: Config, projectDir: string): string | null {
+  return config.validation.lintCommand || detectLintCommand(projectDir);
+}
+
+// "lint on" must mean a lint stage will actually run; an enabled stage with no
+// resolvable command is reported as skipped, not on.
+function lintSegment(config: Config, projectDir: string): string {
+  if (!config.validation.lint) return 'lint off';
+  return resolvedLintCommand(config, projectDir) === null
+    ? 'lint skipped (no lint command)'
+    : 'lint on';
+}
+
 export function buildValidationChecks(
   config: Config,
   packageScripts: PackageScriptsReadinessInput,
@@ -45,11 +59,12 @@ export function buildValidationChecks(
     {
       id: 'validation.configured',
       severity: 'info',
-      summary: `Validation: typecheck ${onOff(config.validation.typecheck)}, lint ${onOff(config.validation.lint)}, test ${onOff(config.validation.test)}.`,
+      summary: `Validation: typecheck ${onOff(config.validation.typecheck)}, ${lintSegment(config, projectDir)}, test ${onOff(config.validation.test)}.`,
       details: [`Test command: ${resolveReadinessTestCommand(config, projectDir)}`],
       metadata: {
         typecheck: config.validation.typecheck,
         lint: config.validation.lint,
+        lintCommand: config.validation.lint ? resolvedLintCommand(config, projectDir) : null,
         test: config.validation.test,
         testCommand: resolveReadinessTestCommand(config, projectDir),
       },
@@ -71,11 +86,7 @@ export function buildValidationChecks(
     });
   }
 
-  if (
-    config.validation.lint &&
-    !config.validation.lintCommand &&
-    !hasKnownLinterConfig(projectDir)
-  ) {
+  if (config.validation.lint && resolvedLintCommand(config, projectDir) === null) {
     const language = detectProjectLanguage(projectDir);
     const isJsLike =
       language === undefined || language === 'javascript' || language === 'typescript';
@@ -85,7 +96,7 @@ export function buildValidationChecks(
       summary: 'No lint command configured or discovered.',
       details: [
         isJsLike
-          ? 'Task validation skips the lint stage until a lintCommand is set or an ESLint/Biome config exists.'
+          ? 'Task validation skips the lint stage until a lintCommand is set, a `lint` package script exists, or an ESLint/Biome config exists.'
           : `Lint config auto-discovery only covers JavaScript/TypeScript linters (ESLint, Biome), so the lint stage is skipped for this ${language} project until validation.lintCommand is set.`,
       ],
     });
@@ -151,7 +162,7 @@ function resolveProbeCommand(stage: ProbeStage, config: Config, projectDir: stri
     return isTypeScriptProject(projectDir) ? 'npx tsc --noEmit' : null;
   }
   if (stage === 'lint') {
-    return config.validation.lintCommand ?? null;
+    return config.validation.lintCommand ?? detectLintCommand(projectDir);
   }
   return resolveReadinessTestCommand(config, projectDir);
 }
@@ -208,21 +219,4 @@ export async function probeValidationBaseline(
       fix: 'Fix the pre-existing validation failures, or disable the affected stages in .splitbrief/config.yaml.',
     },
   ];
-}
-
-function hasKnownLinterConfig(projectDir: string): boolean {
-  const files = [
-    'eslint.config.js',
-    'eslint.config.mjs',
-    'eslint.config.cjs',
-    'eslint.config.ts',
-    '.eslintrc',
-    '.eslintrc.js',
-    '.eslintrc.cjs',
-    '.eslintrc.json',
-    '.eslintrc.yml',
-    '.eslintrc.yaml',
-    'biome.json',
-  ];
-  return files.some((file) => existsSync(join(projectDir, file)));
 }

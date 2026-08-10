@@ -5,7 +5,8 @@ import { classifyAction } from './action-classifier.js';
 import { ActionClassSchema } from '../../../core/schemas/enums.js';
 import { error } from '../../../utils/error.js';
 import { gateConfirmTier } from './confirm.js';
-import { gateStickyTier, taskScopePatterns } from './sticky.js';
+import { gateStickyTier } from './sticky.js';
+import { taskScopePatterns } from '../task-scope.js';
 import type { GateActionInput, GateDecision } from './types.js';
 
 type ApprovalTierOverrides = NonNullable<Config['approval']>['tiers'];

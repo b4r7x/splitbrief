@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useInput } from 'ink';
 import { INITIALIZING_TOOLS_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { getProviderDisplayName } from '../../core/providers/catalog.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
@@ -140,7 +140,6 @@ export function HomeScreen({
     if (!(r.readiness.refreshing || r.modelsDev.refreshing || r.cliModels.refreshing)) return null;
     return r.readiness.fetchedAt === null ? 'cold' : 'warm';
   });
-  const [sessionsFocused, setSessionsFocused] = useState(false);
   const startPreparation = useStartPreparation<string>({
     prepare: async (feature, signal) => {
       const current = configStore.get();
@@ -166,8 +165,11 @@ export function HomeScreen({
       });
     },
   });
-  const preparationActive = startPreparation.state.kind !== 'idle';
-  const interactionBlocked = hasOverlay || preparationActive || approvalPending;
+  const [sessionsFocused, setSessionsFocused] = useState(false);
+  const preparationState = startPreparation.state;
+  const isPreparing = preparationState.kind === 'preparing';
+  const showPreparationPanel =
+    approvalPending || preparationState.kind === 'blocked' || preparationState.kind === 'failed';
   const preliminaryLayout = getHomeLayout({
     cols,
     rows,
@@ -186,6 +188,7 @@ export function HomeScreen({
   const canFocus = focusedLayout.recentSessionLimit > 0 && sessions.length > 0;
   const sessionsActive = sessionsFocused && canFocus;
   const layout = sessionsActive ? focusedLayout : preliminaryLayout;
+  const interactionBlocked = hasOverlay || showPreparationPanel;
 
   // The box needs real slack below the rendered session rows, or it would be
   // clipped to a partial slice; without slack the hint line carries the notice.
@@ -198,6 +201,7 @@ export function HomeScreen({
   const hintNotice =
     discoveryNotice === 'warm' || (discoveryNotice === 'cold' && !discoveryPanelFits);
   const { frame: refreshFrame } = useSpinnerFrame(hintNotice);
+  const { frame: preparationFrame } = useSpinnerFrame(isPreparing);
 
   useEffect(() => {
     if (!canFocus) setSessionsFocused(false);
@@ -223,15 +227,25 @@ export function HomeScreen({
 
   useRecentSessionsFocus({
     hasSessions: canFocus,
-    hasOverlay: interactionBlocked,
+    hasOverlay: interactionBlocked || isPreparing,
     focused: sessionsActive,
     onEnter: () => setSessionsFocused(true),
   });
   const onStartWorkflow = (feature: string) => {
     observePreparationCleanup(startPreparation.submit(feature));
   };
+
+  useInput(
+    (_input, key) => {
+      if (key.escape) startPreparation.cancel(closeApprovalPrompt);
+    },
+    { isActive: isPreparing && !hasOverlay },
+  );
+
   let homeHint: string | undefined;
-  if (!interactionBlocked) {
+  if (isPreparing && !hasOverlay) {
+    homeHint = `${preparationFrame} ${INITIALIZING_TOOLS_TITLE}`;
+  } else if (!interactionBlocked) {
     homeHint = DEFAULT_HOME_HINT;
     if (canFocus) homeHint = HOME_HINT;
     // The notice borrows the reserved hint line instead of adding a row, so it
@@ -244,7 +258,7 @@ export function HomeScreen({
     if (sessionsActive) homeHint = RECENT_SESSIONS_HINT;
   }
 
-  if (preparationActive || approvalPending) {
+  if (showPreparationPanel) {
     return (
       <StartPreparationPanel
         state={startPreparation.state}
@@ -311,6 +325,7 @@ export function HomeScreen({
             currentScreen="home"
             width={layout.inputWidth}
             homeHint={homeHint}
+            draftRestore={startPreparation.draftRestore}
           />
         </Box>
       </Box>

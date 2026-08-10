@@ -4,7 +4,6 @@ import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js
 import type { ValidationResult } from '../validation/result.js';
 import type { TaskStatus, ValidationStage } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
-import type { RoutingDecision } from '../context-routing/types.js';
 
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
@@ -16,20 +15,13 @@ import { getRunnerDisplayName } from '../../../core/config/accessors/runner-conf
 import { recordTaskUsage } from '../tokens.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { retryProfileOverrideForTask } from './routing.js';
-import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
+import {
+  buildRetryExhaustedRecoveryIssue,
+  routeBiggerProfileFromDecision,
+} from '../recovery/builders/task.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-
-function routeBiggerProfileFromDecision(decision: RoutingDecision | undefined): string | undefined {
-  if (!decision?.selectedProfile) return undefined;
-  const candidate = decision.rejected.find(
-    (profile) =>
-      profile.fit !== 'overflow' &&
-      (profile.requiredWriteMode !== 'direct' || profile.profileWriteMode === 'direct'),
-  );
-  return candidate?.profile;
-}
 
 export type RetryAndRecordOptions = {
   wctx: WorkflowContext;

@@ -60,6 +60,13 @@ describe('maturity disclosure', () => {
   });
 });
 
+describe('install story', () => {
+  it('README and docs/GETTING-STARTED.md agree on the install story', () => {
+    const globalInstall = /npm install -g splitbrief/;
+    expect(globalInstall.test(readme)).toBe(globalInstall.test(gettingStarted));
+  });
+});
+
 // §8 documented a top status line reading `spent … proj … budget … cache …`
 // that no component renders. Every surface it now names is checked against the
 // registry or constant that produces it.

@@ -1,4 +1,4 @@
-tasks.md
+/tasks.md
 
 # Dependencies
 node_modules/
@@ -47,9 +47,6 @@ coverage/
 
 # Visual test artifacts
 .test-artifacts
-
-# Specify
-.specify
 
 # OS
 .DS_Store

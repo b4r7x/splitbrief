@@ -23,7 +23,52 @@ import type { RunnerAvailabilityFact } from '../../core/readiness/checks/availab
 import type { ReadinessCheck } from '../../core/readiness/types.js';
 import { isCliError } from '../errors.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
+import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
+import { runnerDiscoveryContextKey } from '../../engine/detection/detect.js';
+import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution.js';
 import { registerDoctorCommand } from './doctor.js';
+
+const EXECUTABLE_DIGEST = 'a'.repeat(64);
+const codexExecutable = CliExecutableReceiptSchema.parse({
+  path: '/usr/local/bin/codex',
+  fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+  executableIdentity: {
+    canonicalPath: '/usr/local/bin/codex',
+    realPath: '/usr/local/bin/codex',
+    platformFileId: '1:2',
+    fingerprint: `1:2:3:4:sha256:${EXECUTABLE_DIGEST}`,
+    resolvedAt: 1,
+  },
+});
+
+function freshCodexEvidence(
+  context: Parameters<typeof runnerDiscoveryContextKey>[0],
+  overrides: Partial<Pick<RunnerEvidence, 'auth'>> = {},
+): RunnerEvidence {
+  const key = runnerDiscoveryContextKey(context);
+  const testedVersion = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
+  return {
+    runner: { id: 'codex', kind: 'cli', locality: 'local', enabled: 'enabled' },
+    context: { key, observedAt: 1, source: 'fresh' },
+    installation: 'installed',
+    executable: {
+      kind: 'trusted',
+      identity: codexExecutable.executableIdentity,
+    },
+    compatibility: { kind: 'compatible', installedVersion: testedVersion, testedVersion },
+    credential: 'present',
+    auth: overrides.auth ?? 'verified',
+    endpoint: { kind: 'not-run' },
+    catalog: { kind: 'not-run' },
+    modelRun: {
+      kind: 'unknown',
+      selectionId: context.model ?? 'unselected',
+      observedAt: 1,
+      contextKey: key,
+    },
+  };
+}
 
 let tmp: string;
 
@@ -109,6 +154,7 @@ async function runDoctor(
   runArgVectorHelp: () => Promise<string | null> = async () => null,
   // Availability is a live network claim; unit runs make none unless they say so.
   probeRunnerAvailability: () => Promise<readonly RunnerAvailabilityFact[]> = async () => [],
+  collectAdmissionChecks: typeof collectRunnerAdmissionChecks = collectRunnerAdmissionChecks,
 ): Promise<void> {
   const program = new Command();
   program.exitOverride();
@@ -116,6 +162,7 @@ async function runDoctor(
     detectCliReadiness,
     runArgVectorHelp,
     probeRunnerAvailability,
+    collectRunnerAdmissionChecks: collectAdmissionChecks,
   });
   await program.parseAsync(['node', 'splitbrief', 'doctor', ...args]);
 }
@@ -155,7 +202,7 @@ const CLAUDE_HELP_WITHOUT_PARTIAL_MESSAGES = [
   '  -p, --print                Print response and exit',
   '  --output-format <format>   Output format: text, json, stream-json',
   '  --verbose                  Override verbose mode',
-  '  --session-id <uuid>        Use a specific session ID',
+  '  -r, --resume [sessionId]   Resume a conversation by session ID',
   '  -h, --help                 Display help for command',
 ].join('\n');
 
@@ -362,6 +409,66 @@ describe('doctor command', () => {
     expect(planner?.summary).not.toContain('(auto)');
   });
 
+  it('doctor readiness for a config denied headless admission contains a `runners.preparation.` check whose remediation names `--allow-unverified-auth`', async () => {
+    initGitRepo(tmp);
+    writeConfig(
+      tmp,
+      validConfigYaml().replace('  tool: claude-code', '  tool: codex\n  authChannel: session'),
+    );
+    const writes = captureStdout();
+
+    let captured: unknown;
+    try {
+      await runDoctor(
+        ['--project', tmp, '--json'],
+        async () => [
+          deriveCliReadiness({
+            tool: 'codex',
+            enabled: true,
+            installation: 'installed',
+            executable: {
+              path: codexExecutable.path,
+              fingerprint: codexExecutable.fingerprint,
+            },
+            trust: 'trusted',
+            installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+            testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+            compatibility: 'compatible',
+            auth: 'unknown',
+            probedAt: 1,
+          }),
+        ],
+        async () => null,
+        async () => [],
+        async (input) =>
+          collectRunnerAdmissionChecks({
+            ...input,
+            deps: {
+              detectRunnerEvidence: async ({ context }) =>
+                freshCodexEvidence(context, { auth: 'unknown' }),
+              resolveCliExecutableAliases: async () => ({
+                command: 'codex',
+                executable: codexExecutable,
+                usedFallback: false,
+              }),
+            },
+          }),
+      );
+    } catch (err) {
+      captured = err;
+    }
+
+    expect(isCliError(captured)).toBe(true);
+    const parsed = JSON.parse(writes.join('').trim()) as {
+      report?: { checks?: Array<{ id: string; remediation?: string | null }> };
+    };
+    const preparationCheck = parsed.report?.checks?.find((check) =>
+      check.id.startsWith('runners.preparation.'),
+    );
+    expect(preparationCheck).toBeDefined();
+    expect(preparationCheck?.remediation).toContain('--allow-unverified-auth');
+  });
+
   it('emits JSON and exits non-zero for missing config without writing setup files', async () => {
     initGitRepo(tmp);
     const writes = captureStdout();
@@ -549,68 +656,72 @@ describe('doctor command', () => {
     ['incompatible-version', { compatibility: 'incompatible' as const }],
     ['unauthenticated', { auth: 'unauthenticated' as const }],
     ['auth-unknown', { auth: 'unknown' as const }],
-  ] as const)('emits JSON stateId %s and human next action for CLI readiness', async (stateId, overrides) => {
-    initGitRepo(tmp);
-    writeConfig(tmp);
-    const writes = captureStdout();
-    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  ] as const)(
+    'emits JSON stateId %s and human next action for CLI readiness',
+    async (stateId, overrides) => {
+      initGitRepo(tmp);
+      writeConfig(tmp);
+      const writes = captureStdout();
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const cliResult = deriveCliReadiness({
-      tool: 'claude-code',
-      enabled: true,
-      installation: 'installed',
-      executable: {
-        path: '/usr/local/bin/claude',
-        fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
-      },
-      trust: 'trusted',
-      installedVersion: '2.0.0',
-      testedVersion: '2.0.0',
-      compatibility: 'compatible',
-      auth: 'authenticated',
-      probedAt: 1,
-      ...overrides,
-    });
+      const cliResult = deriveCliReadiness({
+        tool: 'claude-code',
+        enabled: true,
+        installation: 'installed',
+        executable: {
+          path: '/usr/local/bin/claude',
+          fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
+        },
+        trust: 'trusted',
+        installedVersion: '2.0.0',
+        testedVersion: '2.0.0',
+        compatibility: 'compatible',
+        auth: 'authenticated',
+        probedAt: 1,
+        ...overrides,
+      });
 
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json'], async () => [cliResult]);
-    } catch (err) {
-      captured = err;
-    }
+      let captured: unknown;
+      try {
+        await runDoctor(['--project', tmp, '--json'], async () => [cliResult]);
+      } catch (err) {
+        captured = err;
+      }
 
-    if (stateId !== 'auth-unknown') {
-      expect(isCliError(captured)).toBe(true);
-    }
+      if (stateId !== 'auth-unknown') {
+        expect(isCliError(captured)).toBe(true);
+      }
 
-    const parsed = JSON.parse(writes.join('').trim()) as {
-      report?: {
-        checks?: Array<{
-          id: string;
-          stateId?: string | null;
-          remediation?: string | null;
-        }>;
+      const parsed = JSON.parse(writes.join('').trim()) as {
+        report?: {
+          checks?: Array<{
+            id: string;
+            stateId?: string | null;
+            remediation?: string | null;
+          }>;
+        };
       };
-    };
-    const readinessCheck = parsed.report?.checks?.find(
-      (check) => check.id === 'runners.cli.claude-code.readiness',
-    );
-    expect(readinessCheck?.stateId).toBe(stateId);
-    expect(readinessCheck?.remediation).toBeTruthy();
+      const readinessCheck = parsed.report?.checks?.find(
+        (check) => check.id === 'runners.cli.claude-code.readiness',
+      );
+      expect(readinessCheck?.stateId).toBe(stateId);
+      expect(readinessCheck?.remediation).toBeTruthy();
 
-    writes.length = 0;
-    consoleSpy.mockClear();
-    try {
-      await runDoctor(['--project', tmp], async () => [cliResult]);
-    } catch {
-      // blocked readiness exits non-zero after printing human output
-    }
-    const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
-    expect(human).toContain('Fix:');
-    expect(human).toContain(readinessCheck?.remediation ?? '');
-    expect(human.includes('\u001b')).toBe(false);
-    expect(human.includes('\u0007')).toBe(false);
-  });
+      writes.length = 0;
+      consoleSpy.mockClear();
+      try {
+        await runDoctor(['--project', tmp], async () => [cliResult]);
+      } catch {
+        // blocked readiness exits non-zero after printing human output
+      }
+      const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+      expect(human).toContain('Fix:');
+      expect(human).toContain(readinessCheck?.remediation ?? '');
+      expect(human.includes('\u001b')).toBe(false);
+      expect(human.includes('\u0007')).toBe(false);
+    },
+    20_000,
+  );
 
   // A CLI readiness the probe could not verify stays a warning — doctor
   // diagnoses, it does not decide — but start refuses it, so the summary must
@@ -641,7 +752,8 @@ describe('doctor command', () => {
     expect(unverified.status).toBe('unverified');
     expect(human).toContain('Run readiness: ready-with-warnings');
     expect(human).not.toContain('start can continue');
-    expect(human).toContain('Start blocked: no trusted readiness identity for claude-code.');
+    expect(human).toContain('No trusted readiness identity for claude-code');
+    expect(human).toContain('--allow-unverified-auth');
     expect(human).toContain(unverified.remediation ?? '');
   });
 

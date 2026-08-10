@@ -4,6 +4,7 @@ import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type { CliImplementerAdapter, CliPlannerAdapter, CliProtocolEvent } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
+import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
 import type { ParsedLine } from '../types.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -22,9 +23,11 @@ const OPENCODE_PROTECTED_FLAGS = new Set([
   '--format',
   '--model',
   '--prompt',
+  '-m',
   'plan',
   'run',
 ]);
+const OPENCODE_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-m']);
 
 type OpenCodePlannerBuildInput = Parameters<CliPlannerAdapter<'opencode'>['buildArgs']>[0];
 type OpenCodeImplementerBuildInput = Parameters<CliImplementerAdapter<'opencode'>['buildArgs']>[0];
@@ -35,6 +38,7 @@ function validateArgs(invocationArgs: readonly string[], baseArgs: readonly stri
     invocationArgs,
     baseArgs,
     protectedFlags: OPENCODE_PROTECTED_FLAGS,
+    protectedShortValueFlags: OPENCODE_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
   });
 }
@@ -98,7 +102,10 @@ function errorEnvelope(line: string): readonly CliProtocolEvent[] | null {
       text: '',
       usage: null,
       nativeSessionId,
-      error: { code: 'opencode-error', message: 'OpenCode reported an error' },
+      error: {
+        code: 'opencode-error',
+        message: envelopeErrorDetail(value, 'OpenCode reported an error'),
+      },
       partial: true,
     },
   ];
@@ -152,7 +159,9 @@ function createProbe() {
 function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
   const args = ['run'];
   if (input.model !== undefined) args.push('--model', input.model);
-  args.push('--format', 'json', '--agent', 'plan', input.prompt);
+  args.push('--format', 'json');
+  args.push('--agent', input.mode === 'plan' ? 'plan' : 'build');
+  args.push(input.prompt);
   return args;
 }
 
@@ -262,6 +271,7 @@ export const CLI_CONFORMANCE_CANDIDATES: readonly OpenCodeCliConformanceCandidat
 export function opencodePromptArgs(opts: {
   role: 'planner' | 'implementer';
   model?: string | undefined;
+  mode?: 'plan' | 'escalate' | undefined;
   configuredArgs?: readonly string[] | undefined;
 }): readonly string[] {
   const configuredArgs = opts.configuredArgs ?? [];
@@ -271,7 +281,7 @@ export function opencodePromptArgs(opts: {
       model: opts.model,
       projectDir: '',
       configuredArgs,
-      mode: 'plan',
+      mode: opts.mode ?? 'plan',
       sessionId: null,
       effort: undefined,
     });

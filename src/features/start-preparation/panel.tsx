@@ -61,6 +61,9 @@ export function StartPreparationPanel({
   if (hasApprovalPrompt) return approvalPrompt;
   if (state.kind === 'idle') return null;
 
+  // Home keeps chrome + composer byline while preparing and never mounts this
+  // panel for `preparing`. Session resume and setup still host the panel alone,
+  // so they need a quiet preparing surface here (not a blank frame).
   if (state.kind === 'preparing') {
     return (
       <OverlayPanel title="Preparing your tools…" maxWidth={72} hint="esc back">

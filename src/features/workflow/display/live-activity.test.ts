@@ -23,6 +23,10 @@ describe('deriveLiveStatus', () => {
     expect(deriveLiveStatus({ ...base, phase: 'researching', status: 'interrupted' })).toBeNull();
   });
 
+  it('deriveLiveStatus emits no spinner for paused', () => {
+    expect(deriveLiveStatus({ ...base, phase: 'implementing', status: 'paused' })).toBeNull();
+  });
+
   it.each([
     ['specifying', 'planner'],
     ['clarifying', 'planner'],

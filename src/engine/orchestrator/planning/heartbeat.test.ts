@@ -73,6 +73,23 @@ describe('startPlannerHeartbeat', () => {
     }
   });
 
+  it('heartbeat elapsedMs restarts when callId changes', () => {
+    const bus = createMockBus();
+    const handle = startPlannerHeartbeat(bus, 'planning', Date.now());
+
+    vi.advanceTimersByTime(3000);
+    handle.updateCallId('planner-call-1');
+
+    vi.advanceTimersByTime(HEARTBEAT_THRESHOLD_MS - 3000);
+    expect(bus.published).toHaveLength(1);
+    const event = bus.published[0]!;
+    expect(event.type).toBe('planner_heartbeat');
+    if (event.type === 'planner_heartbeat') {
+      expect(event.callId).toBe('planner-call-1');
+      expect(event.elapsedMs).toBe(2000);
+    }
+  });
+
   it('stops future heartbeat events whether stopped before or after the first heartbeat', () => {
     const bus = createMockBus();
     const handle = startPlannerHeartbeat(bus, 'planning', Date.now());

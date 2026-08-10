@@ -20,7 +20,7 @@ export function buildQuickPlanPrompt(
       { heading: 'Project Context', body: projectContext },
       ...buildLanguageContextSections(ctx),
       instructionsSection(`1. Briefly review the codebase structure and identify files to create or modify.
-2. Output a \`tasks.md\` file with atomic Task Briefs. One brief = one file.
+2. Compose the complete \`tasks.md\` content with atomic Task Briefs. One brief = one file.
 
 Each brief must be rendered in this exact markdown shape:
 
@@ -33,9 +33,11 @@ ${buildTaskFormatExample(ctx)}`),
 - Required sections per brief: ${requiredBriefSectionsProse()}.
 - \`### Scope\` must include \`**In bounds:**\` / \`**Out of bounds:**\` bullets, even when the boundary is short.
 - \`### Escalation\` must state when the implementer should stop instead of guessing.
-- \`### Evidence\` must state the reviewable proof expected from the task (passing tests, typecheck, changed files, or equivalent).`,
+- \`### Evidence\` must state the reviewable proof expected from the task (passing tests, typecheck, changed files, or equivalent).
+- Outside fenced code blocks, lines containing only \`---\` are reserved for Task Brief frontmatter delimiters. Never use a bare \`---\` as a horizontal rule or phase-heading separator.`,
       },
     ],
-    output: 'Write the complete tasks.md content.',
+    output:
+      'Return the complete tasks.md content in your reply. Do not write tasks.md or any other project file yourself; SPLITBRIEF captures your reply and persists the tasks.md artifact inside the active session.',
   });
 }

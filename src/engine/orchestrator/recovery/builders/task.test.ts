@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { RecoveryIssueSchema } from '../../../../core/schemas/recovery/schemas.js';
+import { actionsAreLegalForReason } from '../../../../core/schemas/recovery/policy.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import {
   buildContextOverflowRecoveryIssue,
   buildDependencyBlockedRecoveryIssue,
   buildRetryExhaustedRecoveryIssue,
+  buildRunnerUsageLimitRecoveryIssue,
 } from './task.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
@@ -84,6 +87,57 @@ describe('buildRetryExhaustedRecoveryIssue', () => {
     expect(override.availableActions).toContain('retry-same-worker');
     expect(override.recommendedAction).toBe('retry-same-worker');
     expectValidRecoveryIssue(override);
+  });
+});
+
+describe('buildRunnerUsageLimitRecoveryIssue', () => {
+  // Captured live from `codex exec --json` on 2026-08-06.
+  const codexLimit =
+    "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.";
+
+  it('names the reset time, keeps the tool message verbatim, and never suggests logging in', () => {
+    const issue = buildRunnerUsageLimitRecoveryIssue({
+      task: makeTask({ id: 'T003' }),
+      runner: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }).implementer,
+      toolMessage: codexLimit,
+      attempts: 1,
+      maxAttempts: 3,
+      createdAt,
+    });
+
+    expect(issue.reason).toBe('runner-usage-limit');
+    expect(issue.message).toContain('hit its usage limit');
+    expect(issue.message).toContain('Aug 8, 2026, 3:27 PM');
+    expect(issue.message).not.toMatch(/log ?in|log ?out/i);
+    expect(issue.details.join('\n')).toContain(codexLimit);
+    expect(issue.details.join('\n')).toContain('stopped instead of escalating');
+    expect(issue.facts?.resetsAt).toMatch(/^2026-08-08T/);
+    expect(issue.availableActions).toEqual([
+      'retry-same-worker',
+      'skip-current-task',
+      'pause-run',
+      'abort-workflow',
+    ]);
+    expect(issue.recommendedAction).toBe('pause-run');
+    expect(actionsAreLegalForReason(issue)).toBe(true);
+    expectValidRecoveryIssue(issue);
+  });
+
+  it('offers and recommends the profile switch when a bigger worker exists', () => {
+    const issue = buildRunnerUsageLimitRecoveryIssue({
+      task: makeTask({ id: 'T003' }),
+      runner: makeConfig({ implementer: { kind: 'api', provider: 'groq' } }).implementer,
+      toolMessage:
+        'Rate limit reached for model `llama-3.3-70b-versatile`. Please try again in 7.66s.',
+      routeBiggerProfile: 'cloud-big',
+      createdAt,
+    });
+
+    expect(issue.availableActions).toContain('route-bigger-worker');
+    expect(issue.recommendedAction).toBe('route-bigger-worker');
+    expect(issue.facts?.routeBiggerProfile).toBe('cloud-big');
+    expect(actionsAreLegalForReason(issue)).toBe(true);
+    expectValidRecoveryIssue(issue);
   });
 });
 

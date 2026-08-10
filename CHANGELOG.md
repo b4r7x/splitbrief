@@ -1,8 +1,17 @@
 # Changelog
 
-## [Unreleased]
+## [0.1.0] - 2026-08-07
+
+Initial release — source install; not yet published to npm. SPLITBRIEF was developed in
+the open before this date; everything in this section and the dated sections below it is
+what 0.1.0 contains.
 
 ### Fixed
+
+- The repo map extracts symbols from Python, Go, and Rust again. The grammars came from `tree-sitter-wasms@0.1.13`, whose parsers are built against tree-sitter 0.20 (ABI 13); the pinned `web-tree-sitter@0.26` refuses to load them and `loadGrammar` swallows the failure, so every `.py`, `.go`, and `.rs` file reached the planner with zero symbols and zero imports while 49 MB of unusable wasm shipped to every install. The three languages now resolve their own grammar packages (`tree-sitter-python`, `tree-sitter-go`, `tree-sitter-rust`, ABI 14/15), which are also smaller. Go type declarations carry their name on a nested `type_spec`, so `type User struct{}` was invisible even once the grammar loaded; `extractName` now unwraps it the same way it already unwrapped `lexical_declaration`.
+- Readiness no longer headlines an installable blocker with `Required action: Exit`. A missing, untrusted, incompatible, unauthenticated, or unreachable runner is the most common first-run blocker and carried no next action at all, so `selectNextAction` fell through to `exit` — or, when a repository blocker was also present, to `Clean or isolate repo`, which named the wrong problem. Runner blockers now carry `prepare-runner` (`Set up the configured runner`).
+- The start gate names the tool and its install URL when a CLI is missing. `Fresh CLI evidence denied admission: installation.` previously fell back to the generic `Review the configured runner, then retry.` even though the catalog already holds an `installUrl` for every tool.
+- `node-pty` moved from `optionalDependencies` to `devDependencies`. Only `testing/` imports it, but it was downloaded and its native install script run on every `npm install -g splitbrief` — 62 MB, and a `node-gyp` fallback on Linux, for a module no shipped file can reach.
 
 - A cloned repository can no longer grant itself hook execution. The hook trust receipt moved out of the project (`.splitbrief/hook-trust.json`) into the owner's machine-scoped store (`~/.splitbrief/trust/hooks.json`, mode `0600` in a `0700` directory), keyed by the canonical path of the checkout — the same store, identity, and owner-only read that custom runner trust already used, now shared through `src/core/trust/receipt-store.ts`. A receipt committed into a repository is a file SPLITBRIEF never reads; a second clone, a `cp -a`, or another account prompts again. Receipts written by earlier versions inside `.splitbrief/` are ignored: trust those hooks once more and delete the file.
 - The hook trust prompt now discloses what it authorizes, and cannot be answered without it. The question itself carries each hook's executable, the absolute path that executable resolves to on this machine, its argv, and the trust boundary the hook runs inside, so every surface that answers the prompt must display it. A config-supplied `name:` no longer displaces the command in the disclosure, and repository-supplied strings are rendered as escaped literals so bidi or zero-width characters cannot redress one command as another. `--allow-hooks` writes the same disclosure to stderr before granting, so CI logs record what was authorized.
@@ -17,6 +26,7 @@
 - `engines.node` is enforced at runtime. The CLI reads `process.versions.node` before parsing and refuses a Node older than 22 with `splitbrief requires Node.js 22 or newer; this process is Node.js <version>.`, instead of running and reporting a wrong diagnosis — on Node 20 the arg-vector preflight truncates its `--help` capture and blocks on flags the installed binary does support.
 - Documented `kind: api` examples now load. `service` and `offering` were missing from the examples in CONFIGURATION.md, CONCEPTS.md, FEATURES.md and COST-AWARE-IMPLEMENTER-DIRECTION.md while the field table promised a catalog back-fill that has never existed, and the generic remote example taught `apiKey: env:VAR` — the one credential form a custom provider is refused. Every YAML fence in `README.md` and `docs/*.md` that names a top-level config key is now loaded through the real `loadConfig` by `testing/docs/configuration.test.ts`, whole configs as written and section fragments under a `version: 3` header, and every documented `kind: api` block is checked for the identity triple it cannot be inferred from.
 - `docs/GETTING-STARTED.md` §8 no longer documents an always-visible `spent … proj … budget … cache …` status line that nothing renders. It describes the four surfaces that exist — the `/sidebar` footer, the Ctrl+G breakdown, the summary screen, and the budget gate — and `testing/docs/getting-started.test.ts` checks each name against the registry or threshold constant that produces it.
+- A Task Brief quality failure is no longer a dead end for headless, RPC, or any other auto-approving transport. Those transports answer every approval with "approved", and the quality gate is deterministic over unchanged briefs, so a standard-mode run whose planner split each implementation and its test into separate briefs — leaving the implementation brief's `### Tests` section as prose — re-approved the same rejected briefs twenty times in about fifty milliseconds, emitted twenty identical error records, and ended as `interrupted`. The briefs approval loop now spends one automatic planner regeneration with the blocking issues as feedback, and rejects immediately with a `brief_quality_rejected` error naming every issue if the regenerated briefs still fail. An edited `tasks.md` that fails the gate is still reported and re-prompted, never overwritten. The Task Brief prompt also states what the contract always meant: a brief whose test file a sibling brief owns still lists the concrete cases that verify its own change.
 - A first run on a machine with no Ollama no longer prints `detectContextLength(ollama): fetch failed` to stderr before the UI appears. An unreachable provider endpoint is handled by falling back to the catalog, exactly as `fetchModelList` already treated it; readiness is where an unreachable implementer is reported. Diagnostics that are not connection failures still print, now credential-redacted.
 
 ### Added
@@ -27,10 +37,10 @@
 
 - Headless `--json` runs now exit non-zero for a **paused** or **applying** `pendingRecovery`, not only `awaiting-user` — a resume that does nothing no longer exits 0. The `recovery_required` record carries the `status` field (optional for older consumers), and the task loop publishes a transcript-safe `recovery_pending_unresolved` warning naming the reason, status, and available actions before stopping.
 
-## [0.1.0] - 2026-08-01
+## 2026-08-01 — naming and session layout
 
-First published release. The entries below describe how this version differs from the
-unpublished pre-release layout that earlier sections of this file document.
+The entries below describe how the tree changed from the earlier pre-release layout that
+the sections after this one document.
 
 ### Breaking
 

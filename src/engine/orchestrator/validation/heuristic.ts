@@ -1,5 +1,6 @@
 import { detectProjectLanguage } from '../../../core/project-meta.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
+import { detectLintCommand } from '../../../core/validation/lint-detection.js';
 
 export function detectValidationHeuristic(projectDir: string): DiscoveredValidation | null {
   switch (detectProjectLanguage(projectDir)) {
@@ -24,8 +25,22 @@ export function detectValidationHeuristic(projectDir: string): DiscoveredValidat
         testPattern: 'test_*.py',
         language: 'python',
       };
-    case 'javascript':
-      return { testCommand: 'npm test', language: 'javascript' };
+    case 'javascript': {
+      const lintCommand = detectLintCommand(projectDir);
+      return {
+        testCommand: 'npm test',
+        ...(lintCommand === null ? {} : { lintCommand }),
+        language: 'javascript',
+      };
+    }
+    // TypeScript keeps its typecheck and test defaults (`npx tsc --noEmit`,
+    // `npm test` with per-task test targeting), which only apply while the
+    // heuristic leaves those fields unset; lint has no default, so without this
+    // case a `validation.lint: true` TS project silently never lints.
+    case 'typescript': {
+      const lintCommand = detectLintCommand(projectDir);
+      return lintCommand === null ? null : { lintCommand, language: 'typescript' };
+    }
     default:
       return null;
   }

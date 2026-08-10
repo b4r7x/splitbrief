@@ -65,19 +65,23 @@ function RowLeading({
   lifecycle,
   focused,
   markerColor,
+  headerContinuation,
 }: {
   kind: ConversationRow['kind'];
   lifecycle: RowLifecycle;
   focused?: boolean;
   markerColor: string;
+  headerContinuation?: boolean;
 }) {
   const t = useTheme();
-  const isHeaderMarker = kind === 'activity' || kind === 'task-header';
+  const leadingKind = headerContinuation === true ? 'message' : kind;
+  const isHeaderMarker =
+    (kind === 'activity' || kind === 'task-header') && headerContinuation !== true;
   const isPulsingDot = isHeaderMarker && lifecycle === 'live';
   const status: RowMarkerStatus =
     lifecycle === 'queued' ? 'queued' : isPulsingDot ? 'live' : 'done';
-  const leading = rowLeading(kind, status);
-  const leadingWidth = rowLeadingCells(kind);
+  const leading = rowLeading(leadingKind, status);
+  const leadingWidth = rowLeadingCells(leadingKind);
 
   if (isPulsingDot) {
     return (
@@ -134,6 +138,7 @@ export function ConversationRowView({
         lifecycle={lifecycle}
         {...(focused === undefined ? {} : { focused })}
         markerColor={markerColor}
+        {...(row.headerContinuation === true ? { headerContinuation: true } : {})}
       />
       <Text wrap="truncate-end">
         {row.segments.map((segment, index) => (

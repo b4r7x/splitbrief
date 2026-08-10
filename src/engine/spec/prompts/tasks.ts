@@ -16,7 +16,7 @@ function briefContract(ctx: LanguageContext): string {
 3. **Scope** — \`${H.scope.heading}\` with \`**In bounds:**\`, \`**Out of bounds:**\`, and optional \`**Approved out of bounds:**\` bullet lists. REQUIRED in standard mode so the implementer cannot drift into adjacent files or features.
 4. **Code Context** — \`${H.signature.heading}\`, \`${H.currentCode.heading}\`, \`${H.typeDefs.heading}\`, and \`${H.pattern.heading}\`: copied verbatim from the project when relevant. The implementer cannot look up other files.
 5. **Implementation Plan** — \`${H.implementationSteps.heading}\`: 3-5 numbered steps with concrete function calls and patterns.
-6. **Validation** — \`${H.tests.heading}\`: REQUIRED concrete test cases with specific inputs and expected outputs. No phrases like "should work correctly."
+6. **Validation** — \`${H.tests.heading}\`: REQUIRED concrete test cases with specific inputs and expected outputs, in every brief. No phrases like "should work correctly", and no deferring the cases to whichever brief owns the test file.
 7. **Constraints** — \`${H.constraints.heading}\`: invariants, dependency rules, ${ctx.importConvention}, refusal conditions.
 8. **Escalation** — \`${H.escalation.heading}\`: bullets describing when the implementer must stop and ask instead of guessing. Required whenever the brief contains plausible ambiguity.
 9. **Evidence** — \`${H.evidence.heading}\`: REQUIRED bullets describing the reviewable proof that should exist when the brief is done (passing tests, validation output, changed files, behavioral note).`;
@@ -29,7 +29,7 @@ function criticalRules(ctx: LanguageContext): string {
 
 3. **Dependency-ordered**: Briefs must be ordered so dependencies come first. Use \`depends_on\` to declare which briefs must complete first. Independent briefs can run in parallel.
 
-4. **Concrete validation**: Every \`${H.tests.heading}\` block must list specific test cases with concrete inputs and expected outputs.
+4. **Concrete validation**: Every \`${H.tests.heading}\` block must list specific test cases with concrete inputs and expected outputs, as \`-\` bullets. This holds for every brief, including one whose test file a different brief owns: list the cases that verify THIS brief's change. Never replace the bullets with prose that defers validation to another brief.
 
 5. **Inline type definitions**: Copy referenced ${ctx.typeAnnotationStyle} or data shape definitions verbatim into \`${H.typeDefs.heading}\`. Max ~300 tokens — prioritize definitions that appear in the function signature.
 
@@ -37,7 +37,9 @@ function criticalRules(ctx: LanguageContext): string {
 
 7. **Escalation, not guessing**: If a brief could be interpreted multiple ways, list those decision points under \`${H.escalation.heading}\` rather than baking a guess into the steps.
 
-8. **Evidence is not implementation**: \`${H.evidence.heading}\` describes the proof that survives after the brief is done, not the steps that produce it.`;
+8. **Evidence is not implementation**: \`${H.evidence.heading}\` describes the proof that survives after the brief is done, not the steps that produce it.
+
+9. **Reserved delimiter**: Outside fenced code blocks, lines containing only \`---\` are reserved for Task Brief frontmatter delimiters. Never use a bare \`---\` as a horizontal rule or phase-heading separator.`;
 }
 
 export function buildTasksPrompt(
@@ -65,7 +67,7 @@ export function buildTasksPrompt(
         : []),
       ...buildLanguageContextSections(ctx),
       instructionsSection(
-        'Write a `tasks.md` file containing one Task Brief per markdown block, ordered by dependency. Each brief represents a single file operation (create or modify one file).',
+        'Compose the complete `tasks.md` content with one Task Brief per markdown block, ordered by dependency. Each brief represents a single file operation (create or modify one file).',
       ),
       {
         heading: 'Task Brief Format',
@@ -83,6 +85,6 @@ ${buildTaskFormatExample(ctx)}`,
       },
     ],
     output:
-      'Write the complete tasks.md content with all Task Briefs in dependency order. Group related briefs into phases with a brief purpose statement for each phase.',
+      'Return the complete tasks.md content in your reply, with all Task Briefs in dependency order. Group related briefs into phases with a brief purpose statement for each phase. Do not write tasks.md or any other project file yourself; SPLITBRIEF captures your reply and persists the tasks.md artifact inside the active session.',
   });
 }

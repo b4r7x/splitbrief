@@ -136,12 +136,14 @@ export function runnerAvailabilityCheck(
   }>,
 ): ReadinessCheck {
   const copy = availabilityCopy(input.fact, input.label);
+  const severity = availabilitySeverity(input.fact, input.isDefaultImplementer);
   return {
     id: runnerAvailabilityCheckId(input.fact.slot),
-    severity: availabilitySeverity(input.fact, input.isDefaultImplementer),
+    severity,
     summary: copy.summary,
     ...(copy.details !== undefined && { details: copy.details }),
     ...(copy.fix !== undefined && { fix: copy.fix }),
+    ...(severity === 'blocker' && { nextAction: 'prepare-runner' as const }),
     metadata: {
       role: input.fact.slot.role,
       ...(input.fact.slot.role === 'implementer' && { profile: input.fact.slot.profile }),

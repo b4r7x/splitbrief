@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { basename, join, relative, resolve } from 'node:path';
 import { confinedExists, confinedReadFile } from '../../lib/confined-fs.js';
 import { isPathConfined, pathConfinementError } from '../../lib/path-confinement.js';
@@ -12,10 +13,10 @@ import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
 import {
   CLI_NO_DEADLINE_MS,
-  CLI_PROMPT_PLACEHOLDER,
   invokeCliAdapter,
   toCliEnvironment,
 } from '../runners/invoke-cli-adapter.js';
+import { CLI_PROMPT_SENTINEL } from '../runners/cli-tools/candidate-contract.js';
 import { withOutputFormat } from '../runners/cli-tools/output-format.js';
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
 import type { CliPlannerAdapter } from '../runners/cli-tools/contract.js';
@@ -31,11 +32,13 @@ import {
 } from '../session-expiry.js';
 import { readSpecFile } from '../../core/paths-io.js';
 import { escapeRegExp } from '../../utils/regexp.js';
+import type { ChangedFilesBaseline } from '../orchestrator/changed-files-baseline.js';
 import {
   capturePlanningMutationBaseline,
   findUnexpectedPlanningMutations,
   planningMutationError,
 } from '../orchestrator/planning/mutation-guard.js';
+import { sha256Hex } from '../../utils/sha256.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { createRunnerAttemptCallbackBuffer } from '../calls/callback-buffer.js';
@@ -76,11 +79,53 @@ function mentionsWrittenArtifact(resultText: string, filename: string): boolean 
   ).test(resultText);
 }
 
-function readCliPhaseOutput(
+function extractInlineArtifactPaths(resultText: string, filename: string): string[] {
+  const mentions = resultText.match(
+    new RegExp(`[^\\s\`'"()\\[\\]]*${escapeRegExp(filename)}`, 'g'),
+  );
+  return [...new Set(mentions ?? [])].slice(0, 5);
+}
+
+let activePhaseMutationBaseline: ChangedFilesBaseline | null = null;
+
+function toConfinedRelativePath(projectDir: string, candidate: string): string | null {
+  const relativePath = relative(projectDir, resolve(projectDir, candidate));
+  if (!isPathConfined(relativePath, projectDir)) return null;
+  return relativePath;
+}
+
+function wasPathMutatedDuringPhase(
+  projectDir: string,
+  candidate: string,
+  baseline: ChangedFilesBaseline,
+): boolean {
+  const relativePath = toConfinedRelativePath(projectDir, candidate);
+  if (relativePath === null) return false;
+  const prior = baseline.fingerprints.get(relativePath);
+  if (prior === undefined) return true;
+  try {
+    const current = sha256Hex(readFileSync(resolve(projectDir, relativePath), 'utf-8'));
+    return current !== prior;
+  } catch {
+    return prior !== 'missing';
+  }
+}
+
+function acceptInlineArtifactPath(
+  projectDir: string,
+  candidate: string,
+  baseline: ChangedFilesBaseline | null,
+): boolean {
+  if (baseline === null) return true;
+  return wasPathMutatedDuringPhase(projectDir, candidate, baseline);
+}
+
+export function readCliPhaseOutput(
   filename: string,
   resultText: string,
   projectDir: string,
   sessionId?: string,
+  mutationBaseline?: ChangedFilesBaseline | null,
 ): string {
   const sessionArtifact = sessionId ? readSpecFile({ projectDir, sessionId }, filename) : null;
   if (sessionArtifact !== null) return sessionArtifact;
@@ -92,8 +137,16 @@ function readCliPhaseOutput(
   }
 
   if (mentionsWrittenArtifact(resultText, filename)) {
+    const baseline =
+      mutationBaseline !== undefined ? mutationBaseline : activePhaseMutationBaseline;
     const rootArtifact = readArtifactPath(projectDir, filename, join(projectDir, filename));
     if (rootArtifact !== null) return rootArtifact;
+
+    for (const candidate of extractInlineArtifactPaths(resultText, filename)) {
+      if (!acceptInlineArtifactPath(projectDir, candidate, baseline)) continue;
+      const artifact = readArtifactPath(projectDir, filename, candidate);
+      if (artifact !== null) return artifact;
+    }
   }
 
   return resultText;
@@ -133,6 +186,23 @@ export function createCliPlanner(
   const timeout = plannerCfg.timeout;
   const extraArgs = plannerCfg.args ?? [];
 
+  async function resolveExecutable(projectDir: string): Promise<CliExecutableIdentity> {
+    try {
+      return (
+        await resolveCliExecutableAliases({
+          commands: adapter.descriptor.executableAliases,
+          projectDir,
+          trust: assertCliStartGate(plannerCfg.tool, trustedCli),
+        })
+      ).executable;
+    } catch (err) {
+      if (isCliExecutableUnavailable(err)) {
+        throw processError.notFound(command, notFoundMessage);
+      }
+      throw err;
+    }
+  }
+
   async function runOnce(opts: {
     prompt: string;
     projectDir: string;
@@ -159,23 +229,9 @@ export function createCliPlanner(
     };
 
     try {
-      let executable: CliExecutableIdentity;
-      try {
-        executable = (
-          await resolveCliExecutableAliases({
-            commands: adapter.descriptor.executableAliases,
-            projectDir,
-            trust: assertCliStartGate(plannerCfg.tool, trustedCli),
-          })
-        ).executable;
-      } catch (err) {
-        if (isCliExecutableUnavailable(err)) {
-          throw processError.notFound(command, notFoundMessage);
-        }
-        throw err;
-      }
+      const executable = await resolveExecutable(projectDir);
       const baseArgs = adapter.baseArgs({
-        prompt: CLI_PROMPT_PLACEHOLDER,
+        prompt: CLI_PROMPT_SENTINEL,
         model: resolvedModel,
         projectDir,
         configuredArgs: extraArgs,
@@ -201,16 +257,17 @@ export function createCliPlanner(
         callContext,
         onOutput: attemptCallbacks.onOutput,
         onCallEvent,
-        onSessionId: supportsSessionResume
-          ? (id: string) => {
-              if (resumeId && id !== resumeId) {
-                unexpectedResumeSessionId = id;
-                return;
+        onSessionId:
+          supportsSessionResume && mode === 'plan'
+            ? (id: string) => {
+                if (resumeId && id !== resumeId) {
+                  unexpectedResumeSessionId = id;
+                  return;
+                }
+                session.capture(id);
+                attemptCallbacks.onSessionId?.(id);
               }
-              session.capture(id);
-              attemptCallbacks.onSessionId?.(id);
-            }
-          : undefined,
+            : undefined,
         idle: {
           warnMs: plannerCfg.idleWarnMs,
           killMs: plannerCfg.idleKillMs,
@@ -246,22 +303,40 @@ export function createCliPlanner(
       'onOutput' | 'onSessionId' | 'onSessionExpired' | 'sessionId' | 'onCallEvent'
     >;
     callContext: RunnerCallContext;
-    mode: 'plan' | 'escalate';
+    accessMode: 'planning' | 'read-only' | 'write-files';
+    artifactFile?: string | undefined;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<RunnerCallResult> {
-    const { prompt, projectDir, callbacks, callContext, mode, signal, sandboxEnv } = opts;
-    const planningBaseline =
-      mode === 'plan' && callbacks.sessionId
-        ? await capturePlanningMutationBaseline(projectDir)
-        : null;
+    const {
+      prompt,
+      projectDir,
+      callbacks,
+      callContext,
+      accessMode,
+      artifactFile,
+      signal,
+      sandboxEnv,
+    } = opts;
+    const shouldGuardMutations =
+      accessMode === 'read-only' ||
+      (accessMode === 'planning' && callbacks.sessionId !== undefined);
+    if (shouldGuardMutations) await resolveExecutable(projectDir);
+    const environment =
+      sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner'));
+    const mutationBaseline = shouldGuardMutations
+      ? await capturePlanningMutationBaseline(projectDir)
+      : null;
+    activePhaseMutationBaseline = mutationBaseline;
+    const adapterMode = accessMode === 'write-files' ? 'escalate' : 'plan';
 
     const finish = async (result: RunnerCallResult): Promise<RunnerCallResult> => {
-      if (planningBaseline && callbacks.sessionId) {
+      if (mutationBaseline !== null) {
         const unexpected = await findUnexpectedPlanningMutations({
           projectDir,
-          sessionId: callbacks.sessionId,
-          baseline: planningBaseline,
+          sessionId: callbacks.sessionId ?? '',
+          baseline: mutationBaseline,
+          artifactFile,
         });
         if (unexpected.length > 0) {
           throw planningMutationError.unexpectedMutations(unexpected);
@@ -277,10 +352,25 @@ export function createCliPlanner(
           projectDir,
           callbacks,
           callContext,
-          mode,
+          mode: adapterMode,
           resumeId: null,
           signal,
-          sandboxEnv,
+          sandboxEnv: environment,
+        }),
+      );
+    }
+
+    if (accessMode === 'write-files') {
+      return finish(
+        await runOnce({
+          prompt,
+          projectDir,
+          callbacks,
+          callContext,
+          mode: adapterMode,
+          resumeId: null,
+          signal,
+          sandboxEnv: environment,
         }),
       );
     }
@@ -295,10 +385,10 @@ export function createCliPlanner(
             projectDir,
             callbacks,
             callContext: createSessionAttemptCallContext(callContext, attempt),
-            mode,
+            mode: adapterMode,
             resumeId: resumeId ?? null,
             signal,
-            sandboxEnv,
+            sandboxEnv: environment,
           }),
         () => {
           if (priorId) callbacks.onSessionExpired?.(priorId);
@@ -308,13 +398,29 @@ export function createCliPlanner(
   }
 
   return createPlannerBase({
-    invokePlan: ({ prompt, projectDir, callbacks, callContext, signal }) =>
-      invoke({ prompt, projectDir, callbacks, callContext, mode: 'plan', signal }),
-    invokeEscalate: ({ prompt, projectDir, callbacks, callContext, signal, sandboxEnv }) =>
-      invoke({ prompt, projectDir, callbacks, callContext, mode: 'escalate', signal, sandboxEnv }),
+    invokePlan: ({ prompt, projectDir, callbacks, callContext, artifactFile, signal }) =>
+      invoke({
+        prompt,
+        projectDir,
+        callbacks,
+        callContext,
+        accessMode: 'planning',
+        artifactFile,
+        signal,
+      }),
+    invokeEscalate: ({
+      prompt,
+      projectDir,
+      callbacks,
+      callContext,
+      accessMode,
+      signal,
+      sandboxEnv,
+    }) => invoke({ prompt, projectDir, callbacks, callContext, accessMode, signal, sandboxEnv }),
     runnerName: plannerCfg.tool,
     ...(resolvedModel !== undefined && { model: resolvedModel }),
-    hintSuccessMode: 'files',
+    hintSuccessMode: 'text',
+    escalateFullMode: 'files',
     readPhaseOutput: readCliPhaseOutput,
 
     ...createCommandAvailability(baseAdapter.descriptor.executableAliases, {

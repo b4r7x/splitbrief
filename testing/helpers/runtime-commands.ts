@@ -32,6 +32,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     getCurrentPhase: () => 'idle',
     requestRewind: noopTrue,
     requestTaskRedo: noopTrue,
+    requestWorkflowResume: noopTrue,
     getQueueDepth: () => 0,
     clearQueue: () => ({ status: 'cleared', count: 0 }),
     rebuildRepomap: async () => ({ deleted: false, files: [] }),

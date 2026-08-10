@@ -221,8 +221,7 @@ export function parseRecoveryActionAnswer(
   if (normalized.length === 0) {
     return actions.includes('pause-run') ? 'pause-run' : null;
   }
-  const action =
-    normalized.length === 0 ? 'pause-run' : findAliasedActionAmong(normalized, actions);
+  const action = findAliasedActionAmong(normalized, actions);
   return action ?? null;
 }
 

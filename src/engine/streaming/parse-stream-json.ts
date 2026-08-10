@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type {
+  ParsedTextSemantics,
   ParsedUsageSemantics,
   ParsedTextChannel,
   ParsedWarningInfo,
@@ -14,6 +15,8 @@ import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './pars
 export interface StreamParseResult {
   text?: string | undefined;
   channel?: ParsedTextChannel | undefined;
+  /** `final` marks text that restates a block already streamed as deltas. */
+  textSemantics?: ParsedTextSemantics | undefined;
   sessionId?: string | undefined;
   isResult?: boolean | undefined;
   isError?: boolean | undefined;
@@ -70,7 +73,11 @@ function parseStreamEvent(event: Record<string, unknown>): StreamParseResult | n
   if (streamType === 'content_block_delta' && isRecord(streamEvent.delta)) {
     const delta = streamEvent.delta;
     if (delta.type === 'text_delta') {
-      const text = firstString(delta.text);
+      // Payload text is read verbatim: `firstString` trims and drops
+      // whitespace-only values, which is right for ids and discriminants and
+      // silently corrupts a message whose slices break on a space or a
+      // paragraph gap.
+      const text = typeof delta.text === 'string' ? delta.text : undefined;
       return text ? { text, channel: 'assistant', sessionId } : { sessionId };
     }
     if (delta.type === 'input_json_delta') {
@@ -165,6 +172,9 @@ export function parseStreamLine(line: string): StreamParseResult {
       return {
         text: texts.length > 0 ? texts.join('') : undefined,
         channel: texts.length > 0 ? 'assistant' : undefined,
+        // A non-partial `assistant` record restates the whole block whose
+        // `text_delta` slices already streamed; it replaces them, never appends.
+        textSemantics: texts.length > 0 ? 'final' : undefined,
         sessionId: assistant.data.session_id ?? undefined,
         toolUse: tools.length > 0 ? tools : undefined,
       };

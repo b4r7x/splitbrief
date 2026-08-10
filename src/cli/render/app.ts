@@ -1,4 +1,4 @@
-import { render } from 'ink';
+import { type Instance, render } from 'ink';
 import { withFullScreen } from 'fullscreen-ink';
 import type { createElement } from 'react';
 import { warnError } from '../../lib/warn.js';
@@ -41,6 +41,12 @@ interface RenderOptions {
   mouse?: boolean;
   hover?: boolean;
   projectDir?: string | undefined;
+  /**
+   * Aborting unmounts the TUI and resolves the render promise once the terminal
+   * is restored, so a caller that mounted Ink ahead of its own work can write to
+   * a plain terminal instead of into the alternate screen buffer.
+   */
+  unmountSignal?: AbortSignal | undefined;
 }
 
 type TerminationSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP';
@@ -84,11 +90,20 @@ export function createCrashListener(deps: {
   });
 }
 
+function unmountWhenSignalled(instance: Instance, signal: AbortSignal | undefined): void {
+  if (!signal) return;
+  if (signal.aborted) {
+    instance.unmount();
+    return;
+  }
+  signal.addEventListener('abort', () => instance.unmount(), { once: true });
+}
+
 export async function renderApp(
   appElement: ReturnType<typeof createElement>,
   options: RenderOptions,
 ): Promise<void> {
-  const { fullscreen, mouse, hover, projectDir } = options;
+  const { fullscreen, mouse, hover, projectDir, unmountSignal } = options;
   const kittyKeyboard = detectKittyKeyboardFlags();
   installTerminalOutputErrorGuard();
 
@@ -246,6 +261,7 @@ export async function renderApp(
           disableFilteredStdin,
         });
         const inst = renderFallback(fallbackStdin);
+        unmountWhenSignalled(inst, unmountSignal);
         try {
           await inst.waitUntilExit();
         } catch (fallbackErr) {
@@ -254,6 +270,7 @@ export async function renderApp(
         return;
       }
       if (!ink) return;
+      unmountWhenSignalled(ink.instance, unmountSignal);
       try {
         await ink.waitUntilExit();
       } catch (err) {
@@ -261,6 +278,7 @@ export async function renderApp(
       }
     } else {
       const inst = renderFallback();
+      unmountWhenSignalled(inst, unmountSignal);
       await inst.waitUntilExit();
     }
   } finally {

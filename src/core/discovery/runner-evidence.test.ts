@@ -68,7 +68,6 @@ function startAdmission(evidence: RunnerEvidence, requiredFacts: readonly StartF
     expectedSelectionId: 'gpt-5',
     requiredFacts,
     interaction: 'interactive',
-    runnerTier: 'first-class',
     unverifiedAuth: 'denied',
   });
 }
@@ -118,7 +117,39 @@ describe('runner evidence', () => {
       kind: 'installed-configurable',
       reason: 'unknown',
     });
+    // Interactive without an accepted disclosure surfaces the unverified
+    // credential for review rather than refusing a runner no cheap check can
+    // ever verify.
     expect(startAdmission(evidence, ['authentication'])).toEqual({
+      kind: 'disclosure-required',
+      auth: 'unknown',
+    });
+  });
+
+  it('admits unknown authentication only per policy: disclosed interactively, allowed headless', () => {
+    const evidence = freshEvidence({ auth: 'unknown', credential: 'present' });
+    const admit = (
+      interaction: 'interactive' | 'headless',
+      unverifiedAuth: 'denied' | 'disclosed' | 'allowed',
+    ) =>
+      admitStart({
+        evidence,
+        expectedContextKey: 'runner:codex:context-1',
+        expectedSelectionId: 'gpt-5',
+        requiredFacts: ['authentication'],
+        interaction,
+        unverifiedAuth,
+      });
+
+    expect(admit('interactive', 'disclosed')).toEqual({ kind: 'admitted' });
+    expect(admit('headless', 'allowed')).toEqual({ kind: 'admitted' });
+    // A headless run has nobody to disclose to; anything short of an explicit
+    // allowance stays fail-closed.
+    expect(admit('headless', 'disclosed')).toEqual({
+      kind: 'denied',
+      reason: { kind: 'authentication-unverified' },
+    });
+    expect(admit('headless', 'denied')).toEqual({
       kind: 'denied',
       reason: { kind: 'authentication-unverified' },
     });

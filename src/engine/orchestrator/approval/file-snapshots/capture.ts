@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { isInternalGitStatusPath } from '../../../../core/paths.js';
+import { isProcessOutputSink } from '../../../../lib/process/stdio-sinks.js';
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
 import { uniqueInOrder } from '../../../../utils/collections.js';
 import { getCommittedFilesSince } from '../../../../lib/git/diff.js';
@@ -109,14 +110,25 @@ async function getChangedFilesSinceBaselineHashes(
   return changedFiles.sort();
 }
 
+// The run's own stdout/stderr redirect targets grow with the run itself, so a
+// content-window diff would attribute them to whatever task happens to be
+// executing. They are never implementer work; drop them here so neither the
+// approval gate, the evidence ledger, nor drift analysis ever sees them.
+function withoutProcessOutputSinks(projectDir: string, files: string[]): string[] {
+  return files.filter((file) => !isProcessOutputSink(join(projectDir, file)));
+}
+
 export async function getChangedFilesSinceSnapshot(
   projectDir: string,
   snapshot: ChangedFilesSnapshot,
 ): Promise<string[]> {
   if (snapshot.baselineFileHashes !== undefined && !hasGitMetadata(projectDir)) {
-    return getChangedFilesSinceBaselineHashes(projectDir, snapshot.baselineFileHashes, {
-      ignoreProjectDir: snapshot.ignoreProjectDir,
-    });
+    return withoutProcessOutputSinks(
+      projectDir,
+      await getChangedFilesSinceBaselineHashes(projectDir, snapshot.baselineFileHashes, {
+        ignoreProjectDir: snapshot.ignoreProjectDir,
+      }),
+    );
   }
 
   const baseline = new Set(snapshot.files);
@@ -146,7 +158,8 @@ export async function getChangedFilesSinceSnapshot(
   const committedFiles = (await hasCommits(projectDir))
     ? uniqueProjectFiles(await getCommittedFilesSince(projectDir, snapshot.head))
     : [];
-  return uniqueInOrder([...newChanges, ...modifiedDirtyFiles, ...committedFiles])
+  const changed = uniqueInOrder([...newChanges, ...modifiedDirtyFiles, ...committedFiles])
     .filter((file) => !isInternalGitStatusPath(file))
     .sort();
+  return withoutProcessOutputSinks(projectDir, changed);
 }

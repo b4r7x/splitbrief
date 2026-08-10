@@ -189,15 +189,19 @@ describe('admitted readiness probe contracts', () => {
     });
     if (planner.declared.auth.kind === 'not-run')
       throw new Error('expected Codex auth status probe');
+    // `codex login status` reads auth.json and never talks to the server: a
+    // host with an already-burned refresh token still prints "Logged in using
+    // ChatGPT" while every real call 401s (measured 2026-08-06). A positive
+    // local status is therefore presence, never proof — capped at `unknown`.
     expect(
       planner.declared.auth.parse({
-        stdout: 'Logged in',
+        stdout: 'Logged in using ChatGPT',
         stderr: '',
         exitCode: 0,
         timedOut: false,
         outputExceeded: false,
       }),
-    ).toBe('verified');
+    ).toBe('unknown');
     expect(
       planner.declared.auth.parse({
         stdout: 'Not logged in',

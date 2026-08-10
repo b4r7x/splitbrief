@@ -22,7 +22,7 @@ export type PlannerCapabilities = {
   supportsConversationalPlanning: boolean;
   /** Planner can produce a short hint before escalating to full fix. */
   supportsHintEscalation: boolean;
-  /** Backend exposes a session handle that can be reused on resume (e.g. Claude Code --session-id). */
+  /** Backend exposes a session handle that can be reused on resume (e.g. Claude Code --resume). */
   supportsSessionResume: boolean;
   /** Backend honours an effort/reasoning hint (Claude Code prefix, Codex flag, Anthropic thinking, OpenAI reasoning_effort). */
   supportsEffort: boolean;
@@ -89,7 +89,7 @@ export interface PlannerCallbacks {
   onOutput: (text: string) => void;
   onPhase?: ((phase: Phase) => void) | undefined;
   onQuestion?: ((questions: ClarificationQuestion[]) => void) | undefined;
-  /** Emitted when the backend reports its native session handle (e.g. Claude Code --session-id). */
+  /** Emitted when the backend reports its native session handle (e.g. Claude Code stream-json session_id). */
   onSessionId?: ((sessionId: string) => void) | undefined;
   /** Emitted when a previously-valid session handle is rejected by the backend. */
   onSessionExpired?: ((previousId: string) => void) | undefined;

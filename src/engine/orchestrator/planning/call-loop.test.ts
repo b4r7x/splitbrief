@@ -19,6 +19,7 @@ import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { HEARTBEAT_THRESHOLD_MS } from './heartbeat.js';
 import { HEARTBEAT_INTERVAL_MS } from '../../constants.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
+import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { Config } from '../../../core/schemas/config.js';
 
@@ -175,6 +176,66 @@ describe('runPlannerCallInContinuationLoop — heartbeat cleanup', () => {
       }),
     );
   });
+
+  it('heartbeat accumulatedTokens is non-zero after a planner call reports usage', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      quickPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onCallEvent?.({
+            type: 'call_started',
+            ts: Date.now(),
+            callId: 'planner-call-1',
+            role: 'planner',
+            backendKind: 'cli',
+          });
+          await new Promise((resolve) => setTimeout(resolve, HEARTBEAT_THRESHOLD_MS + 100));
+          return {
+            spec: '',
+            plan: '',
+            tasks: [makeTask()],
+            usage: { inputTokens: 100, outputTokens: 50 },
+          };
+        }),
+    });
+    const wctx = makeWctx(projectDir, sessionId, {
+      bus,
+      config: makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'openrouter',
+          apiBase: 'https://openrouter.ai/api/v1',
+          apiKey: 'test-key',
+          model: 'test',
+        },
+      }),
+    });
+
+    const run = runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(HEARTBEAT_THRESHOLD_MS);
+    await vi.advanceTimersByTimeAsync(100);
+    await run;
+
+    const heartbeat = events.find(
+      (e) =>
+        e.type === 'planner_heartbeat' && e.callId === 'planner-call-1' && e.accumulatedTokens > 0,
+    );
+    expect(heartbeat).toBeDefined();
+    if (heartbeat?.type === 'planner_heartbeat') {
+      expect(heartbeat.accumulatedTokens).toBeGreaterThan(0);
+      expect(heartbeat.accumulatedTokens).toBe(150);
+    }
+  });
 });
 
 describe('runPlannerCallInContinuationLoop — signal propagation', () => {
@@ -278,6 +339,43 @@ describe('runPlannerCallInContinuationLoop — quick zero-task recovery', () => 
       { text: '# retry tasks', filename: 'tasks.md' },
       { text: '# first spec', filename: 'spec.md' },
     ]);
+  });
+
+  it('sends a corrective retry prompt carrying the first attempt’s parse diagnostics', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const parseDiagnostic =
+      'No Task Brief was parsed: the output contains a ``` code fence, but neither the fenced content nor the text around it has a --- frontmatter block with an id: field.';
+    const prompts: string[] = [];
+    const quickPlan = vi
+      .fn()
+      .mockImplementation(
+        async ({ feature, callbacks }: { feature: string; callbacks: PlannerCallbacks }) => {
+          prompts.push(feature);
+          if (prompts.length === 1) {
+            callbacks.onWarning?.(parseDiagnostic);
+            return { spec: '', plan: '', tasks: [], usage: null };
+          }
+          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+        },
+      );
+    const planner = makePlanner({ quickPlan });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWctx(projectDir, sessionId, { bus });
+
+    const { result } = await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    expect(result.tasks).toHaveLength(1);
+    expect(prompts[0]).toBe('test feature');
+    expect(prompts[1]).toBe(zeroTaskRetryPrompt('test feature', [parseDiagnostic]));
+    expect(
+      events.filter((e) => e.type === 'warning' && 'message' in e && e.message === parseDiagnostic),
+    ).toHaveLength(1);
   });
 
   it('leaves the zero-task warning to the caller that persists the planner text', async () => {

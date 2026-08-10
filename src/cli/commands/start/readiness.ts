@@ -13,7 +13,7 @@ import {
   formatReadinessBlockers,
   readinessBlockerPointer,
 } from '../../../core/readiness/format.js';
-import { clearStaleSession } from '../../../core/sessions/guards.js';
+import { assertNoLiveSession, clearStaleSession } from '../../../core/sessions/guards.js';
 import { sessionError } from '../../../core/sessions/errors.js';
 import { detectAvailableCliReadiness } from '../../../engine/detection/detect.js';
 import {
@@ -72,17 +72,25 @@ export const detectConfiguredCliReadiness: DetectCliReadiness = async ({ project
   return detectAvailableCliReadiness({ projectDir, tools, authChannels });
 };
 
-export function clearStaleSessionForCli(
-  projectDir: string,
-  liveSession: 'reject' | 'defer-to-preparation',
-): void {
+// A live session is left in place: preparation readiness reports it as the
+// `repo.active-session-live` blocker with its remediation.
+export function clearStaleSessionForCli(projectDir: string): void {
   try {
     clearStaleSession(projectDir);
   } catch (err) {
-    if (sessionError.isStillActive(err)) {
-      if (liveSession === 'defer-to-preparation') return;
-      throw cliError(err.message, 1);
-    }
+    if (sessionError.isStillActive(err)) return;
+    throw err;
+  }
+}
+
+// For surfaces that only open the TUI (home, setup): refuse to run alongside a
+// live session, but never touch the active pointer — deleting it would break
+// `splitbrief resume` for the stale-but-resumable case.
+export function assertNoLiveSessionForCli(projectDir: string): void {
+  try {
+    assertNoLiveSession(projectDir);
+  } catch (err) {
+    if (sessionError.isStillActive(err)) throw cliError(err.message, 1);
     throw err;
   }
 }
@@ -152,6 +160,12 @@ export async function prepareStartExecution(
     defaultApprove?: 'none' | undefined;
     emitReadiness: (report: ReadinessReport) => void;
     prepare?: typeof prepareExecution | undefined;
+    /**
+     * Interactive starts mount the TUI before preparation resolves. Ink owns the
+     * alternate screen buffer and erases it on exit, so every outcome that prints
+     * a blocker report or throws hands the terminal back through this hook first.
+     */
+    releaseTerminal?: (() => Promise<void>) | undefined;
   }>,
 ): Promise<PreparedExecution> {
   const config = resolveRunConfig({
@@ -160,7 +174,7 @@ export async function prepareStartExecution(
     ...(input.defaultApprove !== undefined && { defaultApprove: input.defaultApprove }),
   });
   if (input.transport === 'json') assertHeadlessTaskReviewDisabled(config);
-  clearStaleSessionForCli(input.projectDir, 'defer-to-preparation');
+  clearStaleSessionForCli(input.projectDir);
   const interaction = input.transport === 'interactive' ? 'interactive' : 'headless';
   const outcome = await (input.prepare ?? prepareExecution)({
     projectDir: input.projectDir,
@@ -186,6 +200,7 @@ export async function prepareStartExecution(
       }
     }
   }
+  if (outcome.kind !== 'prepared') await input.releaseTerminal?.();
   return preparedExecutionOrThrow(
     outcome,
     input.transport === 'interactive' ? 'prose' : 'structured',

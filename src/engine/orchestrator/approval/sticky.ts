@@ -1,4 +1,3 @@
-import type { Task } from '../../../core/schemas/task.js';
 import type { ApprovalGrant } from '../../../core/schemas/approval-store.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import { extractActionPattern, matchesActionPattern } from './action-classifier.js';
@@ -10,11 +9,8 @@ import {
   publishApprovalRejected,
 } from './events.js';
 import type { ActionClass } from '../../../core/schemas/enums.js';
+import { taskScopePatterns } from '../task-scope.js';
 import { isConfiguredHeadless, type GateActionInput, type GateDecision } from './types.js';
-
-export function taskScopePatterns(task: Task): string[] {
-  return [...(task.scope?.inBounds ?? []), ...(task.scope?.approvedOutOfBounds ?? [])];
-}
 
 function mergeGrant(grants: ApprovalGrant[], grant: ApprovalGrant): ApprovalGrant[] | null {
   const alwaysExists = grants.some(

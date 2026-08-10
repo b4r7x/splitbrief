@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createImplementerBase } from './run.js';
+import { runnerCallOutcome } from './call-result.js';
 import type { RunnerCallContext } from '../../calls/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
@@ -178,6 +179,159 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
       expect(result.output).toBe('partial before abort');
       expect(result.error).toBe('Aborted');
       expect(result.usage).toEqual({ inputTokens: 1, outputTokens: 1 });
+    }
+  });
+});
+
+// Captured verbatim from `codex exec --json` (codex-cli 0.146.0, 2026-08-06).
+const CODEX_BURNED_REFRESH =
+  'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
+const CODEX_SIGNED_OUT =
+  'unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses';
+
+describe('runnerCallOutcome — auth-failure classification', () => {
+  function failed(code: string, message: string) {
+    return makeRunnerCallResult({
+      status: 'failed',
+      text: '',
+      error: { code, message },
+    });
+  }
+
+  it('maps the real codex burned-refresh turn failure to unauthenticated', () => {
+    expect(runnerCallOutcome(failed('codex-turn-failed', CODEX_BURNED_REFRESH)).state).toBe(
+      'unauthenticated',
+    );
+  });
+
+  it('maps the codex signed-out 401 error record to unauthenticated', () => {
+    expect(runnerCallOutcome(failed('codex-error', CODEX_SIGNED_OUT)).state).toBe(
+      'unauthenticated',
+    );
+  });
+
+  it('maps the Claude Code signed-out result to unauthenticated', () => {
+    expect(
+      runnerCallOutcome(failed('runner_result_error', 'Invalid API key · Please run /login')).state,
+    ).toBe('unauthenticated');
+  });
+
+  it('keeps a stable error code authoritative over the message', () => {
+    expect(runnerCallOutcome(failed('timeout', 'Please run /login')).state).toBe('timeout');
+  });
+
+  it('leaves non-auth turn failures on protocol-failure', () => {
+    expect(runnerCallOutcome(failed('codex-turn-failed', 'Codex turn failed')).state).toBe(
+      'protocol-failure',
+    );
+    expect(runnerCallOutcome(failed('runner_result_error', 'Overloaded: please retry')).state).toBe(
+      'protocol-failure',
+    );
+  });
+
+  it('surfaces unauthenticated on the ImplementerResult when the pipeline runs the call', async () => {
+    const invoke = vi.fn().mockResolvedValue(failed('codex-turn-failed', CODEX_BURNED_REFRESH));
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, backendKind: 'cli', invoke }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.outcome).toBe('unauthenticated');
+      expect(result.error).toBe(CODEX_BURNED_REFRESH);
+    }
+  });
+});
+
+// Captured live from `codex exec --json` on 2026-08-06 against an account at
+// its usage limit.
+const CODEX_USAGE_LIMIT =
+  "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Aug 8th, 2026 3:27 PM.";
+
+describe('runnerCallOutcome — usage-limit classification', () => {
+  function failed(code: string, message: string) {
+    return makeRunnerCallResult({
+      status: 'failed',
+      text: '',
+      error: { code, message },
+    });
+  }
+
+  it('maps the live codex usage-limit turn failure to usage-limit, not auth', () => {
+    const outcome = runnerCallOutcome(failed('codex-turn-failed', CODEX_USAGE_LIMIT));
+    expect(outcome.state).toBe('usage-limit');
+    expect(outcome.remediation).not.toMatch(/log ?in|log ?out|authenticate/i);
+  });
+
+  it('maps Claude Code limit and credit-exhaustion result texts to usage-limit', () => {
+    expect(
+      runnerCallOutcome(
+        failed('runner_result_error', "You've hit your session limit · resets 3:45pm"),
+      ).state,
+    ).toBe('usage-limit');
+    expect(
+      runnerCallOutcome(failed('runner_result_error', 'Credit balance is too low')).state,
+    ).toBe('usage-limit');
+  });
+
+  it('surfaces usage-limit on the ImplementerResult when the pipeline runs the call', async () => {
+    const invoke = vi.fn().mockResolvedValue(failed('codex-error', CODEX_USAGE_LIMIT));
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, backendKind: 'cli', invoke }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.outcome).toBe('usage-limit');
+      expect(result.error).toBe(CODEX_USAGE_LIMIT);
+    }
+  });
+
+  it('classifies a thrown provider 429 as usage-limit and keeps the raw detail', async () => {
+    const { streamError } = await import('../../streaming/stream-errors.js');
+    const invoke = vi
+      .fn()
+      .mockRejectedValue(
+        streamError.httpStatus(
+          'openrouter',
+          429,
+          '429 You exceeded your current quota, please check your plan and billing details.',
+        ),
+      );
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, backendKind: 'api', invoke }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.outcome).toBe('usage-limit');
+      expect(result.error).toBe(
+        '429 You exceeded your current quota, please check your plan and billing details.',
+      );
     }
   });
 });

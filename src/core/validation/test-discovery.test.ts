@@ -32,6 +32,28 @@ describe('findAffectedTestFile', () => {
     expect(result).toBeNull();
   });
 
+  it('resolves a task whose file is itself a TS test file to that file', () => {
+    writeFileSync(join(tmpDir, 'src', 'text.test.ts'), '');
+    expect(findAffectedTestFile('src/text.test.ts', tmpDir)).toBe(
+      join(tmpDir, 'src', 'text.test.ts'),
+    );
+  });
+
+  it('resolves a task whose file matches the custom test pattern to that file', () => {
+    writeFileSync(join(tmpDir, 'src', 'handler_test.go'), '');
+    expect(findAffectedTestFile('src/handler_test.go', tmpDir, '*_test.go')).toBe(
+      join(tmpDir, 'src', 'handler_test.go'),
+    );
+    writeFileSync(join(tmpDir, 'src', 'test_handler.py'), '');
+    expect(findAffectedTestFile('src/test_handler.py', tmpDir, 'test_*.py')).toBe(
+      join(tmpDir, 'src', 'test_handler.py'),
+    );
+  });
+
+  it('returns null for a test-file task that does not exist on disk', () => {
+    expect(findAffectedTestFile('src/missing.test.ts', tmpDir)).toBeNull();
+  });
+
   it('finds Python test file with prefix pattern', () => {
     writeFileSync(join(tmpDir, 'src', 'test_handler.py'), '');
     const result = findAffectedTestFile('src/handler.py', tmpDir, 'test_*.py');

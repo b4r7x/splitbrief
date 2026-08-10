@@ -9,6 +9,7 @@ import type { PickerOption } from './model-catalog/options.js';
 import type { RunnerPermissionPosture } from './model-catalog/posture.js';
 import type { PickerOptionStatus } from './model-catalog/status.js';
 import type { ProviderAuthAction } from './provider-auth.js';
+import { assertNever } from '../../utils/type-guards.js';
 
 const DETECTING_MODELS_COPY = 'Detecting models…';
 
@@ -38,6 +39,8 @@ export function formatPickerStatusLabel(status: PickerOptionStatus): string | un
       return 'Unverified';
     case 'disabled':
       return 'Disabled';
+    default:
+      return assertNever(status);
   }
 }
 

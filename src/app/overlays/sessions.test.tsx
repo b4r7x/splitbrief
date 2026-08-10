@@ -141,11 +141,11 @@ describe('SessionsPicker', () => {
     await flushEffects();
 
     instance.stdin.write('interrupted');
-    await tick(1);
-
-    let frame = instance.lastFrame() ?? '';
-    expect(frame).toContain('alpha feature');
-    expect(frame).not.toContain('beta feature');
+    await vi.waitFor(() => {
+      const current = instance.lastFrame() ?? '';
+      expect(current).toContain('alpha feature');
+      expect(current).not.toContain('beta feature');
+    });
 
     instance.unmount();
 
@@ -154,11 +154,11 @@ describe('SessionsPicker', () => {
     await flushEffects();
 
     byId.stdin.write('hidden-id');
-    await tick(1);
-
-    frame = byId.lastFrame() ?? '';
-    expect(frame).toContain('beta feature');
-    expect(frame).not.toContain('alpha feature');
+    await vi.waitFor(() => {
+      const current = byId.lastFrame() ?? '';
+      expect(current).toContain('beta feature');
+      expect(current).not.toContain('alpha feature');
+    });
 
     byId.unmount();
   });
@@ -246,11 +246,12 @@ describe('SessionsPicker', () => {
     await flushEffects();
 
     instance.stdin.write('alpha-feature-filter');
-    await tick(1);
+    await vi.waitFor(() => {
+      expect(instance.lastFrame() ?? '').toContain('alpha-feature');
+    });
 
     const frame = instance.lastFrame() ?? '';
     expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
-    expect(frame).toContain('alpha-feature');
     expect(frame).toContain('navigate');
 
     instance.unmount();
@@ -274,13 +275,14 @@ describe('SessionsPicker', () => {
     await flushEffects();
 
     instance.stdin.write('alpha-feature-filter');
-    await tick(1);
+    await vi.waitFor(() => {
+      expect(instance.lastFrame() ?? '').toContain('alpha-feature');
+    });
 
     const frame = instance.lastFrame() ?? '';
     expect(frame.split('\n').length).toBeLessThanOrEqual(terminalRows);
     expect(stripAnsiStyles(frame)).toContain('Sessions · 1');
     expect(frame).toContain('navigate');
-    expect(frame).toContain('alpha-feature');
     expect(frame).not.toContain('No matching sessions');
 
     instance.unmount();

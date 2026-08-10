@@ -19,6 +19,9 @@ export type CreateWorktreeOptions = {
   slug: string;
   git: GitClient;
   requireCleanSource?: boolean;
+  // Run isolation places its worktree outside `.trees/` and resolves that path
+  // itself; without it the slug names a directory under the project root.
+  worktreeDir?: string;
 };
 
 async function propagateSplitbriefState(projectDir: string, wtPath: string): Promise<void> {
@@ -45,7 +48,7 @@ async function initWorktreeSubmodules(
 
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
   const { projectDir, slug, git, requireCleanSource = true } = opts;
-  const wtPath = resolveConfinedWorktreePath(projectDir, slug);
+  const wtPath = opts.worktreeDir ?? resolveConfinedWorktreePath(projectDir, slug);
   const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${slug}`;
 
   const status = await git.status();

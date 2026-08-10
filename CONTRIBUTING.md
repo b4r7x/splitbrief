@@ -36,7 +36,7 @@ npm run lint                  # Biome check
 npm run format                # Biome format --write
 npm test                      # vitest run
 npm run test:watch            # vitest watch mode
-npm run test:coverage         # vitest run --coverage
+npm run test:coverage         # tsx scripts/coverage-run.ts (vitest --coverage + run pruning)
 npm run test-ci               # format -> typecheck -> lint -> test:coverage -> e2e -> invariants
 ```
 
@@ -80,7 +80,7 @@ Full rule index: [docs/PRINCIPLES.md](./docs/PRINCIPLES.md).
 - Multi-folder flows live in `testing/integration/{cli,orchestrator,ui}/`.
 - Assert on observable state (store contents, files on disk, emitted events) — never on call counts.
 - No `vi.mock('./sibling.js')`, no `vi.spyOn` on internal modules.
-- Extend the existing `createFakePlanner` / `createFakeImplementer` in `testing/helpers/orchestrator-factories.ts` — do not add new fakes.
+- Extend `fauxPlanner` / `fauxImplementer` in `testing/helpers/faux/` — do not add new fakes. Legacy `makePlanner` / `makeImplementer` in `testing/helpers/orchestrator-factories.ts` remain for older suites only.
 - Sanctioned `vi.mock` targets, forbidden patterns, and the manual smoke checklist live in [docs/TESTING.md](./docs/TESTING.md).
 
 ## Commits

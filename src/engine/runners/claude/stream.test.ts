@@ -60,6 +60,37 @@ describe('Claude stream credential redaction', () => {
     expect(persisted).toContain('***REDACTED***');
   });
 
+  it('streams a partial message once when the assistant record restates it', () => {
+    const deltas = ['returning `a', ' - b`', '\n\n', 'second para.'];
+    const message = deltas.join('');
+    const output: string[] = [];
+    const { state, handleLine } = createStreamHandler({
+      context,
+      onOutput: (text) => output.push(text),
+    });
+
+    for (const text of deltas) {
+      handleLine(
+        JSON.stringify({
+          type: 'stream_event',
+          session_id: 'sess-partial',
+          event: { type: 'content_block_delta', delta: { type: 'text_delta', text } },
+        }),
+      );
+    }
+    handleLine(
+      JSON.stringify({
+        type: 'assistant',
+        session_id: 'sess-partial',
+        message: { content: [{ type: 'text', text: message }] },
+      }),
+    );
+    handleLine(JSON.stringify({ type: 'result', session_id: 'sess-partial', result: message }));
+
+    expect(output.join('')).toBe(message);
+    expect(finishClaudeStream(state).text).toBe(message);
+  });
+
   it('returns a typed, redacted interruption while preserving timeout taxonomy', () => {
     const credential = 'opaque-claude-interrupt-credential-canary-7d93c612';
     const controller = new AbortController();

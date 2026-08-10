@@ -91,11 +91,16 @@ function startDeps(run: { gates?: readonly RunnerGate[] | undefined }): Partial<
   };
 }
 
+// A cheap auth probe proves a credential exists, never that the server still
+// honours it, so fresh CLI evidence reports auth as unknown and a headless
+// start stays fail-closed without --allow-unverified-auth. These fixtures
+// accept unverified auth so the assertions stay about version admission.
 function startWithFreshPreparation() {
   const run: { gates?: readonly RunnerGate[] | undefined } = {};
-  return runCommand(['start', '--project', tmp, '--json', 'add endpoint'], startDeps(run)).then(
-    (result) => ({ ...result, run }),
-  );
+  return runCommand(
+    ['start', '--project', tmp, '--json', '--allow-unverified-auth', 'add endpoint'],
+    startDeps(run),
+  ).then((result) => ({ ...result, run }));
 }
 
 describe('CLI integration: fresh CLI runner start gate', () => {
@@ -110,6 +115,23 @@ describe('CLI integration: fresh CLI runner start gate', () => {
     expect(exitCode).not.toBe(0);
     expect(stdoutWrites.join('')).toContain('Fresh CLI evidence denied admission: compatibility.');
     expect(run.gates).toBeUndefined();
+    expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
+  });
+
+  it('fail-closes a headless start on unverified auth and names the escape hatch', async () => {
+    activateCodexShim('0.999.0');
+
+    const run: { gates?: readonly RunnerGate[] | undefined } = {};
+    const { exitCode } = await runCommand(
+      ['start', '--project', tmp, '--json', 'add endpoint'],
+      startDeps(run),
+    );
+
+    expect(exitCode).not.toBe(0);
+    expect(run.gates).toBeUndefined();
+    const emitted = stdoutWrites.join('');
+    expect(emitted).toContain('Fresh CLI evidence denied admission: authentication-unverified.');
+    expect(emitted).toContain('--allow-unverified-auth');
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
   });
 

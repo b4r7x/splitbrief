@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createValidator } from './run.js';
+import { runValidationStep } from './stage.js';
 import { createEventBus } from '../../events/bus.js';
 import type { EngineEvent, EngineEventOf } from '../../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -106,5 +107,24 @@ describe('validation output redaction', () => {
     });
 
     expect(results[0]?.output?.length).toBeLessThanOrEqual(4097);
+  });
+
+  it('keeps the tail of long passing test output so the runner summary line survives', async () => {
+    const filler = Array.from({ length: 400 }, (_, i) => `check ${i} passed`).join('\n');
+    const stdout = `${filler}\nTest Files  1 passed (1)\n     Tests  4 passed (4)`;
+    const result = await runValidationStep({
+      stage: 'test',
+      cmd: 'npm',
+      args: ['test'],
+      source: 'config',
+      cwd: tempDir,
+      timeout: 1000,
+      runCommand: async () => ({ stdout, stderr: '', code: 0 }),
+      command: 'npm test',
+    });
+
+    expect(result.passed).toBe(true);
+    expect(result.output).toContain('Tests  4 passed (4)');
+    expect((result.output ?? '').length).toBeLessThanOrEqual(4096);
   });
 });

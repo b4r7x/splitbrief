@@ -1,6 +1,10 @@
 import { join, relative } from 'node:path';
 import { z } from 'zod';
-import { confinedReadFileAsync, confinedUnlinkSync } from '../../lib/confined-fs.js';
+import {
+  confinedExists,
+  confinedReadFileAsync,
+  confinedUnlinkSync,
+} from '../../lib/confined-fs.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import {
   CliExecutableFingerprintSchema,
@@ -373,6 +377,16 @@ async function readCache(projectDir: string): Promise<DetectionCache | null> {
     return null;
   }
   return parseCache(raw);
+}
+
+/**
+ * Whether an earlier run already remembered detection results for this project.
+ * Only a completed detection pass writes the record, so presence alone answers
+ * it — and answers it synchronously, for callers on the startup path that must
+ * decide before any store hydrates.
+ */
+export function hasRememberedDetection(projectDir: string): boolean {
+  return confinedExists(projectDir, CACHE_RELATIVE_PATH);
 }
 
 /**

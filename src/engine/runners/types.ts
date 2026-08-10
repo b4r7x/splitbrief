@@ -7,6 +7,7 @@ import type {
   RUNNER_CALL_WARNING_SEVERITIES,
   RUNNER_CALL_WARNING_SURFACES,
 } from '../../core/runner-call-contract.js';
+import type { RunnerCallTextSemantics } from '../calls/types.js';
 
 export interface ToolUseInfo {
   id?: string | undefined;
@@ -35,6 +36,7 @@ export interface ParsedWarningInfo {
 }
 
 export type ParsedTextChannel = RunnerCallTextChannel;
+export type ParsedTextSemantics = RunnerCallTextSemantics;
 export type ParsedUsageSemantics = (typeof RUNNER_CALL_USAGE_SEMANTICS)[number];
 
 export type ParsedLine =

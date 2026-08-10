@@ -126,6 +126,8 @@ export const spawnPipeError = {
 export interface SpawnIdleOptions {
   warnMs: number;
   killMs: number;
+  /** Names the subject in the idle diagnostic so it need not carry the resolved binary path. */
+  label?: string | undefined;
   onWarn?: ((silentMs: number) => void) | undefined;
   onClear?: (() => void) | undefined;
 }
@@ -322,7 +324,11 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       idleKillTimer = setTimeout(() => {
         terminate({
           kind: 'error',
-          error: processError.idleTimeout({ command: opts.command, idleMs: idle.killMs }),
+          error: processError.idleTimeout({
+            command: opts.command,
+            label: idle.label,
+            idleMs: idle.killMs,
+          }),
         });
       }, idle.killMs);
       idleKillTimer.unref?.();

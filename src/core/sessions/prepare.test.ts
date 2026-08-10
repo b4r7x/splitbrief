@@ -20,9 +20,18 @@ vi.mock('node:fs', async (importOriginal) => {
 });
 
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { lockSibling } from '../../lib/file-lock.js';
-import { activeFile, READINESS_FILE, sessionDir, sessionsRoot } from '../paths.js';
+import {
+  activeFile,
+  LOCKFILE,
+  READINESS_FILE,
+  sessionDir,
+  sessionsRoot,
+  STATE_FILE,
+} from '../paths.js';
+import { createInitialState } from '../state/machine.js';
 import { readActive, writeActive } from './lifecycle.js';
 import {
   acceptDetachedSessionHandoff,
@@ -84,6 +93,13 @@ function prepareInput(
       sessionId,
     }),
   };
+}
+
+function writeInterruptedState(project: string, sessionId: string): void {
+  writeFileSync(
+    join(sessionDir(project, sessionId), STATE_FILE),
+    JSON.stringify({ ...createInitialState('interrupted run'), phase: 'implementing' }),
+  );
 }
 
 function replaceSessionDirectory(project: string, sessionId: string): void {
@@ -186,6 +202,39 @@ describe('prepareNewSession', () => {
       dev: expect.stringMatching(/^\d+$/),
       ino: expect.stringMatching(/^\d+$/),
     });
+  });
+
+  it('a stale `.splitbrief/active` does not block `prepareExecution`/`prepareNewSession` for a new workflow', () => {
+    const project = projectDir();
+    const signal = new AbortController().signal;
+    const interrupted = '2026-08-03-interrupted';
+    const fresh = '2026-08-03-after-interrupt';
+    expect(prepareNewSession(prepareInput(project, interrupted, signal)).kind).toBe('prepared');
+    writeInterruptedState(project, interrupted);
+
+    const result = prepareNewSession(prepareInput(project, fresh, signal));
+
+    expect(result.kind).toBe('prepared');
+    expect(readActive(project)).toBe(fresh);
+    expect(existsSync(sessionDir(project, interrupted))).toBe(true);
+  });
+
+  it('refuses to publish over a live session and leaves its active pointer intact', () => {
+    const project = projectDir();
+    const signal = new AbortController().signal;
+    const live = '2026-08-03-live-run';
+    const attempted = '2026-08-03-blocked-by-live';
+    expect(prepareNewSession(prepareInput(project, live, signal)).kind).toBe('prepared');
+    writeInterruptedState(project, live);
+    writeFileSync(
+      join(sessionDir(project, live), LOCKFILE),
+      JSON.stringify(makeSessionLockfile(live)),
+    );
+
+    expect(() => prepareNewSession(prepareInput(project, attempted, signal))).toThrow();
+
+    expect(readActive(project)).toBe(live);
+    expect(existsSync(sessionDir(project, attempted))).toBe(false);
   });
 
   it('rolls back only the owned session when aborted at each mutation boundary', () => {

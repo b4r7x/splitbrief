@@ -10,6 +10,7 @@ import { composeSteeredPrompt } from '../../implementers/types.js';
 import type { PhaseResult, PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type { PlannerCallRunResult, PlannerCallOptions } from './types.js';
+import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 
 export const MAX_CLARIFICATION_QUESTIONS = 5;
 
@@ -37,11 +38,6 @@ export async function runPlannerCallInContinuationLoop(
 
   const heartbeat = startPlannerHeartbeat(wctx.bus, state.phase, Date.now());
   if (opts.phaseHint) heartbeat.updatePhaseHint(opts.phaseHint);
-  const unsubscribeHeartbeat = wctx.bus.subscribe((e) => {
-    if (e.type === 'cost_update') {
-      heartbeat.updateTokens((e.tokenUsage.plannerInput ?? 0) + (e.tokenUsage.plannerOutput ?? 0));
-    }
-  });
 
   try {
     const loop = await withContinuationLoop<PlanResult>({
@@ -119,16 +115,29 @@ export async function runPlannerCallInContinuationLoop(
 
         if (mode === 'quick') {
           const quickPlanFn = planner.quickPlan ?? planner.plan;
-          const runQuickCall = () =>
+          const runQuickCall = (callPrompt: string, callCallbacks: PlannerCallbacks) =>
             quickPlanFn.call(planner, {
-              feature: prompt,
+              feature: callPrompt,
               projectDir,
-              callbacks: plannerCallbacks,
+              callbacks: callCallbacks,
               codebaseContext,
             });
-          let result = await runQuickCall();
+          const parseDiagnostics: string[] = [];
+          let result = await runQuickCall(prompt, {
+            ...plannerCallbacks,
+            onWarning: (message) => {
+              parseDiagnostics.push(message);
+              plannerCallbacks.onWarning?.(message);
+            },
+          });
+          heartbeat.updateTokens(plannerCallTokens(result.usage));
           if (result.tasks.length === 0) {
-            result = mergePlannerAttempts(result, await runQuickCall());
+            const retry = await runQuickCall(
+              zeroTaskRetryPrompt(prompt, parseDiagnostics),
+              plannerCallbacks,
+            );
+            heartbeat.updateTokens(plannerCallTokens(retry.usage));
+            result = mergePlannerAttempts(result, retry);
           }
           const rest = stripper.flush();
           if (rest.length > 0) textHandler(rest);
@@ -141,6 +150,7 @@ export async function runPlannerCallInContinuationLoop(
           skillsContext,
           codebaseContext,
         });
+        heartbeat.updateTokens(plannerCallTokens(result.usage));
         const rest = stripper.flush();
         if (rest.length > 0) textHandler(rest);
         return result;
@@ -150,8 +160,12 @@ export async function runPlannerCallInContinuationLoop(
     return { state, result: loop.value };
   } finally {
     heartbeat.stop();
-    unsubscribeHeartbeat();
   }
+}
+
+function plannerCallTokens(usage: TokenDelta | null): number {
+  if (usage === null) return 0;
+  return usage.inputTokens + usage.outputTokens;
 }
 
 /**

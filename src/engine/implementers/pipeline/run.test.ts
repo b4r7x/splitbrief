@@ -358,6 +358,34 @@ describe('createImplementerBase — retry', () => {
   });
 });
 
+describe('createImplementerBase — thrown provider auth failures', () => {
+  it("thrown 401 provider error yields outcome 'unauthenticated' with the provider detail preserved", async () => {
+    const { streamError } = await import('../../streaming/stream-errors.js');
+    const providerDetail =
+      '401 Invalid API key provided: Missing bearer or basic authentication in header.';
+    const invoke = vi
+      .fn()
+      .mockRejectedValue(streamError.httpStatus('openrouter', 401, providerDetail));
+    const implementer = createImplementerBase(
+      makeBaseConfig({ extractsCode: false, backendKind: 'api', invoke }),
+    );
+
+    const result = await implementer.implement({
+      task: makeTask(),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: vi.fn(),
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.outcome).toBe('unauthenticated');
+      expect(result.error).toBe(providerDetail);
+    }
+  });
+});
+
 describe('createImplementerBase — unavailabilityReason', () => {
   it('exposes the configured reason on the returned implementer', async () => {
     const implementer = createImplementerBase(

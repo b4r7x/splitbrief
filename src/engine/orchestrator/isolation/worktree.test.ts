@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   lstatSync,
+  readdirSync,
   readlinkSync,
   realpathSync,
   rmSync,
@@ -9,39 +10,221 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { isolationMarkerPath, SPLITBRIEF_DIR, TREES_DIR } from '../../../core/paths.js';
+import {
+  isolationMarkerPath,
+  isolationTreesRoot,
+  isolationWorktreePath,
+  isolationWorktreeRoot,
+  SPLITBRIEF_DIR,
+  TREES_DIR,
+} from '../../../core/paths.js';
 import { createGitClient } from '../../../lib/git/client.js';
+import { isInsideRoot } from '../../../lib/path-confinement.js';
 import {
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
 } from '../approval/file-snapshots/capture.js';
 import { promoteStagedChanges } from '../approval/staged-project.js';
-import { ensureIsolationWorktree, removeNodeModulesExclude } from './worktree.js';
+import {
+  ensureIsolationWorktree,
+  parseIsolationMarker,
+  removeNodeModulesExclude,
+} from './worktree.js';
 
 const SESSION_ID = '2026-08-04-203317-spec-orchestrator-loop';
+const ORIGINAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;
+const ORIGINAL_HOME = process.env.HOME;
 
 let repoDir: string;
 let outsideDir: string;
+let stateDir: string;
+let homeDir: string;
 
 beforeEach(async () => {
   repoDir = await mkdtemp(join(tmpdir(), 'isolation-worktree-'));
   outsideDir = await mkdtemp(join(tmpdir(), 'isolation-outside-'));
+  stateDir = await mkdtemp(join(tmpdir(), 'isolation-state-'));
+  homeDir = await mkdtemp(join(tmpdir(), 'isolation-home-'));
+  process.env.XDG_STATE_HOME = stateDir;
+  process.env.HOME = homeDir;
 });
 
 afterEach(async () => {
+  if (existsSync(join(repoDir, '.git'))) {
+    await rm(worktreeRoot(), { recursive: true, force: true });
+  }
   await rm(repoDir, { recursive: true, force: true });
   await rm(outsideDir, { recursive: true, force: true });
+  await rm(stateDir, { recursive: true, force: true });
+  await rm(homeDir, { recursive: true, force: true });
+  if (ORIGINAL_XDG_STATE_HOME === undefined) delete process.env.XDG_STATE_HOME;
+  else process.env.XDG_STATE_HOME = ORIGINAL_XDG_STATE_HOME;
+  if (ORIGINAL_HOME === undefined) delete process.env.HOME;
+  else process.env.HOME = ORIGINAL_HOME;
 });
 
-function worktreeDir(): string {
-  return join(repoDir, TREES_DIR, SESSION_ID.slice(0, 64));
+const gitCommonDir = (): string => realpathSync(join(repoDir, '.git'));
+
+const worktreeRoot = (): string => isolationWorktreeRoot(gitCommonDir());
+
+const worktreeDir = (): string => isolationWorktreePath(gitCommonDir(), SESSION_ID.slice(0, 64));
+
+// Model the files a test runner sees when it walks the project root. The
+// isolation checkout must not add anything to this result.
+const RUNNER_SKIPPED_ENTRIES = new Set(['.git', 'node_modules']);
+
+function filesRunnersWouldDiscover(root: string, prefix = ''): string[] {
+  const found: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.isSymbolicLink() || RUNNER_SKIPPED_ENTRIES.has(entry.name)) continue;
+    const rel = prefix === '' ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) {
+      found.push(...filesRunnersWouldDiscover(join(root, entry.name), rel));
+      continue;
+    }
+    found.push(rel);
+  }
+  return found;
 }
 
 describe('ensureIsolationWorktree', () => {
+  it('isolation worktree path is outside the git dir and outside the project worktree', async () => {
+    delete process.env.XDG_STATE_HOME;
+    createTestGitRepo(repoDir, { 'README.md': '# test\n' });
+
+    const result = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: SESSION_ID,
+      git: createGitClient(repoDir),
+    });
+
+    expect(result.kind).toBe('ready');
+    if (result.kind !== 'ready') return;
+    expect(isInsideRoot(gitCommonDir(), realpathSync(result.worktreePath))).toBe(false);
+    expect(isInsideRoot(realpathSync(repoDir), realpathSync(result.worktreePath))).toBe(false);
+    expect(
+      isInsideRoot(
+        realpathSync(join(homedir(), '.local', 'state')),
+        realpathSync(result.worktreePath),
+      ),
+    ).toBe(true);
+  });
+
+  it('uses an external XDG_STATE_HOME for isolation worktrees', async () => {
+    process.env.XDG_STATE_HOME = outsideDir;
+    createTestGitRepo(repoDir, { 'README.md': '# test\n' });
+
+    const result = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: SESSION_ID,
+      git: createGitClient(repoDir),
+    });
+
+    expect(result.kind).toBe('ready');
+    if (result.kind !== 'ready') return;
+    expect(isInsideRoot(realpathSync(outsideDir), realpathSync(result.worktreePath))).toBe(true);
+  });
+
+  it('rejects XDG_STATE_HOME=<project> before any worktree operation', async () => {
+    createTestGitRepo(repoDir, { 'README.md': '# test\n' });
+    process.env.XDG_STATE_HOME = repoDir;
+    const before = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: repoDir,
+      encoding: 'utf-8',
+    });
+
+    await expect(
+      ensureIsolationWorktree({
+        projectDir: repoDir,
+        sessionId: SESSION_ID,
+        git: createGitClient(repoDir),
+      }),
+    ).rejects.toThrow(
+      'Isolation worktree directory overlaps the project root or repository git root.',
+    );
+
+    expect(
+      execFileSync('git', ['worktree', 'list', '--porcelain'], {
+        cwd: repoDir,
+        encoding: 'utf-8',
+      }),
+    ).toBe(before);
+    expect(existsSync(isolationTreesRoot())).toBe(false);
+  });
+
+  it('rejects an external-looking XDG_STATE_HOME that resolves inside the project', async () => {
+    createTestGitRepo(repoDir, { 'README.md': '# test\n' });
+    const stateLink = join(outsideDir, 'state');
+    symlinkSync(repoDir, stateLink, 'dir');
+    process.env.XDG_STATE_HOME = stateLink;
+
+    await expect(
+      ensureIsolationWorktree({
+        projectDir: repoDir,
+        sessionId: SESSION_ID,
+        git: createGitClient(repoDir),
+      }),
+    ).rejects.toThrow(
+      'Isolation worktree directory overlaps the project root or repository git root.',
+    );
+
+    expect(existsSync(isolationTreesRoot())).toBe(false);
+  });
+
+  it('stays out of reach of a test runner discovering files from the project root', async () => {
+    createTestGitRepo(repoDir, {
+      'README.md': '# test\n',
+      'src/slug.ts': 'export const slug = (s: string) => s;\n',
+      'src/slug.test.ts': 'test("slug", () => {});\n',
+    });
+    const before = filesRunnersWouldDiscover(repoDir);
+    expect(before).toContain('src/slug.test.ts');
+
+    const result = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: SESSION_ID,
+      git: createGitClient(repoDir),
+    });
+
+    expect(result.kind).toBe('ready');
+    if (result.kind !== 'ready') return;
+    expect(existsSync(join(result.worktreePath, 'src', 'slug.test.ts'))).toBe(true);
+    // The second copy exists and carries the same test file, yet nothing a
+    // runner would walk from the project root has changed: no second
+    // src/slug.test.ts to collect, count, and report twice.
+    expect(filesRunnersWouldDiscover(repoDir)).toEqual(before);
+  });
+
+  // A `--worktree` session's project directory is a linked worktree, where
+  // `.git` is a file rather than a directory: joining `.git` onto the project
+  // path would name a file to create a directory in. The location is resolved
+  // from the repository's common git directory instead, which every checkout of
+  // the repository agrees on.
+  it('resolves the isolation worktree when the project is itself a linked worktree', async () => {
+    createTestGitRepo(repoDir, { 'README.md': '# test\n' });
+    const sessionProject = join(repoDir, TREES_DIR, 'feature');
+    execFileSync('git', ['worktree', 'add', sessionProject, '-b', 'feature'], {
+      cwd: repoDir,
+      stdio: 'pipe',
+    });
+    expect(lstatSync(join(sessionProject, '.git')).isFile()).toBe(true);
+
+    const result = await ensureIsolationWorktree({
+      projectDir: sessionProject,
+      sessionId: SESSION_ID,
+      git: createGitClient(sessionProject),
+    });
+
+    expect(result).toEqual({ kind: 'ready', worktreePath: worktreeDir(), reused: false });
+    if (result.kind !== 'ready') return;
+    expect(existsSync(join(result.worktreePath, 'README.md'))).toBe(true);
+    expect(filesRunnersWouldDiscover(sessionProject)).toEqual(['README.md', 'init.txt']);
+  });
+
   it('seeds a dirty source checkout so the worktree matches its working state', async () => {
     createTestGitRepo(repoDir, {
       'README.md': '# test\n',
@@ -86,6 +269,24 @@ describe('ensureIsolationWorktree', () => {
     expect(await readFile(join(first.worktreePath, 'implementer-work.txt'), 'utf-8')).toBe(
       'in progress\n',
     );
+  });
+
+  it('records the owning project alongside the session in the isolation marker', async () => {
+    createTestGitRepo(repoDir, { 'README.md': '# test\n' });
+
+    const result = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: SESSION_ID,
+      git: createGitClient(repoDir),
+    });
+
+    expect(result.kind).toBe('ready');
+    if (result.kind !== 'ready') return;
+    const marker = await readFile(isolationMarkerPath(result.worktreePath), 'utf-8');
+    expect(parseIsolationMarker(marker)).toEqual({
+      sessionId: SESSION_ID,
+      projectDir: repoDir,
+    });
   });
 
   it.each([
@@ -302,10 +503,12 @@ describe('ensureIsolationWorktree', () => {
     await mkdir(join(repoDir, 'node_modules', '.bin'), { recursive: true });
     await mkdir(join(repoDir, 'packages', 'app', 'node_modules'), { recursive: true });
     await writeFile(join(repoDir, 'packages', 'app', 'node_modules', 'dep.txt'), 'nested\n');
+    // No filtering: the isolation worktree lives outside the project, so it
+    // contributes no status line to strip out.
     const projectStatus = (): string[] =>
       execFileSync('git', ['status', '--porcelain'], { cwd: repoDir, encoding: 'utf-8' })
         .split('\n')
-        .filter((line) => line !== '' && !line.includes(TREES_DIR));
+        .filter((line) => line !== '');
     const before = projectStatus();
     expect(before).toEqual(['?? packages/']);
 

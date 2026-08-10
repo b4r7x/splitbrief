@@ -29,11 +29,76 @@ const ASSIGNED_SECRET_PATTERN = new RegExp(
   'gi',
 );
 
+// Prose after a credential noun is not a credential: "Failed to refresh token:
+// Permission denied" is an error message, not an assignment. A `=` assignment
+// or an explicit PASSWORD/SECRET/API_KEY noun treats any single-token remainder
+// as a credential; multi-word prose after the first token keeps the legacy
+// shape heuristics. Quoted and Bearer values always count as credentials. A
+// short pure-numeric value is a status code, not a credential: "Failed to
+// refresh token: 401 Unauthorized" must keep its 401.
+const UNQUOTED_CREDENTIAL_VALUE_PATTERN = /[0-9@#$%^&*+=/\\~_]|^bearer\s/i;
+const MIN_UNQUOTED_CREDENTIAL_LENGTH = 24;
+const STRONG_CREDENTIAL_KEY_PATTERN = /PASSWORD|PASSWD|SECRET|CREDENTIALS|API[_-]?KEY/i;
+
+// `TOKEN` is the one credential noun that is also an ordinary English word, so
+// it only names a credential when it stands in key position — first thing on
+// its line or right after a structural delimiter (`TOKEN: v`, `  auth_token: v`,
+// `{"a":1,token:v}`). Mid-sentence it is prose: "Failed to refresh token:
+// denied" must survive intact.
+const TOKEN_CREDENTIAL_KEY_PATTERN = /TOKENS?["']?\s*[:=]\s*$/i;
+const KEY_POSITION_LINE_PREFIX_PATTERN = /(?:^|[{,[;])\s*$/;
+
+function isStrongCredentialAssignment(
+  fullString: string,
+  keyOffset: number,
+  prefix: string,
+): boolean {
+  if (/=\s*$/.test(prefix) || STRONG_CREDENTIAL_KEY_PATTERN.test(prefix)) return true;
+  if (!TOKEN_CREDENTIAL_KEY_PATTERN.test(prefix)) return false;
+  const lineStart = fullString.lastIndexOf('\n', keyOffset - 1) + 1;
+  return KEY_POSITION_LINE_PREFIX_PATTERN.test(fullString.slice(lineStart, keyOffset));
+}
+
+function hasMultiWordProseRemainder(fullString: string, matchEnd: number): boolean {
+  return /^\s+\S/.test(fullString.slice(matchEnd));
+}
+
+function isShortNumericStatusCode(unquotedValue: string): boolean {
+  return /^\d+$/.test(unquotedValue) && unquotedValue.length < MIN_UNQUOTED_CREDENTIAL_LENGTH;
+}
+
+function isLegacyCredentialShapedValue(unquotedValue: string): boolean {
+  if (isShortNumericStatusCode(unquotedValue)) return false;
+  return (
+    UNQUOTED_CREDENTIAL_VALUE_PATTERN.test(unquotedValue) ||
+    unquotedValue.length >= MIN_UNQUOTED_CREDENTIAL_LENGTH
+  );
+}
+
+interface CredentialValueContext {
+  unquotedValue: string;
+  quoted: boolean;
+  hasProseRemainder: boolean;
+  strongAssignment: boolean;
+}
+
+function isCredentialShapedValue({
+  unquotedValue,
+  quoted,
+  hasProseRemainder,
+  strongAssignment,
+}: CredentialValueContext): boolean {
+  if (quoted) return true;
+  if (hasProseRemainder) return isLegacyCredentialShapedValue(unquotedValue);
+  if (strongAssignment) return !isShortNumericStatusCode(unquotedValue);
+  return isLegacyCredentialShapedValue(unquotedValue);
+}
+
 function replaceAssignedSecret(
   marker: string,
   previouslyRedactedValues: ReadonlySet<string>,
-): RedactionReplacement {
-  return (match, prefix: string, value: string) => {
+): (match: string, prefix: string, value: string, offset: number, fullString: string) => string {
+  return (match, prefix, value, offset, fullString) => {
     const quote = value.at(0);
     const hasMatchingQuotes = (quote === '"' || quote === "'") && value.at(-1) === quote;
     const unquotedValue = hasMatchingQuotes ? value.slice(1, -1) : value;
@@ -42,6 +107,15 @@ function replaceAssignedSecret(
       unquotedValue.endsWith(` ${marker}`) ||
       previouslyRedactedValues.has(unquotedValue)
     ) {
+      return match;
+    }
+    const isCredential = isCredentialShapedValue({
+      unquotedValue,
+      quoted: hasMatchingQuotes,
+      hasProseRemainder: hasMultiWordProseRemainder(fullString, offset + match.length),
+      strongAssignment: isStrongCredentialAssignment(fullString, offset, prefix),
+    });
+    if (!isCredential) {
       return match;
     }
 
@@ -231,14 +305,14 @@ export function redactSecretsWithMetadata(
     });
   }
   const assignedSecretReplacement = replaceAssignedSecret(marker, previouslyRedactedValues);
-  result = result.replace(ASSIGNED_SECRET_PATTERN, (...args) => {
-    const replacedValue =
-      typeof assignedSecretReplacement === 'string'
-        ? assignedSecretReplacement
-        : assignedSecretReplacement(args[0], ...args.slice(1));
-    if (replacedValue !== args[0]) redacted = true;
-    return replacedValue;
-  });
+  result = result.replace(
+    ASSIGNED_SECRET_PATTERN,
+    (match, prefix: string, value: string, offset: number, fullString: string) => {
+      const replacedValue = assignedSecretReplacement(match, prefix, value, offset, fullString);
+      if (replacedValue !== match) redacted = true;
+      return replacedValue;
+    },
+  );
   return { text: result, redacted };
 }
 

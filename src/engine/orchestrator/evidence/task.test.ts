@@ -32,6 +32,34 @@ describe('recordLocalTaskEvidence', () => {
     expect(updated.tasks[0]?.observedEvidence).toContain('task reached done');
   });
 
+  it('keeps the validation command and recorded output so the review can quote them', () => {
+    const task = makeTask();
+    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
+    const updated = recordLocalTaskEvidence({
+      ledger,
+      task,
+      status: 'done',
+      validation: [
+        {
+          passed: true,
+          stage: 'test',
+          command: 'npm test',
+          output: 'Tests  4 passed (4)',
+        },
+        { passed: true, stage: 'typecheck', command: 'npm run typecheck', output: '   \n' },
+      ],
+    });
+
+    const [test, typecheck] = updated.tasks[0]?.validation ?? [];
+    expect(test).toMatchObject({
+      stage: 'test',
+      command: 'npm test',
+      output: 'Tests  4 passed (4)',
+    });
+    expect(typecheck?.command).toBe('npm run typecheck');
+    expect(typecheck?.output).toBeUndefined();
+  });
+
   it('flags a failing stage as baseline-exempt when its stage is exempt, and only then', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
@@ -110,6 +138,20 @@ describe('recordRetryOrEscalationEvidence', () => {
     });
     expect(updated.tasks[0]?.escalated).toBe(true);
     expect(updated.tasks[0]?.observedEvidence).toContain('task reached escalated');
+  });
+
+  it('records an escalated task without changed-file evidence when no files changed', () => {
+    const task = makeTask();
+    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
+    const updated = recordRetryOrEscalationEvidence({
+      ledger,
+      task,
+      status: 'escalated',
+      escalated: true,
+    });
+
+    expect(updated.tasks[0]?.changedFiles).toEqual([]);
+    expect(updated.tasks[0]?.observedEvidence).not.toContain(`diff written for ${task.file}`);
   });
 
   it('flags and reports an exempt stage on the escalation path too', () => {

@@ -23,7 +23,7 @@ export type AliasableSession = {
   lockfile: LockfileData | null;
 };
 
-export function listSessionDirs(projectDir: string): string[] {
+function listSessionDirs(projectDir: string): string[] {
   const root = sessionsRoot(projectDir);
   if (!existsSync(root)) return [];
   return readdirSync(root, { withFileTypes: true })
@@ -62,7 +62,7 @@ export function assignSessionAliases(sessions: AliasableSession[]): AliasedSessi
 export async function buildAliasedSessions(projectDir: string): Promise<AliasedSession[]> {
   const sessions: AliasableSession[] = [];
 
-  for (const name of listSessionDirs(projectDir)) {
+  for (const name of listValidSessionDirs(projectDir)) {
     const sessDir = sessionDir(projectDir, name);
     const lockfile = await confinedReadLockfile(sessDir, name);
     const sortKeyMs = sessionSortKeyMs(sessDir, lockfile);

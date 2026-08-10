@@ -12,8 +12,10 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
+import { loadState } from '../../../core/state/persistence.js';
 import type { PlanOptions, Planner } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
+import { resolveValidationDisplayCommand } from '../validation/commands.js';
 import { runFullPlanning } from './full.js';
 
 let dirs: string[] = [];
@@ -162,5 +164,73 @@ describe('runFullPlanning — questions', () => {
     });
 
     expect(onQuestionAsked).toHaveBeenCalledWith(question, 1, 1);
+  });
+});
+
+describe('runFullPlanning — discovered validation ingress', () => {
+  const researchWithDisallowedTest = `### Validation Tools
+
+- **Language**: typescript
+- **Type checker**: \`npx tsc --noEmit\`
+- **Linter**: \`npx biome check\`
+- **Test runner**: \`./scripts/evil\`
+- **Test file pattern**: \`*.test.ts\`
+
+### Architecture
+Some architecture.`;
+
+  it('a disallowed discovered testCommand never reaches persisted state / the handoff resolver sees only allowlisted commands', async () => {
+    const projectDir = createTempDir('full-sanitize-ingress');
+    dirs.push(projectDir);
+    const sessionId = 'sess-sanitize';
+    ensureSessionDir(projectDir, sessionId);
+
+    const planner: Planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [],
+        usage: { inputTokens: 1, outputTokens: 1 },
+        phases: [{ filename: 'research.md', text: researchWithDisallowedTest }],
+      }),
+    });
+
+    const config = makeConfig({ workflow: { approve: 'none' } });
+
+    await runFullPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config,
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner,
+      state: transition(createInitialState('feat'), { type: 'START' }),
+      feature: 'feat',
+      selectedSkills: undefined,
+      approveLevel: 'none',
+      deferBriefGate: true,
+    });
+
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted?.discoveredValidation).toBeDefined();
+    expect(persisted?.discoveredValidation?.testCommand).toBeUndefined();
+    expect(persisted?.discoveredValidation?.lintCommand).toBe('npx biome check');
+    expect(persisted?.discoveredValidation?.typecheckCommand).toBe('npx tsc --noEmit');
+
+    const handoffTest = resolveValidationDisplayCommand(
+      'testCommand',
+      config,
+      persisted?.discoveredValidation,
+      projectDir,
+    );
+    expect(handoffTest).not.toBe('./scripts/evil');
+    if (handoffTest) {
+      expect(handoffTest).not.toMatch(/^\.\//);
+      expect(handoffTest).not.toMatch(/^\//);
+    }
   });
 });

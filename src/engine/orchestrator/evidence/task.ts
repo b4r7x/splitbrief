@@ -36,6 +36,10 @@ export function validationEntries(
 ): EvidenceValidationEntry[] {
   return results.map((r) => {
     const entry: EvidenceValidationEntry = { stage: r.stage, passed: r.passed };
+    // The final review must quote validation output instead of summarising
+    // it, so the recorded command and its output are part of the evidence.
+    if (r.command !== undefined) entry.command = r.command;
+    if (r.output !== undefined && r.output.trim() !== '') entry.output = r.output;
     if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
     if (!r.passed && isExemptStage(r.stage, metadata?.exemptStages)) entry.baselineExempt = true;
     if (metadata?.retryState) entry.retryState = metadata.retryState;
@@ -155,9 +159,6 @@ export function recordRetryOrEscalationEvidence(
         uniquePush(next.observedEvidence, VALIDATION_PRE_EXISTING_LABEL[r.stage]);
       }
     }
-  }
-  if ((input.status === 'done' || input.status === 'escalated') && next.changedFiles.length === 0) {
-    uniquePush(next.changedFiles, input.task.file);
   }
   if (next.changedFiles.length > 0) {
     uniquePush(next.observedEvidence, `diff written for ${input.task.file}`);

@@ -11,6 +11,7 @@ export interface NativeCliModelCatalogEntry {
   readonly nativeDefault?: boolean | undefined;
   readonly nativeHidden?: boolean | undefined;
   readonly nativeReasoningEfforts?: readonly string[] | undefined;
+  readonly contextWindow?: number | undefined;
 }
 
 export interface NativeCliModelCatalog {
@@ -46,6 +47,8 @@ const CodexNativeModelSchema = z
     isDefault: z.boolean().optional(),
     hidden: z.boolean().optional(),
     is_hidden: z.boolean().optional(),
+    context_window: z.number().int().positive().optional(),
+    contextWindow: z.number().int().positive().optional(),
     reasoning_efforts: z.array(CodexReasoningEffortSchema).optional(),
     supported_reasoning_efforts: z.array(CodexReasoningEffortSchema).optional(),
   })
@@ -71,6 +74,16 @@ function distinctValue(values: readonly (string | undefined)[]): string | null |
 
 function distinctBoolean(values: readonly (boolean | undefined)[]): boolean | null | undefined {
   let selected: boolean | undefined;
+  for (const value of values) {
+    if (value === undefined) continue;
+    if (selected !== undefined && selected !== value) return null;
+    selected = value;
+  }
+  return selected;
+}
+
+function distinctNumber(values: readonly (number | undefined)[]): number | null | undefined {
+  let selected: number | undefined;
   for (const value of values) {
     if (value === undefined) continue;
     if (selected !== undefined && selected !== value) return null;
@@ -118,6 +131,7 @@ function codexNativeEntry(
   ]);
   const nativeDefault = distinctBoolean([input.model.is_default, input.model.isDefault]);
   const nativeHidden = distinctBoolean([input.model.hidden, input.model.is_hidden]);
+  const contextWindow = distinctNumber([input.model.context_window, input.model.contextWindow]);
   const nativeReasoningEfforts = distinctReasoningEfforts([
     input.model.reasoning_efforts,
     input.model.supported_reasoning_efforts,
@@ -128,6 +142,7 @@ function codexNativeEntry(
     displayName === null ||
     nativeDefault === null ||
     nativeHidden === null ||
+    contextWindow === null ||
     nativeReasoningEfforts === null
   ) {
     return null;
@@ -138,6 +153,7 @@ function codexNativeEntry(
     ...(displayName === undefined ? {} : { displayName }),
     ...(nativeDefault === undefined ? {} : { nativeDefault }),
     ...(nativeHidden === undefined ? {} : { nativeHidden }),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
     ...(nativeReasoningEfforts === undefined
       ? {}
       : { nativeReasoningEfforts: [...nativeReasoningEfforts] }),
@@ -250,6 +266,7 @@ export function nativeCliCatalogToDetectedModels(catalog: NativeCliModelCatalog)
     ...(model.displayName === undefined ? {} : { displayName: model.displayName }),
     ...(model.nativeDefault === undefined ? {} : { nativeDefault: model.nativeDefault }),
     ...(model.nativeHidden === undefined ? {} : { nativeHidden: model.nativeHidden }),
+    ...(model.contextWindow === undefined ? {} : { contextLength: model.contextWindow }),
     ...(model.nativeReasoningEfforts === undefined
       ? {}
       : {

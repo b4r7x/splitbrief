@@ -2,6 +2,7 @@ import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
 import type { ParsedLine } from '../types.js';
+import { envelopeErrorDetail } from '../../streaming/error-envelope.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
 import { parseTextLine } from '../../streaming/parse-text.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -26,9 +27,11 @@ const KILO_PROTECTED_FLAGS = new Set([
   '--model',
   '--output-format',
   '--prompt',
-  'architect',
+  '-m',
+  'plan',
   'run',
 ]);
+const KILO_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-m']);
 
 type KiloPlannerBuildInput = Parameters<CliPlannerAdapter<'kilo-code'>['buildArgs']>[0];
 type KiloImplementerBuildInput = Parameters<CliImplementerAdapter<'kilo-code'>['buildArgs']>[0];
@@ -39,6 +42,7 @@ function validateArgs(invocationArgs: readonly string[], baseArgs: readonly stri
     invocationArgs,
     baseArgs,
     protectedFlags: KILO_PROTECTED_FLAGS,
+    protectedShortValueFlags: KILO_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
   });
 }
@@ -102,7 +106,10 @@ function structuredErrorEnvelope(line: string): readonly CliProtocolEvent[] | nu
       text: '',
       usage: null,
       nativeSessionId,
-      error: { code: 'kilo-code-error', message: 'Kilo Code reported an error' },
+      error: {
+        code: 'kilo-code-error',
+        message: envelopeErrorDetail(value, 'Kilo Code reported an error'),
+      },
       partial: true,
     },
   ];
@@ -167,8 +174,7 @@ function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {
     ...(input.model === undefined ? [] : ['--model', input.model]),
     '--format',
     'json',
-    '--agent',
-    'architect',
+    ...(input.mode === 'plan' ? ['--agent', 'plan'] : ['--agent', 'code', '--auto']),
     input.prompt,
   ];
 }
@@ -265,7 +271,7 @@ function rawContract(role: 'planner' | 'implementer'): RawKiloCliContract {
     auth: { kind: 'env-or-native', env: [] },
     rawInvocation:
       role === 'planner'
-        ? ['run', '--format', 'json', '--agent', 'architect', CLI_PROMPT_SENTINEL]
+        ? ['run', '--format', 'json', '--agent', 'plan', CLI_PROMPT_SENTINEL]
         : ['run', '--auto', CLI_PROMPT_SENTINEL],
     promptTransport: 'argv',
     expectedRawTerminal: 'process-exit',

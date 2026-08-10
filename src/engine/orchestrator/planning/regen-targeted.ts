@@ -20,3 +20,14 @@ export function buildTargetedRejectionComment(
     'For each flagged task, keep the same goal and revise the description, scope, tests, and implementation steps to address the user feedback.',
   ].join('\n');
 }
+
+export function buildBriefQualityRepairComment(errorMessages: readonly string[]): string {
+  return [
+    'The Task Brief quality gate rejected the briefs you just produced. Every issue below is blocking:',
+    '',
+    ...errorMessages.map((message) => `- ${message}`),
+    '',
+    'Regenerate the complete tasks.md so every brief clears the Brief Contract on its own: concrete `### Tests` bullets (required even when a different brief owns the test file — list the cases that verify this brief), `### Scope` bounds, `### Evidence` bullets, and numbered `### Implementation Steps`.',
+    'Keep the feature scope, the brief ids, and the dependency links unchanged wherever the issues above do not require otherwise.',
+  ].join('\n');
+}

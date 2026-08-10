@@ -213,6 +213,7 @@ export function createRpcCommandContext(opts: {
       opts.abortTurn?.(WORKFLOW_REWIND_ABORT_REASON);
       return true;
     },
+    requestWorkflowResume: () => false,
     getQueueDepth: () => opts.pendingQueueDepth(opts.getState()),
     clearQueue: async () => {
       const clearLiveQueue = opts.clearQueueHandler();

@@ -26,6 +26,7 @@ const NEXT_ACTION_LABELS: Record<
   continue: { label: 'Continue' },
   'run-init': { label: 'Run init', command: 'splitbrief init' },
   'fix-config': { label: 'Fix config' },
+  'prepare-runner': { label: 'Set up the configured runner' },
   'clean-or-isolate-repo': { label: 'Clean or isolate repo' },
   'raise-context': { label: 'Raise context' },
   'set-budget': { label: 'Set budget' },
@@ -35,6 +36,7 @@ const NEXT_ACTION_LABELS: Record<
 const NEXT_ACTION_PRIORITY: ReadinessNextActionKind[] = [
   'fix-config',
   'run-init',
+  'prepare-runner',
   'clean-or-isolate-repo',
   'raise-context',
   'set-budget',

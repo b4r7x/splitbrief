@@ -7,6 +7,7 @@ export const RUNNER_OUTCOME_STATES = [
   'spawn-not-found',
   'incompatible-version',
   'unauthenticated',
+  'usage-limit',
   'timeout',
   'user-abort',
   'signal-exit',
@@ -37,6 +38,8 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
       return 'Install a supported CLI version, then retry.';
     case 'unauthenticated':
       return 'Authenticate the CLI, then retry.';
+    case 'usage-limit':
+      return 'Wait for the usage limit to reset, switch to a different runner profile, or abort.';
     case 'timeout':
       return 'Retry the command or increase its configured timeout.';
     case 'user-abort':

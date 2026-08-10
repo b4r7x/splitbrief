@@ -27,10 +27,15 @@ import {
   CLI_RAW_OUTPUT_MAX_BYTES,
   CLI_RAW_PROTOCOL_MAX_EVENTS,
   invokeProcessCli,
-  revalidateCliExecutableIdentity,
 } from './process-invoke.js';
+import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
+import { codexImplementerAdapter } from './codex.js';
+import { opencodeImplementerAdapter } from './opencode.js';
 import { toCliEnvironment } from '../invoke-cli-adapter.js';
-import { resolveCliExecutable } from '../resolve-cli-executable.js';
+import {
+  resolveCliExecutable,
+  revalidateCliExecutableIdentity,
+} from '../resolve-cli-executable.js';
 import { createRunnerSandboxEnv } from '../sandbox-env.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -200,6 +205,19 @@ async function run(
 
 const emitPromptScript = (source: string) =>
   `const emit=v=>process.stdout.write('TEXT:'+Buffer.from(v).toString('base64')+'\\nRESULT\\n');${source};`;
+
+function o4DirectEnvelopeExitScript(envelope: string): string {
+  const encoded = Buffer.from(envelope, 'utf8').toString('base64');
+  return `process.stdout.write(Buffer.from('${encoded}','base64').toString('utf8')+'\\n');process.exitCode=1;`;
+}
+
+function opencodeEnvelopeInvocation(envelope: string) {
+  return invocation({
+    script: o4DirectEnvelopeExitScript(envelope),
+    args: ['<PROMPT>'],
+    promptTransport: opencodeImplementerAdapter.promptTransport,
+  });
+}
 
 describe('invokeProcessCli', () => {
   it('transports multibyte prompts losslessly through stdin, argv, and private files', async () => {
@@ -453,6 +471,137 @@ describe('invokeProcessCli', () => {
       error: { code: 'fixture-refusal' },
     });
     expect(text).toMatchObject({ status: 'completed', text: 'plain output' });
+  });
+
+  it('surfaces the real Codex failure from its error + turn.failed pair on a non-zero exit', async () => {
+    // Captured verbatim from `codex exec --json` (codex-cli 0.146.0): one failed
+    // turn is reported as an `error` record, then `turn.failed`, then exit 1.
+    const realMessage =
+      'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
+    const stream = [
+      '{"type":"thread.started","thread_id":"019fd8af-fdab-7f11-a014-29c1de9fe822"}',
+      '{"type":"turn.started"}',
+      `{"type":"error","message":"${realMessage}"}`,
+      `{"type":"turn.failed","error":{"message":"${realMessage}"}}`,
+    ].join('\n');
+    const encoded = Buffer.from(stream, 'utf8').toString('base64');
+    const script = `process.stdout.write(Buffer.from('${encoded}','base64').toString('utf8')+'\\n');process.exitCode=1;`;
+
+    const result = await run(
+      codexImplementerAdapter,
+      invocation({
+        script,
+        args: ['<PROMPT>'],
+        promptTransport: codexImplementerAdapter.promptTransport,
+      }),
+      'fixture prompt',
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      nativeSessionId: '019fd8af-fdab-7f11-a014-29c1de9fe822',
+      error: { code: 'codex-turn-failed', message: realMessage },
+    });
+  });
+
+  it('carries data.message, not the bare exit code', async () => {
+    const detail = 'Unexpected server error. Check server logs for details.';
+    const envelope = JSON.stringify({
+      type: 'error',
+      error: { name: 'UnknownError', data: { message: detail } },
+    });
+
+    const result = await run(
+      opencodeImplementerAdapter,
+      opencodeEnvelopeInvocation(envelope),
+      'fixture prompt',
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      error: { code: 'opencode-error', message: `UnknownError: ${detail}` },
+    });
+    expect(result.error?.message).not.toMatch(/^CLI exited with code /);
+    expect(result.error?.code).not.toBe('non-zero-exit');
+  });
+
+  it('drives usage-limit and unauthenticated classification via runnerCallOutcome', async () => {
+    const usageEnvelope = JSON.stringify({
+      type: 'error',
+      error: { name: 'UnknownError', data: { message: 'Rate limit exceeded' } },
+    });
+    const authEnvelope = JSON.stringify({
+      type: 'error',
+      error: {
+        name: 'UnknownError',
+        data: {
+          message:
+            'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.',
+        },
+      },
+    });
+
+    const usageResult = await run(
+      opencodeImplementerAdapter,
+      opencodeEnvelopeInvocation(usageEnvelope),
+      'fixture prompt',
+    );
+    const authResult = await run(
+      opencodeImplementerAdapter,
+      opencodeEnvelopeInvocation(authEnvelope),
+      'fixture prompt',
+    );
+
+    expect(usageResult.error?.message).toBe('UnknownError: Rate limit exceeded');
+    expect(runnerCallOutcome(usageResult).state).toBe('usage-limit');
+    expect(authResult.error?.message).toContain('log out and sign in again');
+    expect(runnerCallOutcome(authResult).state).toBe('unauthenticated');
+  });
+
+  it("a text-exit adapter's parsed failed terminal wins over the bare non-zero exit code", async () => {
+    // Captured verbatim from `opencode run --format json`: the provider failure
+    // arrives as an error envelope on stdout and the process then exits 1.
+    const envelope =
+      '{"type":"error","timestamp":1786189284110,"sessionID":"ses_01ed27dc5ffeO5NkTAti48djZr","error":{"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_1bf036f6"}}}';
+    const encoded = Buffer.from(envelope, 'utf8').toString('base64');
+
+    const diagnosed = await run(
+      opencodeImplementerAdapter,
+      invocation({
+        script: `process.stdout.write(Buffer.from('${encoded}','base64').toString('utf8')+'\\n');process.exitCode=1;`,
+        args: ['<PROMPT>'],
+        promptTransport: opencodeImplementerAdapter.promptTransport,
+      }),
+      'fixture prompt',
+    );
+    const undiagnosed = await run(
+      adapter({ kind: 'stdin' }, { output: 'text' }),
+      invocation({ script: 'process.exitCode=1' }),
+    );
+
+    expect(diagnosed).toMatchObject({
+      status: 'failed',
+      nativeSessionId: 'ses_01ed27dc5ffeO5NkTAti48djZr',
+      error: {
+        code: 'opencode-error',
+        message: 'UnknownError: Unexpected server error. Check server logs for details.',
+      },
+    });
+    expect(undiagnosed.error?.code).toBe('non-zero-exit');
+  });
+
+  it('keeps last-result-wins for restated terminals and fail-closed on contradictory exits', async () => {
+    const restated = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({ script: "process.stdout.write('ERROR\\nERROR\\n')" }),
+    );
+    const contradiction = await run(
+      adapter({ kind: 'stdin' }),
+      invocation({ script: "process.stdout.write('RESULT\\n');process.exitCode=2" }),
+    );
+
+    expect(restated).toMatchObject({ status: 'refused', error: { code: 'fixture-refusal' } });
+    expect(contradiction).toMatchObject({ status: 'failed', error: { code: 'non-zero-exit' } });
   });
 
   it.each([
@@ -822,6 +971,19 @@ describe('invokeProcessCli', () => {
       expect(result.error?.message).not.toContain(executablePath);
       expect(existsSync(markerPath)).toBe(false);
     });
+  });
+
+  it('names the tool, not the resolved executable path, when a silent runner is killed', async () => {
+    const result = await invokeProcessCli(adapter({ kind: 'stdin' }), {
+      invocation: invocation({ script: 'setTimeout(() => {}, 5_000);' }),
+      prompt: '',
+      callContext,
+      idle: { warnMs: 10, killMs: 40 },
+    });
+
+    expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+    expect(result.error?.message).toContain(CLI_TOOL_CATALOG.codex.id);
+    expect(result.error?.message).not.toContain(realpathSync(process.execPath));
   });
 
   it.skipIf(process.platform === 'win32')('awaits process-group reaping after abort', async () => {

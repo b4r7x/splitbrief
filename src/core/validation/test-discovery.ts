@@ -38,6 +38,20 @@ function buildCandidatesFromPattern(
   ];
 }
 
+// A task whose file already is a test file is tested by that file itself;
+// deriving a candidate from it would look for `foo.test.test.ts` and find
+// nothing, leaving the task green with its test never run.
+function isSelfTestFile(base: string, testPattern: string | undefined): boolean {
+  if (testPattern === undefined) return /\.test\.tsx?$/.test(base);
+  const star = testPattern.indexOf('*');
+  if (star === -1) return base === testPattern;
+  const prefix = testPattern.slice(0, star);
+  const suffix = testPattern.slice(star + 1);
+  return (
+    base.length > prefix.length + suffix.length && base.startsWith(prefix) && base.endsWith(suffix)
+  );
+}
+
 export function findAffectedTestFile(
   taskFile: string,
   projectDir: string,
@@ -46,7 +60,14 @@ export function findAffectedTestFile(
   if (testPattern && !isTestPatternSafe(testPattern)) return null;
 
   const dir = dirname(taskFile);
-  const name = basename(taskFile).replace(/\.\w+$/, '');
+  const base = basename(taskFile);
+
+  if (isSelfTestFile(base, testPattern)) {
+    const self = join(projectDir, dir, base);
+    if (isCandidateConfined(self, projectDir) && existsSync(self)) return self;
+  }
+
+  const name = base.replace(/\.\w+$/, '');
 
   const candidates = testPattern
     ? buildCandidatesFromPattern(name, dir, projectDir, testPattern)

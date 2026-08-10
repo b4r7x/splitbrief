@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
+import { relative } from 'node:path';
 import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 import type { GitClient } from '../../lib/git/client.js';
+import { isInsideRoot } from '../../lib/path-confinement.js';
 import { worktreeError } from './errors.js';
 import {
   gitignoreDiffersOnlyBySplitbriefBookkeeping,
@@ -9,23 +11,58 @@ import {
 import { resolveConfinedWorktreePath } from './path.js';
 import { findLiveWorktreeSession } from './status.js';
 
+export type WorktreeWarningPublisher = (message: string) => void;
+
 export type RemoveWorktreeOptions = {
   projectDir: string;
   slug: string;
   git: GitClient;
   force?: boolean;
   deleteBranch?: boolean;
+  // Run isolation places its worktree outside `.trees/` and resolves that path
+  // itself; without it the slug names a directory under the project root.
+  worktreeDir?: string;
+  warningPublisher?: WorktreeWarningPublisher;
+  // Isolation dispose proves no unpromoted work before force-removing; git
+  // porcelain can still list promoted edits, so skip that bypass warning.
+  suppressUncommittedWarning?: boolean;
 };
 
+function publishWorktreeWarning(
+  message: string,
+  warningPublisher: WorktreeWarningPublisher | undefined,
+): void {
+  if (warningPublisher !== undefined) {
+    warningPublisher(message);
+    return;
+  }
+  process.stderr.write(message.endsWith('\n') ? message : `${message}\n`);
+}
+
+// An isolation worktree lives outside the project root when the project is
+// itself a linked worktree, and a `../../` walk is worse than the full path.
+function worktreeLabel(projectDir: string, wtPath: string): string {
+  return isInsideRoot(projectDir, wtPath) ? relative(projectDir, wtPath) : wtPath;
+}
+
 export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void> {
-  const { projectDir, slug, git, force = false, deleteBranch = false } = opts;
-  const wtPath = resolveConfinedWorktreePath(projectDir, slug);
+  const {
+    projectDir,
+    slug,
+    git,
+    force = false,
+    deleteBranch = false,
+    warningPublisher,
+    suppressUncommittedWarning = false,
+  } = opts;
+  const wtPath = opts.worktreeDir ?? resolveConfinedWorktreePath(projectDir, slug);
+  const label = worktreeLabel(projectDir, wtPath);
   const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${slug}`;
 
   if (!existsSync(wtPath)) {
     const branches = await git.branch();
     if (!branches.all.includes(branch)) {
-      throw worktreeError.notFound(slug);
+      throw worktreeError.notFound(label);
     }
     await git.raw(['worktree', 'prune']);
     if (deleteBranch) {
@@ -42,7 +79,7 @@ export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void>
   const live = await findLiveWorktreeSession(wtPath);
   if (live) {
     if (!force) {
-      throw worktreeError.liveSession(slug, live.sessionId);
+      throw worktreeError.liveSession(label, live.sessionId);
     }
     liveSessionBypassed = true;
     liveSessionId = live.sessionId;
@@ -61,19 +98,21 @@ export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void>
   if (uncommittedPaths.length > 0) {
     uncommittedFileCount = uncommittedPaths.length;
     if (!force) {
-      throw worktreeError.uncommittedChanges(slug);
+      throw worktreeError.uncommittedChanges(label);
     }
     uncommittedBypassed = true;
   }
 
   if (liveSessionBypassed) {
-    process.stderr.write(
-      `Warning: forcing removal of worktree ".trees/${slug}" with live session ${liveSessionId ?? 'unknown'}.\n`,
+    publishWorktreeWarning(
+      `Warning: forcing removal of worktree "${label}" with live session ${liveSessionId ?? 'unknown'}.`,
+      warningPublisher,
     );
   }
-  if (uncommittedBypassed) {
-    process.stderr.write(
-      `Warning: forcing removal of worktree ".trees/${slug}" with ${uncommittedFileCount} uncommitted file(s).\n`,
+  if (uncommittedBypassed && !suppressUncommittedWarning) {
+    publishWorktreeWarning(
+      `Warning: forcing removal of worktree "${label}" with ${uncommittedFileCount} uncommitted file(s).`,
+      warningPublisher,
     );
   }
 

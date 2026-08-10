@@ -2,6 +2,7 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { publishWarningFromError, publishDriftChainDetected } from '../events.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { WorkflowContext } from '../types.js';
 import {
   readDriftChainState,
@@ -9,7 +10,6 @@ import {
   initialDriftChainState,
 } from '../drift/chain-state.js';
 import { computePerTaskOutOfBounds, analyzeDriftChain } from '../drift/chain.js';
-import { resolveDependsOnFiles } from './resolve-deps.js';
 
 export async function runChainAnalysisSafe(opts: {
   wctx: WorkflowContext;
@@ -20,8 +20,16 @@ export async function runChainAnalysisSafe(opts: {
   const { projectDir, sessionId, bus } = opts.wctx;
   try {
     const taskChangedFiles = await getChangedFilesSinceSnapshot(projectDir, opts.taskStartSnapshot);
-    const dependsOnFiles = resolveDependsOnFiles(opts.state.tasks, opts.task);
-    const outOfBoundsFiles = computePerTaskOutOfBounds(opts.task, taskChangedFiles, dependsOnFiles);
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
+    const runAttributedFiles = new Set(
+      (ledger?.tasks ?? []).flatMap((entry) => entry.changedFiles),
+    );
+    const outOfBoundsFiles = computePerTaskOutOfBounds({
+      tasks: opts.state.tasks,
+      taskChangedFiles,
+      preRunChangedFiles: opts.state.changedFilesBaseline?.runStartChangedFiles ?? [],
+      runAttributedFiles,
+    });
 
     const existing =
       readDriftChainState({ projectDir, sessionId }) ?? initialDriftChainState(sessionId);

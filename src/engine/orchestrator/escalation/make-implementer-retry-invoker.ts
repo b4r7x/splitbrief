@@ -3,7 +3,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Implementer, RetryOptions } from '../../implementers/types.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProjectContext } from '../../../core/state/types.js';
-import type { RetryInvokeArgs } from './types.js';
+import type { RetryInvokeArgs, RetryInvokeResult } from './types.js';
 
 export function makeImplementerRetryInvoker(opts: {
   context: ProjectContext;
@@ -13,8 +13,8 @@ export function makeImplementerRetryInvoker(opts: {
   onOutput: (text: string) => void;
   implementer?: Implementer | undefined;
   config?: Config | undefined;
-}): (args: RetryInvokeArgs) => ReturnType<Implementer['retry']> {
-  return ({
+}): (args: RetryInvokeArgs) => Promise<RetryInvokeResult> {
+  return async ({
     task,
     lastError,
     attempts,
@@ -25,11 +25,12 @@ export function makeImplementerRetryInvoker(opts: {
     sandboxEnv,
     fileIgnoreProjectDir,
     changeDetection,
-  }) =>
-    (opts.implementer ?? implementer).retry({
+  }) => {
+    const effectiveConfig = opts.config ?? config;
+    const result = await (opts.implementer ?? implementer).retry({
       task,
       projectDir,
-      config: opts.config ?? config,
+      config: effectiveConfig,
       context: opts.context,
       languageContext: opts.languageContext,
       error: lastError,
@@ -42,4 +43,6 @@ export function makeImplementerRetryInvoker(opts: {
       fileIgnoreProjectDir,
       changeDetection,
     });
+    return { ...result, runner: effectiveConfig.implementer };
+  };
 }

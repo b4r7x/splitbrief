@@ -1,6 +1,7 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../utils/collections.js';
 import { matchesActionPattern } from '../approval/action-classifier.js';
+import { taskAcceptedPatterns } from '../task-scope.js';
 
 import type { UserEditConflictKind, UserEditConflictAction } from '../../../core/schemas/enums.js';
 import type { UserEditConflictFile, UserEditConflict } from '../../events/workflow-events.js';
@@ -11,12 +12,8 @@ export const DESTRUCTIVE_CONFLICT_ACTIONS: readonly UserEditConflictAction[] = [
   'abort-workflow',
 ];
 
-function taskPatterns(task: Task): string[] {
-  return [task.file, ...(task.scope?.inBounds ?? []), ...(task.scope?.approvedOutOfBounds ?? [])];
-}
-
 function fileMatchesTask(file: string, task: Task): boolean {
-  return taskPatterns(task).some((pattern) => matchesActionPattern(file, pattern));
+  return taskAcceptedPatterns(task).some((pattern) => matchesActionPattern(file, pattern));
 }
 
 function classifyFile(opts: {

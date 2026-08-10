@@ -780,6 +780,47 @@ describe('prepareExecution', () => {
     expect(check?.fix).toContain('Sign in to codex');
   });
 
+  it('names --allow-unverified-auth when headless admission fail-closes on unverified auth', async () => {
+    const project = projectDir();
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
+    });
+
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'unverified planner',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: policy('spec'),
+      deps: {
+        collectArgVectorPreflightChecks: async () => [],
+        collectReadiness: async () => ({ report: readyReport(project), config }),
+        detectRunnerEvidence: async ({ context }) => ({
+          ...freshCliEvidence(context),
+          auth: 'unknown',
+        }),
+        resolveCliExecutableAliases: async () => ({
+          command: 'codex',
+          executable,
+          usedFallback: false,
+        }),
+        prepareNewSession: vi.fn(),
+      },
+    });
+
+    expect(outcome.kind).toBe('blocked');
+    if (outcome.kind !== 'blocked') return;
+    const check = outcome.report.sections
+      .find((section) => section.id === 'runners')
+      ?.checks.find((candidate) => candidate.id === 'runners.preparation.planner');
+    expect(check?.details).toContain(
+      'Fresh CLI evidence denied admission: authentication-unverified.',
+    );
+    // The denial is policy, not a broken credential; the fix must name the
+    // escape hatch instead of sending the user back to a config that is fine.
+    expect(check?.fix).toContain('--allow-unverified-auth');
+  });
+
   it('blocks without a session when final CLI identity revalidation fails', async () => {
     const project = projectDir();
     const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });

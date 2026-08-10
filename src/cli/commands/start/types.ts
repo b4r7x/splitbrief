@@ -7,8 +7,6 @@ import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { GitClient } from '../../../lib/git/client.js';
 import type { prepareExecution } from '../../../engine/runners/prepare-execution.js';
 
-export type { DetectCliReadiness } from './readiness.js';
-
 export interface StartDeps {
   spawnServer: (opts: SpawnServerOptions) => Promise<SpawnServerResult>;
   runHeadless: typeof runHeadless;
@@ -35,3 +33,10 @@ export interface DispatchArgs {
 }
 
 export type RequiredFeatureDispatchArgs = DispatchArgs & { feature: string };
+
+/**
+ * Interactive starts mount Ink before preparation resolves, so the mount is not
+ * the run dispatch: `handOffWorktree` marks the point where a `--worktree` run
+ * stops being eligible for startup rollback.
+ */
+export type InteractiveDispatchArgs = DispatchArgs & { handOffWorktree: () => void };

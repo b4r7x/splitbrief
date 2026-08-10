@@ -298,6 +298,26 @@ describe('createRunnerCallRecorder', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'call_stall_cleared' }));
   });
 
+  it('emits a session id once per distinct value however often it is restated', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+
+    for (let repeat = 0; repeat < 5; repeat += 1) {
+      recorder.sessionId({ nativeSessionId: 'sid-1', ts: 2 + repeat });
+    }
+    recorder.sessionId({ nativeSessionId: 'sid-2', ts: 7 });
+
+    expect(events.filter((event) => event.type === 'call_session_id')).toEqual([
+      expect.objectContaining({ type: 'call_session_id', nativeSessionId: 'sid-1', ts: 2 }),
+      expect.objectContaining({ type: 'call_session_id', nativeSessionId: 'sid-2', ts: 7 }),
+    ]);
+    expect(recorder.snapshot().nativeSessionId).toBe('sid-2');
+  });
+
   it('sanitizes direct unknown-upstream raw previews before emitting events', () => {
     const events: RunnerCallEvent[] = [];
     const recorder = createRunnerCallRecorder({

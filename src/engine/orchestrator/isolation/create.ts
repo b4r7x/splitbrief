@@ -1,5 +1,5 @@
-import { realpath } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { realpath, rmdir } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { isInternalGitStatusPath } from '../../../core/paths.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { IsolationStrategy } from '../../../core/schemas/enums.js';
@@ -12,6 +12,7 @@ import { toErrorMessage } from '../../../utils/format-errors.js';
 import {
   clearBridgedCliState,
   createRunnerSandboxEnv,
+  pruneSandboxNpmCache,
   runnerSandboxIdentity,
   withPrependedPathDirectory,
 } from '../../runners/sandbox-env.js';
@@ -28,6 +29,19 @@ import { ensureIsolationWorktree, removeNodeModulesExclude } from './worktree.js
 
 const NODE_MODULES = 'node_modules';
 
+// The worktree's parent under the isolation trees root is this repository's
+// directory, shared by every session of it, so the removal only succeeds once
+// this run's worktree was the last entry: a concurrent session's worktree makes
+// it fail with ENOTEMPTY and the directory stays. Without it, the user state
+// directory collects one empty directory per repository ever run in.
+async function removeEmptyRepositoryRoot(worktreeDir: string): Promise<void> {
+  try {
+    await rmdir(dirname(worktreeDir));
+  } catch {
+    return;
+  }
+}
+
 function gitignoresMatch(a: string | null, b: string | null): boolean {
   return stripGitignoreBookkeeping(a) === stripGitignoreBookkeeping(b);
 }
@@ -38,8 +52,9 @@ export function createRunIsolation(opts: {
   strategy: IsolationStrategy;
   onFallback: (reason: string) => void;
   onRetained: (dir: string) => void;
+  warningPublisher?: (message: string) => void;
 }): RunIsolation {
-  const { projectDir, sessionId, strategy, onFallback, onRetained } = opts;
+  const { projectDir, sessionId, strategy, onFallback, onRetained, warningPublisher } = opts;
 
   let latchedStrategy: IsolationStrategy = strategy;
   let fallbackReported = false;
@@ -48,6 +63,12 @@ export function createRunIsolation(opts: {
   let createdWorktreeDir: string | null = null;
   let nodeModulesExcludeFile: string | null = null;
   let worktreeAbandoned = false;
+  // The worktree's content right after creation and seeding. Seeded files track
+  // live project files (the operator's own log of this run, for one), so the
+  // dispose scan must only weigh files the run changed on top of this baseline —
+  // comparing a stale seed against a project file that moved on would retain a
+  // fully promoted worktree forever.
+  let seedSnapshot: ChangedFilesSnapshot | null = null;
   let worktreePromise: Promise<string | null> | null = null;
   // A worktree cleanup is asynchronous while its callers are not, so the work is
   // chained here and awaited by everything that reads the worktree afterwards.
@@ -96,6 +117,9 @@ export function createRunIsolation(opts: {
           }
           worktreeGit = git;
           worktreeDir = result.worktreePath;
+          if (!result.reused) {
+            seedSnapshot = await getChangedFilesSnapshot(result.worktreePath);
+          }
           return result.worktreePath;
         } catch (err) {
           worktreeDir = createdWorktreeDir;
@@ -200,8 +224,13 @@ export function createRunIsolation(opts: {
     };
   }
 
+  // A reused worktree (a resumed session) has no seed baseline in this process,
+  // so every changed file is scanned; retention can only err towards keeping it.
   async function hasUnpromotedWork(worktreePath: string): Promise<boolean> {
-    const changed = await getCurrentChangedFiles(worktreePath);
+    const changed =
+      seedSnapshot === null
+        ? await getCurrentChangedFiles(worktreePath)
+        : await getChangedFilesSinceSnapshot(worktreePath, seedSnapshot);
     for (const file of changed) {
       if (await isUnpromoted(worktreePath, file)) return true;
     }
@@ -211,15 +240,22 @@ export function createRunIsolation(opts: {
   async function dispose(): Promise<void> {
     try {
       await pendingCleanup;
+      // The planner never takes the worktree — it runs in the project itself —
+      // so the cache that survives a run is the one under the project's sandbox
+      // roots, whatever isolation strategy the run ended up on. The worktree's
+      // own cache goes with the worktree below.
+      await pruneSandboxNpmCache(projectDir);
       const dir = worktreeDir;
       if (dir === null || worktreeGit === null) return;
       await clearBridgedCliState(dir);
       // A worktree the run fell back from was created before the fallback and was
       // never handed to an implementer, so it holds nothing to salvage and is
       // removed outright rather than scanned for unpromoted work.
+      let promotionProven = false;
       if (!worktreeAbandoned) {
         try {
-          if (await hasUnpromotedWork(dir)) {
+          promotionProven = !(await hasUnpromotedWork(dir));
+          if (!promotionProven) {
             onRetained(dir);
             return;
           }
@@ -240,7 +276,11 @@ export function createRunIsolation(opts: {
         git: worktreeGit,
         force: true,
         deleteBranch: true,
+        worktreeDir: dir,
+        ...(warningPublisher !== undefined && { warningPublisher }),
+        suppressUncommittedWarning: promotionProven,
       });
+      await removeEmptyRepositoryRoot(dir);
     } finally {
       // The entry lives in the repository's shared info/exclude, which the source
       // checkout reads too, so the run owns it only while it is running. It goes

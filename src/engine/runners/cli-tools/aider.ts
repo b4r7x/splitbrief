@@ -19,16 +19,26 @@ const AIDER_PROMPT_TRANSPORT = Object.freeze({
 const AIDER_VERSION_ARGS = Object.freeze(['--version'] as const);
 
 const AIDER_PROTECTED_FLAGS = new Set([
+  '--architect',
+  '--auto-commits',
   '--chat-mode',
+  '--commit',
+  '--dirty-commits',
+  '--dry-run',
+  '--edit-format',
   '--message',
+  '--msg',
   '--model',
   '--no-auto-commits',
   '--no-dirty-commits',
+  '--no-dry-run',
   '--no-pretty',
   '--no-stream',
   '--read',
   '--yes-always',
+  '-m',
 ]);
+const AIDER_PROTECTED_SHORT_VALUE_FLAGS = new Set(['-m']);
 
 type AiderPlannerBuildInput = Parameters<CliPlannerAdapter<'aider'>['buildArgs']>[0];
 type AiderImplementerBuildInput = Parameters<CliImplementerAdapter<'aider'>['buildArgs']>[0];
@@ -38,6 +48,7 @@ function validateArgs(invocationArgs: readonly string[], baseArgs: readonly stri
     invocationArgs,
     baseArgs,
     protectedFlags: AIDER_PROTECTED_FLAGS,
+    protectedShortValueFlags: AIDER_PROTECTED_SHORT_VALUE_FLAGS,
     promptTransport: 'argv',
   });
 }
@@ -102,15 +113,13 @@ function terminal(input: {
 function plannerBaseArgs(input: AiderPlannerBuildInput): string[] {
   const args: string[] = [];
   if (input.model !== undefined) args.push('--model', input.model);
-  args.push(
-    '--chat-mode',
-    'ask',
-    '--yes-always',
-    '--no-stream',
-    '--no-pretty',
-    '--message',
-    input.prompt,
-  );
+  if (input.mode === 'plan') args.push('--chat-mode', 'ask');
+  if (input.mode === 'escalate') args.push('--edit-format', 'whole');
+  args.push('--yes-always');
+  if (input.mode === 'escalate') {
+    args.push('--no-auto-commits', '--no-dirty-commits', '--no-dry-run');
+  }
+  args.push('--no-stream', '--no-pretty', '--message', input.prompt);
   if (
     input.mode === 'plan' &&
     input.projectDir.length > 0 &&

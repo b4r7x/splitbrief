@@ -1,18 +1,25 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { Command } from 'commander';
 import { canonicalizeProjectDir } from '../setup.js';
 import { assertNotWindows } from '../windows-guard.js';
+import { SPLITBRIEF_IDENTITY } from '../../core/identity.js';
 import { checkServerStatus, readLockfile, type LockfileData } from '../../engine/ipc/lockfile.js';
 import {
   sessionsRoot,
   sessionDir,
   isolationMarkerPath,
-  TREES_DIR,
+  ISOLATION_TREES_DIR,
+  isolationWorktreeRoot,
   isValidSessionId,
 } from '../../core/paths.js';
 import { listOrphanSessionIds, pruneOrphanSessions } from '../../core/sessions/orphans.js';
-import { assertTreesDirReadable } from '../../engine/worktree/path.js';
+import { getGitCommonDir } from '../../lib/git/repository.js';
+import { assertIsolationDirReadable } from '../../engine/worktree/path.js';
+import {
+  type IsolationMarker,
+  parseIsolationMarker,
+} from '../../engine/orchestrator/isolation/worktree.js';
 import { warnError } from '../../lib/warn.js';
 import {
   assignSessionAliases,
@@ -22,6 +29,7 @@ import {
 import { renderTable } from '../render-table.js';
 import { formatTime } from '../../utils/format-time.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
+import { formatShellArgv } from '../../utils/shell-quote.js';
 import type { WorkflowMode } from '../../core/schemas/enums.js';
 
 export type PsDeps = {
@@ -107,40 +115,60 @@ function assignDisplayedAliases(rows: SessionRow[]): SessionRow[] {
   return rows.map((row) => ({ ...row, alias: aliasBySession.get(row.sessionId) ?? null }));
 }
 
-type OrphanedIsolationWorktree = { slug: string; sessionId: string };
+type IsolationWorktreeReport = {
+  kind: 'orphaned' | 'unowned';
+  path: string;
+  sessionId: string;
+};
 
-function listOrphanedIsolationWorktrees(projectDir: string): OrphanedIsolationWorktree[] {
-  const treesDir = join(projectDir, TREES_DIR);
-  if (!existsSync(treesDir)) return [];
-  const orphaned: OrphanedIsolationWorktree[] = [];
+async function listIsolationWorktreeReports(
+  projectDir: string,
+): Promise<IsolationWorktreeReport[]> {
+  // A project that is not a git repository never had an isolation worktree to
+  // orphan, so there is nothing to report rather than something to warn about.
+  let gitCommonDir: string;
   try {
-    assertTreesDirReadable(projectDir);
-    for (const entry of readdirSync(treesDir, { withFileTypes: true })) {
+    gitCommonDir = await getGitCommonDir(projectDir);
+  } catch {
+    return [];
+  }
+  const reports: IsolationWorktreeReport[] = [];
+  try {
+    assertIsolationDirReadable({ projectDir, gitCommonDir });
+    const isolationDir = isolationWorktreeRoot(gitCommonDir);
+    if (!existsSync(isolationDir)) return [];
+    for (const entry of readdirSync(isolationDir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const wtDir = join(treesDir, entry.name);
+      const wtDir = join(isolationDir, entry.name);
       if (!existsSync(join(wtDir, '.git')) || !statSync(join(wtDir, '.git')).isFile()) continue;
-      let sessionId: string;
+      let marker: IsolationMarker;
       try {
-        sessionId = readFileSync(isolationMarkerPath(wtDir), 'utf8').trim();
+        marker = parseIsolationMarker(readFileSync(isolationMarkerPath(wtDir), 'utf8'));
       } catch {
         continue;
       }
+      // The isolation root is shared by every linked worktree of the repository
+      // while sessions are per-checkout, so only the marker's own project can
+      // decide the question. Without one the worktree is listed, never judged.
+      if (marker.projectDir === null) {
+        reports.push({ kind: 'unowned', path: wtDir, sessionId: marker.sessionId });
+        continue;
+      }
       if (
-        sessionId.length === 0 ||
-        !isValidSessionId(sessionId) ||
-        !existsSync(sessionDir(projectDir, sessionId))
+        !isValidSessionId(marker.sessionId) ||
+        !existsSync(sessionDir(marker.projectDir, marker.sessionId))
       ) {
-        orphaned.push({ slug: entry.name, sessionId });
+        reports.push({ kind: 'orphaned', path: wtDir, sessionId: marker.sessionId });
       }
     }
   } catch (err) {
-    warnError(`isolation worktrees: cannot scan ${TREES_DIR}`, err);
+    warnError(`isolation worktrees: cannot scan ${ISOLATION_TREES_DIR}`, err);
     return [];
   }
-  return orphaned;
+  return reports;
 }
 
-function printCollectionHints(projectDir: string, pruned: boolean): void {
+async function printCollectionHints(projectDir: string, pruned: boolean): Promise<void> {
   if (!pruned) {
     const collectable = listOrphanSessionIds({ projectDir }).length;
     if (collectable === 1) {
@@ -153,9 +181,19 @@ function printCollectionHints(projectDir: string, pruned: boolean): void {
       );
     }
   }
-  for (const orphan of listOrphanedIsolationWorktrees(projectDir)) {
+  for (const worktree of await listIsolationWorktreeReports(projectDir)) {
+    const path = stripTerminalControls(worktree.path);
+    if (worktree.kind === 'unowned') {
+      console.log(
+        `Isolation worktree "${path}" records no owning project; check that no run is using it before removing it.`,
+      );
+      continue;
+    }
+    const branch = `${SPLITBRIEF_IDENTITY.branchPrefix}${stripTerminalControls(basename(worktree.path))}`;
+    const removeCommand = formatShellArgv(['git', 'worktree', 'remove', path, '--force']);
+    const deleteBranchCommand = formatShellArgv(['git', 'branch', '-D', branch]);
     console.log(
-      `Orphaned isolation worktree ".trees/${stripTerminalControls(orphan.slug)}" (session ${stripTerminalControls(orphan.sessionId)} no longer exists); remove it with "splitbrief worktree remove ${stripTerminalControls(orphan.slug)} --force --delete-branch".`,
+      `Orphaned isolation worktree "${path}" (session ${stripTerminalControls(worktree.sessionId)} no longer exists); remove it with "${removeCommand}" then "${deleteBranchCommand}".`,
     );
   }
 }
@@ -181,7 +219,7 @@ export async function psCommand(
 
   if (names.length === 0) {
     console.log('No sessions found in this project.');
-    printCollectionHints(opts.projectDir, opts.prune ?? false);
+    await printCollectionHints(opts.projectDir, opts.prune ?? false);
     return;
   }
 
@@ -191,7 +229,7 @@ export async function psCommand(
 
   if (rows.length === 0) {
     console.log('No sessions found in this project.');
-    printCollectionHints(opts.projectDir, opts.prune ?? false);
+    await printCollectionHints(opts.projectDir, opts.prune ?? false);
     return;
   }
 
@@ -219,7 +257,7 @@ export async function psCommand(
   });
 
   for (const line of lines) console.log(line);
-  printCollectionHints(opts.projectDir, opts.prune ?? false);
+  await printCollectionHints(opts.projectDir, opts.prune ?? false);
 }
 
 export function registerPsCommand(program: Command): void {

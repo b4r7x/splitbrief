@@ -166,6 +166,7 @@ export interface RuntimeCommandContext {
   getCurrentPhase: () => Phase;
   requestRewind: (target: 'spec' | 'plan', comment?: string) => boolean;
   requestTaskRedo: (taskId: string) => boolean;
+  requestWorkflowResume: () => boolean;
   getQueueDepth: () => number;
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   rebuildRepomap: () => Promise<{ deleted: boolean; files: string[] }>;

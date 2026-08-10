@@ -1,8 +1,11 @@
+import type { Config } from '../../../../core/schemas/config.js';
 import type { Phase } from '../../../../core/schemas/enums.js';
 import type { RecoveryIssue } from '../../../../core/schemas/recovery/schemas.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
+import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
+import { parseUsageLimitReset, usageLimitGuidance } from '../../../runners/usage-limit.js';
 import { uniqueSortedIds, uniqueSorted } from '../../../../utils/collections.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
@@ -51,6 +54,128 @@ export interface DependencyBlockedRecoveryOptions extends RecoveryBuilderBase {
   blockedByTasks?: Task[] | undefined;
   blockedByTaskIds?: TaskId[] | undefined;
   phase?: Phase | undefined;
+}
+
+export interface RunnerUnauthenticatedRecoveryOptions
+  extends RecoveryBuilderBase,
+    TaskRecoveryContext {
+  runner: Config['implementer'];
+  toolMessage: string;
+}
+
+export type RunnerUsageLimitRecoveryOptions = RunnerUnauthenticatedRecoveryOptions;
+
+/** The profile a limit-hit or exhausted task could be re-routed to, if any. */
+export function routeBiggerProfileFromDecision(
+  decision: RoutingDecision | undefined,
+): string | undefined {
+  if (!decision?.selectedProfile) return undefined;
+  const candidate = decision.rejected.find(
+    (profile) =>
+      profile.fit !== 'overflow' &&
+      (profile.requiredWriteMode !== 'direct' || profile.profileWriteMode === 'direct'),
+  );
+  return candidate?.profile;
+}
+
+/**
+ * A runner that ran out of quota halts the run the same way a signed-out one
+ * does: retrying is free but cannot succeed until the limit resets, and
+ * silently escalating every task to the planner is the expensive failure the
+ * halt exists to prevent. The message names the reset time whenever the
+ * tool's own diagnostic carried one; login is never suggested because it
+ * cannot restore quota.
+ */
+export function buildRunnerUsageLimitRecoveryIssue(
+  opts: RunnerUsageLimitRecoveryOptions,
+): RecoveryIssue {
+  const phase = opts.phase ?? 'implementing';
+  const displayName = runnerAuthDisplayName(opts.runner);
+  const resetsAt = parseUsageLimitReset(opts.toolMessage);
+  const actions = orderedActions([
+    'retry-same-worker',
+    hasRouteBigger(opts) ? 'route-bigger-worker' : undefined,
+    'skip-current-task',
+    'pause-run',
+    'abort-workflow',
+  ]);
+
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'runner-usage-limit',
+    phase,
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: `${displayName} hit its usage limit. ${usageLimitGuidance(resetsAt)}`,
+    details: [
+      `${displayName} reported: ${opts.toolMessage}`,
+      'The run stopped instead of escalating this task to the planner.',
+      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...implementerDetails(opts.selectedImplementerProfile),
+      ...routeBiggerDetails(opts),
+    ],
+    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    facts: compactFacts({
+      tool: displayName,
+      limitMessage: opts.toolMessage,
+      resetsAt: resetsAt?.toISOString(),
+      routeBiggerProfile: opts.routeBiggerProfile,
+      canRouteBigger: hasRouteBigger(opts) ? true : undefined,
+    }),
+    availableActions: actions,
+    recommendedAction: chooseRecommended(actions, ['route-bigger-worker', 'pause-run']),
+    createdAt: opts.createdAt,
+  });
+}
+
+/**
+ * A signed-out runner halts the run instead of escalating: retrying costs
+ * nothing but cannot succeed, and silently routing every task to the planner
+ * is the expensive failure the halt exists to prevent. The message carries
+ * the exact login command; the details keep the tool's own words verbatim.
+ */
+export function buildRunnerUnauthenticatedRecoveryIssue(
+  opts: RunnerUnauthenticatedRecoveryOptions,
+): RecoveryIssue {
+  const phase = opts.phase ?? 'implementing';
+  const displayName = runnerAuthDisplayName(opts.runner);
+  const instruction = runnerLoginInstruction(opts.runner);
+  const actions = orderedActions([
+    'retry-same-worker',
+    'skip-current-task',
+    'pause-run',
+    'abort-workflow',
+  ]);
+
+  return createRecoveryIssue({
+    id: opts.id,
+    reason: 'runner-unauthenticated',
+    phase,
+    task: opts.task,
+    files: taskFiles(opts.task),
+    affectedTaskIds: [opts.task.id],
+    message: `${displayName} is signed out. ${instruction}`,
+    details: [
+      `${displayName} reported: ${opts.toolMessage}`,
+      'The run stopped instead of escalating this task to the planner.',
+      ...attemptDetails(opts.attempts, opts.maxAttempts),
+      ...implementerDetails(opts.selectedImplementerProfile),
+    ],
+    ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
+    ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
+    selectedImplementerProfile: opts.selectedImplementerProfile,
+    facts: compactFacts({
+      tool: displayName,
+      loginInstruction: instruction,
+      authMessage: opts.toolMessage,
+    }),
+    availableActions: actions,
+    recommendedAction: chooseRecommended(actions, ['retry-same-worker', 'pause-run']),
+    createdAt: opts.createdAt,
+  });
 }
 
 export function buildRetryExhaustedRecoveryIssue(

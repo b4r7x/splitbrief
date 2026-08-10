@@ -97,6 +97,61 @@ describe('Aider role adapters', () => {
     expect(aiderImplementerAdapter.validateArgs(args, args.slice(0, -1))).toEqual({ valid: true });
   });
 
+  it('overrides read-only and dry-run config defaults for full escalation', () => {
+    const args = aiderPromptArgs({
+      role: 'planner',
+      model: 'claude-sonnet-4-6',
+      projectDir: '',
+      mode: 'escalate',
+    });
+
+    expect(args).toEqual([
+      '--model',
+      'claude-sonnet-4-6',
+      '--edit-format',
+      'whole',
+      '--yes-always',
+      '--no-auto-commits',
+      '--no-dirty-commits',
+      '--no-dry-run',
+      '--no-stream',
+      '--no-pretty',
+      '--message',
+      PROMPT,
+    ]);
+    expect(args).not.toContain('--chat-mode');
+    expect(args).not.toContain('ask');
+    expect(
+      aiderPlannerAdapter.validateArgs(
+        aiderPromptArgs({
+          role: 'planner',
+          model: 'claude-sonnet-4-6',
+          projectDir: '',
+          mode: 'escalate',
+          configuredArgs: ['--architect', '--dry-run'],
+        }),
+        args,
+      ),
+    ).toEqual({ valid: false, conflicts: ['--architect', '--dry-run'] });
+  });
+
+  it.each([
+    { tail: ['--msg', 'other'], conflict: '--msg' },
+    { tail: ['-m', 'other'], conflict: '-m' },
+    { tail: ['-mPROMPT'], conflict: '-m' },
+    { tail: ['--architect'], conflict: '--architect' },
+    { tail: ['--auto-commits'], conflict: '--auto-commits' },
+    { tail: ['--dirty-commits'], conflict: '--dirty-commits' },
+    { tail: ['--commit'], conflict: '--commit' },
+  ])('rejects the protected configured-tail bypass $conflict', ({ tail, conflict }) => {
+    const base = aiderPromptArgs({ role: 'implementer' });
+
+    expect(aiderImplementerAdapter.validateArgs([...base, ...tail], base)).toEqual({
+      valid: false,
+      conflicts: [conflict],
+    });
+  });
+
   it('rejects reordered, protected, and alternate prompt arguments', () => {
     const base = aiderPromptArgs({ role: 'implementer' });
     expect(aiderImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
@@ -106,6 +161,14 @@ describe('Aider role adapters', () => {
     expect(aiderImplementerAdapter.validateArgs([...base, '--message', 'other'], base)).toEqual({
       valid: false,
       conflicts: ['--message'],
+    });
+    expect(aiderImplementerAdapter.validateArgs([...base, '--edit-format', 'diff'], base)).toEqual({
+      valid: false,
+      conflicts: ['--edit-format'],
+    });
+    expect(aiderImplementerAdapter.validateArgs([...base, '--dry-run'], base)).toEqual({
+      valid: false,
+      conflicts: ['--dry-run'],
     });
     expect(aiderImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
       valid: false,

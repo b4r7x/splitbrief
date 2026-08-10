@@ -55,6 +55,8 @@ export function allowedActionsForReason(reason: RecoveryReason): RecoveryAction[
     case 'implementation-error':
     case 'validation-failed':
     case 'retry-exhausted':
+    case 'runner-unauthenticated':
+    case 'runner-usage-limit':
       return copyActions(TASK_RECOVERY_ACTIONS);
     case 'context-overflow':
       return copyActions(CONTEXT_OVERFLOW_ACTIONS);

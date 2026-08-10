@@ -42,7 +42,7 @@ export function ScreenShell({
         {children}
       </Box>
       {footer !== undefined && footer !== null && (
-        <Box flexDirection="column" flexShrink={0} width="100%">
+        <Box flexDirection="column" flexShrink={0}>
           {footer}
         </Box>
       )}

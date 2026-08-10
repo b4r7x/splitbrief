@@ -96,6 +96,8 @@ export const RECOVERY_REASONS = [
   'implementation-error',
   'validation-failed',
   'retry-exhausted',
+  'runner-unauthenticated',
+  'runner-usage-limit',
   'context-overflow',
   'user-edit-conflict',
   'approval-promotion-conflict',

@@ -207,8 +207,23 @@ describe('fresh CLI start gate', () => {
     expect(disclosed).toMatchObject({ kind: 'admitted', gate: { tool: 'aider' } });
   });
 
-  it('does not let a disclosure silently bypass first-class unknown auth', () => {
-    expect(admit(freshEvidence({ auth: 'unknown' }), { unverifiedAuth: 'disclosed' })).toEqual({
+  it('surfaces first-class unknown auth for review and admits it only once disclosed', () => {
+    // The honest gauge caps a local status read at `unknown` — codex's
+    // `login status` reads auth.json and cannot prove a working session — so
+    // unknown must be startable interactively, but never silently: without an
+    // accepted disclosure it comes back for review, and headless stays
+    // fail-closed below.
+    expect(admit(freshEvidence({ auth: 'unknown' }))).toEqual({
+      kind: 'disclosure-required',
+      auth: 'unknown',
+    });
+    expect(
+      admit(freshEvidence({ auth: 'unknown' }), { unverifiedAuth: 'disclosed' }),
+    ).toMatchObject({
+      kind: 'admitted',
+      gate: { tool: 'codex' },
+    });
+    expect(admit(freshEvidence({ auth: 'unknown' }), { interaction: 'headless' })).toEqual({
       kind: 'denied',
       reason: { kind: 'authentication-unverified' },
     });

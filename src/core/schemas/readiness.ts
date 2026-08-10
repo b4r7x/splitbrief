@@ -27,6 +27,7 @@ export const READINESS_NEXT_ACTION_KINDS = [
   'continue',
   'run-init',
   'fix-config',
+  'prepare-runner',
   'clean-or-isolate-repo',
   'raise-context',
   'set-budget',
@@ -233,7 +234,10 @@ function cliReadinessRemediation(
       if (facts.installedVersion === null || facts.compatibility !== 'compatible') {
         return `Verify ${facts.tool} against tested version ${facts.testedVersion}, then run runner readiness again.`;
       }
-      return `Verify ${facts.tool} authentication in the staged runner environment, then run runner readiness again.`;
+      // Honest about the ceiling of a cheap check: stored credentials prove
+      // presence, never a working session, and re-running readiness cannot
+      // change that — only a real call can.
+      return `${facts.tool} authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real ${facts.tool} call settles it; if that call fails to authenticate, sign in to ${facts.tool} again.`;
     case 'unauthenticated':
       return cliAuthRemediation(facts);
   }

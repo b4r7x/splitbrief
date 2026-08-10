@@ -50,6 +50,7 @@ describe('makeImplementerRetryInvoker', () => {
       success: true,
       output: 'fixed',
       usage: { inputTokens: 1, outputTokens: 1 },
+      runner: config.implementer,
     });
 
     const received = getReceived();
@@ -85,7 +86,7 @@ describe('makeImplementerRetryInvoker', () => {
       config: overrideConfig,
     });
 
-    await invoker({
+    const result = await invoker({
       task: makeTask(),
       lastError: 'boom',
       attempts: 1,
@@ -95,6 +96,7 @@ describe('makeImplementerRetryInvoker', () => {
       fileIgnoreProjectDir: '/project',
     });
 
+    expect(result.runner).toEqual(overrideConfig.implementer);
     expect(argImpl.getReceived()).toBeUndefined();
     expect(override.getReceived()?.config.implementer.model).toBe('override-model');
     expect(override.getReceived()?.kind).toBe('local');

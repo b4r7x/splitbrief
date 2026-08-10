@@ -168,6 +168,24 @@ describe('resolveNumericAlias', () => {
     expect(result).toBe('older');
   });
 
+  it('ignores quarantine claim directories when resolving a numeric alias', async () => {
+    const { resolveNumericAlias } = await import('./aliases.js');
+    const projectDir = makeTmpProject();
+
+    makeSessionWithLockfile(projectDir, 'session', 1000);
+    mkdirSync(
+      join(
+        projectDir,
+        '.splitbrief',
+        'sessions',
+        '.session.directory.11111111-1111-4111-8111-111111111111.claim',
+      ),
+      { recursive: true },
+    );
+
+    await expect(resolveNumericAlias('1', projectDir)).resolves.toBe('session');
+  });
+
   it('throws for out-of-range alias', async () => {
     const { resolveNumericAlias } = await import('./aliases.js');
     const projectDir = makeTmpProject();

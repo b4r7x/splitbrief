@@ -53,6 +53,24 @@ export const streamError = {
   },
 } as const;
 
+/**
+ * The Retry-After a 429 response carried, in whole seconds. OpenAI-compatible
+ * SDK errors expose the response headers on the thrown error; appending the
+ * value to the diagnostic lets the usage-limit recovery name the reset moment.
+ */
+export function retryAfterHeaderSeconds(err: Record<string, unknown>): string | null {
+  const headers = err.headers;
+  const value =
+    headers instanceof Headers
+      ? headers.get('retry-after')
+      : isRecord(headers)
+        ? (headers['retry-after'] ?? headers['Retry-After'])
+        : null;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return /^\d+$/.test(trimmed) ? trimmed : null;
+}
+
 function hasConnectionRefusedInChain(err: Record<string, unknown>): boolean {
   const seen = new Set<unknown>();
   let node: unknown = err;
@@ -74,7 +92,12 @@ export function throwMappedError(
     throw streamError.connectionRefused(provider, endpoint?.apiBase, err);
   }
   if (typeof err.status === 'number' && err.status >= 400) {
-    throw streamError.httpStatus(provider, err.status, toErrorMessage(err), err);
+    const retryAfter = err.status === 429 ? retryAfterHeaderSeconds(err) : null;
+    const detail =
+      retryAfter === null
+        ? toErrorMessage(err)
+        : `${toErrorMessage(err)} (retry-after: ${retryAfter}s)`;
+    throw streamError.httpStatus(provider, err.status, detail, err);
   }
   throw err;
 }

@@ -5,32 +5,42 @@ import type {
 } from '../../../core/schemas/drift-chain.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import { emptyActiveChain } from './chain-state.js';
+import { SESSION_ARTIFACT_FILES } from './analyze.js';
 import { clamp01 } from '../../../utils/math.js';
 import { matchesActionPattern } from '../approval/action-classifier.js';
+import { taskAcceptedPatterns } from '../task-scope.js';
 
 export type DriftChainUpdate = {
   state: DriftChainState;
   emitted: EmittedChain | undefined;
 };
 
-export function computePerTaskOutOfBounds(
-  task: Task,
-  taskChangedFiles: string[],
-  dependsOnFiles: string[] = [],
-): Set<string> {
-  if (taskChangedFiles.length === 0) return new Set();
+export type PerTaskOutOfBoundsInput = {
+  /** Every Task Brief in the plan; a file any brief targets is entitled. */
+  tasks: Task[];
+  /** Files whose content changed during this task's execution window. */
+  taskChangedFiles: string[];
+  /** Files already dirty when the run started (run-start baseline). */
+  preRunChangedFiles: readonly string[];
+  /** Files the evidence ledger attributes to task execution. */
+  runAttributedFiles: ReadonlySet<string>;
+};
 
-  const inBoundsPatterns = task.scope?.inBounds ?? [];
-  const approvedPatterns = task.scope?.approvedOutOfBounds ?? [];
-  const dependsOn = new Set(dependsOnFiles);
+// The run's own stdout/stderr sinks never reach here: change detection
+// excludes them (see stdio-sinks.ts), which also keeps the ledger from
+// attributing them and thereby defeating the pre-run-baseline excuse below.
+export function computePerTaskOutOfBounds(input: PerTaskOutOfBoundsInput): Set<string> {
+  if (input.taskChangedFiles.length === 0) return new Set();
+
+  const acceptedPatterns = input.tasks.flatMap(taskAcceptedPatterns);
+  const preRunBaseline = new Set(input.preRunChangedFiles);
 
   const result = new Set<string>();
 
-  for (const file of [...new Set(taskChangedFiles)].sort()) {
-    if (matchesActionPattern(file, task.file)) continue;
-    if (dependsOn.has(file)) continue;
-    if (inBoundsPatterns.some((pattern) => matchesActionPattern(file, pattern))) continue;
-    if (approvedPatterns.some((pattern) => matchesActionPattern(file, pattern))) continue;
+  for (const file of [...new Set(input.taskChangedFiles)].sort()) {
+    if (acceptedPatterns.some((pattern) => matchesActionPattern(file, pattern))) continue;
+    if (SESSION_ARTIFACT_FILES.has(file)) continue;
+    if (preRunBaseline.has(file) && !input.runAttributedFiles.has(file)) continue;
     result.add(file);
   }
 

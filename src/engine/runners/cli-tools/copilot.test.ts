@@ -85,6 +85,9 @@ describe('Copilot role adapters', () => {
       'gpt-5.2',
       '-p',
       PROMPT,
+      '--plan',
+      '--allow-all-tools',
+      '--no-ask-user',
       '--output-format',
       'json',
       '--label',
@@ -114,6 +117,41 @@ describe('Copilot role adapters', () => {
     expect(args).toContain('--allow-all');
   });
 
+  it('uses plan mode for read-only calls and direct-write approval for full escalation', () => {
+    const planArgs = copilotPromptArgs({ role: 'planner' });
+    expect(planArgs).toEqual([
+      '-p',
+      PROMPT,
+      '--plan',
+      '--allow-all-tools',
+      '--no-ask-user',
+      '--output-format',
+      'json',
+    ]);
+    expect(planArgs).not.toContain('--allow-all');
+
+    const escalationArgs = copilotPromptArgs({ role: 'planner', mode: 'escalate' });
+    expect(escalationArgs).toEqual([
+      '-p',
+      PROMPT,
+      '--allow-all',
+      '--no-ask-user',
+      '--output-format',
+      'json',
+    ]);
+    expect(escalationArgs).not.toContain('--plan');
+    expect(
+      copilotPlannerAdapter.validateArgs(
+        copilotPromptArgs({
+          role: 'planner',
+          mode: 'escalate',
+          configuredArgs: ['--plan'],
+        }),
+        escalationArgs,
+      ),
+    ).toEqual({ valid: false, conflicts: ['--plan'] });
+  });
+
   it('rejects reordered, protected, duplicate, embedded, and alternate prompt arguments', () => {
     const base = copilotPromptArgs({ role: 'implementer' });
     expect(copilotImplementerAdapter.validateArgs([PROMPT, ...base], base)).toEqual({
@@ -127,6 +165,26 @@ describe('Copilot role adapters', () => {
     expect(copilotImplementerAdapter.validateArgs([...base, '--model', 'other'], base)).toEqual({
       valid: false,
       conflicts: ['--model'],
+    });
+    expect(copilotImplementerAdapter.validateArgs([...base, '--plan'], base)).toEqual({
+      valid: false,
+      conflicts: ['--plan'],
+    });
+    expect(copilotImplementerAdapter.validateArgs([...base, '--agent', 'custom'], base)).toEqual({
+      valid: false,
+      conflicts: ['--agent'],
+    });
+    expect(copilotImplementerAdapter.validateArgs([...base, '--prompt', 'other'], base)).toEqual({
+      valid: false,
+      conflicts: ['--prompt'],
+    });
+    expect(copilotImplementerAdapter.validateArgs([...base, '-pPROMPT'], base)).toEqual({
+      valid: false,
+      conflicts: ['-p'],
+    });
+    expect(copilotImplementerAdapter.validateArgs([...base, '--yolo'], base)).toEqual({
+      valid: false,
+      conflicts: ['--yolo'],
     });
     expect(copilotImplementerAdapter.validateArgs([...base, 'prefix-<PROMPT>'], base)).toEqual({
       valid: false,

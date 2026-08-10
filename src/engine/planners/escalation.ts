@@ -14,6 +14,7 @@ type PlannerEscalationConfig = {
     prompt: string;
     projectDir: string;
     callContext: RunnerCallContext;
+    accessMode: 'read-only' | 'write-files';
     callbacks: PlannerOutputCallbacks;
     signal?: AbortSignal | undefined;
     sandboxEnv?: NodeJS.ProcessEnv | undefined;
@@ -73,6 +74,7 @@ export async function escalateHint(
       prompt: hintPrompt,
       projectDir,
       callContext,
+      accessMode: 'read-only',
       callbacks,
       signal: callbacks.signal,
       sandboxEnv: opts.sandboxEnv,
@@ -88,12 +90,13 @@ export async function escalateFull(
   opts: EscalateOptions,
 ): Promise<EscalationResult> {
   const { task, error, projectDir, callbacks, languageContext } = opts;
-  const escalationPrompt = buildEscalationPrompt(
+  const escalationPrompt = buildEscalationPrompt({
     task,
-    task.currentCode ?? '',
+    lastAttempt: task.currentCode ?? '',
     error,
-    languageContext ?? buildProjectLanguageContext(projectDir, undefined),
-  );
+    languageContext: languageContext ?? buildProjectLanguageContext(projectDir, undefined),
+    outputMode: config.escalateFullMode === 'files' ? 'files' : 'text',
+  });
 
   if (config.escalateFullMode === 'files') {
     const detect = createChangeDetector('Full escalation');
@@ -107,6 +110,7 @@ export async function escalateFull(
         prompt: escalationPrompt,
         projectDir,
         callContext,
+        accessMode: 'write-files',
         callbacks,
         signal: callbacks.signal,
         sandboxEnv: opts.sandboxEnv,
@@ -122,6 +126,7 @@ export async function escalateFull(
       prompt: escalationPrompt,
       projectDir,
       callContext,
+      accessMode: 'read-only',
       callbacks,
       signal: callbacks.signal,
       sandboxEnv: opts.sandboxEnv,
