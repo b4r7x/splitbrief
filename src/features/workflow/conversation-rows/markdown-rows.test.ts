@@ -908,3 +908,70 @@ describe('highlighted code in transcript rows', () => {
     expect(rows.map(rowText).join('\n')).toContain("const x = 'y';");
   });
 });
+
+describe('projection reuse across re-renders', () => {
+  it('reuses the projection when the same raw text is re-projected', () => {
+    resetMarkdownConversationRowsCache();
+    const input = { keyPrefix: 'reuse', text: '# Title\n\nbody line', width: 80 };
+    const first = markdownConversationRowsProjection(input);
+    const second = markdownConversationRowsProjection({ ...input });
+
+    expect(second).toBe(first);
+  });
+
+  it('reuses the projection when raw text is an equal but distinct string', () => {
+    resetMarkdownConversationRowsCache();
+    const text = '# Title\n\nbody line';
+    const first = markdownConversationRowsProjection({ keyPrefix: 'reuse-copy', text, width: 80 });
+    const second = markdownConversationRowsProjection({
+      keyPrefix: 'reuse-copy',
+      text: `${text.slice(0, 3)}${text.slice(3)}`,
+      width: 80,
+    });
+
+    expect(second).toBe(first);
+  });
+
+  it('rebuilds the projection when the raw text changes', () => {
+    resetMarkdownConversationRowsCache();
+    const first = markdownConversationRowsProjection({
+      keyPrefix: 'rebuild',
+      text: '# Title\n\nbody line',
+      width: 80,
+    });
+    const second = markdownConversationRowsProjection({
+      keyPrefix: 'rebuild',
+      text: '# Title\n\nbody line\n\nmore',
+      width: 80,
+    });
+
+    expect(second).not.toBe(first);
+    expect(second.rowCount).toBeGreaterThan(first.rowCount);
+  });
+
+  it('reuses the projection when only stripped control characters differ', () => {
+    resetMarkdownConversationRowsCache();
+    const first = markdownConversationRowsProjection({
+      keyPrefix: 'sanitized',
+      text: '# Title\n\nbody line',
+      width: 80,
+    });
+    const second = markdownConversationRowsProjection({
+      keyPrefix: 'sanitized',
+      text: '# Title\n\nbody\u001b[31m line',
+      width: 80,
+    });
+
+    expect(second).toBe(first);
+  });
+
+  it('rebuilds the projection when the width changes', () => {
+    resetMarkdownConversationRowsCache();
+    const text = '# Title\n\na fairly long body line that will wrap differently at each width';
+    const wide = markdownConversationRowsProjection({ keyPrefix: 'width', text, width: 80 });
+    const narrow = markdownConversationRowsProjection({ keyPrefix: 'width', text, width: 24 });
+
+    expect(narrow).not.toBe(wide);
+    expect(narrow.rowCount).toBeGreaterThan(wide.rowCount);
+  });
+});

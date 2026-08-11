@@ -1,6 +1,6 @@
 import { Box, Text } from 'ink';
 import { useEffect } from 'react';
-import { renderMarkdownRows } from '../../../components/markdown.js';
+import { renderReviewRows } from './review-rows-cache.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import { getScrollViewportContentWidth } from '../../../components/scrollbar.js';
@@ -35,7 +35,7 @@ export function ReviewView({ height, width }: ReviewViewProps) {
   const scrollableWidth = Math.max(1, documentWidth - 2);
   const bodyWidth = Math.max(1, getScrollViewportContentWidth(scrollableWidth));
   const innerHeight = Math.max(0, containerHeight - REVIEW_FRAME_ROWS);
-  const rows = renderMarkdownRows({
+  const rows = renderReviewRows({
     source: content,
     width: bodyWidth,
     theme: t,

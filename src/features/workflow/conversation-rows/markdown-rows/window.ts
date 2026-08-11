@@ -4,7 +4,7 @@ import type { ConversationRow } from '../types.js';
 import type {
   MarkdownConversationRowsProjection,
   MarkdownLayoutChunk,
-  MarkdownRowsCacheEntry,
+  MarkdownRowsProjectionEntry,
 } from './types.js';
 import { workflowMarkdownConversationSegments } from './conversation-segments.js';
 
@@ -13,7 +13,7 @@ export function createMarkdownRowsCacheEntryFromChunks(input: {
   keyPrefix: string;
   chunks: readonly MarkdownLayoutChunk[];
   projectDir: string | undefined;
-}): MarkdownRowsCacheEntry {
+}): MarkdownRowsProjectionEntry {
   const rows = input.chunks.flatMap((chunk) => chunk.rows);
   const rowCount = input.chunks.reduce((sum, chunk) => sum + chunk.height, 0);
   const keyPrefix = input.keyPrefix;
