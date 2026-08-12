@@ -50,6 +50,10 @@ export interface MarkdownLayoutChunk {
   endOffset: number;
   rows: readonly MarkdownLayoutRow[];
   height: number;
+  // Taken from the parsed blocks, not the rows: a document header parses as frontmatter and
+  // renders nothing, so a row scan would read the chunk as ordinary content and re-lay the
+  // whole message on every append.
+  metadataOnly: boolean;
 }
 
 export interface MetadataCandidate {

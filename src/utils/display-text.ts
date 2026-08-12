@@ -1,6 +1,6 @@
 import { redactSecrets } from './redact.js';
 
-const ELLIPSIS = '\u2026';
+export const ELLIPSIS = '\u2026';
 export const DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS = 4000;
 const ESC = '\\u001b';
 const BEL = '\\u0007';
@@ -107,6 +107,27 @@ export function splitTerminalGraphemes(
 ): string[] {
   if (PRINTABLE_ASCII_PATTERN.test(text)) return text.split('');
   return Array.from(iterateTerminalGraphemes(text, opts));
+}
+
+export function wrapTerminalGraphemes(input: {
+  graphemes: Iterable<string>;
+  maxWidth: number;
+  initialWidth?: number;
+  flush: () => number | undefined;
+  append: (grapheme: string) => void;
+}): void {
+  const maxWidth = Math.max(1, input.maxWidth);
+  let lineWidth = Math.max(0, input.initialWidth ?? 0);
+
+  for (const grapheme of input.graphemes) {
+    const graphemeWidth = getTerminalCellWidth(grapheme);
+    if (lineWidth > 0 && lineWidth + graphemeWidth > maxWidth) {
+      const flushedWidth = input.flush();
+      lineWidth = typeof flushedWidth === 'number' ? Math.max(0, flushedWidth) : 0;
+    }
+    input.append(grapheme);
+    lineWidth += graphemeWidth;
+  }
 }
 
 export function truncateTerminalDisplayText(text: string, maxCells: number): string {

@@ -6,7 +6,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { TieredApprovalRequest } from '../../../src/core/approval/types.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/features/workflow/prompt-grace.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { glyph } from '../../../src/lib/glyphs.js';
 import { mountWorkflowScreen } from '#testing/helpers/workflow-screen.js';
 
@@ -152,7 +152,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(PAST_GRACE);
     await tick(20);
 
-    expect(ui.lastFrame() ?? '').toContain('approve?');
+    expect(ui.lastFrame() ?? '').toContain('Approve');
 
     await flushEffects();
     ui.stdin.write('n');

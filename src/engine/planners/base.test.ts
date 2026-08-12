@@ -482,7 +482,7 @@ describe('createPlannerBase — priorMessages injection (FR-007)', () => {
     const planner = createPlannerBase({
       invokePlan: async ({ prompt }) => {
         captured.push(prompt);
-        return completedRunnerCall('ok');
+        return completedRunnerCall(taskMarkdown);
       },
       invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,
@@ -519,7 +519,7 @@ describe('createPlannerBase — priorMessages injection (FR-007)', () => {
       invokePlan: async ({ prompt, priorMessages }) => {
         captured.push(prompt);
         if (priorMessages) seenPriorMessages = priorMessages;
-        return completedRunnerCall('ok');
+        return completedRunnerCall(taskMarkdown);
       },
       invokeEscalate: async () => completedRunnerCall(''),
       isAvailable: async () => true,

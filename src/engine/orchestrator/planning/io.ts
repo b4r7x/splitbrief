@@ -1,22 +1,57 @@
 import { dirname } from 'node:path';
 import type { Task } from '../../../core/schemas/task.js';
+import type { Phase } from '../../../core/schemas/enums.js';
+import type { EventBus } from '../../events/types.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { writeSpecFile } from '../../../core/paths-io.js';
-import { TASKS_FILE } from '../../../core/paths.js';
+import { PLAN_FILE, RESEARCH_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { readSessionFileConfined } from '../../../core/sessions/confinement.js';
 import { formatTasks } from '../../spec/formatter.js';
 import { parseTasksStrict } from '../../spec/tasks/parse.js';
 import { labelError } from '../../../utils/format-errors.js';
+import { error } from '../../../utils/error.js';
+import { writeAndPublishArtifact, type ArtifactKind } from '../artifact-write.js';
 import type { PlanResult } from '../../planners/types.js';
 
-export function persistPhases(
-  projectDir: string,
-  sessionId: string,
-  phases: PlanResult['phases'],
-  metadata: SpecMetadata,
-): void {
-  for (const phase of phases ?? []) {
-    writeSpecFile({ projectDir, sessionId }, phase.filename, phase.text, metadata);
+function artifactKindFor(filename: string): ArtifactKind {
+  switch (filename) {
+    case RESEARCH_FILE:
+      return 'research';
+    case SPEC_FILE:
+      return 'spec';
+    case PLAN_FILE:
+      return 'plan';
+    case TASKS_FILE:
+      return 'task-briefs';
+    default:
+      throw error('planning-unknown-artifact', `Unsupported planning phase artifact: ${filename}`, {
+        filename,
+      });
+  }
+}
+
+export function persistPhases(opts: {
+  projectDir: string;
+  sessionId: string;
+  phases: PlanResult['phases'];
+  metadata: SpecMetadata;
+  bus: EventBus;
+  phase: Phase;
+}): void {
+  const { projectDir, sessionId, metadata, bus, phase } = opts;
+  for (const phaseResult of opts.phases ?? []) {
+    const kind = artifactKindFor(phaseResult.filename);
+    const admission = kind === 'spec' || kind === 'plan' ? 'already-admitted' : undefined;
+    writeAndPublishArtifact({
+      kind,
+      bus,
+      phase,
+      projectDir,
+      sessionId,
+      text: phaseResult.text,
+      metadata,
+      ...(admission !== undefined ? { admission } : {}),
+    });
   }
 }
 

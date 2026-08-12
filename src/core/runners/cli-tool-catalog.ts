@@ -211,6 +211,16 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   billing: RunnerBillingPosture;
   isSubscription: boolean;
   sandbox: RolePolicy<CliSandboxPosture>;
+  /**
+   * Project-relative path prefixes — exact files, or directories with a
+   * trailing `/` — the tool rewrites as its own per-project state on startup,
+   * e.g. OpenCode regenerates its `.opencode/` plugin lockfile on every
+   * launch. Mutation guards treat churn under these prefixes as tool-internal
+   * housekeeping, never runner-authored output. Declare only the regenerated
+   * state itself: user-authored config under the same dot-directory (e.g.
+   * `.opencode/plugin/`) must stay guarded.
+   */
+  internalStatePaths: readonly string[];
   compatibility: CliCompatibility;
   authDiscoveryMode: CliAuthDiscoveryMode;
   modelDiscoveryMode: CliModelDiscoveryMode;
@@ -379,6 +389,7 @@ function activeCliToolDeclaration<Id extends CliToolId>(
     ...input,
     executableAliases: Object.freeze([...input.executableAliases]),
     roles: Object.freeze([...input.roles]),
+    internalStatePaths: Object.freeze([...input.internalStatePaths]),
     mandatoryPreflightFacts: Object.freeze([...input.mandatoryPreflightFacts]),
     admission: Object.freeze({ state: 'active' }),
   });
@@ -400,6 +411,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     billing: 'subscription-included',
     isSubscription: false,
     sandbox: rolePolicy('none', 'none'),
+    internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://claude.ai/code',
       testedVersion: '2.0.0',
@@ -425,6 +437,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     billing: 'subscription-included',
     isSubscription: false,
     sandbox: rolePolicy('mode-dependent', 'cli-managed'),
+    internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://github.com/openai/codex',
       testedVersion: '0.40.0',
@@ -449,6 +462,11 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     billing: 'provider-dependent',
     isSubscription: false,
     sandbox: rolePolicy('none', 'none'),
+    internalStatePaths: [
+      '.opencode/package-lock.json',
+      '.opencode/package.json',
+      '.opencode/node_modules/',
+    ],
     compatibility: compatibility({
       installUrl: 'https://opencode.ai',
       testedVersion: '0.5.0',
@@ -473,6 +491,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     billing: 'provider-dependent',
     isSubscription: false,
     sandbox: rolePolicy('none', 'none'),
+    internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://aider.chat',
       testedVersion: '0.86.0',
@@ -502,6 +521,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     billing: 'subscription-included',
     isSubscription: true,
     sandbox: rolePolicy('none', 'none'),
+    internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://github.com/github/copilot-cli',
       testedVersion: '0.3.0',
@@ -526,6 +546,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     billing: 'provider-dependent',
     isSubscription: true,
     sandbox: rolePolicy('none', 'none'),
+    internalStatePaths: [],
     compatibility: compatibility({
       installUrl: 'https://kilo.ai',
       testedVersion: '0.1.0',

@@ -1,8 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { markdownSegmentStyle } from '../../../components/markdown.js';
+import { getTheme } from '../../../components/theme.js';
 import { configStore } from '../../../stores/project/config.js';
-import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { glyph, markdownLayoutGlyphs } from '../../../lib/glyphs.js';
+import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../../../utils/markdown/layout.js';
+import { colorForTone } from '../display/tone-color.js';
 import {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRows,
@@ -12,9 +18,23 @@ import {
 } from './markdown-rows.js';
 import { rowText } from './row-format/rows.js';
 
-const THEMATIC_BREAK_CHAR = '\u2500';
+// The transcript path resolves its own glyphs inside the chunker, so both sides of every
+// review-versus-transcript comparison below have to sit on the same pinned tier.
+forceUnicodeGlyphs();
+
+const GLYPHS = markdownLayoutGlyphs();
+const RULE = glyph('divider');
+const RAIL = glyph('codeRail');
+const HOOK = glyph('wrapContinuation');
 
 type MarkdownRows = ReturnType<typeof markdownConversationRows>;
+
+function stripCodeRail(text: string): string {
+  if (text.startsWith(`${RAIL}${HOOK}`)) return text.slice(`${RAIL}${HOOK}`.length);
+  if (text.startsWith(`${RAIL} `)) return text.slice(`${RAIL} `.length);
+  if (text.startsWith(RAIL)) return text.slice(RAIL.length);
+  return text;
+}
 
 function comparableRows(rows: MarkdownRows): Pick<MarkdownRows[number], 'kind' | 'segments'>[] {
   return rows.map(({ kind, segments }) => ({ kind, segments }));
@@ -48,7 +68,7 @@ function appendedCharacterByCharacterRows(input: {
 }
 
 function canonicalMarkdownLineText(text: string, width: number): string[] {
-  const layout = layoutMarkdown(parseMarkdownBlocks(text), { width });
+  const layout = layoutMarkdown(parseMarkdownBlocks(text), { width, glyphs: GLYPHS });
   return layout.rows.flatMap((layoutRow) =>
     layoutRow.lines.map((line) => line.segments.map((segment) => segment.text).join('')),
   );
@@ -105,7 +125,14 @@ describe('markdownConversationRows', () => {
       width: 80,
     });
 
-    expect(rows.map(rowText)).toEqual(['Title', 'intro line', '', 'Section', 'body line']);
+    expect(rows.map(rowText)).toEqual([
+      'Title',
+      RULE.repeat('Title'.length),
+      'intro line',
+      '',
+      'Section',
+      'body line',
+    ]);
   });
 
   it('keeps a heading flush when only non-rendering source precedes it', () => {
@@ -120,7 +147,7 @@ describe('markdownConversationRows', () => {
         width: 80,
       });
 
-      expect(rows.map(rowText)).toEqual(['Title', 'body line']);
+      expect(rows.map(rowText)).toEqual(['Title', RULE.repeat('Title'.length), 'body line']);
     }
   });
 
@@ -132,7 +159,14 @@ describe('markdownConversationRows', () => {
     }
     const rows = markdownConversationRows({ keyPrefix: 'flush-stream', text: full, width: 80 });
 
-    expect(rows.map(rowText)).toEqual(['Title', 'body line', '', 'Section', 'tail']);
+    expect(rows.map(rowText)).toEqual([
+      'Title',
+      RULE.repeat('Title'.length),
+      'body line',
+      '',
+      'Section',
+      'tail',
+    ]);
   });
 
   it('renders task brief metadata without turning its delimiters into rules', () => {
@@ -174,7 +208,7 @@ describe('markdownConversationRows', () => {
     expect(texts).toContain('depends_on:');
     expect(texts).toContain('  - T001');
     expect(
-      texts.filter((text) => text.length > 0 && text === THEMATIC_BREAK_CHAR.repeat(text.length)),
+      texts.filter((text) => text.length > 0 && text === RULE.repeat(text.length)),
     ).toHaveLength(1);
   });
 
@@ -307,6 +341,49 @@ describe('markdownConversationRows', () => {
       expect(comparableRows(lineByLine)).toEqual(cold);
       expect(comparableRows(charByChar)).toEqual(cold);
     }
+  });
+
+  // The review overlay lays the whole document out in one call while the transcript lays it
+  // out chunk by chunk. Vertical rhythm depends on the preceding block, so the two paths only
+  // agree while the chunker carries that kind across its boundaries.
+  it('matches canonical layout on a document exercising every rhythm rule', () => {
+    const text = [
+      'intro paragraph',
+      '',
+      '## Section',
+      '',
+      'body paragraph',
+      '',
+      '<!-- Q: pending -->',
+      '',
+      'Dispatch rules:',
+      '- first rule',
+      '- second rule',
+      '',
+      'Options:',
+      '```text',
+      'src/engine/request.ts',
+      '  Adds the tool definitions.',
+      '```',
+      '',
+      '---',
+      '',
+      'tail paragraph',
+    ].join('\n');
+    const width = 48;
+
+    resetMarkdownConversationRowsCache();
+    const cold = markdownConversationRows({ keyPrefix: 'rhythm-cold', text, width });
+
+    resetMarkdownConversationRowsCache();
+    const streamed = appendedCharacterByCharacterRows({
+      keyPrefix: 'rhythm-stream',
+      text,
+      width,
+    });
+
+    expect(cold.map(rowText)).toEqual(canonicalMarkdownLineText(text, width));
+    expect(streamed.map(rowText)).toEqual(canonicalMarkdownLineText(text, width));
   });
 
   it('keeps long appended paragraphs equivalent to canonical markdown layout', () => {
@@ -468,6 +545,80 @@ describe('markdownConversationRows', () => {
         tone: 'markdownLink',
         href: 'file:///repo/src/app/root.tsx',
       });
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('links file paths listed inside an unhighlighted fence', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown',
+        text: ['```text', '/repo/src/app/root.tsx', '  Mounts the router.', '```'].join('\n'),
+        width: 80,
+      });
+      const segments = rows.flatMap((row) => row.segments);
+
+      expect(segments).toContainEqual({
+        text: 'src/app/root.tsx',
+        tone: 'markdownLink',
+        href: 'file:///repo/src/app/root.tsx',
+      });
+      expect(segments).toContainEqual({ text: '  Mounts the router.', tone: 'text' });
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('leaves a highlighted fence body unlinked', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown',
+        text: ['```ts', "import x from '/repo/src/app/root.tsx';", '```'].join('\n'),
+        width: 80,
+      });
+
+      const segments = rows.flatMap((row) => row.segments);
+
+      expect(segments.every((segment) => segment.href === undefined)).toBe(true);
+      expect(segments).toContainEqual({ text: 'import', tone: 'syntaxKeyword' });
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('does not mint a file href for the authority of an absolute URL', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown',
+        text: 'fetches https://ollama.com/api/tags now',
+        width: 80,
+      });
+      const segments = rows.flatMap((row) => row.segments);
+
+      expect(segments.every((segment) => segment.href === undefined)).toBe(true);
+      expect(rows.map(rowText).join('')).toContain('https://ollama.com/api/tags');
+    } finally {
+      configStore.__testReset();
+    }
+  });
+
+  it('does not mint a file href inside a URL whose path segment looks like a file', () => {
+    configStore.__testReset({ projectDir: '/repo' });
+    try {
+      const rows = markdownConversationRows({
+        keyPrefix: 'markdown',
+        text: 'see https://example.com/a/b.html and edit src/app/root.tsx now',
+        width: 80,
+      });
+      const segments = rows.flatMap((row) => row.segments);
+      const linked = segments.filter((segment) => segment.href !== undefined);
+
+      expect(linked.map((segment) => segment.text)).toEqual(['src/app/root.tsx']);
+      expect(rows.map(rowText).join('')).toContain('https://example.com/a/b.html');
     } finally {
       configStore.__testReset();
     }
@@ -718,8 +869,12 @@ describe('links and tables in transcript rows', () => {
     expect(segments).toContainEqual({ text: 'Status', tone: 'markdownHeading', bold: true });
     expect(segments.some((segment) => segment.tone === 'markdownTableBorder')).toBe(true);
     const text = rows.map(rowText).join('\n');
+    // The source's `| --- |` separator row never reaches the surface; the only rule the reader
+    // sees is the header underline, which is a run of the divider glyph and nothing else.
     expect(text).not.toContain('|');
-    expect(text).not.toContain('---');
+    const ruleRows = rows.map(rowText).filter((row) => row.startsWith(RULE.repeat(3)));
+    expect(ruleRows).toHaveLength(1);
+    expect(ruleRows[0]).toBe(RULE.repeat(ruleRows[0]?.length ?? 0));
   });
 
   it('wraps an overflow-width table without any row exceeding the layout width', () => {
@@ -753,8 +908,8 @@ describe('code block framing in transcript rows', () => {
 
     expect(rows[0]?.codeBg).toBeUndefined();
     expect(rows[2]?.codeBg).toBe(true);
-    expect(rows[2]?.segments[0]).toEqual({ text: '▏ ', tone: 'markdownRule' });
-    expect(rows[2]?.segments).toContainEqual({ text: "const x = 'y';", tone: 'markdownCode' });
+    expect(rows[2]?.segments[0]).toEqual({ text: `${RAIL} `, tone: 'markdownCodeGutter' });
+    expect(rows[2]?.segments).toContainEqual({ text: "const x = 'y';", tone: 'text' });
   });
 
   it('pads a code block with a bare-rail row above and below, both carrying the background', () => {
@@ -763,24 +918,45 @@ describe('code block framing in transcript rows', () => {
       text: ['intro prose', '', '```', "const x = 'y';", '```'].join('\n'),
       width: 60,
     });
-    const padSegments = [{ text: '▏', tone: 'markdownRule' }];
+    const padSegments = [{ text: RAIL, tone: 'markdownCodeGutter' }];
 
-    expect(rows.map(rowText)).toEqual(['intro prose', '▏', "▏ const x = 'y';", '▏']);
+    expect(rows.map(rowText)).toEqual(['intro prose', RAIL, `${RAIL} const x = 'y';`, RAIL]);
     expect(rows[1]?.segments).toEqual(padSegments);
     expect(rows[1]?.codeBg).toBe(true);
     expect(rows.at(-1)?.segments).toEqual(padSegments);
     expect(rows.at(-1)?.codeBg).toBe(true);
   });
 
-  it('separates back-to-back fences with the two padding rows', () => {
+  // Two rails touching read as one block with a hole in it, so the boundary between adjacent
+  // fences is an unpainted row, not another rail.
+  it('separates back-to-back fences with an unpainted row between their rails', () => {
     const rows = markdownConversationRows({
       keyPrefix: 'code-frame-adjacent',
       text: ['```', 'first', '```', '```', 'second', '```'].join('\n'),
       width: 60,
     });
 
-    expect(rows.map(rowText)).toEqual(['▏', '▏ first', '▏', '▏', '▏ second', '▏']);
-    expect(rows.every((row) => row.codeBg === true)).toBe(true);
+    expect(rows.map(rowText)).toEqual([
+      RAIL,
+      `${RAIL} first`,
+      RAIL,
+      '',
+      RAIL,
+      `${RAIL} second`,
+      RAIL,
+    ]);
+    expect(rows[3]?.codeBg).toBeUndefined();
+    expect(rows.filter((row) => row.codeBg === true)).toHaveLength(6);
+  });
+
+  it('gives a list after a fence the same boundary row', () => {
+    const rows = markdownConversationRows({
+      keyPrefix: 'code-frame-then-list',
+      text: ['```', 'first', '```', '', '- a bullet'].join('\n'),
+      width: 60,
+    });
+
+    expect(rows.map(rowText)).toEqual([RAIL, `${RAIL} first`, RAIL, '', '• a bullet']);
   });
 
   it('repeats the gutter and the background flag on wrapped code lines', () => {
@@ -794,8 +970,10 @@ describe('code block framing in transcript rows', () => {
     for (const row of rows) {
       expect(row.codeBg).toBe(true);
     }
-    for (const row of rows.slice(1, -1)) {
-      expect(row.segments[0]).toEqual({ text: '▏ ', tone: 'markdownRule' });
+    const body = rows.slice(1, -1);
+    expect(body[0]?.segments[0]).toEqual({ text: `${RAIL} `, tone: 'markdownCodeGutter' });
+    for (const row of body.slice(1)) {
+      expect(row.segments[0]).toEqual({ text: `${RAIL}${HOOK}`, tone: 'markdownCodeGutter' });
     }
   });
 
@@ -829,19 +1007,19 @@ describe('code block framing in transcript rows', () => {
     expect(rows[0]?.codeBg).toBeUndefined();
     for (const row of rows.slice(1)) {
       expect(row.codeBg).toBe(true);
-      expect(row.segments[0]?.tone).toBe('markdownRule');
-      expect(row.segments[0]?.text.startsWith('▏')).toBe(true);
+      expect(row.segments[0]?.tone).toBe('markdownCodeGutter');
+      expect(row.segments[0]?.text.startsWith(RAIL)).toBe(true);
     }
 
     const codeTexts = rows.slice(1).map(rowText);
-    expect(codeTexts.at(0)).toBe('▏');
-    expect(codeTexts.at(-1)).toBe('▏');
+    expect(codeTexts.at(0)).toBe(`${RAIL}${' '.repeat(37)}md`);
+    expect(codeTexts.at(-1)).toBe(RAIL);
 
-    // gutters stripped and wrapping collapsed, the code rows carry the fence
-    // interior verbatim — no tail-repair delimiter leaks into the stream
+    // language tag and gutters stripped and wrapping collapsed, the code rows carry the
+    // fence interior verbatim — no tail-repair delimiter leaks into the stream
     const interior = rows
-      .slice(1)
-      .map((row) => rowText(row).replace('▏', ''))
+      .slice(2, -1)
+      .map((row) => stripCodeRail(rowText(row)))
       .join('')
       .replace(/\s+/g, '');
     expect(interior).toBe(openFenceText.slice(openFenceInteriorStart, offset).replace(/\s+/g, ''));
@@ -855,27 +1033,41 @@ describe('code block framing in transcript rows', () => {
     });
 
     expect(rows.every((row) => row.codeBg === undefined)).toBe(true);
-    expect(rows.map(rowText).join('\n')).not.toContain('▏');
+    expect(rows.map(rowText).join('\n')).not.toContain(RAIL);
   });
 });
 
-describe('heading tone unification', () => {
+describe('heading rank ladder', () => {
   it.each([
-    1, 2, 3, 4, 5, 6,
-  ] as const)('gives depth %d headings the shared markdownHeading tone with bold only at depth <= 3', (depth) => {
-    const marker = '#'.repeat(depth);
+    [1, { text: 'Heading text', tone: 'markdownHeading', bold: true }],
+    [2, { text: 'Heading text', tone: 'markdownHeading', bold: true }],
+    [3, { text: 'Heading text', tone: 'markdownHeading' }],
+    [4, { text: 'Heading text', tone: 'text', bold: true }],
+    [5, { text: 'Heading text', tone: 'textDim', bold: true }],
+    [6, { text: 'Heading text', tone: 'textDim', italic: true }],
+  ] as const)('places a depth %d heading on its own rung', (depth, expected) => {
     const rows = markdownConversationRows({
-      keyPrefix: `heading-tone-depth-${depth}`,
-      text: `${marker} Heading text`,
+      keyPrefix: `heading-rank-depth-${depth}`,
+      text: `${'#'.repeat(depth)} Heading text`,
       width: 80,
     });
-    const segments = rows.flatMap((row) => row.segments);
 
-    expect(segments).toContainEqual({
-      text: 'Heading text',
-      tone: 'markdownHeading',
-      bold: depth <= 3,
+    expect(rows.flatMap((row) => row.segments)).toContainEqual(expected);
+  });
+
+  it('leaves no two ranks rendering alike, and rules off the title', () => {
+    const forms = [1, 2, 3, 4, 5, 6].map((depth) => {
+      const rows = markdownConversationRows({
+        keyPrefix: `heading-rank-distinct-${depth}`,
+        text: `${'#'.repeat(depth)} Heading text`,
+        width: 80,
+      });
+      return JSON.stringify(rows.map((row) => row.segments));
     });
+
+    expect(new Set(forms).size).toBe(6);
+    expect(forms[0]).toContain(RULE);
+    expect(forms.slice(1).some((form) => form.includes(RULE))).toBe(false);
   });
 });
 
@@ -973,5 +1165,207 @@ describe('projection reuse across re-renders', () => {
 
     expect(narrow).not.toBe(wide);
     expect(narrow.rowCount).toBeGreaterThan(wide.rowCount);
+  });
+});
+
+// The transcript lays a message out chunk by chunk as it streams; the review overlay lays the
+// whole document out in one call. Every rule that depends on what came before — the leading gap,
+// the list-item continuation, the fence framing — is a chance for those two to drift apart.
+describe('streamed rows equal a cold render', () => {
+  function appendedInChunkSizeRows(input: {
+    keyPrefix: string;
+    text: string;
+    width: number;
+    chunkSize: number;
+  }): { rows: MarkdownRows; steps: MarkdownRows[] } {
+    resetMarkdownConversationRowsCache();
+    const steps: MarkdownRows[] = [];
+    let rows = markdownConversationRows({ ...input, text: '' });
+    for (
+      let end = input.chunkSize;
+      end < input.text.length + input.chunkSize;
+      end += input.chunkSize
+    ) {
+      rows = markdownConversationRows({ ...input, text: input.text.slice(0, end) });
+      steps.push(rows);
+    }
+    return { rows, steps };
+  }
+
+  const questionMarker =
+    '<!-- Q:{"id":"q1","type":"choice","text":"which runner?","options":["a","b"],"default":0} -->';
+
+  const scenarioDocument = [
+    '# Ollama Cloud Tool Support',
+    '',
+    questionMarker,
+    '',
+    '## User Scenarios',
+    '',
+    '- A user configures `ollama-cloud` as the planner with a model that supports tools.',
+    '  Expected outcome: SPLITBRIEF sends the available tools and completes the phase.',
+    '',
+    '- Ollama Cloud returns malformed tool arguments.',
+    '  Expected outcome: the tool is not executed and the call records a failure status.',
+    '',
+    '### Request construction',
+    '',
+    '```ts',
+    'const request = { model, tools };',
+    '```',
+    '',
+    '```text',
+    'src/engine/providers/openai-stream/request.ts',
+    '  Adds the tool definitions.',
+    '```',
+    '',
+    questionMarker,
+    '',
+    '#### Provider capability',
+    '',
+    'Tool capability is represented separately from provider admission.',
+  ].join('\n');
+
+  const longListDocument = [
+    'Dispatch rules:',
+    ...Array.from(
+      { length: 70 },
+      (_, index) => `- T${String(index + 1).padStart(3, '0')} rule ${index}`,
+    ),
+    '',
+    'tail paragraph',
+  ].join('\n');
+
+  const documents = [
+    ['a scenario document with clarification markers', scenarioDocument],
+    ['a 70-item list crossing the chunk cap', longListDocument],
+  ] as const;
+
+  const chunkSizes = [1, 13, 512];
+
+  it.each(
+    documents.flatMap(([name, text]) =>
+      chunkSizes.flatMap((chunkSize) =>
+        [78, 110].map(
+          (width) =>
+            [
+              `${name} at width ${width}, ${chunkSize} chars per append`,
+              text,
+              width,
+              chunkSize,
+            ] as const,
+        ),
+      ),
+    ),
+  )('matches byte for byte: %s', (_name, text, width, chunkSize) => {
+    resetMarkdownConversationRowsCache();
+    const cold = markdownConversationRows({ keyPrefix: 'equality-cold', text, width });
+    const streamed = appendedInChunkSizeRows({
+      keyPrefix: 'equality-stream',
+      text,
+      width,
+      chunkSize,
+    });
+
+    expect(streamed.rows.map(rowText)).toEqual(cold.map(rowText));
+    expect(comparableRows(streamed.rows)).toEqual(comparableRows(cold));
+    expect(cold.map(rowText)).toEqual(canonicalMarkdownLineText(text, width));
+  });
+
+  it.each(
+    chunkSizes,
+  )('never renders a clarification marker at any point while streaming (%d chars per append)', (chunkSize) => {
+    const { steps } = appendedInChunkSizeRows({
+      keyPrefix: `q-marker-stream-${chunkSize}`,
+      text: scenarioDocument,
+      width: 78,
+      chunkSize,
+    });
+
+    for (const step of steps) {
+      const text = step.map(rowText).join('\n');
+      expect(text).not.toContain('<!--');
+      expect(text).not.toContain('-->');
+      expect(text).not.toContain('Q:');
+      expect(text).not.toContain('which runner?');
+    }
+  });
+
+  it('keeps every item of a 70-item list on exactly one row, with no gap at the chunk seam', () => {
+    resetMarkdownConversationRowsCache();
+    const rows = markdownConversationRows({
+      keyPrefix: 'long-list-seam',
+      text: longListDocument,
+      width: 78,
+    });
+    const bullets = rows.map(rowText).filter((text) => text.startsWith('• T'));
+
+    expect(bullets).toHaveLength(70);
+    expect(rows.map(rowText).filter((text) => text === '')).toHaveLength(1);
+  });
+});
+
+// Both surfaces read the same layout; the review overlay resolves a segment through
+// markdownSegmentStyle and the transcript through a ConversationRowTone. A rank that resolves
+// differently on the two paths turns one document into two different outlines.
+describe('review and transcript resolve a segment the same way', () => {
+  const theme = getTheme();
+
+  function reviewStyles(source: string, width: number) {
+    return layoutMarkdown(parseMarkdownBlocks(source), { width, glyphs: GLYPHS })
+      .rows.flatMap((row) => row.lines.flatMap((line) => line.segments))
+      .map((segment) => {
+        const style = markdownSegmentStyle(segment, theme);
+        return {
+          text: segment.text,
+          color: style.color,
+          bold: style.bold === true,
+          italic: style.italic === true,
+        };
+      });
+  }
+
+  function transcriptStyles(source: string, width: number) {
+    return markdownConversationRows({ keyPrefix: 'parity', text: source, width })
+      .flatMap((row) => row.segments)
+      .map((segment) => ({
+        text: segment.text,
+        color: colorForTone(segment.tone, theme),
+        bold: segment.bold === true,
+        italic: segment.italic === true,
+      }));
+  }
+
+  it.each([1, 2, 3, 4, 5, 6])('resolves a depth %d heading identically on both paths', (depth) => {
+    const source = `${'#'.repeat(depth)} Rank ${depth}`;
+
+    expect(transcriptStyles(source, 78)).toEqual(reviewStyles(source, 78));
+  });
+
+  // The review overlay lays a whole document out in one call; the transcript reaches the same
+  // rows through the chunker. Real project documents are the only thing that exercises every
+  // rhythm rule at once, so they are the ones that have to come out byte for byte identical.
+  const repoDocuments = ['docs/WORKFLOW.md', 'docs/MENTAL-MODEL.md', 'docs/ENGINE.md'];
+
+  function reviewLineText(source: string, width: number): string[] {
+    const safeSource = sanitizeTerminalDisplayText(source, { preserveLineBreaks: true });
+    return layoutMarkdown(parseMarkdownBlocks(safeSource), { width, glyphs: GLYPHS }).rows.flatMap(
+      (row) => row.lines.map((line) => line.segments.map((segment) => segment.text).join('')),
+    );
+  }
+
+  it.each(
+    repoDocuments.flatMap((path) => [78, 110].map((width) => [path, width] as const)),
+  )('renders %s byte for byte identically on both pipelines at width %d', (path, width) => {
+    const source = readFileSync(new URL(`../../../../${path}`, import.meta.url), 'utf8');
+    resetMarkdownConversationRowsCache();
+    const transcript = markdownConversationRows({
+      keyPrefix: `pipeline-parity-${path}-${width}`,
+      text: source,
+      width,
+    });
+
+    expect(transcript.map(rowText)).toEqual(reviewLineText(source, width));
+    expect(transcript.every((row) => getTerminalCellWidth(rowText(row)) <= width)).toBe(true);
   });
 });

@@ -1,4 +1,3 @@
-import { getCompletedTaskSummaryRows } from '../../../core/sections/completed-task-summary-rows.js';
 import { clamp } from '../../../utils/math.js';
 import { computeScrollMaxOffset, getScrollWindowState } from '../layout/scroll-window.js';
 import {
@@ -82,10 +81,7 @@ export function computeConversationRowsWindowFromProjection(input: {
 export function computeConversationRowScroll(
   inputs: ConversationRowScrollInputs,
 ): ConversationRowScrollComputation {
-  const scrollViewportHeight = Math.max(
-    0,
-    inputs.viewportHeight - getCompletedTaskSummaryRows(inputs.sections, inputs.viewportHeight),
-  );
+  const scrollViewportHeight = Math.max(0, inputs.viewportHeight);
   const projectionInput = {
     sections: inputs.sections,
     expandedDiffs: inputs.expandedDiffs,

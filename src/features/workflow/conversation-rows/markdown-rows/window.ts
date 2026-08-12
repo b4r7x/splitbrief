@@ -64,12 +64,20 @@ function markdownLayoutWindowRows(input: {
         key: `${input.keyPrefix}-${layoutRow.key}-${currentIndex}`,
         kind: 'message',
         segments: markdownLineSegments(line, layoutRow.lines[localIndex - 1], input.projectDir),
-        ...(layoutRow.blockKind === 'code' ? { codeBg: true as const } : {}),
+        ...(layoutRow.blockKind === 'code' && hasVisibleText(line)
+          ? { codeBg: true as const }
+          : {}),
       });
     }
   }
 
   return rows;
+}
+
+// The ground stops at the block. A blank line inside a code row is the air that separates that
+// block from the one before it, so painting it would join the two into one long ground.
+function hasVisibleText(line: MarkdownLayoutLine): boolean {
+  return line.segments.some((segment) => segment.text.trim().length > 0);
 }
 
 function markdownLineSegments(

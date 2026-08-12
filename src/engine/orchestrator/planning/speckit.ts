@@ -17,7 +17,6 @@ import { confinedReadFileOrEmpty } from '../../../lib/confined-fs.js';
 import { readSpecFileOrEmpty } from '../../../core/paths-io.js';
 import { buildConstitutionPrompt } from '../../spec/prompts/constitution.js';
 import { buildAnalyzePrompt } from '../../spec/prompts/analyze.js';
-import { runBriefQualityGate } from './brief-quality-gate.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import type {
@@ -117,7 +116,7 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
     },
   });
   state = planResult.state;
-  if (planResult.cancelled) return planResult;
+  if (planResult.cancelled || planResult.failed) return planResult;
   let tasks = planResult.tasks;
 
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ANALYZE_START' });
@@ -170,10 +169,9 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   state = transitionAndSave({ projectDir, sessionId }, state, { type: 'ANALYZE_DONE' });
   publishPlannerStatus(bus, state, 'done');
 
-  runBriefQualityGate({ tasks, projectDir, sessionId, bus, phase: state.phase });
-
   const briefsLoop = await runBriefsApprovalLoop({
     tasks,
+    qualityValidatedTasks: tasks,
     ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
     ...(wctx.detectedContextLength !== undefined && {
       detectedContextLength: wctx.detectedContextLength,
@@ -191,12 +189,14 @@ export async function runSpeckitPlanning(opts: PlanningPhaseOptions): Promise<Pl
   });
   state = briefsLoop.state;
   tasks = briefsLoop.tasks;
-  if (briefsLoop.rejected || briefsLoop.aborted) return { state, tasks: [], cancelled: true };
+  if (briefsLoop.failed) return { state, tasks: [], cancelled: true, failed: true };
+  if (briefsLoop.rejected || briefsLoop.aborted)
+    return { state, tasks: [], cancelled: true, failed: false };
 
   publishPlannerStatus(bus, state, 'running');
   bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
-  return { state, tasks, cancelled: false };
+  return { state, tasks, cancelled: false, failed: false };
 }
 
 async function runConstitutionGate(

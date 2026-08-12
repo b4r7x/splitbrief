@@ -410,6 +410,57 @@ describe('InputFooter', () => {
     // The shown span includes the silence that elapsed before the warning fired:
     // 5s since the warning + the 60s warn threshold = 1:05.
     expect(frame).toContain(`${glyph('statusWarning')} Still working — silent 1:05`);
+    expect(frame).not.toContain('tools report when done');
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('a silent runner that only reports finished tools earns a hint beside the warning', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'implementing',
+      startedAt: Date.now() - 120_000,
+    });
+    addEvent(
+      makeRunnerCallStalled({
+        ts: Date.now() - 5_000,
+        silentMs: 60_000,
+        runnerName: 'opencode',
+      }),
+    );
+
+    const ui = renderFeature(<InputFooter />);
+
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Still working — silent 1:05 · tools report when done',
+    );
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('a runner that streams tool use live gets the warning without the hint', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'implementing',
+      startedAt: Date.now() - 120_000,
+    });
+    addEvent(
+      makeRunnerCallStalled({
+        ts: Date.now() - 5_000,
+        silentMs: 60_000,
+        runnerName: 'claude-code',
+      }),
+    );
+
+    const ui = renderFeature(<InputFooter />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Still working — silent 1:05');
+    expect(frame).not.toContain('tools report when done');
 
     ui.unmount();
     terminalSizeStore.reset();

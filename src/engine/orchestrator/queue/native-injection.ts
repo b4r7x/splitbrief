@@ -1,4 +1,5 @@
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
+import { loadState } from '../../../core/state/persistence.js';
 import type { Planner } from '../../planners/types.js';
 import type { EventBus } from '../../events/types.js';
 import {
@@ -6,9 +7,11 @@ import {
   rebaseOnPersistedWorkflowState,
   transitionAndSave,
 } from '../state-ops.js';
+import { claimQueuedMessage, releaseQueuedMessage } from './drain.js';
 import { publishRunnerCallEvent, publishWarningFromError } from '../events.js';
 import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 
 export type DispatchNativeInjectionOptions = {
   message: QueuedMessage;
@@ -23,7 +26,10 @@ export type DispatchNativeInjectionOptions = {
 
 export type NativeInjectionResult =
   | { status: 'delivered' }
-  | { status: 'not-delivered'; reason: 'unsupported' | 'aborted' | 'failed' | 'cleared' };
+  | {
+      status: 'not-delivered';
+      reason: 'unsupported' | 'aborted' | 'failed' | 'cleared' | 'already-owned';
+    };
 
 function findQueuedMessage(
   state: WorkflowState,
@@ -32,16 +38,33 @@ function findQueuedMessage(
   return state.messageQueue.find((queued) => queued.id === id);
 }
 
+function wasCleared(ref: { projectDir: string; sessionId: string }, id: string): boolean {
+  const persisted = loadState(ref);
+  return persisted !== null && !persisted.messageQueue.some((queued) => queued.id === id);
+}
+
 export async function dispatchNativeInjection(
   opts: DispatchNativeInjectionOptions,
 ): Promise<NativeInjectionResult> {
   const { message, planner, projectDir, sessionId, getState, setState, bus, signal } = opts;
+  const ref = { projectDir, sessionId };
   if (!planner.injectUserTurn) return { status: 'not-delivered', reason: 'unsupported' };
   if (signal?.aborted) return { status: 'not-delivered', reason: 'aborted' };
+  if (wasCleared(ref, message.id)) return { status: 'not-delivered', reason: 'cleared' };
+
+  const current = rebaseOnPersistedWorkflowState(ref, getState());
+  const queued = findQueuedMessage(current, message.id);
+  if (!queued) return { status: 'not-delivered', reason: 'cleared' };
+  if (!isQueuedMessagePendingDelivery(queued)) {
+    return { status: 'not-delivered', reason: 'already-owned' };
+  }
+  if (!claimQueuedMessage(ref, message.id, 'native')) {
+    return { status: 'not-delivered', reason: 'already-owned' };
+  }
 
   try {
     throwIfAborted(signal);
-    const injecting = transitionAndSave({ projectDir, sessionId }, getState(), {
+    const injecting = transitionAndSave(ref, current, {
       type: 'MARK_INJECTING_NATIVE',
       id: message.id,
     });
@@ -59,15 +82,23 @@ export async function dispatchNativeInjection(
       },
     });
     throwIfAborted(signal);
-    const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, getState());
-    const queued = findQueuedMessage(latest, message.id);
-    if (!queued) return { status: 'not-delivered', reason: 'cleared' };
+    if (wasCleared(ref, message.id)) {
+      releaseQueuedMessage(ref, message.id, 'native');
+      return { status: 'not-delivered', reason: 'cleared' };
+    }
+    const latest = rebaseOnPersistedWorkflowState(ref, getState());
+    const latestMessage = findQueuedMessage(latest, message.id);
+    if (!latestMessage) {
+      releaseQueuedMessage(ref, message.id, 'native');
+      return { status: 'not-delivered', reason: 'cleared' };
+    }
     const booked = addUsageAndSave({ projectDir, sessionId, bus }, latest, 'planner', usage);
-    const next = transitionAndSave({ projectDir, sessionId }, booked, {
+    const next = transitionAndSave(ref, booked, {
       type: 'MARK_DELIVERED_NATIVE',
       id: message.id,
     });
     setState(next);
+    releaseQueuedMessage(ref, message.id, 'native');
     const preview = formatQueuedMessagePreview(message);
     bus.publish({
       type: 'message_injected_native',
@@ -78,15 +109,24 @@ export async function dispatchNativeInjection(
     });
     return { status: 'delivered' };
   } catch (err) {
-    if (signal?.aborted || isAbortError(err)) return { status: 'not-delivered', reason: 'aborted' };
-    const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, getState());
-    const queued = findQueuedMessage(latest, message.id);
-    if (!queued) return { status: 'not-delivered', reason: 'cleared' };
-    const next = transitionAndSave({ projectDir, sessionId }, latest, {
+    const aborted = signal?.aborted || isAbortError(err);
+    if (wasCleared(ref, message.id)) {
+      releaseQueuedMessage(ref, message.id, 'native');
+      return { status: 'not-delivered', reason: 'cleared' };
+    }
+    const latest = rebaseOnPersistedWorkflowState(ref, getState());
+    const latestMessage = findQueuedMessage(latest, message.id);
+    if (!latestMessage) {
+      releaseQueuedMessage(ref, message.id, 'native');
+      return { status: 'not-delivered', reason: 'cleared' };
+    }
+    const next = transitionAndSave(ref, latest, {
       type: 'MARK_NATIVE_DELIVERY_FAILED',
       id: message.id,
     });
     setState(next);
+    releaseQueuedMessage(ref, message.id, 'native');
+    if (aborted) return { status: 'not-delivered', reason: 'aborted' };
     publishWarningFromError({ bus, phase: getState().phase }, 'native injection failed', err);
     return { status: 'not-delivered', reason: 'failed' };
   }

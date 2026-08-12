@@ -22,6 +22,7 @@ describe('parseMarkdownBlocks', () => {
     expect(document.blocks).toEqual([
       {
         kind: 'frontmatter',
+        role: 'document',
         lines: ['title: Markdown core', 'owner: docs'],
       },
       {
@@ -80,6 +81,7 @@ describe('parseMarkdownBlocks', () => {
     expect(frontmatterBlocks).toEqual([
       {
         kind: 'frontmatter',
+        role: 'task',
         lines: [
           'id: T001',
           'title: Add parser test',
@@ -90,6 +92,7 @@ describe('parseMarkdownBlocks', () => {
       },
       {
         kind: 'frontmatter',
+        role: 'task',
         lines: [
           'id: T002',
           'title: Add workflow row test',

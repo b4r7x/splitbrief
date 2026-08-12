@@ -107,16 +107,22 @@ export function suspendTerminalForEditor(config?: TerminalHandoverConfig): void 
   beginHandover(stdin);
   try {
     stdin.pause();
-    if (!handover) return;
-    const paste = handover.paste ?? handover.mouse;
-    if (handover.mouse || paste) setTerminalInputModes('disable', { mouse: handover.mouse, paste });
-    if (handover.fullscreen) {
-      writeTerminalSequence(terminalSequences.popKittyKeyboard);
-      writeTerminalSequence(terminalSequences.exitAltBuffer);
-      writeTerminalSequence(terminalSequences.showCursor);
+    if (handover) {
+      const paste = handover.paste ?? handover.mouse;
+      if (handover.mouse || paste)
+        setTerminalInputModes('disable', { mouse: handover.mouse, paste });
+      if (handover.fullscreen) {
+        writeTerminalSequence(terminalSequences.popKittyKeyboard);
+        writeTerminalSequence(terminalSequences.exitAltBuffer);
+      }
     }
+    // Ink hides the hardware cursor once at mount and never re-asserts it, so the handover
+    // owns visibility in both directions: the editor (or shell) gets a cursor even in
+    // inline mode, and resumeTerminalAfterEditor re-hides it on every return path.
+    writeTerminalSequence(terminalSequences.showCursor);
   } catch (err) {
     const snapshot = endHandover();
+    writeTerminalSequence(terminalSequences.hideCursor);
     try {
       (snapshot?.stdin ?? stdin).resume();
     } catch {
@@ -129,10 +135,12 @@ export function suspendTerminalForEditor(config?: TerminalHandoverConfig): void 
 export function resumeTerminalAfterEditor(config?: TerminalHandoverConfig): void {
   const handover = config ?? activeHandover;
   try {
+    if (handover?.fullscreen) writeTerminalSequence(terminalSequences.enterAltBuffer);
+    // Unconditional counterpart to the suspend-side showCursor: whatever the editor did —
+    // clean exit, SIGINT death, spawn failure — the TUI takes the screen back cursor-hidden.
+    writeTerminalSequence(terminalSequences.hideCursor);
     if (handover) {
       if (handover.fullscreen) {
-        writeTerminalSequence(terminalSequences.enterAltBuffer);
-        writeTerminalSequence(terminalSequences.hideCursor);
         writeTerminalSequence(
           kittyPushSequence(resolveKittyFlagBits(detectKittyKeyboardFlags().flags)),
         );

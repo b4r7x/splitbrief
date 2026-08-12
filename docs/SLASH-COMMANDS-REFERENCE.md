@@ -486,7 +486,16 @@ During simple Task Brief review, typed commands use `src/features/workflow/revie
 | `↑` / `↓` | Select a Task Brief row (review mode only) | `use-brief-review-keys.ts` |
 | `y` | Copy the focused brief (`/copy brief` parity) | `use-brief-review-keys.ts` |
 
-Typed commands:
+One-key gate actions, armed only while the composer draft is empty and no brief row is focused:
+
+| Key | Action | Owner |
+|---|---|---|
+| `y` | Approve | `core/keybindings/review.ts` |
+| `e` | Open the review file in the external editor | `core/keybindings/review.ts` |
+| `c` | Start a comment (seeds the draft with `comment `) | `core/keybindings/review.ts` |
+| `q` | Reject | `core/keybindings/review.ts` |
+
+Typed commands (unchanged; these are what RPC and attached clients send):
 
 | Command | Action |
 |---|---|

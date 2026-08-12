@@ -27,6 +27,7 @@ import { assertSupportedNodeVersion } from './cli/node-guard.js';
 import { assertNotMistypedCommand } from './cli/unknown-command.js';
 import { HELP_EXAMPLES } from './cli/help-examples.js';
 import { toErrorMessage } from './utils/format-errors.js';
+import { createLogger } from './lib/logger.js';
 import { getSplitbriefVersion } from './core/paths-io.js';
 import { SPLITBRIEF_IDENTITY } from './core/identity.js';
 
@@ -75,6 +76,12 @@ async function main(): Promise<void> {
 main().catch(async (err) => {
   await flushOtel();
   const message = toErrorMessage(err, { preserveLineBreaks: true });
+  // No-op for fatals before bootstrapStoresSync configures the logger: projectDir is
+  // unknown then, and configuring from cwd would create .splitbrief outside the project.
+  createLogger('cli').error('fatal', {
+    message,
+    stack: err instanceof Error ? err.stack : undefined,
+  });
   console.error(`${ansis.red('Error:')} ${message}`);
   process.exit(isCliError(err) ? err.exitCode : 1);
 });

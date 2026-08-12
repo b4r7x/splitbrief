@@ -46,6 +46,7 @@ import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.j
 import { assertCliStartGate, type CliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
+import { createQuestionAccumulator } from '../parsers/question.js';
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
 function cliNotFoundMessage(descriptor: CliPlannerAdapter['descriptor']): string {
@@ -206,7 +207,7 @@ export function createCliPlanner(
   async function runOnce(opts: {
     prompt: string;
     projectDir: string;
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onCallEvent'>;
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onQuestion' | 'onSessionId' | 'onCallEvent'>;
     callContext: RunnerCallContext;
     mode: 'plan' | 'escalate';
     resumeId: string | null;
@@ -218,6 +219,13 @@ export function createCliPlanner(
     let stderrOutput = '';
     const callbackBuffer = resumeId === null ? null : createRunnerAttemptCallbackBuffer(callbacks);
     const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
+    const questionAccumulator = callbacks.onQuestion ? createQuestionAccumulator() : null;
+    const onOutput = (text: string): void => {
+      attemptCallbacks.onOutput(text);
+      if (questionAccumulator === null) return;
+      const newQuestions = questionAccumulator.addChunk(text);
+      if (newQuestions.length > 0) attemptCallbacks.onQuestion?.(newQuestions);
+    };
 
     const effectiveSignal = composeAbortSignal(signal, timeout);
     const onCallEvent = (event: RunnerCallEvent): void => {
@@ -255,7 +263,7 @@ export function createCliPlanner(
         },
         prompt,
         callContext,
-        onOutput: attemptCallbacks.onOutput,
+        onOutput,
         onCallEvent,
         onSessionId:
           supportsSessionResume && mode === 'plan'
@@ -300,7 +308,7 @@ export function createCliPlanner(
     projectDir: string;
     callbacks: Pick<
       PlannerCallbacks,
-      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'sessionId' | 'onCallEvent'
+      'onOutput' | 'onQuestion' | 'onSessionId' | 'onSessionExpired' | 'sessionId' | 'onCallEvent'
     >;
     callContext: RunnerCallContext;
     accessMode: 'planning' | 'read-only' | 'write-files';
@@ -337,6 +345,7 @@ export function createCliPlanner(
           sessionId: callbacks.sessionId ?? '',
           baseline: mutationBaseline,
           artifactFile,
+          internalStatePaths: adapter.descriptor.internalStatePaths,
         });
         if (unexpected.length > 0) {
           throw planningMutationError.unexpectedMutations(unexpected);

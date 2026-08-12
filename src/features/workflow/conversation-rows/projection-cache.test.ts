@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import type { Section } from '../../../core/sections/event-sections.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -44,14 +45,10 @@ function runningEvent(): Extract<EngineEvent, { type: 'implementer_generate_runn
 function activityEvent(
   overrides?: Partial<Extract<EngineEvent, { type: 'runner_call_activity' }>>,
 ): Extract<EngineEvent, { type: 'runner_call_activity' }> {
-  return {
-    type: 'runner_call_activity',
+  return makeRunnerCallActivity({
     ts: 1_000,
     phase: 'implementing',
     taskId: taskId('T001'),
-    callId: 'call-1',
-    role: 'implementer',
-    backendKind: 'cli',
     runnerName: 'codex',
     model: 'xhigh',
     attempt: 0,
@@ -61,9 +58,8 @@ function activityEvent(
     kind: 'command',
     label: 'ran command',
     target: 'npm test',
-    redacted: false,
     ...overrides,
-  };
+  });
 }
 
 function eventSections(items: EngineEvent[]): Section<EngineEvent>[] {
@@ -222,6 +218,54 @@ describe('conversation rows projection cache', () => {
     expect(second.rows.map(rowText).join('\n')).toContain('changed visible line');
   });
 
+  it('reuses the cached projection when streaming is a new object with the same fields', () => {
+    const lines = ['one', 'two'];
+    const base = {
+      sections: sections(3),
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 80,
+      viewportHeight: 10,
+      streaming: { active: true, taskId: taskId('T001'), lines },
+    };
+
+    const first = getConversationRowsProjection(base);
+    const second = getConversationRowsProjection({
+      ...base,
+      streaming: { active: true, taskId: taskId('T001'), lines },
+    });
+
+    expect(second).toBe(first);
+  });
+
+  it('rebuilds when the streaming input is a live view whose fields changed', () => {
+    // useStores hands render callers a Proxy that forwards every read to the live store, so the
+    // cache must not retain the wrapper: doing so would compare live state against itself.
+    const live: StreamingOutputState = { active: true, taskId: taskId('T001'), lines: ['before'] };
+    const liveView = (): StreamingOutputState =>
+      new Proxy({} as StreamingOutputState, {
+        get: (_target, prop) => (live as unknown as Record<PropertyKey, unknown>)[prop],
+      });
+    const base = {
+      sections: eventSections([runningEvent()]),
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 80,
+      viewportHeight: 10,
+      windowStart: 0,
+      windowEnd: 5,
+    };
+
+    const first = getConversationRowsWindowProjection({ ...base, streaming: liveView() });
+    live.lines = ['after'];
+    const second = getConversationRowsWindowProjection({ ...base, streaming: liveView() });
+
+    expect(first.rows.map(rowText).join('\n')).toContain('before');
+    expect(second.rows.map(rowText).join('\n')).toContain('after');
+  });
+
+  // Phase pair chosen so the rows still differ: only `escalating` carries a phase header now, so
+  // comparing two header-less phases would pass whether or not the projection was re-cut.
   it('invalidates when planner phase changes for markdown content with the same text', () => {
     const base = {
       expandedDiffs: new Set<string>(),
@@ -245,13 +289,13 @@ describe('conversation rows projection cache', () => {
         },
       ]),
     });
-    const researching = getConversationRowsWindowProjection({
+    const escalating = getConversationRowsWindowProjection({
       ...base,
       sections: eventSections([
         {
           type: 'planner_text',
           ts: 1,
-          phase: 'researching',
+          phase: 'escalating',
           text: '### Heading',
           role: 'planner',
           content: 'markdown',
@@ -259,8 +303,8 @@ describe('conversation rows projection cache', () => {
       ]),
     });
 
-    expect(planning.rows.map(rowText)).toEqual(['Plan', 'Heading']);
-    expect(researching.rows.map(rowText)).toEqual(['Research', 'Heading']);
+    expect(planning.rows.map(rowText)).toEqual(['Heading']);
+    expect(escalating.rows.map(rowText)).toEqual(['Escalation', 'Heading']);
   });
 
   it('invalidates when planner text content mode or role changes', () => {
@@ -297,7 +341,41 @@ describe('conversation rows projection cache', () => {
     });
 
     expect(plain.rows.map(rowText)).toEqual(['### Heading']);
-    expect(markdown.rows.map(rowText)).toEqual(['Plan', 'Heading']);
+    expect(markdown.rows.map(rowText)).toEqual(['Heading']);
+  });
+
+  it('serves every window slice identically to the full materialization', () => {
+    // Blocks wrap their text once, at construction; a window must still be the exact slice of the
+    // whole block, with the same keys, so scrolling never renumbers or re-tones a row.
+    const base = {
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 60,
+      viewportHeight: 10,
+      streaming,
+      sections: eventSections([
+        {
+          type: 'planner_text',
+          ts: 1,
+          phase: 'planning',
+          role: 'planner',
+          text: Array.from({ length: 12 }, (_, index) => `tool output line ${index}`).join('\n'),
+        },
+        { type: 'error', ts: 2, phase: 'planning', message: 'first failure\nsecond failure' },
+      ]),
+    };
+
+    const full = getConversationRowsWindowProjection({ ...base, windowStart: 0, windowEnd: 999 });
+    expect(full.rows.length).toBeGreaterThan(12);
+
+    for (let start = 0; start < full.rows.length; start += 1) {
+      const slice = getConversationRowsWindowProjection({
+        ...base,
+        windowStart: start,
+        windowEnd: start + 3,
+      });
+      expect(slice.rows).toEqual(full.rows.slice(start, start + 3));
+    }
   });
 
   it('invalidates when activity role or runner metadata changes', () => {

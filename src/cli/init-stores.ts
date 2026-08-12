@@ -20,6 +20,8 @@ import { modelCacheStore } from '../stores/discovery/model-cache.js';
 import { loadDetectionCacheSnapshot } from '../engine/detection/cache.js';
 import { loadModelsDevCatalogCache } from '../engine/providers/models-dev-cache.js';
 import { discoverSkills } from '../engine/skill-discovery.js';
+import { initLogger } from '../core/logger.js';
+import { createLogger } from '../lib/logger.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
 import { cliError } from './errors.js';
 import { getPlannerToolId } from '../core/config/accessors/runner-config.js';
@@ -30,6 +32,8 @@ import { workflowOptsToCLIOverrides } from '../core/config/runtime/overrides/fro
 let historyPersistenceTeardown: (() => void) | null = null;
 
 export function bootstrapStoresSync(projectDir: string, opts: WorkflowOpts = {}): void {
+  initLogger(projectDir);
+  createLogger('bootstrap').info('stores bootstrap', { projectDir });
   initUIChrome();
   loadProjectState(projectDir, opts);
 }

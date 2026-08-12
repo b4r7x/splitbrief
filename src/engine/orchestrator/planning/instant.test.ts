@@ -189,6 +189,7 @@ describe('runInstantPlanning', () => {
     });
 
     expect(result.cancelled).toBe(false);
+    expect(result.failed).toBe(false);
     expect(instantPlan).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: expect.stringContaining(rawFeedback),
@@ -380,6 +381,7 @@ describe('runInstantPlanning', () => {
         ),
     });
     expect(result.cancelled).toBe(true);
+    expect(result.failed).toBe(true);
     expect(result.state.phase).toBe('idle');
     expect(result.tasks).toHaveLength(0);
     const errorEvent = events.find((e) => e.type === 'error');
@@ -644,6 +646,64 @@ describe('runInstantPlanning', () => {
     const specContent = readFileSync(join(sessionDir(projectDir, sessionId), SPEC_FILE), 'utf-8');
     expect(specContent).toContain('## Clarifications');
     expect(specContent).toContain('auth-module');
+  });
+
+  it('deduplicates IDs across the zero-task retry before applying the question cap', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const firstQuestion: ClarificationQuestion = {
+      id: 'q1',
+      type: 'input',
+      text: 'First wording',
+    };
+    const duplicateQuestion: ClarificationQuestion = {
+      id: 'q1',
+      type: 'input',
+      text: 'Later wording must not replace the first question',
+    };
+    const distinctQuestions: ClarificationQuestion[] = ['q2', 'q3', 'q4', 'q5', 'q6'].map((id) => ({
+      id,
+      type: 'input',
+      text: id,
+    }));
+    const instantPlan = vi
+      .fn()
+      .mockImplementationOnce(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onQuestion?.([firstQuestion, firstQuestion]);
+        return instantPlanResult({ tasks: [] });
+      })
+      .mockImplementationOnce(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onQuestion?.([duplicateQuestion, ...distinctQuestions]);
+        return instantPlanResult();
+      });
+    const planner = makePlanner({ instantPlan });
+    const onQuestionAsked = vi.fn().mockResolvedValue('answer');
+    const { callbacks } = makeCallbacks({ onQuestionAsked });
+    const config = makeConfig({ workflow: { mode: 'instant' } });
+    const initial = createInitialState('feature');
+
+    const result = await runPlanningPhase({
+      wctx: {
+        projectDir,
+        config,
+        callbacks,
+        metadata: TEST_METADATA,
+        sessionId,
+        bus: makeBusRecorder().bus,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      },
+      planner,
+      state: { ...initial, phase: 'idle' },
+      feature: 'feature',
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(onQuestionAsked.mock.calls).toEqual([
+      [firstQuestion, 1, 5],
+      [distinctQuestions[0], 2, 5],
+      [distinctQuestions[1], 3, 5],
+      [distinctQuestions[2], 4, 5],
+      [distinctQuestions[3], 5, 5],
+    ]);
   });
 
   it('all-skip proceeds to START_INSTANT', async () => {

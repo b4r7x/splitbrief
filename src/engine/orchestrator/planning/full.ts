@@ -24,7 +24,7 @@ import { handleRewindSpec, handleRewindPlan } from './rewind.js';
 import { resetDriftChainState } from '../drift/chain-state.js';
 import { drainAndFormat } from './queue-drain.js';
 import { handlePlanningFailure } from './failure.js';
-import { runBriefQualityGate } from './brief-quality-gate.js';
+import { runBriefQuality } from './brief-quality-run.js';
 import { runBriefsApprovalLoop } from './briefs-approval-loop.js';
 import { persistPhases } from './io.js';
 import { runPlannerCallInContinuationLoop } from './call-loop.js';
@@ -86,7 +86,14 @@ async function runNewPlanning(
     return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
   }
 
-  persistPhases(projectDir, sessionId, planResult.phases, metadata);
+  persistPhases({
+    projectDir,
+    sessionId,
+    phases: planResult.phases,
+    metadata,
+    bus: wctx.bus,
+    phase: state.phase,
+  });
   let tasks = planResult.tasks;
 
   const researchPhase = planResult.phases?.[0];
@@ -150,7 +157,8 @@ async function runNewPlanning(
       sinks: wctx.sinks,
     });
     state = specLoop.state;
-    if (specLoop.rejected || specLoop.aborted) return { state, tasks: [], cancelled: true };
+    if (specLoop.rejected || specLoop.aborted)
+      return { state, tasks: [], cancelled: true, failed: false };
     if (specLoop.regenerated) {
       ({ state, tasks } = await regeneratePlanAndTasks({
         projectDir,
@@ -171,7 +179,7 @@ async function runNewPlanning(
     const advanced = await opts.afterSpecReview({ state, tasks });
     state = advanced.state;
     tasks = advanced.tasks;
-    if (advanced.cancelled) return { state, tasks: [], cancelled: true };
+    if (advanced.cancelled) return { state, tasks: [], cancelled: true, failed: false };
   } else {
     state = transitionAndSave({ projectDir, sessionId }, state, { type: 'APPROVE_SPEC' });
     publishPlannerStatus(wctx.bus, state, 'running');
@@ -198,7 +206,8 @@ async function runNewPlanning(
       sinks: wctx.sinks,
     });
     state = planLoop.state;
-    if (planLoop.rejected || planLoop.aborted) return { state, tasks: [], cancelled: true };
+    if (planLoop.rejected || planLoop.aborted)
+      return { state, tasks: [], cancelled: true, failed: false };
     if (planLoop.regenerated) {
       const taskRegen = await regenerateTasks({
         projectDir,
@@ -216,11 +225,15 @@ async function runNewPlanning(
     }
   }
 
-  runBriefQualityGate({ tasks, projectDir, sessionId, bus: wctx.bus, phase: state.phase });
+  const quality = await runBriefQuality({ tasks, state, planner, wctx });
+  if (!quality.ok) return quality.result;
+  state = quality.state;
+  tasks = quality.tasks;
 
   if (!opts.deferBriefGate) {
     const briefsLoop = await runBriefsApprovalLoop({
       tasks,
+      qualityValidatedTasks: tasks,
       ...(wctx.modelCache !== undefined && { modelCache: wctx.modelCache }),
       ...(wctx.detectedContextLength !== undefined && {
         detectedContextLength: wctx.detectedContextLength,
@@ -238,13 +251,15 @@ async function runNewPlanning(
     });
     state = briefsLoop.state;
     tasks = briefsLoop.tasks;
-    if (briefsLoop.rejected || briefsLoop.aborted) return { state, tasks: [], cancelled: true };
+    if (briefsLoop.failed) return { state, tasks: [], cancelled: true, failed: true };
+    if (briefsLoop.rejected || briefsLoop.aborted)
+      return { state, tasks: [], cancelled: true, failed: false };
 
     publishPlannerStatus(wctx.bus, state, 'running');
     wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
   }
 
-  return { state, tasks, cancelled: false };
+  return { state, tasks, cancelled: false, failed: false };
 }
 
 export async function runFullPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -19,6 +19,7 @@ import { reactivateExistingSession } from '../../../core/sessions/lifecycle.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
+import { createEventBus } from '../../events/bus.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { formatValidationError } from '../validation/format-error.js';
 import { loadState } from '../../../core/state/persistence.js';
@@ -108,6 +109,68 @@ afterEach(() => {
 });
 
 describe('initializeWorkflow', () => {
+  it('initializes the shared logger for a headless host before the event sink handles events', async () => {
+    await withTempDir('splitbrief-init-headless-logger', async (projectDir) => {
+      const feature = 'headless logger lifecycle';
+      const sessionId = 'session-init-headless-logger';
+      const config = makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: true },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
+      });
+      const { callbacks } = makeCallbacks();
+      const events: EngineEvent[] = [];
+      const bus = createEventBus();
+      bus.subscribe((event) => events.push(event));
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
+
+      const init = await initializeWorkflow({
+        opts: {
+          prepared: prepared.execution,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          headless: true,
+          eventBus: bus,
+          _planner: makePlanner(),
+          _implementer: makeImplementer(),
+        },
+        config: prepared.config,
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: () => {},
+        resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
+      });
+
+      expect(init.ok).toBe(true);
+      expect(events).toContainEqual(expect.objectContaining({ type: 'workflow_started' }));
+      const log = await readFile(join(projectDir, '.splitbrief', 'logs', 'debug.log'), 'utf8');
+      expect(log).toContain('[engine] workflow_started');
+    });
+  });
+
   it('registers discovered pre-task modules when config has no hooks', async () => {
     await withTempDir('splitbrief-init-hooks', async (projectDir) => {
       const hooksDir = join(projectDir, '.splitbrief', 'hooks');
@@ -405,6 +468,82 @@ describe('initializeWorkflow', () => {
           phase: 'implementing',
           status: 'running',
         }),
+      );
+    });
+  });
+
+  it('recovers interrupted native delivery only when a saved workflow is resumed', async () => {
+    await withTempDir('splitbrief-init-resume-native-delivery', async (projectDir) => {
+      const feature = 'resume interrupted native delivery';
+      const sessionId = 'session-init-resume-native-delivery';
+      const config = makeConfig({
+        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        workflow: { mode: 'quick', persistTranscript: false },
+        approval: { enabled: false, feedRejectionsToPlanner: true },
+        codebase: { enabled: false, tokenBudget: 4000, cacheDir: '.splitbrief' },
+      });
+      const { callbacks } = makeCallbacks();
+      const summaryBase: SummaryBase = {
+        feature,
+        startTime: Date.now(),
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+        projectDir,
+        sessionId,
+      };
+      const metadata: SpecMetadata = {
+        plannerTool: 'test-planner',
+        implementerTool: 'test-implementer',
+        mode: 'quick',
+      };
+      const prepared = await preparedTestExecution({
+        projectDir,
+        sessionId,
+        feature,
+        inputConfig: config,
+        allowHooks: true,
+      });
+      const savedState: WorkflowState = {
+        ...createInitialState(feature),
+        phase: 'implementing',
+        messageQueue: [
+          {
+            id: 'interrupted-native-message',
+            text: 'retry after process restart',
+            queuedAt: new Date(0).toISOString(),
+            phase: 'implementing',
+            deliveredViaNative: false,
+            nativeDeliveryState: 'injecting',
+          },
+        ],
+      };
+      let trackedState: WorkflowState | undefined;
+
+      const init = await initializeWorkflow({
+        opts: {
+          prepared: prepared.execution,
+          callbacks,
+          sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+          savedState,
+          _planner: makePlanner(),
+          _implementer: makeImplementer(),
+        },
+        config: prepared.config,
+        sessionId,
+        summaryBase,
+        metadata,
+        setTrackedState: (state) => {
+          trackedState = state;
+        },
+        resumeHolder: { messages: [] },
+        isolation: makeCopyingIsolation(projectDir, sessionId),
+      });
+
+      expect(init.ok).toBe(true);
+      expect(trackedState?.messageQueue[0]?.nativeDeliveryState).toBe('pending');
+      expect(loadState({ projectDir, sessionId })?.messageQueue[0]?.nativeDeliveryState).toBe(
+        'pending',
       );
     });
   });

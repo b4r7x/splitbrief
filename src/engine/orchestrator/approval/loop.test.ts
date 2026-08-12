@@ -40,6 +40,13 @@ function prepareState(): WorkflowState {
   return state;
 }
 
+function preparePlanState(): WorkflowState {
+  let state = prepareState();
+  state = transition(state, { type: 'APPROVE_SPEC' });
+  state = transition(state, { type: 'PLAN_DONE', tasks: [] });
+  return state;
+}
+
 describe('runApprovalLoop', () => {
   it('rejects when user declines without comment — state transitions and spec_rejected event fires', async () => {
     const { projectDir, sessionId, specPath } = setupProject();
@@ -137,7 +144,7 @@ describe('runApprovalLoop', () => {
     const planner = makePlanner({
       regenerate: async (opts) => {
         regenCalls.push(opts.prompt);
-        return { text: 'regenerated', usage: null };
+        return { text: '# Spec\n\nRegenerated.', usage: null };
       },
     });
 
@@ -159,6 +166,125 @@ describe('runApprovalLoop', () => {
     expect(regenCalls[0]).toContain('please add auth section');
     expect(regenCalls[0]).toContain('spec');
     expect(approvalCalls).toBe(2);
+  });
+
+  it.each([
+    {
+      type: 'spec' as const,
+      filename: SPEC_FILE,
+      state: prepareState,
+      current: '# Spec\n\nApproved spec.\n',
+    },
+    {
+      type: 'plan' as const,
+      filename: PLAN_FILE,
+      state: preparePlanState,
+      current: '# Plan\n\nApproved plan.\n',
+    },
+  ])('rejects invalid $type feedback replacement without changing the approved artifact or publishing events', async ({
+    type,
+    filename,
+    state: makeState,
+    current,
+  }) => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, filename, current, null);
+    const artifactPath = join(projectDir, '.splitbrief', 'sessions', sessionId, filename);
+    const before = readFileSync(artifactPath);
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi.fn().mockResolvedValue({
+        approved: false,
+        action: 'revise',
+        comment: 'replace with malformed output',
+      }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      regenerate: async () => ({ text: 'planner prose without a heading', usage: null }),
+    });
+
+    await expect(
+      runApprovalLoop({
+        type,
+        filePath: specPath,
+        planner,
+        projectDir,
+        sessionId,
+        callbacks,
+        bus,
+        state: makeState(),
+        persistTranscript: false,
+      }),
+    ).rejects.toMatchObject({
+      kind: 'planning-invalid-artifact',
+      data: { phase: type === 'spec' ? 'specifying' : 'planning', filename },
+    });
+
+    expect(readFileSync(artifactPath)).toEqual(before);
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+    expect(events.filter((event) => event.type === `${type}_regenerated`)).toHaveLength(0);
+    expect(events.some((event) => event.type === 'planner_status' && event.status === 'done')).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    {
+      type: 'spec' as const,
+      filename: SPEC_FILE,
+      state: prepareState,
+      current: '# Spec\n\nApproved spec.\n',
+      replacement: '# Spec\n\nReplacement spec.\n',
+    },
+    {
+      type: 'plan' as const,
+      filename: PLAN_FILE,
+      state: preparePlanState,
+      current: '# Plan\n\nApproved plan.\n',
+      replacement: '# Plan\n\nReplacement plan.\n',
+    },
+  ])('persists and publishes a valid $type feedback replacement exactly once', async ({
+    type,
+    filename,
+    state: makeState,
+    current,
+    replacement,
+  }) => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    writeSpecFile({ projectDir, sessionId }, filename, current, null);
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi
+        .fn()
+        .mockResolvedValueOnce({
+          approved: false,
+          action: 'revise',
+          comment: 'make a valid replacement',
+        })
+        .mockResolvedValueOnce({ approved: true }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      regenerate: async () => ({ text: replacement, usage: null }),
+    });
+
+    const result = await runApprovalLoop({
+      type,
+      filePath: specPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: makeState(),
+      persistTranscript: false,
+    });
+
+    expect(result.regenerated).toBe(true);
+    expect(
+      readFileSync(join(projectDir, '.splitbrief', 'sessions', sessionId, filename), 'utf8'),
+    ).toBe(replacement);
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(1);
+    expect(events.filter((event) => event.type === `${type}_regenerated`)).toHaveLength(1);
   });
 
   it('applies pending queued planner input before showing the approval prompt', async () => {
@@ -241,6 +367,63 @@ describe('runApprovalLoop', () => {
       'utf8',
     );
     expect(onDisk).toContain('With auth.');
+  });
+
+  it('regenerated spec reaches the transcript as an artifact card, not as a body paste', async () => {
+    const { projectDir, sessionId, specPath } = setupProject();
+    const document = `# Spec\n\n${Array.from({ length: 30 }, (_, i) => `Requirement ${i + 1}.`).join('\n\n')}\n`;
+    const { callbacks } = makeCallbacks({
+      onApprovalNeeded: vi
+        .fn()
+        .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'add auth' })
+        .mockResolvedValueOnce({ approved: true }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      regenerate: async (opts) => {
+        opts.callbacks?.onOutput?.(document);
+        return { text: document, usage: null };
+      },
+    });
+
+    await runApprovalLoop({
+      type: 'spec',
+      filePath: specPath,
+      planner,
+      projectDir,
+      sessionId,
+      callbacks,
+      bus,
+      state: prepareState(),
+      persistTranscript: false,
+    });
+
+    expect(events.some((e) => e.type === 'planner_text' && e.text.includes('Requirement 1.'))).toBe(
+      false,
+    );
+    expect(events.filter((e) => e.type === 'artifact_written')).toEqual([
+      {
+        type: 'artifact_written',
+        ts: expect.any(Number),
+        phase: 'reviewing-spec',
+        filename: SPEC_FILE,
+        path: join(projectDir, '.splitbrief', 'sessions', sessionId, SPEC_FILE),
+        lineCount: 61,
+        excerpt: [
+          'Requirement 1.',
+          '',
+          'Requirement 2.',
+          '',
+          'Requirement 3.',
+          '',
+          'Requirement 4.',
+          '',
+          'Requirement 5.',
+        ],
+        omittedCount: 52,
+        omittedUnit: 'line',
+      },
+    ]);
   });
 
   it('spec gate: editing spec.md on disk then approving triggers regeneration', async () => {
@@ -334,7 +517,7 @@ describe('runApprovalLoop', () => {
     const planner = makePlanner({
       regenerate: async (opts) => {
         capturedSignal = opts.callbacks.signal;
-        return { text: 'regenerated', usage: null };
+        return { text: '# Spec\n\nRegenerated.', usage: null };
       },
     });
 

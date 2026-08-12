@@ -45,7 +45,7 @@ import {
   openApprovalPrompt,
 } from '../../stores/approval-prompt/prompt.js';
 import { getLogo } from '../../features/home/logo.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../features/workflow/prompt-grace.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { HomeScreen, type HomeScreenDeps } from './home.js';
 import { Layout } from '../layout.js';
 import { SessionPreparation } from '../session-preparation.js';

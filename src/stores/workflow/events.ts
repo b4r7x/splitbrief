@@ -49,6 +49,11 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
       return null;
     case 'planner_heartbeat':
       return null;
+    // The plan announcement drives the task stores, not a transcript row, and it is republished on
+    // every resume and re-attach. Keeping it out of the capped log spends no entries on a payload
+    // nothing renders.
+    case 'tasks_planned':
+      return null;
     case 'warning':
       return { ...event, message: sanitizeTerminalDiagnosticText(event.message) };
     case 'error':

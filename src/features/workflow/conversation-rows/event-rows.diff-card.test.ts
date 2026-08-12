@@ -92,7 +92,7 @@ describe('implementer_generate_done diff card', () => {
     const addedTone = requireSegment(addedBodyRow.segments, (segment) => {
       return segment.text.trim().length > 0;
     });
-    expect(segmentTone(addedTone)).toBe('success');
+    expect(segmentTone(addedTone)).toBe('diffAdded');
 
     const removedBodyRow = requireRow(bodyRows, (rowValue) =>
       rowText(rowValue).includes('removed line'),
@@ -100,7 +100,7 @@ describe('implementer_generate_done diff card', () => {
     const removedTone = requireSegment(removedBodyRow.segments, (segment) => {
       return segment.text.trim().length > 0;
     });
-    expect(segmentTone(removedTone)).toBe('error');
+    expect(segmentTone(removedTone)).toBe('diffRemoved');
 
     requireRow(bodyRows, (rowValue) => rowText(rowValue).includes('ctrl+d to collapse'));
 

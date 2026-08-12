@@ -48,10 +48,12 @@ function parseEditor(raw: string | undefined): EditorArgv | undefined {
   return { command, args };
 }
 
+export function editorDisplayLabel(command: string): string {
+  return basename(command).replace(/\.(cmd|exe|bat)$/i, '');
+}
+
 function editorName(command: string): string {
-  return basename(command)
-    .replace(/\.(cmd|exe|bat)$/i, '')
-    .toLowerCase();
+  return editorDisplayLabel(command).toLowerCase();
 }
 
 function isTerminalEditor(command: string): boolean {

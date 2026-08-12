@@ -31,11 +31,9 @@ describe('glyph tier', () => {
     expect(glyph('divider', 'ascii')).toBe('-');
   });
 
-  it('maps the prompt marker and completed header through both tiers', () => {
+  it('maps the prompt marker through both tiers', () => {
     expect(glyph('promptMarker', 'unicode')).toBe('❯');
     expect(glyph('promptMarker', 'ascii')).toBe('>');
-    expect(glyph('completed', 'unicode')).toBe('◇');
-    expect(glyph('completed', 'ascii')).toBe('o');
   });
 });
 

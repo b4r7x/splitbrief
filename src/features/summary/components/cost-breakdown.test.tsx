@@ -42,7 +42,7 @@ describe('buildCostBreakdownRows', () => {
     const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('◆ Cost');
+    expect(frame).toContain('Cost');
     expect(frame).toContain('Actual cost');
     expect(frame).toContain('$1.50');
     expect(frame).toContain('Planner cost');
@@ -52,13 +52,14 @@ describe('buildCostBreakdownRows', () => {
     expect(frame).toContain('Saved');
     expect(frame).toContain('$4.50 (75%)');
     expect(frame).not.toContain('Local/cheap rate');
+    expect(frame).not.toContain('provider pricing unavailable');
     expect(frame).toContain('Anthropic');
     expect(frame).toContain('DeepSeek');
 
     ui.unmount();
   });
 
-  it('renders unknown price instead of fake zero cost when implementer pricing is unavailable', () => {
+  it('drops unpriced rows and states the gap once when implementer pricing is unavailable', () => {
     const costBreakdown: CostBreakdown = {
       hypotheticalCost: 18,
       actualPlannerCost: 1,
@@ -83,8 +84,10 @@ describe('buildCostBreakdownRows', () => {
     expect(frame).toContain('$1.00 + unknown');
     expect(frame).toContain('All-planner baseline');
     expect(frame).toContain('$18.00');
-    expect(frame).toContain('Saved');
-    expect(frame).toContain('Unknown price');
+    expect(frame).not.toContain('Implementer cost');
+    expect(frame).not.toContain('Saved');
+    expect(frame).not.toContain('Unknown price');
+    expect(frame).toContain('unpriced usage · provider pricing unavailable');
     expect(frame).not.toContain('Local/cheap rate');
     expect(frame).not.toContain('$0.00');
 
@@ -226,10 +229,45 @@ describe('buildCostBreakdownRows', () => {
     const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('subscription-included');
+    expect(frame).toContain('Billing');
+    expect((frame.match(/subscription-included/g) ?? []).length).toBe(1);
+    expect(frame).not.toContain('Actual cost');
     expect(frame).not.toContain('Extra $');
     expect(frame).not.toContain('$0.00');
     expect(frame).not.toMatch(/\bfree\b/);
+
+    ui.unmount();
+  });
+
+  it('collapses a fully unpriced run to a single unavailable statement', () => {
+    const costBreakdown: CostBreakdown = {
+      hypotheticalCost: 0,
+      actualPlannerCost: 0,
+      actualImplementerCost: 0,
+      totalActualCost: 0,
+      savingsAmount: 0,
+      savingsPercentage: 0,
+      localCompletionRate: 0,
+      hasPricedUsage: false,
+      hasUnpricedUsage: true,
+      hasSavingsEstimate: false,
+      isActualPlannerCostKnown: false,
+      isActualImplementerCostKnown: false,
+      isTotalActualCostKnown: false,
+      isAllPlannerBaselineKnown: false,
+    };
+
+    const ui = renderFeature(<CostBreakdownRows costBreakdown={costBreakdown} />);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).toContain('Cost');
+    expect(frame).toContain('not estimated · provider pricing unavailable');
+    expect((frame.match(/provider pricing unavailable/g) ?? []).length).toBe(1);
+    expect(frame).not.toContain('Unknown price');
+    expect(frame).not.toContain('Actual cost');
+    expect(frame).not.toContain('Planner cost');
+    expect(frame).not.toContain('Implementer cost');
+    expect(frame).not.toContain('Saved');
 
     ui.unmount();
   });

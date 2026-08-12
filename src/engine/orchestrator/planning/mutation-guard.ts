@@ -30,15 +30,24 @@ export async function capturePlanningMutationBaseline(
 // artifactFile is the phase's declared artifact (e.g. tasks.md). A CLI planner that writes it
 // anywhere inside the project is on the supported ingestion path readCliPhaseOutput reads back,
 // so matching that basename is a produced artifact, not an unexpected project mutation.
+// internalStatePaths are the tool's catalog-declared per-project state prefixes (e.g. OpenCode
+// regenerates its `.opencode/package-lock.json` on startup); churn there is tool-internal
+// housekeeping, not planner-authored content.
 export async function findUnexpectedPlanningMutations(opts: {
   projectDir: string;
   sessionId: string;
   baseline: ChangedFilesBaseline;
   artifactFile?: string | undefined;
+  internalStatePaths?: readonly string[] | undefined;
 }): Promise<string[]> {
+  const internalStatePaths = opts.internalStatePaths ?? [];
   const changed = await changedFilesSinceBaseline(opts.projectDir, opts.baseline);
   return changed.filter(
     (file) =>
-      !isAllowedPlanningMutation(file, opts.sessionId) && basename(file) !== opts.artifactFile,
+      !isAllowedPlanningMutation(file, opts.sessionId) &&
+      basename(file) !== opts.artifactFile &&
+      !internalStatePaths.some((path) =>
+        path.endsWith('/') ? file.startsWith(path) : file === path,
+      ),
   );
 }

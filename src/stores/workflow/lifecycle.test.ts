@@ -373,10 +373,20 @@ describe('runner call stall', () => {
     const running = lifecycleStore.get();
 
     const stalled = updateStall(running, makeRunnerCallStalled());
-    expect(stalled.stall).toEqual({ since: 2_000, silentMs: 60_000 });
+    expect(stalled.stall).toEqual({ since: 2_000, silentMs: 60_000, runnerName: null });
 
     const cleared = updateStall(stalled, makeRunnerCallStallCleared());
     expect(cleared.stall).toBeNull();
+  });
+
+  it('carries the silent runner so the byline can name why the output stopped', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    const stalled = updateStall(
+      lifecycleStore.get(),
+      makeRunnerCallStalled({ runnerName: 'opencode' }),
+    );
+
+    expect(stalled.stall?.runnerName).toBe('opencode');
   });
 
   it('call activity, completion, error, planner text, and phase changes clear stall', () => {

@@ -10,12 +10,18 @@ import {
   TEST_METADATA,
   TEST_SINKS,
 } from '#testing/helpers/orchestrator-factories.js';
+import {
+  REAL_TASKS_MD,
+  makeBriefQualityFailureTask,
+  makePassingTask,
+} from '#testing/helpers/planning-phase.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { PlanOptions, Planner } from '../../planners/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { resolveValidationDisplayCommand } from '../validation/commands.js';
+import { formatTasks } from '../../spec/formatter.js';
 import { runFullPlanning } from './full.js';
 
 let dirs: string[] = [];
@@ -48,7 +54,7 @@ describe('runFullPlanning — skill rehydration', () => {
         return {
           spec: '# Spec',
           plan: '# Plan',
-          tasks: [],
+          tasks: [makePassingTask()],
           usage: { inputTokens: 1, outputTokens: 1 },
         };
       }),
@@ -94,7 +100,7 @@ describe('runFullPlanning — skill rehydration', () => {
         return {
           spec: '# Spec',
           plan: '# Plan',
-          tasks: [],
+          tasks: [makePassingTask()],
           usage: { inputTokens: 1, outputTokens: 1 },
         };
       }),
@@ -136,10 +142,14 @@ describe('runFullPlanning — questions', () => {
         return {
           spec: '# Spec',
           plan: '# Plan',
-          tasks: [],
+          tasks: [makePassingTask()],
           usage: { inputTokens: 1, outputTokens: 1 },
         };
       }),
+      review: vi
+        .fn()
+        .mockResolvedValueOnce({ text: '# Reviewed plan', usage: null })
+        .mockResolvedValueOnce({ text: REAL_TASKS_MD, usage: null }),
     });
     expect(planner.capabilities.supportsConversationalPlanning).toBe(false);
 
@@ -189,7 +199,7 @@ Some architecture.`;
       plan: vi.fn().mockResolvedValue({
         spec: '# Spec',
         plan: '# Plan',
-        tasks: [],
+        tasks: [makePassingTask()],
         usage: { inputTokens: 1, outputTokens: 1 },
         phases: [{ filename: 'research.md', text: researchWithDisallowedTest }],
       }),
@@ -232,5 +242,177 @@ Some architecture.`;
       expect(handoffTest).not.toMatch(/^\.\//);
       expect(handoffTest).not.toMatch(/^\//);
     }
+  });
+});
+
+describe('runFullPlanning — brief quality preparation', () => {
+  it('does not regenerate a passing Task Brief set before brief review', async () => {
+    const projectDir = createTempDir('full-quality-pass');
+    dirs.push(projectDir);
+    const sessionId = 'sess-quality-pass';
+    ensureSessionDir(projectDir, sessionId);
+    const callbacks = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [makePassingTask()],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+    });
+
+    const result = await runFullPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { approve: 'none' } }),
+        callbacks: callbacks.callbacks,
+        bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner,
+      state: transition(createInitialState('feat'), { type: 'START' }),
+      feature: 'feat',
+      approveLevel: 'none',
+    });
+
+    expect(planner.review).not.toHaveBeenCalled();
+    expect(callbacks.callbacks.onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.tasks).toHaveLength(1);
+    expect(result.failed).toBe(false);
+    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
+  });
+
+  it('repairs an initial zero-task result once before entering brief review', async () => {
+    const projectDir = createTempDir('full-quality-repair');
+    dirs.push(projectDir);
+    const sessionId = 'sess-quality-repair';
+    ensureSessionDir(projectDir, sessionId);
+    const callbacks = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+
+    const result = await runFullPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { approve: 'none' } }),
+        callbacks: callbacks.callbacks,
+        bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner,
+      state: transition(createInitialState('feat'), { type: 'START' }),
+      feature: 'feat',
+      approveLevel: 'none',
+    });
+
+    expect(planner.plan).toHaveBeenCalledTimes(1);
+    expect(planner.review).toHaveBeenCalledTimes(1);
+    expect(callbacks.callbacks.onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]?.id).toBe('T001');
+    expect(result.failed).toBe(false);
+    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
+  });
+
+  it('prepares deferred briefs once without opening review', async () => {
+    const projectDir = createTempDir('full-quality-deferred');
+    dirs.push(projectDir);
+    const sessionId = 'sess-quality-deferred';
+    ensureSessionDir(projectDir, sessionId);
+    const callbacks = makeCallbacks();
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+      review: vi.fn().mockResolvedValue({ text: REAL_TASKS_MD, usage: null }),
+    });
+
+    const result = await runFullPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { approve: 'none' } }),
+        callbacks: callbacks.callbacks,
+        bus: makeBusRecorder().bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner,
+      state: transition(createInitialState('feat'), { type: 'START' }),
+      feature: 'feat',
+      approveLevel: 'none',
+      deferBriefGate: true,
+    });
+
+    expect(planner.review).toHaveBeenCalledTimes(1);
+    expect(callbacks.callbacks.onApprovalNeeded).not.toHaveBeenCalled();
+    expect(result.cancelled).toBe(false);
+    expect(result.failed).toBe(false);
+    expect(result.state.phase).toBe('reviewing-plan');
+    expect(result.tasks).toHaveLength(1);
+  });
+
+  it('cancels after a second quality failure without opening brief review', async () => {
+    const projectDir = createTempDir('full-quality-failure');
+    dirs.push(projectDir);
+    const sessionId = 'sess-quality-failure';
+    ensureSessionDir(projectDir, sessionId);
+    const callbacks = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const invalidTask = makeBriefQualityFailureTask();
+    const planner = makePlanner({
+      plan: vi.fn().mockResolvedValue({
+        spec: '# Spec',
+        plan: '# Plan',
+        tasks: [invalidTask],
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+      review: vi.fn().mockResolvedValue({ text: formatTasks([invalidTask]), usage: null }),
+    });
+
+    const result = await runFullPlanning({
+      wctx: {
+        projectDir,
+        sessionId,
+        config: makeConfig({ workflow: { approve: 'none' } }),
+        callbacks: callbacks.callbacks,
+        bus,
+        metadata: TEST_METADATA,
+        sinks: TEST_SINKS,
+      },
+      planner,
+      state: transition(createInitialState('feat'), { type: 'START' }),
+      feature: 'feat',
+      approveLevel: 'none',
+    });
+
+    expect(planner.review).toHaveBeenCalledTimes(1);
+    expect(callbacks.callbacks.onApprovalNeeded).not.toHaveBeenCalled();
+    expect(result.cancelled).toBe(true);
+    expect(result.failed).toBe(true);
+    expect(result.state.phase).toBe('idle');
+    expect(result.tasks).toEqual([]);
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('idle');
+    expect(loadState({ projectDir, sessionId })?.tasks).toEqual([]);
+    expect(events.some((event) => event.type === 'error')).toBe(true);
   });
 });

@@ -1,32 +1,48 @@
 import { describe, expect, it } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { getTerminalCellWidth } from '../display-text.js';
+import { glyph, markdownLayoutGlyphs } from '../../lib/glyphs.js';
 import { parseMarkdownBlocks } from './block-parser.js';
 import { layoutMarkdown } from './layout.js';
 import type { MarkdownDocument, MarkdownLayoutLine } from './types.js';
 
-const THEMATIC_BREAK_CHAR = '\u2500';
+// These expectations spell the unicode tier out literally, so the tier is pinned here rather
+// than left to whether the process running the suite happens to own a TTY.
+forceUnicodeGlyphs();
+
+const GLYPHS = markdownLayoutGlyphs();
+const RULE = glyph('divider');
+const RAIL = glyph('codeRail');
+const HOOK = glyph('wrapContinuation');
 
 function lineText(line: MarkdownLayoutLine): string {
   return line.segments.map((segment) => segment.text).join('');
 }
 
+function stripCodeRail(text: string): string {
+  if (text.startsWith(`${RAIL}${HOOK}`)) return text.slice(`${RAIL}${HOOK}`.length);
+  if (text.startsWith(`${RAIL} `)) return text.slice(`${RAIL} `.length);
+  if (text.startsWith(RAIL)) return text.slice(RAIL.length);
+  return text;
+}
+
 function layoutLines(source: string, width: number): string[] {
-  const layout = layoutMarkdown(parseMarkdownBlocks(source), { width });
+  const layout = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width });
   return layout.rows.flatMap((row) => row.lines.map(lineText));
 }
 
 describe('layoutMarkdown', () => {
   it('uses terminal width for thematic breaks', () => {
-    expect(layoutLines('---', 12)).toEqual([THEMATIC_BREAK_CHAR.repeat(12)]);
-    expect(layoutLines('---', 28)).toEqual([THEMATIC_BREAK_CHAR.repeat(28)]);
+    expect(layoutLines('---', 12)).toEqual([RULE.repeat(12)]);
+    expect(layoutLines('---', 28)).toEqual([RULE.repeat(28)]);
   });
 
   it('produces more rows at narrow widths and keeps long paths inside row width', () => {
     const source =
       'This paragraph references src/utils/markdown/really-long-path-for-layout-tests.ts and keeps wrapping.';
 
-    const narrow = layoutMarkdown(parseMarkdownBlocks(source), { width: 24 });
-    const wide = layoutMarkdown(parseMarkdownBlocks(source), { width: 80 });
+    const narrow = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 24 });
+    const wide = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 80 });
     const narrowLines = narrow.rows.flatMap((row) => row.lines.map(lineText));
 
     expect(narrow.height).toBeGreaterThan(wide.height);
@@ -40,61 +56,150 @@ describe('layoutMarkdown', () => {
   it('does not interpret markdown syntax inside code fences', () => {
     const layout = layoutMarkdown(
       parseMarkdownBlocks(['```', '# heading', '---', '- item', '```'].join('\n')),
-      { width: 40 },
+      { glyphs: GLYPHS, width: 40 },
     );
 
     expect(layout.rows.map((row) => row.blockKind)).toEqual(['code']);
     expect(layout.rows.flatMap((row) => row.lines.map(lineText))).toEqual([
-      '▏',
-      '▏ # heading',
-      '▏ ---',
-      '▏ - item',
-      '▏',
+      RAIL,
+      `${RAIL} # heading`,
+      `${RAIL} ---`,
+      `${RAIL} - item`,
+      RAIL,
     ]);
   });
 
   it('pads a code block with a bare-rail line above and below its content', () => {
     const layout = layoutMarkdown(parseMarkdownBlocks(['```', 'const a = 1;', '```'].join('\n')), {
       width: 40,
+      glyphs: GLYPHS,
     });
     const row = layout.rows[0];
-    const padSegments = [{ kind: 'codeGutter', text: '▏' }];
+    const padSegments = [{ kind: 'codeGutter', text: RAIL }];
 
-    expect(row?.lines.map(lineText)).toEqual(['▏', '▏ const a = 1;', '▏']);
+    expect(row?.lines.map(lineText)).toEqual([RAIL, `${RAIL} const a = 1;`, RAIL]);
     expect(row?.lines.at(0)?.segments).toEqual(padSegments);
     expect(row?.lines.at(-1)?.segments).toEqual(padSegments);
     expect(row?.height).toBe(3);
     expect(layout.height).toBe(3);
   });
 
-  it('pads a highlighted code block the same way as the literal path', () => {
+  it('flushes the language tag to the far edge, out of the column the code starts in', () => {
     const source = ['```ts', 'const a = 1;', '```'].join('\n');
-    const row = layoutMarkdown(parseMarkdownBlocks(source), { width: 40 }).rows[0];
+    const row = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 40 }).rows[0];
 
-    expect(row?.lines.map(lineText)).toEqual(['▏', '▏ const a = 1;', '▏']);
-    expect(row?.lines.at(0)?.segments).toEqual([{ kind: 'codeGutter', text: '▏' }]);
-    expect(row?.lines.at(-1)?.segments).toEqual([{ kind: 'codeGutter', text: '▏' }]);
+    expect(row?.lines.map(lineText)).toEqual([
+      `${RAIL}${' '.repeat(37)}ts`,
+      `${RAIL} const a = 1;`,
+      RAIL,
+    ]);
+    expect(row?.lines.at(0)?.segments).toEqual([
+      { kind: 'codeGutter', text: `${RAIL}${' '.repeat(37)}` },
+      { kind: 'codeLanguage', text: 'ts' },
+    ]);
+    expect(row?.lines.every((line) => getTerminalCellWidth(lineText(line)) <= 40)).toBe(true);
+    expect(row?.lines.at(-1)?.segments).toEqual([{ kind: 'codeGutter', text: RAIL }]);
   });
 
-  it('repeats the code gutter on wrapped continuation lines', () => {
+  it.each([
+    'text',
+    'txt',
+    'plain',
+    'plaintext',
+    'none',
+    'raw',
+    'output',
+    'TEXT',
+  ])('opens a fence tagged %s on the bare rail, with no label to read as code', (language) => {
+    const source = [`\`\`\`${language}`, 'value', '```'].join('\n');
+    const row = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 40 }).rows[0];
+
+    expect(row?.lines.map(lineText)).toEqual([RAIL, `${RAIL} value`, RAIL]);
+    expect(row?.lines.at(0)?.segments).toEqual([{ kind: 'codeGutter', text: RAIL }]);
+  });
+
+  it('marks wrapped code continuation lines in the gutter', () => {
     const source = ['```', `const value = '${'x'.repeat(40)}';`, '```'].join('\n');
-    const lines = layoutMarkdown(parseMarkdownBlocks(source), { width: 24 }).rows.flatMap(
-      (row) => row.lines,
-    );
+    const lines = layoutMarkdown(parseMarkdownBlocks(source), {
+      glyphs: GLYPHS,
+      width: 24,
+    }).rows.flatMap((row) => row.lines);
     const texts = lines.map(lineText);
+    const body = texts.slice(1, -1);
 
-    expect(texts.slice(1, -1).length).toBeGreaterThan(1);
+    expect(body.length).toBeGreaterThan(1);
     expect(lines.every((line) => line.segments[0]?.kind === 'codeGutter')).toBe(true);
-    expect(texts.slice(1, -1).every((text) => text.startsWith('▏ '))).toBe(true);
-    expect(texts.at(0)).toBe('▏');
-    expect(texts.at(-1)).toBe('▏');
+    expect(body.at(0)?.startsWith(`${RAIL} `)).toBe(true);
+    expect(body.slice(1).every((text) => text.startsWith(`${RAIL}${HOOK}`))).toBe(true);
+    expect(texts.at(0)).toBe(RAIL);
+    expect(texts.at(-1)).toBe(RAIL);
   });
 
-  it('leaves frontmatter metadata free of the code gutter', () => {
-    const source = ['---', 'title: Doc', '---', '', 'body'].join('\n');
-    const segments = layoutMarkdown(parseMarkdownBlocks(source), { width: 40 }).rows.flatMap(
-      (row) => row.lines.flatMap((line) => line.segments),
-    );
+  it('wraps an unhighlighted fence on words and hangs it at its own indent', () => {
+    const source = [
+      '```text',
+      'src/engine/providers/request.ts',
+      '  Add tool definitions and assistant tool-call messages.',
+      '```',
+    ].join('\n');
+
+    expect(
+      layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 40 }).rows[0]?.lines.map(
+        lineText,
+      ),
+    ).toEqual([
+      RAIL,
+      `${RAIL} src/engine/providers/request.ts`,
+      `${RAIL}   Add tool definitions and assistant`,
+      `${RAIL}${HOOK}  tool-call messages.`,
+      RAIL,
+    ]);
+  });
+
+  it('drops the hanging indent when it would leave no room to wrap into', () => {
+    const source = ['```text', `${' '.repeat(34)}${'x'.repeat(160)}`, '```'].join('\n');
+    const layout = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 40 });
+    const body = layout.rows[0]?.lines.map(lineText).slice(1, -1) ?? [];
+
+    expect(layout.height).toBeLessThan(12);
+    expect(body.every((text) => getTerminalCellWidth(text) <= 40)).toBe(true);
+    expect(body.slice(1).every((text) => text.startsWith(`${RAIL}${HOOK}`))).toBe(true);
+  });
+
+  it('wraps a long language tag so the row height matches what it renders', () => {
+    const source = ['```', 'code', '```'].join('\n').replace('```', `\`\`\`${'z'.repeat(120)}`);
+    const row = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 40 }).rows[0];
+
+    expect(row?.lines.every((line) => getTerminalCellWidth(lineText(line)) <= 40)).toBe(true);
+    expect(row?.height).toBe(row?.lines.length);
+  });
+
+  // The session header a generator stamps on a file says nothing a reader wants, and it would
+  // take the most valuable rows on the surface. Task Brief metadata is content and still renders.
+  it('renders no row for a document frontmatter header', () => {
+    const source = ['---', 'title: Doc', 'owner: docs', '---', '', 'body'].join('\n');
+    const layout = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width: 40 });
+
+    expect(layout.rows.map((row) => row.blockKind)).toEqual(['paragraph']);
+    expect(layout.rows.flatMap((row) => row.lines.map(lineText))).toEqual(['body']);
+  });
+
+  it('leaves task brief metadata visible and free of the code gutter', () => {
+    const source = [
+      '---',
+      'id: T001',
+      'title: Doc',
+      'action: modify',
+      'file: src/a.ts',
+      'depends_on: []',
+      '---',
+      '',
+      'body',
+    ].join('\n');
+    const segments = layoutMarkdown(parseMarkdownBlocks(source), {
+      glyphs: GLYPHS,
+      width: 40,
+    }).rows.flatMap((row) => row.lines.flatMap((line) => line.segments));
 
     expect(segments.some((segment) => segment.kind === 'metadata')).toBe(true);
     expect(segments.some((segment) => segment.kind === 'codeGutter')).toBe(false);
@@ -119,10 +224,23 @@ describe('layoutMarkdown', () => {
     expect(lines.join('')).toBe(source);
   });
 
+  it.each([8, 12, 16])('keeps nested quote/list rows within width %d', (width) => {
+    const source = `${Array.from({ length: width }, () => '>').join(' ')} - 界 👩‍💻 nested text`;
+    const layout = layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width });
+    const lines = layout.rows.flatMap((row) => row.lines.map(lineText));
+
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines.every((line) => getTerminalCellWidth(line) <= layout.width)).toBe(true);
+    expect(lines.join('')).toContain('界');
+    expect(lines.join('')).toContain('👩‍💻');
+  });
+
   it('lays out deeply nested quote markers without exhausting the call stack', () => {
     const quoted = `${Array.from({ length: 5000 }, () => '>').join(' ')} quoted`;
 
-    expect(() => layoutMarkdown(parseMarkdownBlocks(quoted), { width: 40 })).not.toThrow();
+    expect(() =>
+      layoutMarkdown(parseMarkdownBlocks(quoted), { glyphs: GLYPHS, width: 40 }),
+    ).not.toThrow();
   });
 
   it('keeps adjacent links unmerged', () => {
@@ -139,7 +257,7 @@ describe('layoutMarkdown', () => {
       ],
     };
 
-    const layout = layoutMarkdown(document, { width: 40 });
+    const layout = layoutMarkdown(document, { glyphs: GLYPHS, width: 40 });
     const links = layout.rows
       .flatMap((row) => row.lines.flatMap((line) => line.segments))
       .filter((segment) => segment.kind === 'link');
@@ -156,7 +274,7 @@ describe('layoutMarkdown', () => {
       blocks: [{ kind: 'htmlComment', lines: ['<!-- Q:{"id":"q1"} -->'] }],
     };
 
-    const layout = layoutMarkdown(document, { width: 40 });
+    const layout = layoutMarkdown(document, { glyphs: GLYPHS, width: 40 });
 
     expect(layout.rows).toEqual([]);
     expect(layout.height).toBe(0);
@@ -183,7 +301,7 @@ describe('layoutMarkdown', () => {
       ],
     };
 
-    const heading = layoutMarkdown(document, { width: 40 })
+    const heading = layoutMarkdown(document, { glyphs: GLYPHS, width: 40 })
       .rows.flatMap((row) => row.lines.flatMap((line) => line.segments))
       .find((segment) => segment.kind === 'heading');
 
@@ -191,7 +309,10 @@ describe('layoutMarkdown', () => {
   });
 
   it('opens a mid-document heading with one blank line', () => {
-    const layout = layoutMarkdown(parseMarkdownBlocks('intro text\n\n## Section'), { width: 40 });
+    const layout = layoutMarkdown(parseMarkdownBlocks('intro text\n\n## Section'), {
+      glyphs: GLYPHS,
+      width: 40,
+    });
     const heading = layout.rows[1];
 
     expect(heading?.blockKind).toBe('heading');
@@ -200,18 +321,41 @@ describe('layoutMarkdown', () => {
     expect(layout.height).toBe(3);
   });
 
-  it('keeps a document-leading heading flush with the top', () => {
-    const layout = layoutMarkdown(parseMarkdownBlocks('# Title\n\nbody'), { width: 40 });
+  it('keeps a document-leading heading flush with the top and rules it off', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks('# Title\n\nbody'), {
+      glyphs: GLYPHS,
+      width: 40,
+    });
 
-    expect(layout.rows[0]?.lines.map(lineText)).toEqual(['Title']);
-    expect(layout.rows[0]?.height).toBe(1);
-    expect(layout.height).toBe(2);
+    expect(layout.rows[0]?.lines.map(lineText)).toEqual(['Title', RULE.repeat('Title'.length)]);
+    expect(layout.rows[0]?.height).toBe(2);
+    expect(layout.height).toBe(3);
   });
 
-  it('opens a leading heading with a blank line when leadingHeadingGap is set', () => {
-    const layout = layoutMarkdown(parseMarkdownBlocks('# Title'), {
+  it('separates the depth ranks so no two of the six read alike', () => {
+    const rendered = ([1, 2, 3, 4, 5, 6] as const).map((depth) => {
+      const rows = layoutMarkdown(parseMarkdownBlocks(`${'#'.repeat(depth)} Rank`), {
+        glyphs: GLYPHS,
+        width: 40,
+      });
+      const segments = rows.rows.flatMap((row) => row.lines.flatMap((line) => line.segments));
+      return {
+        depth,
+        kinds: segments.map((segment) => segment.kind).join('+'),
+        headingDepth: segments.find((segment) => segment.kind === 'heading')?.depth,
+      };
+    });
+
+    expect(rendered.map((entry) => entry.headingDepth)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(rendered[0]?.kinds).toBe('heading+rule');
+    expect(rendered.slice(1).every((entry) => entry.kinds === 'heading')).toBe(true);
+  });
+
+  it('opens a leading heading with a blank line when an earlier block is reported', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks('## Title'), {
       width: 40,
-      leadingHeadingGap: true,
+      glyphs: GLYPHS,
+      previousBlock: { kind: 'paragraph', endsWithBlankLine: false },
     });
 
     expect(layout.rows[0]?.lines.map(lineText)).toEqual(['', 'Title']);
@@ -219,9 +363,66 @@ describe('layoutMarkdown', () => {
     expect(layout.height).toBe(2);
   });
 
+  it('does not double the air when the preceding block already closed on a blank line', () => {
+    const layout = layoutMarkdown(parseMarkdownBlocks('## Title'), {
+      width: 40,
+      glyphs: GLYPHS,
+      previousBlock: { kind: 'list', endsWithBlankLine: true },
+    });
+
+    expect(layout.rows[0]?.lines.map(lineText)).toEqual(['Title']);
+  });
+
+  it('opens a mid-document paragraph with one blank line', () => {
+    expect(layoutLines('first para\n\nsecond para', 40)).toEqual(['first para', '', 'second para']);
+  });
+
+  it('keeps a label paragraph flush with the list or fence it introduces', () => {
+    expect(layoutLines('intro\n\nDispatch rules:\n- one\n- two', 40)).toEqual([
+      'intro',
+      '',
+      'Dispatch rules:',
+      '• one',
+      '• two',
+    ]);
+    expect(layoutLines('intro\n\nOptions:\n```\nvalue\n```', 40)).toEqual([
+      'intro',
+      '',
+      'Options:',
+      RAIL,
+      `${RAIL} value`,
+      RAIL,
+    ]);
+  });
+
+  it('binds a heading to its body by dropping the body gap', () => {
+    expect(layoutLines('intro\n\n## Section\n\nbody\n\nmore', 40)).toEqual([
+      'intro',
+      '',
+      'Section',
+      'body',
+      '',
+      'more',
+    ]);
+  });
+
+  it('opens a mid-document thematic break with one blank line', () => {
+    expect(layoutLines('intro\n\n---', 8)).toEqual(['intro', '', RULE.repeat(8)]);
+  });
+
+  it('ignores blocks that render nothing when deciding the next gap', () => {
+    expect(layoutLines('intro\n\n## Section\n\n<!-- Q: ask -->\n\nbody', 40)).toEqual([
+      'intro',
+      '',
+      'Section',
+      'body',
+    ]);
+  });
+
   it('counts the gap once for a heading that wraps across lines', () => {
     const layout = layoutMarkdown(parseMarkdownBlocks('intro\n\n## Section title that wraps'), {
       width: 12,
+      glyphs: GLYPHS,
     });
     const heading = layout.rows[1];
 
@@ -230,14 +431,32 @@ describe('layoutMarkdown', () => {
   });
 
   it('opens a heading that starts a blockquote with one blank line', () => {
-    const layout = layoutMarkdown(parseMarkdownBlocks('intro\n\n> # Quoted\n> body'), {
+    const layout = layoutMarkdown(parseMarkdownBlocks('intro\n\n> ## Quoted\n> body'), {
       width: 40,
+      glyphs: GLYPHS,
     });
     const quotedHeading = layout.rows[1];
 
     expect(quotedHeading?.blockKind).toBe('blockquote');
     expect(quotedHeading?.lines.map(lineText)).toEqual(['▎ ', '▎ Quoted']);
     expect(quotedHeading?.height).toBe(2);
+  });
+
+  it('binds a list-item continuation to its own bullet and closes the item below it', () => {
+    expect(
+      layoutLines('- A user starts a workflow.\n  Expected outcome: it completes.\n\n- Next.', 40),
+    ).toEqual(['• A user starts a workflow.', '  Expected outcome: it completes.', '', '• Next.']);
+  });
+
+  it('hangs a wrapped continuation at the item text column, never at column 0', () => {
+    const lines = layoutLines(
+      '- Bullet text.\n  Expected outcome: a much longer sentence that has to wrap at this width.',
+      32,
+    );
+
+    expect(lines[0]).toBe('• Bullet text.');
+    expect(lines.slice(1, -1).every((line) => line === '' || line.startsWith('  '))).toBe(true);
+    expect(lines.at(-1)).toBe('');
   });
 
   it('maps strikethrough inline tokens onto strikethrough segments', () => {
@@ -251,7 +470,7 @@ describe('layoutMarkdown', () => {
       ],
     };
 
-    const segments = layoutMarkdown(document, { width: 40 }).rows.flatMap((row) =>
+    const segments = layoutMarkdown(document, { glyphs: GLYPHS, width: 40 }).rows.flatMap((row) =>
       row.lines.flatMap((line) => line.segments),
     );
 
@@ -283,7 +502,7 @@ describe('layoutMarkdown', () => {
       ],
     };
 
-    const layout = layoutMarkdown(document, { width: 40 });
+    const layout = layoutMarkdown(document, { glyphs: GLYPHS, width: 40 });
 
     expect(layout.rows.length).toBeGreaterThan(0);
     expect(layout.rows.every((row) => row.blockKind === 'table')).toBe(true);
@@ -292,7 +511,7 @@ describe('layoutMarkdown', () => {
   describe('highlighted code layout', () => {
     function fenceLayout(language: string, lines: readonly string[], width: number) {
       const source = [`\`\`\`${language}`, ...lines, '```'].join('\n');
-      return layoutMarkdown(parseMarkdownBlocks(source), { width });
+      return layoutMarkdown(parseMarkdownBlocks(source), { glyphs: GLYPHS, width });
     }
 
     function fenceSegments(language: string, lines: readonly string[], width: number) {
@@ -315,18 +534,20 @@ describe('layoutMarkdown', () => {
       ).toBe(true);
     });
 
-    it('opens a highlighted fence line with the same code gutter as the literal path', () => {
+    it('opens a highlighted fence with its language tag, then gutters the body', () => {
       const segments = fenceSegments('ts', ["const greeting = 'hello';"], 60);
 
-      expect(segments[0]).toEqual({ kind: 'codeGutter', text: '▏' });
-      expect(segments[1]).toEqual({ kind: 'codeGutter', text: '▏ ' });
+      expect(segments[0]).toEqual({ kind: 'codeGutter', text: `${RAIL}${' '.repeat(57)}` });
+      expect(segments[1]).toEqual({ kind: 'codeLanguage', text: 'ts' });
+      expect(segments[2]).toEqual({ kind: 'codeGutter', text: `${RAIL} ` });
     });
 
-    it('keeps an unknown language monochrome with scope-less code segments', () => {
+    it('keeps an unknown language monochrome as scope-less code text', () => {
       const segments = fenceSegments('notalanguage', ["const greeting = 'hello';"], 60);
 
       expect(segments.every((segment) => segment.scope === undefined)).toBe(true);
-      expect(segments.some((segment) => segment.kind === 'code')).toBe(true);
+      expect(segments.some((segment) => segment.kind === 'codeText')).toBe(true);
+      expect(segments.some((segment) => segment.kind === 'code')).toBe(false);
     });
 
     it('preserves the scope on continuation lines when a highlighted line wraps', () => {
@@ -342,17 +563,20 @@ describe('layoutMarkdown', () => {
       expect(continuationScopes).toContain('string');
     });
 
+    // Wrapping trims the whitespace it breaks on, so the invariant is that highlighting
+    // neither drops nor duplicates any non-space character, at any width.
     it.each([
       16, 24, 40, 60, 80,
-    ])('keeps line counts and text identical to the monochrome path at width %d', (width) => {
+    ])('reconstructs the highlighted fence source within the width at %d', (width) => {
       const lines = ['const value = 42;', '', '// done'];
-      const highlighted = fenceLayout('ts', lines, width);
-      const monochrome = fenceLayout('notalanguage', lines, width);
-      const lineTexts = (layout: ReturnType<typeof layoutMarkdown>) =>
-        layout.rows.flatMap((row) => row.lines.map(lineText));
+      const rendered = fenceLayout('ts', lines, width)
+        .rows.flatMap((row) => row.lines)
+        .map(lineText);
+      const body = rendered.slice(1, -1).map((text) => stripCodeRail(text));
+      const withoutSpace = (text: string) => text.replace(/\s/g, '');
 
-      expect(highlighted.height).toBe(monochrome.height);
-      expect(lineTexts(highlighted)).toEqual(lineTexts(monochrome));
+      expect(withoutSpace(body.join(''))).toBe(withoutSpace(lines.join('')));
+      expect(rendered.every((text) => getTerminalCellWidth(text) <= width)).toBe(true);
     });
   });
 });

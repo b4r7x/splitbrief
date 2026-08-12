@@ -8,7 +8,9 @@ import type {
 } from '../../../engine/events/types.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import { formatTruncatedList } from '../../../core/formatting.js';
+import { glyph } from '../../../lib/glyphs.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
 export function formatTaskStartedValue(
   event: Extract<EngineEvent, { type: 'task_started' }>,
@@ -49,12 +51,39 @@ export function formatExternalChangesValue(
   return `${event.conflict.kind} · ${filesLabel}${tasksLabel}${actionLabel}`;
 }
 
-export function validationRow(event: Extract<EngineEvent, { type: 'validate' }>): string {
-  const stageText = ValidationStageSchema.options
-    .map((stage) => validationStageText(event, stage))
-    .join(' ');
-  const dur = event.duration ? ` ${formatDuration(event.duration)}` : '';
-  return `validate ${stageText}${dur}`;
+// One flat string could not show which stage failed without being read word by word, and it wrapped
+// mid-stage. Each stage is its own toned segment now, and dropping the command keeps the row on one
+// line at every width — the failing stage's command moves to the error block below it.
+export function validationSummarySegments(
+  event: Extract<EngineEvent, { type: 'validate' }>,
+): ConversationRowSegment[] {
+  const segments: ConversationRowSegment[] = [{ text: 'validate', tone: 'textDim' }];
+  for (const stage of ValidationStageSchema.options) {
+    const state = validationStageSymbol(event, event.stages, stage, event.skipped);
+    segments.push(
+      { text: '  ' },
+      { text: `${stageGlyph(state)} ${stage}`, tone: stageTone(state) },
+    );
+  }
+  if (event.duration) {
+    segments.push({ text: '  ' }, { text: formatDuration(event.duration), tone: 'textDim' });
+  }
+  return segments;
+}
+
+function stageGlyph(state: string): string {
+  if (state === 'passed') return glyph('check');
+  if (state === 'failed') return glyph('statusFailed');
+  if (state === 'running') return glyph('statusInProgress');
+  if (state === 'skipped') return glyph('statusSkipped');
+  return glyph('statusPending');
+}
+
+function stageTone(state: string): ConversationRowTone {
+  if (state === 'passed') return 'success';
+  if (state === 'failed') return 'error';
+  if (state === 'running') return 'info';
+  return 'textDim';
 }
 
 export function baselineValidationRow(
@@ -102,16 +131,6 @@ function validationStageWasAttempted(
 ): boolean {
   if (event.attempted !== undefined) return event.attempted[stage];
   return event.stages[stage] || skipped?.[stage] === true || !event.passed;
-}
-
-function validationStageText(
-  event: Extract<EngineEvent, { type: 'validate' }>,
-  stage: ValidationStage,
-): string {
-  const command = event.commands?.[stage];
-  const label =
-    command === undefined ? stage : `${stage} (${truncateTerminalDisplayText(command, 48)})`;
-  return `${label} ${validationStageSymbol(event, event.stages, stage, event.skipped)}`;
 }
 
 function baselineValidationStageSymbol(

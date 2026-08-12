@@ -1,11 +1,13 @@
 import type { EngineEvent } from '../../../../engine/events/types.js';
-import { ValidationStageSchema } from '../../../../core/schemas/enums.js';
+import { ValidationStageSchema, type ValidationStage } from '../../../../core/schemas/enums.js';
 import { formatDuration } from '../../../../utils/format-time.js';
 import { implementerExpandedDiffCardBlock } from '../implementer-diff-card-block.js';
 import type { ConversationRowBlock, ConversationRowTone, RowBuildContext } from '../types.js';
 import { sanitizeRowDisplayText } from '../row-format/text.js';
-import { baselineValidationRow, validationRow } from '../event-format.js';
-import { compositeBlock, wrappedTextBlock } from '../row-block-compose.js';
+import { preformattedOutputBlock } from '../row-format/preformatted-block.js';
+import { segmentedRow } from '../row-format/rows.js';
+import { baselineValidationRow, validationSummarySegments } from '../event-format.js';
+import { compositeBlock, rowsBlock, wrappedTextBlock } from '../row-block-compose.js';
 
 export function runningImplementerRowBlock(
   keyPrefix: string,
@@ -84,22 +86,39 @@ export function validateRowBlock(
   event: Extract<EngineEvent, { type: 'validate' }>,
   width: number,
 ): ConversationRowBlock | null {
+  const stage = failedValidationStage(event);
+  const command = stage === undefined ? undefined : event.commands?.[stage];
+
   return compositeBlock(keyPrefix, [
-    wrappedTextBlock({
-      keyPrefix,
-      text: validationRow(event),
-      width,
-      tone: event.passed ? 'success' : 'textDim',
-    }),
+    rowsBlock(keyPrefix, [
+      segmentedRow(`${keyPrefix}-summary`, validationSummarySegments(event), 'message'),
+    ]),
     event.status === 'done' && !event.passed && event.error
-      ? wrappedTextBlock({
+      ? preformattedOutputBlock({
           keyPrefix: `${keyPrefix}-error`,
-          text: `error: ${event.error}`,
+          label: 'error',
+          // The header names the stage; the footer names the command. Carrying the command in both
+          // put one string on screen twice, cut at two different columns because the two rows have
+          // different budgets. It belongs at the foot, where it is the thing to act on.
+          ...(stage === undefined ? {} : { meta: stage }),
+          text: event.error,
           width,
           tone: 'error',
+          ...(command === undefined ? {} : { moreHint: `run ${command}` }),
         })
       : null,
   ]);
+}
+
+function failedValidationStage(
+  event: Extract<EngineEvent, { type: 'validate' }>,
+): ValidationStage | undefined {
+  return ValidationStageSchema.options.find(
+    (stage) =>
+      !event.stages[stage] &&
+      event.skipped?.[stage] !== true &&
+      (event.attempted === undefined || event.attempted[stage]),
+  );
 }
 
 export function baselineValidationRowBlock(

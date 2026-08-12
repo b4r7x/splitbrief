@@ -58,20 +58,24 @@ export function rebaseOnPersistedWorkflowState(
   const persisted = loadState(ref);
   if (!persisted) return state;
 
-  const inMemoryById = new Map(state.messageQueue.map((message) => [message.id, message]));
-  const messageQueue = persisted.messageQueue.map((persistedMessage) => {
-    const current = inMemoryById.get(persistedMessage.id);
-    if (!current) return persistedMessage;
-    return {
-      ...persistedMessage,
-      ...current,
-      deliveredViaNative: persistedMessage.deliveredViaNative || current.deliveredViaNative,
-      nativeDeliveryState: mergeNativeDeliveryState(persistedMessage, current),
-      drainedAt: current.drainedAt ?? persistedMessage.drainedAt,
-    };
-  });
+  const byId = new Map(persisted.messageQueue.map((message) => [message.id, message]));
+  for (const current of state.messageQueue) {
+    const persistedMessage = byId.get(current.id);
+    byId.set(
+      current.id,
+      persistedMessage
+        ? {
+            ...persistedMessage,
+            ...current,
+            deliveredViaNative: persistedMessage.deliveredViaNative || current.deliveredViaNative,
+            nativeDeliveryState: mergeNativeDeliveryState(persistedMessage, current),
+            drainedAt: current.drainedAt ?? persistedMessage.drainedAt,
+          }
+        : current,
+    );
+  }
 
-  return { ...persisted, messageQueue };
+  return { ...persisted, messageQueue: [...byId.values()] };
 }
 
 export function transitionAndSave(
@@ -147,7 +151,7 @@ export function addUsageAndSave(
   category: UsageCategory,
   usage: TokenDelta | null | undefined,
 ): WorkflowState {
-  const base = mergePersistedMessageQueue(ctx, state);
+  const base = rebaseOnPersistedWorkflowState(ctx, state);
   const next = addUsage(base, category, usage);
   saveState(ctx, next);
   if (usage) {

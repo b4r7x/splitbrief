@@ -5,6 +5,7 @@ import type {
   MarkdownDocument,
   MarkdownHeadingDepth,
   MarkdownListItem,
+  MarkdownListItemContinuation,
   MarkdownBlock,
   MarkdownTableAlignment,
   MarkdownTableCell,
@@ -13,6 +14,7 @@ import {
   isMarkdownBlockquoteLine as isBlockquoteLine,
   isMarkdownFenceCloseLine as isFenceClose,
   isMarkdownHtmlCommentStartLine as isHtmlCommentStartLine,
+  isMarkdownListContinuationLine as isListContinuationLine,
   isMarkdownListItemLine as isListItemLine,
   isMarkdownTableLine as isTableLine,
   isMarkdownTableSeparatorLine as isTableSeparatorLine,
@@ -296,11 +298,28 @@ function parseList(state: ParseState): MarkdownBlock {
     const item = parseListItem(line);
     if (!item) break;
 
-    items.push(item);
     state.index += 1;
+    const continuation = parseListItemContinuation(state);
+    items.push(continuation === undefined ? item : { ...item, continuation });
   }
 
   return { kind: 'list', items };
+}
+
+function parseListItemContinuation(state: ParseState): MarkdownListItemContinuation | undefined {
+  const lines: string[] = [];
+
+  while (state.index < state.lines.length) {
+    const line = state.lines[state.index];
+    if (line === undefined) break;
+    if (!isListContinuationLine(line, state.lines[state.index + 1])) break;
+    lines.push(line.trim());
+    state.index += 1;
+  }
+
+  if (lines.length === 0) return undefined;
+  const text = lines.join(' ');
+  return { text, inlines: parseMarkdownInlines(text) };
 }
 
 function parseListItem(line: string): MarkdownListItem | undefined {

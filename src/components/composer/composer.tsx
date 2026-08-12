@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Box, Text, type Key } from 'ink';
+import { Box, Text, useInput, type Key } from 'ink';
 import { MultilineInput } from '../input/multiline-input.js';
 import { isTextEntryInput, isUnmodifiedYInput } from '../../lib/terminal/text-entry.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
+import { REVIEW_COMMENT_DRAFT, resolveReviewActionKey } from '../../core/keybindings/review.js';
 import { CommandCompletionMenu } from './completion/command/menu.js';
 import { ReferenceCompletionMenu } from './completion/reference/menu.js';
 import { AttachmentChips, attachmentChipRows, expandPastes } from './attachments.js';
@@ -12,6 +14,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
 import { inputHeightStore } from '../../stores/ui/input-height.js';
 import { completionStore } from '../../stores/ui/completion.js';
+import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { focusStore } from '../../stores/ui/focus.js';
 import { configStore } from '../../stores/project/config.js';
@@ -24,7 +27,7 @@ import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { useHistory } from './use-history.js';
 import { attachImage, attachmentsStore } from '../../stores/workflow/attachments.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
-import { glyph } from '../../lib/glyphs.js';
+import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import {
   fitFeedbackMessage,
   matchKnownFeedbackMessage,
@@ -40,13 +43,13 @@ const RESUME_INTERRUPTED_SUFFIX = '": interrupted before it made progress \u2014
 const SESSION_FAILED_PREFIX = 'Session "';
 const SESSION_FAILED_SUFFIX = '" failed without a summary to display';
 
-function promptColorForMode(
-  mode: InputMode,
-  theme: Pick<Theme, 'accent' | 'planner' | 'warning'>,
-): string {
-  if (mode === 'review') return theme.planner;
+// The prompt glyph is structure: it marks where typing goes, it does not name a category. Weight
+// and position carry it, never hue — so normal and review draw the same mark. Question mode keeps
+// its tone for now because the answer gate has no other cue at the caret; if that becomes a
+// different glyph, this whole function goes.
+function promptColorForMode(mode: InputMode, theme: Pick<Theme, 'text' | 'warning'>): string {
   if (mode === 'question') return theme.warning;
-  return theme.accent;
+  return theme.text;
 }
 
 function placeholderForMode(mode: InputMode, hint?: string): string {
@@ -147,6 +150,9 @@ export function Composer({
   const [value, setValue] = useState('');
   const [visibleRows, setVisibleRows] = useState(1);
   const previousModeRef = useRef(mode);
+  // The workflow screen remounts this composer when a review gate opens, so mount time
+  // is gate time — keystrokes buffered before the gate cannot settle it.
+  const reviewActionGraceUntilRef = useRef(Date.now() + PROMPT_TYPEAHEAD_GRACE_MS);
   const persistTranscript = config?.workflow.persistTranscript ?? true;
 
   const briefFocusHeld =
@@ -238,6 +244,49 @@ export function Composer({
     if (!submitKeepsDraft) clearDraft();
   };
 
+  // A review gate settles on one key only while the draft is empty; the moment the
+  // user types anything the same letters go back to being text.
+  const reviewActionKeysArmed =
+    mode === 'review' &&
+    !disabled &&
+    !briefFocusHeld &&
+    value.length === 0 &&
+    pastes.length === 0 &&
+    pendingAttachments.length === 0;
+
+  // The legend that advertises these keys renders in a sibling row, so the armed flag is
+  // published rather than recomputed there: one condition, one writer, no drift.
+  useEffect(() => {
+    reviewKeysStore.setArmed(reviewActionKeysArmed);
+    return () => reviewKeysStore.setArmed(false);
+  }, [reviewActionKeysArmed]);
+
+  const reviewActionKey = (input: string, key: Key) =>
+    reviewActionKeysArmed && Date.now() >= reviewActionGraceUntilRef.current
+      ? resolveReviewActionKey(input, key)
+      : null;
+
+  const shouldHandleComposerInput = (input: string, key: Key): boolean =>
+    reviewActionKey(input, key) === null &&
+    (!briefFocusHeld ||
+      (mode === 'review' &&
+        (!reviewYankActive || !isUnmodifiedYInput(input, key)) &&
+        isTextEntryInput(input, key)));
+
+  useInput(
+    (input, key) => {
+      const command = reviewActionKey(input, key);
+      if (command === null) return;
+      if (command === 'comment') {
+        handleDraftChange(REVIEW_COMMENT_DRAFT);
+        bumpEpoch();
+        return;
+      }
+      onSubmit(command);
+    },
+    { isActive: reviewActionKeysArmed },
+  );
+
   const isEditShortcut = (input: string, key: Key): boolean =>
     mode === 'review' && key.ctrl && input === 'e';
 
@@ -249,11 +298,7 @@ export function Composer({
     }
     return handleBoundaryNavigate(direction);
   };
-  const shouldHandleComposerInput = (input: string, key: Key): boolean =>
-    !briefFocusHeld ||
-    (mode === 'review' &&
-      (!reviewYankActive || !isUnmodifiedYInput(input, key)) &&
-      isTextEntryInput(input, key));
+
   const handleComposerInputAccepted = (): void => {
     if (briefFocusHeld) focusStore.clear();
   };
@@ -348,7 +393,7 @@ export function Composer({
       <AttachmentChips pastes={pastes} />
       <Box flexDirection="column" width="100%" overflow="visible">
         <Box
-          borderStyle="round"
+          borderStyle={borderStyleFor('round')}
           borderColor={theme.border}
           paddingX={inputPaddingX}
           width="100%"

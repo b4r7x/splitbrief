@@ -1,14 +1,16 @@
-import type { Phase } from '../../core/schemas/enums.js';
 import type {
   BriefReviewCommand,
   BriefReviewCommandAction,
 } from '../../core/schemas/brief-review-command.js';
 import { SOFT_SEP } from '../../components/separators.js';
 
-export const REVIEW_HINT = `approve${SOFT_SEP}ctrl+e edit${SOFT_SEP}comment <text> revises${SOFT_SEP}quit`;
-export const BRIEFS_REVIEW_HINT = `approve${SOFT_SEP}ctrl+e edit-file${SOFT_SEP}comment <text> revises${SOFT_SEP}reject/q`;
+// Both review phases take the same four keys and the same typed commands; the phase split only
+// ever named `e` twice, and `e` opened the same external-editor handoff either way.
+export const REVIEW_HINT = `y approve${SOFT_SEP}c comment${SOFT_SEP}q reject${SOFT_SEP}e edit`;
+// Named with the same words the legend just taught. Every one of them parses, so the recovery
+// message cannot send a user who read `q reject` off to type a word the legend never showed.
 export const REVIEW_UNKNOWN_COMMAND_MESSAGE =
-  'Unknown command. Use: approve, edit-file, comment <text>, or quit';
+  'Unknown command. Use: approve, comment <text>, reject, or edit';
 
 const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
 const REJECT_ALIASES = new Set(['quit', 'reject', 'no', 'n', 'q']);
@@ -18,12 +20,8 @@ export type ReviewAction =
   | { kind: 'open-external-editor' }
   | null;
 
-export function reviewHintForPhase(phase: Phase): string {
-  return phase === 'reviewing-briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
-}
-
-export function reviewOpeningPromptMessage(phase: Phase): string {
-  return `Review prompt is opening. Once active, use: ${reviewHintForPhase(phase)}`;
+export function reviewOpeningPromptMessage(): string {
+  return `Review prompt is opening. Once active, use: ${REVIEW_HINT}`;
 }
 
 export function parseReviewCommand(text: string): ReviewAction {

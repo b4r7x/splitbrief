@@ -2,6 +2,53 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 
 type EventOfType<T extends EngineEvent['type']> = Extract<EngineEvent, { type: T }>;
 
+type RunnerCallActivityScenario = 'planner-read' | 'implementer-command';
+
+const PLANNER_READ_ACTIVITY = {
+  ts: 0,
+  phase: 'researching',
+  callId: 'call-1',
+  role: 'planner',
+  backendKind: 'cli',
+  runnerName: 'codex',
+  sequence: 1,
+  activityId: 'activity-1',
+  stage: 'updated',
+  kind: 'read',
+  label: 'reading file.ts',
+  redacted: false,
+} satisfies Partial<EventOfType<'runner_call_activity'>>;
+
+const LEGACY_ACTIVITY = {
+  ts: 2_500,
+  phase: 'implementing',
+  callId: 'call-1',
+  role: 'implementer',
+  backendKind: 'cli',
+  sequence: 2,
+  activityId: 'call-1:tool:1',
+  stage: 'completed',
+  kind: 'command',
+  label: 'running npm test',
+  redacted: false,
+} satisfies Partial<EventOfType<'runner_call_activity'>>;
+
+const IMPLEMENTER_COMMAND_ACTIVITY = {
+  ts: 2_500,
+  phase: 'implementing',
+  callId: 'call-1',
+  role: 'implementer',
+  backendKind: 'cli',
+  runnerName: 'codex',
+  sequence: 2,
+  activityId: 'call-1:tool:1',
+  stage: 'completed',
+  kind: 'command',
+  label: 'running npm test',
+  target: 'npm test',
+  redacted: false,
+} satisfies Partial<EventOfType<'runner_call_activity'>>;
+
 export function makeRunnerCallStalled(
   overrides?: Partial<EventOfType<'runner_call_stalled'>>,
 ): EventOfType<'runner_call_stalled'> {
@@ -50,21 +97,29 @@ export function makeRunnerCallStarted(
 
 export function makeRunnerCallActivity(
   overrides?: Partial<EventOfType<'runner_call_activity'>>,
+): EventOfType<'runner_call_activity'>;
+export function makeRunnerCallActivity(
+  scenario: RunnerCallActivityScenario,
+  overrides?: Partial<EventOfType<'runner_call_activity'>>,
+): EventOfType<'runner_call_activity'>;
+export function makeRunnerCallActivity(
+  scenarioOrOverrides:
+    | RunnerCallActivityScenario
+    | Partial<EventOfType<'runner_call_activity'>> = 'implementer-command',
+  overrides?: Partial<EventOfType<'runner_call_activity'>>,
 ): EventOfType<'runner_call_activity'> {
+  const scenario = typeof scenarioOrOverrides === 'string' ? scenarioOrOverrides : undefined;
+  const eventOverrides = typeof scenarioOrOverrides === 'string' ? overrides : scenarioOrOverrides;
+  const defaults =
+    scenario === 'planner-read'
+      ? PLANNER_READ_ACTIVITY
+      : scenario === 'implementer-command'
+        ? IMPLEMENTER_COMMAND_ACTIVITY
+        : LEGACY_ACTIVITY;
   return {
     type: 'runner_call_activity',
-    ts: 2_500,
-    phase: 'implementing',
-    callId: 'call-1',
-    role: 'implementer',
-    backendKind: 'cli',
-    sequence: 2,
-    activityId: 'call-1:tool:1',
-    stage: 'completed',
-    kind: 'command',
-    label: 'running npm test',
-    redacted: false,
-    ...overrides,
+    ...defaults,
+    ...eventOverrides,
   };
 }
 

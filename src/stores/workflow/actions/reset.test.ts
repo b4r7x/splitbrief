@@ -94,7 +94,7 @@ describe('resetWorkflow', () => {
       attempt: 0,
       tasks: [
         makeTask({ id: 'T001', status: 'done' }),
-        makeTask({ id: 'T002', status: 'done' }),
+        makeTask({ id: 'T002', status: 'done', file: 'src/resumed.ts', action: 'modify' }),
         makeTask({ id: 'T003', status: 'pending' }),
       ],
       plannerSessionId: null,
@@ -133,6 +133,8 @@ describe('resetWorkflow', () => {
       ['T003', 'pending'],
     ]);
     expect(tasksStore.get().taskMap.get('T002')?.status).toBe('done');
+    expect(tasksStore.get().taskMap.get('T002')?.file).toBe('src/resumed.ts');
+    expect(tasksStore.get().taskMap.get('T002')?.action).toBe('modify');
     expect(tasksStore.get().taskMap.get('T002')?.route).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toEqual({
       plannerInput: 0,

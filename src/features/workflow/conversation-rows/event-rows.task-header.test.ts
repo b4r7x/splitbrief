@@ -133,8 +133,15 @@ describe('eventRows task header and planner phase header', () => {
     }
   });
 
-  it('prepends a planner phase header (Plan, planner tone, bold) for planning markdown', () => {
-    const event = makeMarkdownPlannerText({ phase: 'planning' });
+  // The artifact card names Spec, Plan, Tasks and Research in the same column, so a bare phase
+  // header above it repeated the label without adding a fact. Only escalation, which has no card,
+  // still gets one.
+  it.each([
+    'planning',
+    'researching',
+    'specifying',
+  ] as const)('prepends no phase header for %s markdown, because the artifact card names the artifact', (phase) => {
+    const event = makeMarkdownPlannerText({ phase });
     const rows = eventRows({
       event,
       globalIndex: 0,
@@ -142,14 +149,12 @@ describe('eventRows task header and planner phase header', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    const first = requireRow(rows, 0);
-    expect(first.kind).toBe('message');
-    expect(rowText(first)).toBe('Plan');
-    expect(first.segments).toContainEqual({ text: 'Plan', tone: 'planner', bold: true });
+    expect(rowText(requireRow(rows, 0))).toBe('id: T001');
+    expect(rows.map(rowText).join('\n')).not.toMatch(/^(Plan|Research|Spec)$/m);
   });
 
-  it('prepends a planner phase header (Research, planner tone, bold) for researching markdown', () => {
-    const event = makeMarkdownPlannerText({ phase: 'researching' });
+  it('keeps the Escalation header, which no card covers', () => {
+    const event = makeMarkdownPlannerText({ phase: 'escalating' });
     const rows = eventRows({
       event,
       globalIndex: 0,
@@ -159,7 +164,7 @@ describe('eventRows task header and planner phase header', () => {
 
     const first = requireRow(rows, 0);
     expect(first.kind).toBe('message');
-    expect(rowText(first)).toBe('Research');
-    expect(first.segments).toContainEqual({ text: 'Research', tone: 'planner', bold: true });
+    expect(rowText(first)).toBe('Escalation');
+    expect(first.segments).toContainEqual({ text: 'Escalation', tone: 'warning', bold: true });
   });
 });

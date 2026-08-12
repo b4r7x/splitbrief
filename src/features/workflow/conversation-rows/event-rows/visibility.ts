@@ -20,6 +20,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'mode_resolved',
   'mode_advice',
   'instant_plan_received',
+  'tasks_planned',
   'task_completed',
   'task_escalating',
   'task_tokens',

@@ -6,6 +6,7 @@ import { abortStore } from '../../../stores/workflow/abort.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
 import { resolveAttachFeedbackHint } from '../input-hints.js';
+import { REVIEW_HINT } from '../review-commands.js';
 import { FeedbackRow } from './feedback-row.js';
 
 describe('FeedbackRow', () => {
@@ -103,14 +104,39 @@ describe('FeedbackRow', () => {
     ui.unmount();
   });
 
-  it('keeps explicit feedback visible alongside the hint text', () => {
+  it('lets live feedback own the row instead of gluing the hint after it', () => {
     feedbackStore.setMessage('Message queued for the next planner turn.');
 
     const ui = renderFeature(<FeedbackRow inputHint="approve · ctrl+e/e edit" />);
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Message queued for the next planner turn.');
-    expect(frame).toContain('approve · ctrl+e/e edit');
+    expect(frame).not.toContain('approve · ctrl+e/e edit');
+
+    ui.unmount();
+  });
+
+  it('never renders an editor failure run-on with the review key legend', () => {
+    feedbackStore.setError('Failed to open editor (vi): spawn vi ENOENT');
+
+    const ui = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Failed to open editor (vi): spawn vi ENOENT');
+    expect(frame).not.toContain('y approve');
+
+    ui.unmount();
+  });
+
+  it('restores the review key legend once the feedback clears', () => {
+    feedbackStore.setError('Failed to open editor (vi): spawn vi ENOENT');
+    feedbackStore.setError(null);
+
+    const ui = renderFeature(<FeedbackRow inputHint={REVIEW_HINT} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('y approve');
+    expect(frame).not.toContain('Failed to open editor');
 
     ui.unmount();
   });

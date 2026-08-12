@@ -143,10 +143,12 @@ describe('mono legibility — the cost approval gate without colour (unicode ter
     // The approve action is the focused default: the ▸ cursor (not a hue) points at it.
     const cursor = glyph('cursor');
     expect(cursor).toBe('▸');
-    const approveLine = frame.split('\n').find((row) => row.includes('approve?')) ?? '';
+    // The gate buttons moved to the `<key>   <Label>` shape every other approval panel uses, so
+    // the row is found by its label rather than by the old `approve?` question.
+    const approveLine = frame.split('\n').find((row) => row.includes('Approve')) ?? '';
     expect(approveLine).toContain(cursor);
-    expect(approveLine.indexOf(cursor)).toBeLessThan(approveLine.indexOf('approve?'));
-    expect(frame).toContain('reject');
+    expect(approveLine.indexOf(cursor)).toBeLessThan(approveLine.indexOf('Approve'));
+    expect(frame).toContain('x   Deny');
     // The savings comparison reads as text/figures, so the "saving" emphasis (green in colour mode)
     // is not the only thing distinguishing it.
     expect(frame).toContain('$0.14');

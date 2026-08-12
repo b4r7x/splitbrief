@@ -9,10 +9,26 @@ import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { composeSteeredPrompt } from '../../implementers/types.js';
 import type { PhaseResult, PlanResult, PlannerCallbacks } from '../../planners/types.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
+import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import type { PlannerCallRunResult, PlannerCallOptions } from './types.js';
 import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
 
-export const MAX_CLARIFICATION_QUESTIONS = 5;
+const MAX_CLARIFICATION_QUESTIONS = 5;
+
+export function createClarificationQuestionCollector(
+  questions: ClarificationQuestion[],
+): (incoming: ClarificationQuestion[]) => void {
+  const seenIds = new Set(questions.map((question) => question.id));
+
+  return (incoming) => {
+    for (const question of incoming) {
+      if (seenIds.has(question.id)) continue;
+      seenIds.add(question.id);
+      if (questions.length >= MAX_CLARIFICATION_QUESTIONS) continue;
+      questions.push(question);
+    }
+  };
+}
 
 export async function runPlannerCallInContinuationLoop(
   opts: PlannerCallOptions,
@@ -38,6 +54,9 @@ export async function runPlannerCallInContinuationLoop(
 
   const heartbeat = startPlannerHeartbeat(wctx.bus, state.phase, Date.now());
   if (opts.phaseHint) heartbeat.updatePhaseHint(opts.phaseHint);
+  const collectQuestions = collectedQuestions
+    ? createClarificationQuestionCollector(collectedQuestions)
+    : undefined;
 
   try {
     const loop = await withContinuationLoop<PlanResult>({
@@ -100,60 +119,58 @@ export async function runPlannerCallInContinuationLoop(
           ...(state.discoveredValidation !== undefined
             ? { discoveredValidation: state.discoveredValidation }
             : {}),
-          ...(collectedQuestions
+          ...(collectQuestions
             ? {
-                onQuestion: (questions) => {
-                  for (const q of questions) {
-                    if (collectedQuestions.length < MAX_CLARIFICATION_QUESTIONS) {
-                      collectedQuestions.push(q);
-                    }
-                  }
-                },
+                onQuestion: collectQuestions,
               }
             : {}),
         };
 
-        if (mode === 'quick') {
-          const quickPlanFn = planner.quickPlan ?? planner.plan;
-          const runQuickCall = (callPrompt: string, callCallbacks: PlannerCallbacks) =>
-            quickPlanFn.call(planner, {
-              feature: callPrompt,
-              projectDir,
-              callbacks: callCallbacks,
-              codebaseContext,
+        try {
+          if (mode === 'quick') {
+            const quickPlanFn = planner.quickPlan ?? planner.plan;
+            const runQuickCall = (callPrompt: string, callCallbacks: PlannerCallbacks) =>
+              quickPlanFn.call(planner, {
+                feature: callPrompt,
+                projectDir,
+                callbacks: callCallbacks,
+                codebaseContext,
+              });
+            const parseDiagnostics: string[] = [];
+            let result = await runQuickCall(prompt, {
+              ...plannerCallbacks,
+              onWarning: (message) => {
+                parseDiagnostics.push(message);
+                plannerCallbacks.onWarning?.(message);
+              },
             });
-          const parseDiagnostics: string[] = [];
-          let result = await runQuickCall(prompt, {
-            ...plannerCallbacks,
-            onWarning: (message) => {
-              parseDiagnostics.push(message);
-              plannerCallbacks.onWarning?.(message);
-            },
+            heartbeat.updateTokens(plannerCallTokens(result.usage));
+            if (result.tasks.length === 0) {
+              const retry = await runQuickCall(
+                zeroTaskRetryPrompt(prompt, parseDiagnostics),
+                plannerCallbacks,
+              );
+              heartbeat.updateTokens(plannerCallTokens(retry.usage));
+              result = mergePlannerAttempts(result, retry);
+            }
+            return result;
+          }
+          const result = await planner.plan({
+            feature: prompt,
+            projectDir,
+            callbacks: plannerCallbacks,
+            skillsContext,
+            codebaseContext,
           });
           heartbeat.updateTokens(plannerCallTokens(result.usage));
-          if (result.tasks.length === 0) {
-            const retry = await runQuickCall(
-              zeroTaskRetryPrompt(prompt, parseDiagnostics),
-              plannerCallbacks,
-            );
-            heartbeat.updateTokens(plannerCallTokens(retry.usage));
-            result = mergePlannerAttempts(result, retry);
-          }
+          return result;
+        } finally {
+          // The stripper holds text that could still turn out to be a question marker. An
+          // abort or a planner crash ends the call with that text unreleased, so the flush
+          // has to run on every exit or the narration it holds never reaches the transcript.
           const rest = stripper.flush();
           if (rest.length > 0) textHandler(rest);
-          return result;
         }
-        const result = await planner.plan({
-          feature: prompt,
-          projectDir,
-          callbacks: plannerCallbacks,
-          skillsContext,
-          codebaseContext,
-        });
-        heartbeat.updateTokens(plannerCallTokens(result.usage));
-        const rest = stripper.flush();
-        if (rest.length > 0) textHandler(rest);
-        return result;
       },
     });
 

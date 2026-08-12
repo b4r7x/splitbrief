@@ -9,7 +9,7 @@ import { reviewStore } from '../../stores/workflow/review.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
 import { SOFT_SEP } from '../../components/separators.js';
-import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
+import { REVIEW_HINT } from './review-parser.js';
 import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
@@ -19,7 +19,7 @@ import type { UseInputModeResult } from './hooks/use-input-mode.js';
 
 export const CONTINUATION_PROMPT =
   'Interrupted. Type instructions to steer, or press Enter to retry.';
-export const ARTIFACT_REVIEW_HINT = `approve${SOFT_SEP}quit`;
+export const ARTIFACT_REVIEW_HINT = `y approve${SOFT_SEP}q reject`;
 
 interface BuildCallbacksOptions {
   inputMode: UseInputModeResult;
@@ -32,16 +32,14 @@ export function buildPromptCallbacks(): (opts: BuildCallbacksOptions) => Orchest
   return (opts: BuildCallbacksOptions): OrchestratorCallbacks => {
     const { inputMode, abortedRef, controller, onComplete } = opts;
     return {
-      onApprovalNeeded: async (type, input) => {
+      // `type` stays in the positional signature because `OrchestratorCallbacks` defines it and the
+      // engine passes it; the review legend no longer varies by approval type, so nothing reads it.
+      onApprovalNeeded: async (_type, input) => {
         const artifactReview = typeof input !== 'string';
         const reviewOwner = artifactReview
           ? reviewStore.setReviewArtifact(input.text)
           : reviewStore.setReviewFile(input);
-        const hint = artifactReview
-          ? ARTIFACT_REVIEW_HINT
-          : type === 'briefs'
-            ? BRIEFS_REVIEW_HINT
-            : REVIEW_HINT;
+        const hint = artifactReview ? ARTIFACT_REVIEW_HINT : REVIEW_HINT;
         try {
           return await inputMode.setReviewMode(hint);
         } finally {

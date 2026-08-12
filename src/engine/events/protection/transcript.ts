@@ -7,6 +7,7 @@ import type { UserEditConflict } from '../workflow-events.js';
 
 const DROPPED_TRANSCRIPT_EVENT_TYPES = new Set<EngineEvent['type']>([
   'planner_text',
+  'artifact_written',
   'user_message',
   'clarifications_collected',
   'clarification_answered',
@@ -47,6 +48,8 @@ export function projectEngineEventForTranscriptPolicy(
       return projectRunnerCallError(event);
     case 'runner_call_completed':
       return { ...event, nativeSessionId: null };
+    case 'tasks_planned':
+      return projectTasksPlanned(event);
     case 'task_started':
       return projectTaskStarted(event);
     case 'task_completed':
@@ -278,6 +281,22 @@ function projectOperationalMessage<
     return event;
   }
   return { ...event, message: TRANSCRIPT_OMITTED_MESSAGE };
+}
+
+// Titles and paths are redacted here for the same reason `task_started` redacts them: the plan
+// names files and intent that a non-persisting transcript must not retain. Ids and ordering stay so
+// the list still renders its shape.
+function projectTasksPlanned(
+  event: EngineEventOf<'tasks_planned'>,
+): EngineEventOf<'tasks_planned'> {
+  return {
+    ...event,
+    tasks: event.tasks.map((task) => ({
+      ...task,
+      title: TRANSCRIPT_OMITTED_MESSAGE,
+      file: TRANSCRIPT_OMITTED_MESSAGE,
+    })),
+  };
 }
 
 function projectTaskStarted(event: EngineEventOf<'task_started'>): EngineEventOf<'task_started'> {

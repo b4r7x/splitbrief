@@ -2,7 +2,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { PlanningPhaseResult } from './types.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { publishError } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { typedRunnerCallErrorMessage } from '../../implementers/pipeline/call-result.js';
 import {
@@ -61,8 +61,9 @@ export function handlePlanningFailure(opts: {
       };
     }
   }
+  const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
   return {
-    state: transitionAndSave({ projectDir, sessionId }, state, { type: 'CANCEL' }),
+    state: transitionAndSave({ projectDir, sessionId }, latest, { type: 'CANCEL' }),
     tasks: [],
     cancelled: true,
     failed: !isAbortError(err),

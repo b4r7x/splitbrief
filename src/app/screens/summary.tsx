@@ -4,12 +4,14 @@ import { SOFT_SEP, ARROW_SEP } from '../../components/separators.js';
 import { useTheme } from '../../components/theme.js';
 import { formatTime } from '../../utils/format-time.js';
 import { formatScoreSummary } from '../../core/formatting.js';
-import { formatToolModel } from '../../core/model-display.js';
 import { Composer } from '../../components/composer/composer.js';
 import { LabeledRow } from '../../components/labeled-row.js';
 import { ScreenShell } from '../../components/screen-shell.js';
-import { borderStyleFor, glyph } from '../../lib/glyphs.js';
-import { ScrollableDocument } from '../../components/scrollable-document.js';
+import { glyph } from '../../lib/glyphs.js';
+import {
+  ScrollableDocument,
+  getScrollableDocumentLineCount,
+} from '../../components/scrollable-document.js';
 import { SummaryProgress } from '../../features/summary/components/progress.js';
 import { HeroSavings } from '../../features/summary/components/hero-savings.js';
 import { SummaryCompactRunDetails } from '../../features/summary/components/compact-run-details.js';
@@ -18,6 +20,7 @@ import { buildSummaryDetailRows } from '../../features/summary/detail-rows.js';
 import { getSummaryDetailViewportHeight } from '../../features/summary/detail-layout.js';
 import {
   formatImplementerSummary,
+  formatPlannerSummary,
   formatRouteSummary,
   getSummaryHeading,
 } from '../../features/summary/presentation.js';
@@ -65,12 +68,13 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
 
   const bq = summary.briefQuality;
   const drift = summary.driftSummary;
-  const briefQualityText = bq ? formatScoreSummary(bq.score, bq, 'quality') : 'quality n/a';
+  const briefQualityText = bq ? formatScoreSummary(bq.score, bq, 'quality') : null;
   const driftText = drift ? formatScoreSummary(drift.score, drift) : null;
+  const plannerSummary = formatPlannerSummary(summary);
   const implementerSummary = formatImplementerSummary(summary);
   const routeSummary = formatRouteSummary(summary, implementerSummary);
   const heading = getSummaryHeading(status, theme);
-  const bylineText = [routeSummary, mode, formatTime(summary.totalTime)]
+  const bylineMetaText = [mode, formatTime(summary.totalTime)]
     .filter((part): part is string => part !== null && part !== undefined && part !== '')
     .join(SOFT_SEP);
   const detailRows = buildSummaryDetailRows({
@@ -91,6 +95,8 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
     implementerSummary,
     routeSummary,
   });
+  const detailViewportHeight = Math.min(detailHeight, getScrollableDocumentLineCount(detailRows));
+  const ledgerRule = glyph('divider').repeat(Math.max(0, contentWidth));
 
   return (
     <ScreenShell
@@ -124,16 +130,27 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
       >
         <Box justifyContent="center" width="100%">
           <Text wrap="truncate-end">
-            {heading.marker ? <Text color={theme.success}>{glyph('check')} </Text> : null}
+            <Text color={heading.color}>{glyph(heading.glyph)} </Text>
             <Text color={theme.textDim}>{SPLITBRIEF_IDENTITY.displayName} </Text>
-            <Text color={heading.color}>{heading.word}</Text>
-            {isSmall && routeSummary ? <Text color={theme.textDim}> {routeSummary}</Text> : null}
+            <Text bold color={heading.color}>
+              {heading.word}
+            </Text>
           </Text>
         </Box>
-        {!isSmall && bylineText && (
+        {!isSmall && (routeSummary !== null || bylineMetaText !== '') && (
           <Box justifyContent="center" width="100%">
-            <Text color={theme.textDim} wrap="truncate-end">
-              {bylineText}
+            <Text wrap="truncate-end">
+              {plannerSummary !== null && <Text color={theme.planner}>{plannerSummary}</Text>}
+              {plannerSummary !== null && implementerSummary !== null && (
+                <Text color={theme.textDim}>{ARROW_SEP}</Text>
+              )}
+              {implementerSummary !== null && (
+                <Text color={theme.implementer}>{implementerSummary}</Text>
+              )}
+              {routeSummary !== null && bylineMetaText !== '' && (
+                <Text color={theme.textDim}>{SOFT_SEP}</Text>
+              )}
+              {bylineMetaText !== '' && <Text color={theme.textDim}>{bylineMetaText}</Text>}
             </Text>
           </Box>
         )}
@@ -149,25 +166,27 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
                 {stripTerminalControls(summary.feature)}
               </Text>
             </LabeledRow>
-            {summary.plannerTool && (
+            {isSmall && plannerSummary && (
               <LabeledRow label="Planner" labelWidth={labelWidth}>
-                <Text wrap="truncate-end">
-                  {stripTerminalControls(
-                    formatToolModel(summary.plannerTool, summary.plannerModel),
-                  )}
+                <Text color={theme.planner} wrap="truncate-end">
+                  {plannerSummary}
                 </Text>
               </LabeledRow>
             )}
-            {implementerSummary && (
+            {isSmall && implementerSummary && (
               <LabeledRow label="Implementer" labelWidth={labelWidth}>
-                <Text wrap="truncate-end">{implementerSummary}</Text>
+                <Text color={theme.implementer} wrap="truncate-end">
+                  {implementerSummary}
+                </Text>
               </LabeledRow>
             )}
-            <LabeledRow label="Brief quality" labelWidth={labelWidth}>
-              <Text color={bq && !bq.passed ? theme.warning : theme.textDim} wrap="truncate-end">
-                {briefQualityText}
-              </Text>
-            </LabeledRow>
+            {briefQualityText && (
+              <LabeledRow label="Brief quality" labelWidth={labelWidth}>
+                <Text color={bq && !bq.passed ? theme.warning : theme.textDim} wrap="truncate-end">
+                  {briefQualityText}
+                </Text>
+              </LabeledRow>
+            )}
             {driftText && (
               <LabeledRow label="Drift" labelWidth={labelWidth}>
                 <Text
@@ -212,23 +231,21 @@ export function SummaryScreen({ commands, onRuntimeCommand }: SummaryScreenProps
         {isShortSmall ? (
           <SummaryCompactLowerSections summary={summary} ledger={evidenceLedger} />
         ) : detailRows.length > 0 ? (
-          <Box
-            flexDirection="column"
-            width={contentWidth}
-            marginTop={1}
-            borderStyle={borderStyleFor('single')}
-            borderColor={theme.border}
-            borderDimColor
-            overflow="hidden"
-          >
+          <Box flexDirection="column" width={contentWidth} marginTop={1} overflow="hidden">
+            <Box height={1} overflow="hidden" flexShrink={0}>
+              <Text color={theme.border}>{ledgerRule}</Text>
+            </Box>
             <ScrollableDocument
               rows={detailRows}
-              height={detailHeight}
+              height={detailViewportHeight}
               width={contentWidth}
               isActive={!hasOverlay}
               showScrollbar
               showScrollIndicators={false}
             />
+            <Box height={1} overflow="hidden" flexShrink={0}>
+              <Text color={theme.border}>{ledgerRule}</Text>
+            </Box>
           </Box>
         ) : null}
       </Box>

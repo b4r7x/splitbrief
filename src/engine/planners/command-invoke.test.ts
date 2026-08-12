@@ -11,8 +11,31 @@ describe('createCommandBasedPlanner', () => {
     createTestGitRepo(projectDir);
     try {
       const marker = '<!-- Q:{"id":"q1","type":"input","text":"Module name?"} -->';
+      const artifact = `---
+id: T001
+title: Test task
+action: create
+file: src/example.ts
+depends_on: []
+---
+
+# Plan
+
+### Description
+Create the example file.
+
+### Implementation Steps
+1. Write the file.
+
+### Tests
+- npm test
+
+### Constraints
+- Follow project conventions.
+
+${marker}`;
       const planner = createCommandBasedPlanner(
-        { command: 'printf', args: ['%s', marker] },
+        { command: 'printf', args: ['%s', artifact] },
         'test-planner',
       );
       const onQuestion = vi.fn();

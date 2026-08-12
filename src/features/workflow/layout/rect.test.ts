@@ -4,16 +4,24 @@ import {
   clampWorkflowPromptRows,
   getReviewContentLayout,
   getReviewColumnWidth,
+  getSidebarStatusColumnCells,
+  getSidebarTaskListRows,
   getSidebarTaskTitleWidth,
+  getSidebarTaskWindow,
   getWorkflowContentRect,
   getWorkflowContentWidth,
-  getWorkflowReviewColumn,
+  getWorkflowConversationHeight,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
   WORKFLOW_SIDEBAR_GAP,
 } from './rect.js';
 
 describe('workflow viewport layout', () => {
+  it('keeps the sidebar status reservation explicit at the call boundary', () => {
+    expect(getSidebarStatusColumnCells({ hasStatusTail: false })).toBe(0);
+    expect(getSidebarStatusColumnCells({ hasStatusTail: true })).toBeGreaterThan(0);
+  });
+
   it('splits width between sidebar, gap, and content exactly, only when the sidebar is visible above the breakpoint', () => {
     const cols = 120;
 
@@ -45,6 +53,16 @@ describe('workflow viewport layout', () => {
     expect(atCap).toBe(atWide);
     expect(atWide).toBeLessThan(Math.floor(400 * 0.25));
     expect(getWorkflowSidebarWidth({ cols: 400, sidebarVisible: false })).toBe(0);
+  });
+
+  it('keeps the content pane and review column continuous across the 119/120 breakpoint', () => {
+    const below = getWorkflowContentWidth({ cols: 119, sidebarVisible: true });
+    const at = getWorkflowContentWidth({ cols: 120, sidebarVisible: true });
+
+    expect(below).toBe(119);
+    expect(at).toBe(120 - getWorkflowSidebarWidth({ cols: 120, sidebarVisible: true }) - 2);
+    expect(getReviewColumnWidth(below)).toBe(below);
+    expect(getReviewColumnWidth(at)).toBe(at);
   });
 
   it('keeps sidebar plus gap plus content equal to the terminal width at every viewport', () => {
@@ -103,33 +121,23 @@ describe('workflow viewport layout', () => {
     expect(clampWorkflowPromptRows({ rows: 10, inputRows: 3, promptRows: 999 })).toBeLessThan(10);
     expect(getWorkflowViewportHeight({ rows: 10, inputRows: 3, promptRows: 999 })).toBe(0);
   });
+
+  it('clamps the visible-sidebar bottom inset without inverting tiny body heights', () => {
+    for (const height of [0, 1, 2]) {
+      const withSidebar = getWorkflowConversationHeight({ height, sidebarWidth: 34 });
+      const withoutSidebar = getWorkflowConversationHeight({ height, sidebarWidth: 0 });
+
+      expect(withSidebar).toBe(Math.max(0, height - 1));
+      expect(withSidebar).toBeLessThanOrEqual(withoutSidebar);
+      expect(withSidebar).toBeGreaterThanOrEqual(0);
+    }
+  });
 });
 
-describe('review column layout', () => {
-  it('spans the full content width and offsets it to the workflow content column', () => {
+describe('review document layout', () => {
+  it('spans the full workflow content width', () => {
     expect(getReviewColumnWidth(180)).toBe(180);
     expect(getReviewColumnWidth(80)).toBe(80);
-
-    expect(
-      getWorkflowReviewColumn({
-        cols: 180,
-        sidebarVisible: false,
-      }),
-    ).toEqual({
-      leftOffset: 0,
-      width: getWorkflowContentWidth({ cols: 180, sidebarVisible: false }),
-    });
-
-    const withSidebar = getWorkflowReviewColumn({
-      cols: 180,
-      sidebarVisible: true,
-    });
-    // The review column starts past the sidebar and its two-column gap so it aligns with the
-    // conversation pane.
-    expect(withSidebar.leftOffset).toBe(
-      getWorkflowSidebarWidth({ cols: 180, sidebarVisible: true }) + WORKFLOW_SIDEBAR_GAP,
-    );
-    expect(withSidebar.width).toBe(getWorkflowContentWidth({ cols: 180, sidebarVisible: true }));
   });
 });
 
@@ -222,5 +230,129 @@ describe('getReviewContentLayout', () => {
     });
     expect(getReviewContentLayout(1, 20).contentHeight).toBe(0);
     expect(getReviewContentLayout(0, 0).contentHeight).toBe(0);
+  });
+});
+
+describe('sidebar task list geometry', () => {
+  it('leaves the list every row the sidebar chrome and footer do not claim', () => {
+    expect(getSidebarTaskListRows({ height: 24, footerRows: 3 })).toBe(16);
+    expect(getSidebarTaskListRows({ height: 24, footerRows: 4 })).toBe(15);
+    expect(getSidebarTaskListRows({ height: 5, footerRows: 3 })).toBe(0);
+    expect(getSidebarTaskListRows({ height: 0, footerRows: 0 })).toBe(0);
+  });
+
+  it('shows the whole list when it fits', () => {
+    expect(getSidebarTaskWindow({ itemCount: 4, anchorIndex: 2, rows: 8 })).toEqual({
+      start: 0,
+      end: 4,
+      hiddenAbove: 0,
+      hiddenBelow: 0,
+      showAbove: false,
+      showBelow: false,
+      combine: false,
+    });
+  });
+
+  it('keeps the anchor visible and never exceeds the row budget when the list overflows', () => {
+    for (const rows of [1, 2, 3, 5, 8, 13]) {
+      for (let anchor = 0; anchor < 20; anchor += 1) {
+        const window = getSidebarTaskWindow({ itemCount: 20, anchorIndex: anchor, rows });
+        const visible = window.end - window.start;
+        const used =
+          visible +
+          (window.showAbove ? 1 : 0) +
+          (window.showBelow ? 1 : 0) +
+          (window.combine ? 1 : 0);
+
+        expect(used, `rows ${rows} anchor ${anchor}`).toBeLessThanOrEqual(rows);
+        expect(visible, `rows ${rows} anchor ${anchor}`).toBeGreaterThan(0);
+        expect(window.hiddenAbove + visible + window.hiddenBelow).toBe(20);
+        expect(anchor, `anchor ${anchor} outside window at rows ${rows}`).toBeGreaterThanOrEqual(
+          window.start,
+        );
+        expect(anchor).toBeLessThan(window.end);
+      }
+    }
+  });
+
+  it('drops the overflow markers rather than the only task row it can show', () => {
+    expect(getSidebarTaskWindow({ itemCount: 20, anchorIndex: 9, rows: 1 })).toEqual({
+      start: 9,
+      end: 10,
+      hiddenAbove: 9,
+      hiddenBelow: 10,
+      showAbove: false,
+      showBelow: false,
+      combine: false,
+    });
+  });
+
+  it('collapses both markers into one row rather than hiding an overflowing edge', () => {
+    // Two rows buy one task row and one marker row. Spending that marker on a single edge would
+    // leave the other edge silently truncated, so the one row has to name both.
+    expect(getSidebarTaskWindow({ itemCount: 20, anchorIndex: 9, rows: 2 })).toEqual({
+      start: 9,
+      end: 10,
+      hiddenAbove: 9,
+      hiddenBelow: 10,
+      showAbove: false,
+      showBelow: false,
+      combine: true,
+    });
+  });
+
+  it('never leaves an overflowing edge unreported once it can afford a marker row', () => {
+    for (const rows of [2, 3, 5, 8, 13]) {
+      for (let anchor = 0; anchor < 20; anchor += 1) {
+        const window = getSidebarTaskWindow({ itemCount: 20, anchorIndex: anchor, rows });
+        const reported = window.combine || (window.showAbove && window.showBelow);
+
+        if (window.hiddenAbove > 0 && window.hiddenBelow > 0) {
+          expect(reported, `rows ${rows} anchor ${anchor} hides an edge`).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('anchors to the top and the bottom without wasting a marker row', () => {
+    expect(getSidebarTaskWindow({ itemCount: 10, anchorIndex: 0, rows: 4 })).toEqual({
+      start: 0,
+      end: 3,
+      hiddenAbove: 0,
+      hiddenBelow: 7,
+      showAbove: false,
+      showBelow: true,
+      combine: false,
+    });
+    expect(getSidebarTaskWindow({ itemCount: 10, anchorIndex: 9, rows: 4 })).toEqual({
+      start: 7,
+      end: 10,
+      hiddenAbove: 7,
+      hiddenBelow: 0,
+      showAbove: true,
+      showBelow: false,
+      combine: false,
+    });
+  });
+
+  it('returns an empty window when there is no room or nothing to show', () => {
+    expect(getSidebarTaskWindow({ itemCount: 5, anchorIndex: 2, rows: 0 })).toEqual({
+      start: 0,
+      end: 0,
+      hiddenAbove: 0,
+      hiddenBelow: 5,
+      showAbove: false,
+      showBelow: false,
+      combine: false,
+    });
+    expect(getSidebarTaskWindow({ itemCount: 0, anchorIndex: 0, rows: 6 })).toEqual({
+      start: 0,
+      end: 0,
+      hiddenAbove: 0,
+      hiddenBelow: 0,
+      showAbove: false,
+      showBelow: false,
+      combine: false,
+    });
   });
 });

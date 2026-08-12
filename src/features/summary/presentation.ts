@@ -1,6 +1,7 @@
 import type { Summary } from '../../core/schemas/summary.js';
 import type { Session } from '../../core/schemas/session.js';
 import type { Theme } from '../../components/theme.js';
+import type { GlyphName } from '../../lib/glyphs.js';
 import { ARROW_SEP } from '../../components/separators.js';
 import { formatToolModel } from '../../core/model-display.js';
 import { uniqueSorted } from '../../utils/collections.js';
@@ -40,29 +41,32 @@ export function formatImplementerSummary(summary: Summary): string | null {
 export interface SummaryHeading {
   word: string;
   color: string;
-  marker: boolean;
+  glyph: GlyphName;
 }
 
 export function getSummaryHeading(status: Session['status'], theme: Theme): SummaryHeading {
   switch (status) {
     case 'complete':
-      return { word: 'complete', color: theme.success, marker: true };
+      return { word: 'complete', color: theme.success, glyph: 'check' };
     case 'failed':
-      return { word: 'failed', color: theme.error, marker: false };
+      return { word: 'failed', color: theme.error, glyph: 'statusFailed' };
     case 'interrupted':
-      return { word: 'interrupted', color: theme.warning, marker: false };
+      return { word: 'interrupted', color: theme.warning, glyph: 'statusCancelled' };
     default:
       return assertNever(status);
   }
+}
+
+export function formatPlannerSummary(summary: Summary): string | null {
+  if (!summary.plannerTool) return null;
+  return stripTerminalControls(formatToolModel(summary.plannerTool, summary.plannerModel));
 }
 
 export function formatRouteSummary(
   summary: Summary,
   implementerSummary: string | null,
 ): string | null {
-  const plannerSummary = summary.plannerTool
-    ? stripTerminalControls(formatToolModel(summary.plannerTool, summary.plannerModel))
-    : null;
+  const plannerSummary = formatPlannerSummary(summary);
   if (!plannerSummary && !implementerSummary) return null;
   if (!plannerSummary) return implementerSummary;
   if (!implementerSummary) return plannerSummary;

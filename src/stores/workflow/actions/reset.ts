@@ -92,6 +92,8 @@ function tasksStateFromResume(
     id: task.id,
     title: task.title,
     status: task.status,
+    file: task.file,
+    action: task.action,
   }));
   const taskMap = new Map<string, WorkflowTask>();
   for (const task of tasks) {

@@ -26,9 +26,28 @@ describe('supportsHexColors', () => {
 });
 
 describe('resolveTheme', () => {
-  it('falls back to the named-ANSI preset when mono is requested without hi-color support', () => {
-    const resolved = resolveTheme('mono', { TERM: 'xterm' });
+  // chalk downsamples a hex to the 16-color set through ansi-styles rgbToAnsi: the themed
+  // code ground #24283b lands on bgBlack, which is the terminal's own ground on a dark
+  // profile, and the rail #6272a4 lands on blue, the bucket syntax.function already holds.
+  // Neither survives, so a terminal without hex support is handed a preset that frames code
+  // with the rail alone.
+  it.each([
+    ['mono' as const, { TERM: 'xterm' }],
+    ['terminal' as const, { TERM: 'xterm' }],
+    ['terminal' as const, {}],
+  ])('drops the hex code frame for %s mode without hi-color support', (mode, env) => {
+    const resolved = resolveTheme(mode, env);
+
+    expect(resolved.markdown.codeBg).toBeUndefined();
+    expect(resolved.markdown.codeGutter).toBe('gray');
+    expect(resolved.markdown.heading).toBe(getTheme('terminal').markdown.heading);
+  });
+
+  it('keeps the hex code frame for terminal mode when the terminal advertises truecolor', () => {
+    const resolved = resolveTheme('terminal', { COLORTERM: 'truecolor' });
+
     expect(resolved).toBe(getTheme('terminal'));
+    expect(resolved.markdown.codeBg).toBe('#24283b');
   });
 
   it('keeps the mono hex preset when the terminal advertises truecolor', () => {
@@ -37,7 +56,15 @@ describe('resolveTheme', () => {
     expect(resolved.accent).toBe('#7aa2f7');
   });
 
-  it('always returns the named-ANSI preset for terminal mode', () => {
-    expect(resolveTheme('terminal', {})).toBe(getTheme('terminal'));
+  it('leaves cyan to paths and links in every preset it can hand out', () => {
+    for (const theme of [
+      getTheme('terminal'),
+      getTheme('mono'),
+      resolveTheme('terminal', { TERM: 'xterm' }),
+    ]) {
+      expect(theme.markdown.heading).not.toBe(theme.markdown.link);
+      expect(theme.markdown.list).not.toBe(theme.markdown.link);
+      expect(theme.markdown.rule).not.toBe(theme.markdown.link);
+    }
   });
 });

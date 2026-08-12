@@ -3,44 +3,56 @@ import type { ConversationRow } from '../types.js';
 import { row, segmentedRow } from './rows.js';
 import { sanitizeRowDisplayText, wrappedRowTexts } from './text.js';
 
-export interface CardRowsInput {
+export interface CardRowsLayout {
+  labelText: string;
+  hasValue: boolean;
+  wrapped: string[];
+}
+
+export interface CardRowsWindowInput extends CardRowsLayout {
   keyPrefix: string;
-  label: string;
-  value: string | undefined;
-  width: number;
   labelTone: ConversationRowTone;
   valueTone?: ConversationRowTone;
   kind?: ConversationRowKind;
   markerTone?: ConversationRowTone;
-}
-
-export interface CardRowsWindowInput extends CardRowsInput {
   windowStart: number;
   windowEnd: number;
+}
+
+// Wrapping is done once per card, at block construction, and the lines are reused for every window.
+// Re-wrapping inside createRows made each scroll step cost the whole card again.
+export function cardRowsLayout(input: {
+  label: string;
+  value: string | undefined;
+  width: number;
+}): CardRowsLayout {
+  const cleanLabel = sanitizeRowDisplayText(input.label);
+  const cleanValue = input.value === undefined ? undefined : sanitizeRowDisplayText(input.value);
+  const labelText = cleanValue ? `${cleanLabel}  ` : cleanLabel;
+  return {
+    labelText,
+    hasValue: cleanValue !== undefined && cleanValue !== '',
+    wrapped: wrappedRowTexts(`${labelText}${cleanValue ?? ''}`, input.width),
+  };
 }
 
 export function cardRowsWindow(input: CardRowsWindowInput): ConversationRow[] {
   const {
     keyPrefix,
-    label,
-    value,
-    width,
+    labelText,
+    hasValue,
+    wrapped,
     labelTone,
     valueTone = 'textDim',
     kind = 'card',
     markerTone,
   } = input;
-  const cleanLabel = sanitizeRowDisplayText(label);
-  const cleanValue = value === undefined ? undefined : sanitizeRowDisplayText(value);
-  const labelText = cleanValue ? `${cleanLabel}  ` : cleanLabel;
-  const text = `${labelText}${cleanValue ?? ''}`;
-  const wrapped = wrappedRowTexts(text, width);
   const start = Math.max(0, input.windowStart);
   const end = Math.min(wrapped.length, Math.max(start, input.windowEnd));
 
   return wrapped.slice(start, end).map((line, offset) => {
     const index = start + offset;
-    if (index > 0 || !cleanValue) {
+    if (index > 0 || !hasValue) {
       return {
         ...row({
           key: `${keyPrefix}-${index}`,

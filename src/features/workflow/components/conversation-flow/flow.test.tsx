@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makePlannerText as makePlannerTextEvent } from '#testing/helpers/events/planner.js';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { makeTaskStart, makeTaskComplete } from '#testing/helpers/events/task.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
@@ -16,6 +17,8 @@ import { glyph } from '../../../../lib/glyphs.js';
 import { displayActivityLabel } from '../../display/activity-label-display.js';
 import { ConversationFlow } from './flow.js';
 import { hoverStore } from '../../../../stores/ui/hover.js';
+import { controlsStore } from '../../../../stores/ui/controls.js';
+import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { configStore } from '../../../../stores/project/config.js';
 import * as projectionCache from '../../conversation-rows/projection-cache.js';
 import { resetMarkdownConversationRowsCache } from '../../conversation-rows/markdown-rows.js';
@@ -23,7 +26,7 @@ import { resetMarkdownConversationRowsCache } from '../../conversation-rows/mark
 const QUEUED_MARK = glyph('statusPending');
 const LIVE_MARK = glyph('statusInProgress');
 const FOCUS_MARK = glyph('liveBar');
-const COMPLETED_HEADER = `${glyph('completed')} completed`;
+const COMPLETED_HEADER = 'Completed';
 
 function expectActivityLine(
   frame: string,
@@ -137,42 +140,25 @@ function makeTaskFullFail(): Extract<EngineEvent, { type: 'task_full_fail' }> {
 }
 
 function makeRunnerActivity(): Extract<EngineEvent, { type: 'runner_call_activity' }> {
-  return {
-    type: 'runner_call_activity',
-    ts: 0,
-    phase: 'researching',
-    callId: 'call-1',
-    role: 'planner',
-    backendKind: 'cli',
-    runnerName: 'codex',
+  return makeRunnerCallActivity('planner-read', {
     sequence: 2,
     activityId: 'call-1:system',
-    stage: 'updated',
     kind: 'unknown',
     label: '/bin/zsh -lc "sed -n \'1,260p\' CLAUDE.md"',
-    redacted: false,
-  };
+  });
 }
 
 function makeActivityRead(
   sequence: number,
   file: string,
 ): Extract<EngineEvent, { type: 'runner_call_activity' }> {
-  return {
-    type: 'runner_call_activity',
+  return makeRunnerCallActivity('planner-read', {
     ts: sequence,
-    phase: 'researching',
-    callId: 'call-1',
-    role: 'planner',
-    backendKind: 'cli',
-    runnerName: 'codex',
     sequence,
     activityId: `call-1:read:${file}`,
     stage: 'completed',
-    kind: 'read',
     label: `reading ${file}`,
-    redacted: false,
-  };
+  });
 }
 
 function makeActivityReads(
@@ -254,6 +240,8 @@ describe('ConversationFlow', () => {
     streamingOutputStore.__testReset();
     lifecycleStore.__testReset();
     tasksStore.__testReset();
+    controlsStore.__testReset();
+    terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
   });
 
   it('renders markdown planner documents without raw markdown control markers', () => {
@@ -507,6 +495,7 @@ describe('ConversationFlow', () => {
     tasksStore.__testReset({
       tasks: [{ id: taskId('T002'), title: 'wire login route', status: 'pending' }],
     });
+    terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
 
     const ui = renderConversation(events, 12, 90);
     const frame = ui.lastFrame() ?? '';
@@ -515,6 +504,64 @@ describe('ConversationFlow', () => {
     expect(frame).toContain('wire login route');
 
     ui.unmount();
+  });
+
+  it('keeps the queued block while the sidebar is suppressed below its column breakpoint', () => {
+    const events = makeActivityReads(['src/a.ts']);
+    tasksStore.__testReset({
+      tasks: [{ id: taskId('T002'), title: 'wire login route', status: 'pending' }],
+    });
+    controlsStore.setSidebar(true);
+    terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: true });
+
+    const ui = renderConversation(events, 12, 90);
+
+    expect(ui.lastFrame() ?? '').toContain('wire login route');
+
+    ui.unmount();
+  });
+
+  it('stands the queued block down while the sidebar renders the same pending list', () => {
+    const events = makeActivityReads(['src/a.ts']);
+    tasksStore.__testReset({
+      tasks: [{ id: taskId('T002'), title: 'wire login route', status: 'pending' }],
+    });
+    controlsStore.setSidebar(true);
+    terminalSizeStore.__testReset({ cols: 160, rows: 30, isSmall: false });
+
+    const ui = renderConversation(events, 12, 120);
+    const frame = ui.lastFrame() ?? '';
+
+    expect(frame).not.toContain('wire login route');
+    expect(frame).toContain('src/a.ts');
+
+    ui.unmount();
+  });
+
+  it('gives the transcript the rows the queued block no longer reserves', () => {
+    const events = Array.from({ length: 12 }, (_, index) => makePlannerText(index));
+    tasksStore.__testReset({
+      tasks: [
+        { id: taskId('T002'), title: 'wire login route', status: 'pending' },
+        { id: taskId('T003'), title: 'wire logout route', status: 'pending' },
+      ],
+    });
+    controlsStore.setSidebar(true);
+
+    const transcriptRows = (frame: string): number =>
+      normalizedRows(frame).filter((line) => /^event \d+$/.test(line)).length;
+
+    terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: true });
+    const narrow = renderConversation(events, 12, 90);
+    const narrowRows = transcriptRows(narrow.lastFrame() ?? '');
+    narrow.unmount();
+
+    terminalSizeStore.__testReset({ cols: 160, rows: 30, isSmall: false });
+    const wide = renderConversation(events, 12, 90);
+    const wideRows = transcriptRows(wide.lastFrame() ?? '');
+    wide.unmount();
+
+    expect(wideRows).toBeGreaterThan(narrowRows);
   });
 
   it('lifts the above scroll label to the chrome divider via onScrollAbove', async () => {

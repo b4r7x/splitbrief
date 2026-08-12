@@ -510,6 +510,49 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
     ]);
   });
 
+  it('deduplicates IDs across retry callbacks before applying the question cap', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const firstQuestion: ClarificationQuestion = {
+      id: 'q1',
+      type: 'input',
+      text: 'First wording',
+    };
+    const duplicateQuestion: ClarificationQuestion = {
+      id: 'q1',
+      type: 'input',
+      text: 'Later wording must not replace the first question',
+    };
+    const distinctQuestions: ClarificationQuestion[] = ['q2', 'q3', 'q4', 'q5', 'q6'].map((id) => ({
+      id,
+      type: 'input',
+      text: id,
+    }));
+    const quickPlan = vi
+      .fn()
+      .mockImplementationOnce(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onQuestion?.([firstQuestion, firstQuestion]);
+        return { spec: '', plan: '', tasks: [], usage: null };
+      })
+      .mockImplementationOnce(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+        callbacks.onQuestion?.([duplicateQuestion, ...distinctQuestions]);
+        return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+      });
+    const planner = makePlanner({ quickPlan });
+    const wctx = makeWctx(projectDir, sessionId);
+    const collectedQuestions: ClarificationQuestion[] = [];
+
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+      collectedQuestions,
+    });
+
+    expect(collectedQuestions).toEqual([firstQuestion, ...distinctQuestions.slice(0, 4)]);
+  });
+
   it('records raw marker text for continuation while publishing stripped text', async () => {
     const { projectDir, sessionId } = setupSession();
     const marker = '<!-- Q:{"id":"q1","type":"input","text":"Name?"} -->';
@@ -549,5 +592,76 @@ describe('runPlannerCallInContinuationLoop — question markers', () => {
 
     expect(continuationPrompts).toEqual([marker]);
     expect(callCount).toBe(2);
+  });
+
+  it('releases held planner text when the planner call throws', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const planner = makePlanner({
+      quickPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callbacks.onOutput('Findings so far. <!-- Q:{"id":"q1","text":"Which file');
+          throw new Error('planner crashed');
+        }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWctx(projectDir, sessionId, { bus });
+
+    await expect(
+      runPlannerCallInContinuationLoop({
+        wctx,
+        state: planningState(),
+        planner,
+        feature: 'test feature',
+        mode: 'quick',
+      }),
+    ).rejects.toThrow('planner crashed');
+
+    const publishedText = events
+      .filter((e) => e.type === 'planner_text')
+      .map((e) => e.text)
+      .join('');
+    expect(publishedText).toContain('Findings so far.');
+    expect(publishedText).toContain('Which file');
+  });
+
+  it('releases held planner text when the turn is interrupted', async () => {
+    const { projectDir, sessionId } = setupSession();
+    const sinks = createTestSinks();
+    let callCount = 0;
+    const planner = makePlanner({
+      quickPlan: vi
+        .fn()
+        .mockImplementation(async ({ callbacks }: { callbacks: PlannerCallbacks }) => {
+          callCount++;
+          if (callCount === 1) {
+            callbacks.onOutput('Partial findings. <!-- Q:{"id":"q1","text":"Which file');
+            sinks.abortTurn();
+            throw new DOMException('The user aborted a request.', 'AbortError');
+          }
+          return { spec: '', plan: '', tasks: [makeTask()], usage: null };
+        }),
+    });
+    const { bus, events } = makeBusRecorder();
+    const wctx = makeWctx(projectDir, sessionId, {
+      bus,
+      sinks,
+      callbacks: makeCallbacks({ onContinuationNeeded: async () => 'continue' }).callbacks,
+    });
+
+    await runPlannerCallInContinuationLoop({
+      wctx,
+      state: planningState(),
+      planner,
+      feature: 'test feature',
+      mode: 'quick',
+    });
+
+    const publishedText = events
+      .filter((e) => e.type === 'planner_text')
+      .map((e) => e.text)
+      .join('');
+    expect(publishedText).toContain('Partial findings.');
+    expect(publishedText).toContain('Which file');
   });
 });

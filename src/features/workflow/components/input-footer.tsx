@@ -16,6 +16,7 @@ import { getActiveRailStage } from '../layout/chrome-rows.js';
 import {
   deriveLiveStatus,
   formatStageElapsed,
+  stallRunnerHint,
   PAUSED_LIVE_STATUS_VERB,
 } from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
@@ -101,24 +102,25 @@ export function InputFooter({
     stall !== null ? `${glyph('statusWarning')} Still working — silent ${stalledFor}` : '';
 
   // One derivation encodes the interrupted → waiting → stalled → live priority
-  // order so the lead text and its color can never drift apart.
-  const { lead, leadColor } = interrupted
-    ? { lead: interruptedLead, leadColor: t.warning }
+  // order so the lead text, its color, and its hint can never drift apart.
+  const { lead, leadColor, hintText } = interrupted
+    ? { lead: interruptedLead, leadColor: t.warning, hintText: null }
     : paused
-      ? { lead: pausedLead, leadColor: null }
+      ? { lead: pausedLead, leadColor: null, hintText: null }
       : waiting
-        ? { lead: waitingLead, leadColor: null }
+        ? { lead: waitingLead, leadColor: null, hintText: null }
         : stall !== null
-          ? { lead: stalledLead, leadColor: t.warning }
+          ? { lead: stalledLead, leadColor: t.warning, hintText: stallRunnerHint(stall.runnerName) }
           : liveStatus !== null
-            ? { lead: liveLead, leadColor: colorForTone(liveStatus.tone, t) }
-            : { lead: stageLead, leadColor: null };
+            ? { lead: liveLead, leadColor: colorForTone(liveStatus.tone, t), hintText: null }
+            : { lead: stageLead, leadColor: null, hintText: null };
 
   const queuedText = lifecycle.queueDepth > 0 ? `${lifecycle.queueDepth} queued` : null;
 
   const byline = buildInputFooterByline({
     cols: width ?? cols,
     lead,
+    hintText,
     queuedText,
     etaText,
     gitLabel,
@@ -132,6 +134,7 @@ export function InputFooter({
     <Box width="100%" paddingX={0} height={1} flexShrink={0}>
       <Text color={t.textDim} wrap="truncate-end">
         {leadColor !== null ? <Text color={leadColor}>{byline.lead}</Text> : byline.lead}
+        {byline.hint}
         {byline.queued.length > 0 ? <Text color={t.info}>{byline.queued}</Text> : null}
         {byline.rest}
       </Text>

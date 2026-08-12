@@ -1,15 +1,20 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import type { EventBus } from '../../events/types.js';
-import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../../core/paths-io.js';
+import { readSpecFileOrEmpty, type SpecMetadata } from '../../../core/paths-io.js';
 import { SPEC_FILE, PLAN_FILE } from '../../../core/paths.js';
 import { buildRegeneratePrompt } from '../../spec/prompts/plan.js';
 import type { Planner } from '../../planners/types.js';
 import { createBusTextHandler, publishPlannerStatus } from '../events.js';
+import { writeAndPublishArtifact } from '../artifact-write.js';
 import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { commitQueueMessagesDrained, readQueueForPrompt } from '../queue/drain.js';
+import {
+  commitQueueMessagesDrained,
+  readQueueForPrompt,
+  releaseQueueMessagesForPrompt,
+} from '../queue/drain.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
 import type { WorkflowSinks } from '../types.js';
 import type { EngineEventOf } from '../../events/types.js';
@@ -60,56 +65,68 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
     if (signal?.aborted) return { state, rejected: false, regenerated, aborted: true };
     const queue = readQueueForPrompt({ projectDir, sessionId, state });
     if (queue.messages.length > 0) {
-      state = queue.state;
-      const comment = formatDrainedMessages(queue.messages).trim();
-      const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
-      const regenPrompt = buildRegeneratePrompt(type, current, comment);
-      createBusTextHandler({ bus, phase: state.phase })(
-        `\n[Applying ${queue.messages.length} queued message${
-          queue.messages.length === 1 ? '' : 's'
-        } before ${type} review]\n`,
-      );
-      let regenResult: Awaited<ReturnType<Planner['regenerate']>>;
       try {
-        regenResult = await runLiveRegenerate({
-          planner,
-          projectDir,
-          bus,
+        state = queue.state;
+        const comment = formatDrainedMessages(queue.messages).trim();
+        const current = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
+        const regenPrompt = buildRegeneratePrompt(type, current, comment);
+        createBusTextHandler({ bus, phase: state.phase })(
+          `\n[Applying ${queue.messages.length} queued message${
+            queue.messages.length === 1 ? '' : 's'
+          } before ${type} review]\n`,
+        );
+        let regenResult: Awaited<ReturnType<Planner['regenerate']>>;
+        try {
+          regenResult = await runLiveRegenerate({
+            planner,
+            projectDir,
+            bus,
+            state,
+            statusPhase: regenerationPhase,
+            summary: `applying queued input before ${type} review`,
+            prompt: regenPrompt,
+            signal,
+            sinks: opts.sinks,
+          });
+        } catch (err) {
+          if (signal?.aborted || isAbortError(err))
+            return { state, rejected: false, regenerated, aborted: true };
+          throw err;
+        }
+        state = addUsageAndSave(
+          { projectDir, sessionId, bus },
           state,
-          statusPhase: regenerationPhase,
-          summary: `applying queued input before ${type} review`,
-          prompt: regenPrompt,
-          signal,
-          sinks: opts.sinks,
+          'planner',
+          regenResult.usage,
+        );
+        writeAndPublishArtifact({
+          projectDir,
+          sessionId,
+          bus,
+          phase: state.phase,
+          kind: isSpec ? 'spec' : 'plan',
+          text: regenResult.text,
+          metadata: opts.specMetadata ?? null,
         });
-      } catch (err) {
-        if (signal?.aborted || isAbortError(err))
-          return { state, rejected: false, regenerated, aborted: true };
-        throw err;
+        state = commitQueueMessagesDrained({
+          projectDir,
+          sessionId,
+          state,
+          messages: queue.messages,
+          bus,
+        }).state;
+        snapshot = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
+        regenerated = true;
+        bus.publish({
+          type: regeneratedEvent,
+          ts: Date.now(),
+          phase: state.phase,
+          comment: `(queued input before ${type} review)`,
+        });
+        continue;
+      } finally {
+        releaseQueueMessagesForPrompt({ projectDir, sessionId }, queue.messages);
       }
-      state = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', regenResult.usage);
-      writeSpecFile(
-        { projectDir, sessionId },
-        filename,
-        regenResult.text,
-        opts.specMetadata ?? null,
-      );
-      state = commitQueueMessagesDrained({
-        projectDir,
-        sessionId,
-        state,
-        messages: queue.messages,
-        bus,
-      }).state;
-      snapshot = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
-      regenerated = true;
-      bus.publish({
-        type: regeneratedEvent,
-        ts: Date.now(),
-        phase: state.phase,
-        comment: `(queued input before ${type} review)`,
-      });
-      continue;
     }
 
     const result = await callbacks.onApprovalNeeded(type, filePath);
@@ -169,7 +186,15 @@ export async function runApprovalLoop(opts: ApprovalLoopOptions): Promise<{
       throw err;
     }
     state = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', regenResult.usage);
-    writeSpecFile({ projectDir, sessionId }, filename, regenResult.text, opts.specMetadata ?? null);
+    writeAndPublishArtifact({
+      projectDir,
+      sessionId,
+      bus,
+      phase: state.phase,
+      kind: isSpec ? 'spec' : 'plan',
+      text: regenResult.text,
+      metadata: opts.specMetadata ?? null,
+    });
     snapshot = readSpecFileOrEmpty({ projectDir, sessionId }, filename);
     regenerated = true;
     bus.publish({
@@ -215,10 +240,9 @@ async function runLiveRegenerate(opts: {
       prompt: opts.prompt,
       projectDir: opts.projectDir,
       callbacks: {
-        onOutput: createBusTextHandler(
-          { bus: opts.bus, phase: opts.state.phase },
-          { content: 'markdown' },
-        ),
+        // The reply is the regenerated document itself; it reaches the transcript as the
+        // artifact card published once it is written, never as a body paste.
+        onOutput: () => {},
         signal,
       },
     });

@@ -1,4 +1,4 @@
-import { cardRowsWindowSlice, countCardRows } from './row-format/card-block.js';
+import { prepareCardRows } from './row-format/card-block.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
 
 export type CalloutSeverity = 'error' | 'warning' | 'info';
@@ -26,24 +26,21 @@ export function calloutRowsBlock(input: {
           text: string;
           tone: ConversationRowTone;
         }[]);
-  const cardInput = {
+  const card = prepareCardRows({
     keyPrefix: input.keyPrefix,
     label: input.label,
     labelTone: tone,
     bodyLines,
     width: Math.max(1, input.width),
     bodyPrefix: '',
-  };
-  const rowCount = countCardRows(cardInput);
-  if (rowCount === 0) return null;
+  });
+  if (card.rowCount === 0) return null;
 
   return {
     key: input.keyPrefix,
-    rowCount,
+    rowCount: card.rowCount,
     renderableUnits: 1,
     createRows: (windowStart, windowEnd) =>
-      cardRowsWindowSlice({ ...cardInput, windowStart, windowEnd }).map((row) =>
-        toCalloutRow(row, tone),
-      ),
+      card.createRows(windowStart, windowEnd).map((row) => toCalloutRow(row, tone)),
   };
 }

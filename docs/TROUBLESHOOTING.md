@@ -540,6 +540,21 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ## Workflow issues
 
+### Symptom: `Still working — silent 5:12` sits in the byline for minutes with OpenCode
+
+**Likely cause:** OpenCode's `run --format json` mode reports a tool only once that tool completes, and it never forwards child-session (subagent) events at all. A `task explore` subagent that runs for two minutes therefore produces no output until it lands, so the idle watchdog warns at `RUNNER_IDLE_WARN_MS` (5 minutes) even though the call is healthy. The run is not hung.
+
+**Fix:**
+1. Wait. The byline appends `· tools report when done` when the silent runner is one that only reports finished tools, which is the signal that this silence is expected rather than a hang.
+2. If you want to confirm liveness, the watchdog is still armed underneath: a genuinely dead process is killed at `RUNNER_IDLE_KILL_MS` (30 minutes), and the stall clears on the next activity, completion, or error event.
+3. To see what the tool actually did, read the run tree after the call completes — the tool uses land there in one batch.
+
+**Prevention:** Use a runner that streams tool use live (Claude Code's `stream-json`) for the role where you want per-tool progress, and keep OpenCode for the role where a batched report is acceptable.
+
+**See also:** [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/DEBUGGING.md](./DEBUGGING.md).
+
+---
+
 ### Symptom: a session is reported active but nothing is running
 
 **Likely cause:** Each session writes a per-session lockfile at `.splitbrief/sessions/<id>/lockfile.json` that records the PID, heartbeat, and exit marker. If `.splitbrief/active` still points at a non-terminal `state.json`, older versions could treat that pointer as live even when the lockfile already had `exitedAt`.
@@ -575,7 +590,7 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 **Likely cause:** The TUI is waiting for input but the input mode is wrong, or a non-interactive run reached an approval gate that needs a response.
 
 **Fix:**
-1. In the TUI, focus the composer (Tab if focus is elsewhere) and submit `approve` / `comment ...` / `reject`.
+1. In the TUI, focus the composer (Tab if focus is elsewhere) and press `y` / `c` / `q`, or submit `approve` / `comment ...` / `reject`.
 2. If you ran with `--json`, the NDJSON stream cannot accept replies. Workflow review gates are auto-approved in headless JSON mode; file-write tiered approvals fail closed with `APPROVAL_REQUIRED` unless their tiers allow the write. Use `--rpc` from the start when a client needs to answer approvals programmatically, or resume with `splitbrief continue --rpc <session-id>` when the session is resumable. For unattended runs, use `--mode quick` or configure approval tiers so file writes do not prompt.
 3. Check `workflow.approve` in config; `workflow.approve: none` skips the spec and plan approval gates but not the standard/speckit brief-review gate, `workflow.approve: spec` (default) blocks only on the spec, `workflow.approve: all` blocks on both spec and plan. For file-write tiered approval, see the `approval.tiers` config block.
 
@@ -650,14 +665,14 @@ To see which stages are already red **before** starting a run, run `splitbrief d
 
 ### Symptom: `invalid_confirm_phrase` — confirm tier rejected my input
 
-**Likely cause:** The `confirm` tier requires typing the literal string `I confirm` (capital I, space, lowercase confirm) followed by a non-empty reason. Any deviation — wrong case, extra space, empty reason — results in rejection.
+**Likely cause:** The engine requires every confirm-tier response to carry the literal phrase `I confirm` (capital I, space, lowercase confirm) and a non-empty reason. The TUI supplies both for you once you make the keyed gesture, so this error means the response came from somewhere else: an RPC client (`splitbrief spec --rpc`), the configured-runner trust prompt, or a custom `onTieredApproval` callback that sent a different phrase or an empty reason.
 
 **Fix:**
-1. When the confirm prompt appears, type exactly: `I confirm` (no quotes) and press Enter.
-2. On the next step, enter a non-empty reason string and press Enter.
-3. Pressing Escape at either step cancels (denies) the action — not an error, just a cancel.
+1. In the TUI, press Enter (destructive class) or `y` (every other confirm-tier class). Press `r` first if you want to record a reason. Escape denies.
+2. Over RPC, send `confirmationPhrase: "I confirm"` plus a non-empty `reason` — see `src/cli/rpc/gates.ts`.
+3. In a custom callback, return `{ decision: 'confirm', phrase: CONFIRM_PHRASE, reason }` with `reason` non-empty.
 
-**Prevention:** The phrase is always displayed in the prompt. Read it before typing.
+**Prevention:** Import `CONFIRM_PHRASE` from `src/core/approval/types.ts` rather than retyping the literal.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §approval.tiers.
 
@@ -1156,7 +1171,8 @@ SPLITBRIEF MCP exposes read-only session resources and five constrained evidence
 
 **Likely cause:** Spec, plan, and brief review edits use the external editor resolver and then spawn the resolved command. Resolution uses explicit `VISUAL` first, then non-terminal `EDITOR`, then detected GUI editors (`cursor`, `code`, `zed`, `subl`, `mate`, `bbedit`) with wait flags from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. The failure is in launching or running that resolved command, not a missing variable:
 - The resolved binary is not on `PATH` (e.g. `VISUAL=code` or `EDITOR=code` on a machine without VS Code) — the spawn errors and you get `Failed to open editor: …`.
-- The editor exits non-zero or is killed by a signal — you get `Editor exited with status … . Edit cancelled.` or `Failed to open editor: Editor exited with …` depending on the review gate.
+- The editor exits non-zero or is killed by a signal — if it saved the file first, the saved content is kept and applied (`Editor exited with status … but saved spec.md — content reloaded`); if the file is unchanged you get `Editor exited with status … — edit not applied` or `Editor failed: … terminated by …`.
+- You press Ctrl+C in the editor — that is a cancel, not a failure: `Edit cancelled — vim closed by ctrl+c`. A save that landed before the interrupt is still detected and applied.
 - A GUI editor returns immediately without blocking (e.g. `code` without `--wait`), so the edit is treated as cancelled.
 
 **Fix:**

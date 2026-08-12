@@ -183,7 +183,9 @@ Mode dispatch: `src/engine/orchestrator/planning/run.ts`. Mode determines how ma
 | `instant` | 1 | idle → implementing | `none` | tasks.md |
 | `quick` | 1 | idle → implementing | `none` | tasks.md |
 | `standard` | 4 | idle → researching → specifying → reviewing-spec → planning → reviewing-plan → reviewing-briefs → implementing | `spec` | research, spec.md, plan.md, tasks.md |
-| `speckit` | 6-7 | idle → researching → specifying → reviewing-spec → clarifying → constitution-check → planning → reviewing-plan → reviewing-briefs → analyzing → implementing | `all` | research, spec.md, clarifications.md, constitution-check.json, plan.md, tasks.md, analyze.json |
+| `speckit` | 6-7 | idle → researching → specifying → reviewing-spec → clarifying → constitution-check → planning → reviewing-plan → analyzing → implementing → reviewing-briefs → implementing | `all` | research, spec.md, clarifications.md, constitution-check.json, plan.md, tasks.md, analyze.json |
+
+Speckit runs pre-review quality preparation while in `reviewing-plan`. After it succeeds, `ANALYZE_START` enters `analyzing`, `ANALYZE_DONE` returns to `implementing`, and `BRIEFS_READY` opens `reviewing-briefs`.
 
 **When the single call produces no briefs** (`instant` and `quick`). If the planner's single call returns no Task Briefs, the same call is retried exactly once. The planner's text output is persisted to the session directory first and a coded, transcript-safe warning (`planner_returned_zero_tasks`) is published pointing at it. If the retry also returns zero tasks, the run fails with the existing `instant`/`quick planner returned zero tasks; cannot proceed` error — with the artifact on disk and the warning in the transcript. The run never falls through to the multi-phase path, which would silently change the selected mode and its cost.
 
@@ -211,11 +213,13 @@ Controlled by `workflow.approve`: `none` | `spec` | `plan` | `all` | `default`. 
 - `plan` — gate on plan only.
 - `all` — gate on spec and plan. speckit default.
 
-The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all four modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block the transition.
+The brief quality gate (`src/engine/spec/brief-quality.ts`) runs for all four modes after the Task Brief is produced and before `implementing`. It writes `brief-quality.json` and publishes `brief_quality_passed` or `brief_quality_failed`. Error-level issues block a direct transition. In `standard` and `speckit`, the first error-level report triggers one bounded tasks-only regeneration of `tasks.md`, before `BRIEFS_READY` and `reviewing-briefs`. If the repaired tasks still have any error-level issue, the second report fails the run closed: briefs approval is not called, `reviewing-briefs` is not entered, and implementation does not start. This applies to every error-level issue, not only `empty_task_list`.
+
+The second unrepaired report is a terminal planning failure, not a user cancellation or abort. The failed result records the workflow failure and stops before briefs approval or implementation. A user cancellation or abort keeps cancellation semantics and does not publish the planning error.
 
 Next to it, the brief readiness gate (`src/engine/orchestrator/planning/brief-readiness-gate.ts`) runs over the Task Briefs at briefs approval and again after brief edits. It writes `brief-readiness.json` and publishes `brief_readiness_passed` or `brief_readiness_blocked`. Readiness never permanently blocks approval: a blocked report is a warning, and a second identical approval overrides it and proceeds (see [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md)).
 
-Briefs review is separate from `workflow.approve`: `standard` and `speckit` enter `reviewing-briefs` after the quality gate so the user can review `tasks.md` before implementation.
+Briefs review is separate from `workflow.approve`: `standard` and `speckit` enter `reviewing-briefs` only after the initial quality check and any bounded repair pass, so the user can review `tasks.md` before implementation.
 
 ### Mode advisor
 
@@ -227,7 +231,9 @@ The advisor never auto-switches the mode. It publishes a `mode_advice` event and
 
 ### Clarification questions
 
-All four modes extract planner `<!-- Q:{...} -->` markers and show the interactive `QuestionPrompt` panel above the composer (`collectAndPersistClarifications` in `src/engine/orchestrator/clarifications.ts`); the marker itself never appears in the transcript, in any mode. The five-question cap holds everywhere.
+All four modes extract planner `<!-- Q:{...} -->` markers and show the interactive `QuestionPrompt` panel above the composer (`collectAndPersistClarifications` in `src/engine/orchestrator/clarifications.ts`); the marker itself never appears in the transcript, in any mode. Known CLI runners preserve explicit markers across stream chunks, so a marker split between chunks still invokes the question flow once. Arbitrary prose questions are not inferred. The five-question cap holds everywhere.
+
+Question IDs are unique for the planning run. The collector keeps the first question for an ID across planner callbacks, continuation turns, and the built-in zero-task retry, then applies the five-question cap to the distinct IDs. A later question with an ID already seen in that run is ignored.
 
 `standard` and `speckit` collect clarifications mid-plan, after the phase's planner call, and regenerate the affected planning artifacts with the answers before moving on — existing behavior, unchanged by this feature.
 
@@ -272,6 +278,8 @@ On the next planning restart, `handleRewindSpec` detects `rewindPending`:
 - If `comment` is non-empty: calls `planner.regenerate()` with `buildRegeneratePrompt('spec', currentSpec, comment)`. Writes regenerated spec.md.
 - If `comment` is empty: skips regeneration.
 - Either way: dispatches `SPEC_DONE` → `reviewing-spec`. Presents the spec approval gate. On approval: dispatches `APPROVE_SPEC` → `planning`. Regenerates plan and tasks from the new spec. Runs `PLAN_DONE` → `reviewing-plan`, then briefs approval.
+
+The regenerated document follows the same admission rule as the initial document. This covers replacement spec and plan artifacts: invalid Markdown is rejected before the file write or `artifact_written` event, so the previous artifact remains available for the current workflow.
 
 ### /revise-plan [comment]
 
@@ -379,7 +387,9 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Planner session ID captured → SET_PLANNER_SESSION_ID → state.json.
 
  7. phase: researching → RESEARCH_DONE → specifying
-    Planner writes supporting spec.md.
+    Planner writes supporting spec.md. The artifact must be non-empty Markdown
+    with a heading before review or downstream use. Empty or heading-free output
+    fails admission and does not feed the next phase.
 
  8. phase: specifying → SPEC_DONE → reviewing-spec
     callbacks.onApprovalNeeded('spec', specPath)
@@ -391,16 +401,24 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 
  9. phase: reviewing-spec → APPROVE_SPEC → planning
     Planner compiles plan and Task Brief transport. Writes plan.md and tasks.md.
+    plan.md must meet the same minimum before downstream use or review. Invalid
+    plan output is not used to derive or review Task Briefs.
 
 10. phase: planning → PLAN_DONE → reviewing-plan
     In standard mode, plan gate is auto-advanced (approve level is 'spec').
 
-11. phase: reviewing-plan → BRIEFS_READY → reviewing-briefs
-    Brief quality gate runs. Writes brief-quality.json.
+11. phase: reviewing-plan → BRIEFS_READY → reviewing-briefs (standard)
+    Brief quality gate runs. Writes brief-quality.json. An error-level result gets
+    one bounded tasks-only regeneration before
+    BRIEFS_READY. Passing original or repaired tasks enter reviewing-briefs. A
+    second failed report stops the run before briefs approval or implementation.
 
-12. phase: implementing → BRIEFS_READY → reviewing-briefs
+12. phase: reviewing-briefs
     callbacks.onApprovalNeeded('briefs', tasksPath)
-    Approval reads tasks.md from disk, reparses, re-runs quality gate.
+    Approval reads tasks.md from disk. Unchanged tasks carrying the successful
+    pre-review canonical validation skip a duplicate quality report. Changed-on-
+    disk tasks are re-gated. Direct resumed reviewing-briefs tasks are also
+    re-gated because they have no pre-review validation context.
     Ctrl+E/e/edit/E/edit-file opens tasks.md in the external editor
     resolved as VISUAL, non-terminal EDITOR, detected GUI editor from safe absolute PATH, macOS open, terminal EDITOR, then vi.
 

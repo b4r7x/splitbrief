@@ -71,7 +71,7 @@ export const processError = {
       command,
       label,
       timeoutMs: opts.timeoutMs,
-      output: sanitizeTerminalDiagnosticText(opts.output),
+      output: sanitizeTerminalDiagnosticText(opts.output, { preserveLineBreaks: true }),
     });
   },
 
@@ -95,8 +95,12 @@ export const processError = {
     const command = sanitizeTerminalDiagnosticText(opts.command);
     const label = opts.label === undefined ? undefined : sanitizeTerminalDiagnosticText(opts.label);
     const subject = label ?? command;
-    const stderr = sanitizeTerminalDiagnosticText(opts.stderr ?? '');
-    const output = sanitizeTerminalDiagnosticText(opts.output ?? opts.detail ?? opts.stderr ?? '');
+    // Tool output is column-structured (formatter diffs, test reports); losing the
+    // line breaks here flattens it into unreadable soup before any renderer sees it.
+    const stderr = sanitizeTerminalDiagnosticText(opts.stderr ?? '', { preserveLineBreaks: true });
+    const output = sanitizeTerminalDiagnosticText(opts.output ?? opts.detail ?? opts.stderr ?? '', {
+      preserveLineBreaks: true,
+    });
     const detail = stderr.trim() || sanitizeTerminalDiagnosticText(opts.detail ?? '').trim();
     const message = sanitizeTerminalDiagnosticText(
       `${subject} exited with code ${opts.code}${detail ? `: ${detail}` : ''}`,

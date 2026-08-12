@@ -4,7 +4,7 @@ import { formatCostGateSummary } from '../../../core/cost-gate-summary.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
 import { useTheme } from '../../../components/theme.js';
 import { borderStyleFor } from '../../../lib/glyphs.js';
-import { cursorGlyph } from '../../../components/pickers/cursor-glyph.js';
+import { NO_CURSOR, cursorGlyph } from '../../../components/pickers/cursor-glyph.js';
 import {
   costApprovalStore,
   closeCostApprovalPrompt,
@@ -14,45 +14,47 @@ import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { registerMouseZone } from '../../../lib/terminal/mouse-zones.js';
 import { readConversationScrollSnapshot } from '../layout/snapshot.js';
-import { getApprovalPromptRows } from '../prompt-rows/approval.js';
+import {
+  APPROVAL_OPTION_FIRST_ROW_OFFSET,
+  GATE_TITLE,
+  approvalKeyColumnWidth,
+  approvalOptionKeyCell,
+  approvalOptionLabelText,
+  getApprovalOptionZones,
+  getApprovalPromptRows,
+  type PromptOptionZone,
+} from '../prompt-rows/approval.js';
 import {
   COST_HINTS,
+  COST_KIND,
+  COST_OPTIONS,
   costGateComparisonRows,
   costGateHeaderLine,
   getCostApprovalButtonRowOffset,
   getCostApprovalPromptRowsForPrediction,
 } from '../prompt-rows/cost.js';
+import { costTextWidth } from '../prompt-rows/measure.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import { PROMPT_ZONE_Z } from './approval-prompt.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 
-export interface CostPromptButtonZone {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-}
-
-export interface CostPromptButtonZones {
-  approve: CostPromptButtonZone;
-  reject: CostPromptButtonZone;
-}
-
+// Stacked full-width rows, measured by the same helper the approval panels use: the cost gate is
+// one more gate, not a dialog with its own button bar, and at 110 columns a split-justified pair
+// put the second choice ninety columns from the first.
 export function getCostApprovalButtonZones(input: {
   boxTop: number;
   cols: number;
   promptRows: number;
   prediction: CostPrediction;
-}): CostPromptButtonZones | null {
-  const top = input.boxTop + getCostApprovalButtonRowOffset(input.prediction, input.cols);
-  const boxBottom = input.boxTop + input.promptRows - 1;
-  if (top > boxBottom) return null;
-  const left = 1;
-  const right = Math.max(1, input.cols);
-  const mid = Math.max(left, Math.floor((left + right) / 2));
-  return {
-    approve: { left, right: mid, top, bottom: top },
-    reject: { left: mid + 1, right, top, bottom: top },
-  };
+}): PromptOptionZone[] {
+  const optionOffset = getCostApprovalButtonRowOffset(input.prediction, input.cols);
+  return getApprovalOptionZones({
+    boxTop: input.boxTop,
+    cols: input.cols,
+    promptRows: input.promptRows,
+    subjectRows: optionOffset - APPROVAL_OPTION_FIRST_ROW_OFFSET,
+    options: COST_OPTIONS,
+  });
 }
 
 interface CostApprovalPromptProps {
@@ -88,21 +90,17 @@ export function CostApprovalPrompt({
     const zoneBoxRows =
       clampedBoxRows === undefined ? promptRows : Math.max(0, clampedBoxRows - approvalOffset);
     const zones = getCostApprovalButtonZones({ boxTop, cols, promptRows: zoneBoxRows, prediction });
-    if (!zones) return;
-    const cleanups = [
+    const cleanups = zones.map((zone) =>
       registerMouseZone({
-        id: 'cost-approve',
-        ...zones.approve,
+        id: zone.key === 'y' ? 'cost-approve' : 'cost-reject',
+        left: zone.left,
+        right: zone.right,
+        top: zone.top,
+        bottom: zone.bottom,
         z: PROMPT_ZONE_Z,
-        onClick: onApprove,
+        onClick: zone.key === 'y' ? onApprove : onReject,
       }),
-      registerMouseZone({
-        id: 'cost-reject',
-        ...zones.reject,
-        z: PROMPT_ZONE_Z,
-        onClick: onReject,
-      }),
-    ];
+    );
     return () => {
       for (const cleanup of cleanups) cleanup();
     };
@@ -115,7 +113,7 @@ export function CostApprovalPrompt({
         onApprove();
         return;
       }
-      if (input === 'n' || input === 'N' || key.escape) {
+      if (input === 'x' || input === 'X' || input === 'n' || input === 'N' || key.escape) {
         onReject();
         return;
       }
@@ -131,12 +129,13 @@ export function CostApprovalPrompt({
         flexDirection="column"
         paddingX={1}
         borderStyle={border}
-        borderColor={t.warning}
+        borderColor={t.border}
         height={promptRows}
         width="100%"
         overflow="hidden"
         flexShrink={0}
       >
+        <CostGateTitle />
         <Text> </Text>
         <Text> </Text>
         <CostGateButtons />
@@ -151,12 +150,13 @@ export function CostApprovalPrompt({
       flexDirection="column"
       paddingX={1}
       borderStyle={border}
-      borderColor={t.warning}
+      borderColor={t.border}
       height={promptRows}
       width="100%"
       overflow="hidden"
       flexShrink={0}
     >
+      <CostGateTitle />
       <Text> </Text>
       <Text color={t.text}>{costGateHeaderLine(summary)}</Text>
       {costGateComparisonRows(summary).map((row) => (
@@ -168,12 +168,7 @@ export function CostApprovalPrompt({
           <Text color={row.emphasis ? t.success : t.text}>{row.value}</Text>
         </Text>
       ))}
-      {summary.scopeNote ? (
-        <>
-          <Text color={t.textDim}>{summary.scopeNote}</Text>
-          <Text> </Text>
-        </>
-      ) : null}
+      {summary.scopeNote ? <Text color={t.textDim}>{summary.scopeNote}</Text> : null}
       <Text> </Text>
       <CostGateButtons />
       <Text> </Text>
@@ -182,16 +177,32 @@ export function CostApprovalPrompt({
   );
 }
 
-function CostGateButtons() {
+function CostGateTitle() {
   const t = useTheme();
   return (
-    <Box justifyContent="space-between">
-      <Text>
-        <Text color={t.accent}>{cursorGlyph()}</Text>
-        {'approve?   '}y
-      </Text>
-      <Text color={t.textDim}>{'n   reject'}</Text>
-    </Box>
+    <Text color={t.textDim}>
+      {GATE_TITLE}
+      {SOFT_SEP}
+      <Text color={t.warning}>{COST_KIND}</Text>
+    </Text>
+  );
+}
+
+function CostGateButtons() {
+  const t = useTheme();
+  const cols = terminalSizeStore.use((s) => s.cols);
+  const keyWidth = approvalKeyColumnWidth(COST_OPTIONS);
+  return (
+    <>
+      {COST_OPTIONS.map((option, index) => (
+        <Text key={option.key}>
+          {index === 0 ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
+          <Text color={t.textDim}>{approvalOptionKeyCell(option, keyWidth)}</Text>
+          {'   '}
+          {approvalOptionLabelText(option, keyWidth, costTextWidth(cols))}
+        </Text>
+      ))}
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ARTIFACT_REVIEW_HINT, buildPromptCallbacks } from './prompt-callbacks.js';
-import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
+import { REVIEW_HINT } from './review-parser.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import {
   TASK_REVIEW_COMMANDS,
@@ -87,7 +87,7 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
 
     await callbacks.onApprovalNeeded('briefs', '/tmp/tasks.md');
 
-    expect(setReviewMode).toHaveBeenCalledWith(BRIEFS_REVIEW_HINT);
+    expect(setReviewMode).toHaveBeenCalledWith(REVIEW_HINT);
   });
 
   it.each([

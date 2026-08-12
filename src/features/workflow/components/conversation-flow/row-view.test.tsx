@@ -4,7 +4,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { ConversationRow } from '../../conversation-rows/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
-import { getTheme, ThemeProvider } from '../../../../components/theme.js';
+import { getTheme, resolveTheme, ThemeProvider } from '../../../../components/theme.js';
 import { ConversationRowView } from './row-view.js';
 
 // Ink resolves chalk color level 0 against the capture stdout unless FORCE_COLOR is set before
@@ -222,8 +222,11 @@ describe('ConversationRowView code background', () => {
     ui.unmount();
   });
 
-  it('renders a code row unpainted when the theme leaves the background undefined', () => {
-    const theme = getTheme();
+  // A 16-color terminal has no background that frames code: the themed hex downsamples to
+  // bgBlack, which is that terminal's own ground. resolveTheme hands such a terminal a preset
+  // with no codeBg at all, and the rail has to carry the frame on its own.
+  it('renders a code row unpainted on a terminal without hex color, leaving the rail to frame it', () => {
+    const theme = resolveTheme('terminal', { TERM: 'xterm' });
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
         <ConversationRowView row={codeRow} />

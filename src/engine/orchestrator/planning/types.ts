@@ -39,7 +39,7 @@ export type PlanningPhaseResult = {
   state: WorkflowState;
   tasks: Task[];
   cancelled: boolean;
-  failed?: boolean | undefined;
+  failed: boolean;
 };
 
 export type PlannerCallRunResult = {
@@ -63,6 +63,7 @@ export type PlannerCallOptions = {
 
 export type BriefsApprovalLoopOptions = {
   tasks: Task[];
+  qualityValidatedTasks?: Task[] | undefined;
   planner: Planner;
   projectDir: string;
   sessionId: string;
@@ -81,5 +82,6 @@ export type BriefsApprovalLoopResult = {
   state: WorkflowState;
   tasks: Task[];
   rejected: boolean;
+  failed: boolean;
   aborted?: boolean | undefined;
 };
