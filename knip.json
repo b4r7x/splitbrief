@@ -16,7 +16,7 @@
     "!testing/fixtures/**",
     "!testing/e2e/vitest.e2e.config.ts"
   ],
-  "ignoreDependencies": ["@anthropic-ai/claude-agent-sdk"],
+  "ignoreDependencies": ["@anthropic-ai/claude-agent-sdk", "node-pty"],
   "ignoreExportsUsedInFile": true,
   "includeEntryExports": true
 }

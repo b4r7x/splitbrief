@@ -11,6 +11,7 @@ import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { glyph } from '../../lib/glyphs.js';
 import { SummaryScreen } from './summary.js';
 
 const ESC = String.fromCharCode(27);
@@ -174,13 +175,14 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
-  it('renders "quality n/a" when no briefQuality present', () => {
+  it('omits the brief quality row when no briefQuality is present', () => {
     showSummaryRoute({ summary: makeSummary() });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('quality n/a');
+    expect(frame).not.toContain('quality n/a');
+    expect(frame).not.toContain('Brief quality');
 
     ui.unmount();
   });
@@ -248,6 +250,97 @@ describe('SummaryScreen', () => {
     expect(frame).toContain('No task briefs compiled');
     expect(frame).not.toContain('0/0');
     expect(frame).not.toContain('No savings this run');
+
+    ui.unmount();
+  });
+
+  it('signals a failed run with a status marker and collapses unknown pricing to one statement', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    showSummaryRoute({
+      status: 'failed',
+      summary: makeSummary({
+        totalTasks: 0,
+        completedByLocal: 0,
+        escalatedToPlanner: 0,
+        plannerTool: 'opencode',
+        implementerTool: 'opencode',
+        mode: 'standard',
+        totalTime: 245000,
+        phaseTimings: { planning: 245000 },
+        costBreakdown: {
+          hypotheticalCost: 0,
+          actualPlannerCost: 0,
+          actualImplementerCost: 0,
+          totalActualCost: 0,
+          savingsAmount: 0,
+          savingsPercentage: 0,
+          localCompletionRate: 0,
+          hasPricedUsage: false,
+          hasUnpricedUsage: true,
+          hasSavingsEstimate: false,
+          isActualPlannerCostKnown: false,
+          isActualImplementerCostKnown: false,
+          isTotalActualCostKnown: false,
+          isAllPlannerBaselineKnown: false,
+        },
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('statusFailed')} SPLITBRIEF failed`);
+    expect(frame).toContain('No task briefs compiled');
+    expect(frame).not.toContain('Unknown price');
+    expect((frame.match(/provider pricing unavailable/g) ?? []).length).toBe(1);
+    expect(frame).not.toContain('Brief quality');
+    expect(frame).not.toContain('quality n/a');
+    expect(frame).toContain('Phase breakdown');
+
+    ui.unmount();
+  });
+
+  it('renders a successful run with a check marker, savings hero, and cost ledger', () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
+    showSummaryRoute({
+      status: 'complete',
+      summary: makeSummary({
+        plannerTool: 'codex',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen-small',
+        mode: 'standard',
+        totalTasks: 4,
+        completedByLocal: 3,
+        escalatedToPlanner: 1,
+        costBreakdown: {
+          hypotheticalCost: 5,
+          actualPlannerCost: 1,
+          actualImplementerCost: 0.5,
+          totalActualCost: 1.5,
+          savingsAmount: 3.5,
+          savingsPercentage: 70,
+          localCompletionRate: 0.75,
+          hasPricedUsage: true,
+          hasSavingsEstimate: true,
+          isActualPlannerCostKnown: true,
+          isActualImplementerCostKnown: true,
+          isTotalActualCostKnown: true,
+          isAllPlannerBaselineKnown: true,
+        },
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('check')} SPLITBRIEF complete`);
+    expect(frame).toContain('$1.50 actual vs $5.00 baseline');
+    expect(frame).toContain('4/4 tasks');
+    expect(frame).toContain('Actual cost');
+    expect(frame).toContain('Saved');
+    expect(frame).toContain('$3.50 (70%)');
+    expect(frame).not.toContain('provider pricing unavailable');
+    expect(frame).not.toContain('Unknown price');
 
     ui.unmount();
   });
@@ -409,7 +502,27 @@ describe('SummaryScreen', () => {
     ui.unmount();
   });
 
-  it('summary runner rows label planner and implementer in sentence case', () => {
+  it('summary runner rows label planner and implementer in sentence case on small terminals', () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 40, isSmall: true });
+    showSummaryRoute({
+      summary: makeSummary({
+        plannerTool: 'codex',
+        implementerTool: 'ollama',
+        implementerModel: 'qwen-small',
+      }),
+    });
+
+    const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('Planner');
+    expect(frame).toContain('Implementer');
+    expect((frame.match(/OpenAI Codex CLI/g) ?? []).length).toBe(1);
+
+    ui.unmount();
+  });
+
+  it('shows the planner-to-implementer route once on large terminals, in the byline only', () => {
     terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     showSummaryRoute({
       summary: makeSummary({
@@ -420,10 +533,12 @@ describe('SummaryScreen', () => {
     });
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
-    const frame = ui.lastFrame() ?? '';
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Planner');
-    expect(frame).toContain('Implementer');
+    expect((frame.match(/OpenAI Codex CLI/g) ?? []).length).toBe(1);
+    expect((frame.match(/qwen-small/g) ?? []).length).toBe(1);
+    expect(frame).not.toContain('Planner');
+    expect(frame).not.toContain('Implementer');
 
     ui.unmount();
   });
@@ -506,12 +621,14 @@ describe('SummaryScreen', () => {
 
     const ui = renderFeature(<SummaryScreen commands={[]} onRuntimeCommand={() => {}} />);
     const frame = ui.lastFrame() ?? '';
-    const routeLines = frame.split('\n').filter((line) => line.includes('OpenAI Codex CLI'));
+    const lines = stripAnsiStyles(frame).split('\n');
+    const routeLines = lines.filter((line) => line.includes('OpenAI Codex CLI'));
+    const headingLine = lines.find((line) => line.includes('SPLITBRIEF')) ?? '';
 
     expect(frame).toContain('SPLITBRIEF');
     expect(frame).toContain('failed');
-    expect(routeLines.length).toBeGreaterThan(0);
-    expect(routeLines.some((line) => line.includes('…'))).toBe(true);
+    expect(routeLines.length).toBe(1);
+    expect(headingLine).not.toContain('OpenAI Codex CLI');
     const continueCount = frame.split('Press enter to continue').length - 1;
     expect(continueCount).toBe(1);
     expect(maxLineLength(frame)).toBeLessThanOrEqual(48);
@@ -670,7 +787,7 @@ describe('SummaryScreen', () => {
 
     expect(frame).toContain('Extra cost');
     expect(frame).not.toContain('saved $0.00 (-50%)');
-    expect((frame.match(/◆/g) ?? []).length).toBe(1);
+    expect((frame.match(/\bCost\b/g) ?? []).length).toBe(1);
 
     ui.unmount();
   });

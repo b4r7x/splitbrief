@@ -32,7 +32,6 @@ import { useStores } from '../../stores/use-stores.js';
 import {
   clampWorkflowPromptRows,
   getWorkflowContentWidth,
-  getWorkflowReviewColumn,
   getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
 } from '../../features/workflow/layout/rect.js';
@@ -133,11 +132,6 @@ export function WorkflowScreen({
     cols,
     sidebarVisible,
   });
-  const reviewColumn =
-    model.inputMode.mode === 'review'
-      ? getWorkflowReviewColumn({ cols, sidebarVisible })
-      : undefined;
-
   return (
     <ScreenShell
       header={
@@ -160,7 +154,6 @@ export function WorkflowScreen({
             questionEpoch={model.questionEpoch}
             feedbackHint={model.feedbackHint}
             boxHintOverride={model.boxHintOverride}
-            reviewColumn={reviewColumn}
             waitingForUser={
               model.inputMode.mode !== 'normal' || model.approvalPending || model.costPending
             }

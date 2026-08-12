@@ -11,6 +11,8 @@ const WORKFLOW_SIDEBAR_MAX_WIDTH = 48;
 // 2 border cells + 2 paddingX cells + the 3-cell bar/marker/space prefix each row paints.
 const SIDEBAR_TASK_ROW_OVERHEAD = 7;
 const SIDEBAR_TASK_TITLE_MIN = 10;
+// `escalated` is the longest status word, plus the two cells of gap before it.
+const SIDEBAR_TASK_TAIL_CELLS = 11;
 
 export interface SidebarWidthInput {
   cols: number;
@@ -27,6 +29,13 @@ export function getWorkflowSidebarWidth(input: SidebarWidthInput): number {
   );
 }
 
+export function getWorkflowConversationHeight(input: {
+  height: number;
+  sidebarWidth: number;
+}): number {
+  return Math.max(0, input.height - (input.sidebarWidth > 0 ? 1 : 0));
+}
+
 export function getSidebarTaskTitleWidth(input: {
   width: number;
   reservedTailCells: number;
@@ -35,6 +44,94 @@ export function getSidebarTaskTitleWidth(input: {
     SIDEBAR_TASK_TITLE_MIN,
     input.width - SIDEBAR_TASK_ROW_OVERHEAD - input.reservedTailCells,
   );
+}
+
+// Every row in a list that holds a tail-bearing task reserves the status column, filled or not, so
+// all titles truncate in the same place instead of ragging against a right-aligned word. A list
+// with nothing escalated, failed, or skipped reserves nothing and spends the cells on titles.
+export interface SidebarStatusColumnOptions {
+  hasStatusTail: boolean;
+}
+
+export function getSidebarStatusColumnCells({ hasStatusTail }: SidebarStatusColumnOptions): number {
+  return hasStatusTail ? SIDEBAR_TASK_TAIL_CELLS : 0;
+}
+
+// 2 border rows + the count header + the blank row under it + the footer divider.
+const SIDEBAR_LIST_CHROME_ROWS = 5;
+
+export function getSidebarTaskListRows(input: { height: number; footerRows: number }): number {
+  return Math.max(0, input.height - SIDEBAR_LIST_CHROME_ROWS - Math.max(0, input.footerRows));
+}
+
+export interface SidebarTaskWindow {
+  start: number;
+  end: number;
+  hiddenAbove: number;
+  hiddenBelow: number;
+  showAbove: boolean;
+  showBelow: boolean;
+  combine: boolean;
+}
+
+// Windows the task list around the anchor (the running task) so it stays on screen no matter how
+// long the plan is. Overflow markers claim a row each; the two passes settle which of them the
+// window needs, because pass one cannot know whether the offsets it produces overflow both edges.
+// A task row always outranks a marker row, so a budget too small for both collapses them into one
+// `combine` row that still names both edges, and a budget too small even for that reports every
+// marker as not shown rather than pushing the list past its rows.
+export function getSidebarTaskWindow(input: {
+  itemCount: number;
+  anchorIndex: number;
+  rows: number;
+}): SidebarTaskWindow {
+  const rows = Math.max(0, Math.floor(input.rows));
+  const itemCount = Math.max(0, Math.floor(input.itemCount));
+  if (rows === 0 || itemCount === 0) {
+    return {
+      start: 0,
+      end: 0,
+      hiddenAbove: 0,
+      hiddenBelow: itemCount,
+      showAbove: false,
+      showBelow: false,
+      combine: false,
+    };
+  }
+  if (itemCount <= rows) {
+    return {
+      start: 0,
+      end: itemCount,
+      hiddenAbove: 0,
+      hiddenBelow: 0,
+      showAbove: false,
+      showBelow: false,
+      combine: false,
+    };
+  }
+
+  const anchor = clamp(Math.floor(input.anchorIndex), 0, itemCount - 1);
+  const markerBudget = rows - 1;
+  let capacity = rows;
+  let start = 0;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const wanted = (start > 0 ? 1 : 0) + (start + capacity < itemCount ? 1 : 0);
+    capacity = rows - Math.min(wanted, markerBudget);
+    start = clamp(anchor - Math.floor((capacity - 1) / 2), 0, itemCount - capacity);
+  }
+
+  const end = start + capacity;
+  const hiddenAbove = start;
+  const hiddenBelow = itemCount - end;
+  const spare = rows - capacity;
+  const wantAbove = hiddenAbove > 0;
+  const wantBelow = hiddenBelow > 0;
+  // One spare row cannot host both edges separately. Showing only one of them would hide that the
+  // list continues in the other direction, so the single row carries both counts instead.
+  const combine = wantAbove && wantBelow && spare === 1;
+  const showAbove = wantAbove && spare > 0 && !combine;
+  const showBelow = wantBelow && spare > (showAbove ? 1 : 0) && !combine;
+  return { start, end, hiddenAbove, hiddenBelow, showAbove, showBelow, combine };
 }
 
 // The gap exists only while the sidebar actually renders, so a hidden sidebar keeps the full width.
@@ -54,19 +151,6 @@ export function getWorkflowContentWidth(input: SidebarWidthInput): number {
 
 export function getReviewColumnWidth(contentWidth: number): number {
   return Math.max(0, contentWidth);
-}
-
-export interface WorkflowReviewColumn {
-  leftOffset: number;
-  width: number;
-}
-
-export function getWorkflowReviewColumn(input: SidebarWidthInput): WorkflowReviewColumn {
-  const sidebarWidth = getWorkflowSidebarWidth(input);
-  return {
-    leftOffset: sidebarWidth + getWorkflowSidebarGap(input) + WORKFLOW_CONTENT_PADDING_X,
-    width: getReviewColumnWidth(getWorkflowContentWidth(input)),
-  };
 }
 
 export interface WorkflowContentRect {

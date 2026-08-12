@@ -34,7 +34,7 @@ export function parseFrontmatter(state: FrontmatterLineState): FrontmatterParseR
       if (line === undefined) break;
       if (line.trim() === '---') {
         return {
-          block: { kind: 'frontmatter', lines },
+          block: { kind: 'frontmatter', role: 'document', lines },
           nextIndex: cursor + 1,
         };
       }
@@ -55,8 +55,10 @@ export function parseFrontmatter(state: FrontmatterLineState): FrontmatterParseR
   }
 
   if (yamlLines.length >= 2) {
+    // Undelimited YAML at the top of a planner stream is partial task metadata, not a stamped
+    // document header, so it keeps rendering; only the delimited header block is hidden.
     return {
-      block: { kind: 'frontmatter', lines: yamlLines },
+      block: { kind: 'frontmatter', role: 'task', lines: yamlLines },
       nextIndex: cursor,
     };
   }
@@ -70,7 +72,7 @@ export function parseTaskBriefMetadata(
   const delimited = collectDelimitedYamlMetadata(state);
   if (delimited && hasTaskBriefMetadataKeys(delimited.keys)) {
     return {
-      block: { kind: 'frontmatter', lines: delimited.lines },
+      block: { kind: 'frontmatter', role: 'task', lines: delimited.lines },
       nextIndex: delimited.nextIndex,
     };
   }
@@ -81,7 +83,7 @@ export function parseTaskBriefMetadata(
   const closingLine = state.lines[bare.nextIndex];
   const nextIndex = closingLine?.trim() === '---' ? bare.nextIndex + 1 : bare.nextIndex;
   return {
-    block: { kind: 'frontmatter', lines: bare.lines },
+    block: { kind: 'frontmatter', role: 'task', lines: bare.lines },
     nextIndex,
   };
 }

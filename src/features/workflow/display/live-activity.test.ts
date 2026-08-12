@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
-import { deriveLiveStatus } from './live-activity.js';
+import { deriveLiveStatus, stallRunnerHint } from './live-activity.js';
 
 const base = {
   status: 'running' as const,
@@ -61,5 +61,21 @@ describe('deriveLiveStatus', () => {
     for (const verb of verbs) {
       expect(verb).toMatch(/^[A-Z]/);
     }
+  });
+});
+
+describe('stallRunnerHint', () => {
+  it('explains the silence for a runner that only reports finished tools', () => {
+    expect(stallRunnerHint('opencode')).toBe('tools report when done');
+  });
+
+  it('stays silent for runners that stream tool use live, and when the runner is unknown', () => {
+    expect(stallRunnerHint('claude-code')).toBeNull();
+    expect(stallRunnerHint('codex')).toBeNull();
+    expect(stallRunnerHint(null)).toBeNull();
+  });
+
+  it('is short enough to sit inside the byline', () => {
+    expect((stallRunnerHint('opencode') ?? '').length).toBeLessThanOrEqual(24);
   });
 });

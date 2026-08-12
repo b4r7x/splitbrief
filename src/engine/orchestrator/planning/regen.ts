@@ -17,7 +17,11 @@ import { buildProjectLanguageContext } from '../../spec/prompts/language-context
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import { publishPlannerStatus, publishWarning } from '../events.js';
 import { runPlannerReview } from '../planner-review.js';
-import { commitQueueMessagesDrained, readQueueForPrompt } from '../queue/drain.js';
+import {
+  commitQueueMessagesDrained,
+  readQueueForPrompt,
+  releaseQueueMessagesForPrompt,
+} from '../queue/drain.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
 import { readPersistedTasks } from './io.js';
 import { composeSteeredPrompt } from '../../implementers/types.js';
@@ -70,63 +74,75 @@ async function regenerateFromFeedback(
   const { projectDir, sessionId, bus, skillsContext, planOverride } = ctx;
   let { state } = ctx;
 
+  const ownsQueueClaim = ctx.queuedMessages === undefined;
   const queued =
     ctx.queuedMessages === undefined
       ? readQueueForPrompt({ projectDir, sessionId, state })
       : { state, messages: [...ctx.queuedMessages] };
-  state = queued.state;
-  const queuedPrefix = queued.messages.length > 0 ? formatDrainedMessages(queued.messages) : '';
-  const prefix = ctx.feedback ? `${ctx.feedback}\n\n${queuedPrefix}` : queuedPrefix;
+  let transferredQueueClaim = false;
+  try {
+    state = queued.state;
+    const queuedPrefix = queued.messages.length > 0 ? formatDrainedMessages(queued.messages) : '';
+    const prefix = ctx.feedback ? `${ctx.feedback}\n\n${queuedPrefix}` : queuedPrefix;
 
-  const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
-  const languageContext = buildProjectLanguageContext(
-    projectDir,
-    state.discoveredValidation?.language,
-  );
-
-  if (kind === 'plan') {
-    const projectContext = await buildProjectContextMarkdown(projectDir);
-    const basePrompt = buildPlanPrompt(
-      { content: spec, hasClarifications: spec.includes('## Clarifications') },
-      projectContext,
-      skillsContext,
-      languageContext,
+    const spec = readSpecFileOrEmpty({ projectDir, sessionId }, SPEC_FILE);
+    const languageContext = buildProjectLanguageContext(
+      projectDir,
+      state.discoveredValidation?.language,
     );
+
+    if (kind === 'plan') {
+      const projectContext = await buildProjectContextMarkdown(projectDir);
+      const basePrompt = buildPlanPrompt(
+        { content: spec, hasClarifications: spec.includes('## Clarifications') },
+        projectContext,
+        skillsContext,
+        languageContext,
+      );
+      const result = await runRegenerationReview({
+        kind,
+        ctx,
+        state,
+        prompt: prefix ? prefix + basePrompt : basePrompt,
+        writeTo: PLAN_FILE,
+      });
+      state = result.state;
+      state = maybeCommitQueue(ctx, state, queued.messages);
+      transferredQueueClaim = ownsQueueClaim && ctx.commitQueue === false;
+      return { kind: 'plan', state, plan: result.text, queuedMessages: queued.messages };
+    }
+
+    const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
+    const persisted = await readPersistedTasks(
+      join(sessionDir(projectDir, sessionId), TASKS_FILE),
+      (message) => publishWarning({ bus, phase: state.phase, message }),
+    );
+    const currentTasks = persisted.ok ? persisted.tasks : state.tasks;
+    const basePrompt = buildTasksPrompt(spec, plan, languageContext, currentTasks);
     const result = await runRegenerationReview({
       kind,
       ctx,
       state,
       prompt: prefix ? prefix + basePrompt : basePrompt,
-      writeTo: PLAN_FILE,
+      writeTo: TASKS_FILE,
     });
-    state = maybeCommitQueue(ctx, result.state, queued.messages);
-    return { kind: 'plan', state, plan: result.text, queuedMessages: queued.messages };
+    state = result.state;
+    const tasks = parseTasksStrict(result.text, (message) =>
+      publishWarning({ bus, phase: state.phase, message }),
+    );
+    state = maybeCommitQueue(ctx, state, queued.messages);
+    transferredQueueClaim = ownsQueueClaim && ctx.commitQueue === false;
+    return {
+      kind: 'tasks',
+      state,
+      tasks,
+      queuedMessages: queued.messages,
+    };
+  } finally {
+    if (ownsQueueClaim && !transferredQueueClaim) {
+      releaseQueueMessagesForPrompt({ projectDir, sessionId }, queued.messages);
+    }
   }
-
-  const plan = planOverride ?? readSpecFileOrEmpty({ projectDir, sessionId }, PLAN_FILE);
-  const persisted = await readPersistedTasks(
-    join(sessionDir(projectDir, sessionId), TASKS_FILE),
-    (message) => publishWarning({ bus, phase: state.phase, message }),
-  );
-  const currentTasks = persisted.ok ? persisted.tasks : state.tasks;
-  const basePrompt = buildTasksPrompt(spec, plan, languageContext, currentTasks);
-  const result = await runRegenerationReview({
-    kind,
-    ctx,
-    state,
-    prompt: prefix ? prefix + basePrompt : basePrompt,
-    writeTo: TASKS_FILE,
-  });
-  const tasks = parseTasksStrict(result.text, (message) =>
-    publishWarning({ bus, phase: state.phase, message }),
-  );
-  state = maybeCommitQueue(ctx, result.state, queued.messages);
-  return {
-    kind: 'tasks',
-    state,
-    tasks,
-    queuedMessages: queued.messages,
-  };
 }
 
 function maybeCommitQueue(
@@ -282,45 +298,49 @@ export async function regeneratePlanAndTasks(
   const { projectDir, sessionId, planner, callbacks, bus, state, metadata, skillsContext, signal } =
     opts;
   const queued = readQueueForPrompt({ projectDir, sessionId, state });
-  const planRegen = await regenerateFromFeedback('plan', {
-    projectDir,
-    sessionId,
-    planner,
-    callbacks,
-    bus,
-    state: queued.state,
-    metadata,
-    skillsContext,
-    signal,
-    queuedMessages: queued.messages,
-    commitQueue: false,
-    sinks: opts.sinks,
-  });
-  const taskRegen = await regenerateFromFeedback('tasks', {
-    projectDir,
-    sessionId,
-    planner,
-    callbacks,
-    bus,
-    state: planRegen.state,
-    metadata,
-    planOverride: planRegen.plan,
-    signal,
-    queuedMessages: [],
-    commitQueue: false,
-    sinks: opts.sinks,
-  });
-  const nextState =
-    queued.messages.length === 0
-      ? taskRegen.state
-      : commitQueueMessagesDrained({
-          projectDir,
-          sessionId,
-          state: taskRegen.state,
-          messages: queued.messages,
-          bus,
-        }).state;
-  return { state: nextState, tasks: taskRegen.tasks };
+  try {
+    const planRegen = await regenerateFromFeedback('plan', {
+      projectDir,
+      sessionId,
+      planner,
+      callbacks,
+      bus,
+      state: queued.state,
+      metadata,
+      skillsContext,
+      signal,
+      queuedMessages: queued.messages,
+      commitQueue: false,
+      sinks: opts.sinks,
+    });
+    const taskRegen = await regenerateFromFeedback('tasks', {
+      projectDir,
+      sessionId,
+      planner,
+      callbacks,
+      bus,
+      state: planRegen.state,
+      metadata,
+      planOverride: planRegen.plan,
+      signal,
+      queuedMessages: [],
+      commitQueue: false,
+      sinks: opts.sinks,
+    });
+    const nextState =
+      queued.messages.length === 0
+        ? taskRegen.state
+        : commitQueueMessagesDrained({
+            projectDir,
+            sessionId,
+            state: taskRegen.state,
+            messages: queued.messages,
+            bus,
+          }).state;
+    return { state: nextState, tasks: taskRegen.tasks };
+  } finally {
+    releaseQueueMessagesForPrompt({ projectDir, sessionId }, queued.messages);
+  }
 }
 
 export async function regenerateTasksIfNeeded(

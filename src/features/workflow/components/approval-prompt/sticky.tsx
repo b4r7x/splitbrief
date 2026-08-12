@@ -1,24 +1,31 @@
 import { useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
-import { SOFT_SEP } from '../../../../components/separators.js';
 import { borderStyleFor } from '../../../../lib/glyphs.js';
-import { cursorGlyph } from '../../../../components/pickers/cursor-glyph.js';
+import { NO_CURSOR, cursorGlyph } from '../../../../components/pickers/cursor-glyph.js';
 import { closeApprovalPrompt } from '../../../../stores/approval-prompt/prompt.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { registerMouseZone } from '../../../../lib/terminal/mouse-zones.js';
 import { readConversationScrollSnapshot } from '../../layout/snapshot.js';
 import {
-  APPROVAL_TITLE,
+  GATE_TITLE,
   STICKY_HINTS,
   STICKY_OPTIONS,
-  formatApprovalActionDescription,
+  STICKY_PERSIST_NOTE,
+  approvalKeyColumnWidth,
+  approvalOptionKeyCell,
+  approvalOptionLabelText,
+  approvalSubjectText,
   getApprovalSeverityWord,
   getStickyOptionZones,
 } from '../../prompt-rows/approval.js';
+import { approvalTextWidth } from '../../prompt-rows/measure.js';
+import { SOFT_SEP } from '../../../../components/separators.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 
 export const PROMPT_ZONE_Z = 50;
+
+const STICKY_KEY_WIDTH = approvalKeyColumnWidth(STICKY_OPTIONS);
 
 function triggerStickyOption(key: string): void {
   if (key === 'a') {
@@ -54,7 +61,6 @@ export function StickyApprovalPrompt({
   const t = useTheme();
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);
-  const actionDescription = formatApprovalActionDescription(request.actionDescription);
 
   useInput(
     (input, key) => {
@@ -87,7 +93,6 @@ export function StickyApprovalPrompt({
       boxTop,
       cols,
       promptRows: clampedBoxRows ?? promptRows,
-      actionClass: request.actionClass,
       actionDescription: request.actionDescription,
     });
     const cleanups = zones.map((zone) =>
@@ -110,36 +115,31 @@ export function StickyApprovalPrompt({
     <Box
       flexDirection="column"
       borderStyle={borderStyleFor('bold')}
-      borderColor={t.warning}
+      borderColor={t.border}
       paddingX={1}
       height={promptRows}
       width="100%"
       overflow="hidden"
       flexShrink={0}
     >
-      <Text color={t.textDim}>{APPROVAL_TITLE}</Text>
-      <Text> </Text>
-      <Text>
+      <Text color={t.textDim}>
+        {GATE_TITLE}
+        {SOFT_SEP}
         <Text color={t.warning}>{getApprovalSeverityWord(request.actionClass)}</Text>
-        {'   '}
-        {actionDescription}
       </Text>
+      <Text> </Text>
+      <Text>{approvalSubjectText(request.actionDescription, cols)}</Text>
       <Text> </Text>
       {STICKY_OPTIONS.map((option, index) => (
         <Text key={option.key}>
-          {index === 0 ? <Text color={t.accent}>{cursorGlyph()}</Text> : '  '}
-          <Text color={t.textDim}>{option.key}</Text>
+          {index === 0 ? <Text color={t.text}>{cursorGlyph()}</Text> : NO_CURSOR}
+          <Text color={t.textDim}>{approvalOptionKeyCell(option, STICKY_KEY_WIDTH)}</Text>
           {'   '}
-          {option.label}
-          {option.note ? (
-            <Text color={t.textDim}>
-              {SOFT_SEP}
-              {option.note}
-            </Text>
-          ) : null}
+          {approvalOptionLabelText(option, STICKY_KEY_WIDTH, approvalTextWidth(cols))}
         </Text>
       ))}
       <Text> </Text>
+      <Text color={t.textDim}>{STICKY_PERSIST_NOTE}</Text>
       <Text color={t.textDim}>{STICKY_HINTS}</Text>
     </Box>
   );

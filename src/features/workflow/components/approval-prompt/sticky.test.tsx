@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
-import { flushEffects, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { ApprovalPrompt, PROMPT_ZONE_Z } from '../approval-prompt.js';
 import {
@@ -15,8 +15,14 @@ import {
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { readConversationScrollSnapshot } from '../../layout/snapshot.js';
-import { getApprovalPromptRows, getStickyOptionZones } from '../../prompt-rows/approval.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../prompt-grace.js';
+import {
+  GATE_TITLE,
+  STICKY_HINTS,
+  STICKY_OPTIONS,
+  STICKY_PERSIST_NOTE,
+  getStickyOptionZones,
+} from '../../prompt-rows/approval.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../lib/terminal/typeahead-grace.js';
 import type { TieredApprovalRequest } from '../../../../core/approval/types.js';
 
 const ESC = '\u001b';
@@ -47,6 +53,30 @@ afterEach(() => {
 });
 
 describe('ApprovalPrompt sticky tier', () => {
+  it('keeps every option and the persistence disclosure whole at 40 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 40, rows: 40, isSmall: false });
+    const ui = renderFeature(<ApprovalPrompt />, { cols: 40, rows: 40 });
+    const decision = openApprovalPrompt(makeStickyRequest('write src/features/workflow/panel.ts'));
+    await tick(PAST_GRACE);
+    await flushEffects();
+
+    const lines = stripColor(ui.lastFrame()).split('\n');
+    // Row counts cannot see a clipped line. The disclosure that tells the user `w` is persisted,
+    // and where, has to survive intact on one row — that is the defect a height assertion missed.
+    expect(lines.some((line) => line.includes(STICKY_PERSIST_NOTE))).toBe(true);
+    for (const option of STICKY_OPTIONS) {
+      expect(lines.some((line) => line.includes(`${option.key}   ${option.label}`))).toBe(true);
+    }
+    expect(lines.some((line) => line.includes(STICKY_HINTS))).toBe(true);
+    expect(lines.some((line) => line.includes(GATE_TITLE))).toBe(true);
+    expect(stripColor(ui.lastFrame())).not.toContain('…');
+
+    await flushEffects();
+    ui.stdin.write(ESC);
+    await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_cancelled' });
+    ui.unmount();
+  });
+
   it('sanitizes action descriptions before rendering and measuring rows', async () => {
     terminalSizeStore.__testReset({ cols: 34, rows: 24, isSmall: true });
     const ui = render(<ApprovalPrompt />);
@@ -63,7 +93,9 @@ describe('ApprovalPrompt sticky tier', () => {
     expect(frame).not.toContain('clipboard');
     expect(frame).not.toContain('\u001b');
     expect(frame).not.toContain('\u0000');
-    expect(frame.split('\n')).toHaveLength(getApprovalPromptRows(approvalPromptStore.get(), 34));
+    // The redaction must not cost the panel its answers: every option and the legend still show.
+    for (const option of STICKY_OPTIONS) expect(frame).toContain(option.label);
+    expect(frame).toContain(STICKY_HINTS);
 
     await flushEffects();
     ui.stdin.write(ESC);
@@ -132,7 +164,6 @@ describe('sticky option click zones', () => {
       boxTop: 10,
       cols: 80,
       promptRows: 30,
-      actionClass: 'write_out_of_scope',
       actionDescription: 'write src/x.ts',
     });
     expect(zones.map((zone) => zone.key)).toEqual(['a', 's', 'w', 'x']);
@@ -145,7 +176,6 @@ describe('sticky option click zones', () => {
       boxTop: 10,
       cols: 80,
       promptRows: 8,
-      actionClass: 'write_out_of_scope',
       actionDescription: 'write src/x.ts',
     });
     expect(zones.map((zone) => zone.key)).toEqual(['a', 's', 'w']);
@@ -157,7 +187,6 @@ describe('sticky option click zones', () => {
       boxTop: 10,
       cols: 80,
       promptRows: 30,
-      actionClass: 'write_out_of_scope',
       actionDescription: 'write src/x.ts',
     });
     if (!first) throw new Error('expected a sticky option zone');
@@ -265,7 +294,13 @@ describe('multi-line trust disclosures in the sticky prompt', () => {
     expect(lines.some((line) => line.includes('Executable:') && line.includes('Arguments:'))).toBe(
       false,
     );
-    expect(lines).toHaveLength(getApprovalPromptRows(approvalPromptStore.get(), 120));
+    // Three disclosure rows must not push the answers out of the box: the options, the
+    // persistence note and the legend are all still on screen underneath them.
+    for (const option of STICKY_OPTIONS) {
+      expect(lines.some((line) => line.includes(option.label))).toBe(true);
+    }
+    expect(lines.some((line) => line.includes(STICKY_PERSIST_NOTE))).toBe(true);
+    expect(lines.some((line) => line.includes(STICKY_HINTS))).toBe(true);
 
     await flushEffects();
     ui.stdin.write(ESC);

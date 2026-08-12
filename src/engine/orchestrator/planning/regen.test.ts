@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
-import { ensureSessionDir, writeSpecFile } from '../../../core/paths-io.js';
+import { ensureSessionDir, readSpecFile, writeSpecFile } from '../../../core/paths-io.js';
 import { PLAN_FILE, SPEC_FILE, TASKS_FILE } from '../../../core/paths.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -70,6 +70,40 @@ function planningStateWithQueuedMessage() {
 }
 
 describe('regeneratePlanAndTasks', () => {
+  it('rejects an invalid plan replacement before writing, publishing, or prompting for tasks', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+    const previousPlan = readSpecFile({ projectDir, sessionId }, PLAN_FILE);
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({
+        text: 'planner prose without an artifact heading',
+        usage: { inputTokens: 17, outputTokens: 9 },
+      }),
+    });
+
+    await expect(
+      regeneratePlanAndTasks({
+        projectDir,
+        sessionId,
+        planner,
+        callbacks,
+        bus,
+        state: planningStateWithQueuedMessage(),
+        metadata: TEST_METADATA,
+      }),
+    ).rejects.toMatchObject({ kind: 'planning-invalid-artifact' });
+
+    expect(planner.review).toHaveBeenCalledTimes(1);
+    expect(readSpecFile({ projectDir, sessionId }, PLAN_FILE)).toBe(previousPlan);
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
+
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted).not.toBeNull();
+    if (persisted === null) throw new Error('expected usage state to be persisted');
+    expect(persisted.tokenUsage).toMatchObject({ plannerInput: 17, plannerOutput: 9 });
+  });
+
   it('leaves queued feedback pending when task regeneration fails after plan regeneration', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { callbacks } = makeCallbacks();
@@ -122,6 +156,10 @@ describe('regeneratePlanAndTasks', () => {
     expect(result.tasks).toHaveLength(1);
     expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
     expect(events.some((event) => event.type === 'queue_drained' && event.count === 1)).toBe(true);
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(2);
+    expect(
+      events.filter((event) => event.type === 'artifact_written').map((event) => event.filename),
+    ).toEqual([PLAN_FILE, TASKS_FILE]);
   });
 });
 
@@ -217,6 +255,46 @@ describe('regenerateTasks', () => {
       (e) => e.type === 'warning' && e.message.includes('Future Considerations'),
     );
     expect(warning).toBeDefined();
+  });
+
+  it('persists planner usage when strict Task Brief parsing rejects a replacement', async () => {
+    const { projectDir, sessionId } = setupProjectDir();
+    const { bus, events } = makeBusRecorder();
+    const malformedTaskLikeBlock = `---
+id: T002
+title:
+action: invalid
+file:
+depends_on: []
+---
+
+### Description
+This replacement must fail strict parsing.
+`;
+    const planner = makePlanner({
+      review: vi.fn().mockResolvedValue({
+        text: malformedTaskLikeBlock,
+        usage: { inputTokens: 31, outputTokens: 7 },
+      }),
+    });
+
+    await expect(
+      regenerateTasks({
+        projectDir,
+        sessionId,
+        planner,
+        callbacks: makeCallbacks().callbacks,
+        bus,
+        state: createInitialState('feat'),
+        metadata: TEST_METADATA,
+      }),
+    ).rejects.toMatchObject({ kind: 'parse-tasks-invalid-block' });
+
+    const persisted = loadState({ projectDir, sessionId });
+    expect(persisted).not.toBeNull();
+    if (persisted === null) throw new Error('expected usage state to be persisted');
+    expect(persisted.tokenUsage).toMatchObject({ plannerInput: 31, plannerOutput: 7 });
+    expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(1);
   });
 
   it('an abort during regeneration review parks the retry prompt instead of failing', async () => {

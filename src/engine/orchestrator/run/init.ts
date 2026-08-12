@@ -14,6 +14,8 @@ import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { recoverInterruptedNativeDeliveries } from '../../../core/queue-state.js';
+import { saveState } from '../../../core/state/persistence.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
 import {
   ensureSessionDir,
@@ -27,9 +29,11 @@ import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
 import { createOtelSink } from '../../events/sinks/otel.js';
 import { createTreeRecorderSink } from '../../events/sinks/tree-recorder.js';
+import { createLoggerSink } from '../../events/sinks/logger.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { createHookSink } from '../../hooks/sink.js';
 import { createBranch } from '../../../lib/git/refs.js';
+import { initLogger } from '../../../core/logger.js';
 import { slugify } from '../../../utils/slugify.js';
 import { generateOpaqueSessionSlug } from '../../../core/sessions/lifecycle.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
@@ -189,6 +193,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   const feature = runtime.feature;
   const projectDir = opts.prepared.session.ref.projectDir;
 
+  initLogger(projectDir);
   ensureSplitbriefDir(projectDir);
   ensureSessionDir(projectDir, sessionId);
 
@@ -226,6 +231,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
       }),
     ),
   );
+  unsubs.push(
+    bus.subscribe(createLoggerSink({ persistTranscript: config.workflow.persistTranscript })),
+  );
   if (opts.headless)
     unsubs.push(
       bus.subscribe(createStdoutJsonSink({ persistTranscript: config.workflow.persistTranscript })),
@@ -251,6 +259,13 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   }
 
   let savedState = opts.savedState;
+  if (savedState !== undefined) {
+    const recovered = recoverInterruptedNativeDeliveries(savedState);
+    if (recovered !== savedState) {
+      saveState({ projectDir, sessionId }, recovered);
+      savedState = recovered;
+    }
+  }
   if (savedState) setTrackedState(savedState);
   const hasPendingRecovery = savedState?.pendingRecovery !== undefined;
 

@@ -11,6 +11,7 @@ import { runPlannerCallInContinuationLoop } from './call-loop.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult } from './types.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
 import { planningError } from './errors.js';
+import { withRewindFeedback } from './rewind-feedback.js';
 
 export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -23,7 +24,7 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
     state = drainedState;
     feature = prefix + feature;
   }
-  feature = featureWithRewindFeedback(feature, opts.rewindPending);
+  feature = withRewindFeedback(feature, opts.rewindPending);
 
   const collectedQuestions: ClarificationQuestion[] = [];
   let planResult: PlanResult;
@@ -48,7 +49,14 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
     return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
   }
 
-  persistPhases(projectDir, sessionId, planResult.phases, metadata);
+  persistPhases({
+    projectDir,
+    sessionId,
+    phases: planResult.phases,
+    metadata,
+    bus: wctx.bus,
+    phase: state.phase,
+  });
   state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
 
   if (collectedQuestions.length > 0 && wctx.callbacks.onQuestionAsked) {
@@ -113,13 +121,5 @@ export async function runQuickPlanning(opts: PlanningPhaseOptions): Promise<Plan
   publishPlannerStatus(wctx.bus, state, 'running');
   wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
-  return { state, tasks: planResult.tasks, cancelled: false };
-}
-
-function featureWithRewindFeedback(
-  feature: string,
-  rewindPending: PlanningPhaseOptions['rewindPending'],
-): string {
-  if (rewindPending?.comment === undefined) return feature;
-  return `${feature}\n\n<rewind-feedback target="${rewindPending.target}">\n${rewindPending.comment}\n</rewind-feedback>`;
+  return { state, tasks: planResult.tasks, cancelled: false, failed: false };
 }

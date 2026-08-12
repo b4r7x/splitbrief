@@ -21,6 +21,10 @@ export type MarkdownBlock =
 
 export interface MarkdownFrontmatterBlock {
   kind: 'frontmatter';
+  // 'document' is the delimited header a generator stamps on top of a file — generated_by,
+  // created_at and the like. It says nothing a reader wants and never renders. 'task' is Task
+  // Brief metadata, and undelimited YAML in a planner stream, both of which are content.
+  role: 'document' | 'task';
   lines: readonly string[];
 }
 
@@ -46,6 +50,11 @@ export interface MarkdownListBlock {
   items: readonly MarkdownListItem[];
 }
 
+export interface MarkdownListItemContinuation {
+  text: string;
+  inlines: readonly MarkdownInlineToken[];
+}
+
 export type MarkdownListItem =
   | {
       kind: 'unordered';
@@ -53,6 +62,7 @@ export type MarkdownListItem =
       marker: '-' | '*' | '+';
       text: string;
       inlines: readonly MarkdownInlineToken[];
+      continuation?: MarkdownListItemContinuation;
     }
   | {
       kind: 'ordered';
@@ -61,6 +71,7 @@ export type MarkdownListItem =
       start: number;
       text: string;
       inlines: readonly MarkdownInlineToken[];
+      continuation?: MarkdownListItemContinuation;
     };
 
 export interface MarkdownBlockquoteBlock {
@@ -111,6 +122,8 @@ export type MarkdownLayoutSegmentKind =
   | 'listMarker'
   | 'blockquoteMarker'
   | 'codeGutter'
+  | 'codeLanguage' // the fence info string, set apart from the body it labels
+  | 'codeText' // fence body the highlighter left unscoped; 'code' is an inline span
   | 'tableBorder'
   | 'tableHeader';
 
@@ -137,4 +150,24 @@ export interface MarkdownLayout {
   width: number;
   rows: readonly MarkdownLayoutRow[];
   height: number;
+}
+
+// The characters the layout draws with. src/utils is the leaf of the import graph and cannot
+// reach the glyph table in src/lib, so the resolved tier arrives from the caller instead — which
+// also lets either tier be laid out in a test without touching global state.
+export interface MarkdownLayoutGlyphs {
+  codeRail: string;
+  wrapContinuation: string;
+  divider: string;
+  listBullet: string;
+  listBulletNested: string;
+  tableColumn: string;
+}
+
+// What a preceding stretch of layout left behind, so a later block can decide its own
+// leading air. The chunked transcript path carries this across chunk boundaries to reach
+// the same rhythm as the review path, which lays the document out in one call.
+export interface MarkdownLayoutTail {
+  kind: MarkdownBlock['kind'];
+  endsWithBlankLine: boolean;
 }

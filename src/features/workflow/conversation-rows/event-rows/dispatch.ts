@@ -18,6 +18,7 @@ import {
   rowsBlock,
   wrappedTextBlock,
 } from '../row-block-compose.js';
+import { artifactWrittenRowBlock } from './artifact-card.js';
 import { taskStartedRowBlock } from '../task-started-row-block.js';
 import { isRunnerCallTranscriptRowSuppressed } from '../runner-call-classification.js';
 import {
@@ -223,6 +224,8 @@ export function eventRowBlock(options: {
       return baselineValidationRowBlock(keyPrefix, event, ctx.width);
     case 'escalate':
       return escalateRowBlock(keyPrefix, event, ctx.width);
+    case 'artifact_written':
+      return artifactWrittenRowBlock(keyPrefix, event, ctx.width);
     case 'git_commit':
       return borderedCardRowsBlock({
         keyPrefix,

@@ -26,6 +26,7 @@ import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
 import { requireCompletedCall } from './require-completed-call.js';
 import { formatRepoMapBlock, prepareInvokeArgs } from './single-phase.js';
 import { createPlannerCallContext } from './call-context.js';
+import { admitPlanningArtifact } from '../spec/planning-artifact-admission.js';
 
 type MultiPhaseConfig = {
   invokePlan: (opts: {
@@ -141,6 +142,9 @@ export async function runMultiPhasePlanning(
       ? config.readPhaseOutput(filename, result.text, projectDir, callbacks.sessionId)
       : result.text;
     const rawOutput = artifactText !== result.text ? result.text : undefined;
+    if (phase === 'specifying' || phase === 'planning') {
+      admitPlanningArtifact({ phase, filename, text: artifactText });
+    }
     phases.push({ text: artifactText, filename, rawOutput });
     return artifactText;
   }

@@ -9,13 +9,19 @@ import type {
   ConversationRowsProjection,
 } from './types.js';
 
+interface StreamingProjectionKey {
+  active: boolean;
+  taskId: StreamingOutputState['taskId'];
+  lines: string[];
+}
+
 interface ProjectionCacheEntry {
   sections: Section<EngineEvent>[];
   expandedDiffs: Set<string>;
   expandedActivityBatches: Set<string>;
   cols: number;
   viewportHeight: number;
-  streaming: StreamingOutputState;
+  streaming: StreamingProjectionKey;
   projection: ConversationRowsProjection;
 }
 
@@ -54,10 +60,16 @@ export function getConversationRowsProjection(
     expandedActivityBatches,
     cols,
     viewportHeight,
-    streaming,
+    streaming: streamingProjectionKey(streaming),
     projection,
   };
   return projection;
+}
+
+// Copied by value: useStores hands render callers a Proxy whose reads forward to the live store, so
+// retaining the object itself would compare live state against live state and hit forever.
+function streamingProjectionKey(streaming: StreamingOutputState): StreamingProjectionKey {
+  return { active: streaming.active, taskId: streaming.taskId, lines: streaming.lines };
 }
 
 export function getConversationRowsWindowProjection(
@@ -85,11 +97,17 @@ export function getConversationRowsWindowProjection(
   };
 }
 
-// A hit requires all six inputs to be reference/primitive-equal. This is sound because upstream
+// A hit requires the inputs to be reference/primitive-equal. This is sound because upstream
 // state never mutates in place: mergeEvent re-allocates the changed event and the events array
 // (src/stores/workflow/events.ts), computeSections is identity-cached on that array
 // (src/stores/workflow/actions/sections.ts), and the streaming/scroll stores replace their state objects
 // on every change.
+//
+// Streaming is compared field-by-field rather than by object identity: useStores hands components a
+// fresh Proxy per render (src/stores/use-stores.ts), so a whole-object check never matched from the
+// render path and the transcript was rebuilt on every keypress. The projection reads only these three
+// fields (event-rows/execution.ts) and the store replaces `lines` on every change, so comparing them
+// is equivalent to comparing the state itself.
 function isProjectionCacheHit(entry: ProjectionCacheEntry, input: ConversationRowInputs): boolean {
   return (
     entry.sections === input.sections &&
@@ -97,6 +115,8 @@ function isProjectionCacheHit(entry: ProjectionCacheEntry, input: ConversationRo
     entry.expandedActivityBatches === input.expandedActivityBatches &&
     entry.cols === input.cols &&
     entry.viewportHeight === input.viewportHeight &&
-    entry.streaming === input.streaming
+    entry.streaming.active === input.streaming.active &&
+    entry.streaming.taskId === input.streaming.taskId &&
+    entry.streaming.lines === input.streaming.lines
   );
 }

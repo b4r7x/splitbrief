@@ -144,7 +144,6 @@ export function useWorkflowScreen({
       : resolveInputHint({
           inputHint: inputMode.hint,
           inputMode: inputMode.mode,
-          phase,
         });
   const feedbackHint = attachedNormal
     ? resolveAttachFeedbackHint(ipcStatus)
@@ -160,7 +159,7 @@ export function useWorkflowScreen({
   return {
     isAttachedClient,
     hasOverlay,
-    phase,
+    phase: phase,
     cancelled,
     inputMode,
     reviewFilePath,

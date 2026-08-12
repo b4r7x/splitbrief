@@ -9,6 +9,7 @@ import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { ROW_ZONE_Z_SCREEN } from '../../../components/pickers/row-zone.js';
 import { useFilterableList } from '../../../hooks/use-filterable-list.js';
 import { filterSession } from '../../../core/sessions/search.js';
+import { borderStyleFor } from '../../../lib/glyphs.js';
 import { copyToClipboard } from '../../../lib/clipboard/clipboard.js';
 import { isUnmodifiedYInput } from '../../../lib/terminal/text-entry.js';
 
@@ -53,7 +54,12 @@ export function RecentSessionsList({
 
   return (
     <RecentSessionsShell>
-      <Box borderStyle="round" borderColor={theme.border} paddingX={1} marginBottom={1}>
+      <Box
+        borderStyle={borderStyleFor('round')}
+        borderColor={theme.border}
+        paddingX={1}
+        marginBottom={1}
+      >
         <FilterInput filter={filter} />
       </Box>
       <Box flexDirection="column">

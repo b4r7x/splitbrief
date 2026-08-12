@@ -5,7 +5,10 @@ import { abortStore, type ArmedKind } from '../../../stores/workflow/abort.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { WORKFLOW_CONTENT_PADDING_X } from '../layout/rect.js';
-import { hintStateSeverity } from '../input-hints.js';
+import { controlsStore } from '../../../stores/ui/controls.js';
+import { reviewKeysStore } from '../../../stores/ui/review-keys.js';
+import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { hintStateSeverity, resolveReviewKeyLegend } from '../input-hints.js';
 
 const ARMED_MESSAGES: Record<Exclude<ArmedKind, 'none'>, string> = {
   exit: 'ctrl+c again to exit',
@@ -26,14 +29,19 @@ function summarizeDisplayLine(text: string): string {
 export function FeedbackRow({ inputHint = '' }: { inputHint?: string | undefined }) {
   const [{ message, isError }] = useStores(feedbackStore);
   const armed = abortStore.use((s) => s.armed);
+  const inReviewMode = controlsStore.use((s) => s.inputMode === 'review');
+  const reviewKeysArmed = reviewKeysStore.use((s) => s.armed);
+  const cols = terminalSizeStore.use((s) => s.cols) - WORKFLOW_CONTENT_PADDING_X * 2;
   const t = useTheme();
 
-  const safeInputHint = summarizeDisplayLine(inputHint);
+  const safeInputHint = summarizeDisplayLine(
+    resolveReviewKeyLegend({ inputHint, inReviewMode, reviewKeysArmed, width: cols }),
+  );
   const safeMessage = message === null ? null : summarizeDisplayLine(message);
-  const feedbackMessage =
-    safeMessage && safeInputHint ? `${safeMessage} ${safeInputHint}` : safeMessage;
-  const displayMessage =
-    armed !== 'none' ? ARMED_MESSAGES[armed] : (feedbackMessage ?? safeInputHint);
+  // Feedback owns the row while it is live and the key legend returns when it clears;
+  // appending the legend produced run-on lines like
+  // "Failed to open editor: … y approve · c comment · q reject · e edit".
+  const displayMessage = armed !== 'none' ? ARMED_MESSAGES[armed] : safeMessage || safeInputHint;
   const showArmed = armed !== 'none';
   const severity = showArmed
     ? null

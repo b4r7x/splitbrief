@@ -56,6 +56,9 @@ function captureStdout(): string[] {
 
 beforeEach(() => {
   originalWrite = process.stdout.write.bind(process.stdout);
+  // Every suspend/resume writes real cursor sequences; swallow them by default so tests
+  // that never call captureStdout() don't leak ANSI codes into the test terminal.
+  process.stdout.write = (() => true) as typeof process.stdout.write;
   setActiveTerminalHandover(undefined);
 });
 
@@ -82,11 +85,33 @@ describe('terminal handover for $EDITOR', () => {
     expect(suspendWrites).toContain(terminalSequences.exitAltBuffer);
     expect(suspendWrites).toContain(terminalSequences.disableMouseTracking);
     expect(suspendWrites).not.toContain(terminalSequences.enterAltBuffer);
+    expect(suspendWrites.indexOf(terminalSequences.showCursor)).toBeGreaterThan(
+      suspendWrites.indexOf(terminalSequences.exitAltBuffer),
+    );
 
     expect(resumeWrites).toContain(terminalSequences.enterAltBuffer);
     expect(resumeWrites).toContain(terminalSequences.enableMouseTracking);
+    expect(resumeWrites).not.toContain(terminalSequences.showCursor);
+    expect(resumeWrites.indexOf(terminalSequences.hideCursor)).toBeGreaterThan(
+      resumeWrites.indexOf(terminalSequences.enterAltBuffer),
+    );
 
     expect(calls).toEqual(['pause', 'resume']);
+  });
+
+  it('re-hides the hardware cursor on resume for a non-fullscreen handover', () => {
+    const { stdin } = makeFakeStdin();
+    const config: TerminalHandoverConfig = { fullscreen: false, mouse: false, sourceStdin: stdin };
+    const written = captureStdout();
+
+    suspendTerminalForEditor(config);
+    const afterSuspend = written.length;
+    resumeTerminalAfterEditor(config);
+
+    expect(written.slice(0, afterSuspend)).toContain(terminalSequences.showCursor);
+    expect(written.slice(afterSuspend)).toContain(terminalSequences.hideCursor);
+    expect(written).not.toContain(terminalSequences.enterAltBuffer);
+    expect(written).not.toContain(terminalSequences.exitAltBuffer);
   });
 
   it('resumes hover-enabled handoffs with any-motion mouse tracking', () => {
@@ -209,6 +234,7 @@ describe('terminal handover for $EDITOR', () => {
     expect(written).not.toContain(terminalSequences.exitAltBuffer);
     expect(written).not.toContain(terminalSequences.enterAltBuffer);
     expect(written).not.toContain(terminalSequences.disableMouseTracking);
+    expect(written).toEqual([terminalSequences.showCursor, terminalSequences.hideCursor]);
     expect(calls).toEqual(['pause', 'resume']);
   });
 
@@ -230,7 +256,9 @@ describe('terminal handover for $EDITOR', () => {
       suspendTerminalForEditor();
       resumeTerminalAfterEditor();
 
-      expect(written).toHaveLength(0);
+      // Even without a handover config the cursor round-trips: shown for the editor,
+      // re-hidden the moment the TUI takes the screen back.
+      expect(written).toEqual([terminalSequences.showCursor, terminalSequences.hideCursor]);
       expect(calls).toEqual(['pause', 'resume']);
     } finally {
       process.stdin.pause = pause;

@@ -4,6 +4,7 @@ import { warnError } from '../../lib/warn.js';
 
 const MARKER_PREFIX = '<!-- Q:';
 const MARKER_SUFFIX = ' -->';
+export const MAX_PENDING_MARKER_BYTES = 16 * 1024;
 
 function narrowQuestion(raw: unknown): ClarificationQuestion | null {
   const result = ClarificationQuestionSchema.safeParse(raw);
@@ -102,30 +103,147 @@ function scanQuestions(text: string): ScanResult {
   return { questions, consumed };
 }
 
+function findPendingMarkerStart(text: string): number {
+  let from = text.length;
+  while (from > 0) {
+    const candidate = text.lastIndexOf(MARKER_PREFIX, from - 1);
+    if (candidate === -1) break;
+    const after = candidate + MARKER_PREFIX.length;
+    if (after >= text.length || text[after] === '{') return candidate;
+    from = candidate;
+  }
+
+  for (let len = MARKER_PREFIX.length - 1; len >= 1; len--) {
+    if (text.endsWith(MARKER_PREFIX.slice(0, len))) return text.length - len;
+  }
+  return text.length;
+}
+
 export function extractQuestionsFromStream(text: string): ClarificationQuestion[] {
   return scanQuestions(text).questions;
 }
 
 export function createQuestionAccumulator() {
-  let buffer = '';
+  type PendingMarker = {
+    json: string[];
+    depth: number;
+    inString: boolean;
+    escaped: boolean;
+    suffixIndex: number;
+  };
+
+  let prefixMatch = 0;
+  let pending: PendingMarker | null = null;
+  let pendingBytes = 0;
   const seenIds = new Set<string>();
   const allQuestions: ClarificationQuestion[] = [];
 
+  const resetPending = (): void => {
+    pending = null;
+    pendingBytes = 0;
+  };
+
+  const scanNormalCharacter = (character: string): void => {
+    if (character === MARKER_PREFIX[prefixMatch]) {
+      prefixMatch += 1;
+    } else {
+      prefixMatch = character === MARKER_PREFIX[0] ? 1 : 0;
+    }
+    if (prefixMatch === MARKER_PREFIX.length) {
+      pending = {
+        json: [],
+        depth: 0,
+        inString: false,
+        escaped: false,
+        suffixIndex: 0,
+      };
+      pendingBytes = MARKER_PREFIX.length;
+      prefixMatch = 0;
+    }
+  };
+
+  const scanCharacter = (character: string, fresh: ClarificationQuestion[]): void => {
+    if (pending === null) {
+      scanNormalCharacter(character);
+      return;
+    }
+
+    if (pending.json.length === 0) {
+      if (character !== '{') {
+        resetPending();
+        scanNormalCharacter(character);
+        return;
+      }
+      pending.json.push(character);
+      pending.depth = 1;
+      pendingBytes += character.length;
+      return;
+    }
+
+    if (pending.suffixIndex < MARKER_SUFFIX.length && pending.depth === 0) {
+      if (pendingBytes + character.length > MAX_PENDING_MARKER_BYTES) {
+        resetPending();
+        scanNormalCharacter(character);
+        return;
+      }
+      if (character !== MARKER_SUFFIX[pending.suffixIndex]) {
+        resetPending();
+        scanNormalCharacter(character);
+        return;
+      }
+      pending.suffixIndex += 1;
+      pendingBytes += character.length;
+      if (pending.suffixIndex !== MARKER_SUFFIX.length) return;
+
+      try {
+        const parsed = JSON.parse(pending.json.join(''));
+        const narrowed = narrowQuestion(parsed);
+        if (narrowed && !seenIds.has(narrowed.id)) {
+          seenIds.add(narrowed.id);
+          fresh.push(narrowed);
+          allQuestions.push(narrowed);
+        }
+      } catch (err) {
+        warnError('question: malformed marker', err);
+      }
+      resetPending();
+      return;
+    }
+
+    if (pendingBytes + character.length > MAX_PENDING_MARKER_BYTES) {
+      resetPending();
+      scanNormalCharacter(character);
+      return;
+    }
+
+    pending.json.push(character);
+    pendingBytes += character.length;
+    if (pending.escaped) {
+      pending.escaped = false;
+      return;
+    }
+    if (character === '\\' && pending.inString) {
+      pending.escaped = true;
+      return;
+    }
+    if (character === '"') {
+      pending.inString = !pending.inString;
+      return;
+    }
+    if (pending.inString) return;
+    if (character === '{') pending.depth += 1;
+    if (character === '}') pending.depth -= 1;
+  };
+
   return {
     addChunk(chunk: string): ClarificationQuestion[] {
-      buffer += chunk;
-      const { questions, consumed } = scanQuestions(buffer);
-      const newOnes = questions.filter((q) => !seenIds.has(q.id));
-      for (const q of newOnes) {
-        seenIds.add(q.id);
-        allQuestions.push(q);
-      }
-
-      const tail = buffer.substring(consumed);
-      const pendingPrefix = tail.lastIndexOf(MARKER_PREFIX);
-      buffer = pendingPrefix === -1 ? '' : tail.substring(pendingPrefix);
+      const newOnes: ClarificationQuestion[] = [];
+      for (const character of chunk) scanCharacter(character, newOnes);
 
       return newOnes;
+    },
+    getPendingBytes(): number {
+      return pending === null ? prefixMatch : pendingBytes;
     },
     getAll(): ClarificationQuestion[] {
       return [...allQuestions];
@@ -135,7 +253,7 @@ export function createQuestionAccumulator() {
 
 // Cap for text held back awaiting a marker that never completes; on overflow it is released
 // verbatim — the markdown html-comment hiding keeps it invisible (layered defense).
-const HOLD_CAP = 16 * 1024;
+const HOLD_CAP = MAX_PENDING_MARKER_BYTES;
 
 export function createQuestionMarkerStripper() {
   let held = '';
@@ -204,29 +322,9 @@ export function createQuestionMarkerStripper() {
       }
 
       const tail = buffer.slice(cursor);
-      // Hold only viable candidates — nothing after the prefix yet, or '{' next — mirroring
-      // scanMarkerSpans' dead-prefix rule, so prose mentioning '<!-- Q:' is released immediately.
-      let holdStart = -1;
-      let from = tail.length;
-      while (from > 0) {
-        const candidate = tail.lastIndexOf(MARKER_PREFIX, from - 1);
-        if (candidate === -1) break;
-        const after = candidate + MARKER_PREFIX.length;
-        if (after >= tail.length || tail[after] === '{') {
-          holdStart = candidate;
-          break;
-        }
-        from = candidate;
-      }
-      if (holdStart === -1) {
-        holdStart = tail.length;
-        for (let len = MARKER_PREFIX.length - 1; len >= 1; len--) {
-          if (tail.endsWith(MARKER_PREFIX.slice(0, len))) {
-            holdStart = tail.length - len;
-            break;
-          }
-        }
-      }
+      // Hold only viable candidates and partial prefixes, so prose mentioning '<!-- Q:' is
+      // released immediately.
+      const holdStart = findPendingMarkerStart(tail);
       out += emit(tail.slice(0, holdStart));
       held = tail.slice(holdStart);
       if (held.length > HOLD_CAP) {

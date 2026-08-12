@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SPEC_FILE, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
+import { saveState } from '../../../src/core/state/persistence.js';
 import type { WorkflowMode } from '../../../src/core/schemas/enums.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
@@ -236,11 +237,13 @@ function modeSuite(mode: WorkflowMode): void {
     if (mode === 'standard' || mode === 'speckit') {
       expect(reviewPrompts.some((prompt) => prompt.includes(ANSWER))).toBe(true);
     } else {
+      const secondState = transition(first.result.state, { type: 'CANCEL' });
+      saveState({ projectDir: first.projectDir, sessionId: first.sessionId }, secondState);
       const second = await runMode({
         mode,
         planner,
         project: { projectDir: first.projectDir, sessionId: first.sessionId },
-        state: { ...first.result.state, phase: 'idle' },
+        state: secondState,
         feature: 'follow-up tweak',
       });
       expect(second.result.cancelled).toBe(false);

@@ -3,7 +3,6 @@ import { join } from 'node:path';
 import type { WorkflowState } from '../schemas/workflow.js';
 import { WorkflowStateSchema } from '../schemas/workflow.js';
 import { CURRENT_STATE_VERSION } from './machine.js';
-import { normalizeLoadedWorkflowState } from '../queue-state.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { SPLITBRIEF_DIR, SESSIONS_DIR, STATE_FILE, sessionDir } from '../paths.js';
 import { narrowRecord } from '../../utils/type-guards.js';
@@ -47,7 +46,7 @@ export function saveState(ref: SessionRef, state: WorkflowState): void {
     cacheState(filePath, {
       mtimeMs: stat.mtimeMs,
       size: stat.size,
-      state: normalizeLoadedWorkflowState(parsed.data),
+      state: parsed.data,
     });
   } catch {
     stateCache.delete(filePath);
@@ -98,7 +97,7 @@ export function loadState(ref: SessionRef): WorkflowState | null {
     warnStderr('Warning: state file failed schema validation, ignoring');
     return null;
   }
-  const state = normalizeLoadedWorkflowState(result.data);
+  const state = result.data;
   cacheState(filePath, { mtimeMs: stat.mtimeMs, size: stat.size, state });
   return state;
 }

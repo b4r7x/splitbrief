@@ -8,6 +8,7 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { TRANSCRIPT_OMITTED_MESSAGE } from '../../../core/transcript-policy.js';
 import { error } from '../../../utils/error.js';
+import { addUsageAndSave } from '../state-ops.js';
 import { handlePlanningFailure } from './failure.js';
 
 let dirs: string[] = [];
@@ -84,6 +85,34 @@ describe('handlePlanningFailure', () => {
       comment: TRANSCRIPT_OMITTED_MESSAGE,
     });
     expect(loadState({ projectDir, sessionId })?.phase).toBe('planning');
+  });
+
+  it('rebases cancellation after planner usage booking so the paid usage remains persisted', () => {
+    const { projectDir, sessionId } = setupProject();
+    const staleState = { ...createInitialState('feature'), phase: 'planning' as const };
+    saveState({ projectDir, sessionId }, staleState);
+    const { bus } = makeBusRecorder();
+
+    addUsageAndSave({ projectDir, sessionId, bus }, staleState, 'planner', {
+      inputTokens: 125,
+      outputTokens: 40,
+    });
+
+    const result = handlePlanningFailure({
+      err: error('planning-parse-failed', 'planner output could not be parsed'),
+      projectDir,
+      sessionId,
+      state: staleState,
+      wctx: makeWctx({ projectDir, sessionId }),
+    });
+
+    expect(result).toMatchObject({ cancelled: true, failed: true });
+    expect(result.state.phase).toBe('idle');
+    expect(result.state.tokenUsage).toMatchObject({ plannerInput: 125, plannerOutput: 40 });
+    expect(loadState({ projectDir, sessionId })?.tokenUsage).toMatchObject({
+      plannerInput: 125,
+      plannerOutput: 40,
+    });
   });
 
   it('surfaces the planner tool diagnosis and the login command for an auth failure', () => {

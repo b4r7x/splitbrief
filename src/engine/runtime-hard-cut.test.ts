@@ -185,7 +185,13 @@ it('runtime hard-cut matrix has exactly 8 labeled cases', async () => {
           'task_started',
         ]);
         expect(tasksStore.get().tasks).toEqual([
-          { id: 'T001', title: 'Canonical runtime', status: 'in_progress' },
+          {
+            id: 'T001',
+            title: 'Canonical runtime',
+            status: 'in_progress',
+            file: 'src/runtime.ts',
+            action: 'modify',
+          },
         ]);
         expect(lifecycleStore.get().phase).toBe('implementing');
       },

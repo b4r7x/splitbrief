@@ -18,8 +18,9 @@ import { createSessionExpiredHandler } from '../resume-context.js';
 import { createQuestionMarkerStripper } from '../../parsers/question.js';
 import { firstBriefError } from '../../spec/brief-quality.js';
 import { planningError } from './errors.js';
-import { MAX_CLARIFICATION_QUESTIONS, mergePlannerAttempts } from './call-loop.js';
+import { createClarificationQuestionCollector, mergePlannerAttempts } from './call-loop.js';
 import { zeroTaskRetryPrompt } from '../../spec/prompts/zero-task-retry.js';
+import { withRewindFeedback } from './rewind-feedback.js';
 
 export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<PlanningPhaseResult> {
   const { wctx, planner } = opts;
@@ -32,7 +33,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     state = drainedState;
     feature = prefix + feature;
   }
-  feature = featureWithRewindFeedback(feature, opts.rewindPending);
+  feature = withRewindFeedback(feature, opts.rewindPending);
 
   const textHandler = createBusTextHandler(
     { bus: wctx.bus, phase: state.phase },
@@ -50,6 +51,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   const attachments =
     opts.attachments && opts.attachments.length > 0 ? opts.attachments : undefined;
   const collected: ClarificationQuestion[] = [];
+  const collectQuestions = createClarificationQuestionCollector(collected);
   const stripper = createQuestionMarkerStripper();
   const plannerCallbacks: PlannerCallbacks = {
     onOutput: (text) => {
@@ -74,11 +76,7 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     sessionId,
     persistTranscript: config.workflow.persistTranscript,
     onCallEvent: (event) => publishRunnerCallEvent({ bus: wctx.bus, phase: state.phase }, event),
-    onQuestion: (questions) => {
-      for (const q of questions) {
-        if (collected.length < MAX_CLARIFICATION_QUESTIONS) collected.push(q);
-      }
-    },
+    onQuestion: collectQuestions,
     ...(wctx.signal !== undefined && { signal: wctx.signal }),
     ...(priorMessages ? { priorMessages } : {}),
     ...(attachments ? { attachments } : {}),
@@ -128,7 +126,14 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
     return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });
   }
 
-  persistPhases(projectDir, sessionId, planResult.phases, metadata);
+  persistPhases({
+    projectDir,
+    sessionId,
+    phases: planResult.phases,
+    metadata,
+    bus: wctx.bus,
+    phase: state.phase,
+  });
   state = addUsageAndSave(wctx, state, 'planner', planResult.usage);
 
   if (collected.length > 0 && wctx.callbacks.onQuestionAsked) {
@@ -200,13 +205,5 @@ export async function runInstantPlanning(opts: PlanningPhaseOptions): Promise<Pl
   publishPlannerStatus(wctx.bus, state, 'running');
   wctx.bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 
-  return { state, tasks: planResult.tasks, cancelled: false };
-}
-
-function featureWithRewindFeedback(
-  feature: string,
-  rewindPending: PlanningPhaseOptions['rewindPending'],
-): string {
-  if (rewindPending?.comment === undefined) return feature;
-  return `${feature}\n\n<rewind-feedback target="${rewindPending.target}">\n${rewindPending.comment}\n</rewind-feedback>`;
+  return { state, tasks: planResult.tasks, cancelled: false, failed: false };
 }

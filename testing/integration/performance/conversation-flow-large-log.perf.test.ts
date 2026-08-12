@@ -15,10 +15,12 @@ import {
   markdownConversationRowsProjection,
   resetMarkdownConversationRowsCache,
 } from '../../../src/features/workflow/conversation-rows/markdown-rows.js';
+import { markdownLayoutGlyphs } from '../../../src/lib/glyphs.js';
 import { parseMarkdownBlocks } from '../../../src/utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../../../src/utils/markdown/layout.js';
 import type { MarkdownLayout } from '../../../src/utils/markdown/types.js';
 
+const GLYPHS = markdownLayoutGlyphs();
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
 function plannerText(index: number): Extract<EngineEvent, { type: 'planner_text' }> {
@@ -316,14 +318,15 @@ describe.skipIf(process.env.SPLITBRIEF_PERF !== '1')('conversation row projectio
 
     forceGc();
     const monoAt = performance.now();
-    const mono = layoutMarkdown(monoDocument, { width: 96 });
+    const mono = layoutMarkdown(monoDocument, { width: 96, glyphs: GLYPHS });
     const monoMs = performance.now() - monoAt;
     const highlightedAt = performance.now();
-    const highlighted = layoutMarkdown(highlightedDocument, { width: 96 });
+    const highlighted = layoutMarkdown(highlightedDocument, { width: 96, glyphs: GLYPHS });
     const highlightedMs = performance.now() - highlightedAt;
 
     const oversized = layoutMarkdown(parseMarkdownBlocks(fencedCode('ts', fenceLines(2_001))), {
       width: 96,
+      glyphs: GLYPHS,
     });
 
     expect(highlightScopes(highlighted).size).toBeGreaterThanOrEqual(2);

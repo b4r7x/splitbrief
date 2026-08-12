@@ -25,6 +25,7 @@ import {
   type SessionSelectDeps,
   sessionSelectStore,
 } from '../../stores/navigation/session-select.js';
+import { borderStyleFor } from '../../lib/glyphs.js';
 import { getHomeLayout } from '../../features/home/layout.js';
 import { getLogo } from '../../features/home/logo.js';
 import { RECENT_SESSIONS_HINT } from '../../features/home/components/recent-sessions-list.js';
@@ -90,7 +91,7 @@ function DiscoveryPanel() {
 
   return (
     <Box
-      borderStyle="round"
+      borderStyle={borderStyleFor('round')}
       borderColor={stalled ? (failedOutcome ? theme.error : theme.warning) : theme.accent}
       paddingX={2}
       flexDirection="column"

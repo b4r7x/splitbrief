@@ -11,8 +11,9 @@ import { readPersistedTasks } from './io.js';
 export async function resumeBriefsApproval(opts: {
   wctx: PlannerCallbacksContext & { planner: Planner };
   state: WorkflowState;
-}): Promise<{ state: WorkflowState; cancelled: boolean }> {
-  const { wctx, state } = opts;
+  qualityValidatedTasks?: Task[] | undefined;
+}): Promise<{ state: WorkflowState; cancelled: boolean; failed: boolean }> {
+  const { wctx, state, qualityValidatedTasks } = opts;
   const { projectDir, sessionId, bus, planner } = wctx;
 
   const tasksFilePath = join(sessionDir(projectDir, sessionId), TASKS_FILE);
@@ -26,11 +27,12 @@ export async function resumeBriefsApproval(opts: {
       message: `Cannot resume briefs review: ${TASKS_FILE} is missing from the session directory and the saved state carries no tasks`,
       safety: { category: 'planning', code: 'briefs_not_restorable', transcriptSafe: true },
     });
-    return { state, cancelled: true };
+    return { state, cancelled: true, failed: false };
   }
 
   const briefsLoop = await runBriefsApprovalLoop({
     tasks,
+    ...(qualityValidatedTasks !== undefined && { qualityValidatedTasks }),
     planner,
     projectDir,
     sessionId,
@@ -47,9 +49,10 @@ export async function resumeBriefsApproval(opts: {
     }),
   });
 
+  if (briefsLoop.failed) return { state: briefsLoop.state, cancelled: true, failed: true };
   if (briefsLoop.rejected || briefsLoop.aborted)
-    return { state: briefsLoop.state, cancelled: true };
+    return { state: briefsLoop.state, cancelled: true, failed: false };
 
   publishPlanApproved(briefsLoop.state, bus);
-  return { state: briefsLoop.state, cancelled: false };
+  return { state: briefsLoop.state, cancelled: false, failed: false };
 }

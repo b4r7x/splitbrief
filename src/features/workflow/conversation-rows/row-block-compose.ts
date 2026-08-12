@@ -4,13 +4,9 @@ import type {
   ConversationRowKind,
   ConversationRowTone,
 } from './types.js';
-import { cardRowsWindow } from './row-format/label-card.js';
+import { cardRowsLayout, cardRowsWindow } from './row-format/label-card.js';
 import { row, type RowInput } from './row-format/rows.js';
-import {
-  countWrappedRowTexts,
-  sanitizeRowDisplayText,
-  wrappedRowTexts,
-} from './row-format/text.js';
+import { sanitizeRowDisplayText, wrappedRowTexts } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
 
 export function rowsBlock(
@@ -64,12 +60,12 @@ export function wrappedTextBlock(input: {
   kind?: ConversationRowKind;
 }): ConversationRowBlock | null {
   const keyPrefix = input.keyPrefix;
-  const text = sanitizeRowDisplayText(input.text);
   const wrapWidth = wrapWidthFor(input.kind ?? 'message', input.width);
   const tone = input.tone;
   const bold = input.bold;
   const kind = input.kind;
-  const rowCount = countEventWrappedRows(text, wrapWidth);
+  const lines = eventWrappedLines(sanitizeRowDisplayText(input.text), wrapWidth);
+  const rowCount = lines.length;
   if (rowCount === 0) return null;
 
   return {
@@ -82,8 +78,7 @@ export function wrappedTextBlock(input: {
     createRows: (windowStart, windowEnd) =>
       eventWrappedRowsWindow({
         keyPrefix,
-        text,
-        width: wrapWidth,
+        lines,
         tone,
         ...(bold !== undefined && { bold }),
         ...(kind !== undefined && { kind }),
@@ -98,9 +93,9 @@ export function promptTextBlock(input: {
   text: string;
   width: number;
 }): ConversationRowBlock | null {
-  const text = sanitizeRowDisplayText(input.text);
   const wrapWidth = wrapWidthFor('prompt', input.width);
-  const rowCount = countEventWrappedRows(text, wrapWidth);
+  const lines = eventWrappedLines(sanitizeRowDisplayText(input.text), wrapWidth);
+  const rowCount = lines.length;
   if (rowCount === 0) return null;
   return {
     key: input.keyPrefix,
@@ -109,8 +104,7 @@ export function promptTextBlock(input: {
     createRows: (windowStart, windowEnd) => {
       const rows = eventWrappedRowsWindow({
         keyPrefix: input.keyPrefix,
-        text,
-        width: wrapWidth,
+        lines,
         tone: 'text',
         bold: true,
         kind: 'message',
@@ -135,15 +129,13 @@ export function cardRowsBlock(input: {
   markerTone?: ConversationRowTone;
 }): ConversationRowBlock | null {
   const keyPrefix = input.keyPrefix;
-  const label = sanitizeRowDisplayText(input.label);
-  const value = input.value === undefined ? undefined : sanitizeRowDisplayText(input.value);
   const wrapWidth = wrapWidthFor(input.kind ?? 'card', input.width);
   const labelTone = input.labelTone;
   const valueTone = input.valueTone;
   const kind = input.kind;
   const markerTone = input.markerTone;
-  const labelText = value ? `${label}  ` : label;
-  const rowCount = countWrappedRowTexts(`${labelText}${value ?? ''}`, wrapWidth);
+  const layout = cardRowsLayout({ label: input.label, value: input.value, width: wrapWidth });
+  const rowCount = layout.wrapped.length;
   if (rowCount === 0) return null;
 
   return {
@@ -156,9 +148,7 @@ export function cardRowsBlock(input: {
     createRows: (windowStart, windowEnd) =>
       cardRowsWindow({
         keyPrefix,
-        label,
-        value,
-        width: wrapWidth,
+        ...layout,
         labelTone,
         ...(valueTone !== undefined && { valueTone }),
         ...(kind !== undefined && { kind }),
@@ -222,46 +212,34 @@ function isActiveKind(kind: ConversationRowKind | undefined): boolean {
   return kind === 'activity' || kind === 'task-header';
 }
 
-function countEventWrappedRows(text: string, width: number): number {
-  return text
-    .split('\n')
-    .reduce((count, rawLine) => count + countWrappedRowTexts(rawLine, width), 0);
+// Wrapping the whole body once, at block construction, is what keeps scrolling flat: the previous
+// shape re-wrapped every line from the top of the event on each createRows call, so a long tool
+// output cost its full length on every scroll step.
+function eventWrappedLines(text: string, width: number): string[] {
+  return text.split('\n').flatMap((rawLine) => wrappedRowTexts(rawLine, width));
 }
 
 function eventWrappedRowsWindow(input: {
   keyPrefix: string;
-  text: string;
-  width: number;
+  lines: readonly string[];
   tone: ConversationRowTone;
   bold?: boolean;
   kind?: ConversationRowKind;
   windowStart: number;
   windowEnd: number;
 }): ConversationRow[] {
-  const rows: ConversationRow[] = [];
   const start = Math.max(0, input.windowStart);
   const end = Math.max(start, input.windowEnd);
   const bold = input.bold ?? false;
   const kind = input.kind ?? 'message';
-  let rowIndex = 0;
 
-  for (const rawLine of input.text.split('\n')) {
-    for (const wrappedLine of wrappedRowTexts(rawLine, input.width)) {
-      if (rowIndex >= start && rowIndex < end) {
-        rows.push(
-          row({
-            key: `${input.keyPrefix}-${rowIndex}`,
-            text: wrappedLine,
-            tone: input.tone,
-            bold,
-            kind,
-          }),
-        );
-      }
-      rowIndex += 1;
-      if (rowIndex >= end) return rows;
-    }
-  }
-
-  return rows;
+  return input.lines.slice(start, end).map((wrappedLine, offset) =>
+    row({
+      key: `${input.keyPrefix}-${start + offset}`,
+      text: wrappedLine,
+      tone: input.tone,
+      bold,
+      kind,
+    }),
+  );
 }

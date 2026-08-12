@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { chdir, cwd } from 'node:process';
-import { resolveEditorArgv } from './editor-command.js';
+import { editorDisplayLabel, resolveEditorArgv } from './editor-command.js';
 
 const missingCommand = () => false;
 
@@ -171,5 +171,16 @@ describe('resolveEditorArgv', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('editorDisplayLabel', () => {
+  it('names the editor by basename', () => {
+    expect(editorDisplayLabel('/usr/local/bin/code')).toBe('code');
+  });
+
+  it('drops Windows launcher extensions but keeps other suffixes', () => {
+    expect(editorDisplayLabel('Cursor.CMD')).toBe('Cursor');
+    expect(editorDisplayLabel('editor-sigint.js')).toBe('editor-sigint.js');
   });
 });

@@ -1,22 +1,42 @@
 import { describe, it, expect } from 'vitest';
 import {
-  BRIEFS_REVIEW_HINT,
   REVIEW_HINT,
+  REVIEW_UNKNOWN_COMMAND_MESSAGE,
   parseReviewCommand,
-  reviewHintForPhase,
   reviewOpeningPromptMessage,
 } from './review-commands.js';
+import { fitKeyLegend } from './input-hints.js';
 
-describe('reviewHintForPhase', () => {
-  it('names the edit-file command only in the briefs phase', () => {
-    expect(reviewHintForPhase('reviewing-briefs')).toBe(BRIEFS_REVIEW_HINT);
-    expect(reviewHintForPhase('reviewing-spec')).toBe(REVIEW_HINT);
-    expect(reviewHintForPhase('reviewing-plan')).toBe(REVIEW_HINT);
+describe('REVIEW_HINT', () => {
+  // Asserted against the literal legend rather than against the constant it names, so the
+  // assertion still fails if the legend changes wording, order, or separator.
+  it('names four keys once each, in one order, for every review phase', () => {
+    expect(REVIEW_HINT).toBe('y approve · c comment · q reject · e edit');
+    expect(reviewOpeningPromptMessage()).toBe(
+      'Review prompt is opening. Once active, use: y approve · c comment · q reject · e edit',
+    );
+  });
+
+  it('fits the review legend on one 78-column row and drops nothing above 40', () => {
+    expect(REVIEW_HINT.length).toBeLessThanOrEqual(78);
+    expect(fitKeyLegend(REVIEW_HINT, 78)).toBe(REVIEW_HINT);
+    // At 40 columns the fourth token does not fit; it is dropped whole rather than ellipsised,
+    // and `e` stays reachable through ctrl+e and the composer placeholder.
+    expect(fitKeyLegend(REVIEW_HINT, 40)).toBe('y approve · c comment · q reject');
+    expect(fitKeyLegend(REVIEW_HINT, 40)).not.toContain('…');
+  });
+
+  it('offers only commands the parser accepts when it rejects one', () => {
+    for (const command of ['approve', 'reject', 'edit']) {
+      expect(REVIEW_UNKNOWN_COMMAND_MESSAGE).toContain(command);
+      expect(parseReviewCommand(command)).not.toBeNull();
+    }
+    expect(parseReviewCommand('comment add more tests')).not.toBeNull();
   });
 
   it('never offers the readiness override, which only the review header can honour', () => {
-    expect(reviewHintForPhase('reviewing-briefs')).not.toContain('approve again overrides');
-    expect(reviewOpeningPromptMessage('reviewing-briefs')).not.toContain('approve again overrides');
+    expect(REVIEW_HINT).not.toContain('approve again overrides');
+    expect(reviewOpeningPromptMessage()).not.toContain('approve again overrides');
   });
 });
 

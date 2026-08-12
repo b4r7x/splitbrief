@@ -8,7 +8,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { ARTIFACT_REVIEW_HINT, CONTINUATION_PROMPT } from './prompt-callbacks.js';
-import { BRIEFS_REVIEW_HINT, REVIEW_HINT } from './review-parser.js';
+import { REVIEW_HINT } from './review-parser.js';
 import {
   formatUserEditConflictPrompt,
   parseUserEditConflictAnswer,
@@ -113,7 +113,7 @@ export function createIpcPromptDispatcher(
       if (filePath === null) return { kind: 'approval_needed', approved: false };
 
       const reviewOwner = reviewStore.setReviewFile(filePath);
-      const hint = request.approvalType === 'briefs' ? BRIEFS_REVIEW_HINT : REVIEW_HINT;
+      const hint = REVIEW_HINT;
       const result = await inputMode.setReviewMode(hint);
       reviewStore.clearReviewIfOwner(reviewOwner);
       if (result.approved) {

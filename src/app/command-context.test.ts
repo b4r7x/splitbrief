@@ -36,6 +36,7 @@ import { feedbackStore } from '../stores/ui/feedback.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { createRuntimeCommands } from '../core/runtime/commands/registry.js';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import {
   buildCommandContext,
   useRuntimeCommands,
@@ -77,22 +78,7 @@ beforeEach(() => {
 function activity(
   overrides: Partial<EngineEventOf<'runner_call_activity'>>,
 ): EngineEventOf<'runner_call_activity'> {
-  return {
-    type: 'runner_call_activity',
-    ts: overrides.ts ?? 0,
-    phase: overrides.phase ?? 'researching',
-    callId: overrides.callId ?? 'call-1',
-    role: overrides.role ?? 'planner',
-    backendKind: overrides.backendKind ?? 'cli',
-    runnerName: overrides.runnerName ?? 'codex',
-    sequence: overrides.sequence ?? 1,
-    activityId: overrides.activityId ?? 'activity-1',
-    stage: overrides.stage ?? 'updated',
-    kind: overrides.kind ?? 'read',
-    label: overrides.label ?? 'reading file.ts',
-    redacted: overrides.redacted ?? false,
-    ...(overrides.target !== undefined && { target: overrides.target }),
-  };
+  return makeRunnerCallActivity('planner-read', overrides);
 }
 
 function seedExpandableActivityBatch(): string {
@@ -184,10 +170,12 @@ describe('buildCommandContext', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     const ctx = build();
 
-    expect(ctx.toggleSidebar()).toEqual({ status: 'toggled', visible: true });
+    // The sidebar ships on, so the first toggle is the one that hides it.
     expect(controlsStore.get().sidebarVisible).toBe(true);
     expect(ctx.toggleSidebar()).toEqual({ status: 'toggled', visible: false });
     expect(controlsStore.get().sidebarVisible).toBe(false);
+    expect(ctx.toggleSidebar()).toEqual({ status: 'toggled', visible: true });
+    expect(controlsStore.get().sidebarVisible).toBe(true);
   });
 
   it('does not report the workflow sidebar as shown on small terminals', () => {
@@ -197,7 +185,7 @@ describe('buildCommandContext', () => {
       status: 'unavailable',
       message: 'Sidebar is hidden on small terminals.',
     });
-    expect(controlsStore.get().sidebarVisible).toBe(false);
+    expect(controlsStore.get().sidebarVisible).toBe(true);
   });
 
   it('is not attached for an in-process session', () => {

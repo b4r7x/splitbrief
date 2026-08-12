@@ -1,13 +1,16 @@
 import { useEffect } from 'react';
 import { Box, Text } from 'ink';
 import { useTheme } from '../../../../components/theme.js';
-import { glyph } from '../../../../lib/glyphs.js';
 import { TaskSummary } from '../task-summary.js';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
+import { getWorkflowSidebarWidth } from '../../layout/rect.js';
+import { controlsStore } from '../../../../stores/ui/controls.js';
+import { terminalSizeStore } from '../../../../stores/ui/terminal-size.js';
 import { conversationScrollStore } from '../../../../stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
-import { tasksStore } from '../../../../stores/workflow/tasks.js';
+import { selectTaskListView, tasksStore } from '../../../../stores/workflow/tasks.js';
+import type { TaskListView } from '../../../../stores/workflow/tasks.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
@@ -27,6 +30,14 @@ interface ConversationFlowProps {
   contentWidth: number;
   onScrollAbove?: ((label: string) => void) | undefined;
   onScrollBelow?: ((label: string) => void) | undefined;
+}
+
+// Without a sidebar this header is the only place the transcript states how far the run has got, so
+// it carries the counts rather than the bare word "completed". Bare of any marker, like the
+// sidebar's own headings: a heading whose first character is a letter, above rows whose first
+// character is a symbol, differs in kind rather than in shape, and no glyph tier can collapse that.
+function taskListLabel(view: TaskListView): string {
+  return view.total > 0 ? `Completed ${view.settled}/${view.total}` : 'Completed';
 }
 
 function computeScrollBannerLabel(
@@ -58,7 +69,16 @@ export function ConversationFlow({
     streaming,
     lifecycle,
     tasks,
-  ] = useStores(conversationScrollStore, streamingOutputStore, lifecycleStore, tasksStore);
+    controls,
+    terminalSize,
+  ] = useStores(
+    conversationScrollStore,
+    streamingOutputStore,
+    lifecycleStore,
+    tasksStore,
+    controlsStore,
+    terminalSizeStore,
+  );
   const isRunning = lifecycle.status === 'running';
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
@@ -66,14 +86,24 @@ export function ConversationFlow({
   const completedItems = sections.flatMap((section) =>
     section.type === 'completed-task' ? [section.summary] : [],
   );
-  const pendingTasks = tasks.tasks.filter((task) => task.status === 'pending');
+  const taskListView = selectTaskListView(tasks);
+  // The sidebar is the persistent list and the transcript is the narrative, so the queued block
+  // stands down while the sidebar renders rather than printing the same pending titles twice, side
+  // by side. Below the sidebar's column breakpoint it is the only place pending work appears.
+  const sidebarShowsTasks =
+    getWorkflowSidebarWidth({
+      cols: terminalSize.cols,
+      sidebarVisible: controls.sidebarVisible,
+    }) > 0;
+  const pendingTasks = sidebarShowsTasks
+    ? []
+    : tasks.tasks.filter((task) => task.status === 'pending');
   const viewportSplit = splitConversationViewport({
     viewportHeight,
     sections,
     pendingTaskCount: pendingTasks.length,
   });
-  const queuedRows = tasks.tasks
-    .filter((task) => task.status === 'pending')
+  const queuedRows = pendingTasks
     .slice(0, viewportSplit.queuedRows)
     .map((task) =>
       row({ key: `queued-${task.id}`, text: task.title, tone: 'textDim', kind: 'task-header' }),
@@ -118,6 +148,9 @@ export function ConversationFlow({
   const belowLabel = [below, newEventsLabel].filter((part) => part !== '').join(SOFT_SEP);
 
   const stickyLeadingLines = viewportSplit.stickyLeadingRows;
+  // The transcript pane sizes to its rows so a short run does not leave a hole above whatever
+  // follows it. The empty-state line is a row too, and a zero-height pane would clip it.
+  const showsEmptyState = rows.length === 0 && completedItems.length === 0;
 
   useEffect(() => {
     onScrollAbove?.(above);
@@ -145,7 +178,7 @@ export function ConversationFlow({
           {(focusedSummaryIndex) => (
             <>
               <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
-                <Text color={t.textDim}>{`${glyph('completed')} completed`}</Text>
+                <Text color={t.textDim}>{taskListLabel(taskListView)}</Text>
               </Box>
               {visibleCompletedItems.map((item, position) => (
                 <Box
@@ -155,6 +188,7 @@ export function ConversationFlow({
                   flexShrink={0}
                 >
                   <TaskSummary
+                    width={conversationWidth}
                     index={item.index}
                     title={item.title}
                     method={item.method}
@@ -173,15 +207,13 @@ export function ConversationFlow({
       ) : null}
       <Box
         width={conversationWidth}
-        height={innerHeight}
+        height={Math.min(innerHeight, showsEmptyState ? 1 : rows.length)}
         flexDirection="column"
         overflow="hidden"
         flexShrink={0}
       >
         <Box width="100%" flexDirection="column" flexShrink={0}>
-          {rows.length === 0 && completedItems.length === 0 && (
-            <Text color={t.textDim}>no events yet</Text>
-          )}
+          {showsEmptyState && <Text color={t.textDim}>no events yet</Text>}
           <ConversationTranscriptRows
             rows={rows}
             stickyLeadingLines={stickyLeadingLines}
@@ -191,6 +223,13 @@ export function ConversationFlow({
       </Box>
       {queuedRows.length > 0 && (
         <Box flexDirection="column" width={conversationWidth} flexShrink={0} overflow="hidden">
+          {/* One pad row and the heading — the two rows the viewport split charges this block as
+              its chrome. A bare run of circles under a stretch of blank rows announces nothing;
+              the air belongs above the label and the label belongs against its rows. */}
+          <Box height={1} width={conversationWidth} flexShrink={0} />
+          <Box height={1} width={conversationWidth} overflow="hidden" flexShrink={0}>
+            <Text color={t.textDim}>{`Queued ${pendingTasks.length}`}</Text>
+          </Box>
           {queuedRows.map((queuedRow) => (
             <Box key={queuedRow.key} height={1} width={conversationWidth} flexShrink={0}>
               <ConversationRowView row={queuedRow} lifecycle="queued" />

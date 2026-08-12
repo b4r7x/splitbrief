@@ -6,6 +6,7 @@ import { getChromeContentWidth } from './layout/chrome-rows.js';
 export interface InputFooterBylineInput {
   cols: number;
   lead: string;
+  hintText?: string | null;
   queuedText: string | null;
   etaText: string | null;
   gitLabel: string;
@@ -26,6 +27,7 @@ function bylineCells(text: string): number {
 
 export interface InputFooterByline {
   lead: string;
+  hint: string;
   queued: string;
   rest: string;
 }
@@ -33,16 +35,19 @@ export interface InputFooterByline {
 export function buildInputFooterByline(input: InputFooterBylineInput): InputFooterByline {
   const width = getChromeContentWidth(input.cols);
   const queuedPart = input.queuedText && input.queuedText.length > 0 ? input.queuedText : null;
+  const hintPart = input.hintText && input.hintText.length > 0 ? input.hintText : null;
 
-  const candidates: Array<{ queued: boolean; tail: (string | null)[] }> = [
-    { queued: true, tail: [input.etaText, input.gitLabel, input.advisoryText] },
-    { queued: true, tail: [input.etaText, input.gitLabel] },
-    { queued: true, tail: [input.gitLabel] },
-    { queued: true, tail: [] },
-    { queued: false, tail: [] },
+  const candidates: Array<{ hint: boolean; queued: boolean; tail: (string | null)[] }> = [
+    { hint: true, queued: true, tail: [input.etaText, input.gitLabel, input.advisoryText] },
+    { hint: true, queued: true, tail: [input.etaText, input.gitLabel] },
+    { hint: true, queued: true, tail: [input.gitLabel] },
+    { hint: true, queued: true, tail: [] },
+    { hint: false, queued: true, tail: [] },
+    { hint: false, queued: false, tail: [] },
   ];
 
   let leadOut = input.lead;
+  let hintIncluded = false;
   let queuedIncluded = false;
   let tail: (string | null)[] = [];
   let line = '';
@@ -51,11 +56,13 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
   for (const candidate of candidates) {
     const candidateStr = joinBylineParts([
       input.lead,
+      candidate.hint ? hintPart : null,
       candidate.queued ? queuedPart : null,
       ...candidate.tail,
     ]);
     if (bylineCells(candidateStr) <= width) {
       line = candidateStr;
+      hintIncluded = candidate.hint;
       queuedIncluded = candidate.queued;
       tail = candidate.tail;
       matched = true;
@@ -68,16 +75,22 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
     line = leadOut;
   }
 
+  const hintOut =
+    hintIncluded && hintPart !== null
+      ? leadOut.length > 0
+        ? `${SOFT_SEP}${hintPart}`
+        : hintPart
+      : '';
   const queuedOut =
     queuedIncluded && queuedPart !== null
-      ? leadOut.length > 0
+      ? leadOut.length > 0 || hintOut.length > 0
         ? `${SOFT_SEP}${queuedPart}`
         : queuedPart
       : '';
   const restCore = joinBylineParts(tail);
   let restOut =
     restCore.length > 0
-      ? leadOut.length > 0 || queuedOut.length > 0
+      ? leadOut.length > 0 || hintOut.length > 0 || queuedOut.length > 0
         ? `${SOFT_SEP}${restCore}`
         : restCore
       : '';
@@ -112,5 +125,5 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
     }
   }
 
-  return { lead: leadOut, queued: queuedOut, rest: restOut };
+  return { lead: leadOut, hint: hintOut, queued: queuedOut, rest: restOut };
 }

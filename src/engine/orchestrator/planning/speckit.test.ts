@@ -6,20 +6,23 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import type { TaskId } from '../../../core/schemas/task.js';
 import {
   makeCallbacks,
   makePlanner,
   makeBusRecorder,
 } from '#testing/helpers/orchestrator-factories.js';
-import { expectBriefQualityBlocked } from '#testing/helpers/assertions/brief-quality.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { ANALYZE_FILE, sessionDir, SPEC_FILE, PLAN_FILE, TASKS_FILE } from '../../../core/paths.js';
+import {
+  ANALYZE_FILE,
+  BRIEF_QUALITY_FILE,
+  sessionDir,
+  SPEC_FILE,
+  PLAN_FILE,
+} from '../../../core/paths.js';
 import { runPlanningPhase } from './run.js';
 import { formatTasks } from '../../spec/formatter.js';
 import type { Planner, PlanResult } from '../../planners/types.js';
-import type { ApprovalReviewInput } from '../../runners/types.js';
 import type { OrchestratorCallbacks } from '../types.js';
 
 const TEST_METADATA = {
@@ -30,32 +33,8 @@ const TEST_METADATA = {
 
 const SAMPLE_SPEC = '# Spec\n\n- requirement A\n';
 const SAMPLE_PLAN = '# Plan\n\n1. step A\n';
-const SAMPLE_TASKS_WITH_SECTIONS = `---
-id: T001
-title: do A
-action: create
-file: src/a.ts
----
-
-### Description
-Do A.
-
-### Tests
-- passes tsc
-
-### Implementation Steps
-1. Create src/a.ts.
-
-### Scope
-**In bounds:**
-- src/a.ts
-
-**Out of bounds:**
-- unrelated files
-
-### Evidence
-- brief-quality.json records a passing gate
-`;
+const ANALYZE_RESULT =
+  '```json\n{"specTaskCoverage":1,"planTaskCoverage":1,"orphanTasks":[],"unaddressedSpecSections":[],"warnings":[]}\n```';
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -79,11 +58,10 @@ function setupProject(opts?: { withConstitution?: string }): {
       'utf8',
     );
   }
-  // Pre-write the spec/plan/tasks artifacts so the planner mock doesn't have to.
+  // Pre-write the spec/plan artifacts so the planner mock doesn't have to.
   const dir = sessionDir(projectDir, sessionId);
   writeFileSync(join(dir, SPEC_FILE), SAMPLE_SPEC, 'utf8');
   writeFileSync(join(dir, PLAN_FILE), SAMPLE_PLAN, 'utf8');
-  writeFileSync(join(dir, TASKS_FILE), SAMPLE_TASKS_WITH_SECTIONS, 'utf8');
   return { projectDir, sessionId };
 }
 
@@ -108,14 +86,7 @@ function invalidPlanResult(): PlanResult {
   return {
     spec: SAMPLE_SPEC,
     plan: SAMPLE_PLAN,
-    tasks: [
-      {
-        ...makeTask(),
-        id: 'T-BAD' as unknown as TaskId,
-        tests: [],
-        implementationSteps: [],
-      },
-    ],
+    tasks: [makeTask({ id: 'T002', tests: [], implementationSteps: [] })],
     usage: { inputTokens: 10, outputTokens: 5 },
     phases: [],
   };
@@ -132,10 +103,7 @@ async function runSpeckit(opts: RunOpts = {}) {
   const { projectDir, sessionId } = setupProject(
     opts.withConstitution !== undefined ? { withConstitution: opts.withConstitution } : {},
   );
-  const reviewFn =
-    opts.reviewText ??
-    (() =>
-      '```json\n{"specTaskCoverage":1,"planTaskCoverage":1,"orphanTasks":[],"unaddressedSpecSections":[],"warnings":[]}\n```');
+  const reviewFn = opts.reviewText ?? (() => ANALYZE_RESULT);
   const planner = makePlanner({
     plan: vi.fn().mockResolvedValue(planResult()),
     review: vi
@@ -171,6 +139,7 @@ describe('runSpeckitPlanning', () => {
   it('completes the successful Speckit flow end to end', async () => {
     const { result, projectDir, sessionId, events } = await runSpeckit();
     expect(result.cancelled).toBe(false);
+    expect(result.failed).toBe(false);
     expect(result.state.phase).toBe('implementing');
     expect(result.tasks).toHaveLength(1);
 
@@ -182,6 +151,9 @@ describe('runSpeckitPlanning', () => {
     expect(cc.passed).toBe(true);
     const an = JSON.parse(readFileSync(join(dir, 'analyze.json'), 'utf8'));
     expect(an.specTaskCoverage).toBe(1);
+    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
+    const quality = JSON.parse(readFileSync(join(dir, BRIEF_QUALITY_FILE), 'utf8'));
+    expect(quality.passed).toBe(true);
 
     const statusEvents = events.filter((e) => e.type === 'planner_status');
     const phasesInOrder = statusEvents.map((e) => e.phase);
@@ -208,6 +180,7 @@ describe('runSpeckitPlanning', () => {
       reviewText: (p) => (p.includes('Constitution Check') ? failJson : '{}'),
     });
     expect(result.cancelled).toBe(true);
+    expect(result.failed).toBe(false);
     expect(result.tasks).toEqual([]);
     const persisted = loadState({ projectDir, sessionId });
     expect(persisted?.phase).toBe('idle');
@@ -248,36 +221,72 @@ describe('runSpeckitPlanning', () => {
     ).toBe(3);
   });
 
-  it('enters reviewing-briefs for invalid briefs; user rejection cancels the workflow', async () => {
+  it('repairs an initial empty task set before analyze and opens briefs review once', async () => {
+    const repairedTask = makeTask({
+      title: 'Repaired Speckit brief',
+      file: 'src/repaired.ts',
+      scope: { inBounds: ['src/repaired.ts'], outOfBounds: ['unrelated files'] },
+      evidence: ['the repaired brief has complete evidence'],
+      typeDefs: 'type Repaired = { ok: true }',
+    });
+    const review = vi
+      .fn<Planner['review']>()
+      .mockResolvedValueOnce({ text: formatTasks([repairedTask]), usage: null })
+      .mockResolvedValueOnce({ text: ANALYZE_RESULT, usage: null });
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockResolvedValue({ approved: false });
-    const { result, projectDir, sessionId, events } = await runSpeckit({
-      plannerOverrides: { plan: vi.fn().mockResolvedValue(invalidPlanResult()) },
+      .mockResolvedValue({ approved: true });
+    const { result, events, planner } = await runSpeckit({
+      plannerOverrides: {
+        plan: vi.fn().mockResolvedValue({ ...planResult(), tasks: [] }),
+        review,
+      },
       callbacksOverride: { onApprovalNeeded },
     });
-    expectBriefQualityBlocked(result, projectDir, sessionId, events);
+
+    expect(result.cancelled).toBe(false);
+    expect(result.state.phase).toBe('implementing');
+    expect(result.tasks).toEqual([expect.objectContaining({ title: 'Repaired Speckit brief' })]);
+    expect(review).toHaveBeenCalledTimes(2);
+    expect(review.mock.calls[1]?.[0]).toContain('Repaired Speckit brief');
+    expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
+    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'brief_quality_passed')).toHaveLength(1);
+    expect(
+      events.some((event) => event.type === 'planner_status' && event.phase === 'analyzing'),
+    ).toBe(true);
+    expect(planner.review).toHaveBeenCalledTimes(2);
   });
 
-  it('blocks invalid briefs even when user approves reviewing-briefs', async () => {
-    let tasksPath = '';
+  it('stops after a failed repair before analyze or briefs approval', async () => {
+    const invalidTasks = invalidPlanResult().tasks;
+    const review = vi.fn<Planner['review']>().mockResolvedValue({
+      text: formatTasks(invalidTasks),
+      usage: null,
+    });
     const onApprovalNeeded = vi
       .fn<OrchestratorCallbacks['onApprovalNeeded']>()
-      .mockImplementationOnce(async (_type, input: ApprovalReviewInput) => {
-        if (typeof input !== 'string') {
-          throw new Error('Expected a task briefs file path');
-        }
-        const filePath = input;
-        tasksPath = filePath;
-        writeFileSync(filePath, formatTasks(invalidPlanResult().tasks), 'utf8');
-        return { approved: true };
-      })
-      .mockResolvedValue({ approved: false });
-    const { result, projectDir, sessionId, events } = await runSpeckit({
-      plannerOverrides: { plan: vi.fn().mockResolvedValue(invalidPlanResult()) },
+      .mockResolvedValue({ approved: true });
+    const { result, projectDir, sessionId, events, planner } = await runSpeckit({
+      plannerOverrides: {
+        plan: vi.fn().mockResolvedValue(invalidPlanResult()),
+        review,
+      },
       callbacksOverride: { onApprovalNeeded },
     });
-    expectBriefQualityBlocked(result, projectDir, sessionId, events);
-    expect(tasksPath.endsWith(TASKS_FILE)).toBe(true);
+
+    expect(result.cancelled).toBe(true);
+    expect(result.failed).toBe(true);
+    expect(result.state.phase).toBe('idle');
+    expect(result.tasks).toEqual([]);
+    expect(loadState({ projectDir, sessionId })?.phase).toBe('idle');
+    expect(onApprovalNeeded).not.toHaveBeenCalled();
+    expect(review).toHaveBeenCalledTimes(1);
+    expect(planner.review).toHaveBeenCalledTimes(1);
+    expect(
+      events.some((event) => event.type === 'planner_status' && event.phase === 'analyzing'),
+    ).toBe(false);
+    expect(events.filter((event) => event.type === 'brief_quality_failed')).toHaveLength(2);
+    expect(existsSync(join(sessionDir(projectDir, sessionId), ANALYZE_FILE))).toBe(false);
   });
 });

@@ -15,6 +15,7 @@ import { protectEngineEventForConsumer } from '../../engine/events/protection/pr
 import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import { makePlannerText, makePlannerStatus } from '#testing/helpers/events/planner.js';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import {
   makeTaskStart,
   makeValidate,
@@ -108,22 +109,15 @@ function makeRunnerError(
 function makeRunnerActivity(
   overrides?: Partial<EngineEventOf<'runner_call_activity'>>,
 ): EngineEventOf<'runner_call_activity'> {
-  return {
-    type: 'runner_call_activity',
+  return makeRunnerCallActivity({
     ts: 1_200,
     phase: 'implementing',
-    callId: 'call-1',
-    role: 'implementer',
-    backendKind: 'cli',
     sequence: 3,
     activityId: 'call-1:tool:1',
-    stage: 'completed',
-    kind: 'command',
     label: 'running npm test',
     target: 'npm test',
-    redacted: false,
     ...overrides,
-  };
+  });
 }
 
 function makeValidationBaseline(

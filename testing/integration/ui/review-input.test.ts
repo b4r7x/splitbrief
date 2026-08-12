@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { PassThrough } from 'node:stream';
@@ -12,11 +12,13 @@ import { terminalSequences } from '../../../src/lib/terminal/control.js';
 import { setActiveTerminalHandover } from '../../../src/lib/terminal/editor-handover.js';
 import { setQueueHandler, clearAllHandlers } from '../../../src/features/workflow/handlers.js';
 import { createReviewInputHandler } from '../../../src/features/workflow/review-parser.js';
-import { BRIEFS_REVIEW_HINT } from '../../../src/features/workflow/review-commands.js';
+import { REVIEW_HINT } from '../../../src/features/workflow/review-commands.js';
 import type { UseInputModeResult } from '../../../src/features/workflow/hooks/use-input-mode.js';
 import type { Phase } from '../../../src/core/schemas/enums.js';
 
 let tmpDir: string;
+let written: string[];
+let originalStdoutWrite: typeof process.stdout.write;
 
 async function writeFakeEditor(exitCode: number): Promise<string> {
   const editorPath = join(tmpDir, `editor-${exitCode}.js`);
@@ -57,6 +59,14 @@ function setPhase(phase: Phase) {
 
 beforeEach(async () => {
   tmpDir = await mkdtemp(join(tmpdir(), 'review-input-test-'));
+  // The editor handover writes real cursor sequences to process.stdout on every
+  // suspend/resume; capture them so spawning tests assert on — not leak — them.
+  originalStdoutWrite = process.stdout.write.bind(process.stdout);
+  written = [];
+  process.stdout.write = ((chunk: string) => {
+    written.push(chunk);
+    return true;
+  }) as typeof process.stdout.write;
   resetWorkflow();
   feedbackStore.reset();
   clearAllHandlers();
@@ -66,6 +76,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  process.stdout.write = originalStdoutWrite;
   setActiveTerminalHandover(undefined);
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
@@ -240,7 +251,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
 
     expect(feedbackStore.get()).toMatchObject({
       isError: true,
-      message: `Review prompt is opening. Once active, use: ${BRIEFS_REVIEW_HINT}`,
+      message: `Review prompt is opening. Once active, use: ${REVIEW_HINT}`,
     });
   });
 });
@@ -288,7 +299,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     'edit-file',
   ])('opens persisted tasks.md and resolves edit for %s during brief review', async (command) => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    reviewStore.setReviewFile('/tmp/tasks.md');
+    reviewStore.setReviewFile(join(tmpDir, 'tasks.md'));
     stubReviewEditor('true');
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
@@ -296,12 +307,17 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     await handleInput(command);
 
     expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
-    expect(feedbackStore.get().isError).toBe(false);
+    // The file never existed, so neither snapshot is readable: the gate still settles on
+    // whatever the approval loop reads back, but the message must not claim an edit.
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Could not read tasks.md after editing — applying changes',
+    });
   });
 
   it('keeps external editor behavior for non-brief reviews', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-plan' });
-    reviewStore.setReviewFile('/tmp/supporting-spec.md');
+    reviewStore.setReviewFile(join(tmpDir, 'supporting-spec.md'));
     stubReviewEditor('/definitely/missing-splitbrief-editor');
     const { handleInput } = createReviewInputHandler(makeInputMode('review'));
 
@@ -313,7 +329,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
 
   it('opens the external editor for a non-brief review without resolving the gate', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-spec' });
-    reviewStore.setReviewFile('/tmp/spec.md');
+    reviewStore.setReviewFile(join(tmpDir, 'spec.md'));
     stubReviewEditor('true');
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
@@ -321,12 +337,15 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     await handleInput('edit');
 
     expect(resolve).not.toHaveBeenCalled();
-    expect(feedbackStore.get().isError).toBe(false);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Could not read spec.md after editing — content reloaded',
+    });
   });
 
   it('surfaces non-zero editor exit status and keeps brief review unresolved', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    reviewStore.setReviewFile('/tmp/tasks.md');
+    reviewStore.setReviewFile(join(tmpDir, 'tasks.md'));
     stubReviewEditor(await writeFakeEditor(42));
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
@@ -340,7 +359,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
 
   it('brackets the async editor spawn with terminal handover and resumes stdin', async () => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    reviewStore.setReviewFile('/tmp/tasks.md');
+    reviewStore.setReviewFile(join(tmpDir, 'tasks.md'));
     stubReviewEditor('true');
 
     const stdinCalls: string[] = [];
@@ -360,24 +379,393 @@ describe('createReviewInputHandler – brief review edit mode', () => {
       sourceStdin: sourceStdin as unknown as NodeJS.ReadStream,
     });
 
-    const written: string[] = [];
-    const originalWrite = process.stdout.write.bind(process.stdout);
-    process.stdout.write = ((chunk: string) => {
-      written.push(chunk);
-      return true;
-    }) as typeof process.stdout.write;
     const { handleInput } = createReviewInputHandler(makeInputMode('review'));
-    try {
-      await handleInput('edit-file');
-    } finally {
-      process.stdout.write = originalWrite;
-    }
+    await handleInput('edit-file');
 
     const exitIndex = written.indexOf(terminalSequences.exitAltBuffer);
     const enterIndex = written.indexOf(terminalSequences.enterAltBuffer);
     expect(exitIndex).toBeGreaterThanOrEqual(0);
     expect(enterIndex).toBeGreaterThan(exitIndex);
+    expect(written.indexOf(terminalSequences.hideCursor, enterIndex)).toBeGreaterThan(enterIndex);
     expect(stdinCalls).toEqual(['pause', 'resume']);
+  });
+
+  it('restores the handover and resumes stdin when the editor spawn fails', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    reviewStore.setReviewFile(join(tmpDir, 'tasks.md'));
+    stubReviewEditor('/definitely/missing-splitbrief-editor');
+
+    const stdinCalls: string[] = [];
+    const sourceStdin = Object.assign(new PassThrough(), {
+      pause(): NodeJS.ReadStream {
+        stdinCalls.push('pause');
+        return sourceStdin as unknown as NodeJS.ReadStream;
+      },
+      resume(): NodeJS.ReadStream {
+        stdinCalls.push('resume');
+        return sourceStdin as unknown as NodeJS.ReadStream;
+      },
+    });
+    setActiveTerminalHandover({
+      fullscreen: true,
+      mouse: true,
+      sourceStdin: sourceStdin as unknown as NodeJS.ReadStream,
+    });
+
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+    await handleInput('edit-file');
+
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().message).toContain('Failed to open editor');
+    const exitIndex = written.indexOf(terminalSequences.exitAltBuffer);
+    const enterIndex = written.indexOf(terminalSequences.enterAltBuffer);
+    expect(exitIndex).toBeGreaterThanOrEqual(0);
+    expect(enterIndex).toBeGreaterThan(exitIndex);
+    expect(written.indexOf(terminalSequences.hideCursor, enterIndex)).toBeGreaterThan(enterIndex);
+    expect(stdinCalls).toEqual(['pause', 'resume']);
+  });
+});
+
+describe('openReviewFileExternally – edit lifecycle feedback', () => {
+  async function writeScriptEditor(name: string, body: string): Promise<string> {
+    const editorPath = join(tmpDir, name);
+    await writeFile(editorPath, `#!/usr/bin/env node\n${body}\n`, 'utf-8');
+    await chmod(editorPath, 0o700);
+    return editorPath;
+  }
+
+  it('announces the editor before the handover and reports a no-change close', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor('true');
+    const messages: string[] = [];
+    const unsubscribe = feedbackStore.subscribe(() => {
+      const { message } = feedbackStore.get();
+      if (message !== null) messages.push(message);
+    });
+    const revisionBefore = reviewStore.get().revision;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+
+    try {
+      await handleInput('e');
+    } finally {
+      unsubscribe();
+    }
+
+    expect(messages[0]).toBe('Opening true — spec.md…');
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Editor closed — no changes to spec.md',
+    });
+    expect(reviewStore.get().revision).toBe(revisionBefore);
+  });
+
+  it('reloads the review file and says so when the editor changed it', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-append.js',
+        `require('node:fs').appendFileSync(process.argv[2], 'edited\\n');`,
+      ),
+    );
+    const revisionBefore = reviewStore.get().revision;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+
+    await handleInput('e');
+
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Edited spec.md — content reloaded',
+    });
+    expect(reviewStore.get().revision).toBe(revisionBefore + 1);
+  });
+
+  it('resolves a changed brief review edit with an applying signal', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    const reviewFile = join(tmpDir, 'tasks.md');
+    await writeFile(reviewFile, '# tasks\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-append-brief.js',
+        `require('node:fs').appendFileSync(process.argv[2], 'edited\\n');`,
+      ),
+    );
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('e');
+
+    expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Edited tasks.md — applying changes',
+    });
+  });
+
+  it('keeps an unchanged brief review gate open with a no-change signal', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    const reviewFile = join(tmpDir, 'tasks.md');
+    await writeFile(reviewFile, '# tasks\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor('true');
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('e');
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Editor closed — no changes to tasks.md',
+    });
+  });
+
+  it('reports a SIGINT editor death as a user cancel, not a failure', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(
+      await writeScriptEditor('editor-sigint.js', `process.kill(process.pid, 'SIGINT');`),
+    );
+    const resolve = vi.fn();
+    const revisionBefore = reviewStore.get().revision;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('e');
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(reviewStore.get().revision).toBe(revisionBefore);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Edit cancelled — editor-sigint.js closed by ctrl+c',
+    });
+  });
+
+  it('still applies an edit saved before the editor died by SIGINT', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-save-sigint.js',
+        `require('node:fs').appendFileSync(process.argv[2], 'edited\\n');
+process.kill(process.pid, 'SIGINT');`,
+      ),
+    );
+    const revisionBefore = reviewStore.get().revision;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+
+    await handleInput('e');
+
+    expect(reviewStore.get().revision).toBe(revisionBefore + 1);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'Edited spec.md — content reloaded',
+    });
+  });
+
+  it('keeps an edit the editor saved before exiting non-zero', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-save-fail.js',
+        `require('node:fs').appendFileSync(process.argv[2], 'edited\\n');
+process.exit(1);`,
+      ),
+    );
+    const revisionBefore = reviewStore.get().revision;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+
+    await handleInput('e');
+
+    expect(reviewStore.get().revision).toBe(revisionBefore + 1);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message:
+        'Editor exited with status 1 (editor-save-fail.js) but saved spec.md — content reloaded',
+    });
+  });
+
+  it('resolves the brief gate with an edit saved before a non-zero exit', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    const reviewFile = join(tmpDir, 'tasks.md');
+    await writeFile(reviewFile, '# tasks\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-save-fail-brief.js',
+        `require('node:fs').appendFileSync(process.argv[2], 'edited\\n');
+process.exit(2);`,
+      ),
+    );
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('e');
+
+    expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'edit' });
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message:
+        'Editor exited with status 2 (editor-save-fail-brief.js) but saved tasks.md — applying changes',
+    });
+  });
+
+  it('reports a non-zero exit that saved nothing as an unapplied edit', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(await writeScriptEditor('editor-fail.js', 'process.exit(3);'));
+    const resolve = vi.fn();
+    const revisionBefore = reviewStore.get().revision;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    await handleInput('e');
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(reviewStore.get().revision).toBe(revisionBefore);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Editor exited with status 3 (editor-fail.js) — edit not applied',
+    });
+  });
+
+  it('keeps an edit the editor saved before dying by a non-SIGINT signal', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-save-sigterm.js',
+        `require('node:fs').appendFileSync(process.argv[2], 'edited\\n');
+process.kill(process.pid, 'SIGTERM');`,
+      ),
+    );
+    const revisionBefore = reviewStore.get().revision;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+
+    await handleInput('e');
+
+    expect(reviewStore.get().revision).toBe(revisionBefore + 1);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: false,
+      message: 'editor-save-sigterm.js terminated by SIGTERM but saved spec.md — content reloaded',
+    });
+  });
+
+  it('reports a non-SIGINT signal death that saved nothing as an editor failure', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    stubReviewEditor(
+      await writeScriptEditor('editor-sigterm.js', `process.kill(process.pid, 'SIGTERM');`),
+    );
+    const revisionBefore = reviewStore.get().revision;
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+
+    await handleInput('e');
+
+    expect(reviewStore.get().revision).toBe(revisionBefore);
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Editor failed: editor-sigterm.js terminated by SIGTERM',
+    });
+  });
+
+  it('ignores a second edit request while the editor is already out', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    const runLog = join(tmpDir, 'editor-runs.log');
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-slow.js',
+        `require('node:fs').appendFileSync(${JSON.stringify(runLog)}, 'run\\n');
+setTimeout(() => process.exit(0), 150);`,
+      ),
+    );
+    const { handleInput } = createReviewInputHandler(makeInputMode('review'));
+
+    await Promise.all([handleInput('e'), handleInput('e')]);
+
+    const runs = await readFile(runLog, 'utf-8');
+    expect(runs).toBe('run\n');
+  });
+
+  it('does not open the editor when the gate settles during the opening-signal window', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    const runLog = join(tmpDir, 'editor-runs.log');
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-log.js',
+        `require('node:fs').appendFileSync(${JSON.stringify(runLog)}, 'run\\n');`,
+      ),
+    );
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    const pending = handleInput('e');
+    reviewStore.clearReview();
+    await pending;
+
+    expect(resolve).not.toHaveBeenCalled();
+    await expect(readFile(runLog, 'utf-8')).rejects.toThrow();
+    expect(feedbackStore.get().message).toBeNull();
+  });
+
+  it('does not resolve a review gate that replaced the edited one while the editor was out', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+    const reviewFile = join(tmpDir, 'spec.md');
+    await writeFile(reviewFile, '# spec\n', 'utf-8');
+    const laterReviewFile = join(tmpDir, 'tasks.md');
+    await writeFile(laterReviewFile, '# tasks\n', 'utf-8');
+    reviewStore.setReviewFile(reviewFile);
+    const sentinel = join(tmpDir, 'release-editor');
+    stubReviewEditor(
+      await writeScriptEditor(
+        'editor-hold.js',
+        `const fs = require('node:fs');
+fs.appendFileSync(process.argv[2], 'edited\\n');
+const wait = () =>
+  fs.existsSync(${JSON.stringify(sentinel)}) ? process.exit(0) : setTimeout(wait, 10);
+wait();`,
+      ),
+    );
+    const resolve = vi.fn();
+    const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
+
+    const pending = handleInput('e');
+    await vi.waitFor(async () => {
+      expect(await readFile(reviewFile, 'utf-8')).toContain('edited');
+    });
+    lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    reviewStore.setReviewFile(laterReviewFile);
+    await writeFile(sentinel, '', 'utf-8');
+    await pending;
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: 'Review closed while editing — spec.md saved but not applied',
+    });
   });
 });
 

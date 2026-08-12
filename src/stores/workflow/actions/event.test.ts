@@ -38,7 +38,11 @@ describe('addEvent — runner call stall', () => {
       sequence: 1,
       silentMs: 60_000,
     });
-    expect(lifecycleStore.get().stall).toEqual({ since: 2_000, silentMs: 60_000 });
+    expect(lifecycleStore.get().stall).toEqual({
+      since: 2_000,
+      silentMs: 60_000,
+      runnerName: null,
+    });
 
     addEvent({
       type: 'runner_call_stall_cleared',

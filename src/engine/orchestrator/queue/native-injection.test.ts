@@ -10,8 +10,11 @@ import { transition } from '../../../core/state/machine.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { RunnerCallContext } from '../../calls/types.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { fauxPlanner } from '#testing/helpers/faux/planner.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
+import { readQueueForPrompt, releaseQueueMessagesForPrompt } from './drain.js';
+import { addUsageAndSave } from '../state-ops.js';
 
 const message: QueuedMessage = {
   id: 'msg-1',
@@ -316,6 +319,93 @@ describe('dispatchNativeInjection', () => {
       expect(loadState({ projectDir, sessionId: 'sess-rewind' })?.phase).toBe('planning');
       expect(events.some((event) => event.type === 'message_injected_native')).toBe(true);
     } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps a live native owner out of prompt drain while both usage deltas persist', async () => {
+    const { planner } = fauxPlanner();
+    let finishInjection: (usage: TokenDelta) => void = () => {
+      throw new Error('native injection was not started');
+    };
+    planner.injectUserTurn = async () =>
+      new Promise<TokenDelta>((resolve) => {
+        finishInjection = resolve;
+      });
+
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+    const projectDir = mkdtempSync(join(tmpdir(), 'native-inject-ownership-'));
+    try {
+      const sessionId = 'sess-ownership';
+      ensureSessionDir(projectDir, sessionId);
+      let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+      const native = dispatchNativeInjection({
+        message,
+        planner,
+        projectDir,
+        sessionId,
+        getState: () => state,
+        setState: (next) => {
+          state = next;
+        },
+        bus,
+      });
+
+      await Promise.resolve();
+      const prompt = readQueueForPrompt({ projectDir, sessionId, state });
+      expect(prompt.messages).toEqual([]);
+
+      const bookedByPrompt = addUsageAndSave({ projectDir, sessionId, bus }, state, 'planner', {
+        inputTokens: 13,
+        outputTokens: 5,
+      });
+      state = bookedByPrompt;
+      finishInjection({ inputTokens: 11, outputTokens: 7 });
+
+      await expect(native).resolves.toEqual({ status: 'delivered' });
+      expect(state.tokenUsage.plannerInput).toBe(24);
+      expect(state.tokenUsage.plannerOutput).toBe(12);
+      expect(state.messageQueue[0]?.nativeDeliveryState).toBe('delivered');
+      expect(events.filter((event) => event.type === 'message_injected_native')).toHaveLength(1);
+      expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(0);
+    } finally {
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not inject a message after a prompt reader has claimed it', async () => {
+    const { planner } = fauxPlanner();
+    planner.injectUserTurn = async () => ({ inputTokens: 99, outputTokens: 9 });
+    const events: EngineEvent[] = [];
+    const bus = createEventBus();
+    bus.subscribe((event) => events.push(event));
+    const projectDir = mkdtempSync(join(tmpdir(), 'prompt-owns-before-native-'));
+    const sessionId = 'sess-prompt-owner';
+    try {
+      ensureSessionDir(projectDir, sessionId);
+      let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+      const prompt = readQueueForPrompt({ projectDir, sessionId, state });
+
+      expect(prompt.messages).toEqual([expect.objectContaining({ id: message.id })]);
+      await expect(
+        dispatchNativeInjection({
+          message,
+          planner,
+          projectDir,
+          sessionId,
+          getState: () => state,
+          setState: (next) => {
+            state = next;
+          },
+          bus,
+        }),
+      ).resolves.toEqual({ status: 'not-delivered', reason: 'already-owned' });
+      expect(events.filter((event) => event.type === 'message_injected_native')).toHaveLength(0);
+      expect(state.tokenUsage.plannerInput).toBe(0);
+    } finally {
+      releaseQueueMessagesForPrompt({ projectDir, sessionId }, [message]);
       rmSync(projectDir, { recursive: true, force: true });
     }
   });

@@ -1,4 +1,4 @@
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
@@ -24,9 +24,12 @@ export function buildPhaseTimingRows(
     rows.push({
       key: `phase:${phase}`,
       node: (
-        <LabeledRow label={formatStageLabel(phase)} labelWidth={labelWidth}>
-          <Text color={theme.textDim}>{formatTime(duration)}</Text>
-        </LabeledRow>
+        <>
+          <Box width={2} flexShrink={0} />
+          <LabeledRow label={formatStageLabel(phase)} labelWidth={labelWidth}>
+            <Text color={theme.textDim}>{formatTime(duration)}</Text>
+          </LabeledRow>
+        </>
       ),
     });
   }

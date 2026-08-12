@@ -3,14 +3,34 @@ import type { CostGateSummary } from '../../../core/cost-gate-summary.js';
 import { SOFT_SEP } from '../../../components/separators.js';
 import type { CostApprovalState } from '../../../stores/cost-approval/prompt.js';
 import type { CostPrediction } from '../../../core/schemas/summary.js';
+import {
+  CONFIRM_HINT,
+  DENY_HINT,
+  approvalKeyColumnWidth,
+  approvalOptionLabelLines,
+  formatKeyHints,
+  type ApprovalOption,
+} from './approval.js';
 import { costTextWidth, wrappedRows } from './measure.js';
 
-export const COST_HINTS = `⏎/y approve${SOFT_SEP}esc reject`;
+// The option rows spell `y` and `x`; `enter` also approves and appears nowhere else, so by the
+// same rule every gate panel follows, the legend carries it and the escape and nothing more.
+export const COST_HINTS = formatKeyHints([{ key: CONFIRM_HINT.key, verb: 'approve' }, DENY_HINT]);
 
+// `Deny` answers `x` on every other gate. A cost gate that answered `n` instead was the one place
+// the same word took a different key; `n` still works, it is simply no longer what we teach.
+export const COST_OPTIONS: ReadonlyArray<ApprovalOption> = [
+  { key: 'y', label: 'Approve' },
+  { key: 'x', label: 'Deny' },
+];
+
+export const COST_KIND = 'cost';
+
+// The gate title is one row plus the blank under it, exactly like the sticky and confirm panels.
+const COST_TITLE_ROWS = 1;
 const COST_PAD_TOP_ROWS = 1;
 const COST_GAP_ROWS = 1;
-const COST_BUTTON_ROWS = 1;
-const COST_BUTTON_GAP_ROWS = 1;
+const COST_OPTION_GAP_ROWS = 1;
 const COST_BORDER_TOP_ROWS = 1;
 const COST_BORDER_BOTTOM_ROWS = 1;
 
@@ -52,15 +72,26 @@ function costComparisonRowCount(summary: CostGateSummary, width: number): number
 }
 
 function costScopeRows(summary: CostGateSummary, width: number): number {
-  return summary.scopeNote ? wrappedRows(summary.scopeNote, width) + 1 : 0;
+  return summary.scopeNote ? wrappedRows(summary.scopeNote, width) : 0;
+}
+
+function costOptionRows(width: number): number {
+  const keyWidth = approvalKeyColumnWidth(COST_OPTIONS);
+  return COST_OPTIONS.reduce(
+    (rows, option) => rows + approvalOptionLabelLines(option, keyWidth, width).length,
+    0,
+  );
 }
 
 export function getCostApprovalButtonRowOffset(prediction: CostPrediction, cols: number): number {
   const summary = formatCostGateSummary(prediction);
-  if (!summary) return COST_BORDER_TOP_ROWS + COST_PAD_TOP_ROWS + COST_GAP_ROWS;
+  if (!summary) {
+    return COST_BORDER_TOP_ROWS + COST_TITLE_ROWS + COST_PAD_TOP_ROWS + COST_GAP_ROWS;
+  }
   const width = costTextWidth(cols);
   return (
     COST_BORDER_TOP_ROWS +
+    COST_TITLE_ROWS +
     COST_PAD_TOP_ROWS +
     costHeaderRows(summary, width) +
     costComparisonRowCount(summary, width) +
@@ -76,8 +107,8 @@ export function getCostApprovalPromptRowsForPrediction(
   const width = costTextWidth(cols);
   return (
     getCostApprovalButtonRowOffset(prediction, cols) +
-    COST_BUTTON_ROWS +
-    COST_BUTTON_GAP_ROWS +
+    costOptionRows(width) +
+    COST_OPTION_GAP_ROWS +
     wrappedRows(COST_HINTS, width) +
     COST_BORDER_BOTTOM_ROWS
   );

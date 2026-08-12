@@ -11,6 +11,7 @@ describe('TaskSummary', () => {
   it('sanitizes completed task title and file text', () => {
     const ui = renderFeature(
       <TaskSummary
+        width={100}
         index={1}
         title={`apply \u001b[31mred\u001b[0m ${jwt}`}
         method="local"
@@ -31,6 +32,7 @@ describe('TaskSummary', () => {
   it('sanitizes skipped reasons', () => {
     const ui = renderFeature(
       <TaskSummary
+        width={100}
         index={2}
         title="skip task"
         method="skipped"
@@ -47,7 +49,9 @@ describe('TaskSummary', () => {
   });
 
   it('renders a failed summary with no ✗ glyph and a single failed word', () => {
-    const ui = renderFeature(<TaskSummary index={3} title="wire login route" method="failed" />);
+    const ui = renderFeature(
+      <TaskSummary width={100} index={3} title="wire login route" method="failed" />,
+    );
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('T3 wire login route');
@@ -59,7 +63,7 @@ describe('TaskSummary', () => {
 
   it('keeps the focused accent bar adjacent to the row title without an extra gutter', () => {
     const ui = renderFeature(
-      <TaskSummary index={3} title="wire login route" method="failed" focused={true} />,
+      <TaskSummary width={100} index={3} title="wire login route" method="failed" focused={true} />,
     );
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
@@ -72,7 +76,7 @@ describe('TaskSummary', () => {
 
   it('wears the ▌ accent bar when focused', () => {
     const focused = renderFeature(
-      <TaskSummary index={1} title="hash passwords" method="local" focused={true} />,
+      <TaskSummary width={100} index={1} title="hash passwords" method="local" focused={true} />,
     );
     const focusedFrame = focused.lastFrame() ?? '';
     expect(focusedFrame).toContain(glyph('liveBar'));
@@ -80,7 +84,7 @@ describe('TaskSummary', () => {
     focused.unmount();
 
     const unfocused = renderFeature(
-      <TaskSummary index={1} title="hash passwords" method="local" />,
+      <TaskSummary width={100} index={1} title="hash passwords" method="local" />,
     );
     expect(unfocused.lastFrame() ?? '').not.toContain(glyph('liveBar'));
     unfocused.unmount();
@@ -89,6 +93,7 @@ describe('TaskSummary', () => {
   it('joins a completed summary file and meta with a soft separator', () => {
     const ui = renderFeature(
       <TaskSummary
+        width={100}
         index={1}
         title="add session schema"
         method="local"

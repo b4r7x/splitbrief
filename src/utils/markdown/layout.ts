@@ -7,9 +7,15 @@ import type {
   MarkdownLayoutLine,
   MarkdownLayoutRow,
   MarkdownLayoutSegment,
+  MarkdownLayoutGlyphs,
+  MarkdownLayoutTail,
   MarkdownListItem,
 } from './types.js';
-import { getTerminalCellWidth, splitTerminalGraphemes } from '../display-text.js';
+import {
+  getTerminalCellWidth,
+  splitTerminalGraphemes,
+  wrapTerminalGraphemes,
+} from '../display-text.js';
 import { highlightMarkdownCode, type MarkdownHighlightSpan } from './highlight.js';
 import {
   appendSegment,
@@ -22,16 +28,27 @@ import { assertNever } from '../type-guards.js';
 
 interface LayoutOptions {
   width: number;
-  leadingHeadingGap?: boolean;
+  glyphs: MarkdownLayoutGlyphs;
+  previousBlock?: MarkdownLayoutTail | undefined;
 }
 
 type WrapMode = 'word' | 'hard';
-const THEMATIC_BREAK_CHAR = '\u2500';
-const CODE_GUTTER_RAIL = '\u258f';
+const MIN_HANGING_CODE_CELLS = 8;
+// Info strings that name no language. They label the fence with nothing the reader does not
+// already see, so the block opens on the bare rail instead.
+const UNINFORMATIVE_CODE_LANGUAGES: ReadonlySet<string> = new Set([
+  'text',
+  'txt',
+  'plain',
+  'plaintext',
+  'none',
+  'raw',
+  'output',
+]);
 
 export function layoutMarkdown(document: MarkdownDocument, options: LayoutOptions): MarkdownLayout {
   const width = normalizeWidth(options.width);
-  const rows = layoutBlocks(document.blocks, width, 'block', options.leadingHeadingGap ?? false);
+  const rows = layoutBlocks(document.blocks, width, 'block', options.previousBlock, options.glyphs);
   return {
     width,
     rows,
@@ -39,74 +56,136 @@ export function layoutMarkdown(document: MarkdownDocument, options: LayoutOption
   };
 }
 
+export function markdownLayoutTail(
+  rows: readonly MarkdownLayoutRow[],
+): MarkdownLayoutTail | undefined {
+  const last = rows.at(-1);
+  if (last === undefined) return undefined;
+  return {
+    kind: last.blockKind,
+    endsWithBlankLine: isBlankLine(last.lines.at(-1)),
+  };
+}
+
+function isBlankLine(line: MarkdownLayoutLine | undefined): boolean {
+  return line?.segments.every((segment) => segment.text.trim().length === 0) === true;
+}
+
 function layoutBlocks(
   blocks: readonly MarkdownBlock[],
   width: number,
   keyPrefix: string,
-  leadingHeadingGap = false,
+  previousBlock: MarkdownLayoutTail | undefined,
+  glyphs: MarkdownLayoutGlyphs,
 ): MarkdownLayoutRow[] {
   const rows: MarkdownLayoutRow[] = [];
+  let previous = previousBlock;
 
   blocks.forEach((block, index) => {
-    const headingGap = rows.length > 0 || leadingHeadingGap;
-    rows.push(...layoutBlock(block, width, `${keyPrefix}-${index}`, headingGap));
+    const blockRows = layoutBlock(block, width, `${keyPrefix}-${index}`, previous, glyphs);
+    rows.push(...blockRows);
+    // Blocks that render nothing (HTML comments) must not shadow the tail the next
+    // block compares against, or the chunked path and the whole-document path disagree.
+    previous = markdownLayoutTail(blockRows) ?? previous;
   });
 
   return rows;
+}
+
+function leadsWithGap(block: MarkdownBlock, previous: MarkdownLayoutTail | undefined): boolean {
+  if (previous === undefined) return false;
+  // A loose list item already closes on a blank line; adding another would double the air.
+  if (previous.endsWithBlankLine) return false;
+  if (block.kind === 'heading') return true;
+  if (previous.kind === 'heading') return false;
+  // A fence closes on its own rail. Without air after it, the next block's first row butts
+  // against that rail and two adjacent fences read as one long block with a gap in the middle.
+  if (previous.kind === 'code') return true;
+  return block.kind === 'paragraph' || block.kind === 'thematicBreak';
 }
 
 function layoutBlock(
   block: MarkdownBlock,
   width: number,
   key: string,
-  headingGap: boolean,
+  previousBlock: MarkdownLayoutTail | undefined,
+  glyphs: MarkdownLayoutGlyphs,
 ): MarkdownLayoutRow[] {
+  const leadingGap = leadsWithGap(block, previousBlock);
   switch (block.kind) {
     case 'frontmatter':
+      if (block.role === 'document') return [];
       return [createRow(key, block.kind, literalLines(block.lines, 'metadata', [], width))];
     case 'heading': {
-      const lines = wrapSegments(
+      const wrapped = wrapSegments(
         block.inlines.map((token) => headingTokenToSegment(token, block.depth)),
         [],
         [],
         width,
         'word',
       );
-      return [createRow(key, block.kind, headingGap ? [{ segments: [] }, ...lines] : lines)];
-    }
-    case 'thematicBreak':
-      return [
-        createRow(key, block.kind, [
-          { segments: [{ kind: 'rule', text: THEMATIC_BREAK_CHAR.repeat(Math.max(1, width)) }] },
-        ]),
-      ];
-    case 'code': {
-      const highlighted = highlightMarkdownCode({ lines: block.lines, language: block.language });
+      // The document title is the one heading with no heavier rank above it to place it, so it
+      // carries a hairline instead of borrowing weight the deeper ranks also use. The hairline
+      // runs the width of the title, not the terminal, so it underlines rather than divides —
+      // a full-width rule is what a thematic break looks like.
       const lines =
-        highlighted === null
-          ? literalLines(block.lines, 'code', literalPrefix(), width)
-          : highlightedCodeLines(highlighted, width);
-      return [createRow(key, block.kind, [codePadLine(), ...lines, codePadLine()])];
+        block.depth === 1 ? [...wrapped, headingRuleLine(wrapped, width, glyphs)] : wrapped;
+      return [createRow(key, block.kind, leadingGap ? [{ segments: [] }, ...lines] : lines)];
+    }
+    case 'thematicBreak': {
+      const lines = [thematicBreakLine(width, glyphs)];
+      return [createRow(key, block.kind, leadingGap ? [{ segments: [] }, ...lines] : lines)];
+    }
+    case 'code': {
+      const spans = highlightMarkdownCode({ lines: block.lines, language: block.language });
+      const highlighted = spans !== null && hasHighlightScope(spans) ? spans : undefined;
+      const lines =
+        highlighted === undefined
+          ? plainCodeLines(block.lines, width, glyphs)
+          : highlightedCodeLines(highlighted, width, glyphs);
+      return withLeadingGap(
+        [
+          createRow(key, block.kind, [
+            ...codeOpenLines(block.language, width, glyphs),
+            ...lines,
+            codeCloseLine(glyphs),
+          ]),
+        ],
+        leadingGap,
+      );
     }
     case 'list':
-      return block.items.map((item, index) => layoutListItem(item, width, `${key}-${index}`));
+      return withLeadingGap(
+        block.items.map((item, index) => layoutListItem(item, width, `${key}-${index}`, glyphs)),
+        leadingGap,
+      );
     case 'blockquote':
-      return layoutBlockquote(block.blocks, width, key, headingGap);
+      return layoutBlockquote(block.blocks, width, key, previousBlock, glyphs);
     case 'table':
-      return layoutMarkdownTable({ block, width, key });
+      return withLeadingGap(layoutMarkdownTable({ block, width, key, glyphs }), leadingGap);
     case 'htmlComment':
       return [];
-    case 'paragraph':
-      return [
-        createRow(
-          key,
-          block.kind,
-          wrapSegments(block.inlines.map(inlineTokenToSegment), [], [], width, 'word'),
-        ),
-      ];
+    case 'paragraph': {
+      const lines = wrapSegments(block.inlines.map(inlineTokenToSegment), [], [], width, 'word');
+      return [createRow(key, block.kind, leadingGap ? [{ segments: [] }, ...lines] : lines)];
+    }
     default:
       return assertNever(block);
   }
+}
+
+// Blocks that own more than one row take their air on the first of them, so the gap belongs to
+// the block it opens rather than trailing the one it follows.
+function withLeadingGap(
+  rows: readonly MarkdownLayoutRow[],
+  leadingGap: boolean,
+): MarkdownLayoutRow[] {
+  const first = rows[0];
+  if (!leadingGap || first === undefined) return [...rows];
+  return [
+    createRow(first.key, first.blockKind, [{ segments: [] }, ...first.lines]),
+    ...rows.slice(1),
+  ];
 }
 
 function literalLines(
@@ -121,26 +200,79 @@ function literalLines(
   );
 }
 
+// A fence whose highlighter produced no scoped span carries no syntax meaning, so it
+// wraps on words and hangs continuations at its own indent instead of breaking mid-token.
+function plainCodeLines(
+  sourceLines: readonly string[],
+  width: number,
+  glyphs: MarkdownLayoutGlyphs,
+): MarkdownLayoutLine[] {
+  const lines = sourceLines.length > 0 ? sourceLines : [''];
+  return lines.flatMap((line) => {
+    const indent = /^\s*/.exec(line)?.[0] ?? '';
+    // Past this point the hanging indent leaves too little room to wrap into, and every
+    // continuation would hold a cell or two, so the line falls back to the hard split.
+    if (
+      measureSegments(codeWrapPrefix(glyphs)) +
+        getTerminalCellWidth(indent) +
+        MIN_HANGING_CODE_CELLS >
+      width
+    ) {
+      return wrapSegments(
+        [{ kind: 'codeText', text: line }],
+        codeGutterPrefix(glyphs),
+        codeWrapPrefix(glyphs),
+        width,
+        'hard',
+      );
+    }
+    const hang: MarkdownLayoutSegment[] =
+      indent.length > 0 ? [{ kind: 'codeText', text: indent }] : [];
+    return wrapSegments(
+      [{ kind: 'codeText', text: line.slice(indent.length) }],
+      [...codeGutterPrefix(glyphs), ...hang],
+      [...codeWrapPrefix(glyphs), ...hang],
+      width,
+      'word',
+    );
+  });
+}
+
 function highlightedCodeLines(
   spanLines: readonly (readonly MarkdownHighlightSpan[])[],
   width: number,
+  glyphs: MarkdownLayoutGlyphs,
 ): MarkdownLayoutLine[] {
   const lines = spanLines.length > 0 ? spanLines : [[]];
-  const prefix = literalPrefix();
   return lines.flatMap((spans) =>
-    wrapSegments(spans.map(highlightSpanToSegment), prefix, prefix, width, 'hard'),
+    wrapSegments(
+      spans.map(highlightSpanToSegment),
+      codeGutterPrefix(glyphs),
+      codeWrapPrefix(glyphs),
+      width,
+      'hard',
+    ),
   );
+}
+
+function hasHighlightScope(spanLines: readonly (readonly MarkdownHighlightSpan[])[]): boolean {
+  return spanLines.some((spans) => spans.some((span) => span.scope !== undefined));
 }
 
 function highlightSpanToSegment(span: MarkdownHighlightSpan): MarkdownLayoutSegment {
   if (span.scope === undefined) {
-    return { kind: 'code', text: span.text };
+    return { kind: 'codeText', text: span.text };
   }
   return { kind: 'code', text: span.text, scope: span.scope };
 }
 
-function layoutListItem(item: MarkdownListItem, width: number, key: string): MarkdownLayoutRow {
-  const bullet = item.indent > 0 ? '◦ ' : '• ';
+function layoutListItem(
+  item: MarkdownListItem,
+  width: number,
+  key: string,
+  glyphs: MarkdownLayoutGlyphs,
+): MarkdownLayoutRow {
+  const bullet = item.indent > 0 ? `${glyphs.listBulletNested} ` : `${glyphs.listBullet} `;
   const marker = item.kind === 'ordered' ? `${item.marker} ` : bullet;
   const indent = Math.min(item.indent, Math.max(0, width - getTerminalCellWidth(marker) - 1));
   const prefixText = `${' '.repeat(indent)}${marker}`;
@@ -149,22 +281,41 @@ function layoutListItem(item: MarkdownListItem, width: number, key: string): Mar
     { kind: 'listMarker', text: ' '.repeat(prefixText.length) },
   ];
 
-  return createRow(
-    key,
-    'list',
-    wrapSegments(item.inlines.map(inlineTokenToSegment), prefix, continuation, width, 'word'),
+  const lines = wrapSegments(
+    item.inlines.map(inlineTokenToSegment),
+    prefix,
+    continuation,
+    width,
+    'word',
   );
+  if (item.continuation === undefined) return createRow(key, 'list', lines);
+
+  // The continuation paragraph hangs at the item's own text column so it reads as part of
+  // that item, and the blank line closes the item below it — air the next bullet inherits
+  // from above instead of a gap that would cut this paragraph off from its own bullet.
+  return createRow(key, 'list', [
+    ...lines,
+    ...wrapSegments(
+      item.continuation.inlines.map(inlineTokenToSegment),
+      continuation,
+      continuation,
+      width,
+      'word',
+    ),
+    { segments: [] },
+  ]);
 }
 
 function layoutBlockquote(
   blocks: readonly MarkdownBlock[],
   width: number,
   key: string,
-  leadingHeadingGap: boolean,
+  previousBlock: MarkdownLayoutTail | undefined,
+  glyphs: MarkdownLayoutGlyphs,
 ): MarkdownLayoutRow[] {
-  const quotePrefix: MarkdownLayoutSegment = { kind: 'blockquoteMarker', text: '▎ ' };
-  const innerWidth = Math.max(1, width - getTerminalCellWidth(quotePrefix.text));
-  const innerRows = layoutBlocks(blocks, innerWidth, `${key}-quote`, leadingHeadingGap);
+  const quotePrefix = blockquotePrefix(width);
+  const innerWidth = Math.max(2, width - getTerminalCellWidth(quotePrefix.text));
+  const innerRows = layoutBlocks(blocks, innerWidth, `${key}-quote`, previousBlock, glyphs);
 
   if (innerRows.length === 0) {
     return [createRow(key, 'blockquote', [{ segments: [quotePrefix] }])];
@@ -175,10 +326,16 @@ function layoutBlockquote(
       `${key}-${index}`,
       'blockquote',
       row.lines.map((line) => ({
-        segments: [quotePrefix, ...line.segments],
+        segments: quotePrefix.text.length === 0 ? line.segments : [quotePrefix, ...line.segments],
       })),
     ),
   );
+}
+
+function blockquotePrefix(width: number): MarkdownLayoutSegment {
+  if (width <= 2) return { kind: 'blockquoteMarker', text: '' };
+  if (width === 3) return { kind: 'blockquoteMarker', text: '▎' };
+  return { kind: 'blockquoteMarker', text: '▎ ' };
 }
 
 function createRow(
@@ -202,20 +359,24 @@ function wrapSegments(
   width: number,
   mode: WrapMode,
 ): MarkdownLayoutLine[] {
-  const wrapWidth = Math.max(
-    1,
-    width,
-    measureSegments(firstPrefix) + 1,
-    measureSegments(continuationPrefix) + 1,
-  );
+  const wrapWidth = Math.max(1, width);
+  let maxContentGraphemeWidth = 1;
+  for (const segment of segments) {
+    for (const grapheme of splitTerminalGraphemes(segment.text)) {
+      maxContentGraphemeWidth = Math.max(maxContentGraphemeWidth, getTerminalCellWidth(grapheme));
+    }
+  }
+  const prefixBudget = Math.max(0, wrapWidth - maxContentGraphemeWidth);
+  const fittedFirstPrefix = fitPrefixSegments(firstPrefix, prefixBudget);
+  const fittedContinuationPrefix = fitPrefixSegments(continuationPrefix, prefixBudget);
   const lines: MarkdownLayoutLine[] = [];
-  let current = cloneSegments(firstPrefix);
+  let current = cloneSegments(fittedFirstPrefix);
   let currentLength = measureSegments(current);
   let prefixLength = currentLength;
 
   const startContinuation = () => {
     lines.push({ segments: trimTrailingSpace(current) });
-    current = cloneSegments(continuationPrefix);
+    current = cloneSegments(fittedContinuationPrefix);
     currentLength = measureSegments(current);
     prefixLength = currentLength;
   };
@@ -226,35 +387,16 @@ function wrapSegments(
   };
 
   const appendHard = (segment: MarkdownLayoutSegment, text: string) => {
-    let rest = splitTerminalGraphemes(text);
-    while (rest.length > 0) {
-      const capacity = Math.max(0, wrapWidth - currentLength);
-      if (capacity === 0) {
+    wrapTerminalGraphemes({
+      graphemes: splitTerminalGraphemes(text),
+      maxWidth: wrapWidth,
+      initialWidth: currentLength,
+      flush: () => {
         startContinuation();
-        continue;
-      }
-
-      const chunk = takeLeadingGraphemes(rest, capacity);
-      if (chunk.text.length === 0) {
-        if (currentLength > prefixLength) {
-          startContinuation();
-          continue;
-        }
-        const grapheme = rest[0];
-        if (grapheme === undefined) break;
-        appendPart(segment, grapheme);
-        rest = rest.slice(1);
-        if (rest.length > 0) startContinuation();
-        continue;
-      }
-
-      appendPart(segment, chunk.text);
-      rest = rest.slice(chunk.count);
-
-      if (rest.length > 0) {
-        startContinuation();
-      }
-    }
+        return currentLength;
+      },
+      append: (grapheme) => appendPart(segment, grapheme),
+    });
   };
 
   const appendWord = (segment: MarkdownLayoutSegment, text: string) => {
@@ -282,7 +424,7 @@ function wrapSegments(
   };
 
   for (const segment of segments) {
-    if (mode === 'hard' || isHardWrappedSegment(segment)) {
+    if (mode === 'hard') {
       appendHard(segment, segment.text);
       continue;
     }
@@ -306,37 +448,103 @@ function headingTokenToSegment(
   return inlineTokenToSegment(token);
 }
 
-function literalPrefix(): MarkdownLayoutSegment[] {
-  return [{ kind: 'codeGutter', text: `${CODE_GUTTER_RAIL} ` }];
+function codeGutterPrefix(glyphs: MarkdownLayoutGlyphs): MarkdownLayoutSegment[] {
+  return [{ kind: 'codeGutter', text: `${glyphs.codeRail} ` }];
 }
 
-function codePadLine(): MarkdownLayoutLine {
-  return { segments: [{ kind: 'codeGutter', text: CODE_GUTTER_RAIL }] };
+function codeWrapPrefix(glyphs: MarkdownLayoutGlyphs): MarkdownLayoutSegment[] {
+  return [{ kind: 'codeGutter', text: `${glyphs.codeRail}${glyphs.wrapContinuation}` }];
 }
 
-function isHardWrappedSegment(segment: MarkdownLayoutSegment): boolean {
-  return segment.kind === 'code';
+// The tag sits flush with the block's right edge so it never occupies the column the code
+// starts in, and it wraps like any other content when it cannot: an unwrapped row would
+// report height 1 for something the terminal breaks across several lines, and the
+// virtualized window measures rows by that height.
+function codeOpenLines(
+  language: string | undefined,
+  width: number,
+  glyphs: MarkdownLayoutGlyphs,
+): MarkdownLayoutLine[] {
+  const label = codeLanguageLabel(language);
+  if (label === undefined) return [codeCloseLine(glyphs)];
+
+  const railWidth = getTerminalCellWidth(glyphs.codeRail);
+  const pad = width - railWidth - getTerminalCellWidth(label);
+  if (pad < 1) {
+    return wrapSegments(
+      [{ kind: 'codeLanguage', text: label }],
+      codeGutterPrefix(glyphs),
+      codeGutterPrefix(glyphs),
+      width,
+      'hard',
+    );
+  }
+
+  return [
+    {
+      segments: [
+        { kind: 'codeGutter', text: `${glyphs.codeRail}${' '.repeat(pad)}` },
+        { kind: 'codeLanguage', text: label },
+      ],
+    },
+  ];
+}
+
+function codeLanguageLabel(language: string | undefined): string | undefined {
+  if (language === undefined) return undefined;
+  const label = language.trim();
+  if (label.length === 0) return undefined;
+  return UNINFORMATIVE_CODE_LANGUAGES.has(label.toLowerCase()) ? undefined : label;
+}
+
+function codeCloseLine(glyphs: MarkdownLayoutGlyphs): MarkdownLayoutLine {
+  return { segments: [{ kind: 'codeGutter', text: glyphs.codeRail }] };
+}
+
+function thematicBreakLine(width: number, glyphs: MarkdownLayoutGlyphs): MarkdownLayoutLine {
+  return { segments: [{ kind: 'rule', text: glyphs.divider.repeat(Math.max(1, width)) }] };
+}
+
+function headingRuleLine(
+  lines: readonly MarkdownLayoutLine[],
+  width: number,
+  glyphs: MarkdownLayoutGlyphs,
+): MarkdownLayoutLine {
+  const longest = lines.reduce((max, line) => Math.max(max, measureSegments(line.segments)), 0);
+  return thematicBreakLine(Math.min(width, longest), glyphs);
 }
 
 function cloneSegments(segments: readonly MarkdownLayoutSegment[]): MarkdownLayoutSegment[] {
   return segments.map((segment) => ({ ...segment }));
 }
 
-function takeLeadingGraphemes(
-  graphemes: readonly string[],
+function fitPrefixSegments(
+  segments: readonly MarkdownLayoutSegment[],
   maxCells: number,
-): { text: string; count: number } {
-  let width = 0;
-  const parts: string[] = [];
+): MarkdownLayoutSegment[] {
+  if (maxCells <= 0) return [];
+  const fitted: MarkdownLayoutSegment[] = [];
+  let remaining = maxCells;
 
-  for (const grapheme of graphemes) {
-    const nextWidth = getTerminalCellWidth(grapheme);
-    if (width + nextWidth > maxCells) break;
-    parts.push(grapheme);
-    width += nextWidth;
+  for (const segment of segments) {
+    const graphemes: string[] = [];
+    for (const grapheme of splitTerminalGraphemes(segment.text)) {
+      const graphemeWidth = getTerminalCellWidth(grapheme);
+      if (graphemeWidth > remaining) {
+        appendSegment(fitted, { ...segment, text: graphemes.join('') });
+        return fitted;
+      }
+      graphemes.push(grapheme);
+      remaining -= graphemeWidth;
+      if (remaining === 0) {
+        appendSegment(fitted, { ...segment, text: graphemes.join('') });
+        return fitted;
+      }
+    }
+    appendSegment(fitted, { ...segment, text: graphemes.join('') });
   }
 
-  return { text: parts.join(''), count: parts.length };
+  return fitted;
 }
 
 function normalizeWidth(width: number): number {

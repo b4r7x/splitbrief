@@ -1,8 +1,10 @@
-import { Text } from 'ink';
+import type { ReactNode } from 'react';
+import { Box, Text } from 'ink';
 import { formatCost, formatCostFact, formatKnownCost } from '../../../core/formatting.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { LabeledRow } from '../../../components/labeled-row.js';
+import { SOFT_SEP } from '../../../components/separators.js';
 import {
   costKnownFlags,
   unmeteredRunCostLabel,
@@ -18,10 +20,7 @@ interface BuildCostBreakdownRowsInput {
 }
 
 function formatSavingsLabel(costBreakdown: CostBreakdown): string {
-  if (costBreakdown.hasSavingsEstimate === false) return 'Unknown price';
   if (costBreakdown.savingsAmount < 0) {
-    const unmetered = unmeteredRunCostLabel(costBreakdown);
-    if (unmetered !== null) return unmetered;
     return `Extra ${formatCostFact(Math.abs(costBreakdown.savingsAmount))} (${costBreakdown.savingsPercentage.toFixed(0)}%)`;
   }
   if (costBreakdown.savingsAmount === 0) {
@@ -31,25 +30,55 @@ function formatSavingsLabel(costBreakdown: CostBreakdown): string {
 }
 
 function savingsColor(costBreakdown: CostBreakdown, theme: Theme): string {
-  if (costBreakdown.hasSavingsEstimate === false) return theme.textDim;
   if (costBreakdown.savingsAmount <= 0) return theme.textDim;
   return theme.success;
 }
 
-function savingsRowLabel(costBreakdown: CostBreakdown): string {
-  if (costBreakdown.savingsAmount < 0)
-    return unmeteredRunCostLabel(costBreakdown) !== null ? 'Billing' : 'Extra cost';
-  return 'Saved';
-}
-
-function meteredCostLabel(costBreakdown: CostBreakdown, amount: number, known: boolean): string {
-  return (
-    unmeteredRunCostLabel(costBreakdown) ?? formatKnownCost(amount, known ? 'known' : 'partial')
-  );
+// A price that is neither measured nor partially measured has nothing to show;
+// the section-level note speaks for every dropped row at once.
+function knownCostText(amount: number, known: boolean): string | null {
+  if (!known && amount <= 0) return null;
+  return formatKnownCost(amount, known ? 'known' : 'partial');
 }
 
 function providerCostLabel(costBreakdown: CostBreakdown, provider: string, cost: number): string {
   return costBreakdown.offeringPresentations?.[provider]?.costLabel ?? formatCost(cost);
+}
+
+function costRow(
+  key: string,
+  label: string,
+  labelWidth: number,
+  value: ReactNode,
+): ScrollableDocumentRow {
+  return {
+    key,
+    node: (
+      <>
+        <Box width={2} flexShrink={0} />
+        <LabeledRow label={label} labelWidth={labelWidth}>
+          {value}
+        </LabeledRow>
+      </>
+    ),
+  };
+}
+
+function providerRows(
+  costBreakdown: CostBreakdown,
+  labelWidth: number,
+  theme: Theme,
+): ScrollableDocumentRow[] {
+  return Object.entries(costBreakdown.providerCosts ?? {}).map(([provider, providerCost]) =>
+    costRow(
+      `cost-provider:${provider}`,
+      stripTerminalControls(getProviderDisplayName(provider)),
+      labelWidth,
+      <Text color={theme.textDim}>
+        {providerCostLabel(costBreakdown, provider, providerCost.cost)}
+      </Text>,
+    ),
+  );
 }
 
 export function buildCostBreakdownRows({
@@ -57,105 +86,115 @@ export function buildCostBreakdownRows({
   labelWidth,
   theme,
 }: BuildCostBreakdownRowsInput): ScrollableDocumentRow[] {
+  const rows: ScrollableDocumentRow[] = [
+    { key: 'cost-heading', node: <Text color={theme.textDim}>Cost</Text> },
+  ];
   const { plannerCostKnown, implementerCostKnown, totalCostKnown, allPlannerBaselineKnown } =
     costKnownFlags(costBreakdown);
+  const baseline = knownCostText(costBreakdown.hypotheticalCost, allPlannerBaselineKnown);
+
+  const unmetered = unmeteredRunCostLabel(costBreakdown);
+  if (unmetered !== null) {
+    rows.push(
+      costRow(
+        'cost-billing',
+        'Billing',
+        labelWidth,
+        <Text color={theme.textDim}>{unmetered}</Text>,
+      ),
+    );
+    if (baseline !== null) {
+      rows.push(
+        costRow(
+          'cost-baseline',
+          'All-planner baseline',
+          labelWidth,
+          <Text color={theme.textDim}>{baseline}</Text>,
+        ),
+      );
+    }
+    if (costBreakdown.hasSavingsEstimate !== false && costBreakdown.savingsAmount > 0) {
+      rows.push(
+        costRow(
+          'cost-saved',
+          'Saved',
+          labelWidth,
+          <Text color={theme.success}>{formatSavingsLabel(costBreakdown)}</Text>,
+        ),
+      );
+    }
+    rows.push(...providerRows(costBreakdown, labelWidth, theme));
+    return rows;
+  }
+
+  const valueRows: ScrollableDocumentRow[] = [];
+  const actual = knownCostText(costBreakdown.totalActualCost, totalCostKnown);
+  if (actual !== null) {
+    valueRows.push(costRow('cost-actual', 'Actual cost', labelWidth, <Text bold>{actual}</Text>));
+  }
+  const planner = knownCostText(costBreakdown.actualPlannerCost, plannerCostKnown);
+  if (planner !== null) {
+    valueRows.push(
+      costRow(
+        'cost-planner',
+        'Planner cost',
+        labelWidth,
+        <Text color={theme.textDim}>{planner}</Text>,
+      ),
+    );
+  }
+  const implementer = knownCostText(costBreakdown.actualImplementerCost, implementerCostKnown);
+  if (implementer !== null) {
+    valueRows.push(
+      costRow(
+        'cost-implementer',
+        'Implementer cost',
+        labelWidth,
+        <Text color={theme.textDim}>{implementer}</Text>,
+      ),
+    );
+  }
+  if (baseline !== null) {
+    valueRows.push(
+      costRow(
+        'cost-baseline',
+        'All-planner baseline',
+        labelWidth,
+        <Text color={theme.textDim}>{baseline}</Text>,
+      ),
+    );
+  }
+  if (costBreakdown.hasSavingsEstimate !== false) {
+    valueRows.push(
+      costRow(
+        'cost-saved',
+        costBreakdown.savingsAmount < 0 ? 'Extra cost' : 'Saved',
+        labelWidth,
+        <Text color={savingsColor(costBreakdown, theme)}>{formatSavingsLabel(costBreakdown)}</Text>,
+      ),
+    );
+  }
+  rows.push(...valueRows);
+
   const hasUnknownPrice =
     !plannerCostKnown ||
     !implementerCostKnown ||
     !totalCostKnown ||
     !allPlannerBaselineKnown ||
     costBreakdown.hasSavingsEstimate === false;
-
-  const rows: ScrollableDocumentRow[] = [
-    {
-      key: 'cost-heading',
-      node: <Text color={theme.textDim}>◆ Cost</Text>,
-    },
-    {
-      key: 'cost-actual',
-      node: (
-        <LabeledRow label="Actual cost" labelWidth={labelWidth}>
-          <Text bold>
-            {meteredCostLabel(costBreakdown, costBreakdown.totalActualCost, totalCostKnown)}
-          </Text>
-        </LabeledRow>
-      ),
-    },
-    {
-      key: 'cost-planner',
-      node: (
-        <LabeledRow label="Planner cost" labelWidth={labelWidth}>
-          <Text color={theme.textDim}>
-            {meteredCostLabel(costBreakdown, costBreakdown.actualPlannerCost, plannerCostKnown)}
-          </Text>
-        </LabeledRow>
-      ),
-    },
-    {
-      key: 'cost-implementer',
-      node: (
-        <LabeledRow label="Implementer cost" labelWidth={labelWidth}>
-          <Text color={theme.textDim}>
-            {meteredCostLabel(
-              costBreakdown,
-              costBreakdown.actualImplementerCost,
-              implementerCostKnown,
-            )}
-          </Text>
-        </LabeledRow>
-      ),
-    },
-    {
-      key: 'cost-baseline',
-      node: (
-        <LabeledRow label="All-planner baseline" labelWidth={labelWidth}>
-          <Text color={theme.textDim}>
-            {formatKnownCost(
-              costBreakdown.hypotheticalCost,
-              allPlannerBaselineKnown ? 'known' : 'partial',
-            )}
-          </Text>
-        </LabeledRow>
-      ),
-    },
-    {
-      key: 'cost-saved',
-      node: (
-        <LabeledRow label={savingsRowLabel(costBreakdown)} labelWidth={labelWidth}>
-          <Text color={savingsColor(costBreakdown, theme)}>
-            {formatSavingsLabel(costBreakdown)}
-          </Text>
-        </LabeledRow>
-      ),
-    },
-  ];
-
   if (hasUnknownPrice) {
     rows.push({
-      key: 'cost-unknown-price',
+      key: 'cost-unpriced-note',
       node: (
-        <LabeledRow label="Unknown price" labelWidth={labelWidth}>
-          <Text color={theme.textDim}>Provider price unavailable</Text>
-        </LabeledRow>
+        <Text color={theme.textDim} wrap="truncate-end">
+          {'  '}
+          {valueRows.length === 0 ? 'not estimated' : 'unpriced usage'}
+          {SOFT_SEP}provider pricing unavailable
+        </Text>
       ),
     });
   }
 
-  for (const [provider, providerCost] of Object.entries(costBreakdown.providerCosts ?? {})) {
-    rows.push({
-      key: `cost-provider:${provider}`,
-      node: (
-        <LabeledRow
-          label={stripTerminalControls(getProviderDisplayName(provider))}
-          labelWidth={labelWidth}
-        >
-          <Text color={theme.textDim}>
-            {providerCostLabel(costBreakdown, provider, providerCost.cost)}
-          </Text>
-        </LabeledRow>
-      ),
-    });
-  }
-
+  rows.push(...providerRows(costBreakdown, labelWidth, theme));
   return rows;
 }

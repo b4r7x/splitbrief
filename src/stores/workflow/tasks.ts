@@ -1,17 +1,29 @@
 import { createStore, storeBase } from '../create-store.js';
-import type { EngineEvent } from '../../engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import type { TaskStatus } from '../../core/schemas/enums.js';
 import { taskStatusForCompletionMethod } from '../../core/task-completion.js';
+
+type FileAction = EngineEventOf<'task_started'>['action'];
 
 export interface WorkflowTask {
   id: string;
   title: string;
   status: TaskStatus;
+  file?: string;
+  action?: FileAction;
   route?: {
     profile?: string;
     runner?: string;
     model?: string;
   };
+}
+
+// Both `tasks_planned` and `task_started` carry `file` and `action`, but the resume path rebuilds
+// tasks from persisted state that has neither, so a row cannot assume they are there. Rendering the
+// pair through this is what stops a missing field reaching the screen as the literal `undefined`.
+export function taskTargetLabel(task: WorkflowTask): string {
+  if (task.file === undefined || task.file === '') return '';
+  return task.action === undefined ? task.file : `${task.file} (${task.action})`;
 }
 
 export interface TasksState {
@@ -46,10 +58,49 @@ export const tasksStore = {
   __testReset,
 };
 
+export interface TaskListView {
+  items: readonly WorkflowTask[];
+  settled: number;
+  total: number;
+  unannounced: number;
+}
+
+// `tasks_planned` seeds the whole plan, so `unannounced` is normally zero. It stays non-zero only
+// for a stream that never carried the announcement, where `totalTasks` comes from `task_started`
+// and the tail has no titles to list.
+export function selectTaskListView(state: TasksState): TaskListView {
+  const total = Math.max(state.totalTasks, state.tasks.length);
+  let settled = 0;
+  for (const task of state.tasks) {
+    if (task.status === 'done' || task.status === 'escalated') settled += 1;
+  }
+  return {
+    items: state.tasks,
+    settled,
+    total,
+    unannounced: Math.max(0, total - state.tasks.length),
+  };
+}
+
 export function updateTaskMap(
   taskMap: Map<string, WorkflowTask>,
   event: EngineEvent,
 ): Map<string, WorkflowTask> {
+  if (event.type === 'tasks_planned') {
+    const next = new Map<string, WorkflowTask>();
+    for (const task of event.tasks) {
+      const existing = taskMap.get(task.id);
+      next.set(task.id, {
+        id: task.id,
+        title: task.title,
+        status: existing?.status ?? 'pending',
+        file: task.file,
+        action: task.action,
+        ...(existing?.route !== undefined && { route: existing.route }),
+      });
+    }
+    return next;
+  }
   if (event.type === 'task_started') {
     const next = new Map(taskMap);
     const hasRoute =
@@ -60,6 +111,8 @@ export function updateTaskMap(
       id: event.taskId,
       title: event.title,
       status: 'in_progress',
+      file: event.file,
+      action: event.action,
       ...(hasRoute && {
         route: {
           ...(event.implementerProfile !== undefined && { profile: event.implementerProfile }),
@@ -108,6 +161,9 @@ export function updateTaskCounts(
   event: EngineEvent,
 ): Pick<TasksState, 'currentTask' | 'totalTasks' | 'taskCompletionTimes'> {
   let { currentTask, totalTasks, taskCompletionTimes } = state;
+  if (event.type === 'tasks_planned') {
+    totalTasks = event.total;
+  }
   if (event.type === 'task_started') {
     currentTask = event.index + 1;
     totalTasks = event.total;

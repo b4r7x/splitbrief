@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Text } from 'ink';
 import { render } from 'ink-testing-library';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+
+// Read once from a freshly reset store so the assertion tracks the shipped default.
+controlsStore.__testReset();
+const sidebarDefault = controlsStore.get().sidebarVisible;
 import { completionStore } from '../../../stores/ui/completion.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
@@ -61,22 +66,7 @@ function seedLongConversation(): void {
 function activity(
   overrides: Partial<EngineEventOf<'runner_call_activity'>>,
 ): EngineEventOf<'runner_call_activity'> {
-  return {
-    type: 'runner_call_activity',
-    ts: overrides.ts ?? 0,
-    phase: overrides.phase ?? 'researching',
-    callId: overrides.callId ?? 'call-1',
-    role: overrides.role ?? 'planner',
-    backendKind: overrides.backendKind ?? 'cli',
-    runnerName: overrides.runnerName ?? 'codex',
-    sequence: overrides.sequence ?? 1,
-    activityId: overrides.activityId ?? 'activity-1',
-    stage: overrides.stage ?? 'updated',
-    kind: overrides.kind ?? 'read',
-    label: overrides.label ?? 'reading file.ts',
-    redacted: overrides.redacted ?? false,
-    ...(overrides.target !== undefined && { target: overrides.target }),
-  };
+  return makeRunnerCallActivity('planner-read', overrides);
 }
 
 function seedExpandableActivityBatch(): string {
@@ -191,7 +181,9 @@ describe('useWorkflowKeys', () => {
     ui.stdin.write(CTRL_E);
     await tick(1);
     await tick(1);
-    expect(controlsStore.get().sidebarVisible).toBe(false);
+    // The point is that none of these keys touched the sidebar, so compare against the default
+    // rather than a literal that has to be edited every time the default moves.
+    expect(controlsStore.get().sidebarVisible).toBe(sidebarDefault);
     ui.unmount();
   });
 

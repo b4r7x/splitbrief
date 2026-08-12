@@ -20,7 +20,7 @@ import {
   openCostApprovalPrompt,
 } from '../../../stores/cost-approval/prompt.js';
 import { readConversationScrollSnapshot } from '../layout/snapshot.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
 
@@ -51,7 +51,8 @@ describe('CostApprovalPrompt', () => {
     expect(output).toContain(
       'output, retries, validation reruns, and escalation tracked at runtime',
     );
-    expect(output).toContain('approve?');
+    expect(output).toContain('y   Approve');
+    expect(output).toContain('x   Deny');
     expect(output).not.toContain('Est.');
     ui.unmount();
   });
@@ -184,41 +185,70 @@ describe('cost approve/reject click zones', () => {
     _resetMouseZones();
   });
 
-  it('splits the approve/reject row into two full-height halves (calibration)', () => {
+  it('keeps both narrow option rows visible and clickable inside the computed box', async () => {
+    const cols = 10;
+    const prediction = makeCostPrediction();
+    terminalSizeStore.__testReset({ cols, rows: 80, isSmall: true });
+    const onApprove = vi.fn();
+    const onReject = vi.fn();
+    const ui = renderFeature(
+      <CostApprovalPrompt prediction={prediction} onApprove={onApprove} onReject={onReject} />,
+      { cols, rows: 80 },
+    );
+    await flushEffects();
+
+    const promptRows = getCostApprovalPromptRowsForPrediction(prediction, cols);
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('> y');
+    expect(frame).toContain('  x');
+
+    const zones = getCostApprovalButtonZones({
+      boxTop: 10,
+      cols,
+      promptRows,
+      prediction,
+    });
+    expect(zones).toHaveLength(2);
+    expect(zones.every((zone) => zone.bottom <= 10 + promptRows - 1)).toBe(true);
+
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('stacks the options as full-width rows like every sibling gate (calibration)', () => {
     const zones = getCostApprovalButtonZones({
       boxTop: 10,
       cols: 200,
       promptRows: 30,
       prediction: makeCostPrediction(),
     });
-    expect(zones).not.toBeNull();
-    // boxTop(10) + border(1) + pad(1) + header(1) + comparison(3) + scope(1) + scopeBlank(1)
-    //   + gap(1) = approve/reject row 19.
-    expect(zones?.approve).toMatchObject({ left: 1, right: 100, top: 19, bottom: 19 });
-    expect(zones?.reject).toMatchObject({ left: 101, right: 200, top: 19, bottom: 19 });
+    // boxTop(10) + border(1) + title(1) + pad(1) + header(1) + comparison(3) + scope(1)
+    //   + gap(1) = approve row 19, deny row 20; both span the panel.
+    expect(zones).toEqual([
+      { key: 'y', left: 1, right: 200, top: 19, bottom: 19 },
+      { key: 'x', left: 1, right: 200, top: 20, bottom: 20 },
+    ]);
   });
 
-  it('collapses to a numberless approve/reject row when the summary is unpriced (calibration)', () => {
+  it('collapses to a numberless option pair when the summary is unpriced (calibration)', () => {
     const zones = getCostApprovalButtonZones({
       boxTop: 10,
       cols: 200,
-      promptRows: 7,
+      promptRows: 10,
       prediction: makeCostPrediction({ deterministic: undefined }),
     });
-    expect(zones).not.toBeNull();
-    // boxTop(10) + border(1) + pad(1) + gap(1) = numberless approve/reject row 13 (no data rows).
-    expect(zones?.approve).toMatchObject({ left: 1, right: 100, top: 13, bottom: 13 });
-    expect(zones?.reject).toMatchObject({ left: 101, right: 200, top: 13, bottom: 13 });
+    // boxTop(10) + border(1) + title(1) + pad(1) + gap(1) = approve row 14, deny row 15.
+    expect(zones.map((zone) => zone.top)).toEqual([14, 15]);
   });
 
-  it('returns null when the row would fall below the clamped prompt box', () => {
+  it('drops option rows that would fall below the clamped prompt box', () => {
     const zones = getCostApprovalButtonZones({
       boxTop: 10,
       cols: 200,
       promptRows: 5,
       prediction: makeCostPrediction(),
     });
-    expect(zones).toBeNull();
+    expect(zones).toEqual([]);
   });
 
   it('fires approve and reject callbacks when the rendered click zones are hit', async () => {
@@ -239,11 +269,12 @@ describe('cost approve/reject click zones', () => {
       promptRows: getCostApprovalPromptRowsForPrediction(prediction, 200),
       prediction,
     });
-    if (!zones) throw new Error('expected zones');
+    const [approve, deny] = zones;
+    if (!approve || !deny) throw new Error('expected two cost option zones');
 
-    hitTopmostZone(40, zones.approve.top)?.onClick?.();
-    hitTopmostZone(150, zones.reject.top)?.onClick?.();
-    hitTopmostZone(40, zones.approve.top - 1)?.onClick?.();
+    hitTopmostZone(40, approve.top)?.onClick?.();
+    hitTopmostZone(150, deny.top)?.onClick?.();
+    hitTopmostZone(40, approve.top - 1)?.onClick?.();
 
     expect(onApprove).toHaveBeenCalledOnce();
     expect(onReject).toHaveBeenCalledOnce();
@@ -263,7 +294,7 @@ describe('cost gate render aligns to the computed button offset', () => {
     );
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     const boxWidth = lines[0]?.length ?? 0;
-    const approveRow = lines.findIndex((line) => line.includes('approve?'));
+    const approveRow = lines.findIndex((line) => line.includes('Approve'));
     expect(approveRow).toBe(getCostApprovalButtonRowOffset(makeCostPrediction(), boxWidth));
     ui.unmount();
   });
@@ -279,12 +310,13 @@ describe('cost gate render aligns to the computed button offset', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     const lines = frame.split('\n');
     const boxWidth = lines[0]?.length ?? 0;
-    const approveRow = lines.findIndex((line) => line.includes('approve?'));
+    const approveRow = lines.findIndex((line) => line.includes('Approve'));
     expect(approveRow).toBe(
       getCostApprovalButtonRowOffset(makeCostPrediction({ deterministic: undefined }), boxWidth),
     );
-    // The numberless gate has no header/comparison/scope rows: border + pad + gap = row 3.
-    expect(approveRow).toBe(3);
+    // The numberless gate has no header/comparison/scope rows: border + title + pad + gap = row 4.
+    expect(approveRow).toBe(4);
+    expect(frame).toContain('x   Deny');
     // No fabricated figures leak into the collapsed gate.
     expect(frame).not.toContain('$');
     expect(frame).not.toContain('tasks');

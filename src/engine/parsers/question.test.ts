@@ -3,6 +3,7 @@ import {
   extractQuestionsFromStream,
   createQuestionAccumulator,
   createQuestionMarkerStripper,
+  MAX_PENDING_MARKER_BYTES,
 } from './question.js';
 
 describe('extractQuestionsFromStream', () => {
@@ -79,10 +80,23 @@ describe('extractQuestionsFromStream', () => {
 });
 
 describe('createQuestionAccumulator', () => {
+  const marker = '<!-- Q:{"id":"q1","type":"confirm","text":"OK?"} -->';
+  const markerPrefix = '<!-- Q:';
+
   it('returns question when complete in one chunk', () => {
     const acc = createQuestionAccumulator();
-    const questions = acc.addChunk('<!-- Q:{"id":"q1","type":"confirm","text":"OK?"} -->');
+    const questions = acc.addChunk(marker);
     expect(questions.length).toBe(1);
+    expect(questions[0]?.id).toBe('q1');
+  });
+
+  it.each(
+    Array.from({ length: markerPrefix.length - 1 }, (_, index) => index + 1),
+  )('reassembles a marker split after prefix character %i', (splitAt) => {
+    const acc = createQuestionAccumulator();
+    expect(acc.addChunk(marker.slice(0, splitAt))).toEqual([]);
+    const questions = acc.addChunk(marker.slice(splitAt));
+    expect(questions).toHaveLength(1);
     expect(questions[0]?.id).toBe('q1');
   });
 
@@ -136,6 +150,40 @@ describe('createQuestionAccumulator', () => {
     expect(r2.length).toBe(0);
     const all = acc.getAll();
     expect(all.length).toBe(1);
+  });
+
+  it('deduplicates repeated question IDs within one chunk', () => {
+    const acc = createQuestionAccumulator();
+    const repeated = '<!-- Q:{"id":"q1","type":"confirm","text":"A?"} -->';
+
+    expect(acc.addChunk(`${repeated}${repeated}`)).toEqual([
+      { id: 'q1', type: 'confirm', text: 'A?' },
+    ]);
+    expect(acc.getAll()).toEqual([{ id: 'q1', type: 'confirm', text: 'A?' }]);
+  });
+
+  it('clears unrelated chunks instead of retaining arbitrary prose', () => {
+    const acc = createQuestionAccumulator();
+    expect(acc.addChunk('ordinary output '.repeat(1024))).toEqual([]);
+    expect(acc.addChunk('that does not contain a marker')).toEqual([]);
+    expect(acc.addChunk('{"id":"not-a-question","type":"input","text":"No"} -->')).toEqual([]);
+    expect(acc.addChunk(marker)).toHaveLength(1);
+  });
+
+  it('bounds retained state across malformed prefixes in small chunks', () => {
+    const acc = createQuestionAccumulator();
+    const malformedPrefix = '<!-- Q:{';
+    let emitted = 0;
+
+    for (let i = 0; i < 20_000; i += 1) {
+      for (let offset = 0; offset < malformedPrefix.length; offset += 2) {
+        emitted += acc.addChunk(malformedPrefix.slice(offset, offset + 2)).length;
+      }
+    }
+
+    expect(emitted).toBe(0);
+    expect(acc.getPendingBytes()).toBeLessThanOrEqual(MAX_PENDING_MARKER_BYTES);
+    expect(acc.getAll()).toEqual([]);
   });
 
   it('extracts question whose text contains -->, even when a chunk splits after it', () => {

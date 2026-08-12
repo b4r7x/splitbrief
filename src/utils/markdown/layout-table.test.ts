@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { glyph, markdownLayoutGlyphs } from '../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../display-text.js';
 import { layoutMarkdownTable } from './layout-table.js';
 import type {
@@ -12,6 +14,11 @@ function lineText(line: MarkdownLayoutLine): string {
   return line.segments.map((segment) => segment.text).join('');
 }
 
+// The column and divider expectations below are written as the unicode glyphs themselves, so
+// the tier is pinned here instead of following whether the suite runs against a TTY.
+forceUnicodeGlyphs();
+
+const GLYPHS = markdownLayoutGlyphs();
 const COLUMN_SEPARATOR_CHAR = '\u2502';
 
 function tableCell(text: string): MarkdownTableCell {
@@ -32,7 +39,7 @@ function tableBlock(input: {
 }
 
 function tableLines(block: MarkdownTableBlock, width: number): string[] {
-  return layoutMarkdownTable({ block, width, key: 'table' }).flatMap((row) =>
+  return layoutMarkdownTable({ block, width, key: 'table', glyphs: GLYPHS }).flatMap((row) =>
     row.lines.map(lineText),
   );
 }
@@ -49,7 +56,7 @@ describe('layoutMarkdownTable', () => {
 
     expect(tableLines(block, 40)).toEqual([
       'Name  │ Qty',
-      '\u2500'.repeat(11),
+      glyph('divider').repeat(11),
       'apple │ 1',
       'kiwi  │ 12',
     ]);
@@ -64,7 +71,7 @@ describe('layoutMarkdownTable', () => {
 
     expect(tableLines(block, 40)).toEqual([
       'left │ center │ right',
-      '\u2500'.repeat(21),
+      glyph('divider').repeat(21),
       'a    │   b    │     c',
     ]);
   });
@@ -74,6 +81,7 @@ describe('layoutMarkdownTable', () => {
       block: tableBlock({ header: ['Name', 'Qty'], rows: [['apple', '1']] }),
       width: 40,
       key: 'k',
+      glyphs: GLYPHS,
     });
 
     const headerSegments = rows[0]?.lines[0]?.segments ?? [];
@@ -95,7 +103,7 @@ describe('layoutMarkdownTable', () => {
     const path = 'src/features/workflow/conversation-rows/markdown-rows.ts';
     const block = tableBlock({ header: ['File', 'Note'], rows: [[path, 'ok']] });
     const width = 24;
-    const rows = layoutMarkdownTable({ block, width, key: 'k' });
+    const rows = layoutMarkdownTable({ block, width, key: 'k', glyphs: GLYPHS });
     const lines = rows.flatMap((row) => row.lines.map(lineText));
 
     expect(lines.every((line) => getTerminalCellWidth(line) <= width)).toBe(true);
@@ -122,6 +130,35 @@ describe('layoutMarkdownTable', () => {
     expect(lines.every((line) => getTerminalCellWidth(line) <= width)).toBe(true);
   });
 
+  it.each([8, 12])('stacks narrow cells without losing column ownership at width %d', (width) => {
+    const block = tableBlock({
+      header: ['Name', 'Owner', 'State'],
+      rows: [['界界界界界', '👩‍💻', 'done']],
+    });
+    const rows = layoutMarkdownTable({ block, width, key: 'k', glyphs: GLYPHS });
+    const body = rows[1]?.lines ?? [];
+
+    expect(body.map(lineText).join('').replaceAll(' ', '')).toBe('界界界界界👩‍💻done');
+    expect(body.map(lineText).some((line) => line.trim() === '👩‍💻')).toBe(true);
+    expect(
+      rows
+        .flatMap((row) => row.lines)
+        .every((line) => getTerminalCellWidth(lineText(line)) <= width),
+    ).toBe(true);
+  });
+
+  it('keeps wide graphemes intact in the responsive fallback', () => {
+    const block = tableBlock({
+      header: ['A', 'B'],
+      rows: [['界界界界', '👩‍💻界']],
+    });
+    const rows = layoutMarkdownTable({ block, width: 8, key: 'k', glyphs: GLYPHS });
+    const bodyLines = (rows[1]?.lines ?? []).map(lineText);
+
+    expect(bodyLines.join('').replaceAll(' ', '')).toBe('界界界界👩‍💻界');
+    expect(bodyLines.every((line) => getTerminalCellWidth(line) <= 8)).toBe(true);
+  });
+
   it('keeps link segments and hrefs inside body cells', () => {
     const block: MarkdownTableBlock = {
       kind: 'table',
@@ -136,7 +173,7 @@ describe('layoutMarkdownTable', () => {
         ],
       ],
     };
-    const rows = layoutMarkdownTable({ block, width: 40, key: 'k' });
+    const rows = layoutMarkdownTable({ block, width: 40, key: 'k', glyphs: GLYPHS });
 
     const link = (rows[1]?.lines[0]?.segments ?? []).find((segment) => segment.kind === 'link');
     expect(link?.text).toBe('docs');

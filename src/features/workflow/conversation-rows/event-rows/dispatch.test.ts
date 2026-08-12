@@ -4,6 +4,7 @@ import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text.js';
+import { glyph } from '../../../../lib/glyphs.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import {
   makeRunnerCallCompleted,
@@ -13,6 +14,7 @@ import {
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../../display/activity-label-display.js';
 import { eventRowBlock } from './dispatch.js';
 import { rowText } from '../row-format/rows.js';
+import type { ConversationRow } from '../types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
@@ -100,6 +102,24 @@ function activityLabelSegment(label: Parameters<typeof displayActivityLabel>[0])
 
 function activityLine(label: Parameters<typeof displayActivityLabel>[0], value: string): string {
   return `${activityLabelSegment(label)}${value}`;
+}
+
+function requireRow(
+  rows: ConversationRow[],
+  matcher: (row: ConversationRow) => boolean,
+): ConversationRow {
+  const found = rows.find(matcher);
+  if (found === undefined) throw new Error('requireRow: no row matched');
+  return found;
+}
+
+// Array subscripts are `ConversationRow | undefined` under noUncheckedIndexedAccess, so every row
+// lookup in this file goes through one of these two rather than through `rows[i] ?? rows[0]`, which
+// type-checks nowhere and hides a missing row behind a neighbour when it does.
+function textAt(rows: ConversationRow[], index: number): string {
+  const found = rows.at(index);
+  if (found === undefined) throw new Error(`textAt: no row at index ${index}`);
+  return rowText(found);
 }
 
 describe('event row dispatch', () => {
@@ -785,5 +805,100 @@ describe('event row dispatch', () => {
         ),
       ),
     ).toBe(true);
+  });
+});
+
+describe('validate failure output', () => {
+  const columnar = [
+    '  × Formatter would have printed the following content:',
+    "    16 16 │       ['ollama-cloud', 'kimi-k2.7-code', { state: 'supported', source: 'provider' }],",
+    "    17    │ - ····['ollama-cloud',·'text-embedding-3-large',·{·state:·'unsupported'·}],",
+    '       17 │ + ····[',
+  ].join('\n');
+
+  function failedValidate(error: string): EngineEvent {
+    return {
+      type: 'validate',
+      ts: 0,
+      phase: 'validating-task',
+      taskId: taskId('T002'),
+      status: 'done',
+      passed: false,
+      stages: { typecheck: true, lint: false, test: false },
+      attempted: { typecheck: true, lint: true, test: false },
+      commands: { typecheck: 'npx tsc --noEmit', lint: 'npm run lint' },
+      error,
+    };
+  }
+
+  it('renders columnar tool output one row per source line, cut at the width', () => {
+    const rows = eventRows({
+      event: failedValidate(columnar),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 78, viewportRows: 20, streaming },
+    });
+
+    const bodyRows = rows.filter((rowValue) => rowValue.kind === 'callout-body');
+    const sourceRows = bodyRows.slice(0, columnar.split('\n').length);
+    expect(sourceRows.map(rowText).every((text) => text.length > 0)).toBe(true);
+    expect(bodyRows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= 76)).toBe(true);
+
+    const gutterColumns = new Set(
+      bodyRows.map((rowValue) => rowText(rowValue).indexOf('│')).filter((column) => column >= 0),
+    );
+    expect(gutterColumns.size).toBe(1);
+  });
+
+  // The summary row above dropped the commands so it would stop wrapping mid-stage. The header
+  // names the failing stage and the footer names the command, once each: carrying the command in
+  // both put one string on screen twice, cut at two different columns.
+  it('names the failing stage at the head and the command to rerun at the foot', () => {
+    const rows = eventRows({
+      event: failedValidate(columnar),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 78, viewportRows: 20, streaming },
+    });
+
+    const header = requireRow(rows, (rowValue) => rowValue.kind === 'callout-top');
+    expect(rowText(header)).toBe('error  lint');
+    expect(header.segments[0]?.tone).toBe('error');
+    // The rail is structure: severity lives on the label and the signed rows, never on a
+    // full-height column that reads as one field once sixteen colours flatten it.
+    expect(
+      rows
+        .filter((rowValue) => rowValue.kind.startsWith('callout'))
+        .every((rowValue) => rowValue.markerTone === 'border'),
+    ).toBe(true);
+    expect(textAt(rows, -1)).toBe(`${glyph('treeLast')} run npm run lint`);
+    expect(rows.filter((rowValue) => rowText(rowValue).includes('npm run lint'))).toHaveLength(1);
+  });
+
+  it('keeps a single-line error on one row', () => {
+    const rows = eventRows({
+      event: failedValidate('typecheck failed'),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 78, viewportRows: 20, streaming },
+    });
+    const body = rows.filter((rowValue) => rowValue.kind === 'callout-body');
+
+    expect(body.map(rowText)).toEqual([
+      'typecheck failed',
+      '',
+      `${glyph('treeLast')} run npm run lint`,
+    ]);
+  });
+
+  it('emits no error block while validation is still running', () => {
+    const rows = eventRows({
+      event: { ...failedValidate(columnar), status: 'running' } as EngineEvent,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 78, viewportRows: 20, streaming },
+    });
+
+    expect(rows.some((rowValue) => rowValue.kind === 'callout-body')).toBe(false);
   });
 });

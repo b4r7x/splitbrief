@@ -123,18 +123,18 @@ mode resolved: standard
 phase: researching
 phase: specifying      → spec.md
 phase: reviewing-spec  ← awaiting approval
-  approve | Ctrl+E/e edit | comment <text> revises | quit
-> approve
+  y approve · c comment · q reject · e edit
+> y
 phase: planning        → plan.md, tasks.md
 phase: reviewing-briefs ← brief approval (simple view)
-> approve
+> y
 phase: implementing
   T001 ✓  T002 ✓  T003 ✓
 phase: final-review    → review.md
 workflow_complete
 ```
 
-`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). Type `approve` to continue, `comment <text>` to send feedback that triggers regeneration, `quit` to reject, or press `Ctrl+E` / type `edit` / `e` to open the external editor for the review file. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims.
+`standard` is the default mode (4 planner calls). The spec gate blocks by default (`approve: spec`). While the composer is empty, one key settles the gate: `y` approves, `q` rejects, `e` opens the review file in the external editor, and `c` starts a comment. The typed commands still work and are what RPC and attached clients send — `approve`, `comment <text>`, `reject` / `quit`, `edit` / `edit-file`. Typing anything turns the letters back into text, so a draft is never eaten by a shortcut. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims.
 
 **Variations:** `--approve none` skips the spec and plan approval gates only. Standard and speckit modes still run the brief-review gate before implementation. `--approve all` blocks on spec and plan (the speckit default). During a gate, approve or reject through the TUI prompt or the matching RPC response.
 
@@ -597,11 +597,11 @@ phase: reviewing-briefs
   T001 add validator     create  src/auth/validate.ts
   T002 wire validator    modify  src/auth/middleware.ts
   T003 add tests         create  src/auth/validate.test.ts
-  approve | Ctrl+E/e edit | E/edit-file | comment <text> revises | reject
-> Ctrl+E
+  y approve · c comment · q reject · e edit
+> e
 ```
 
-`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` all point to the external editor path for the brief markdown. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+`e` on an empty composer, plus `Ctrl+E`, `edit`, `E`, and `edit-file`, all point to the external editor path for the brief markdown. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **You'll see:**
 
@@ -609,7 +609,7 @@ phase: reviewing-briefs
 Opened in editor (vim) … saved.
 brief_quality_passed
 phase: reviewing-briefs
-> approve
+> y
 phase: implementing
 ```
 
@@ -675,10 +675,10 @@ phase: reviewing-briefs
   T002 wire validator    modify  src/auth/middleware.ts
   T003 add tests         create  src/auth/validate.test.ts
 
-  approve | Ctrl+E/e/edit | E/edit-file | comment <text> revises | reject
+  y approve · c comment · q reject · e edit
 ```
 
-`Ctrl+E`, `e`, `edit`, `E`, and `edit-file` open `.splitbrief/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
+`e` on an empty composer, plus `Ctrl+E`, `edit`, `E`, and `edit-file`, open `.splitbrief/sessions/<id>/tasks.md` in the external editor. `VISUAL` is explicit; otherwise SPLITBRIEF uses non-terminal `EDITOR`, detected GUI editors from safe absolute `PATH` segments, macOS `open -W -t`, terminal `EDITOR`, and finally `vi`; Windows detection honors `PATHEXT` plus `.cmd`, `.exe`, and `.bat` shims. Save and exit; SPLITBRIEF re-reads `tasks.md`, re-runs brief quality, and returns to the brief-review gate until you explicitly approve.
 
 **Variations:** Leaving `briefReview: rich` in a legacy config is safe, but it no longer opens an inline plan editor. Prefer changing it to `simple` so the config matches the runtime behavior.
 
@@ -1548,29 +1548,30 @@ Start typing to fuzzy-filter the list. Press Enter on the highlighted entry to i
 **You'll see:**
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ [!] Control-plane file write: .splitbrief/session state    │
-│     Type "I confirm" to proceed, or press Escape to     │
-│     cancel.                                             │
-│     Phrase: _                                           │
-└─────────────────────────────────────────────────────────┘
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Approval · destructive                                 ┃
+┃                                                        ┃
+┃ control-plane file write                               ┃
+┃ .splitbrief/state.json                                 ┃
+┃ this cannot be undone ──────────────────────────────── ┃
+┃                                                        ┃
+┃ ▸ enter   Confirm                                      ┃
+┃   r       Confirm with a reason                        ┃
+┃   x       Deny                                         ┃
+┃                                                        ┃
+┃ esc deny                                               ┃
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 ```
 
 **Steps:**
-1. Type the literal string `I confirm` (capital I, space, lowercase confirm) and press Enter.
-2. The prompt advances to the reason step:
+1. Press Enter. The write is approved and the evidence trail records that no reason was stated.
+2. To record why instead, press `r` first, type a reason (e.g. `repairing session metadata`), then press Enter.
 
-```
-│     Phrase accepted. Enter reason:                      │
-│     Reason: _                                           │
-```
-
-3. Type a non-empty reason (e.g. `repairing session metadata`) and press Enter.
+**Key assignment:** the primary key is Enter only for the `destructive` class. Every other confirm-tier class — `package_change`, or any class you configure as `confirm` — takes `y`. Pressing `y` on a destructive prompt does not confirm it; the prompt answers with `enter confirms this write · esc deny`, which keeps the way out visible at the moment the user mis-keyed.
 
 **Rejection cases:**
-- Wrong phrase → `Incorrect phrase. Try again.` — input cleared, try again.
-- Empty reason → no action taken, cursor stays in reason field.
-- Escape at either step → action denied (`user_cancelled`).
+- `x`, `n`, or Escape → action denied (`user_cancelled`).
+- Keystrokes buffered before the prompt appeared are discarded for 150 ms, so typeahead cannot confirm a write.
 
 **Notes:**
 - Confirm-tier approvals are one-shot and are NOT persisted to `.splitbrief/approvals.json`.

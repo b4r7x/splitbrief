@@ -25,6 +25,7 @@ import { streamingOutputStore } from '../../src/stores/workflow/streaming-output
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { costApprovalStore } from '../../src/stores/cost-approval/prompt.js';
 import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
+import { reviewKeysStore } from '../../src/stores/ui/review-keys.js';
 
 export function resetAllStores(): void {
   eventsStore.reset();
@@ -54,4 +55,5 @@ export function resetAllStores(): void {
   approvalPromptStore.reset();
   costApprovalStore.reset();
   commandPaletteMruStore.reset();
+  reviewKeysStore.reset();
 }

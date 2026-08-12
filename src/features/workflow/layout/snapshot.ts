@@ -9,8 +9,10 @@ import { clamp } from '../../../utils/math.js';
 import {
   getReviewColumnWidth,
   getReviewContentLayout,
+  getWorkflowConversationHeight,
   getWorkflowContentRect,
   getWorkflowContentWidth,
+  getWorkflowSidebarWidth,
   getWorkflowViewportHeight,
   REVIEW_FRAME_ROWS,
 } from './rect.js';
@@ -189,12 +191,23 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     promptRows,
   });
   const sections = getSections();
-  const viewportSplit = splitConversationViewport({
-    viewportHeight,
-    sections,
-    pendingTaskCount: tasksStore.get().tasks.filter((task) => task.status === 'pending').length,
-  });
   const sidebarVisible = controlsStore.get().sidebarVisible;
+  const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible });
+  const conversationHeight = getWorkflowConversationHeight({
+    height: viewportHeight,
+    sidebarWidth,
+  });
+  // The queued block stands down while the sidebar lists the same pending work, so the keyboard
+  // path has to read the same suppression the transcript renders under or it budgets rows for a
+  // block that paints nothing.
+  const sidebarShowsTasks = sidebarWidth > 0;
+  const viewportSplit = splitConversationViewport({
+    viewportHeight: conversationHeight,
+    sections,
+    pendingTaskCount: sidebarShowsTasks
+      ? 0
+      : tasksStore.get().tasks.filter((task) => task.status === 'pending').length,
+  });
   const contentWidth = getWorkflowContentWidth({
     cols,
     sidebarVisible,
@@ -206,8 +219,13 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     sidebarVisible,
     promptRows,
   });
+  const conversationRect = {
+    ...contentRect,
+    height: conversationHeight,
+    bottom: conversationHeight > 0 ? contentRect.top + conversationHeight - 1 : contentRect.top,
+  };
   return {
-    conversationRect: contentRect,
+    conversationRect,
     conversationWidth: contentWidth,
     contentRect,
     viewportSplit,

@@ -19,6 +19,30 @@ let receivedBodies: RequestBody[];
 let receivedHeaders: http.IncomingHttpHeaders[];
 let receivedCatalogRequests: { pathname: string; limit: string | null }[];
 let projectDir: string;
+let openAiCompletionChunks: string[];
+
+const validPlannerArtifact = `---
+id: T001
+title: Test task
+action: create
+file: src/example.ts
+depends_on: []
+---
+
+# Test plan
+
+### Description
+Create the example file.
+
+### Implementation Steps
+1. Write the file.
+
+### Tests
+- npm test
+
+### Constraints
+- Follow project conventions.
+`;
 
 function admittedPlannerApiBase(provider: string): string {
   if (provider === 'ollama') return `http://127.0.0.1:${port}/v1`;
@@ -139,6 +163,7 @@ beforeEach(async () => {
   receivedBodies = [];
   receivedHeaders = [];
   receivedCatalogRequests = [];
+  openAiCompletionChunks = ['Hello ', 'world'];
   projectDir = createTempDir('api-planner-test');
 
   server = http.createServer((req, res) => {
@@ -165,7 +190,10 @@ beforeEach(async () => {
       req.on('end', () => {
         receivedBodies.push(JSON.parse(Buffer.concat(chunks).toString('utf-8')));
         receivedHeaders.push(req.headers);
-        streamSseChunks(res, ['Hello ', 'world'], { prompt_tokens: 42, completion_tokens: 17 });
+        streamSseChunks(res, openAiCompletionChunks, {
+          prompt_tokens: 42,
+          completion_tokens: 17,
+        });
       });
       return;
     }
@@ -307,6 +335,7 @@ describe('createApiPlanner', () => {
 
   it('plan() runs four phases and accumulates token usage across them', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
+    openAiCompletionChunks = [validPlannerArtifact];
 
     const result = await planner.plan({
       feature: 'test feature',
@@ -323,6 +352,7 @@ describe('createApiPlanner', () => {
 
   it('plan() injects priorMessages into the first phase chat history (FR-007 api-kind)', async () => {
     const planner = createApiPlanner(makeApiPlannerConfig('ollama'));
+    openAiCompletionChunks = [validPlannerArtifact];
 
     await planner.plan({
       feature: 'add auth',

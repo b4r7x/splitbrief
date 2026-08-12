@@ -3,7 +3,7 @@ import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getApprovalPromptRows } from '../prompt-rows/approval.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../prompt-grace.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 import type { TieredApprovalResponse } from '../../../core/approval/types.js';
 import { ConfirmApprovalPrompt } from './approval-prompt/confirm.js';
 import { PROMPT_ZONE_Z, StickyApprovalPrompt } from './approval-prompt/sticky.js';
@@ -53,6 +53,7 @@ export function ApprovalPrompt({ clampedBoxRows }: ApprovalPromptProps) {
       <ConfirmApprovalPrompt
         request={request}
         promptRows={promptRows}
+        clampedBoxRows={clampedBoxRows}
         isActive={isActive}
         graceUntil={graceUntilRef.current}
         promptIdentity={promptIdentity}

@@ -15,6 +15,8 @@ export type ConversationRowTone =
   | 'info'
   | 'markdownHeading'
   | 'markdownCode'
+  | 'markdownCodeGutter'
+  | 'markdownItalic'
   | 'markdownBlockquote'
   | 'markdownList'
   | 'markdownRule'
@@ -30,6 +32,9 @@ export type ConversationRowTone =
   | 'syntaxFunction'
   | 'syntaxPunctuation'
   | 'reviewFile'
+  | 'diffAdded'
+  | 'diffRemoved'
+  | 'diffContext'
   | 'border';
 
 export type ConversationRowKind =

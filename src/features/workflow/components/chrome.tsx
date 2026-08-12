@@ -1,4 +1,3 @@
-import { Box } from 'ink';
 import type { RuntimeCommandDef } from '../../../core/runtime/commands/types.js';
 import type { InputMode } from '../../../core/navigation/types.js';
 import { Composer, type ComposerBoxHints } from '../../../components/composer/composer.js';
@@ -14,7 +13,6 @@ import { useCostStats } from '../hooks/use-cost-stats.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailForm } from '../layout/chrome-rows.js';
-import type { WorkflowReviewColumn } from '../layout/rect.js';
 
 function useComposerBoxHints(override?: ComposerBoxHintOverride | undefined): ComposerBoxHints {
   const complete = lifecycleStore.use((s) => s.phase === 'complete');
@@ -61,7 +59,6 @@ export function WorkflowFooter({
   onReviewInteraction,
   reviewYankActive,
   reviewEpoch,
-  reviewColumn,
   questionEpoch,
   waitingForUser = false,
 }: {
@@ -79,14 +76,9 @@ export function WorkflowFooter({
   onReviewInteraction?: (() => void) | undefined;
   reviewYankActive?: boolean | undefined;
   reviewEpoch?: number | undefined;
-  reviewColumn?: WorkflowReviewColumn | undefined;
   questionEpoch?: number | undefined;
   waitingForUser?: boolean | undefined;
 }) {
-  const composerWidthProps = reviewColumn
-    ? { width: reviewColumn.width, boxLeftOffset: reviewColumn.leftOffset }
-    : {};
-  const footerWidthProps = reviewColumn ? { width: reviewColumn.width } : {};
   const boxHints = useComposerBoxHints(boxHintOverride);
   const fieldEditorOpen = useFieldSessionOwned();
   const composerSession = mode === 'review' ? `review:${reviewEpoch ?? 0}` : 'non-review';
@@ -106,28 +98,13 @@ export function WorkflowFooter({
         boxHints={boxHints}
         questionEpoch={questionEpoch}
         inputPaddingX={0}
-        {...composerWidthProps}
         {...(onEditShortcut ? { onEditShortcut } : {})}
         {...(onReviewBoundaryNavigate ? { onReviewBoundaryNavigate } : {})}
         {...(onReviewInteraction ? { onReviewInteraction } : {})}
         reviewYankActive={reviewYankActive}
       />
-      <InputFooter {...footerWidthProps} waiting={waitingForUser} />
+      <InputFooter waiting={waitingForUser} />
     </>
   );
-
-  if (mode !== 'review' || reviewColumn === undefined) return footer;
-
-  return (
-    <Box width="100%" flexDirection="column" flexShrink={0}>
-      <Box
-        flexDirection="column"
-        marginLeft={reviewColumn.leftOffset}
-        width={reviewColumn.width}
-        overflow="hidden"
-      >
-        {footer}
-      </Box>
-    </Box>
-  );
+  return footer;
 }

@@ -83,6 +83,7 @@ describe('runQuickPlanning', () => {
     });
 
     expect(result.cancelled).toBe(false);
+    expect(result.failed).toBe(false);
     expect(quickPlan).toHaveBeenCalledWith(
       expect.objectContaining({
         feature: expect.stringContaining(rawFeedback),
@@ -122,6 +123,7 @@ describe('runQuickPlanning', () => {
     });
 
     expect(result.cancelled).toBe(true);
+    expect(result.failed).toBe(true);
     expect(result.state.phase).toBe('idle');
     expect(result.tasks).toHaveLength(0);
     expect(events.find((event) => event.type === 'plan_approved')).toBeUndefined();

@@ -1,8 +1,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { Box, Text } from 'ink';
 import { render } from 'ink-testing-library';
+import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text.js';
 import { renderMarkdownRows, type RenderMarkdownRowsOptions } from './markdown.js';
 import { getTheme } from './theme.js';
@@ -20,6 +22,13 @@ afterAll(() => {
   if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
   else process.env['FORCE_COLOR'] = originalForceColor;
 });
+
+// The rail, bullet, and table-column expectations below name the unicode glyphs literally, so
+// the tier is pinned here rather than following whether the suite runs against a TTY.
+forceUnicodeGlyphs();
+
+const RAIL = glyph('codeRail');
+const HOOK = glyph('wrapContinuation');
 
 function colorOpen(color: string): string {
   const ui = render(<Text color={color}>x</Text>);
@@ -70,7 +79,7 @@ const markdownSample = [
 ].join('\n');
 
 describe('Markdown', () => {
-  it('renders headings, lists, fences, frontmatter, and inline tokens', async () => {
+  it('renders headings, lists, fences, and inline tokens, and hides the document header', async () => {
     const rows = renderMarkdownRows({
       source: markdownSample,
       width: 32,
@@ -88,8 +97,8 @@ describe('Markdown', () => {
     await tick(20);
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('title: Markdown Core');
-    expect(frame).toContain('owner: docs');
+    expect(frame).not.toContain('title: Markdown Core');
+    expect(frame).not.toContain('owner: docs');
     expect(frame).toContain('Markdown Core');
     expect(frame).toContain('• parse **literal** then bold');
     expect(frame).toContain('src/utils/markdown/block-par');
@@ -204,7 +213,7 @@ describe('GFM pipe tables (REQ-003)', () => {
     expect(stripped).toContain('Age');
     expect(stripped).toContain('Alice');
     expect(stripped).toContain('Bob');
-    expect(stripped).not.toContain('---');
+    expect(stripped).not.toContain('|');
     expectFrameUsesThemeColor(raw, theme.markdown.heading);
 
     const tableLines = stripped.split('\n').filter((line) => line.includes('│'));
@@ -228,7 +237,7 @@ describe('GFM pipe tables (REQ-003)', () => {
     for (const line of lines) {
       expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(width);
     }
-    expect(stripped).not.toContain('---');
+    expect(stripped).not.toContain('|');
     unmount();
   });
 });
@@ -265,21 +274,40 @@ describe('strikethrough (REQ-005)', () => {
   });
 });
 
-describe('heading color theming (REQ-006)', () => {
+describe('heading rank ladder (REQ-006)', () => {
   it.each([
-    { preset: 'terminal' as const, source: '## T', depth: 2 },
-    { preset: 'terminal' as const, source: '##### T', depth: 5 },
-    { preset: 'mono' as const, source: '## T', depth: 2 },
-    { preset: 'mono' as const, source: '##### T', depth: 5 },
-  ])('resolves the heading color from theme.markdown.heading ($preset depth $depth)', async ({
-    preset,
-    source,
-  }) => {
+    'terminal' as const,
+    'mono' as const,
+  ])('resolves the top ranks from theme.markdown.heading and the deep ranks from textDim (%s)', async (preset) => {
     const theme = getTheme(preset);
-    const { raw, unmount } = await renderMarkdown({ source, width: 40, theme });
+    const top = await renderMarkdown({ source: '## T', width: 40, theme });
+    const deep = await renderMarkdown({ source: '##### T', width: 40, theme });
 
-    expectFrameUsesThemeColor(raw, theme.markdown.heading);
-    unmount();
+    expectFrameUsesThemeColor(top.raw, theme.markdown.heading);
+    expectFrameUsesThemeColor(deep.raw, theme.textDim);
+    top.unmount();
+    deep.unmount();
+  });
+
+  // The review overlay renders through this module and the transcript through
+  // markdown-rows; a rank that reads the same as its neighbour flattens the outline in both.
+  it.each([
+    'terminal' as const,
+    'mono' as const,
+  ])('gives each of the six ranks its own rendered form (%s)', async (preset) => {
+    const theme = getTheme(preset);
+    const forms: string[] = [];
+    for (const depth of [1, 2, 3, 4, 5, 6]) {
+      const { raw, unmount } = await renderMarkdown({
+        source: `${'#'.repeat(depth)} Rank`,
+        width: 40,
+        theme,
+      });
+      forms.push(raw);
+      unmount();
+    }
+
+    expect(new Set(forms).size).toBe(6);
   });
 });
 
@@ -332,11 +360,11 @@ describe('code block framing', () => {
     const lines = stripped.split('\n').map((line) => line.trimEnd());
 
     expect(lines).toContain('intro prose');
-    expect(lines).toContain("▏ const x = 'y';");
+    expect(lines).toContain(`${RAIL} const x = 'y';`);
     unmount();
   });
 
-  it('repeats the gutter on wrapped code lines', async () => {
+  it('marks wrapped code lines with the continuation gutter', async () => {
     const source = ['```zzz', `const value = '${'x'.repeat(60)}';`, '```'].join('\n');
     const { stripped, unmount } = await renderMarkdown({ source, width: 30, theme: getTheme() });
     const lines = stripped
@@ -346,9 +374,10 @@ describe('code block framing', () => {
     const codeLines = lines.slice(1, -1);
 
     expect(codeLines.length).toBeGreaterThan(1);
-    expect(codeLines.every((line) => line.startsWith('▏ '))).toBe(true);
-    expect(lines.at(0)).toBe('▏');
-    expect(lines.at(-1)).toBe('▏');
+    expect(codeLines.at(0)?.startsWith(`${RAIL} `)).toBe(true);
+    expect(codeLines.slice(1).every((line) => line.startsWith(`${RAIL}${HOOK}`))).toBe(true);
+    expect(lines.at(0)).toBe(`${RAIL}${' '.repeat(26)}zzz`);
+    expect(lines.at(-1)).toBe(RAIL);
     unmount();
   });
 
@@ -360,7 +389,12 @@ describe('code block framing', () => {
     });
     const lines = stripped.split('\n').map((line) => line.trimEnd());
 
-    expect(lines).toEqual(['intro prose', '▏', "▏ const x = 'y';", '▏']);
+    expect(lines).toEqual([
+      'intro prose',
+      `${RAIL}${' '.repeat(36)}zzz`,
+      `${RAIL} const x = 'y';`,
+      RAIL,
+    ]);
     unmount();
   });
 
@@ -382,24 +416,25 @@ describe('code block framing', () => {
       width,
       theme,
     });
-    const codeLines = stripped.split('\n').filter((line) => line.includes('▏'));
+    const codeLines = stripped.split('\n').filter((line) => line.includes(RAIL));
 
     expect(codeLines.length).toBeGreaterThan(0);
     expect(codeLines.map(getTerminalCellWidth)).toEqual(codeLines.map(() => width));
     unmount();
   });
 
-  it('renders code unpainted when the theme leaves the background undefined', async () => {
+  it('paints the code background in the terminal preset too', async () => {
     const theme = getTheme();
+    const codeBg = theme.markdown.codeBg;
+    if (codeBg === undefined) throw new Error('the terminal theme must define markdown.codeBg');
     const { raw, stripped, unmount } = await renderMarkdown({
       source: codeSource,
       width: 40,
       theme,
     });
 
-    expect(theme.markdown.codeBg).toBeUndefined();
     expect(stripped).toContain("const x = 'y';");
-    expect(raw).not.toContain('\x1b[48;');
+    expect(raw).toContain(backgroundOpen(codeBg));
     unmount();
   });
 });

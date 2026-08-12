@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { ensureSplitbriefDir, ensureSessionDir } from '../../../src/core/paths-io.js';
 import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
@@ -37,13 +38,10 @@ function workflowStarted(): EngineEventOf<'workflow_started'> {
 }
 
 function runnerActivity(index: number): EngineEventOf<'runner_call_activity'> {
-  return {
-    type: 'runner_call_activity',
+  return makeRunnerCallActivity('planner-read', {
     ts: 1_000 + index,
     phase: 'planning',
     callId: `call-${index}`,
-    role: 'planner',
-    backendKind: 'cli',
     sequence: index,
     activityId: `call-${index}:tool:1`,
     stage: 'completed',
@@ -55,7 +53,7 @@ function runnerActivity(index: number): EngineEventOf<'runner_call_activity'> {
     rawAvailable: true,
     expandId: `raw-${index}`,
     redacted: true,
-  };
+  });
 }
 
 function runnerText(index: number): EngineEventOf<'runner_call_text_delta'> {

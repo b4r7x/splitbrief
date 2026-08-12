@@ -15,7 +15,7 @@ type RunningPhase = Exclude<Phase, 'complete'>;
 type LifecycleStatus = 'idle' | 'running' | 'interrupted' | 'paused' | 'complete' | 'cancelled';
 type PhaseFirstSeenTs = Readonly<Partial<Record<Phase, number>>>;
 
-type LifecycleStall = { since: number; silentMs: number } | null;
+type LifecycleStall = { since: number; silentMs: number; runnerName: string | null } | null;
 
 interface LifecycleBase {
   queueDepth: number;
@@ -239,7 +239,10 @@ export function updateQueueDepth(state: LifecycleState, event: EngineEvent): Lif
 // time updateStall sees the state the phase transition has already cleared it.
 export function updateStall(state: LifecycleState, event: EngineEvent): LifecycleState {
   if (event.type === 'runner_call_stalled') {
-    return { ...state, stall: { since: event.ts, silentMs: event.silentMs } };
+    return {
+      ...state,
+      stall: { since: event.ts, silentMs: event.silentMs, runnerName: event.runnerName ?? null },
+    };
   }
   if (state.stall === null) return state;
   if (STALL_CLEARING_EVENT_TYPES.has(event.type)) {

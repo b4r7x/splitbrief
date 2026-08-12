@@ -53,3 +53,30 @@ describe('taskStartedRowBlock markers', () => {
     }
   });
 });
+
+describe('taskStartedRowBlock continuations', () => {
+  it('never starts a continuation with the break whitespace or a separator', () => {
+    const rows = eventRows({
+      event: makeTaskStart({
+        taskId: taskId('T002'),
+        index: 1,
+        total: 4,
+        title: 'Infer capabilities from the cloud model list',
+        file: 'src/engine/providers/capability-inference.ts',
+        action: 'modify',
+        tool: 'claude-code',
+        model: 'sonnet',
+      }),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 60, viewportRows: 20, streaming },
+    });
+
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows.slice(1)) {
+      const text = row.segments.map((segment) => segment.text).join('');
+      expect(text).not.toMatch(/^\s/);
+      expect(text).not.toMatch(/^·/);
+    }
+  });
+});

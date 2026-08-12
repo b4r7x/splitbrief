@@ -1,5 +1,5 @@
 import type { ConversationRowBlock, ConversationRowTone } from './types.js';
-import { cardRowsWindowSlice, countCardRows } from './row-format/card-block.js';
+import { prepareCardRows } from './row-format/card-block.js';
 import { sanitizeRowDisplayText } from './row-format/text.js';
 
 export function borderedCardRowsBlock(input: {
@@ -27,21 +27,19 @@ export function borderedCardRowsBlock(input: {
           },
         ];
 
-  const cardInput = {
+  const card = prepareCardRows({
     keyPrefix,
     label,
     labelTone,
     bodyLines,
     width: cardWidth,
-  };
-  const rowCount = countCardRows(cardInput);
-  if (rowCount === 0) return null;
+  });
+  if (card.rowCount === 0) return null;
 
   return {
     key: keyPrefix,
-    rowCount,
+    rowCount: card.rowCount,
     renderableUnits: 1,
-    createRows: (windowStart, windowEnd) =>
-      cardRowsWindowSlice({ ...cardInput, windowStart, windowEnd }),
+    createRows: card.createRows,
   };
 }

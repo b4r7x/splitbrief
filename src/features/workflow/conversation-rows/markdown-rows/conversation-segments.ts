@@ -1,4 +1,5 @@
 import type {
+  MarkdownHeadingDepth,
   MarkdownHighlightScope,
   MarkdownLayoutSegment,
 } from '../../../../utils/markdown/types.js';
@@ -70,23 +71,47 @@ function filePathConversationSegment(
   };
 }
 
+// Mirrors headingStyle in src/components/markdown.tsx: the review overlay and the transcript
+// have to place a rank the same way, or the same document reads as two different outlines.
+function headingSegment(text: string, depth: MarkdownHeadingDepth): ConversationRowSegment {
+  switch (depth) {
+    case 1:
+    case 2:
+      return { text, tone: 'markdownHeading', bold: true };
+    case 3:
+      return { text, tone: 'markdownHeading' };
+    case 4:
+      return { text, tone: 'text', bold: true };
+    case 5:
+      return { text, tone: 'textDim', bold: true };
+    case 6:
+      return { text, tone: 'textDim', italic: true };
+    default:
+      return assertNever(depth);
+  }
+}
+
 function markdownSegment(
   segment: MarkdownLayoutSegment,
   projectDir: string | undefined,
 ): ConversationRowSegment {
   switch (segment.kind) {
     case 'heading':
-      return { text: segment.text, tone: 'markdownHeading', bold: (segment.depth ?? 1) <= 3 };
+      return headingSegment(segment.text, segment.depth ?? 1);
     case 'metadata':
       return { text: segment.text, tone: 'textDim' };
+    case 'codeLanguage':
+      return { text: segment.text, tone: 'markdownCodeGutter' };
     case 'rule':
-      return { text: segment.text, tone: 'textDim' };
-    case 'listMarker':
-      return { text: segment.text, tone: 'text' };
-    case 'blockquoteMarker':
-      return { text: segment.text, tone: 'textDim' };
-    case 'codeGutter':
       return { text: segment.text, tone: 'markdownRule' };
+    case 'listMarker':
+      return { text: segment.text, tone: 'markdownList' };
+    case 'blockquoteMarker':
+      return { text: segment.text, tone: 'markdownBlockquote' };
+    case 'codeGutter':
+      return { text: segment.text, tone: 'markdownCodeGutter' };
+    case 'codeText':
+      return { text: segment.text, tone: 'text' };
     case 'code':
       return segment.scope !== undefined
         ? { text: segment.text, tone: syntaxScopeTone(segment.scope) }
@@ -94,7 +119,7 @@ function markdownSegment(
     case 'bold':
       return { text: segment.text, tone: 'text', bold: true };
     case 'italic':
-      return { text: segment.text, tone: 'textDim', italic: true };
+      return { text: segment.text, tone: 'markdownItalic', italic: true };
     case 'boldItalic':
       return { text: segment.text, tone: 'text', bold: true, italic: true };
     case 'strikethrough':

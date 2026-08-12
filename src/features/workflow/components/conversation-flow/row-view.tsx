@@ -47,7 +47,7 @@ function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number
   }, [reduced]);
   const lit = reduced || on;
   return (
-    <Text color={lit ? theme.accent : theme.textDim} bold={lit}>
+    <Text color={lit ? theme.text : theme.textDim} bold={lit}>
       {alignLeadingWithinWidth(ACTIVE_DOT_GLYPH, leadingWidth)}
     </Text>
   );
@@ -94,7 +94,7 @@ function RowLeading({
   if (focused === true) {
     return (
       <Box width={leadingWidth} flexShrink={0}>
-        <Text color={t.accent} bold>
+        <Text color={t.text} bold>
           {glyph('liveBar')}
         </Text>
         <Text color={markerColor}>{leading.slice(1)}</Text>

@@ -10,7 +10,7 @@ import {
   unlinkSync,
   mkdirSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createCliPlanner as createCliPlannerImpl, readCliPhaseOutput } from './cli.js';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -122,6 +122,7 @@ function installRecordingShim(command: string, bodyLines: string[]): { argvFile:
 function installDirectWriteRecordingShim(
   command: string,
   bodyLines: string[],
+  mutatedFile = 'src/hello.ts',
 ): {
   argvFile: string;
 } {
@@ -134,8 +135,8 @@ function installDirectWriteRecordingShim(
     shimPath,
     `#!/bin/bash
 printf '%s\\n' "$@" > '${argvFile}'
-mkdir -p "$PWD/src"
-printf '%s\\n' 'export const escalated = true;' > "$PWD/src/hello.ts"
+mkdir -p "$PWD/${dirname(mutatedFile)}"
+printf '%s\\n' 'export const escalated = true;' > "$PWD/${mutatedFile}"
 ${output}
 `,
     'utf8',
@@ -206,6 +207,84 @@ describe('createCliPlanner', () => {
       if (originalAnthropic === undefined) delete process.env.ANTHROPIC_API_KEY;
       else process.env.ANTHROPIC_API_KEY = originalAnthropic;
     }
+  });
+
+  it('forwards split known-CLI question markers once while preserving output', async () => {
+    const marker = '<!-- Q:{"id":"scope","type":"input","text":"Which scope?"} -->';
+    const splitAt = marker.indexOf('scope');
+    const chunks = [marker.slice(0, splitAt), marker.slice(splitAt), marker];
+    installShim(
+      'opencode',
+      chunks.map((text) =>
+        JSON.stringify({
+          type: 'text',
+          sessionID: 'ses-open',
+          part: { type: 'text', text },
+        }),
+      ),
+    );
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+    const onOutput = vi.fn();
+    const onQuestion = vi.fn();
+
+    await planner.quickPlan({
+      feature: 'prompt',
+      projectDir,
+      callbacks: { onOutput, onQuestion },
+    });
+
+    expect(onOutput.mock.calls.flat()).toEqual(chunks);
+    expect(onQuestion).toHaveBeenCalledTimes(1);
+    expect(onQuestion).toHaveBeenCalledWith([{ id: 'scope', type: 'input', text: 'Which scope?' }]);
+  });
+
+  it('deduplicates repeated known-CLI question markers in one text event', async () => {
+    const marker = '<!-- Q:{"id":"scope","type":"input","text":"Which scope?"} -->';
+    const combined = `${marker}${marker}`;
+    installShim('opencode', [
+      JSON.stringify({
+        type: 'text',
+        sessionID: 'ses-open',
+        part: { type: 'text', text: combined },
+      }),
+    ]);
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+    const onOutput = vi.fn();
+    const onQuestion = vi.fn();
+
+    await planner.quickPlan({
+      feature: 'prompt',
+      projectDir,
+      callbacks: { onOutput, onQuestion },
+    });
+
+    expect(onOutput).toHaveBeenCalledTimes(1);
+    expect(onOutput).toHaveBeenCalledWith(combined);
+    expect(onQuestion).toHaveBeenCalledTimes(1);
+    expect(onQuestion).toHaveBeenCalledWith([{ id: 'scope', type: 'input', text: 'Which scope?' }]);
+  });
+
+  it('does not infer questions from plain known-CLI prose', async () => {
+    const prose = 'Which scope should tasks.md cover?';
+    installShim('opencode', [
+      JSON.stringify({
+        type: 'text',
+        sessionID: 'ses-open',
+        part: { type: 'text', text: prose },
+      }),
+    ]);
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+    const onOutput = vi.fn();
+    const onQuestion = vi.fn();
+
+    await planner.quickPlan({
+      feature: 'prompt',
+      projectDir,
+      callbacks: { onOutput, onQuestion },
+    });
+
+    expect(onOutput).toHaveBeenCalledWith(prose);
+    expect(onQuestion).not.toHaveBeenCalled();
   });
 
   it('capabilities: supportsSessionResume mirrors the tool config (codex yes, opencode no)', () => {
@@ -718,6 +797,54 @@ Create the session-output file.
     expect(readArgv(argvFile)).toEqual(
       expect.arrayContaining(['run', '--format', 'json', '--agent', 'plan']),
     );
+  });
+
+  it('completes planning when OpenCode regenerates its own .opencode plugin state', async () => {
+    const tasksMarkdown = `---
+id: T001
+title: Internal-state task
+action: create
+file: src/internal-state.ts
+depends_on: []
+---
+
+### Description
+Create the internal-state file.
+
+### Tests
+- verifies the returned task
+`;
+    const output = JSON.stringify({
+      type: 'text',
+      sessionID: 'ses-open',
+      part: { type: 'text', text: tasksMarkdown },
+    });
+    installDirectWriteRecordingShim('opencode', [output], '.opencode/package-lock.json');
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+    const callbacks = { onOutput: () => {}, sessionId: 'workflow-session' };
+
+    const result = await planner.plan({ feature: 'plan a change', projectDir, callbacks });
+
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0]?.id).toBe('T001');
+  });
+
+  it('rejects OpenCode writes to user-authored .opencode config despite the internal-state exemption', async () => {
+    const output = JSON.stringify({
+      type: 'text',
+      sessionID: 'ses-open',
+      part: { type: 'text', text: 'Planning response.' },
+    });
+    installDirectWriteRecordingShim('opencode', [output], '.opencode/plugin/injected.js');
+    const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));
+    const callbacks = { onOutput: () => {}, sessionId: 'workflow-session' };
+
+    await expect(
+      planner.plan({ feature: 'plan a change', projectDir, callbacks }),
+    ).rejects.toMatchObject({
+      kind: 'planning-unexpected-mutations',
+      data: { files: ['.opencode/plugin/injected.js'] },
+    });
   });
 
   it('rejects a typed truncated call and reaps Aider when stdout exceeds its budget', async () => {

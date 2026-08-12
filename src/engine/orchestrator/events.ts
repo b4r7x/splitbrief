@@ -129,6 +129,27 @@ export function publishPlanApproved(state: WorkflowState, bus: EventBus): void {
   bus.publish({ type: 'plan_approved', ts: Date.now(), phase: state.phase });
 }
 
+// Announces the whole plan once, so consumers can show what is still coming instead of learning
+// about each task only when it starts. `task_started` stays the per-task lifecycle signal.
+export function publishTasksPlanned(
+  ctx: BusContext,
+  tasks: readonly { id: TaskId; title: string; file: string; action: 'create' | 'modify' }[],
+): void {
+  ctx.bus.publish({
+    type: 'tasks_planned',
+    ts: Date.now(),
+    phase: ctx.phase,
+    tasks: tasks.map((task, index) => ({
+      id: task.id,
+      title: task.title,
+      index,
+      file: task.file,
+      action: task.action,
+    })),
+    total: tasks.length,
+  });
+}
+
 export function publishTaskStart(
   ctx: BusContext,
   opts: {

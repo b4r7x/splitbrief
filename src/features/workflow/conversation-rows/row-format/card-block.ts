@@ -3,6 +3,7 @@ import {
   iterateTerminalGraphemes,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
+  wrapTerminalGraphemes,
 } from '../../../../utils/display-text.js';
 import { wrapWidthFor } from '../row-markers.js';
 import type { ConversationRow, ConversationRowSegment, ConversationRowTone } from '../types.js';
@@ -26,8 +27,10 @@ interface WrappedDisplayLineWindow {
   exhausted: boolean;
 }
 
-function countHardWrappedDisplayLines(text: string, width: number): number {
-  return wrappedDisplayLineWindow(text, width, 0, Number.POSITIVE_INFINITY).totalRows;
+function hardWrappedDisplayLines(text: string, width: number): string[] {
+  return wrappedDisplayLineWindow(text, width, 0, Number.POSITIVE_INFINITY).lines.map(
+    (line) => line.text,
+  );
 }
 
 function wrappedDisplayLineWindow(
@@ -54,25 +57,28 @@ function wrappedDisplayLineWindow(
     return offset >= end;
   };
 
-  for (const grapheme of iterateTerminalGraphemes(text, { preserveLineBreaks: true })) {
-    if (grapheme === '\n') {
-      if (emitLine()) {
-        return { lines, totalRows: offset, exhausted: false };
-      }
-      continue;
-    }
-
-    const graphemeWidth = displayWidth(grapheme);
-    if (line.length > 0 && lineWidth + graphemeWidth > maxWidth) {
-      if (emitLine()) {
-        return { lines, totalRows: offset, exhausted: false };
-      }
-    }
-    line += grapheme;
-    lineWidth += graphemeWidth;
+  let stopped = false;
+  for (const sourceLine of text.split('\n')) {
+    if (stopped) break;
+    wrapTerminalGraphemes({
+      graphemes: iterateTerminalGraphemes(sourceLine),
+      maxWidth,
+      initialWidth: lineWidth,
+      flush: () => {
+        if (!stopped) stopped = emitLine();
+        return lineWidth;
+      },
+      append: (grapheme) => {
+        if (stopped) return;
+        line += grapheme;
+        lineWidth += displayWidth(grapheme);
+      },
+    });
+    if (stopped) break;
+    stopped = emitLine();
   }
 
-  emitLine();
+  if (stopped) return { lines, totalRows: offset, exhausted: false };
   return { lines, totalRows: offset, exhausted: true };
 }
 
@@ -83,40 +89,25 @@ export interface CardBodyLineInput {
   segments?: ConversationRowSegment[];
 }
 
-export interface CardMetaSegmentInput {
-  text: string;
-  tone?: ConversationRowTone;
-}
-
 export interface CardBlockInput {
   keyPrefix: string;
   label: string;
   labelTone?: ConversationRowTone;
-  metaSegments?: CardMetaSegmentInput[];
+  metaSegments?: ConversationRowSegment[];
   bodyLines: CardBodyLineInput[];
   width: number;
   bodyPrefix?: string;
 }
 
-export function countCardRows(input: CardBlockInput): number {
-  const width = Math.max(CARD_MIN_WIDTH, input.width);
-  const bodyPrefix = input.bodyPrefix ?? '  ';
-  const bodyWrapWidth = Math.max(
-    1,
-    wrapWidthFor('card-body', width) - getTerminalCellWidth(bodyPrefix),
-  );
-  let count = 1;
-  for (const body of input.bodyLines) {
-    const cleanBody = sanitizeRowDisplayText(cardBodyLineDisplayText(body));
-    count += countHardWrappedDisplayLines(cleanBody, bodyWrapWidth);
-  }
-  return count;
+export interface PreparedCardRows {
+  rowCount: number;
+  createRows: (windowStart: number, windowEnd: number) => ConversationRow[];
 }
 
 function fittedCardHeaderSegments(input: {
   label: string;
   labelTone: ConversationRowTone;
-  metaSegments: CardMetaSegmentInput[] | undefined;
+  metaSegments: ConversationRowSegment[] | undefined;
   width: number;
 }): ConversationRowSegment[] {
   if (input.width <= 0) return [];
@@ -156,7 +147,7 @@ function fittedCardHeaderSegments(input: {
     if (used >= input.width) break;
     const text = truncateTerminalDisplayText(segment.text, input.width - used);
     if (text.length === 0) continue;
-    segments.push({ text, tone: segment.tone ?? 'textDim' });
+    segments.push({ ...segment, text, tone: segment.tone ?? 'textDim' });
     used += displayWidth(text);
   }
 
@@ -167,59 +158,33 @@ function fittedCardHeaderSegments(input: {
   return segments;
 }
 
-function cardBodyLineDisplayText(body: CardBodyLineInput): string {
-  if (body.segments !== undefined && body.segments.length > 0) {
-    return body.segments.map((segment) => segment.text).join('');
-  }
-  return body.text;
-}
-
-interface ResolvedBodySegment {
-  text: string;
-  tone: ConversationRowTone;
-  bold: boolean;
-}
-
-function cardBodySegments(body: CardBodyLineInput): ResolvedBodySegment[] {
-  if (body.segments !== undefined && body.segments.length > 0) {
-    return body.segments.map((segment) => ({
-      text: segment.text,
-      tone: segment.tone ?? 'text',
-      bold: segment.bold === true,
-    }));
-  }
+// Segments pass through whole. Re-mapping them field by field is how a caller's href reached the
+// card and never reached a row: the artifact filename rendered as plain text and every test that
+// asserted on text and tone still passed.
+function cardBodySegments(body: CardBodyLineInput): ConversationRowSegment[] {
+  if (body.segments !== undefined && body.segments.length > 0) return body.segments;
   return [
     {
       text: body.text,
       tone: body.tone ?? 'text',
-      bold: body.bold === true,
+      ...(body.bold === true ? { bold: true } : {}),
     },
   ];
 }
 
 function cardBodyRowSegments(
-  segments: ResolvedBodySegment[],
+  segments: ConversationRowSegment[],
   wrappedText: string,
   body: CardBodyLineInput,
   offset: number,
 ): ConversationRowSegment[] {
-  if (segments.length === 1) {
-    return [
-      {
-        text: wrappedText,
-        tone: segments[0]?.tone ?? 'text',
-        ...(segments[0]?.bold === true ? { bold: true } : {}),
-      },
-    ];
+  const only = segments[0];
+  if (segments.length === 1 && only !== undefined) {
+    return [{ ...only, tone: only.tone ?? 'text', text: wrappedText }];
   }
 
-  const joined = segments.map((segment) => segment.text).join('');
-  if (wrappedText.length === joined.length && wrappedText === joined) {
-    return segments.map((segment) => ({
-      text: segment.text,
-      tone: segment.tone,
-      ...(segment.bold === true ? { bold: true } : {}),
-    }));
+  if (wrappedText === segments.map((segment) => segment.text).join('')) {
+    return segments;
   }
 
   if (offset > 0) {
@@ -229,9 +194,9 @@ function cardBodyRowSegments(
   return [{ text: wrappedText, tone: segments[0]?.tone ?? 'text' }];
 }
 
-export function cardRowsWindowSlice(
-  input: CardBlockInput & { windowStart: number; windowEnd: number },
-): ConversationRow[] {
+// Sanitizing and wrapping happen once, when the block is built; createRows only slices. Doing the
+// wrap inside createRows made every scroll step re-walk the card's whole body.
+export function prepareCardRows(input: CardBlockInput): PreparedCardRows {
   const width = Math.max(CARD_MIN_WIDTH, input.width);
   const headerWidth = wrapWidthFor('card-top', width);
   const bodyPrefix = input.bodyPrefix ?? '  ';
@@ -239,63 +204,66 @@ export function cardRowsWindowSlice(
     1,
     wrapWidthFor('card-body', width) - getTerminalCellWidth(bodyPrefix),
   );
-  const label = sanitizeRowDisplayText(input.label);
   const metaSegments =
     input.metaSegments === undefined
       ? undefined
       : input.metaSegments.map((segment) => ({
+          ...segment,
           text: sanitizeRowDisplayText(segment.text),
-          ...(segment.tone !== undefined ? { tone: segment.tone } : {}),
         }));
-  const labelTone: ConversationRowTone = input.labelTone ?? 'textDim';
+  const headerSegments = fittedCardHeaderSegments({
+    label: sanitizeRowDisplayText(input.label),
+    labelTone: input.labelTone ?? 'textDim',
+    metaSegments,
+    width: headerWidth,
+  });
+  const bodies = input.bodyLines.map((body) => {
+    const segments = cardBodySegments(body);
+    return {
+      body,
+      segments,
+      lines: hardWrappedDisplayLines(
+        sanitizeRowDisplayText(segments.map((segment) => segment.text).join('')),
+        bodyWrapWidth,
+      ),
+    };
+  });
+  const rowCount = bodies.reduce((count, entry) => count + entry.lines.length, 1);
 
-  const rows: ConversationRow[] = [];
-  const start = Math.max(0, input.windowStart);
-  const end = Math.max(start, input.windowEnd);
-  let rowIndex = 0;
+  return {
+    rowCount,
+    createRows: (windowStart, windowEnd) => {
+      const rows: ConversationRow[] = [];
+      const start = Math.max(0, windowStart);
+      const end = Math.max(start, windowEnd);
+      let rowIndex = 0;
 
-  const appendTop = (): void => {
-    if (rowIndex < start || rowIndex >= end) {
+      if (rowIndex >= start && rowIndex < end) {
+        rows.push(segmentedRow(`${input.keyPrefix}-top`, headerSegments, 'card-top'));
+      }
       rowIndex += 1;
-      return;
-    }
-    const segments = fittedCardHeaderSegments({
-      label,
-      labelTone,
-      metaSegments,
-      width: headerWidth,
-    });
-    rows.push(segmentedRow(`${input.keyPrefix}-top`, segments, 'card-top'));
-    rowIndex += 1;
+
+      for (const [index, entry] of bodies.entries()) {
+        if (rowIndex >= end) return rows;
+        const from = Math.max(0, start - rowIndex);
+        const to = Math.min(entry.lines.length, end - rowIndex);
+        for (let offset = from; offset < to; offset += 1) {
+          const text = entry.lines[offset] ?? '';
+          rows.push(
+            segmentedRow(
+              `${input.keyPrefix}-body-${index}-${offset}`,
+              [
+                ...(bodyPrefix === '' ? [] : [{ text: bodyPrefix }]),
+                ...cardBodyRowSegments(entry.segments, text, entry.body, offset),
+              ],
+              'card-body',
+            ),
+          );
+        }
+        rowIndex += entry.lines.length;
+      }
+
+      return rows;
+    },
   };
-
-  appendTop();
-
-  for (const [index, body] of input.bodyLines.entries()) {
-    if (rowIndex >= end) return rows;
-    const bodySegments = cardBodySegments(body);
-    const cleanBody = sanitizeRowDisplayText(bodySegments.map((segment) => segment.text).join(''));
-    const bodyWindow = wrappedDisplayLineWindow(
-      cleanBody,
-      bodyWrapWidth,
-      start - rowIndex,
-      end - rowIndex,
-    );
-    for (const { offset, text } of bodyWindow.lines) {
-      rows.push(
-        segmentedRow(
-          `${input.keyPrefix}-body-${index}-${offset}`,
-          [
-            ...(bodyPrefix === '' ? [] : [{ text: bodyPrefix }]),
-            ...cardBodyRowSegments(bodySegments, text, body, offset),
-          ],
-          'card-body',
-        ),
-      );
-    }
-    if (!bodyWindow.exhausted) return rows;
-    rowIndex += bodyWindow.totalRows;
-  }
-
-  return rows;
 }

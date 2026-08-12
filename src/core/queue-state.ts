@@ -12,7 +12,7 @@ export function isQueuedMessageClearable(message: QueuedMessage): boolean {
   );
 }
 
-function normalizeLoadedQueuedMessage(message: QueuedMessage): QueuedMessage {
+function recoverInterruptedQueuedMessage(message: QueuedMessage): QueuedMessage {
   if (message.deliveredViaNative || message.nativeDeliveryState === 'delivered') {
     return { ...message, deliveredViaNative: true, nativeDeliveryState: 'delivered' };
   }
@@ -22,10 +22,10 @@ function normalizeLoadedQueuedMessage(message: QueuedMessage): QueuedMessage {
   return message;
 }
 
-export function normalizeLoadedWorkflowState(state: WorkflowState): WorkflowState {
+export function recoverInterruptedNativeDeliveries(state: WorkflowState): WorkflowState {
   let changed = false;
   const messageQueue = state.messageQueue.map((message) => {
-    const normalized = normalizeLoadedQueuedMessage(message);
+    const normalized = recoverInterruptedQueuedMessage(message);
     changed ||= normalized !== message;
     return normalized;
   });

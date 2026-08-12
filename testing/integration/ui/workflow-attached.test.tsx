@@ -47,8 +47,8 @@ async function waitForAttachedApprovalPrompt(ui: {
 }): Promise<void> {
   await vi.waitFor(() => {
     const frame = frameText(ui);
-    expect(frame).toContain('approve');
-    expect(frame.toLowerCase()).toContain('ctrl+e edit');
+    expect(frame).toContain('y approve');
+    expect(frame.toLowerCase()).toContain('e edit');
     expect(frame.toLowerCase()).not.toContain('queue a message to the running workflow');
   }, ATTACHED_WAIT_MS);
   await flushEffects();

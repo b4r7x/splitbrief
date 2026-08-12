@@ -1,3 +1,4 @@
+import { markdownLayoutGlyphs } from '../../../../lib/glyphs.js';
 import { parseMarkdownBlocks } from '../../../../utils/markdown/block-parser.js';
 import {
   TASK_BRIEF_METADATA_KEYS,
@@ -7,6 +8,7 @@ import {
   isMarkdownFenceStartLine as isFenceStartLine,
   isMarkdownHeadingLine as isHeadingLine,
   isMarkdownHtmlCommentStartLine as isHtmlCommentStartLine,
+  isMarkdownListContinuationLine as isListContinuationLine,
   isMarkdownListItemLine as isListItemLine,
   isMarkdownTableLine as isTableLine,
   isMarkdownTableSeparatorLine as isTableSeparatorLine,
@@ -15,9 +17,11 @@ import {
   markdownFenceMarker as fenceMarker,
   markdownHtmlCommentEndsOnLine as commentEndsOnLine,
   parseMarkdownYamlKey as parseYamlKey,
+  startsMarkdownBlockLine as startsMarkdownBlock,
 } from '../../../../utils/markdown/grammar.js';
-import { layoutMarkdown } from '../../../../utils/markdown/layout.js';
+import { layoutMarkdown, markdownLayoutTail } from '../../../../utils/markdown/layout.js';
 import { repairMarkdownTailChunk } from '../../../../utils/markdown/repair.js';
+import type { MarkdownLayoutTail } from '../../../../utils/markdown/types.js';
 import type {
   MarkdownLayoutChunk,
   MarkdownRowsProjectionEntry,
@@ -46,7 +50,7 @@ export function appendMarkdownRowsCacheEntry(input: {
     width: input.width,
     startChunkIndex: reuseCount,
     startOffset: tailStart,
-    hasRenderedPrefix: reusedChunks.some((chunk) => chunk.rows.length > 0),
+    previousBlock: lastRenderedTail(reusedChunks),
   });
   return createMarkdownRowsCacheEntryFromChunks({
     sourceText: input.sourceText,
@@ -67,7 +71,7 @@ export function createMarkdownRowsCacheEntry(input: {
   return createMarkdownRowsCacheEntryFromChunks({
     sourceText: input.sourceText,
     keyPrefix: input.keyPrefix,
-    chunks: createMarkdownLayoutChunks({ ...input, hasRenderedPrefix: false }),
+    chunks: createMarkdownLayoutChunks({ ...input, previousBlock: undefined }),
     projectDir: input.projectDir,
   });
 }
@@ -111,7 +115,7 @@ function appendSensitiveMetadataPrefixOffset(input: {
 }
 
 function isMetadataChunk(chunk: MarkdownLayoutChunk): boolean {
-  return chunk.rows.length > 0 && chunk.rows.every((row) => row.blockKind === 'frontmatter');
+  return chunk.metadataOnly;
 }
 
 function chunkStartsWithDelimiter(sourceText: string, chunk: MarkdownLayoutChunk): boolean {
@@ -199,24 +203,32 @@ function createMarkdownLayoutChunks(input: {
   width: number;
   startChunkIndex: number;
   startOffset: number;
-  hasRenderedPrefix: boolean;
+  previousBlock: MarkdownLayoutTail | undefined;
 }): MarkdownLayoutChunk[] {
   const sourceChunks = markdownSourceChunks(input.sourceText, input.startOffset);
-  // The heading gap keys off rendered output, not source offset: leading blank
-  // lines or HTML comments (planner <!-- Q:… --> markers) produce no rows, and a
-  // heading after them must not open the document with a spacer.
-  let hasRenderedPrefix = input.hasRenderedPrefix;
+  // The leading gap keys off rendered output, not source offset: leading blank
+  // lines or HTML comments (planner <!-- Q:… --> markers) produce no rows, and the
+  // block after them must compare against the last kind that actually rendered.
+  let previousBlock = input.previousBlock;
   return sourceChunks.map((chunk, index) => {
     const laidOut = layoutMarkdownSourceChunk({
       chunk,
       width: input.width,
       chunkIndex: input.startChunkIndex + index,
       isTailChunk: index === sourceChunks.length - 1,
-      leadingHeadingGap: hasRenderedPrefix,
+      previousBlock,
     });
-    hasRenderedPrefix ||= laidOut.rows.length > 0;
+    previousBlock = markdownLayoutTail(laidOut.rows) ?? previousBlock;
     return laidOut;
   });
+}
+
+function lastRenderedTail(chunks: readonly MarkdownLayoutChunk[]): MarkdownLayoutTail | undefined {
+  for (let index = chunks.length - 1; index >= 0; index -= 1) {
+    const tail = markdownLayoutTail(chunks[index]?.rows ?? []);
+    if (tail !== undefined) return tail;
+  }
+  return undefined;
 }
 
 function layoutMarkdownSourceChunk(input: {
@@ -224,13 +236,13 @@ function layoutMarkdownSourceChunk(input: {
   width: number;
   chunkIndex: number;
   isTailChunk: boolean;
-  leadingHeadingGap: boolean;
+  previousBlock: MarkdownLayoutTail | undefined;
 }): MarkdownLayoutChunk {
   const laidOut = buildMarkdownLayoutChunk(
     input.chunk,
     input.width,
     input.chunkIndex,
-    input.leadingHeadingGap,
+    input.previousBlock,
   );
   if (!input.isTailChunk) return laidOut;
   const firstLine = firstChunkLine(input.chunk.text);
@@ -247,7 +259,7 @@ function layoutMarkdownSourceChunk(input: {
     { ...input.chunk, text: repairedText },
     input.width,
     input.chunkIndex,
-    input.leadingHeadingGap,
+    input.previousBlock,
   );
 }
 
@@ -255,7 +267,7 @@ function buildMarkdownLayoutChunk(
   chunk: MarkdownSourceChunk,
   width: number,
   chunkIndex: number,
-  leadingHeadingGap: boolean,
+  previousBlock: MarkdownLayoutTail | undefined,
 ): MarkdownLayoutChunk {
   const document =
     chunk.startOffset === 0
@@ -263,7 +275,8 @@ function buildMarkdownLayoutChunk(
       : parseMarkdownContinuationChunk(chunk.text);
   const layout = layoutMarkdown(document, {
     width,
-    leadingHeadingGap,
+    previousBlock,
+    glyphs: markdownLayoutGlyphs(),
   });
   const rows = layout.rows.map((rowValue) => ({
     ...rowValue,
@@ -275,6 +288,8 @@ function buildMarkdownLayoutChunk(
     endOffset: chunk.endOffset,
     rows,
     height: layout.height,
+    metadataOnly:
+      document.blocks.length > 0 && document.blocks.every((block) => block.kind === 'frontmatter'),
   };
 }
 
@@ -542,14 +557,23 @@ function fenceEndIndex(lines: readonly MarkdownSourceLine[], startIndex: number)
   return lines.length;
 }
 
+// The cap is tested only at item lines, so a chunk boundary never falls between a bullet and
+// the paragraph that continues it — splitting there would leave the continuation to parse as a
+// standalone paragraph and the streamed rows would stop matching a cold render.
 function listEndIndex(lines: readonly MarkdownSourceLine[], startIndex: number): number {
   let cursor = startIndex;
-  while (
-    cursor < lines.length &&
-    cursor - startIndex < MAX_LIST_LINES_PER_CHUNK &&
-    isListItemLine(lines[cursor]?.text ?? '')
-  ) {
-    cursor += 1;
+  while (cursor < lines.length) {
+    const text = lines[cursor]?.text ?? '';
+    if (isListItemLine(text)) {
+      if (cursor - startIndex >= MAX_LIST_LINES_PER_CHUNK) break;
+      cursor += 1;
+      continue;
+    }
+    if (cursor > startIndex && isListContinuationLine(text, lines[cursor + 1]?.text)) {
+      cursor += 1;
+      continue;
+    }
+    break;
   }
   return cursor;
 }
@@ -595,16 +619,4 @@ function paragraphEndIndex(lines: readonly MarkdownSourceLine[], startIndex: num
   }
 
   return cursor;
-}
-
-function startsMarkdownBlock(line: string, nextLine: string | undefined): boolean {
-  return (
-    isFenceStartLine(line) ||
-    isHeadingLine(line) ||
-    isThematicBreakLine(line) ||
-    isListItemLine(line) ||
-    isBlockquoteLine(line) ||
-    (isTableLine(line) && isTableSeparatorLine(nextLine ?? '')) ||
-    isHtmlCommentStartLine(line)
-  );
 }

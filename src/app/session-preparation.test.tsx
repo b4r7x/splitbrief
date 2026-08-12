@@ -24,7 +24,7 @@ import {
 } from '../stores/navigation/session-select.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { overlayStore } from '../stores/ui/overlay.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../features/workflow/prompt-grace.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../lib/terminal/typeahead-grace.js';
 import { SessionPreparation } from './session-preparation.js';
 
 const ESC = '\u001b';

@@ -1,4 +1,5 @@
 import type { Phase } from '../../../core/schemas/enums.js';
+import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -54,6 +55,17 @@ function activeVerb(phase: Phase): string {
     default:
       return assertNever(phase);
   }
+}
+
+// OpenCode's `run --format json` reports a tool only once it finishes and never
+// forwards child-session events, so minutes of silence are routine there and the
+// stall warning alone reads as a hang.
+const QUIET_STREAM_RUNNERS: ReadonlySet<string> = new Set<CliToolId>(['opencode']);
+
+export function stallRunnerHint(runnerName: string | null): string | null {
+  return runnerName !== null && QUIET_STREAM_RUNNERS.has(runnerName)
+    ? 'tools report when done'
+    : null;
 }
 
 export function formatStageElapsed(ms: number): string {

@@ -264,6 +264,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'planner_text':
       case 'planner_heartbeat':
       case 'turn_interrupted':
+      case 'artifact_written':
       case 'spec_rejected':
       case 'spec_regenerated':
       case 'plan_approved':
@@ -284,6 +285,7 @@ export function createOtelSink(opts: OtelSinkOptions): EventSink {
       case 'mode_resolved':
       case 'mode_advice':
       case 'instant_plan_received':
+      case 'tasks_planned':
       case 'task_retry':
       case 'task_escalating':
       case 'task_reset':

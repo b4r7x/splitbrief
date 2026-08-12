@@ -17,15 +17,11 @@ export interface Theme {
   panelBg: string | undefined;
   suggestionPanelBg: string;
   selectionBg: string;
-  spinner: string;
   scrollIndicator: string;
   diff: {
     added: string;
-    addedBg: string | undefined;
     removed: string;
-    removedBg: string | undefined;
     context: string;
-    contextBg: string | undefined;
   };
   markdown: {
     heading: string;
@@ -33,6 +29,7 @@ export interface Theme {
     italic: string;
     code: string;
     codeBg: string | undefined;
+    codeGutter: string;
     blockquote: string;
     list: string;
     rule: string;
@@ -66,38 +63,48 @@ export interface Theme {
 const terminalTheme: Theme = {
   text: 'white',
   textDim: 'gray',
-  accent: 'cyan',
+  // Cyan is the link, and nothing else on a document or chrome surface may take it.
+  accent: 'blueBright',
   success: 'green',
   error: 'red',
   warning: 'yellow',
   dimError: 'red', // 16-color named ANSI collapses dim to base error/success; mono separates them.
   dimSuccess: 'green',
-  info: 'blue',
+  // Four tokens co-occur in the activity label column — accent, planner, info, implementer — and
+  // the slots that are neither reserved, nor severity, nor structure form two families of two, so
+  // a fourth category hue does not exist here. info drops its hue; SESS/ART are words in a column
+  // of words and the label carries the distinction.
+  info: 'gray',
   planner: 'magenta',
-  implementer: 'cyan',
-  validator: 'green',
+  implementer: 'blue',
+  // A role the reader never infers from color: validator output arrives inside a block the word
+  // `validate` already names, with per-stage glyphs carrying severity.
+  validator: 'white',
   border: 'gray',
   panelBg: undefined,
   suggestionPanelBg: '#24283b',
   selectionBg: '#333333',
-  spinner: 'cyan',
   scrollIndicator: 'gray',
   diff: {
-    added: 'green',
-    addedBg: undefined,
-    removed: 'red',
-    removedBg: undefined,
+    // Polarity, not severity: a removed line inside an error block must not wear the error hue.
+    added: 'greenBright',
+    removed: 'redBright',
     context: 'gray',
-    contextBg: undefined,
   },
   markdown: {
-    heading: 'cyan',
+    // Cyan belongs to paths and links here, so the heading ranks step down on brightness and
+    // weight instead of spending the one hue a reader uses to spot something clickable. That
+    // needs heading to sit a step above body text, or depth 3 renders as an ordinary sentence.
+    heading: 'whiteBright',
     bold: 'white',
     italic: 'gray',
-    code: 'yellow',
-    codeBg: undefined,
+    // Not yellow: warning is yellow here, and inline code appears in ordinary prose, where a
+    // yellow run reads as a severity.
+    code: 'magentaBright',
+    codeBg: '#24283b',
+    codeGutter: '#6272a4',
     blockquote: 'gray',
-    list: 'cyan',
+    list: 'gray',
     rule: 'gray',
     link: 'cyan',
     strike: 'gray',
@@ -118,7 +125,7 @@ const terminalTheme: Theme = {
     bg: 'white',
   },
   review: {
-    file: 'white',
+    file: 'cyan', // a file path that is also a link takes the link tone
   },
   highlight: {
     bg: '#333333',
@@ -135,34 +142,34 @@ const monoTheme: Theme = {
   warning: '#e0af68',
   dimError: '#a85561',
   dimSuccess: '#6e8f4a',
-  info: '#7dcfff',
+  info: '#666666',
   planner: '#bb9af7',
   implementer: '#7dcfff',
-  validator: '#9ece6a',
+  validator: '#c0c0c0',
   border: '#3b3b3b',
   panelBg: '#1a1a1a',
   suggestionPanelBg: '#1a1a1a',
   selectionBg: '#2a2a3a',
-  spinner: '#7aa2f7',
   scrollIndicator: '#666666',
   diff: {
     added: '#4fd6be',
-    addedBg: '#20303b',
     removed: '#c53b53',
-    removedBg: '#37222c',
     context: '#828bb8',
-    contextBg: '#141414',
   },
   markdown: {
-    heading: '#7aa2f7',
+    heading: '#e8e8e8',
     bold: '#c0c0c0',
     italic: '#828bb8',
-    code: '#e0af68',
+    // Not #e0af68: that is warning, and inline code appears in ordinary prose.
+    code: '#ff9e64',
     codeBg: '#24283b',
+    codeGutter: '#6272a4',
     blockquote: '#828bb8',
-    list: '#7aa2f7',
+    list: '#565f89',
     rule: '#3b3b3b',
-    link: '#7aa2f7',
+    // Not #7aa2f7: that is accent here, so anything emphasised looked exactly like a link. The
+    // reservation attaches to the link token, and in this preset the link token is not cyan.
+    link: '#2ac3de',
     strike: '#666666',
     tableBorder: '#3b3b3b',
   },
@@ -181,12 +188,23 @@ const monoTheme: Theme = {
     bg: '#c0c0c0',
   },
   review: {
-    file: '#c0c0c0',
+    file: '#2ac3de', // a file path that is also a link takes the link tone
   },
   highlight: {
     bg: '#2a2a3a',
     fg: '#c0c0c0',
   },
+};
+
+// What the code frame becomes once chalk downsamples it to the 16-color set (ansi-styles
+// rgbToAnsi): #24283b lands on bgBlack, which on a dark profile is the terminal's own ground,
+// so the painted block stops framing anything; #6272a4 lands on blue, the same bucket the
+// terminal preset already spends on syntax.function, so the rail takes the color of the code it
+// encloses. No named background frames without shouting, so at 16 colors the rail, the padding
+// and the right-flush language tag carry the frame on their own.
+const ansiTerminalTheme: Theme = {
+  ...terminalTheme,
+  markdown: { ...terminalTheme.markdown, codeBg: undefined, codeGutter: 'gray' },
 };
 
 export function getTheme(mode: 'terminal' | 'mono' = 'terminal'): Theme {
@@ -208,7 +226,7 @@ export function resolveTheme(
   mode: 'terminal' | 'mono' = 'terminal',
   env?: NodeJS.ProcessEnv,
 ): Theme {
-  if (mode === 'mono' && !supportsHexColors(env)) return terminalTheme;
+  if (!supportsHexColors(env)) return ansiTerminalTheme;
   return getTheme(mode);
 }
 

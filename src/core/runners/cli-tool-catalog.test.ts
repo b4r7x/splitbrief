@@ -115,6 +115,23 @@ describe('CLI tool catalog', () => {
     expect(NATIVE_CLI_CATALOG_TOOL_IDS).toEqual(['codex', 'opencode', 'aider', 'kilo-code']);
   });
 
+  it('declares project-internal state prefixes only for tools proven to rewrite them', () => {
+    expect(
+      Object.fromEntries(CLI_TOOL_IDS.map((id) => [id, CLI_TOOL_CATALOG[id].internalStatePaths])),
+    ).toEqual({
+      'claude-code': [],
+      codex: [],
+      opencode: [
+        '.opencode/package-lock.json',
+        '.opencode/package.json',
+        '.opencode/node_modules/',
+      ],
+      aider: [],
+      copilot: [],
+      'kilo-code': [],
+    });
+  });
+
   it('describes planner tier-2 write authority without changing ordinary planning posture', () => {
     const tier2AutoAllowFlags = {
       'claude-code': [],

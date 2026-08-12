@@ -1,3 +1,5 @@
+import type { MarkdownLayoutGlyphs } from '../utils/markdown/types.js';
+
 export type GlyphTier = 'unicode' | 'ascii';
 
 export type GlyphName =
@@ -14,8 +16,13 @@ export type GlyphName =
   | 'statusWarning'
   | 'connectorSame'
   | 'connectorHandoff'
+  | 'wrapContinuation'
   | 'cursor'
   | 'editCursor'
+  | 'codeRail'
+  | 'listBullet'
+  | 'listBulletNested'
+  | 'tableColumn'
   | 'liveBar'
   | 'prompt'
   | 'scrollThumb'
@@ -26,8 +33,7 @@ export type GlyphName =
   | 'elbow'
   | 'divider'
   | 'check'
-  | 'promptMarker'
-  | 'completed';
+  | 'promptMarker';
 
 export type CardKind = 'round' | 'single' | 'bold';
 export type CardBorderStyle = 'round' | 'single' | 'bold' | 'classic';
@@ -46,8 +52,13 @@ const UNICODE_GLYPHS: Record<GlyphName, string> = {
   statusWarning: '⚠',
   connectorSame: '›',
   connectorHandoff: '→',
+  wrapContinuation: '↪',
   cursor: '▸',
   editCursor: '▏',
+  codeRail: '▏',
+  listBullet: '•',
+  listBulletNested: '◦',
+  tableColumn: '│',
   liveBar: '▌',
   prompt: '›',
   scrollThumb: '█',
@@ -59,7 +70,6 @@ const UNICODE_GLYPHS: Record<GlyphName, string> = {
   divider: '─',
   check: '✓',
   promptMarker: '❯',
-  completed: '◇',
 };
 
 const ASCII_GLYPHS: Record<GlyphName, string> = {
@@ -76,8 +86,13 @@ const ASCII_GLYPHS: Record<GlyphName, string> = {
   statusWarning: '!',
   connectorSame: '>',
   connectorHandoff: '->',
+  wrapContinuation: '>>',
   cursor: '>',
   editCursor: '|',
+  codeRail: '|',
+  listBullet: '*',
+  listBulletNested: '-',
+  tableColumn: '|',
   liveBar: '|',
   prompt: '>',
   scrollThumb: '#',
@@ -89,7 +104,6 @@ const ASCII_GLYPHS: Record<GlyphName, string> = {
   divider: '-',
   check: '+',
   promptMarker: '>',
-  completed: 'o',
 };
 
 export const LINE_SPINNER_FRAMES = ['|', '/', '-', '\\'] as const;
@@ -97,9 +111,17 @@ export const BRAILLE_SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴',
 
 // Decide the glyph tier once from terminal capability. Box-drawing and the marker set below render
 // on virtually every modern terminal; the ascii tier exists for legacy/uncertain hosts where they
-// would mojibake. Pure ASCII is the safe floor: forced on the Linux console, dumb terminals,
-// non-Windows-Terminal Windows, and any non-TTY (piped) output. Otherwise a UTF-8 locale (or no
-// locale at all, the common modern default) selects the unicode tier.
+// would mojibake. It is forced on the Linux console, dumb terminals, non-Windows-Terminal Windows,
+// and any non-TTY (piped) output; otherwise a UTF-8 locale (or no locale at all, the common modern
+// default) selects the unicode tier.
+//
+// What the ascii tier guarantees is exactly this table: no box-drawing and no non-ASCII marker from
+// `glyph()`. It is not a whole-product ASCII floor, and must not be read as one — the truncation
+// ellipsis (`ELLIPSIS` in `utils/display-text.ts`) and the `·` run separator (`SOFT_SEP` in
+// `components/separators.ts`) are untiered constants that render the same at both tiers, so a host
+// that mojibakes `─` mojibakes those too. Tiering them means routing every call site through
+// `glyph()`, including the measured hot path in `display-text.ts`; that is a real change with no
+// observed defect behind it yet, and it is tracked rather than done here.
 export function resolveGlyphTier(
   env: NodeJS.ProcessEnv = process.env,
   isTTY: boolean = Boolean(process.stdout?.isTTY),
@@ -115,6 +137,19 @@ export function resolveGlyphTier(
 
 export function glyph(name: GlyphName, tier: GlyphTier = resolveGlyphTier()): string {
   return (tier === 'ascii' ? ASCII_GLYPHS : UNICODE_GLYPHS)[name];
+}
+
+// Markdown layout lives in `utils/`, the leaf layer, so it cannot reach the glyph table itself.
+// Callers resolve the tier once here and hand the bundle down with the width.
+export function markdownLayoutGlyphs(tier: GlyphTier = resolveGlyphTier()): MarkdownLayoutGlyphs {
+  return {
+    codeRail: glyph('codeRail', tier),
+    wrapContinuation: glyph('wrapContinuation', tier),
+    divider: glyph('divider', tier),
+    listBullet: glyph('listBullet', tier),
+    listBulletNested: glyph('listBulletNested', tier),
+    tableColumn: glyph('tableColumn', tier),
+  };
 }
 
 export function borderStyleFor(

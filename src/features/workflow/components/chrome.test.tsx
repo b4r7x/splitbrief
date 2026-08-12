@@ -5,6 +5,7 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { glyph } from '../../../lib/glyphs.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -103,6 +104,7 @@ describe('WorkflowFooter', () => {
       handleInput: (text: string) => void;
     }> = {},
   ) {
+    const { cols, rows } = terminalSizeStore.get();
     return renderFeature(
       <WorkflowFooter
         handleInput={props.handleInput ?? (() => {})}
@@ -114,6 +116,7 @@ describe('WorkflowFooter', () => {
         reviewEpoch={props.reviewEpoch}
         disabled={false}
       />,
+      { cols, rows },
     );
   }
 
@@ -147,6 +150,21 @@ describe('WorkflowFooter', () => {
 
     expect(ui.lastFrame() ?? '').not.toContain(glyph('check'));
     expect(ui.lastFrame() ?? '').not.toContain('⏎');
+    ui.unmount();
+  });
+
+  it('keeps the review composer at the full terminal width', async () => {
+    const cols = 160;
+    terminalSizeStore.__testReset({ cols, rows: 30, isSmall: false });
+    const ui = renderFooter({ mode: 'review', inputHint: 'y approve · c comment · q reject' });
+    await tick();
+
+    const topBorder = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .find((line) => line.startsWith('╭'));
+
+    expect(topBorder).toBeDefined();
+    expect(getTerminalCellWidth(topBorder ?? '')).toBe(cols);
     ui.unmount();
   });
 

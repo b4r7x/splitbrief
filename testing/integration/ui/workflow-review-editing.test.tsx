@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { renderFeature, flushEffects, tick } from '#testing/helpers/ink.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
@@ -11,6 +11,7 @@ import type { ApprovalReviewResult } from '../../../src/core/approval/types.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { formatTasks } from '../../../src/engine/spec/formatter.js';
+import { REVIEW_HINT } from '../../../src/features/workflow/review-commands.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 
@@ -22,6 +23,7 @@ const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
 const { editorStore } = await import('../../../src/stores/ui/editor.js');
+const { feedbackStore } = await import('../../../src/stores/ui/feedback.js');
 const { focusStore } = await import('../../../src/stores/ui/focus.js');
 const { reviewStore } = await import('../../../src/stores/workflow/review.js');
 const { externalEditRequestStore } = await import(
@@ -33,12 +35,12 @@ const ENTER = '\r';
 const CTRL_E = '\x05';
 const REVIEW_EDITOR_WAIT_MS = 15_000;
 
-async function waitForReviewPrompt(ui: { lastFrame: () => string | undefined }) {
+async function waitForReviewPrompt(ui: { lastFrame: () => string | undefined }, timeout?: number) {
   await vi.waitFor(() => {
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('approve');
     expect(frame.includes('edit-file') || frame.includes('edit')).toBe(true);
-  });
+  }, timeout);
   await tick(20);
 }
 
@@ -56,6 +58,7 @@ const { appendFileSync, writeFileSync } = require('node:fs');
 const filePath = process.argv[2];
 appendFileSync(process.env.FAKE_REVIEW_EDITOR_LOG, filePath + '\\n');
 writeFileSync(filePath, process.env.FAKE_REVIEW_EDITOR_CONTENT);
+process.exit(Number(process.env.FAKE_REVIEW_EDITOR_EXIT_CODE ?? 0));
 `,
     'utf-8',
   );
@@ -71,7 +74,14 @@ function stubReviewEditor(editorPath: string) {
 }
 
 describe('WorkflowScreen review editing', () => {
+  let originalStdoutWrite: typeof process.stdout.write;
+
   beforeEach(() => {
+    // The editor handover writes real cursor sequences to process.stdout on every
+    // suspend/resume; swallow them so spawning tests don't leak ANSI codes into the
+    // test terminal. Ink renders through renderFeature's capture streams, not this one.
+    originalStdoutWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
     resetAllStores();
     routerStore.init({ screen: 'home' });
     runWorkflow.mockReset();
@@ -79,6 +89,7 @@ describe('WorkflowScreen review editing', () => {
   });
 
   afterEach(async () => {
+    process.stdout.write = originalStdoutWrite;
     vi.unstubAllEnvs();
     resetAllStores();
     routerStore.init({ screen: 'home' });
@@ -126,7 +137,7 @@ describe('WorkflowScreen review editing', () => {
 
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Rich footer task');
-        expect(ui.lastFrame() ?? '').toContain('approve · ctrl+e edit-file');
+        expect(ui.lastFrame() ?? '').toContain(REVIEW_HINT);
       });
       const frame = ui.lastFrame() ?? '';
       // The Ctrl+C cluster left the resting InputFooter; it now lives only in the armed FeedbackRow.
@@ -304,7 +315,9 @@ describe('WorkflowScreen review editing', () => {
       expect(readFileSync(reviewPath, 'utf-8')).toContain(`Edited ${type} review`);
       expect(approvalResult).toBeUndefined();
 
-      await waitForReviewPrompt(ui);
+      // "Edited … — content reloaded" owns the feedback row until it auto-clears (3s);
+      // the review key legend returns after that.
+      await waitForReviewPrompt(ui, REVIEW_EDITOR_WAIT_MS);
       await flushEffects();
       ui.stdin.write('approve');
       await vi.waitFor(() => {
@@ -316,6 +329,55 @@ describe('WorkflowScreen review editing', () => {
       await vi.waitFor(() => {
         expect(approvalResult).toEqual({ approved: true });
       }, REVIEW_EDITOR_WAIT_MS);
+
+      ui.unmount();
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  it('refreshes the review overlay with an edit the editor saved before exiting non-zero', async () => {
+    const projectDir = createTempDir('workflow-screen-spec-editor-failure');
+    try {
+      const reviewPath = join(projectDir, 'spec.md');
+      const { editorPath, logPath } = writeFakeReviewEditor(projectDir);
+      writeFileSync(reviewPath, '# Original spec review\n\nstale content\n', 'utf-8');
+      stubReviewEditor(editorPath);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_LOG', logPath);
+      vi.stubEnv('FAKE_REVIEW_EDITOR_CONTENT', '# Edited spec review\n\nfresh editor content\n');
+      vi.stubEnv('FAKE_REVIEW_EDITOR_EXIT_CODE', '1');
+      let approvalResult: ApprovalReviewResult | undefined;
+
+      runWorkflow.mockImplementationOnce(async (opts) => {
+        lifecycleStore.__testReset({ phase: 'reviewing-spec' });
+        approvalResult = await opts.callbacks.onApprovalNeeded('spec', reviewPath);
+        return makeSummary({ feature: 'spec review editor failure' });
+      });
+
+      const ui = mountWorkflow(projectDir);
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain('Original spec review');
+      });
+      await waitForReviewPrompt(ui);
+
+      const messages: string[] = [];
+      const unsubscribe = feedbackStore.subscribe(() => {
+        const { message } = feedbackStore.get();
+        if (message !== null) messages.push(message);
+      });
+      try {
+        externalEditRequestStore.request(reviewStore.get().ownerToken);
+        await vi.waitFor(() => {
+          expect(ui.lastFrame() ?? '').toContain('Edited spec review');
+        }, REVIEW_EDITOR_WAIT_MS);
+      } finally {
+        unsubscribe();
+      }
+
+      expect(messages).toContain(
+        `Editor exited with status 1 (${basename(process.execPath)}) but saved spec.md — content reloaded`,
+      );
+      expect(approvalResult).toBeUndefined();
 
       ui.unmount();
     } finally {

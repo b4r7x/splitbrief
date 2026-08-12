@@ -101,6 +101,45 @@ describe('addUsageAndSave', () => {
       cleanupTempDir(projectDir);
     }
   });
+
+  it('rebases interleaved planner bookings on the latest ledger and workflow fields while merging queues', () => {
+    const { projectDir, sessionId } = setupProject();
+    try {
+      const ref = { projectDir, sessionId };
+      const { bus } = makeBusRecorder();
+      const firstMessage = makeQueuedMessage();
+      const secondMessage = { ...firstMessage, id: 'msg-two', text: 'another queued message' };
+      const persisted = transition(createInitialState('feature'), { type: 'START' });
+      saveState(ref, persisted);
+
+      const stale = { ...persisted, messageQueue: [firstMessage, secondMessage] };
+      addUsageAndSave({ ...ref, bus }, stale, 'planner', {
+        inputTokens: 100,
+        outputTokens: 25,
+      });
+
+      const afterFirst = loadState(ref);
+      if (!afterFirst) throw new Error('expected first usage booking to persist');
+      saveState(ref, { ...afterFirst, phase: 'planning', plannerSessionId: 'latest-planner' });
+
+      const result = addUsageAndSave({ ...ref, bus }, stale, 'planner', {
+        inputTokens: 200,
+        outputTokens: 50,
+      });
+      const saved = loadState(ref);
+
+      expect(result.tokenUsage.plannerInput).toBe(300);
+      expect(result.tokenUsage.plannerOutput).toBe(75);
+      expect(result.phase).toBe('planning');
+      expect(result.plannerSessionId).toBe('latest-planner');
+      expect(result.messageQueue.map((message) => message.id)).toEqual(['msg-one', 'msg-two']);
+      expect(saved?.tokenUsage).toMatchObject({ plannerInput: 300, plannerOutput: 75 });
+      expect(saved?.phase).toBe('planning');
+      expect(saved?.plannerSessionId).toBe('latest-planner');
+    } finally {
+      cleanupTempDir(projectDir);
+    }
+  });
 });
 
 describe('rebaseOnPersistedWorkflowState', () => {

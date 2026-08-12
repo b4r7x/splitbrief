@@ -5,8 +5,8 @@ import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 import { buildInputFooterByline } from './input-footer-byline.js';
 
-function fullByline(byline: { lead: string; queued: string; rest: string }): string {
-  return `${byline.lead}${byline.queued}${byline.rest}`;
+function fullByline(byline: { lead: string; hint: string; queued: string; rest: string }): string {
+  return `${byline.lead}${byline.hint}${byline.queued}${byline.rest}`;
 }
 
 describe('buildInputFooterByline', () => {
@@ -210,6 +210,60 @@ describe('buildInputFooterByline', () => {
 
     expect(byline.queued).toBe(`${SOFT_SEP}2 queued`);
     expect(fullByline(byline)).toBe(`${stageLead} · 2 queued · git:none`);
+  });
+
+  it('renders the hint as its own dim part, directly behind the lead it explains', () => {
+    const byline = buildInputFooterByline({
+      cols: 120,
+      lead: '⚠ Still working — silent 5:12',
+      hintText: 'tools report when done',
+      queuedText: '2 queued',
+      etaText: null,
+      gitLabel: 'git:none',
+      advisoryText: null,
+    });
+
+    expect(byline.hint).toBe(`${SOFT_SEP}tools report when done`);
+    expect(fullByline(byline)).toBe(
+      '⚠ Still working — silent 5:12 · tools report when done · 2 queued · git:none',
+    );
+  });
+
+  it('omits the hint segment when no hint is passed', () => {
+    const byline = buildInputFooterByline({
+      cols: 120,
+      lead: stageLead,
+      queuedText: null,
+      etaText: null,
+      gitLabel: 'git:none',
+      advisoryText: null,
+    });
+
+    expect(byline.hint).toBe('');
+    expect(fullByline(byline)).toBe(`${stageLead} · git:none`);
+  });
+
+  it('drops the hint before the queued count when width runs out', () => {
+    const base = {
+      lead: stageLead,
+      hintText: 'tools report when done',
+      queuedText: '2 queued',
+      etaText: null,
+      gitLabel: 'git:none',
+      advisoryText: null,
+    } as const;
+    const withHint = `${stageLead} · tools report when done · 2 queued`;
+    const withoutHint = `${stageLead} · 2 queued`;
+
+    expect(fullByline(buildInputFooterByline({ ...base, cols: 120 }))).toBe(
+      `${withHint} · git:none`,
+    );
+    expect(
+      fullByline(buildInputFooterByline({ ...base, cols: getTerminalCellWidth(withHint) })),
+    ).toBe(withHint);
+    expect(
+      fullByline(buildInputFooterByline({ ...base, cols: getTerminalCellWidth(withoutHint) })),
+    ).toBe(withoutHint);
   });
 
   it('the queued segment carries no leading separator when the lead is empty', () => {

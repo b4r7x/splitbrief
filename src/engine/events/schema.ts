@@ -344,6 +344,14 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     silentMs: z.number().int().nonnegative(),
   }),
   strictCallPhaseEvent('runner_call_stall_cleared'),
+  phaseEvent('artifact_written').extend({
+    filename: z.string(),
+    path: z.string(),
+    lineCount: z.number().int().nonnegative(),
+    excerpt: stringArray,
+    omittedCount: z.number().int().nonnegative(),
+    omittedUnit: z.enum(['line', 'section', 'task']),
+  }),
   phaseEvent('spec_rejected'),
   phaseEvent('spec_regenerated').extend({ comment: z.string() }),
   phaseEvent('plan_approved'),
@@ -413,6 +421,18 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     missing: stringArray,
   }),
   phaseEvent('instant_plan_received').extend({ taskCount: z.number() }),
+  phaseEvent('tasks_planned').extend({
+    tasks: z.array(
+      z.object({
+        id: TaskIdSchema,
+        title: z.string(),
+        index: z.number().int().nonnegative(),
+        file: z.string(),
+        action: FileActionSchema,
+      }),
+    ),
+    total: z.number().int().nonnegative(),
+  }),
   phaseEvent('task_started').extend({
     taskId: TaskIdSchema,
     title: z.string(),

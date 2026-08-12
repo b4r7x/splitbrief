@@ -11,6 +11,7 @@ import {
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
   truncateTerminalDisplayTextStart,
+  wrapTerminalGraphemes,
 } from './display-text.js';
 
 describe('stripTerminalControls', () => {
@@ -124,6 +125,65 @@ describe('iterateTerminalGraphemes', () => {
     expect(
       Array.from(iterateTerminalGraphemes('e\u0301\n👩‍💻', { preserveLineBreaks: true })),
     ).toEqual(['e\u0301', '\n', '👩‍💻']);
+  });
+});
+
+describe('wrapTerminalGraphemes', () => {
+  function wrappedLines(text: string, maxWidth: number): string[] {
+    const lines: string[] = [];
+    let current = '';
+
+    wrapTerminalGraphemes({
+      graphemes: iterateTerminalGraphemes(text),
+      maxWidth,
+      flush: () => {
+        lines.push(current);
+        current = '';
+      },
+      append: (grapheme) => {
+        current += grapheme;
+      },
+    });
+
+    lines.push(current);
+    return lines;
+  }
+
+  it('keeps zero-width combining marks on the grapheme line', () => {
+    expect(wrappedLines('e\u0301x', 1)).toEqual(['e\u0301', 'x']);
+  });
+
+  it('rolls a wide CJK grapheme at the cell boundary', () => {
+    expect(wrappedLines('界a', 2)).toEqual(['界', 'a']);
+  });
+
+  it('keeps a ZWJ emoji grapheme whole', () => {
+    expect(wrappedLines('👩‍💻x', 2)).toEqual(['👩‍💻', 'x']);
+  });
+
+  it('flushes only after an exact boundary is filled', () => {
+    expect(wrappedLines('abcd', 2)).toEqual(['ab', 'cd']);
+  });
+
+  it('accepts a caller-owned prefix width before the boundary', () => {
+    const lines: string[] = [];
+    let current = 'prefix';
+
+    wrapTerminalGraphemes({
+      graphemes: ['x'],
+      maxWidth: 6,
+      initialWidth: 6,
+      flush: () => {
+        lines.push(current);
+        current = '';
+      },
+      append: (grapheme) => {
+        current += grapheme;
+      },
+    });
+    lines.push(current);
+
+    expect(lines).toEqual(['prefix', 'x']);
   });
 });
 

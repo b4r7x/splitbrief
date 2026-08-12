@@ -1,12 +1,14 @@
 import { Box, Text } from 'ink';
 import type { ReactNode } from 'react';
 import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
+import { markdownLayoutGlyphs } from '../lib/glyphs.js';
 import { osc8Hyperlink, terminalSupportsHyperlinks } from '../lib/terminal/hyperlinks.js';
 import { parseMarkdownBlocks } from '../utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../utils/markdown/layout.js';
 import { resolveMarkdownLinkTarget } from '../utils/path-links.js';
 import { assertNever } from '../utils/type-guards.js';
 import type {
+  MarkdownHeadingDepth,
   MarkdownLayoutLine,
   MarkdownLayoutRow,
   MarkdownLayoutSegment,
@@ -14,7 +16,7 @@ import type {
 import type { ScrollableDocumentRow } from './scrollable-document.js';
 import type { Theme } from './theme.js';
 
-interface SegmentStyle {
+export interface MarkdownSegmentStyle {
   color: string;
   bold?: boolean;
   italic?: boolean;
@@ -66,7 +68,10 @@ export interface RenderMarkdownRowsOptions {
 export function renderMarkdownRows(options: RenderMarkdownRowsOptions): ScrollableDocumentRow[] {
   const { source, width, theme, decorateSegment, projectDir } = options;
   const safeSource = sanitizeTerminalDisplayText(source, { preserveLineBreaks: true });
-  const layout = layoutMarkdown(parseMarkdownBlocks(safeSource), { width });
+  const layout = layoutMarkdown(parseMarkdownBlocks(safeSource), {
+    width,
+    glyphs: markdownLayoutGlyphs(),
+  });
   return layout.rows.map((row) => ({
     key: row.key,
     lines: row.height,
@@ -131,7 +136,11 @@ function renderMarkdownLayoutLine(input: {
           }),
         );
 
-  if (codeWidth === undefined) return <Text key={key}>{content}</Text>;
+  // The ground stops at the block: a blank line inside a code row is the air separating it from
+  // the block before it, and painting that would join the two into one long ground.
+  const painted =
+    codeWidth !== undefined && line.segments.some((segment) => segment.text.trim().length > 0);
+  if (!painted || codeWidth === undefined) return <Text key={key}>{content}</Text>;
 
   const background = theme.markdown.codeBg;
   return (
@@ -154,7 +163,7 @@ function renderSegment(input: {
   previousLineText: string | undefined;
 }): ReactNode {
   const { segment, key, theme, decorateSegment, projectDir, previousLineText } = input;
-  const baseStyle = segmentStyle(segment, theme);
+  const baseStyle = markdownSegmentStyle(segment, theme);
   const parts = decorateSegment?.({ segment, theme, projectDir, previousLineText }) ?? [
     { text: segment.text },
   ];
@@ -171,11 +180,11 @@ function renderSegment(input: {
 }
 
 function mergeSegmentStyle(
-  baseStyle: SegmentStyle,
+  baseStyle: MarkdownSegmentStyle,
   override: MarkdownRenderSegmentStyle | undefined,
-): SegmentStyle {
+): MarkdownSegmentStyle {
   if (!override) return baseStyle;
-  const style: SegmentStyle = { color: override.color ?? baseStyle.color };
+  const style: MarkdownSegmentStyle = { color: override.color ?? baseStyle.color };
   const bold = override.bold ?? baseStyle.bold;
   const italic = override.italic ?? baseStyle.italic;
   const strikethrough = override.strikethrough ?? baseStyle.strikethrough;
@@ -190,7 +199,7 @@ function mergeSegmentStyle(
 function renderTextSegment(input: {
   key: string;
   text: string;
-  style: SegmentStyle;
+  style: MarkdownSegmentStyle;
   href: string | undefined;
   projectDir: string | undefined;
 }): ReactNode {
@@ -219,12 +228,40 @@ function renderTextSegment(input: {
   );
 }
 
-function segmentStyle(segment: MarkdownLayoutSegment, theme: Theme): SegmentStyle {
+// Six ranks that step down without spending a hue: brightness first, then weight, then slant,
+// with depth 1 taking the hairline that layout puts under it. Every rank differs from body text —
+// markdown.heading is a step brighter than text, and the two ranks that fall back to body
+// brightness carry weight instead. Underline is left out on purpose: that is how a link
+// identifies itself.
+function headingStyle(depth: MarkdownHeadingDepth, theme: Theme): MarkdownSegmentStyle {
+  switch (depth) {
+    case 1:
+    case 2:
+      return { color: theme.markdown.heading, bold: true };
+    case 3:
+      return { color: theme.markdown.heading };
+    case 4:
+      return { color: theme.text, bold: true };
+    case 5:
+      return { color: theme.textDim, bold: true };
+    case 6:
+      return { color: theme.textDim, italic: true };
+    default:
+      return assertNever(depth);
+  }
+}
+
+export function markdownSegmentStyle(
+  segment: MarkdownLayoutSegment,
+  theme: Theme,
+): MarkdownSegmentStyle {
   switch (segment.kind) {
     case 'heading':
-      return { color: theme.markdown.heading, bold: (segment.depth ?? 1) <= 3 };
+      return headingStyle(segment.depth ?? 1, theme);
     case 'metadata':
       return { color: theme.textDim };
+    case 'codeLanguage':
+      return { color: theme.markdown.codeGutter };
     case 'rule':
       return { color: theme.markdown.rule };
     case 'listMarker':
@@ -232,7 +269,9 @@ function segmentStyle(segment: MarkdownLayoutSegment, theme: Theme): SegmentStyl
     case 'blockquoteMarker':
       return { color: theme.markdown.blockquote };
     case 'codeGutter':
-      return { color: theme.markdown.rule };
+      return { color: theme.markdown.codeGutter };
+    case 'codeText':
+      return { color: theme.text };
     case 'code':
       return segment.scope !== undefined
         ? { color: theme.syntax[segment.scope] }

@@ -75,12 +75,14 @@ function isWorkflowScannableSegment(segment: MarkdownLayoutSegment): boolean {
     case 'boldItalic':
     case 'strikethrough':
     case 'tableHeader':
+    case 'codeText':
       return true;
     case 'code':
     case 'rule':
     case 'listMarker':
     case 'blockquoteMarker':
     case 'codeGutter':
+    case 'codeLanguage':
     case 'link':
     case 'tableBorder':
       return false;
@@ -100,7 +102,7 @@ function matchWorkflowMarkerAt(
   }
 
   const path = matchPatternAt(text, index, FILE_PATH_PATTERN);
-  if (path && hasWordBoundary(text, index, path.length)) {
+  if (path && hasWordBoundary(text, index, path.length) && !followsUrlScheme(text, index)) {
     return { kind: 'filePath', text: path };
   }
 
@@ -111,6 +113,15 @@ function matchWorkflowMarkerAt(
   if (risk) return { kind: 'risk', text: risk };
 
   return undefined;
+}
+
+// The host of an absolute URL matches the path grammar, so `https://example.com/a.js` would
+// otherwise render as a clickable file link to a path that does not exist. The scanner retries
+// every offset, so this has to reject the whole scheme prefix, not just its first slash.
+const URL_SCHEME_PREFIX = /[A-Za-z][A-Za-z0-9+.-]*:\/*[^\s]*$/;
+
+function followsUrlScheme(text: string, index: number): boolean {
+  return URL_SCHEME_PREFIX.test(text.slice(0, index));
 }
 
 function matchKeywordAt(

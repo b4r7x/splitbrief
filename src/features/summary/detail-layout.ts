@@ -2,10 +2,9 @@ import type { Summary } from '../../core/schemas/summary.js';
 
 const SHELL_PADDING_ROWS = 2;
 const FOOTER_ROWS = 4;
-const SCROLL_DOCUMENT_INDICATOR_ROWS = 2;
 const BASE_HEADER_ROWS = 1;
 const METADATA_MARGIN_ROWS = 1;
-const BASE_METADATA_ROWS = 2;
+const BASE_METADATA_ROWS = 1;
 const PROGRESS_MARGIN_ROWS = 1;
 const PROGRESS_NON_EMPTY_ROWS = 1;
 const PROGRESS_EMPTY_ROWS = 1;
@@ -33,8 +32,9 @@ function countMetadataRows(
   isSmall: boolean,
 ): number {
   let childRows = BASE_METADATA_ROWS;
-  if (summary.plannerTool) childRows += 1;
-  if (implementerSummary) childRows += 1;
+  if (isSmall && summary.plannerTool) childRows += 1;
+  if (isSmall && implementerSummary) childRows += 1;
+  if (summary.briefQuality) childRows += 1;
   if (summary.driftSummary) childRows += 1;
   if (summary.chainDriftSummary) childRows += 1;
   if (!summary.costBreakdown && summary.estimatedCostSavings !== 'unavailable') childRows += 1;
@@ -65,6 +65,6 @@ function countBodyChromeRows(input: SummaryDetailLayoutInput): number {
 export function getSummaryDetailViewportHeight(input: SummaryDetailLayoutInput): number {
   const bodyRows = input.terminalRows - SHELL_PADDING_ROWS - FOOTER_ROWS;
   const headerChrome = countBodyChromeRows(input);
-  const remaining = bodyRows - headerChrome - SCROLL_DOCUMENT_INDICATOR_ROWS - VIEWPORT_SAFETY_ROWS;
+  const remaining = bodyRows - headerChrome - VIEWPORT_SAFETY_ROWS;
   return Math.max(1, remaining);
 }

@@ -19,7 +19,7 @@ import {
   type ChangedFilesBaseline,
 } from '../changed-files-baseline.js';
 import { configForProfile, createTaskImplementer } from './routing.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishError, publishTasksPlanned, publishWarning } from '../events.js';
 import { reviewTaskIfNeeded } from './review-flow.js';
 import { maybeAutoSnapshot } from './auto-snapshot.js';
 import { checkDependencyGate } from './dependency-gate.js';
@@ -102,6 +102,9 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     });
   }
   const acknowledgedUserEditFiles = new Set<string>();
+  // Republished on every entry, including resume and detached re-attach, so a client that missed
+  // the first announcement still learns the plan before the next task starts.
+  publishTasksPlanned({ bus: wctx.bus, phase: state.phase }, state.tasks);
   const firstTask = state.tasks[state.currentTaskIndex];
   if (firstTask) {
     await wctx.validator.primeBaseline({
